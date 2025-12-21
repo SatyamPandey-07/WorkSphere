@@ -68,10 +68,14 @@ export function VenueSubmissionModal({
     setError(null);
 
     try {
+      // Generate a unique placeId for crowdsourced venues
+      const placeId = `crowdsourced_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      
       const response = await fetch("/api/venues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          placeId,
           name: formData.name,
           address: formData.address,
           category: formData.category,
@@ -140,7 +144,7 @@ export function VenueSubmissionModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"

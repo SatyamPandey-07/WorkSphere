@@ -874,6 +874,15 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
         isOpen={showVenueSubmission}
         onClose={() => setShowVenueSubmission(false)}
         userLocation={location}
+        onSubmitSuccess={() => {
+          // Show success in chat
+          setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: "assistant",
+            content: "🎉 Thank you for suggesting a venue! It has been added to our database and will appear in future searches.",
+            suggestions: ["Search for workspaces nearby", "Show my favorites"],
+          }]);
+        }}
       />
     </div>
   );

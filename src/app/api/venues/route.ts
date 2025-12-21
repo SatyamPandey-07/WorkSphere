@@ -1,15 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { venueSearchSchema, venueCreateSchema, validateRequest } from "@/lib/validations";
 
 // GET /api/venues - Search venues
 export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
-    const lat = parseFloat(searchParams.get("lat") || "0");
-    const lng = parseFloat(searchParams.get("lng") || "0");
-    const radius = parseInt(searchParams.get("radius") || "2000");
-    const category = searchParams.get("category");
+    
+    // Validate search params with Zod
+    const validation = validateRequest(venueSearchSchema, {
+      lat: searchParams.get("lat"),
+      lng: searchParams.get("lng"),
+      radius: searchParams.get("radius"),
+      category: searchParams.get("category"),
+      wifi: searchParams.get("wifi"),
+      outlets: searchParams.get("outlets"),
+      quiet: searchParams.get("quiet"),
+    });
+    
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    
+    const { lat, lng, radius, category } = validation.data;
 
     // Simple bounding box search (for PostgreSQL without PostGIS)
     // Approximate: 1 degree ≈ 111km
@@ -61,23 +75,20 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const {
-      placeId,
-      name,
-      latitude,
-      longitude,
-      category,
-      address,
-      rating,
-      wifiQuality,
-      hasOutlets,
-      noiseLevel,
-    } = body;
+    
+    // Validate request body with Zod
+    const validation = validateRequest(venueCreateSchema, body);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+    
+    const { name, latitude, longitude, category, address, wifiQuality, hasOutlets, noiseLevel } = validation.data;
+    const { placeId, rating } = body; // placeId and rating are additional fields
 
-    // Validate required fields
-    if (!placeId || !name || !latitude || !longitude || !category) {
+    // Validate placeId (required for upsert)
+    if (!placeId) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "placeId is required" },
         { status: 400 }
       );
     }

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import Groq from "groq-sdk";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+import { chatRequestSchema, validateRequest } from "@/lib/validations";
 
 export const maxDuration = 60;
 
@@ -362,13 +363,17 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { messages, location, conversationId, filters } = body;
+    
+    // Validate request with Zod
+    const validation = validateRequest(chatRequestSchema, body);
+    if (!validation.success) {
+      return Response.json({ error: validation.error }, { status: 400 });
+    }
+    
+    const { messages, location, conversationId } = validation.data;
+    const { filters } = body; // filters is optional, not in schema
 
     console.log("Chat request:", { messagesCount: messages?.length, location, filters });
-
-    if (!messages || !Array.isArray(messages)) {
-      return Response.json({ error: "Invalid messages format" }, { status: 400 });
-    }
 
     const userMessage = messages[messages.length - 1]?.content || "";
     const agentSteps: any[] = [];

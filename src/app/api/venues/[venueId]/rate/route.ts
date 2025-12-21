@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { venueRatingSchema, validateRequest } from "@/lib/validations";
 
 // POST /api/venues/[venueId]/rate - Add rating
 export async function POST(
@@ -16,15 +17,15 @@ export async function POST(
 
     const { venueId } = await context.params;
     const body = await req.json();
-    const { wifiQuality, hasOutlets, noiseLevel, comment, venue: venueData } = body;
-
-    // Validate
-    if (!wifiQuality || hasOutlets === undefined || !noiseLevel) {
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
+    
+    // Validate rating data with Zod
+    const validation = validateRequest(venueRatingSchema, body);
+    if (!validation.success) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
+    
+    const { wifiQuality, hasOutlets, noiseLevel, comment } = validation.data;
+    const { venue: venueData } = body; // venue data for creating new venues
 
     // Check if venue exists, create if not (for Overpass API results)
     let venue = await prisma.venue.findUnique({

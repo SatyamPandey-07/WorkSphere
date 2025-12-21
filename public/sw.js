@@ -106,7 +106,7 @@ async function updateCache(request) {
       const cache = await caches.open(CACHE_NAME);
       await cache.put(request, response);
     }
-  } catch (error) {
+  } catch {
     // Ignore network errors during background update
   }
 }

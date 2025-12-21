@@ -37,8 +37,27 @@ import {
   recordAgentMetric
 } from "@/lib/analytics";
 
+interface MapUpdate {
+  type: string;
+  markers?: Array<{
+    id: string;
+    lat: number;
+    lng: number;
+    name: string;
+    category: string;
+    address?: string;
+    wifi?: boolean;
+    score?: number;
+  }>;
+  route?: {
+    from: { lat: number; lng: number };
+    to: { lat: number; lng: number };
+    venueName?: string;
+  };
+}
+
 interface EnhancedChatbotProps {
-  onMapUpdate?: (update: any) => void;
+  onMapUpdate?: (update: MapUpdate) => void;
   userLocation?: { lat: number; lng: number };
 }
 
@@ -57,7 +76,7 @@ interface Venue {
 
 interface AgentStep {
   agent: string;
-  result: any;
+  result: Record<string, unknown>;
   timestamp: number;
 }
 
@@ -82,7 +101,7 @@ interface Filters {
   quiet?: boolean;
 }
 
-const AGENT_ICONS: Record<string, any> = {
+const AGENT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   Orchestrator: Brain,
   Context: Search,
   Data: Database,
@@ -99,7 +118,7 @@ const AGENT_COLORS: Record<string, string> = {
 };
 
 export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotProps) {
-  const { user, isSignedIn } = useUser();
+  const { isSignedIn } = useUser();
   const [location, setLocation] = useState(userLocation);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -144,7 +163,7 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
       if (res.ok) {
         const data = await res.json();
         const favoriteIds = new Set<string>(
-          data.favorites?.map((f: any) => f.venueId) || []
+          data.favorites?.map((f: { venueId: string }) => f.venueId) || []
         );
         setFavorites(favoriteIds);
       }
@@ -192,7 +211,7 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
         const data = await res.json();
         setCurrentConversationId(id);
         setMessages(
-          data.messages.map((m: any) => ({
+          data.messages.map((m: { id: string; role: "user" | "assistant"; content: string }) => ({
             id: m.id,
             role: m.role,
             content: m.content,
@@ -626,7 +645,9 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
                             <span>{step.agent} Agent</span>
                           </div>
                           <div className="mt-1 text-zinc-600 dark:text-zinc-400">
-                            {step.result.reasoning || step.result.summary || JSON.stringify(step.result).slice(0, 150)}
+                            {String((step.result as { reasoning?: string; summary?: string }).reasoning || 
+                              (step.result as { summary?: string }).summary || 
+                              JSON.stringify(step.result).slice(0, 150))}
                           </div>
                         </div>
                       );

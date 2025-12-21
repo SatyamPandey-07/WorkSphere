@@ -53,14 +53,39 @@ export default function AppPage() {
     }
   }, []);
 
+  // Map update interface
+  interface MapUpdateData {
+    type: string;
+    markers?: Array<{
+      id: string;
+      lat: number;
+      lng: number;
+      name: string;
+      category: string;
+      address?: string;
+      wifi?: boolean;
+    }>;
+    route?: {
+      from: { lat: number; lng: number };
+      to: { lat: number; lng: number };
+    };
+    data?: {
+      markers?: MapMarker[];
+      routes?: MapRoute[];
+      center?: { lat: number; lng: number };
+      zoom?: number;
+      animate?: boolean;
+    };
+  }
+
   // Handle map updates from chat
-  const handleMapUpdate = (update: any) => {
+  const handleMapUpdate = (update: MapUpdateData) => {
     console.log("Map update:", update);
 
     switch (update.type) {
       case "markers":
         if (update.markers) {
-          const newMarkers: MapMarker[] = update.markers.map((m: any) => ({
+          const newMarkers: MapMarker[] = update.markers.map((m: { id: string; name: string; lat: number; lng: number; category: string; address?: string; wifi?: boolean }) => ({
             id: m.id,
             name: m.name,
             position: { lat: m.lat, lng: m.lng },
@@ -135,7 +160,7 @@ export default function AppPage() {
   };
 
   // Handle venue rating submission
-  const handleRatingSubmit = async (rating: any) => {
+  const handleRatingSubmit = async (rating: { wifiQuality: number; hasOutlets: boolean; noiseLevel: "quiet" | "moderate" | "loud"; comment?: string }) => {
     if (!ratingDialog.venue) return;
 
     try {
@@ -223,9 +248,9 @@ export default function AppPage() {
       `}>
         <EnhancedChatbot
           onMapUpdate={(update) => {
-            handleMapUpdate(update);
+            handleMapUpdate(update as MapUpdateData);
             // Auto-switch to map on mobile when markers are added
-            if (update.type === "markers" && update.markers?.length > 0) {
+            if (update.type === "markers" && update.markers && update.markers.length > 0) {
               // Small delay so user sees the results loading
               setTimeout(() => setMobileView("map"), 500);
             }

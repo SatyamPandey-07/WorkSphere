@@ -1,17 +1,16 @@
-import React from 'react';
 import '@testing-library/jest-dom';
 
 // Test the component exports and types
 describe('EnhancedChatbot', () => {
-  it('exports EnhancedChatbot component', () => {
+  it('exports EnhancedChatbot component', async () => {
     // Verify the module can be imported
-    const module = require('@/components/EnhancedChatbot');
-    expect(module.EnhancedChatbot).toBeDefined();
-    expect(typeof module.EnhancedChatbot).toBe('function');
+    const chatbotModule = await import('@/components/EnhancedChatbot');
+    expect(chatbotModule.EnhancedChatbot).toBeDefined();
+    expect(typeof chatbotModule.EnhancedChatbot).toBe('function');
   });
 
-  it('is a valid React component', () => {
-    const { EnhancedChatbot } = require('@/components/EnhancedChatbot');
+  it('is a valid React component', async () => {
+    const { EnhancedChatbot } = await import('@/components/EnhancedChatbot');
     // React components are functions
     expect(typeof EnhancedChatbot).toBe('function');
     // Component name should match

@@ -43,12 +43,6 @@ test.describe('Landing Page', () => {
     await expect(cta).toBeVisible();
   });
 
-  test('should display stats section', async ({ page }) => {
-    await expect(page.locator('text=Active Users').first()).toBeVisible();
-    await expect(page.locator('text=Venues').first()).toBeVisible();
-    await expect(page.locator('text=Rating').first()).toBeVisible();
-  });
-
   test('should have footer with copyright', async ({ page }) => {
     await expect(page.locator('footer')).toBeVisible();
     await expect(page.locator('text=Built with Next.js').first()).toBeVisible();

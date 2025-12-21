@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { MapPin, Wifi, Zap, Volume2, Clock, Sparkles, Download, ArrowRight, Star, Users, Coffee } from "lucide-react";
+import { MapPin, Wifi, Zap, Volume2, Clock, Sparkles, Download, ArrowRight, Coffee } from "lucide-react";
 import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 
@@ -125,31 +125,6 @@ export default function Home() {
                 Learn More
               </a>
             </SignedIn>
-          </div>
-
-          {/* Stats Section */}
-          <div className="mt-12 md:mt-16 grid grid-cols-3 gap-4 md:gap-8 max-w-xl mx-auto">
-            <div className="text-center p-4 rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm border border-zinc-200/50 dark:border-zinc-800/50">
-              <div className="flex items-center justify-center gap-1 text-2xl md:text-3xl font-bold text-zinc-900 dark:text-zinc-50">
-                <Users className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
-                10K+
-              </div>
-              <p className="text-xs md:text-sm text-zinc-500 dark:text-zinc-400 mt-1">Active Users</p>
-            </div>
-            <div className="text-center p-4 rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm border border-zinc-200/50 dark:border-zinc-800/50">
-              <div className="flex items-center justify-center gap-1 text-2xl md:text-3xl font-bold text-zinc-900 dark:text-zinc-50">
-                <MapPin className="w-5 h-5 md:w-6 md:h-6 text-purple-600" />
-                5K+
-              </div>
-              <p className="text-xs md:text-sm text-zinc-500 dark:text-zinc-400 mt-1">Venues</p>
-            </div>
-            <div className="text-center p-4 rounded-2xl bg-white/50 dark:bg-zinc-900/50 backdrop-blur-sm border border-zinc-200/50 dark:border-zinc-800/50">
-              <div className="flex items-center justify-center gap-1 text-2xl md:text-3xl font-bold text-zinc-900 dark:text-zinc-50">
-                <Star className="w-5 h-5 md:w-6 md:h-6 text-yellow-500" />
-                4.9
-              </div>
-              <p className="text-xs md:text-sm text-zinc-500 dark:text-zinc-400 mt-1">Rating</p>
-            </div>
           </div>
 
           {/* Install App CTA - Shows on mobile */}

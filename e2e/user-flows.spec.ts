@@ -198,17 +198,6 @@ test.describe('Feature Cards Interaction', () => {
   });
 });
 
-test.describe('Stats Section', () => {
-  test('should display stats with icons', async ({ page }) => {
-    await page.goto('/');
-    
-    // Check for stats
-    await expect(page.locator('text=10K+')).toBeVisible();
-    await expect(page.locator('text=5K+')).toBeVisible();
-    await expect(page.locator('text=4.9')).toBeVisible();
-  });
-});
-
 test.describe('Footer', () => {
   test('should display footer content', async ({ page }) => {
     await page.goto('/');

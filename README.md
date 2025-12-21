@@ -13,7 +13,7 @@
 
 **A multi-agent AI platform that helps remote workers discover ideal workspaces like cafes, coworking spaces, and libraries based on WiFi quality, power outlets, noise levels, and more.**
 
-[🚀 Live Demo](https://worksphere.vercel.app) • [📖 Documentation](#features) • [🐛 Report Bug](https://github.com/SatyamPandey-07/WorkSphere/issues)
+[🚀 Live Demo](https://work-sphere-one.vercel.app/) • [🐛 Report Bug](https://github.com/SatyamPandey-07/WorkSphere/issues)
 
 </div>
 

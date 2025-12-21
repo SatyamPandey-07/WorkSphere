@@ -4,7 +4,7 @@
 
 ![WorkSphere Banner](https://img.shields.io/badge/WorkSphere-AI%20Workspace%20Finder-blue?style=for-the-badge)
 
-[![Next.js](https://img.shields.io/badge/Next.js-15.3-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15.5-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Prisma](https://img.shields.io/badge/Prisma-7.2-2D3748?style=flat-square&logo=prisma)](https://www.prisma.io/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-38B2AC?style=flat-square&logo=tailwind-css)](https://tailwindcss.com/)
@@ -104,11 +104,11 @@
 
 | Category | Technology |
 | -------- | ---------- |
-| **Framework** | Next.js 15.3 (App Router) |
+| **Framework** | Next.js 15.5 (App Router) |
 | **Language** | TypeScript 5.0 |
 | **Styling** | Tailwind CSS 4.0, Custom UI Components |
 | **AI/LLM** | Groq SDK (Llama 3.3 70B) |
-| **Database** | Neon PostgreSQL + Prisma 7.2 ORM |
+| **Database** | Neon PostgreSQL + Prisma 7.2 ORM (with @prisma/adapter-pg) |
 | **Authentication** | Clerk |
 | **Maps** | React Leaflet + OpenStreetMap |
 | **Venue Data** | Overpass API (OpenStreetMap) |
@@ -201,6 +201,7 @@
 
 4. **Set up the database**
    ```bash
+   # Prisma 7 uses driver adapters - ensure DATABASE_URL is set
    npx prisma generate
    npx prisma db push
    ```

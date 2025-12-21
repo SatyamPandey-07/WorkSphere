@@ -258,7 +258,7 @@ const Map = ({
           <Marker
             key={marker.id}
             position={[marker.position.lat, marker.position.lng]}
-            icon={venueIcon}
+            icon={defaultIcon}
           >
             <Popup>
               <div className="text-sm">

@@ -28,9 +28,11 @@
 - [Environment Variables](#-environment-variables)
 - [Testing](#-testing)
 - [Database Schema](#-database-schema)
+- [Pages](#-pages)
 - [API Routes](#-api-routes)
 - [Multi-Agent System](#-multi-agent-system)
 - [Project Structure](#-project-structure)
+- [Future Improvements](#-future-improvements)
 - [Contributing](#-contributing)
 - [License](#-license)
 
@@ -346,7 +348,20 @@ model Message {
 
 ---
 
-## 🔌 API Routes
+## � Pages
+
+| Route | Page | Description |
+|-------|------|-------------|
+| `/` | Landing Page | Hero section with product mockup, features showcase, CTAs |
+| `/ai` | AI Workspace Finder | Main app with 70/30 map/chat split, dark theme |
+| `/dashboard` | User Dashboard | Personal dashboard for authenticated users |
+| `/offline` | Offline Page | PWA fallback when network unavailable |
+| `/sign-in` | Sign In | Clerk authentication sign-in page |
+| `/sign-up` | Sign Up | Clerk authentication sign-up page |
+
+---
+
+## �🔌 API Routes
 
 | Method | Route | Description |
 |--------|-------|-------------|
@@ -522,6 +537,21 @@ Try these natural language queries:
 2. Connect repository to [Vercel](https://vercel.com)
 3. Add environment variables
 4. Deploy!
+
+---
+
+## 🔮 Future Improvements
+
+| Priority | Feature | Description |
+|----------|---------|-------------|
+| 🔴 High | **Analytics Dashboard** | Admin page to view search patterns, popular venues, user metrics |
+| 🔴 High | **Real-time Updates** | WebSocket integration for live venue availability |
+| 🟡 Medium | **Mobile App** | React Native version sharing the same API backend |
+| 🟡 Medium | **AI Memory** | Cross-conversation learning for personalized recommendations |
+| 🟡 Medium | **Social Features** | Share favorite workspaces, follow other remote workers |
+| 🟢 Low | **Venue Photos** | User-uploaded images of workspaces |
+| 🟢 Low | **Booking Integration** | Reserve desks at coworking spaces via API |
+| 🟢 Low | **Noise Level API** | Real-time noise monitoring hardware integration |
 
 ---
 

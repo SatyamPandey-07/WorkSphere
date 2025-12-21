@@ -1,0 +1,93 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id
+  email         String?        @unique
+  firstName     String?
+  lastName      String?
+  createdAt     DateTime       @default(now())
+  favorites     Favorite[]
+  ratings       VenueRating[]
+  conversations Conversation[]
+}
+
+model Venue {
+  id           String        @id @default(cuid())
+  placeId      String        @unique
+  name         String
+  latitude     Float
+  longitude    Float
+  category     String // cafe, coworking, library
+  address      String?
+  rating       Float?
+  wifiQuality  Int? // 1-5 scale
+  hasOutlets   Boolean       @default(false)
+  noiseLevel   String? // quiet, moderate, loud
+  crowdsourced Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  ratings      VenueRating[]
+  favorites    Favorite[]
+
+  @@index([latitude, longitude])
+  @@index([category])
+}
+
+model VenueRating {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  venueId     String
+  venue       Venue    @relation(fields: [venueId], references: [id])
+  wifiQuality Int // 1-5
+  hasOutlets  Boolean
+  noiseLevel  String // quiet, moderate, loud
+  comment     String?
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, venueId])
+  @@index([venueId])
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@unique([userId, venueId])
+  @@index([userId])
+}
+
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  title     String?   @default("Work Space Search")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  messages  Message[]
+
+  @@index([userId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  role           String // user, assistant
+  content        String
+  agentName      String?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+}

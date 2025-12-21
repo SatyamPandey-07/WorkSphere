@@ -52,7 +52,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      appearance={{
+        elements: {
+          formButtonPrimary: "bg-blue-600 hover:bg-blue-700",
+          card: "shadow-xl",
+        },
+      }}
+    >
       <html lang="en">
         <head>
           <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />

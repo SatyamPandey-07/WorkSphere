@@ -136,6 +136,38 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Hero Mockup Image */}
+        <div className={`relative max-w-6xl mx-auto mb-16 md:mb-24 px-4 transition-all duration-1000 delay-200 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
+          <div className="relative rounded-2xl overflow-hidden shadow-2xl shadow-blue-500/20 border border-zinc-200/50 dark:border-zinc-800/50">
+            <img
+              src="/images/hero-mockup.png"
+              alt="WorkSphere - AI-Powered Remote Workspace Finder"
+              className="w-full h-auto"
+            />
+            {/* Gradient overlay at bottom */}
+            <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-white dark:from-black to-transparent" />
+          </div>
+          {/* Floating badges */}
+          <div className="absolute -left-4 top-1/4 hidden lg:flex items-center gap-2 px-4 py-3 rounded-xl bg-white dark:bg-zinc-900 shadow-xl border border-zinc-200 dark:border-zinc-800">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="font-semibold text-zinc-900 dark:text-white text-sm">Agent Pipeline</p>
+              <p className="text-xs text-zinc-500">5-step AI reasoning</p>
+            </div>
+          </div>
+          <div className="absolute -right-4 top-1/3 hidden lg:flex items-center gap-2 px-4 py-3 rounded-xl bg-white dark:bg-zinc-900 shadow-xl border border-zinc-200 dark:border-zinc-800">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center">
+              <MapPin className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <p className="font-semibold text-zinc-900 dark:text-white text-sm">Smart Routes</p>
+              <p className="text-xs text-zinc-500">Real-time directions</p>
+            </div>
+          </div>
+        </div>
+
         {/* Features Section */}
         <div id="features" className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-8 mb-16 md:mb-24 px-2 transition-all duration-1000 delay-300 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           <FeatureCard

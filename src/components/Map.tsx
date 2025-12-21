@@ -179,6 +179,11 @@ const Map = ({
           border-radius: 12px;
         }
         
+        /* Dark theme filter for map tiles - keeps labels readable */
+        .leaflet-tile-pane {
+          filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+        }
+        
         /* Venue marker - circular dot */
         .venue-dot {
           width: 20px;
@@ -234,10 +239,11 @@ const Map = ({
           borderRadius: "12px",
         }}
       >
-        {/* Dark theme with visible labels - CartoDB Voyager Dark */}
+        {/* Dark theme with readable city names - Jawg Dark */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          className="map-tiles-dark"
         />
         <MapController mapView={mapView} />
         <AutoCenter markers={markers} userLocation={center} />

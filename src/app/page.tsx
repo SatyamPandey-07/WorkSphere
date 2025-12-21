@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { MapPin, Wifi, Zap, Volume2, Clock, Sparkles, Download, ArrowRight, Coffee } from "lucide-react";
-import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 
 export default function Home() {
@@ -48,16 +48,16 @@ export default function Home() {
           </Link>
           <div className="flex items-center gap-2 md:gap-4">
             <SignedOut>
-              <SignInButton mode="modal">
+              <Link href="/sign-in">
                 <button className="px-3 md:px-4 py-2 text-sm md:text-base text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-50 font-medium transition-all hover:scale-105">
                   Sign In
                 </button>
-              </SignInButton>
-              <SignUpButton mode="modal">
+              </Link>
+              <Link href="/sign-up">
                 <button className="px-4 md:px-6 py-2 text-sm md:text-base rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105">
                   Sign Up
                 </button>
-              </SignUpButton>
+              </Link>
             </SignedOut>
             <SignedIn>
               <Link
@@ -98,12 +98,13 @@ export default function Home() {
           
           <div className="flex flex-col sm:flex-row gap-4 md:gap-5 justify-center px-4">
             <SignedOut>
-              <SignUpButton mode="modal">
-                <button className="group w-full sm:w-auto px-8 md:px-10 py-4 md:py-5 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-lg hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2">
-                  Get Started Free
-                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                </button>
-              </SignUpButton>
+              <Link
+                href="/sign-up"
+                className="group w-full sm:w-auto px-8 md:px-10 py-4 md:py-5 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-lg hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
+              >
+                Get Started Free
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+              </Link>
               <a
                 href="#features"
                 className="w-full sm:w-auto px-8 md:px-10 py-4 md:py-5 rounded-2xl border-2 border-zinc-300 dark:border-zinc-700 text-zinc-900 dark:text-zinc-50 font-semibold text-lg hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-all hover:scale-105 hover:border-zinc-400 dark:hover:border-zinc-600"

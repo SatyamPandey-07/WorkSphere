@@ -44,12 +44,14 @@
 - **Smart Intent Understanding**: Extracts work type, amenities, location preferences
 - **Intelligent Scoring**: Ranks venues based on work-friendliness criteria
 
-### 🗺️ Interactive Map
+### 🗺️ Interactive Dark Theme Map
 
-- **Real-time Markers**: Venue locations with category icons
-- **Route Visualization**: Get directions to selected venues
+- **Dark Theme**: Beautiful CartoDB Dark Matter tiles
+- **Real-time Markers**: Purple glowing venue markers
+- **Green Route Lines**: Styled routes with glow effects
 - **User Location**: Custom marker with Clerk user avatar
 - **Auto-centering**: Map adjusts to show search results
+- **Dark Popups**: Styled popups matching the theme
 
 ### 🎯 Multi-Agent Architecture
 

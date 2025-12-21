@@ -214,6 +214,108 @@
 
 ---
 
+## 🧪 Testing the App (User Guide)
+
+### Quick Start Test
+
+1. **Open the app** at `http://localhost:3000` (or port 3001/3002 if 3000 is busy)
+2. **Allow location access** when prompted (or app will use IP-based location)
+3. **Start chatting** with the AI assistant!
+
+### Feature Testing Checklist
+
+#### 🔍 AI Search (Core Feature)
+Try these natural language queries in the chat:
+
+```
+"Find a quiet cafe with good WiFi near me"
+"Show me coworking spaces within 2km"
+"I need a library to study"
+"Find cafes with power outlets"
+"Show me the best rated workspace nearby"
+```
+
+**What to expect:**
+- AI processes through 5 agents (visible in expandable pipeline)
+- Map updates with venue markers
+- Venue cards appear with scores and details
+- Suggestions for follow-up queries
+
+#### 🗺️ Map Interaction
+- **Click markers** to see venue details
+- **Mobile users**: Tap "Map" tab to see results
+- **Zoom/Pan** the map freely
+- **Watch auto-center** when new results load
+
+#### ⭐ Favorites (Requires Sign-in)
+1. Click **Sign In** (top right)
+2. Create account or sign in with Clerk
+3. Click the **heart icon** on any venue card
+4. Favorites persist across sessions
+
+#### ⭐ Rating Venues (Requires Sign-in)
+1. Sign in to your account
+2. Click **"Rate"** button on a venue card
+3. Rate: WiFi quality, outlets, noise level
+4. Add optional comment
+5. Submit rating
+
+#### 🔧 Filters
+- Click **Filter** button in chat header
+- Toggle: **WiFi** | **Outlets** | **Quiet**
+- Results automatically re-filter
+
+#### 📱 PWA Installation
+- **Desktop**: Click install icon in browser address bar
+- **Mobile**: "Add to Home Screen" from browser menu
+- App works **offline** with cached venues
+
+#### 🔄 Offline Mode Test
+1. Search for some venues (they get cached)
+2. Turn off WiFi/Network
+3. App shows offline banner
+4. Previously viewed venues still visible
+
+#### 💬 Conversation History (Requires Sign-in)
+1. Sign in to your account
+2. Start a search conversation
+3. Click **History** icon in chat header
+4. Previous conversations are listed
+5. Click to resume any conversation
+
+### Testing Rate Limiting
+- Send 20+ messages quickly
+- After limit: "Rate limit exceeded" message appears
+- Wait 60 seconds to reset
+
+### Testing Caching
+- Search for "cafes near me"
+- Search same query again
+- Second search is **instant** (cached)
+- Cache expires after 5 minutes
+
+### API Endpoints to Test
+
+| Endpoint | Method | Test Command |
+|----------|--------|--------------|
+| `/api/chat` | POST | Main AI chat |
+| `/api/favorites` | GET | List favorites |
+| `/api/venues` | GET | Search venues |
+| `/api/location` | GET | IP geolocation |
+| `/api/conversations` | GET | List conversations |
+
+### Troubleshooting
+
+| Issue | Solution |
+|-------|----------|
+| "Getting location..." stuck | Allow location permission or wait for IP fallback |
+| No venues found | Expand search radius or try different location |
+| Rate limited | Wait 60 seconds |
+| Sign-in not working | Check Clerk API keys in `.env.local` |
+| Map not loading | Check browser console for Leaflet errors |
+
+---
+
 ## 🔐 Environment Variables
 
 Create a `.env.local` file in the root directory:

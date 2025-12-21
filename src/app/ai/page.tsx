@@ -299,15 +299,25 @@ export default function AppPage() {
 
   if (!location || isLoadingLocation) {
     return (
-      <div className="flex items-center justify-center h-screen bg-zinc-50 dark:bg-black">
-        <div className="text-center">
-          <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-zinc-600 dark:text-zinc-400">Getting your location...</p>
+      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-zinc-50 via-blue-50/30 to-zinc-50 dark:from-black dark:via-blue-950/10 dark:to-black">
+        <div className="text-center p-8 max-w-md">
+          <div className="relative mx-auto mb-6">
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 animate-pulse flex items-center justify-center">
+              <Loader2 className="w-10 h-10 animate-spin text-white" />
+            </div>
+            <div className="absolute inset-0 w-20 h-20 rounded-full bg-blue-500/20 animate-ping" />
+          </div>
+          <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">
+            Finding Your Location
+          </h2>
+          <p className="text-zinc-600 dark:text-zinc-400">
+            We're pinpointing your location to find the best workspaces nearby...
+          </p>
           {!isOnline && (
-            <p className="text-amber-500 text-sm mt-2 flex items-center justify-center gap-1">
+            <div className="mt-4 px-4 py-3 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-sm flex items-center justify-center gap-2">
               <WifiOff className="w-4 h-4" />
               You're offline - loading saved venues
-            </p>
+            </div>
           )}
         </div>
       </div>
@@ -315,12 +325,13 @@ export default function AppPage() {
   }
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-zinc-50 dark:bg-black overflow-hidden">
+    <div className="flex flex-col h-screen bg-zinc-50 dark:bg-black overflow-hidden">
       {/* Offline Banner */}
       {!isOnline && (
-        <div className="bg-amber-500 text-white text-center py-1 text-sm flex items-center justify-center gap-2">
-          <WifiOff className="w-4 h-4" />
-          You're offline - showing saved venues
+        <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white text-center py-2 text-sm flex items-center justify-center gap-2 shadow-lg">
+          <WifiOff className="w-4 h-4 animate-pulse" />
+          <span className="font-medium">You're offline</span>
+          <span className="opacity-80">— showing saved venues</span>
         </div>
       )}
 
@@ -330,74 +341,77 @@ export default function AppPage() {
       )}
 
       {/* Mobile Navigation Toggle */}
-      <div className="md:hidden flex border-b border-zinc-200 dark:border-zinc-800">
+      <div className="md:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <button
           onClick={() => setMobileView("chat")}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
             mobileView === "chat"
-              ? "text-blue-600 bg-blue-50 dark:bg-blue-950 border-b-2 border-blue-600"
-              : "text-zinc-600 dark:text-zinc-400"
+              ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
+              : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
           }`}
         >
-          <MessageCircle className="w-4 h-4" />
+          <MessageCircle className="w-5 h-5" />
           Chat
         </button>
         <button
           onClick={() => setMobileView("map")}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
             mobileView === "map"
-              ? "text-blue-600 bg-blue-50 dark:bg-blue-950 border-b-2 border-blue-600"
-              : "text-zinc-600 dark:text-zinc-400"
+              ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
+              : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
           }`}
         >
-          <MapIcon className="w-4 h-4" />
+          <MapIcon className="w-5 h-5" />
           Map
           {markers.length > 0 && (
-            <span className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded-full">
+            <span className="px-2 py-0.5 text-xs bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full font-bold shadow-sm">
               {markers.length}
             </span>
           )}
         </button>
       </div>
 
-      {/* Map Section - Hidden on mobile when chat is active */}
-      <div className={`
-        ${mobileView === "map" ? "flex" : "hidden"} 
-        md:flex flex-1 md:flex-[7] relative
-      `}>
-        <MapErrorBoundary>
-          <Map
-            location={location}
-            markers={markers}
-            routes={routes}
-            mapView={mapView}
-          />
-        </MapErrorBoundary>
-      </div>
+      {/* Main Content */}
+      <div className="flex flex-1 md:flex-row overflow-hidden">
+        {/* Map Section - Hidden on mobile when chat is active */}
+        <div className={`
+          ${mobileView === "map" ? "flex" : "hidden"} 
+          md:flex flex-1 md:flex-[7] relative
+        `}>
+          <MapErrorBoundary>
+            <Map
+              location={location}
+              markers={markers}
+              routes={routes}
+              mapView={mapView}
+            />
+          </MapErrorBoundary>
+        </div>
 
-      {/* Divider - Desktop only */}
-      <div className="hidden md:block w-px bg-zinc-200 dark:bg-zinc-800" />
+        {/* Divider - Desktop only */}
+        <div className="hidden md:block w-px bg-gradient-to-b from-zinc-200 via-zinc-300 to-zinc-200 dark:from-zinc-800 dark:via-zinc-700 dark:to-zinc-800" />
 
-      {/* Chat Section - Hidden on mobile when map is active */}
-      <div className={`
-        ${mobileView === "chat" ? "flex" : "hidden"} 
-        md:flex flex-1 md:flex-[3] flex-col min-h-0
-      `}>
-        <ChatErrorBoundary>
-          <EnhancedChatbot
-            onMapUpdate={(update) => {
-              handleMapUpdate(update as MapUpdateData);
-              // Auto-switch to map on mobile when markers are added
-              if (update.type === "markers" && update.markers && update.markers.length > 0) {
-                // Small delay so user sees the results loading
-                setTimeout(() => setMobileView("map"), 500);
+        {/* Chat Section - Hidden on mobile when map is active */}
+        <div className={`
+          ${mobileView === "chat" ? "flex" : "hidden"} 
+          md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
+        `}>
+          <ChatErrorBoundary>
+            <EnhancedChatbot
+              onMapUpdate={(update) => {
+                handleMapUpdate(update as MapUpdateData);
+                // Auto-switch to map on mobile when markers are added
+                if (update.type === "markers" && update.markers && update.markers.length > 0) {
+                  // Small delay so user sees the results loading
+                  setTimeout(() => setMobileView("map"), 500);
+                }
+              }}
+              userLocation={
+                location ? { lat: location.latitude, lng: location.longitude } : undefined
               }
-            }}
-            userLocation={
-              location ? { lat: location.latitude, lng: location.longitude } : undefined
-            }
-          />
-        </ChatErrorBoundary>
+            />
+          </ChatErrorBoundary>
+        </div>
       </div>
 
       {/* Rating Dialog */}

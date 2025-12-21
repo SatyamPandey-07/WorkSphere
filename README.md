@@ -36,39 +36,71 @@
 ## ✨ Features
 
 ### 🤖 AI-Powered Search
+
 - **Natural Language Queries**: "Find a quiet cafe with good WiFi near me"
 - **Smart Intent Understanding**: Extracts work type, amenities, location preferences
 - **Intelligent Scoring**: Ranks venues based on work-friendliness criteria
 
 ### 🗺️ Interactive Map
+
 - **Real-time Markers**: Venue locations with category icons
 - **Route Visualization**: Get directions to selected venues
 - **User Location**: Custom marker with Clerk user avatar
 - **Auto-centering**: Map adjusts to show search results
 
 ### 🎯 Multi-Agent Architecture
+
 - **5 Specialized AI Agents** working together:
   - Orchestrator → Context → Data → Reasoning → Action
 - **Transparent Reasoning**: See each agent's thought process
 - **Parallel Processing**: Efficient query handling
 
 ### ⭐ User Features
+
 - **Favorites System**: Save frequently visited spots
 - **Crowdsourced Ratings**: Rate venues on WiFi, outlets, noise
 - **Conversation History**: Resume previous searches
 - **Amenity Filters**: WiFi, outlets, quiet zones
 
 ### 🔐 Authentication
+
 - **Clerk Integration**: Secure sign-in/sign-up
 - **User Profiles**: Personalized experience
 - **Webhook Sync**: Real-time user data updates
+
+### 📱 Progressive Web App (PWA)
+
+- **Installable**: Add to home screen on mobile/desktop
+- **Offline Support**: IndexedDB storage for venues and favorites
+- **Service Worker**: Caches static assets for fast loading
+- **Push Notifications**: Ready for future notification support
+
+### 🚀 Performance & Reliability
+
+- **Rate Limiting**: API protection with configurable limits
+- **Data Caching**: Multi-layer caching with TTL support
+- **Error Boundaries**: Graceful error handling prevents crashes
+- **Loading Skeletons**: Smooth loading states for better UX
+
+### 📊 Analytics & Monitoring
+
+- **Event Tracking**: Track searches, venue interactions, agent performance
+- **Agent Metrics**: Monitor AI pipeline execution times
+- **Search Patterns**: Understand user behavior and preferences
+
+### 📲 Mobile-First Design
+
+- **Responsive Layout**: Optimized for all screen sizes
+- **Mobile Toggle**: Switch between Chat and Map views on mobile
+- **Touch-Friendly**: Large touch targets and swipe gestures
+- **Offline Indicator**: Visual feedback when connection is lost
 
 ---
 
 ## 🛠️ Tech Stack
 
 | Category | Technology |
-|----------|------------|
+| -------- | ---------- |
 | **Framework** | Next.js 15 (App Router) |
 | **Language** | TypeScript 5.0 |
 | **Styling** | Tailwind CSS 3.4, shadcn/ui |
@@ -77,6 +109,8 @@
 | **Authentication** | Clerk |
 | **Maps** | React Leaflet + OpenStreetMap |
 | **Venue Data** | Overpass API (OpenStreetMap) |
+| **Testing** | Jest + React Testing Library |
+| **PWA** | Service Workers + IndexedDB |
 | **Deployment** | Vercel |
 
 ---

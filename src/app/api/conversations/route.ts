@@ -22,7 +22,7 @@ export async function GET() {
     });
 
     return Response.json({
-      conversations: conversations.map((c) => ({
+      conversations: conversations.map((c: { id: string; title: string | null; messages: { content: string }[]; createdAt: Date; updatedAt: Date }) => ({
         id: c.id,
         title: c.title || "Work Space Search",
         lastMessage: c.messages[0]?.content?.slice(0, 100) || "",

@@ -36,7 +36,7 @@ export async function GET(
       title: conversation.title,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
-      messages: conversation.messages.map((m) => ({
+      messages: conversation.messages.map((m: { id: string; role: string; content: string; agentName: string | null; createdAt: Date }) => ({
         id: m.id,
         role: m.role,
         content: m.content,

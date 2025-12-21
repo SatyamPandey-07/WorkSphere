@@ -75,12 +75,12 @@ export async function POST(
       where: { venueId },
     });
 
-    const avgWifi = allRatings.reduce((sum, r) => sum + r.wifiQuality, 0) / allRatings.length;
-    const outletPercent = (allRatings.filter(r => r.hasOutlets).length / allRatings.length) * 100;
+    const avgWifi = allRatings.reduce((sum: number, r: { wifiQuality: number }) => sum + r.wifiQuality, 0) / allRatings.length;
+    const outletPercent = (allRatings.filter((r: { hasOutlets: boolean }) => r.hasOutlets).length / allRatings.length) * 100;
     
     // Most common noise level
     const noiseCounts: Record<string, number> = {};
-    allRatings.forEach(r => {
+    allRatings.forEach((r: { noiseLevel: string }) => {
       noiseCounts[r.noiseLevel] = (noiseCounts[r.noiseLevel] || 0) + 1;
     });
     const dominantNoise = Object.entries(noiseCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0];

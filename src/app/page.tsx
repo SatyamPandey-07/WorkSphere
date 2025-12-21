@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { MapPin, Wifi, Zap, Volume2, Clock, Sparkles, Download, ArrowRight, Coffee } from "lucide-react";
 import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
@@ -139,10 +140,13 @@ export default function Home() {
         {/* Hero Mockup Image */}
         <div className={`relative max-w-6xl mx-auto mb-16 md:mb-24 px-4 transition-all duration-1000 delay-200 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
           <div className="relative rounded-2xl overflow-hidden shadow-2xl shadow-blue-500/20 border border-zinc-200/50 dark:border-zinc-800/50">
-            <img
+            <Image
               src="/images/hero-mockup.png"
               alt="WorkSphere - AI-Powered Remote Workspace Finder"
+              width={1400}
+              height={900}
               className="w-full h-auto"
+              priority
             />
             {/* Gradient overlay at bottom */}
             <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-white dark:from-black to-transparent" />

@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import { EnhancedChatbot } from "@/components/EnhancedChatbot";
 import { VenueRatingDialog } from "@/components/VenueRatingDialog";
 import { ChatErrorBoundary, MapErrorBoundary } from "@/components/ErrorBoundary";
-import { VenueListSkeleton } from "@/components/ui/skeleton";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { Loader2, Map as MapIcon, MessageCircle, WifiOff } from "lucide-react";
 import { OfflineIndicator } from "@/hooks/usePWA";

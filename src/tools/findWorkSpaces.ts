@@ -14,7 +14,7 @@ export const findWorkSpacesTool = tool({
     Returns venues with basic info. Use this as the primary data source for venue discovery.
     Searches within specified radius (default 2000m).
   `,
-  parameters: z.object({
+  inputSchema: z.object({
     latitude: z.number().describe("Latitude of search center"),
     longitude: z.number().describe("Longitude of search center"),
     radius: z.number().default(2000).describe("Search radius in meters (default 2000)"),
@@ -156,7 +156,7 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 // Helper: Format address from OSM tags
-function formatAddress(tags: any): string {
+function formatAddress(tags: any): string | undefined {
   const parts = [
     tags["addr:housenumber"],
     tags["addr:street"],

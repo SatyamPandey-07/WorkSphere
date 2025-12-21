@@ -19,7 +19,7 @@ interface VenueRatingDialogProps {
 
 export function VenueRatingDialog({
   venueName,
-  venueId,
+  venueId: _venueId,
   isOpen,
   onClose,
   onSubmit,

@@ -11,7 +11,7 @@ export const reverseGeocodeTool = tool({
     Convert latitude/longitude coordinates to a human-readable address.
     Useful for showing the user where they are or describing venue locations.
   `,
-  parameters: z.object({
+  inputSchema: z.object({
     latitude: z.number().describe("Latitude coordinate"),
     longitude: z.number().describe("Longitude coordinate"),
   }),

@@ -58,10 +58,10 @@ const useConfirmation = () => {
   const context = useContext(ConfirmationContext);
 
   if (!context) {
-export type ConfirmationProps = ComponentProps<typeof Alert> & {
-  approval?: ToolUIPartApproval;
-  state: ConfirmationState;
-};
+    throw new Error("useConfirmation must be used within a Confirmation");
+  }
+
+  return context;
 };
 
 export type ConfirmationProps = ComponentProps<typeof Alert> & {

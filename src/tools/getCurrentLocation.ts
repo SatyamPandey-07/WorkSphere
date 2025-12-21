@@ -11,7 +11,7 @@ export const getCurrentLocationTool = tool({
     Use this when the user says "near me" or doesn't specify a location.
     This will prompt the browser for location permission.
   `,
-  parameters: z.object({
+  inputSchema: z.object({
     highAccuracy: z.boolean().default(true).describe("Request high accuracy location"),
   }),
   execute: async ({ highAccuracy }) => {

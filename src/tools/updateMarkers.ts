@@ -11,7 +11,7 @@ export const updateMarkersTool = tool({
     Use this to show search results on the map. Include all relevant venue details
     so markers can show name, rating, amenities, etc.
   `,
-  parameters: z.object({
+  inputSchema: z.object({
     markers: z.array(
       z.object({
         id: z.string(),

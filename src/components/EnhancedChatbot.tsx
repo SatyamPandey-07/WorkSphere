@@ -25,19 +25,23 @@ import {
   Heart,
   Star,
   Navigation,
+  PlusCircle,
+  BarChart3,
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { VenueRatingDialog } from "./VenueRatingDialog";
+import { VenueSubmissionModal } from "./VenueSubmissionModal";
 import { 
   trackSearch, 
   trackVenueInteraction, 
   trackFilterApplied, 
   trackError,
   recordSearchPattern,
-  recordAgentMetric
+  recordAgentMetric,
 } from "@/lib/analytics";
 import { VenueCardSkeleton, ChatMessageSkeleton } from "@/components/ui/skeleton";
-import { saveVenueOffline, saveFavoriteOffline } from "@/lib/offlineStorage";
+import { saveFavoriteOffline } from "@/lib/offlineStorage";
+import Link from "next/link";
 
 interface MapUpdate {
   type: string;
@@ -134,6 +138,7 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
   const [showHistory, setShowHistory] = useState(false);
   const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [showVenueSubmission, setShowVenueSubmission] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll
@@ -475,6 +480,20 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Link
+              href="/dashboard"
+              className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              title="Analytics Dashboard"
+            >
+              <BarChart3 className="w-5 h-5" />
+            </Link>
+            <button
+              onClick={() => setShowVenueSubmission(true)}
+              className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-green-600"
+              title="Suggest a Venue"
+            >
+              <PlusCircle className="w-5 h-5" />
+            </button>
             {isSignedIn && (
               <button
                 onClick={() => setShowHistory(!showHistory)}
@@ -849,6 +868,13 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
           onSubmit={handleSubmitRating}
         />
       )}
+
+      {/* Venue Submission Modal */}
+      <VenueSubmissionModal
+        isOpen={showVenueSubmission}
+        onClose={() => setShowVenueSubmission(false)}
+        userLocation={location}
+      />
     </div>
   );
 }

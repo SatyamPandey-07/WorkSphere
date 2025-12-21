@@ -12,7 +12,7 @@ export const updateRoutesTool = tool({
     Shows walking/driving directions. Use this when user wants directions
     or to compare multiple route options.
   `,
-  parameters: z.object({
+  inputSchema: z.object({
     origin: z.object({
       lat: z.number(),
       lng: z.number(),

@@ -142,7 +142,7 @@ async function dataAgent(
   meta: { total: number; source: string };
   reasoning: string;
 }> {
-  const { location, radius = 2000, category = ["all"] } = params;
+  const { location, radius = 2000, category: _category = ["all"] } = params;
 
   if (!location?.lat || !location?.lng) {
     return {
@@ -292,7 +292,7 @@ function reasoningAgent(
 // ============================================================
 async function actionAgent(
   rankedVenues: any[],
-  userQuery: string
+  _userQuery: string
 ): Promise<{
   message: string;
   mapUpdates: any;

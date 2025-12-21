@@ -119,13 +119,14 @@ export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
 export type ToolOutputProps = ComponentProps<"div"> & {
   output: ToolUIPart["output"];
   errorText: ToolUIPart["errorText"];
+  type?: string;
 };
 
 export const ToolOutput = ({
   className,
   output,
   errorText,
-  type,
+  type: _type,
   ...props
 }: ToolOutputProps) => {
   if (!(output || errorText)) {

@@ -177,7 +177,7 @@ function generateReasoning(venue: Venue, scores: any, workType?: string): string
   return reasoning || `Decent option for ${workType || "work"}.`;
 }
 
-function generateRecommendations(topVenues: ScoredVenue[], workType?: string): string[] {
+function generateRecommendations(topVenues: ScoredVenue[], _workType?: string): string[] {
   const recommendations: string[] = [];
 
   if (topVenues.length === 0) {

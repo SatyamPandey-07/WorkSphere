@@ -49,6 +49,29 @@ export function rateLimit(identifier: string, limit: number = DEFAULT_LIMIT): bo
 }
 
 /**
+ * Get rate limit info for an identifier
+ */
+export function getRateLimitInfo(identifier: string, limit: number = DEFAULT_LIMIT): { count: number; remaining: number; resetTime: number; isLimited: boolean } | null {
+  const entry = rateLimitStore.get(identifier);
+  
+  if (!entry || Date.now() > entry.resetTime) {
+    return {
+      count: 0,
+      remaining: limit,
+      resetTime: Date.now() + WINDOW_MS,
+      isLimited: false,
+    };
+  }
+  
+  return {
+    count: entry.count,
+    remaining: Math.max(0, limit - entry.count),
+    resetTime: entry.resetTime,
+    isLimited: entry.count >= limit,
+  };
+}
+
+/**
  * Get remaining requests for an identifier
  */
 export function getRemainingRequests(identifier: string, limit: number = DEFAULT_LIMIT): number {

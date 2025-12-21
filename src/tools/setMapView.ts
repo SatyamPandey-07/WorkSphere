@@ -11,7 +11,7 @@ export const setMapViewTool = tool({
     Use this to center the map on search results, user location, or a specific venue.
     Optionally animate the transition.
   `,
-  parameters: z.object({
+  inputSchema: z.object({
     center: z.object({
       lat: z.number(),
       lng: z.number(),

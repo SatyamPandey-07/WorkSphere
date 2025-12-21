@@ -12,11 +12,11 @@ export const getVenueDetailsTool = tool({
     amenities (WiFi quality, outlets, noise level), and user reviews.
     Use this to enrich venue data with community feedback.
   `,
-  parameters: z.object({
+  inputSchema: z.object({
     venueId: z.string().describe("The ID of the venue to get details for"),
     placeId: z.string().describe("The place ID (for database lookup)"),
   }),
-  execute: async ({ venueId, placeId }) => {
+  execute: async ({ venueId: _venueId, placeId }) => {
     try {
       // Try to find venue in database with aggregated ratings
       const venue = await prisma.venue.findUnique({

@@ -1,7 +1,7 @@
 "use client";
 
 import { useUser } from "@clerk/nextjs";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -78,7 +78,7 @@ function AutoCenter({
   return null;
 }
 
-const routeStyles = {
+const _routeStyles = {
   highlighted: { color: "#28a745", weight: 7, opacity: 1 }, // Green
   faded: { color: "#6c757d", weight: 5, opacity: 0.5 }, // Gray
   normal: { color: "#007bff", weight: 5, opacity: 0.8 }, // Blue
@@ -95,20 +95,21 @@ const Map = ({
   routes: MapRoute[];
   mapView: MapView | null;
 }) => {
-  const [iconUrl, setIconUrl] = useState<string | null>(null);
-  const [customIcon, setCustomIcon] = useState<L.DivIcon | null>(null);
   const clerkUser = useUser();
   const { latitude, longitude } = location;
 
-  useEffect(() => {
+  // Derive iconUrl directly from clerkUser state
+  const iconUrl = useMemo(() => {
     if (clerkUser.isLoaded && clerkUser.user?.hasImage) {
-      setIconUrl(clerkUser.user.imageUrl);
+      return clerkUser.user.imageUrl;
     } else if (clerkUser.isLoaded) {
-      setIconUrl("default");
+      return "default";
     }
+    return null;
   }, [clerkUser.isLoaded, clerkUser.user]);
 
-  useEffect(() => {
+  // Derive customIcon from iconUrl
+  const customIcon = useMemo(() => {
     let html: string;
 
     if (iconUrl && iconUrl !== "default") {
@@ -117,14 +118,12 @@ const Map = ({
       html = `<div class="default-dot-marker"></div>`;
     }
 
-    setCustomIcon(
-      L.divIcon({
-        className: "custom-user-marker",
-        html: html,
-        iconSize: [40, 40],
-        iconAnchor: [20, 20],
-      })
-    );
+    return L.divIcon({
+      className: "custom-user-marker",
+      html: html,
+      iconSize: [40, 40],
+      iconAnchor: [20, 20],
+    });
   }, [iconUrl]);
 
   const center: [number, number] = [latitude, longitude];

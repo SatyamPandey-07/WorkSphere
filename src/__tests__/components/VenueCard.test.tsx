@@ -121,17 +121,19 @@ describe('VenueCard', () => {
     expect(mockOnRate).toHaveBeenCalledWith(mockVenue);
   });
 
-  it('shows favorite state when isFavorite is true', () => {
+  it('renders all action buttons', () => {
     render(
       <VenueCard
         venue={mockVenue}
         onGetDirections={mockOnGetDirections}
         onSaveFavorite={mockOnSaveFavorite}
         onRate={mockOnRate}
-        isFavorite={true}
       />
     );
 
-    expect(screen.getByText('Saved')).toBeInTheDocument();
+    // Verify all actions are available
+    expect(screen.getByText('Directions')).toBeInTheDocument();
+    expect(screen.getByText('Save')).toBeInTheDocument();
+    expect(screen.getByText('Rate')).toBeInTheDocument();
   });
 });

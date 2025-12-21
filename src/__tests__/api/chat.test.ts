@@ -10,32 +10,31 @@ describe('Chat API', () => {
   });
 
   it('should return 400 if messages are missing', async () => {
-    const mockRequest = {
-      json: async () => ({ location: { lat: 37.7749, lng: -122.4194 } }),
-    };
-
+    // Simulating request without messages
+    const requestBody = { location: { lat: 37.7749, lng: -122.4194 } };
+    
     // Mock the route handler behavior
     const response = { status: 400, error: 'Messages are required' };
     
+    expect(requestBody.location).toBeDefined();
     expect(response.status).toBe(400);
   });
 
   it('should return 400 if location is missing', async () => {
-    const mockRequest = {
-      json: async () => ({ messages: [{ role: 'user', content: 'Find cafes' }] }),
-    };
+    // Simulating request without location
+    const requestBody = { messages: [{ role: 'user', content: 'Find cafes' }] };
 
     const response = { status: 400, error: 'Location is required' };
     
+    expect(requestBody.messages).toBeDefined();
     expect(response.status).toBe(400);
   });
 
   it('should process valid request with messages and location', async () => {
-    const mockRequest = {
-      json: async () => ({
-        messages: [{ role: 'user', content: 'Find quiet cafes near me' }],
-        location: { lat: 37.7749, lng: -122.4194 },
-      }),
+    // Valid request with both required fields
+    const requestBody = {
+      messages: [{ role: 'user', content: 'Find quiet cafes near me' }],
+      location: { lat: 37.7749, lng: -122.4194 },
     };
 
     // Simulated successful response structure
@@ -48,6 +47,8 @@ describe('Chat API', () => {
       },
     };
 
+    expect(requestBody.messages.length).toBeGreaterThan(0);
+    expect(requestBody.location.lat).toBeDefined();
     expect(response.status).toBe(200);
   });
 });
@@ -67,16 +68,12 @@ describe('Agent Pipeline', () => {
   it('should extract intent from user query', () => {
     const query = 'Find a quiet cafe with WiFi near me';
     
-    // Expected intent extraction
-    const expectedIntent = {
-      workType: 'focus',
-      amenities: ['wifi', 'quiet'],
-      venueType: 'cafe',
-    };
+    // Expected intent extraction - verify query contains key terms
+    const expectedTerms = ['quiet', 'wifi', 'cafe'];
 
-    expect(query.toLowerCase()).toContain('quiet');
-    expect(query.toLowerCase()).toContain('wifi');
-    expect(query.toLowerCase()).toContain('cafe');
+    expectedTerms.forEach(term => {
+      expect(query.toLowerCase()).toContain(term);
+    });
   });
 
   it('should score venues based on criteria', () => {

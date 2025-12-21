@@ -18,7 +18,7 @@ interface VenueCacheKey {
   categories: string[];
 }
 
-const venueCache = new Map<string, CacheEntry<any>>();
+const venueCache = new Map<string, CacheEntry<unknown>>();
 const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
 const MAX_CACHE_SIZE = 100;
 

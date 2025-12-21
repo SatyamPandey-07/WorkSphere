@@ -28,6 +28,14 @@ import {
 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { VenueRatingDialog } from "./VenueRatingDialog";
+import { 
+  trackSearch, 
+  trackVenueInteraction, 
+  trackFilterApplied, 
+  trackError,
+  recordSearchPattern,
+  recordAgentMetric
+} from "@/lib/analytics";
 
 interface EnhancedChatbotProps {
   onMapUpdate?: (update: any) => void;
@@ -242,7 +250,14 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
     };
     setMessages((prev) => [...prev, newUserMessage]);
 
+    // Track search analytics
+    if (location) {
+      trackSearch(userMessage, location, filters as Record<string, unknown>);
+      recordSearchPattern(userMessage);
+    }
+
     try {
+      const startTime = Date.now();
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -257,6 +272,13 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
       if (!response.ok) throw new Error("Failed to send message");
 
       const data = await response.json();
+
+      // Track agent performance from response
+      if (data.agentSteps) {
+        data.agentSteps.forEach((step: AgentStep) => {
+          recordAgentMetric(step.agent, Date.now() - startTime, true);
+        });
+      }
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -288,6 +310,7 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
     } catch (err) {
       console.error("Error:", err);
       setError("Failed to send message. Please try again.");
+      trackError(err instanceof Error ? err : new Error(String(err)), 'chat_submit');
     } finally {
       setIsLoading(false);
     }
@@ -305,8 +328,10 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
       if (newFilters[key]) {
         delete newFilters[key];
       } else {
-        (newFilters as any)[key] = true;
+        (newFilters as Record<string, boolean>)[key] = true;
       }
+      // Track filter changes
+      trackFilterApplied(newFilters);
       return newFilters;
     });
   };
@@ -326,6 +351,7 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
           newSet.delete(venue.id);
           return newSet;
         });
+        trackVenueInteraction('unfavorited', { id: venue.id, name: venue.name, category: venue.category });
       } else {
         await fetch("/api/favorites", {
           method: "POST",
@@ -341,9 +367,11 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
           }),
         });
         setFavorites((prev) => new Set(prev).add(venue.id));
+        trackVenueInteraction('favorited', { id: venue.id, name: venue.name, category: venue.category });
       }
     } catch (e) {
       console.error("Failed to toggle favorite:", e);
+      trackError(e instanceof Error ? e : new Error(String(e)), 'favorite_toggle');
     }
   };
 
@@ -370,9 +398,11 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
           },
         }),
       });
+      trackVenueInteraction('rated', { id: ratingVenue.id, name: ratingVenue.name, category: ratingVenue.category });
       setRatingVenue(null);
     } catch (e) {
       console.error("Failed to submit rating:", e);
+      trackError(e instanceof Error ? e : new Error(String(e)), 'rating_submit');
     }
   };
 

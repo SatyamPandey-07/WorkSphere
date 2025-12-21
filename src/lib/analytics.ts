@@ -19,7 +19,7 @@ type EventName =
 
 interface AnalyticsEvent {
   name: EventName;
-  properties?: Record<string, any>;
+  properties?: Record<string, unknown>;
   timestamp: number;
 }
 
@@ -30,7 +30,7 @@ const MAX_QUEUE_SIZE = 100;
 /**
  * Track an analytics event
  */
-export function trackEvent(name: EventName, properties?: Record<string, any>): void {
+export function trackEvent(name: EventName, properties?: Record<string, unknown>): void {
   const event: AnalyticsEvent = {
     name,
     properties,
@@ -57,7 +57,7 @@ export function trackEvent(name: EventName, properties?: Record<string, any>): v
 /**
  * Track a search query
  */
-export function trackSearch(query: string, location: { lat: number; lng: number }, filters?: Record<string, any>): void {
+export function trackSearch(query: string, location: { lat: number; lng: number }, filters?: Record<string, unknown>): void {
   trackEvent('search_performed', {
     query,
     location: {
@@ -110,7 +110,7 @@ export function trackAgentPerformance(
 /**
  * Track filter usage
  */
-export function trackFilterApplied(filters: Record<string, any>): void {
+export function trackFilterApplied(filters: Record<string, unknown>): void {
   trackEvent('filter_applied', {
     filters: Object.keys(filters),
     activeCount: Object.keys(filters).length,

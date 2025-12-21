@@ -25,6 +25,24 @@ const defaultIcon = L.icon({
   shadowSize: [41, 41],
 });
 
+// Custom venue marker for dark theme - purple/blue dot
+const venueIcon = L.divIcon({
+  className: "venue-marker",
+  html: `<div class="venue-dot"></div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+  popupAnchor: [0, -12],
+});
+
+// Destination marker - like the reference image
+const destinationIcon = L.divIcon({
+  className: "destination-marker", 
+  html: `<div class="destination-pin"><span>D</span></div>`,
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32],
+});
+
 // Also fix the global default:
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -140,16 +158,16 @@ const Map = ({
           border-radius: 50%;
           background-size: cover;
           background-position: center;
-          border: 3px solid #007bff; /* Simple blue border */
-          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+          border: 3px solid #3b82f6; /* Blue border for dark theme */
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.5), 0 2px 8px rgba(0, 0, 0, 0.5);
         }
         .default-dot-marker {
           width: 20px;
           height: 20px;
           border-radius: 50%;
-          background-color: #007bff;
+          background-color: #3b82f6;
           border: 3px solid white;
-          box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.5), 0 2px 8px rgba(0, 0, 0, 0.5);
           /* Offset for iconAnchor */
           transform: translate(10px, 10px);
         }
@@ -159,6 +177,51 @@ const Map = ({
           width: 100%;
           height: 100%;
           border-radius: 12px;
+        }
+        
+        /* Venue marker - circular dot */
+        .venue-dot {
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #8b5cf6, #6366f1);
+          border: 3px solid white;
+          box-shadow: 0 0 12px rgba(139, 92, 246, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+          transform: translate(2px, 2px);
+        }
+        
+        /* Destination pin marker */
+        .destination-pin {
+          width: 32px;
+          height: 32px;
+          border-radius: 50% 50% 50% 0;
+          background: linear-gradient(135deg, #8b5cf6, #6366f1);
+          transform: rotate(-45deg);
+          border: 2px solid white;
+          box-shadow: 0 0 12px rgba(139, 92, 246, 0.6), 0 4px 8px rgba(0, 0, 0, 0.4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .destination-pin span {
+          transform: rotate(45deg);
+          color: white;
+          font-weight: bold;
+          font-size: 14px;
+        }
+        
+        /* Leaflet popup styling for dark theme */
+        .leaflet-popup-content-wrapper {
+          background: rgba(30, 30, 30, 0.95);
+          color: white;
+          border-radius: 8px;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+        .leaflet-popup-tip {
+          background: rgba(30, 30, 30, 0.95);
+        }
+        .leaflet-popup-content {
+          margin: 12px 16px;
         }
       `}</style>
 
@@ -171,9 +234,10 @@ const Map = ({
           borderRadius: "12px",
         }}
       >
+        {/* Dark theme map tiles - CartoDB Dark Matter */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
         <MapController mapView={mapView} />
         <AutoCenter markers={markers} userLocation={center} />
@@ -188,13 +252,13 @@ const Map = ({
           <Marker
             key={marker.id}
             position={[marker.position.lat, marker.position.lng]}
-            icon={defaultIcon}
+            icon={venueIcon}
           >
             <Popup>
               <div className="text-sm">
-                <div className="font-semibold">{marker.name}</div>
+                <div className="font-semibold text-white">{marker.name}</div>
                 {marker.category && (
-                  <div className="text-zinc-600">{marker.category}</div>
+                  <div className="text-zinc-400">{marker.category}</div>
                 )}
                 {marker.address && (
                   <div className="text-zinc-500 text-xs mt-1">{marker.address}</div>
@@ -209,9 +273,11 @@ const Map = ({
             key={route.id}
             positions={route.path.map(p => [p.lat, p.lng])}
             pathOptions={{
-              color: route.isHighlighted ? "#28a745" : "#007bff",
-              weight: 5,
-              opacity: 0.8,
+              color: route.isHighlighted ? "#22c55e" : "#22c55e", // Green route like the reference
+              weight: 6,
+              opacity: 0.9,
+              lineCap: "round",
+              lineJoin: "round",
             }}
           >
             {route.distance && (

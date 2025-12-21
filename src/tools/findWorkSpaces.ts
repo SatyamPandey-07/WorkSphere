@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import axios from "axios";
 import { Venue } from "@/types/venue";
+import { getCachedVenues, setCachedVenues } from "@/lib/cache";
 
 /**
  * Finds work-friendly spaces (cafes, coworking, libraries) near a location
@@ -23,6 +24,21 @@ export const findWorkSpacesTool = tool({
   }),
   execute: async ({ latitude, longitude, radius, categories }) => {
     try {
+      // Check cache first
+      const cacheKey = { lat: latitude, lng: longitude, radius, categories };
+      const cached = getCachedVenues<{ venues: Venue[]; count: number }>(cacheKey);
+      if (cached) {
+        console.log("[Cache HIT] Returning cached venues");
+        return {
+          success: true,
+          venues: cached.venues,
+          count: cached.count,
+          searchParams: { latitude, longitude, radius, categories },
+          fromCache: true,
+        };
+      }
+      console.log("[Cache MISS] Fetching from Overpass API");
+
       // Build Overpass query for OSM data
       const categoryQueries = [];
       
@@ -91,16 +107,25 @@ export const findWorkSpacesTool = tool({
       // Sort by distance
       venues.sort((a, b) => (a.distance || 0) - (b.distance || 0));
 
-      return {
-        success: true,
+      const result = {
         venues: venues.slice(0, 20), // Return top 20
         count: venues.length,
+      };
+
+      // Cache the results for 5 minutes
+      setCachedVenues(cacheKey, result, 5 * 60 * 1000);
+      console.log(`[Cache SET] Cached ${result.count} venues`);
+
+      return {
+        success: true,
+        ...result,
         searchParams: {
           latitude,
           longitude,
           radius,
           categories,
         },
+        fromCache: false,
       };
     } catch (error: any) {
       console.error("Error finding workspaces:", error);

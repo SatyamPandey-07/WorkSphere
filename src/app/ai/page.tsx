@@ -1,12 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { EnhancedChatbot } from "@/components/EnhancedChatbot";
 import { VenueRatingDialog } from "@/components/VenueRatingDialog";
+import { ChatErrorBoundary, MapErrorBoundary } from "@/components/ErrorBoundary";
+import { VenueListSkeleton } from "@/components/ui/skeleton";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
-import { Loader2, Map as MapIcon, MessageCircle } from "lucide-react";
+import { Loader2, Map as MapIcon, MessageCircle, WifiOff } from "lucide-react";
 import { OfflineIndicator } from "@/hooks/usePWA";
+import { useRealTimeUpdates } from "@/hooks/useRealTime";
+import { saveVenueOffline, getAllVenuesOffline, OfflineVenue } from "@/lib/offlineStorage";
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const Map = dynamic(() => import("@/components/Map"), {
@@ -27,30 +31,143 @@ export default function AppPage() {
     isOpen: boolean;
     venue: MapMarker | null;
   }>({ isOpen: false, venue: null });
+  const [isOnline, setIsOnline] = useState(true);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
   
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
 
-  // Get user location on mount
+  // Real-time updates for venue changes
+  const venueIds = markers.map(m => m.id);
+  const { updates: realTimeUpdates, isConnected } = useRealTimeUpdates({
+    venueIds,
+    enabled: venueIds.length > 0 && isOnline,
+  });
+
+  // Handle real-time updates
   useEffect(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
+    if (realTimeUpdates.length > 0) {
+      const latestUpdate = realTimeUpdates[realTimeUpdates.length - 1];
+      console.log("[RealTime] Venue update received:", latestUpdate);
+      // Could refresh venue data or show notification here
+    }
+  }, [realTimeUpdates]);
+
+  // Track online/offline status
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    setIsOnline(navigator.onLine);
+    
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  // Save venues to offline storage when markers update
+  useEffect(() => {
+    if (markers.length > 0 && isOnline) {
+      markers.forEach(async (marker) => {
+        try {
+          await saveVenueOffline({
+            id: marker.id,
+            name: marker.name,
+            latitude: marker.position.lat,
+            longitude: marker.position.lng,
+            category: marker.category,
+            address: marker.address,
           });
-        },
-        (error) => {
-          console.error("Error getting location:", error);
-          // Default to San Francisco
+        } catch (err) {
+          console.error("[Offline] Failed to save venue:", err);
+        }
+      });
+    }
+  }, [markers, isOnline]);
+
+  // Load offline venues when offline
+  const loadOfflineVenues = useCallback(async () => {
+    if (!isOnline) {
+      try {
+        const offlineVenues = await getAllVenuesOffline();
+        if (offlineVenues.length > 0) {
+          const offlineMarkers: MapMarker[] = offlineVenues.map((v: OfflineVenue) => ({
+            id: v.id,
+            name: v.name,
+            position: { lat: v.latitude, lng: v.longitude },
+            category: v.category || v.type || "cafe",
+            address: v.address || v.location,
+            amenities: { wifi: false, outlets: false, quiet: false },
+          }));
+          setMarkers(offlineMarkers);
+        }
+      } catch (err) {
+        console.error("[Offline] Failed to load venues:", err);
+      }
+    }
+  }, [isOnline]);
+
+  useEffect(() => {
+    loadOfflineVenues();
+  }, [loadOfflineVenues]);
+
+  // Get user location on mount with API fallback
+  useEffect(() => {
+    const getLocation = async () => {
+      setIsLoadingLocation(true);
+      
+      // Try browser geolocation first
+      if ("geolocation" in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            setLocation({
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            });
+            setIsLoadingLocation(false);
+          },
+          async (error) => {
+            console.error("Geolocation error:", error);
+            // Fallback to IP-based location API
+            try {
+              const response = await fetch("/api/location");
+              if (response.ok) {
+                const data = await response.json();
+                setLocation({ latitude: data.lat, longitude: data.lng });
+                console.log(`[Location] Using ${data.source}: ${data.city}, ${data.region}`);
+              } else {
+                throw new Error("Location API failed");
+              }
+            } catch (apiError) {
+              console.error("Location API error:", apiError);
+              // Ultimate fallback to San Francisco
+              setLocation({ latitude: 37.7749, longitude: -122.4194 });
+            }
+            setIsLoadingLocation(false);
+          },
+          { timeout: 5000, enableHighAccuracy: false }
+        );
+      } else {
+        // No geolocation support - use API fallback
+        try {
+          const response = await fetch("/api/location");
+          if (response.ok) {
+            const data = await response.json();
+            setLocation({ latitude: data.lat, longitude: data.lng });
+          } else {
+            setLocation({ latitude: 37.7749, longitude: -122.4194 });
+          }
+        } catch {
           setLocation({ latitude: 37.7749, longitude: -122.4194 });
         }
-      );
-    } else {
-      // Fallback location
-      setLocation({ latitude: 37.7749, longitude: -122.4194 });
-    }
+        setIsLoadingLocation(false);
+      }
+    };
+
+    getLocation();
   }, []);
 
   // Map update interface
@@ -181,12 +298,18 @@ export default function AppPage() {
     }
   };
 
-  if (!location) {
+  if (!location || isLoadingLocation) {
     return (
       <div className="flex items-center justify-center h-screen bg-zinc-50 dark:bg-black">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" />
           <p className="text-zinc-600 dark:text-zinc-400">Getting your location...</p>
+          {!isOnline && (
+            <p className="text-amber-500 text-sm mt-2 flex items-center justify-center gap-1">
+              <WifiOff className="w-4 h-4" />
+              You're offline - loading saved venues
+            </p>
+          )}
         </div>
       </div>
     );
@@ -194,6 +317,19 @@ export default function AppPage() {
 
   return (
     <div className="flex flex-col md:flex-row h-screen bg-zinc-50 dark:bg-black overflow-hidden">
+      {/* Offline Banner */}
+      {!isOnline && (
+        <div className="bg-amber-500 text-white text-center py-1 text-sm flex items-center justify-center gap-2">
+          <WifiOff className="w-4 h-4" />
+          You're offline - showing saved venues
+        </div>
+      )}
+
+      {/* Real-time connection status (debug) */}
+      {isConnected && venueIds.length > 0 && (
+        <div className="hidden" data-realtime="connected" />
+      )}
+
       {/* Mobile Navigation Toggle */}
       <div className="md:hidden flex border-b border-zinc-200 dark:border-zinc-800">
         <button
@@ -230,12 +366,14 @@ export default function AppPage() {
         ${mobileView === "map" ? "flex" : "hidden"} 
         md:flex flex-1 md:flex-[7] relative
       `}>
-        <Map
-          location={location}
-          markers={markers}
-          routes={routes}
-          mapView={mapView}
-        />
+        <MapErrorBoundary>
+          <Map
+            location={location}
+            markers={markers}
+            routes={routes}
+            mapView={mapView}
+          />
+        </MapErrorBoundary>
       </div>
 
       {/* Divider - Desktop only */}
@@ -246,19 +384,21 @@ export default function AppPage() {
         ${mobileView === "chat" ? "flex" : "hidden"} 
         md:flex flex-1 md:flex-[3] flex-col min-h-0
       `}>
-        <EnhancedChatbot
-          onMapUpdate={(update) => {
-            handleMapUpdate(update as MapUpdateData);
-            // Auto-switch to map on mobile when markers are added
-            if (update.type === "markers" && update.markers && update.markers.length > 0) {
-              // Small delay so user sees the results loading
-              setTimeout(() => setMobileView("map"), 500);
+        <ChatErrorBoundary>
+          <EnhancedChatbot
+            onMapUpdate={(update) => {
+              handleMapUpdate(update as MapUpdateData);
+              // Auto-switch to map on mobile when markers are added
+              if (update.type === "markers" && update.markers && update.markers.length > 0) {
+                // Small delay so user sees the results loading
+                setTimeout(() => setMobileView("map"), 500);
+              }
+            }}
+            userLocation={
+              location ? { lat: location.latitude, lng: location.longitude } : undefined
             }
-          }}
-          userLocation={
-            location ? { lat: location.latitude, lng: location.longitude } : undefined
-          }
-        />
+          />
+        </ChatErrorBoundary>
       </div>
 
       {/* Rating Dialog */}

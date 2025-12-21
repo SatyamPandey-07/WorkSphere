@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import Groq from "groq-sdk";
+import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 
 export const maxDuration = 60;
 
@@ -343,6 +344,23 @@ async function actionAgent(
 // ============================================================
 export async function POST(req: Request) {
   try {
+    // Rate limiting - get IP or user ID
+    const { userId } = await auth();
+    const forwarded = req.headers.get("x-forwarded-for");
+    const identifier = userId || forwarded?.split(",")[0] || "anonymous";
+    
+    // Check rate limit (20 requests per minute for chat)
+    if (!rateLimit(identifier, 20)) {
+      const info = getRateLimitInfo(identifier);
+      return Response.json(
+        { 
+          error: "Rate limit exceeded. Please wait before sending more messages.",
+          retryAfter: info?.resetTime ? Math.ceil((info.resetTime - Date.now()) / 1000) : 60
+        },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const { messages, location, conversationId, filters } = body;
 

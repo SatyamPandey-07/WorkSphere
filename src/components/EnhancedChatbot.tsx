@@ -36,6 +36,8 @@ import {
   recordSearchPattern,
   recordAgentMetric
 } from "@/lib/analytics";
+import { VenueCardSkeleton, ChatMessageSkeleton } from "@/components/ui/skeleton";
+import { saveVenueOffline, saveFavoriteOffline } from "@/lib/offlineStorage";
 
 interface MapUpdate {
   type: string;
@@ -387,6 +389,20 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
         });
         setFavorites((prev) => new Set(prev).add(venue.id));
         trackVenueInteraction('favorited', { id: venue.id, name: venue.name, category: venue.category });
+        
+        // Also save to offline storage for offline access
+        try {
+          await saveFavoriteOffline({
+            id: venue.id,
+            name: venue.name,
+            latitude: venue.lat,
+            longitude: venue.lng,
+            category: venue.category,
+            address: venue.address,
+          });
+        } catch (offlineErr) {
+          console.warn("Failed to save favorite offline:", offlineErr);
+        }
       }
     } catch (e) {
       console.error("Failed to toggle favorite:", e);
@@ -771,14 +787,24 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
         ))}
 
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="bg-zinc-100 dark:bg-zinc-900 rounded-lg px-4 py-3">
-              <div className="flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-xs text-zinc-600 dark:text-zinc-400">
-                  Running AI agents...
-                </span>
+          <div className="space-y-3">
+            {/* Loading message skeleton */}
+            <div className="flex justify-start">
+              <div className="bg-zinc-100 dark:bg-zinc-900 rounded-lg px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-xs text-zinc-600 dark:text-zinc-400">
+                    Running AI agents...
+                  </span>
+                </div>
               </div>
+            </div>
+            {/* Chat message skeleton */}
+            <ChatMessageSkeleton />
+            {/* Venue cards skeleton for search queries */}
+            <div className="pl-2">
+              <VenueCardSkeleton />
+              <VenueCardSkeleton />
             </div>
           </div>
         )}

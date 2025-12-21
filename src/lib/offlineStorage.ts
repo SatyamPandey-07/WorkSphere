@@ -6,16 +6,18 @@
 const DB_NAME = 'worksphere-offline';
 const DB_VERSION = 1;
 
-interface OfflineVenue {
+export interface OfflineVenue {
   id: string;
   name: string;
-  location: string;
+  location?: string;
   latitude: number;
   longitude: number;
-  type: string;
-  rating: number;
-  amenities: string[];
-  savedAt: number;
+  type?: string;
+  category?: string;
+  address?: string;
+  rating?: number;
+  amenities?: string[];
+  savedAt?: number;
 }
 
 interface OfflineSearch {

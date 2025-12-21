@@ -5,7 +5,8 @@ import dynamic from "next/dynamic";
 import { EnhancedChatbot } from "@/components/EnhancedChatbot";
 import { VenueRatingDialog } from "@/components/VenueRatingDialog";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
-import { Loader2 } from "lucide-react";
+import { Loader2, Map as MapIcon, MessageCircle } from "lucide-react";
+import { OfflineIndicator } from "@/hooks/usePWA";
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const Map = dynamic(() => import("@/components/Map"), {
@@ -26,6 +27,9 @@ export default function AppPage() {
     isOpen: boolean;
     venue: MapMarker | null;
   }>({ isOpen: false, venue: null });
+  
+  // Mobile view state - show map or chat
+  const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
 
   // Get user location on mount
   useEffect(() => {
@@ -164,9 +168,43 @@ export default function AppPage() {
   }
 
   return (
-    <div className="flex h-screen bg-zinc-50 dark:bg-black overflow-hidden">
-      {/* Map Section - 70% */}
-      <div className="flex-[7] relative">
+    <div className="flex flex-col md:flex-row h-screen bg-zinc-50 dark:bg-black overflow-hidden">
+      {/* Mobile Navigation Toggle */}
+      <div className="md:hidden flex border-b border-zinc-200 dark:border-zinc-800">
+        <button
+          onClick={() => setMobileView("chat")}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+            mobileView === "chat"
+              ? "text-blue-600 bg-blue-50 dark:bg-blue-950 border-b-2 border-blue-600"
+              : "text-zinc-600 dark:text-zinc-400"
+          }`}
+        >
+          <MessageCircle className="w-4 h-4" />
+          Chat
+        </button>
+        <button
+          onClick={() => setMobileView("map")}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+            mobileView === "map"
+              ? "text-blue-600 bg-blue-50 dark:bg-blue-950 border-b-2 border-blue-600"
+              : "text-zinc-600 dark:text-zinc-400"
+          }`}
+        >
+          <MapIcon className="w-4 h-4" />
+          Map
+          {markers.length > 0 && (
+            <span className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded-full">
+              {markers.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Map Section - Hidden on mobile when chat is active */}
+      <div className={`
+        ${mobileView === "map" ? "flex" : "hidden"} 
+        md:flex flex-1 md:flex-[7] relative
+      `}>
         <Map
           location={location}
           markers={markers}
@@ -175,13 +213,23 @@ export default function AppPage() {
         />
       </div>
 
-      {/* Divider */}
-      <div className="w-px bg-zinc-200 dark:bg-zinc-800" />
+      {/* Divider - Desktop only */}
+      <div className="hidden md:block w-px bg-zinc-200 dark:bg-zinc-800" />
 
-      {/* Chat Section - 30% */}
-      <div className="flex-[3] flex flex-col">
+      {/* Chat Section - Hidden on mobile when map is active */}
+      <div className={`
+        ${mobileView === "chat" ? "flex" : "hidden"} 
+        md:flex flex-1 md:flex-[3] flex-col min-h-0
+      `}>
         <EnhancedChatbot
-          onMapUpdate={handleMapUpdate}
+          onMapUpdate={(update) => {
+            handleMapUpdate(update);
+            // Auto-switch to map on mobile when markers are added
+            if (update.type === "markers" && update.markers?.length > 0) {
+              // Small delay so user sees the results loading
+              setTimeout(() => setMobileView("map"), 500);
+            }
+          }}
           userLocation={
             location ? { lat: location.latitude, lng: location.longitude } : undefined
           }
@@ -196,6 +244,9 @@ export default function AppPage() {
         onClose={() => setRatingDialog({ isOpen: false, venue: null })}
         onSubmit={handleRatingSubmit}
       />
+
+      {/* Offline Indicator */}
+      <OfflineIndicator />
     </div>
   );
 }

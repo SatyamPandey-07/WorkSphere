@@ -7,11 +7,17 @@ export interface MapMarker {
   name: string;
   category?: string;
   rating?: number;
+  score?: number;
   wifiQuality?: number;
   hasOutlets?: boolean;
   noiseLevel?: string;
   distance?: string;
   address?: string;
+  amenities?: {
+    wifi?: boolean;
+    outlets?: boolean;
+    quiet?: boolean;
+  };
 }
 
 export interface MapRoute {

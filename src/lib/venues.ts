@@ -74,17 +74,24 @@ export async function searchVenuesOSM(
   try {
     console.log('[OSM] Searching venues:', { lat, lng, radius, query });
     
+    // Add timeout to prevent hanging
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
+    
     const response = await fetch('https://overpass-api.de/api/interpreter', {
       method: 'POST',
       body: `data=${encodeURIComponent(overpassQuery)}`,
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
+      signal: controller.signal,
     });
+    
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       console.error('[OSM] Overpass API error:', response.status, await response.text());
-      return [];
+      return searchVenuesNominatim(lat, lng, options);
     }
 
     const data = await response.json();
@@ -142,6 +149,56 @@ export async function searchVenuesOSM(
     return venues.slice(0, limit);
   } catch (error) {
     console.error('[OSM] Search error:', error);
+    // Fallback to Nominatim search
+    return searchVenuesNominatim(lat, lng, options);
+  }
+}
+
+/**
+ * Fallback: Search using Nominatim (faster but less detailed)
+ */
+async function searchVenuesNominatim(
+  lat: number,
+  lng: number,
+  options: { query?: string; radius?: number; limit?: number } = {}
+): Promise<VenueData[]> {
+  const { limit = 10 } = options;
+  
+  try {
+    console.log('[Nominatim] Fallback search for cafes near:', lat, lng);
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?` +
+      `q=cafe&format=json&limit=${limit}&` +
+      `viewbox=${lng - 0.02},${lat + 0.02},${lng + 0.02},${lat - 0.02}&bounded=1`,
+      {
+        headers: {
+          'User-Agent': 'WorkSphere/1.0 (https://worksphere.app)',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error('[Nominatim] Error:', response.status);
+      return [];
+    }
+
+    const data = await response.json();
+    console.log('[Nominatim] Found:', data.length, 'results');
+    
+    return data.map((place: any) => ({
+      id: `nom-${place.place_id}`,
+      name: place.display_name?.split(',')[0] || 'Unknown Venue',
+      location: {
+        formatted_address: place.display_name,
+        lat: parseFloat(place.lat),
+        lng: parseFloat(place.lon),
+      },
+      categories: [{ name: 'Café' }],
+      distance: calculateDistance(lat, lng, parseFloat(place.lat), parseFloat(place.lon)),
+      photos: [],
+    }));
+  } catch (error) {
+    console.error('[Nominatim] Error:', error);
     return [];
   }
 }

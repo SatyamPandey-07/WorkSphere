@@ -54,19 +54,26 @@ export async function searchVenuesOSM(
   const { query, radius = 2000, limit = 20 } = options;
 
   // Use Overpass API for POI search (cafes, coworking, libraries)
+  // Search both nodes and ways (buildings are often ways in OSM)
   const overpassQuery = `
     [out:json][timeout:25];
     (
       node["amenity"="cafe"](around:${radius},${lat},${lng});
+      way["amenity"="cafe"](around:${radius},${lat},${lng});
       node["amenity"="library"](around:${radius},${lat},${lng});
+      way["amenity"="library"](around:${radius},${lat},${lng});
       node["office"="coworking"](around:${radius},${lat},${lng});
+      way["office"="coworking"](around:${radius},${lat},${lng});
       node["amenity"="coworking_space"](around:${radius},${lat},${lng});
-      node["amenity"="coffee_shop"](around:${radius},${lat},${lng});
+      way["amenity"="coworking_space"](around:${radius},${lat},${lng});
+      node["amenity"="restaurant"]["cuisine"="coffee_shop"](around:${radius},${lat},${lng});
     );
-    out body ${limit};
+    out center ${limit};
   `;
 
   try {
+    console.log('[OSM] Searching venues:', { lat, lng, radius, query });
+    
     const response = await fetch('https://overpass-api.de/api/interpreter', {
       method: 'POST',
       body: `data=${encodeURIComponent(overpassQuery)}`,
@@ -76,16 +83,21 @@ export async function searchVenuesOSM(
     });
 
     if (!response.ok) {
-      console.error('Overpass API error:', response.status);
+      console.error('[OSM] Overpass API error:', response.status, await response.text());
       return [];
     }
 
     const data = await response.json();
+    console.log('[OSM] Raw results:', data.elements?.length || 0, 'elements');
     
     const venues: VenueData[] = (data.elements || [])
       .filter((el: any) => el.tags?.name)
       .map((el: any) => {
         const tags = el.tags || {};
+        // For ways, use center coordinates
+        const elLat = el.center ? el.center.lat : el.lat;
+        const elLon = el.center ? el.center.lon : el.lon;
+        
         return {
           id: `osm-${el.id}`,
           name: tags.name,
@@ -98,11 +110,11 @@ export async function searchVenuesOSM(
             ].filter(Boolean).join(', ') || undefined,
             locality: tags['addr:city'],
             country: tags['addr:country'],
-            lat: el.lat,
-            lng: el.lon,
+            lat: elLat,
+            lng: elLon,
           },
           categories: [{ name: getOSMCategory(tags) }],
-          distance: calculateDistance(lat, lng, el.lat, el.lon),
+          distance: calculateDistance(lat, lng, elLat, elLon),
           photos: [], // Will be enriched with Unsplash
           amenities: {
             wifi: tags.internet_access === 'wlan' || tags.internet_access === 'yes',
@@ -118,15 +130,18 @@ export async function searchVenuesOSM(
     // Filter by query if provided
     if (query) {
       const q = query.toLowerCase();
-      return venues.filter(v => 
+      const filtered = venues.filter(v => 
         v.name.toLowerCase().includes(q) ||
         v.categories.some(c => c.name.toLowerCase().includes(q))
       ).slice(0, limit);
+      console.log('[OSM] Filtered by query:', filtered.length, 'venues');
+      return filtered;
     }
 
+    console.log('[OSM] Returning:', venues.length, 'venues');
     return venues.slice(0, limit);
   } catch (error) {
-    console.error('OSM search error:', error);
+    console.error('[OSM] Search error:', error);
     return [];
   }
 }

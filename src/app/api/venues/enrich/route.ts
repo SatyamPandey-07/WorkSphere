@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getVenueDetails, getVenuePhotos, getVenueTips, searchVenues, WORKSPACE_CATEGORIES } from "@/lib/foursquare";
+import { 
+  searchAndEnrichVenues, 
+  getVenueDetails,
+} from "@/lib/venues";
 
 /**
- * GET /api/venues/enrich - Enrich venue with Yelp data
+ * GET /api/venues/enrich - Enrich venue with OSM + Unsplash data (FREE, no card)
  * Query params: 
  *   - name: venue name to search
  *   - lat, lng: coordinates to find nearby match
- *   - yelpId: direct Yelp ID (if known)
+ *   - venueId: direct OSM ID (if known)
  */
 export async function GET(req: NextRequest) {
   try {
@@ -14,33 +17,27 @@ export async function GET(req: NextRequest) {
     const name = searchParams.get("name");
     const lat = searchParams.get("lat");
     const lng = searchParams.get("lng");
-    const yelpId = searchParams.get("yelpId") || searchParams.get("fsqId"); // Support both
+    const venueId = searchParams.get("venueId") || searchParams.get("fsqId");
 
-    // If we have Yelp ID, get details directly
-    if (yelpId) {
-      const [details, photos, tips] = await Promise.all([
-        getVenueDetails(yelpId),
-        getVenuePhotos(yelpId, 5),
-        getVenueTips(yelpId, 3),
-      ]);
+    // If we have venue ID, get details directly
+    if (venueId) {
+      const details = await getVenueDetails(venueId);
 
       if (!details) {
         return NextResponse.json({ error: "Venue not found" }, { status: 404 });
       }
 
       return NextResponse.json({
-        yelpId: details.fsq_id,
-        fsqId: details.fsq_id, // Keep backward compat
+        venueId: details.id,
+        fsqId: details.id, // Backward compat
         name: details.name,
-        rating: details.rating,
-        price: details.price,
-        hours: details.hours,
-        photos,
-        tips,
+        photos: details.photos,
         website: details.website,
-        phone: details.tel,
-        features: details.features,
+        phone: details.phone,
         address: details.location?.formatted_address,
+        amenities: details.amenities,
+        opening_hours: details.opening_hours,
+        categories: details.categories.map(c => c.name),
       });
     }
 
@@ -52,16 +49,23 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // Search for matching venue
-    const venues = await searchVenues(parseFloat(lat), parseFloat(lng), {
+    // Search for matching venue using OSM + Unsplash
+    const venues = await searchAndEnrichVenues(parseFloat(lat), parseFloat(lng), {
       query: name,
-      categories: WORKSPACE_CATEGORIES.ALL,
-      radius: 500, // Small radius for precise match
+      radius: 500,
       limit: 5,
     });
 
     if (venues.length === 0) {
-      return NextResponse.json({ found: false });
+      // Return fallback photos even if no venue found
+      const fallbackPhotos = [
+        `https://source.unsplash.com/800x600/?cafe-workspace&sig=${Date.now()}`,
+        `https://source.unsplash.com/800x600/?coffee-laptop&sig=${Date.now() + 1}`,
+      ];
+      return NextResponse.json({ 
+        found: false,
+        photos: fallbackPhotos, // Still provide photos for UI
+      });
     }
 
     // Find best match by name similarity
@@ -70,25 +74,19 @@ export async function GET(req: NextRequest) {
       name.toLowerCase().includes(v.name.toLowerCase())
     ) || venues[0];
 
-    // Get additional details
-    const [photos, tips] = await Promise.all([
-      getVenuePhotos(bestMatch.fsq_id, 5),
-      getVenueTips(bestMatch.fsq_id, 3),
-    ]);
-
     return NextResponse.json({
       found: true,
-      yelpId: bestMatch.fsq_id,
-      fsqId: bestMatch.fsq_id, // Keep backward compat
+      venueId: bestMatch.id,
+      fsqId: bestMatch.id, // Backward compat
       name: bestMatch.name,
-      rating: bestMatch.rating,
-      price: bestMatch.price,
       distance: bestMatch.distance,
       address: bestMatch.location?.formatted_address,
       categories: bestMatch.categories?.map((c) => c.name),
-      photos,
-      tips,
-      hours: bestMatch.hours,
+      photos: bestMatch.photos,
+      amenities: bestMatch.amenities,
+      opening_hours: bestMatch.opening_hours,
+      website: bestMatch.website,
+      phone: bestMatch.phone,
     });
   } catch (error) {
     console.error("Venue enrich error:", error);
@@ -117,28 +115,32 @@ export async function POST(req: NextRequest) {
     // Enrich up to 10 venues at a time
     const enrichedVenues = await Promise.all(
       venues.slice(0, 10).map(async (venue: { name: string; lat: number; lng: number }) => {
-        const results = await searchVenues(venue.lat, venue.lng, {
+        const results = await searchAndEnrichVenues(venue.lat, venue.lng, {
           query: venue.name,
-          categories: WORKSPACE_CATEGORIES.ALL,
           radius: 300,
           limit: 1,
         });
 
         if (results.length === 0) {
-          return { ...venue, enriched: false };
+          // Still return fallback photos
+          return { 
+            ...venue, 
+            enriched: false,
+            photos: [
+              `https://source.unsplash.com/800x600/?workspace&sig=${Date.now()}`,
+            ],
+          };
         }
 
         const match = results[0];
-        const photos = await getVenuePhotos(match.fsq_id, 3);
-
         return {
           ...venue,
           enriched: true,
-          fsqId: match.fsq_id,
-          rating: match.rating,
-          price: match.price,
-          photos,
-          hours: match.hours,
+          venueId: match.id,
+          fsqId: match.id,
+          photos: match.photos,
+          amenities: match.amenities,
+          opening_hours: match.opening_hours,
         };
       })
     );

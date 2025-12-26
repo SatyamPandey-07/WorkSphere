@@ -2,17 +2,22 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // Allow external images from Yelp
+  // Allow external images from Unsplash (FREE, no card required)
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 's3-media*.yelpcdn.com',
-        pathname: '/bphoto/**',
+        hostname: 'images.unsplash.com',
+        pathname: '/**',
       },
       {
         protocol: 'https',
-        hostname: '*.yelpcdn.com',
+        hostname: 'source.unsplash.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.unsplash.com',
         pathname: '/**',
       },
     ],

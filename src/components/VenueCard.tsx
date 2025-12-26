@@ -1,19 +1,27 @@
 "use client";
 
 import { MapMarker } from "@/types/map";
-import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2 } from "lucide-react";
+import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2, TreePine, Accessibility } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
 
-interface FoursquareData {
+interface VenueEnrichData {
   found: boolean;
+  venueId?: string;
   fsqId?: string;
   rating?: number;
   price?: number;
   photos?: string[];
   tips?: Array<{ text: string; createdAt: string }>;
   hours?: { open_now?: boolean; display?: string };
+  opening_hours?: string;
   website?: string;
+  amenities?: {
+    wifi?: boolean;
+    outdoor_seating?: boolean;
+    wheelchair?: boolean;
+  };
+  categories?: string[];
 }
 
 interface VenueCardProps {
@@ -30,11 +38,11 @@ export function VenueCard({
   onRate,
 }: VenueCardProps) {
   const [isFavorited, setIsFavorited] = useState(false);
-  const [fsqData, setFsqData] = useState<FoursquareData | null>(null);
+  const [enrichData, setEnrichData] = useState<VenueEnrichData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
 
-  // Fetch Foursquare data for venue enrichment
+  // Fetch venue data from OSM + Unsplash (FREE)
   useEffect(() => {
     async function enrichVenue() {
       if (!venue.position) return;
@@ -50,9 +58,7 @@ export function VenueCard({
         const response = await fetch(`/api/venues/enrich?${params}`);
         if (response.ok) {
           const data = await response.json();
-          if (data.found) {
-            setFsqData(data);
-          }
+          setEnrichData(data);
         }
       } catch (error) {
         console.error("Failed to enrich venue:", error);
@@ -71,14 +77,14 @@ export function VenueCard({
 
   // Cycle through photos
   const nextPhoto = () => {
-    if (fsqData?.photos && fsqData.photos.length > 1) {
-      setPhotoIndex((prev) => (prev + 1) % fsqData.photos!.length);
+    if (enrichData?.photos && enrichData.photos.length > 1) {
+      setPhotoIndex((prev) => (prev + 1) % enrichData.photos!.length);
     }
   };
 
-  const displayRating = fsqData?.rating || venue.rating;
-  const photos = fsqData?.photos || [];
-  const tips = fsqData?.tips || [];
+  const displayRating = enrichData?.rating || venue.rating;
+  const photos = enrichData?.photos || [];
+  const amenities = enrichData?.amenities;
 
   return (
     <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-lg transition-all">
@@ -97,14 +103,10 @@ export function VenueCard({
               {photoIndex + 1}/{photos.length}
             </div>
           )}
-          {/* Open Now Badge */}
-          {fsqData?.hours?.open_now !== undefined && (
-            <div className={`absolute top-2 left-2 px-2 py-1 rounded-full text-xs font-medium ${
-              fsqData.hours.open_now 
-                ? "bg-green-500 text-white" 
-                : "bg-red-500 text-white"
-            }`}>
-              {fsqData.hours.open_now ? "Open Now" : "Closed"}
+          {/* Category Badge */}
+          {enrichData?.categories?.[0] && (
+            <div className="absolute top-2 left-2 px-2 py-1 rounded-full text-xs font-medium bg-blue-500 text-white">
+              {enrichData.categories[0]}
             </div>
           )}
         </div>
@@ -144,11 +146,6 @@ export function VenueCard({
               </span>
             </div>
           )}
-          {fsqData?.price && (
-            <span className="text-sm text-green-600 dark:text-green-400 font-medium">
-              {"$".repeat(fsqData.price)}
-            </span>
-          )}
           {venue.category && (
             <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300">
               {venue.category}
@@ -161,20 +158,35 @@ export function VenueCard({
           )}
         </div>
 
-        {/* Hours */}
-        {fsqData?.hours?.display && (
-          <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
-            <Clock className="w-3 h-3" />
-            <span>{fsqData.hours.display}</span>
+        {/* Amenities from OSM */}
+        {amenities && (
+          <div className="flex items-center gap-3 mb-3">
+            {amenities.wifi && (
+              <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                <Wifi className="w-3 h-3" />
+                <span>WiFi</span>
+              </div>
+            )}
+            {amenities.outdoor_seating && (
+              <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                <TreePine className="w-3 h-3" />
+                <span>Outdoor</span>
+              </div>
+            )}
+            {amenities.wheelchair && (
+              <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                <Accessibility className="w-3 h-3" />
+                <span>Accessible</span>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Tips/Reviews */}
-        {tips.length > 0 && (
-          <div className="mb-3 p-2 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
-            <p className="text-xs text-zinc-600 dark:text-zinc-400 italic line-clamp-2">
-              "{tips[0].text}"
-            </p>
+        {/* Hours */}
+        {enrichData?.opening_hours && (
+          <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
+            <Clock className="w-3 h-3" />
+            <span>{enrichData.opening_hours}</span>
           </div>
         )}
 
@@ -229,9 +241,9 @@ export function VenueCard({
             <MessageSquare className="w-4 h-4" />
             Rate
           </button>
-          {fsqData?.website && (
+          {enrichData?.website && (
             <a
-              href={fsqData.website}
+              href={enrichData.website}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center justify-center px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"

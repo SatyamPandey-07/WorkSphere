@@ -50,13 +50,16 @@ export async function GET(req: NextRequest) {
     }
 
     // Search for matching venue using OSM + Unsplash
+    console.log('[Enrich] Searching for:', { name, lat, lng });
     const venues = await searchAndEnrichVenues(parseFloat(lat), parseFloat(lng), {
-      query: name,
-      radius: 500,
-      limit: 5,
+      query: name === 'cafe' ? undefined : name, // Don't filter by 'cafe' since we already search cafes
+      radius: 2000, // 2km radius
+      limit: 10,
     });
+    console.log('[Enrich] Found venues:', venues.length);
 
     if (venues.length === 0) {
+      console.log('[Enrich] No venues found, returning fallback');
       // Return fallback photos even if no venue found
       const fallbackPhotos = [
         `https://source.unsplash.com/800x600/?cafe-workspace&sig=${Date.now()}`,

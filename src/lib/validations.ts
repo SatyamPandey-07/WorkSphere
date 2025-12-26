@@ -8,11 +8,11 @@ export const chatMessageSchema = z.object({
 
 export const chatRequestSchema = z.object({
   messages: z.array(chatMessageSchema).min(1),
-  conversationId: z.string().optional(),
+  conversationId: z.string().optional().nullable(),
   location: z.object({
     lat: z.number().min(-90).max(90),
     lng: z.number().min(-180).max(180),
-  }).optional(),
+  }).optional().nullable(),
 });
 
 // Venue schemas

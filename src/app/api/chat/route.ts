@@ -367,20 +367,24 @@ export async function POST(req: Request) {
     // Validate request with Zod
     const validation = validateRequest(chatRequestSchema, body);
     if (!validation.success) {
+      console.error("Chat validation error:", validation.error);
       return Response.json({ error: validation.error }, { status: 400 });
     }
     
     const { messages, location, conversationId } = validation.data;
     const { filters } = body; // filters is optional, not in schema
+    
+    // Normalize location - use null if not valid
+    const validLocation = location && typeof location.lat === 'number' && typeof location.lng === 'number' ? location : null;
 
-    console.log("Chat request:", { messagesCount: messages?.length, location, filters });
+    console.log("Chat request:", { messagesCount: messages?.length, location: validLocation, filters });
 
     const userMessage = messages[messages.length - 1]?.content || "";
     const agentSteps: any[] = [];
 
     // ====== STEP 1: ORCHESTRATOR ======
     console.log("Running Orchestrator Agent...");
-    const orchestratorResult = await orchestratorAgent(userMessage, { location });
+    const orchestratorResult = await orchestratorAgent(userMessage, { location: validLocation });
     agentSteps.push({
       agent: "Orchestrator",
       result: orchestratorResult,
@@ -409,7 +413,7 @@ export async function POST(req: Request) {
 
     // ====== STEP 2: CONTEXT AGENT ======
     console.log("Running Context Agent...");
-    const contextResult = await contextAgent(userMessage, location);
+    const contextResult = await contextAgent(userMessage, validLocation ?? undefined);
     agentSteps.push({
       agent: "Context",
       result: contextResult,

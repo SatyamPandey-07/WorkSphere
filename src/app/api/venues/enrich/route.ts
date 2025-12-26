@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getVenueDetails, getVenuePhotos, getVenueTips, searchVenues, WORKSPACE_CATEGORIES } from "@/lib/foursquare";
 
 /**
- * GET /api/venues/enrich - Enrich venue with Foursquare data
+ * GET /api/venues/enrich - Enrich venue with Yelp data
  * Query params: 
  *   - name: venue name to search
  *   - lat, lng: coordinates to find nearby match
- *   - fsqId: direct Foursquare ID (if known)
+ *   - yelpId: direct Yelp ID (if known)
  */
 export async function GET(req: NextRequest) {
   try {
@@ -14,14 +14,14 @@ export async function GET(req: NextRequest) {
     const name = searchParams.get("name");
     const lat = searchParams.get("lat");
     const lng = searchParams.get("lng");
-    const fsqId = searchParams.get("fsqId");
+    const yelpId = searchParams.get("yelpId") || searchParams.get("fsqId"); // Support both
 
-    // If we have Foursquare ID, get details directly
-    if (fsqId) {
+    // If we have Yelp ID, get details directly
+    if (yelpId) {
       const [details, photos, tips] = await Promise.all([
-        getVenueDetails(fsqId),
-        getVenuePhotos(fsqId, 5),
-        getVenueTips(fsqId, 3),
+        getVenueDetails(yelpId),
+        getVenuePhotos(yelpId, 5),
+        getVenueTips(yelpId, 3),
       ]);
 
       if (!details) {
@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
       }
 
       return NextResponse.json({
-        fsqId: details.fsq_id,
+        yelpId: details.fsq_id,
+        fsqId: details.fsq_id, // Keep backward compat
         name: details.name,
         rating: details.rating,
         price: details.price,
@@ -77,7 +78,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       found: true,
-      fsqId: bestMatch.fsq_id,
+      yelpId: bestMatch.fsq_id,
+      fsqId: bestMatch.fsq_id, // Keep backward compat
       name: bestMatch.name,
       rating: bestMatch.rating,
       price: bestMatch.price,

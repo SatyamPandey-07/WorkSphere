@@ -1,10 +1,10 @@
 /**
- * Foursquare Places API integration
- * Provides venue photos, ratings, tips, hours, and more
- * Free: 50k calls/month with hard cap (no surprise bills)
+ * Yelp Fusion API integration (replacing deprecated Foursquare)
+ * Provides venue photos, ratings, reviews, hours, and more
+ * Free: 5000 calls/day
  */
 
-const FOURSQUARE_API_KEY = process.env.FOURSQUARE_API_KEY || process.env.NEXT_PUBLIC_FOURSQUARE_API_KEY;
+const YELP_API_KEY = process.env.YELP_API_KEY || process.env.NEXT_PUBLIC_YELP_API_KEY;
 
 export interface FoursquareVenue {
   fsq_id: string;
@@ -67,43 +67,42 @@ export interface FoursquareSearchResult {
 }
 
 /**
- * Search for nearby venues using Foursquare
+ * Search for nearby venues using Yelp Fusion API
  */
 export async function searchVenues(
   lat: number,
   lng: number,
   options: {
     query?: string;
-    categories?: string; // e.g., "13034,13035" for cafes
+    categories?: string;
     radius?: number;
     limit?: number;
   } = {}
 ): Promise<FoursquareVenue[]> {
-  if (!FOURSQUARE_API_KEY) {
-    console.error('Foursquare API key not configured');
+  if (!YELP_API_KEY) {
+    console.error('Yelp API key not configured');
     return [];
   }
 
-  const { query, categories, radius = 2000, limit = 20 } = options;
+  const { query, radius = 2000, limit = 20 } = options;
 
   const params = new URLSearchParams({
-    ll: `${lat},${lng}`,
-    radius: radius.toString(),
+    latitude: lat.toString(),
+    longitude: lng.toString(),
+    radius: Math.min(radius, 40000).toString(), // Yelp max is 40km
     limit: limit.toString(),
+    sort_by: 'distance',
+    categories: 'cafes,coffee,coworkingspaces,libraries',
   });
 
-  // Add query if provided (Foursquare v3 uses 'query' in params)
-  if (query) params.append('query', query);
-  // Foursquare category IDs: 13032=cafe, 13035=coffee, 12009=coworking, 12050=library
-  if (categories) params.append('categories', categories);
+  if (query) params.append('term', query);
 
   try {
-    // Use the correct Foursquare v3 endpoint
     const response = await fetch(
-      `https://api.foursquare.com/v3/places/search?${params}`,
+      `https://api.yelp.com/v3/businesses/search?${params}`,
       {
         headers: {
-          Authorization: FOURSQUARE_API_KEY,
+          Authorization: `Bearer ${YELP_API_KEY}`,
           Accept: 'application/json',
         },
       }
@@ -111,100 +110,144 @@ export async function searchVenues(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Foursquare search failed:', response.status, errorText);
+      console.error('Yelp search failed:', response.status, errorText);
       return [];
     }
 
-    const data: FoursquareSearchResult = await response.json();
-    return data.results || [];
+    const data = await response.json();
+    
+    // Convert Yelp format to our FoursquareVenue format for compatibility
+    return (data.businesses || []).map((b: any) => ({
+      fsq_id: b.id,
+      name: b.name,
+      location: {
+        address: b.location?.address1,
+        formatted_address: b.location?.display_address?.join(', '),
+        locality: b.location?.city,
+        region: b.location?.state,
+        country: b.location?.country,
+      },
+      categories: b.categories?.map((c: any) => ({
+        id: 0,
+        name: c.title,
+        icon: { prefix: '', suffix: '' },
+      })) || [],
+      distance: b.distance,
+      rating: b.rating ? b.rating * 2 : undefined, // Convert 5-star to 10-scale
+      price: b.price?.length || undefined,
+      hours: {
+        open_now: !b.is_closed,
+      },
+      photos: b.image_url ? [{ 
+        id: '1', 
+        prefix: b.image_url.replace(/o\.jpg$/, ''), 
+        suffix: 'o.jpg',
+        width: 300,
+        height: 200,
+      }] : [],
+      tel: b.phone,
+      website: b.url,
+    }));
   } catch (error) {
-    console.error('Foursquare search error:', error);
+    console.error('Yelp search error:', error);
     return [];
   }
 }
 
 /**
- * Get detailed venue info including photos, tips, hours
+ * Get detailed venue info from Yelp
  */
-export async function getVenueDetails(fsqId: string): Promise<FoursquareVenue | null> {
-  if (!FOURSQUARE_API_KEY) {
-    console.error('Foursquare API key not configured');
+export async function getVenueDetails(yelpId: string): Promise<FoursquareVenue | null> {
+  if (!YELP_API_KEY) {
+    console.error('Yelp API key not configured');
     return null;
   }
 
   try {
     const response = await fetch(
-      `https://api.foursquare.com/v3/places/${fsqId}?fields=fsq_id,name,location,categories,rating,price,hours,stats,tel,website,features,photos,tips`,
+      `https://api.yelp.com/v3/businesses/${yelpId}`,
       {
         headers: {
-          Authorization: FOURSQUARE_API_KEY,
+          Authorization: `Bearer ${YELP_API_KEY}`,
           Accept: 'application/json',
         },
       }
     );
 
     if (!response.ok) {
-      console.error('Foursquare details failed:', response.status);
+      console.error('Yelp details failed:', response.status);
       return null;
     }
 
-    return await response.json();
+    const b = await response.json();
+    
+    return {
+      fsq_id: b.id,
+      name: b.name,
+      location: {
+        address: b.location?.address1,
+        formatted_address: b.location?.display_address?.join(', '),
+        locality: b.location?.city,
+        region: b.location?.state,
+        country: b.location?.country,
+      },
+      categories: b.categories?.map((c: any) => ({
+        id: 0,
+        name: c.title,
+        icon: { prefix: '', suffix: '' },
+      })) || [],
+      rating: b.rating ? b.rating * 2 : undefined,
+      price: b.price?.length || undefined,
+      hours: {
+        open_now: !b.is_closed,
+        display: b.hours?.[0]?.is_open_now ? 'Open Now' : 'Closed',
+      },
+      photos: b.photos?.map((url: string, i: number) => ({
+        id: i.toString(),
+        prefix: url.replace(/o\.jpg$/, ''),
+        suffix: 'o.jpg',
+        width: 300,
+        height: 200,
+      })) || [],
+      tel: b.phone,
+      website: b.url,
+    };
   } catch (error) {
-    console.error('Foursquare details error:', error);
+    console.error('Yelp details error:', error);
     return null;
   }
 }
 
 /**
- * Get venue photos
+ * Get venue photos from Yelp
  */
 export async function getVenuePhotos(
-  fsqId: string,
+  yelpId: string,
   limit: number = 5
 ): Promise<string[]> {
-  if (!FOURSQUARE_API_KEY) {
-    return [];
-  }
-
-  try {
-    const response = await fetch(
-      `https://api.foursquare.com/v3/places/${fsqId}/photos?limit=${limit}`,
-      {
-        headers: {
-          Authorization: FOURSQUARE_API_KEY,
-          Accept: 'application/json',
-        },
-      }
-    );
-
-    if (!response.ok) return [];
-
-    const photos = await response.json();
-    return photos.map((p: { prefix: string; suffix: string }) => 
-      `${p.prefix}300x200${p.suffix}`
-    );
-  } catch {
-    return [];
-  }
+  const details = await getVenueDetails(yelpId);
+  if (!details?.photos) return [];
+  
+  return details.photos.slice(0, limit).map(p => `${p.prefix}${p.suffix}`);
 }
 
 /**
- * Get venue tips (user reviews)
+ * Get venue reviews from Yelp
  */
 export async function getVenueTips(
-  fsqId: string,
+  yelpId: string,
   limit: number = 3
 ): Promise<Array<{ text: string; createdAt: string }>> {
-  if (!FOURSQUARE_API_KEY) {
+  if (!YELP_API_KEY) {
     return [];
   }
 
   try {
     const response = await fetch(
-      `https://api.foursquare.com/v3/places/${fsqId}/tips?limit=${limit}`,
+      `https://api.yelp.com/v3/businesses/${yelpId}/reviews?limit=${limit}`,
       {
         headers: {
-          Authorization: FOURSQUARE_API_KEY,
+          Authorization: `Bearer ${YELP_API_KEY}`,
           Accept: 'application/json',
         },
       }
@@ -212,10 +255,10 @@ export async function getVenueTips(
 
     if (!response.ok) return [];
 
-    const tips = await response.json();
-    return tips.map((t: { text: string; created_at: string }) => ({
-      text: t.text,
-      createdAt: t.created_at,
+    const data = await response.json();
+    return (data.reviews || []).map((r: any) => ({
+      text: r.text,
+      createdAt: r.time_created,
     }));
   } catch {
     return [];
@@ -223,14 +266,14 @@ export async function getVenueTips(
 }
 
 /**
- * Helper: Build photo URL from Foursquare photo object
+ * Helper: Build photo URL
  */
 export function buildPhotoUrl(
   prefix: string,
   suffix: string,
   size: string = '300x200'
 ): string {
-  return `${prefix}${size}${suffix}`;
+  return `${prefix}${suffix}`;
 }
 
 /**
@@ -242,12 +285,12 @@ export function getPriceLevel(price?: number): string {
 }
 
 /**
- * Foursquare category IDs for workspaces
+ * Category constants (kept for compatibility)
  */
 export const WORKSPACE_CATEGORIES = {
-  CAFE: '13032',
-  COFFEE_SHOP: '13035',
-  COWORKING: '12009',
-  LIBRARY: '12050',
-  ALL: '13032,13035,12009,12050',
+  CAFE: 'cafes',
+  COFFEE_SHOP: 'coffee',
+  COWORKING: 'coworkingspaces',
+  LIBRARY: 'libraries',
+  ALL: 'cafes,coffee,coworkingspaces,libraries',
 };

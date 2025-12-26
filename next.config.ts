@@ -2,18 +2,18 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // Allow external images from Foursquare
+  // Allow external images from Yelp
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'fastly.4sqi.net',
-        pathname: '/img/**',
+        hostname: 's3-media*.yelpcdn.com',
+        pathname: '/bphoto/**',
       },
       {
         protocol: 'https',
-        hostname: 'ss3.4sqi.net',
-        pathname: '/img/**',
+        hostname: '*.yelpcdn.com',
+        pathname: '/**',
       },
     ],
   },

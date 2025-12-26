@@ -6,9 +6,16 @@ import { chatRequestSchema, validateRequest } from "@/lib/validations";
 
 export const maxDuration = 60;
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
-});
+// Lazy init Groq client to avoid build-time errors
+let groq: Groq | null = null;
+function getGroqClient(): Groq {
+  if (!groq) {
+    groq = new Groq({
+      apiKey: process.env.GROQ_API_KEY || '',
+    });
+  }
+  return groq;
+}
 
 // ============================================================
 // AGENT 1: ORCHESTRATOR - Determines which agents to use
@@ -41,7 +48,7 @@ Output ONLY valid JSON:
 For general chat: {"skipAgents": true, "reasoning": "General conversation"}`;
 
   try {
-    const response = await groq.chat.completions.create({
+    const response = await getGroqClient().chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: systemPrompt },
@@ -99,7 +106,7 @@ Output ONLY valid JSON:
 {"intent": "Find quiet cafe", "parameters": {"workType": "focus", "amenities": ["wifi", "quiet"], "radius": 2000, "category": ["cafe", "coworking"], "timeOfDay": null, "duration": 120}, "reasoning": "User needs quiet focus space"}`;
 
   try {
-    const response = await groq.chat.completions.create({
+    const response = await getGroqClient().chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: systemPrompt },
@@ -393,7 +400,7 @@ export async function POST(req: Request) {
 
     // If general conversation, respond directly
     if (orchestratorResult.skipAgents) {
-      const response = await groq.chat.completions.create({
+      const response = await getGroqClient().chat.completions.create({
         model: "llama-3.3-70b-versatile",
         messages: [
           {

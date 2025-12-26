@@ -2,14 +2,23 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // Use webpack mode instead of turbopack for dev
-  webpack: (config) => {
-    // Ensure Prisma client works properly
-    config.resolve.alias = {
-      ...config.resolve.alias,
-    };
-    return config;
+  // Allow external images from Foursquare
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'fastly.4sqi.net',
+        pathname: '/img/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'ss3.4sqi.net',
+        pathname: '/img/**',
+      },
+    ],
   },
+  // Use turbopack config (Next.js 16 default)
+  turbopack: {},
 };
 
 export default nextConfig;

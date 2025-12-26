@@ -99,7 +99,7 @@ export async function searchVenues(
 
   try {
     const response = await fetch(
-      `https://api.foursquare.com/v3/places/search?${params}`,
+      `https://api.foursquare.com/v3/places/nearby?${params}`,
       {
         headers: {
           Authorization: FOURSQUARE_API_KEY,
@@ -109,7 +109,7 @@ export async function searchVenues(
     );
 
     if (!response.ok) {
-      console.error('Foursquare search failed:', response.status);
+      console.error('Foursquare search failed:', response.status, await response.text());
       return [];
     }
 

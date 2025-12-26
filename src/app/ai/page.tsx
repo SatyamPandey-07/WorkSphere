@@ -251,25 +251,37 @@ export default function AppPage() {
       case "route":
         // Handle directions request from chatbot
         if (update.route && location) {
-          // Create a simple straight-line route (no routing API)
-          const newRoute: MapRoute = {
-            id: `route-${Date.now()}`,
-            path: [
-              { lat: update.route.from.lat, lng: update.route.from.lng },
-              { lat: update.route.to.lat, lng: update.route.to.lng },
-            ],
-            isHighlighted: true,
-          };
-          setRoutes([newRoute]);
-          // Center map between user and destination
-          setMapView({
-            center: {
-              lat: (update.route.from.lat + update.route.to.lat) / 2,
-              lng: (update.route.from.lng + update.route.to.lng) / 2,
-            },
-            zoom: 14,
-            animate: true,
-          });
+          // Fetch real road route using OSRM API
+          (async () => {
+            const { getRoute } = await import('@/lib/routing');
+            const routeData = await getRoute(
+              update.route!.from, 
+              update.route!.to, 
+              'walking' // can also be 'driving' or 'cycling'
+            );
+            
+            const newRoute: MapRoute = {
+              id: `route-${Date.now()}`,
+              path: routeData?.path || [
+                { lat: update.route!.from.lat, lng: update.route!.from.lng },
+                { lat: update.route!.to.lat, lng: update.route!.to.lng },
+              ],
+              distance: routeData?.distance,
+              duration: routeData?.duration,
+              isHighlighted: true,
+            };
+            setRoutes([newRoute]);
+            
+            // Center map between user and destination
+            setMapView({
+              center: {
+                lat: (update.route!.from.lat + update.route!.to.lat) / 2,
+                lng: (update.route!.from.lng + update.route!.to.lng) / 2,
+              },
+              zoom: 14,
+              animate: true,
+            });
+          })();
         }
         break;
     }

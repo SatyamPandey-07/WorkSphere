@@ -19,8 +19,70 @@
 
 ---
 
+## 🆕 Recent Updates (Dec 26-27, 2025)
+
+### 🎯 Major Changes
+
+#### ✅ Production Fixes (Dec 26)
+- **Fixed manifest.json 404**: Updated middleware to bypass static assets from Clerk authentication
+- **Fixed Chat API crashes**: Made location and conversationId nullable in validation schema
+- **Lazy Groq initialization**: Improved API reliability with on-demand client creation
+
+#### 🗺️ Real Road Routing (Dec 26)
+- **OSRM Integration**: Replaced straight-line routes with actual road paths
+- **Turn-by-turn geometry**: Beautiful polylines following real roads
+- **Multiple profiles**: Walking, driving, cycling route options
+- **File**: `src/lib/routing.ts`
+
+#### 🏢 Venue Enrichment Evolution (Dec 26-27)
+
+**Day 1 - Foursquare Attempt:**
+- Integrated Foursquare v3 Places API
+- Discovered API was completely deprecated (410 Gone on all endpoints)
+
+**Day 2 - Yelp Migration:**
+- Switched to Yelp Fusion API
+- User feedback: Limited to US, requires credit card concerns
+
+**Day 3 - FREE Stack (Final Solution):**
+- ✅ **OpenStreetMap (Overpass API)**: Real venue data worldwide
+- ✅ **Unsplash**: Beautiful workspace/cafe photos
+- ✅ **No credit card required**: 100% free APIs
+- ✅ **Nominatim fallback**: If Overpass times out, uses faster Nominatim search
+- ✅ **8-second timeout**: Prevents API hanging
+
+#### 📸 Enhanced Venue Cards (Dec 27)
+- **Photo Carousel**: Click to cycle through 3+ venue photos
+- **Category Badges**: Café, Library, Coworking Space tags
+- **Amenities Icons**: WiFi, Outdoor Seating, Accessibility
+- **Opening Hours**: Real business hours from OSM
+- **Website Links**: Direct links to venue websites
+
+### 🔧 Technical Improvements
+
+```
+Commits (Dec 26-27, 2025):
+├─ fix: add Nominatim fallback and timeout for Overpass API
+├─ fix: increase search radius and improve debugging
+├─ fix: improve OSM search with better logging and way elements
+├─ feat: replace paid APIs with FREE OSM + Unsplash (no credit card)
+├─ feat: replace deprecated Foursquare with Yelp Fusion API
+├─ feat: add Foursquare API integration for venue photos, ratings, tips
+├─ feat: add real road routing with OSRM API
+└─ fix: make chat API location nullable for production
+```
+
+### 📊 Impact
+- **Deployment**: All fixes live on work-sphere-one.vercel.app
+- **Cost**: $0 (switched from paid APIs to 100% free stack)
+- **Coverage**: Global (OSM has worldwide data vs US-focused Yelp)
+- **Reliability**: 3-layer fallback system (Overpass → Nominatim → Fallback photos)
+
+---
+
 ## 📋 Table of Contents
 
+- [Recent Updates](#-recent-updates-dec-26-27-2025)
 - [Features](#-features)
 - [Tech Stack](#-tech-stack)
 - [Architecture](#-architecture)
@@ -49,11 +111,26 @@
 ### 🗺️ Interactive Dark Theme Map
 
 - **Dark Theme**: Beautiful CartoDB Dark Matter tiles
-- **Real-time Markers**: Purple glowing venue markers
-- **Green Route Lines**: Styled routes with glow effects
+- **Real-time Markers**: Purple glowing venue markers with venue photos
+- **Green Route Lines**: Real road routing with OSRM (not straight lines)
 - **User Location**: Custom marker with Clerk user avatar
 - **Auto-centering**: Map adjusts to show search results
 - **Dark Popups**: Styled popups matching the theme
+
+### 🏢 Venue Enrichment (100% FREE APIs)
+
+- **OpenStreetMap Integration**: Real venue data from OSM Overpass API
+- **Photo Gallery**: Beautiful workspace photos from Unsplash
+- **Amenities Display**: WiFi, outdoor seating, accessibility from OSM
+- **Opening Hours**: Real business hours when available
+- **No Credit Card Required**: All APIs are completely free
+
+### 🛣️ Real Road Routing
+
+- **OSRM Integration**: Actual road paths instead of straight lines
+- **Turn-by-turn Geometry**: Realistic routes on the map
+- **Distance Calculation**: Accurate road distance to venues
+- **Multiple Profiles**: Walking, driving, cycling routes
 
 ### 🎯 Multi-Agent Architecture
 
@@ -115,7 +192,9 @@
 | **Database** | Neon PostgreSQL + Prisma 7.2 ORM (with @prisma/adapter-pg) |
 | **Authentication** | Clerk |
 | **Maps** | React Leaflet + OpenStreetMap |
-| **Venue Data** | Overpass API (OpenStreetMap) |
+| **Venue Data** | OpenStreetMap (Overpass API) - FREE |
+| **Venue Photos** | Unsplash API - FREE |
+| **Routing** | OSRM (Open Source Routing Machine) - FREE |
 | **Testing** | Jest 29, React Testing Library, Playwright |
 | **PWA** | Service Workers + IndexedDB |
 | **Deployment** | Vercel |
@@ -163,14 +242,22 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │                         DATA LAYER                               │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌────────────────┐  │
-│  │  Neon Postgres  │  │   Overpass API  │  │     Clerk      │  │
+│  │  Neon Postgres  │  │   OpenStreetMap │  │     Clerk      │  │
 │  │                 │  │                 │  │                │  │
-│  │ - Users         │  │ - Cafes         │  │ - Auth         │  │
-│  │ - Venues        │  │ - Libraries     │  │ - User Sync    │  │
-│  │ - Ratings       │  │ - Coworking     │  │ - Sessions     │  │
-│  │ - Favorites     │  │                 │  │                │  │
+│  │ - Users         │  │ - Overpass API  │  │ - Auth         │  │
+│  │ - Venues        │  │ - Cafes         │  │ - User Sync    │  │
+│  │ - Ratings       │  │ - Libraries     │  │ - Sessions     │  │
+│  │ - Favorites     │  │ - Coworking     │  │                │  │
 │  │ - Conversations │  │                 │  │                │  │
 │  └─────────────────┘  └─────────────────┘  └────────────────┘  │
+│                                                                  │
+│  ┌─────────────────┐  ┌─────────────────┐                      │
+│  │   Unsplash API  │  │    OSRM API     │                      │
+│  │                 │  │                 │                      │
+│  │ - Venue Photos  │  │ - Road Routing  │                      │
+│  │ - FREE          │  │ - Polylines     │                      │
+│  │ - No Card Req'd │  │ - FREE          │                      │
+│  └─────────────────┘  └─────────────────┘                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -266,15 +353,21 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
 # AI (Groq)
 GROQ_API_KEY=gsk_...
+
+# Unsplash (Optional - for better venue photos)
+UNSPLASH_ACCESS_KEY=... 
+# Note: Works without key using fallback URLs
 ```
 
 ### Getting API Keys
 
-| Service | URL | Free Tier |
-|---------|-----|-----------|
-| **Neon** | [neon.tech](https://neon.tech) | 0.5GB storage |
-| **Clerk** | [clerk.com](https://clerk.com) | 10,000 MAU |
-| **Groq** | [console.groq.com](https://console.groq.com) | Free API access |
+| Service | URL | Free Tier | Required |
+|---------|-----|-----------|----------|
+| **Neon** | [neon.tech](https://neon.tech) | 0.5GB storage | ✅ Yes |
+| **Clerk** | [clerk.com](https://clerk.com) | 10,000 MAU | ✅ Yes |
+| **Groq** | [console.groq.com](https://console.groq.com) | Free API access | ✅ Yes |
+| **Unsplash** | [unsplash.com/developers](https://unsplash.com/developers) | 50 req/hour | ❌ No (has fallback) |
+| **OSM/OSRM** | N/A | Unlimited | ❌ No (public API) |
 
 ---
 
@@ -368,7 +461,9 @@ model Message {
 | `POST` | `/api/chat` | Main chat endpoint with agent pipeline |
 | `GET` | `/api/venues` | Search venues |
 | `POST` | `/api/venues` | Add crowdsourced venue |
+| `GET` | `/api/venues/enrich` | Enrich venue with OSM + Unsplash data |
 | `POST` | `/api/venues/[id]/rate` | Rate a venue |
+| `POST` | `/api/venues/updates` | Bulk update venue photos |
 | `GET` | `/api/favorites` | Get user's favorites |
 | `POST` | `/api/favorites` | Add favorite |
 | `DELETE` | `/api/favorites` | Remove favorite |
@@ -468,6 +563,11 @@ worksphere/
 │   │   └── ActionAgent.tsx    # Updates UI
 │   ├── app/
 │   │   ├── api/               # API routes
+│   │   │   ├── chat/          # Agent pipeline endpoint
+│   │   │   ├── venues/        # Venue CRUD
+│   │   │   │   └── enrich/    # OSM + Unsplash enrichment
+│   │   │   ├── favorites/     # User favorites
+│   │   │   └── conversations/ # Chat history
 │   │   ├── ai/                # Main app page
 │   │   ├── sign-in/           # Auth pages
 │   │   ├── sign-up/
@@ -478,7 +578,7 @@ worksphere/
 │   │   ├── ui/                # UI components
 │   │   ├── EnhancedChatbot.tsx
 │   │   ├── Map.tsx
-│   │   ├── VenueCard.tsx
+│   │   ├── VenueCard.tsx      # Enhanced with photos, amenities
 │   │   ├── VenueRatingDialog.tsx
 │   │   ├── VenueSubmissionModal.tsx
 │   │   └── ErrorBoundary.tsx
@@ -491,6 +591,8 @@ worksphere/
 │   │   ├── rateLimit.ts       # Rate limiting
 │   │   ├── analytics.ts       # Event tracking
 │   │   ├── validations.ts     # Zod schemas
+│   │   ├── venues.ts          # OSM + Unsplash integration (NEW)
+│   │   ├── routing.ts         # OSRM routing (NEW)
 │   │   └── offlineStorage.ts  # IndexedDB for PWA
 │   ├── tools/                 # AI Agent tools
 │   └── types/                 # TypeScript types

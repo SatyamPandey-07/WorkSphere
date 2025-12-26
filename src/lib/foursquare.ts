@@ -90,16 +90,17 @@ export async function searchVenues(
     ll: `${lat},${lng}`,
     radius: radius.toString(),
     limit: limit.toString(),
-    sort: 'DISTANCE',
   });
 
+  // Add query if provided (Foursquare v3 uses 'query' in params)
   if (query) params.append('query', query);
   // Foursquare category IDs: 13032=cafe, 13035=coffee, 12009=coworking, 12050=library
   if (categories) params.append('categories', categories);
 
   try {
+    // Use the correct Foursquare v3 endpoint
     const response = await fetch(
-      `https://api.foursquare.com/v3/places/nearby?${params}`,
+      `https://api.foursquare.com/v3/places/search?${params}`,
       {
         headers: {
           Authorization: FOURSQUARE_API_KEY,
@@ -109,7 +110,8 @@ export async function searchVenues(
     );
 
     if (!response.ok) {
-      console.error('Foursquare search failed:', response.status, await response.text());
+      const errorText = await response.text();
+      console.error('Foursquare search failed:', response.status, errorText);
       return [];
     }
 

@@ -30,6 +30,7 @@ export async function GET() {
                 },
                 favorites: {
                     take: 10,
+                    orderBy: { createdAt: "desc" },
                     include: {
                         venue: {
                             select: { name: true, category: true }
@@ -38,6 +39,7 @@ export async function GET() {
                 },
                 ratings: {
                     take: 10,
+                    orderBy: { createdAt: "desc" },
                     include: {
                         venue: {
                             select: { name: true }

@@ -50,6 +50,9 @@ export async function POST(req: Request) {
             doc.on("end", () => resolve(Buffer.concat(chunks)));
             doc.on("error", (err) => reject(err));
 
+            // Helper to sanitize text for PDFKit (Helvetica doesn't support Unicode/CJK)
+            const safeText = (text: string) => text ? text.replace(/[^\x00-\x7F]/g, "?") : "";
+
             // Neural Design Branding
             doc.rect(0, 0, doc.page.width, 10).fill("#3b82f6");
             doc.moveDown(2);
@@ -62,9 +65,9 @@ export async function POST(req: Request) {
             doc.fontSize(10).font("Helvetica-Bold").text("BOOKING DETAILS:");
             doc.font("Helvetica").text("--------------------------------------------------");
             doc.text(`REFERENCE ID: ${confirmationId}`);
-            doc.text(`VENUE: ${venue.name}`);
-            doc.text(`CATEGORY: ${venue.category?.toUpperCase()}`);
-            doc.text(`ADDRESS: ${venue.address || "Verified Workspace"}`);
+            doc.text(`VENUE: ${safeText(venue.name)}`);
+            doc.text(`CATEGORY: ${safeText(venue.category?.toUpperCase() || "WORKSPACE")}`);
+            doc.text(`ADDRESS: ${safeText(venue.address || "Verified Workspace")}`);
             doc.text(`SCHEDULE: ${date} @ ${time}`);
 
             doc.moveDown(2);

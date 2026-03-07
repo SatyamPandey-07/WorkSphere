@@ -4,9 +4,9 @@ import { getVenuePhotoUrl } from "@/lib/googlePlaces";
 /**
  * GET /api/venues/[venueId]/photo?name=...&lat=...&lng=...
  *
- * Resolves a Google Places photo and proxies the image bytes back.
+ * Resolves a Foursquare venue photo and proxies the image bytes back.
  * The API key never leaves the server — the browser just sees our URL.
- * Response is edge-cached for 24h so repeat renders cost $0.
+ * Response is edge-cached for 24h so repeat renders cost 0 API calls.
  */
 export async function GET(
     req: NextRequest,

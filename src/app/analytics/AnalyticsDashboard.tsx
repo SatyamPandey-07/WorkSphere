@@ -47,7 +47,7 @@ export default function AnalyticsDashboard() {
     const { user: clerkUser } = useUser();
     const [data, setData] = useState<UserAnalytics | null>(null);
     const [loading, setLoading] = useState(true);
-    const [downloadingId, setDownloadingId] = useState<number | null>(null);
+    const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
     const fetchUserStats = async () => {
         setLoading(true);
@@ -62,7 +62,7 @@ export default function AnalyticsDashboard() {
         }
     };
 
-    const handleDownloadReceipt = async (bookingId: number, confirmationId: string) => {
+    const handleDownloadReceipt = async (bookingId: string, confirmationId: string) => {
         setDownloadingId(bookingId);
         try {
             const response = await fetch(`/api/bookings/${bookingId}/download`);

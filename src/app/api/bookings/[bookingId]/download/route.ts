@@ -19,10 +19,10 @@ export async function GET(
 
         const { bookingId } = await context.params;
 
-        // Fetch the booking
+        // Fetch the booking (bookingId is a cuid string)
         const booking = await (prisma as any).booking.findFirst({
             where: {
-                id: parseInt(bookingId),
+                id: bookingId,
                 userId, // Ensure user owns this booking
             },
             include: {

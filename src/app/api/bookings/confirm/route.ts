@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
-import PDFDocument from "pdfkit";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { trackEvent } from "@/lib/analytics";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
@@ -64,50 +64,56 @@ export async function POST(req: Request) {
             }
         });
 
-        // 2. Generate PDF Receipt in Memory (Serverless-Compatible)
-        const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-            // Use bufferPages: true to avoid font loading issues on Vercel
-            const doc = new PDFDocument({ 
-                margin: 50,
-                bufferPages: true,
-                autoFirstPage: true
-            });
-            const chunks: any[] = [];
-            doc.on("data", (chunk) => chunks.push(chunk));
-            doc.on("end", () => resolve(Buffer.concat(chunks)));
-            doc.on("error", (err) => reject(err));
+        // 2. Generate PDF Receipt in Memory (Serverless-Compatible with pdf-lib)
+        const pdfDoc = await PDFDocument.create();
+        const page = pdfDoc.addPage([595, 842]); // A4 size
+        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+        
+        const { width, height } = page.getSize();
+        let yPosition = height - 50;
 
-            // Helper to sanitize text for PDFKit (Helvetica doesn't support Unicode/CJK)
-            const safeText = (text: string) => text ? text.replace(/[^\x00-\x7F]/g, "?") : "";
+        // Helper to sanitize text
+        const safeText = (text: string) => text ? text.replace(/[^\x00-\x7F]/g, "?") : "";
 
-            // Neural Design Branding
-            doc.rect(0, 0, doc.page.width, 10).fill("#3b82f6");
-            doc.moveDown(2);
-            // Use built-in fonts without explicit loading
-            doc.fontSize(25).text("WORKSPHERE CONFIRMATION", { align: "center" });
-            doc.moveDown(0.2);
-            doc.fontSize(8).fillOpacity(0.5).text("SECURE NEURAL TRANSACTION RECEIPT", { align: "center" });
-            doc.fillOpacity(1);
+        // Top blue bar
+        page.drawRectangle({ x: 0, y: height - 10, width, height: 10, color: rgb(0.23, 0.51, 0.96) });
+        yPosition -= 60;
 
-            doc.moveDown(3);
-            doc.fontSize(12).text("BOOKING DETAILS:");
-            doc.fontSize(10).text("--------------------------------------------------");
-            doc.text(`REFERENCE ID: ${confirmationId}`);
-            doc.text(`VENUE: ${safeText(venue.name)}`);
-            doc.text(`CATEGORY: ${safeText(venue.category?.toUpperCase() || "WORKSPACE")}`);
-            doc.text(`ADDRESS: ${safeText(venue.address || "Verified Workspace")}`);
-            doc.text(`SCHEDULE: ${date} @ ${time}`);
+        // Title
+        page.drawText("WORKSPHERE CONFIRMATION", { x: 150, y: yPosition, size: 24, font: boldFont, color: rgb(0, 0, 0) });
+        yPosition -= 15;
+        page.drawText("SECURE NEURAL TRANSACTION RECEIPT", { x: 180, y: yPosition, size: 8, font, color: rgb(0.5, 0.5, 0.5) });
+        yPosition -= 50;
 
-            doc.moveDown(2);
-            doc.fontSize(12).text("SECURITY PROTOCOL:");
-            doc.fontSize(10).text("ZERO-FEE ACCESS PROTOCOL ACTIVE");
-            doc.text("ENCRYPTED VIA WORKSPHERE L3");
+        // Booking Details
+        page.drawText("BOOKING DETAILS:", { x: 50, y: yPosition, size: 12, font: boldFont });
+        yPosition -= 15;
+        page.drawText("-".repeat(50), { x: 50, y: yPosition, size: 10, font });
+        yPosition -= 20;
+        page.drawText(`REFERENCE ID: ${confirmationId}`, { x: 50, y: yPosition, size: 10, font });
+        yPosition -= 18;
+        page.drawText(`VENUE: ${safeText(venue.name)}`, { x: 50, y: yPosition, size: 10, font });
+        yPosition -= 18;
+        page.drawText(`CATEGORY: ${safeText(venue.category?.toUpperCase() || "WORKSPACE")}`, { x: 50, y: yPosition, size: 10, font });
+        yPosition -= 18;
+        page.drawText(`ADDRESS: ${safeText(venue.address || "Verified Workspace")}`, { x: 50, y: yPosition, size: 10, font });
+        yPosition -= 18;
+        page.drawText(`SCHEDULE: ${date} @ ${time}`, { x: 50, y: yPosition, size: 10, font });
+        yPosition -= 40;
 
-            doc.moveDown(5);
-            doc.fontSize(8).fill("#666666").text("Thank you for choosing WorkSphere. Your workspace is ready for you.", { align: "center" });
+        // Security Protocol
+        page.drawText("SECURITY PROTOCOL:", { x: 50, y: yPosition, size: 12, font: boldFont });
+        yPosition -= 18;
+        page.drawText("ZERO-FEE ACCESS PROTOCOL ACTIVE", { x: 50, y: yPosition, size: 10, font });
+        yPosition -= 18;
+        page.drawText("ENCRYPTED VIA WORKSPHERE L3", { x: 50, y: yPosition, size: 10, font });
+        yPosition -= 80;
 
-            doc.end();
-        });
+        // Footer
+        page.drawText("Thank you for choosing WorkSphere. Your workspace is ready for you.", { x: 100, y: yPosition, size: 8, font, color: rgb(0.4, 0.4, 0.4) });
+
+        const pdfBuffer = Buffer.from(await pdfDoc.save());
 
         // 3. Transmit Email via Nodemailer (Official Receipt)
         if (SMTP_USER && SMTP_PASS && (customerEmail || "pandeysatyam1802@gmail.com")) {

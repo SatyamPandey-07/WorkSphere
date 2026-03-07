@@ -1,9 +1,5 @@
 import { NextRequest } from "next/server";
 
-/**
- * Temporary debug endpoint — remove after Pexels is confirmed working.
- * GET /api/debug/foursquare?name=Cafe+Coffee+Day
- */
 export async function GET(req: NextRequest) {
     const { searchParams } = req.nextUrl;
     const name = searchParams.get("name") ?? "Cafe Coffee Day";
@@ -33,12 +29,7 @@ export async function GET(req: NextRequest) {
         const photos = (body as { photos?: Array<{ src: { large2x: string } }> }).photos;
         const photoUrl = photos?.[0]?.src?.large2x ?? null;
 
-        return Response.json({
-            keyPresent: true, maskedKey,
-            status: res.status,
-            photoUrl,
-            response: body,
-        });
+        return Response.json({ keyPresent: true, maskedKey, status: res.status, photoUrl, response: body });
     } catch (err) {
         return Response.json({ keyPresent: true, maskedKey, error: String(err) });
     }

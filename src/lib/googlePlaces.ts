@@ -1,5 +1,5 @@
 /**
- * Pexels API — Venue Photo Enrichment
+ * Pexels API - Venue Photo Enrichment
  *
  * Uses the Pexels photo search API (free tier: 20,000 req/month).
  * Searches by venue name to return a relevant high-quality photo.
@@ -7,8 +7,6 @@
  */
 
 const API_KEY = process.env.PEXELS_API_KEY;
-
-// --- Types --------------------------------------------------------------------
 
 interface PexelsSearchResponse {
     photos?: Array<{
@@ -19,9 +17,6 @@ interface PexelsSearchResponse {
     }>;
 }
 
-// --- Core API call ------------------------------------------------------------
-
-/** Searches Pexels for a photo matching the venue name. */
 async function searchPhoto(query: string): Promise<string | null> {
     if (!API_KEY) {
         console.warn("[Pexels] PEXELS_API_KEY not set");
@@ -52,12 +47,6 @@ async function searchPhoto(query: string): Promise<string | null> {
     }
 }
 
-// --- High-level helper --------------------------------------------------------
-
-/**
- * Gets a venue photo URL from Pexels, cached in the DB after first lookup.
- * Returns null if the API key is missing or no photo found.
- */
 export async function getVenuePhotoUrl(
     osmId: string,
     name: string,
@@ -69,7 +58,6 @@ export async function getVenuePhotoUrl(
     try {
         const { prisma } = await import("@/lib/prisma");
 
-        // 1. Return cached photo URL from DB (costs 0 API calls)
         const cached = await prisma.venue.findUnique({
             where: { placeId: osmId },
             select: { photoReference: true },
@@ -79,11 +67,9 @@ export async function getVenuePhotoUrl(
             return cached.photoReference;
         }
 
-        // 2. Search Pexels by venue name
         const photoUrl = await searchPhoto(name);
         if (!photoUrl) return null;
 
-        // 3. Cache in DB
         await prisma.venue
             .upsert({
                 where: { placeId: osmId },

@@ -36,7 +36,7 @@ const venueIcon = L.divIcon({
 
 // Destination marker - like the reference image
 const destinationIcon = L.divIcon({
-  className: "destination-marker", 
+  className: "destination-marker",
   html: `<div class="destination-pin"><span>D</span></div>`,
   iconSize: [32, 32],
   iconAnchor: [16, 32],
@@ -148,7 +148,8 @@ const Map = ({
 
   return (
     <>
-      <style jsx global>{`
+      <style dangerouslySetInnerHTML={{
+        __html: `
         .custom-user-marker {
           /* This container itself doesn't need styles */
         }
@@ -228,7 +229,7 @@ const Map = ({
         .leaflet-popup-content {
           margin: 12px 16px;
         }
-      `}</style>
+      `}} />
 
       <MapContainer
         center={center}

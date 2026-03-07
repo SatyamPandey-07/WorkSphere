@@ -1,5 +1,5 @@
 {
-  "name": "workhub",
+  "name": "worksphere",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -17,6 +17,8 @@
     "@clerk/nextjs": "^6.36.5",
     "@prisma/adapter-pg": "^7.2.0",
     "@prisma/client": "^7.2.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.36.3",
     "clsx": "^2.1.1",
     "groq-sdk": "^0.37.0",
     "leaflet": "^1.9.4",
@@ -28,7 +30,8 @@
     "react-dom": "19.2.3",
     "react-leaflet": "^5.0.0",
     "svix": "^1.82.0",
-    "tailwind-merge": "^3.4.0"
+    "tailwind-merge": "^3.4.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

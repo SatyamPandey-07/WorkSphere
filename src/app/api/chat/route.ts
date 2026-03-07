@@ -235,13 +235,105 @@ async function dataAgent(
 }
 
 // ============================================================
+// DB ENRICHMENT — joins Prisma VenueRating data onto OSM venues
+// ============================================================
+
+interface RawVenue {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  category: string;
+  address: string | null;
+  wifi: boolean;
+  hasOutlets: boolean;
+  noiseLevel: string;
+  rating: number | null;
+  wifiQuality: number | null;
+  openingHours: string | null;
+}
+
+async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]> {
+  if (venues.length === 0) return venues;
+
+  try {
+    // Look up any stored ratings by placeId (OSM id stored as placeId)
+    const placeIds = venues.map((v) => v.id);
+    const dbVenues = await prisma.venue.findMany({
+      where: { placeId: { in: placeIds } },
+      include: { ratings: true },
+    });
+
+    // Build a lookup map: placeId → aggregated crowdsourced data
+    const dbMap = new Map<
+      string,
+      { avgWifi: number | null; outletPct: number; noiseMode: string | null }
+    >();
+
+    for (const dbV of dbVenues) {
+      const ratings = dbV.ratings;
+      if (ratings.length === 0) {
+        // No user ratings — use the stored venue-level values if present
+        dbMap.set(dbV.placeId, {
+          avgWifi: dbV.wifiQuality ? dbV.wifiQuality * 2 : null, // convert 1-5 → 2-10
+          outletPct: dbV.hasOutlets ? 100 : 0,
+          noiseMode: dbV.noiseLevel ?? null,
+        });
+      } else {
+        // Aggregate user ratings
+        const avgWifi =
+          ratings.reduce((sum, r) => sum + r.wifiQuality, 0) / ratings.length;
+        const outletPct =
+          (ratings.filter((r) => r.hasOutlets).length / ratings.length) * 100;
+
+        // Mode of noiseLevel
+        const noiseCounts: Record<string, number> = {};
+        for (const r of ratings) {
+          noiseCounts[r.noiseLevel] = (noiseCounts[r.noiseLevel] || 0) + 1;
+        }
+        const noiseMode = Object.entries(noiseCounts).reduce(
+          (best, [level, count]) =>
+            count > (noiseCounts[best] ?? 0) ? level : best,
+          "moderate"
+        );
+
+        dbMap.set(dbV.placeId, {
+          avgWifi: (avgWifi / 5) * 10, // convert 1-5 scale → 0-10
+          outletPct,
+          noiseMode,
+        });
+      }
+    }
+
+    // Merge DB data back onto OSM venues
+    return venues.map((venue) => {
+      const db = dbMap.get(venue.id);
+      if (!db) return venue; // No DB record → keep OSM data as-is
+
+      return {
+        ...venue,
+        // Override wifi only if we have richer information
+        wifi: venue.wifi || (db.avgWifi !== null && db.avgWifi >= 5),
+        hasOutlets: db.outletPct >= 50,
+        noiseLevel: db.noiseMode ?? venue.noiseLevel,
+        wifiQuality: db.avgWifi,
+      };
+    });
+  } catch (err) {
+    console.error("[Enrichment] DB lookup failed, using OSM-only data:", err);
+    return venues;
+  }
+}
+
+// ============================================================
 // AGENT 4: REASONING - Scores and ranks venues
+// Uses enriched DB data (wifiQuality 0-10, outletPct, noiseMode)
 // ============================================================
 function reasoningAgent(
-  venues: any[],
+  venues: RawVenue[],
   preferences: { workType?: string; amenities?: string[] }
 ): {
-  rankedVenues: any[];
+  rankedVenues: Array<RawVenue & { score: number; scoreBreakdown: Record<string, number> }>;
   summary: string;
   reasoning: string;
 } {
@@ -257,13 +349,28 @@ function reasoningAgent(
   const w = weights[workType] || weights.focus;
 
   const scoredVenues = venues.map((venue) => {
-    const wifiScore = venue.wifi ? 8 : 4;
-    const noiseScore = venue.noiseLevel === "quiet" ? 9 : venue.noiseLevel === "moderate" ? 6 : 3;
-    const outletsScore = venue.hasOutlets ? 8 : 4;
-    const ratingScore = venue.rating ? venue.rating * 2 : 5;
+    // WiFi: use crowdsourced wifiQuality (0-10) if available, else boolean tag
+    const wifiScore =
+      venue.wifiQuality != null
+        ? Math.min(10, venue.wifiQuality)   // crowdsourced 0-10
+        : venue.wifi
+          ? 7                                  // OSM wlan tag present
+          : 3;                                 // unknown
 
+    // Noise: crowdsourced mode from DB, or OSM tag
+    const noiseScore =
+      venue.noiseLevel === "quiet" ? 9 :
+        venue.noiseLevel === "moderate" ? 6 : 3;
+
+    // Outlets: crowdsourced boolean (outletPct >= 50%) or OSM
+    const outletsScore = venue.hasOutlets ? 8 : 4;
+
+    // Rating: from OSM/DB avg
+    const ratingScore = venue.rating != null ? Math.min(10, venue.rating * 2) : 5;
+
+    // Extra bonus for explicitly-requested features
     let amenityBonus = 0;
-    if (amenities.includes("wifi") && venue.wifi) amenityBonus += 1;
+    if (amenities.includes("wifi") && wifiScore >= 6) amenityBonus += 1;
     if (amenities.includes("quiet") && venue.noiseLevel === "quiet") amenityBonus += 1;
     if (amenities.includes("outlets") && venue.hasOutlets) amenityBonus += 1;
 
@@ -276,7 +383,7 @@ function reasoningAgent(
 
     return {
       ...venue,
-      score: Math.round(totalScore * 10) / 10,
+      score: Math.min(10, Math.round(totalScore * 10) / 10),
       scoreBreakdown: { wifi: wifiScore, noise: noiseScore, outlets: outletsScore, rating: ratingScore },
     };
   });
@@ -291,7 +398,7 @@ function reasoningAgent(
   return {
     rankedVenues: scoredVenues,
     summary,
-    reasoning: `Scored ${scoredVenues.length} venues using ${workType} weights. WiFi: ${Math.round(w.wifi * 100)}%, Noise: ${Math.round(w.noise * 100)}%, Outlets: ${Math.round(w.outlets * 100)}%`,
+    reasoning: `Scored ${scoredVenues.length} venues using "${workType}" weights (WiFi ${Math.round(w.wifi * 100)}%, Noise ${Math.round(w.noise * 100)}%, Outlets ${Math.round(w.outlets * 100)}%). DB ratings applied where available.`,
   };
 }
 
@@ -306,7 +413,7 @@ async function actionAgent(
   mapUpdates: any;
   suggestions: string[];
 }> {
-  const venueList = rankedVenues.slice(0, 5).map((v, i) => 
+  const venueList = rankedVenues.slice(0, 5).map((v, i) =>
     `${i + 1}. **${v.name}** (${v.category}) - Score: ${v.score}/10${v.wifi ? " 📶" : ""}${v.hasOutlets ? " 🔌" : ""}`
   ).join("\n");
 
@@ -356,12 +463,12 @@ export async function POST(req: Request) {
     const { userId } = await auth();
     const forwarded = req.headers.get("x-forwarded-for");
     const identifier = userId || forwarded?.split(",")[0] || "anonymous";
-    
-    // Check rate limit (20 requests per minute for chat)
-    if (!rateLimit(identifier, 20)) {
+
+    // Rate limiting (now async)
+    if (!(await rateLimit(identifier, 20))) {
       const info = getRateLimitInfo(identifier);
       return Response.json(
-        { 
+        {
           error: "Rate limit exceeded. Please wait before sending more messages.",
           retryAfter: info?.resetTime ? Math.ceil((info.resetTime - Date.now()) / 1000) : 60
         },
@@ -370,17 +477,17 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    
+
     // Validate request with Zod
     const validation = validateRequest(chatRequestSchema, body);
     if (!validation.success) {
       console.error("Chat validation error:", validation.error);
       return Response.json({ error: validation.error }, { status: 400 });
     }
-    
+
     const { messages, location, conversationId } = validation.data;
     const { filters } = body; // filters is optional, not in schema
-    
+
     // Normalize location - use null if not valid
     const validLocation = location && typeof location.lat === 'number' && typeof location.lng === 'number' ? location : null;
 
@@ -432,7 +539,7 @@ export async function POST(req: Request) {
     const dataResult = await dataAgent(contextResult.parameters, filters);
     agentSteps.push({
       agent: "Data",
-      result: { 
+      result: {
         venueCount: dataResult.venues.length,
         meta: dataResult.meta,
         reasoning: dataResult.reasoning,
@@ -440,9 +547,13 @@ export async function POST(req: Request) {
       timestamp: Date.now(),
     });
 
+    // ====== STEP 3b: DB ENRICHMENT ======
+    console.log("Enriching venues with DB ratings...");
+    const enrichedVenues = await enrichVenuesWithDBRatings(dataResult.venues as RawVenue[]);
+
     // ====== STEP 4: REASONING AGENT ======
     console.log("Running Reasoning Agent...");
-    const reasoningResult = reasoningAgent(dataResult.venues, {
+    const reasoningResult = reasoningAgent(enrichedVenues, {
       workType: contextResult.parameters.workType,
       amenities: contextResult.parameters.amenities,
     });

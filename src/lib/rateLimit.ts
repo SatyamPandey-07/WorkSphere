@@ -1,68 +1,89 @@
 /**
- * Rate Limiting Utility
- * 
- * Uses an in-memory LRU-like cache to track request counts per IP.
- * For production, consider using Redis for distributed rate limiting.
+ * Rate Limiting — Upstash Redis (distributed) with in-memory fallback
+ *
+ * Production: Set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN in env
+ * Development: Falls back to an in-memory sliding window automatically
  */
 
-interface RateLimitEntry {
+// ─── Upstash (production) ────────────────────────────────────────────────────
+let upstashRatelimit: {
+  limit: (identifier: string) => Promise<{ success: boolean; remaining: number; reset: number }>;
+} | null = null;
+
+function getUpstashRatelimit(limitPerMinute: number) {
+  if (
+    !process.env.UPSTASH_REDIS_REST_URL ||
+    !process.env.UPSTASH_REDIS_REST_TOKEN
+  ) {
+    return null;
+  }
+
+  try {
+    // Dynamic require so the build doesn't fail if packages aren't present yet
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Ratelimit } = require("@upstash/ratelimit");
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Redis } = require("@upstash/redis");
+
+    const redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    });
+
+    return new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(limitPerMinute, "1 m"),
+      analytics: true,
+      prefix: "worksphere:ratelimit",
+    }) as {
+      limit: (
+        identifier: string
+      ) => Promise<{ success: boolean; remaining: number; reset: number }>;
+    };
+  } catch {
+    return null;
+  }
+}
+
+// ─── In-memory fallback (development / no Redis) ─────────────────────────────
+interface MemEntry {
   count: number;
   resetTime: number;
 }
+const memStore = new Map<string, MemEntry>();
+const WINDOW_MS = 60_000;
 
-const rateLimitStore = new Map<string, RateLimitEntry>();
-const WINDOW_MS = 60 * 1000; // 1 minute window
-const DEFAULT_LIMIT = 10; // 10 requests per minute
-
-/**
- * Check if a request should be rate limited
- * @param identifier - Usually the IP address or user ID
- * @param limit - Maximum requests per window (default: 10)
- * @returns true if request is allowed, false if rate limited
- */
-export function rateLimit(identifier: string, limit: number = DEFAULT_LIMIT): boolean {
+function memRateLimit(identifier: string, limit: number): boolean {
   const now = Date.now();
-  const entry = rateLimitStore.get(identifier);
 
-  // Clean up expired entries periodically
-  if (rateLimitStore.size > 10000) {
-    cleanupExpiredEntries();
+  // Periodic cleanup — keep memory from growing unbounded
+  if (memStore.size > 10_000) {
+    for (const [k, v] of memStore) {
+      if (now > v.resetTime) memStore.delete(k);
+    }
   }
 
+  const entry = memStore.get(identifier);
+
   if (!entry || now > entry.resetTime) {
-    // First request or window expired - create new entry
-    rateLimitStore.set(identifier, {
-      count: 1,
-      resetTime: now + WINDOW_MS,
-    });
+    memStore.set(identifier, { count: 1, resetTime: now + WINDOW_MS });
     return true;
   }
 
-  if (entry.count >= limit) {
-    // Rate limit exceeded
-    return false;
-  }
+  if (entry.count >= limit) return false;
 
-  // Increment count
   entry.count++;
   return true;
 }
 
-/**
- * Get rate limit info for an identifier
- */
-export function getRateLimitInfo(identifier: string, limit: number = DEFAULT_LIMIT): { count: number; remaining: number; resetTime: number; isLimited: boolean } | null {
-  const entry = rateLimitStore.get(identifier);
-  
+function memGetInfo(
+  identifier: string,
+  limit: number
+): { count: number; remaining: number; resetTime: number; isLimited: boolean } {
+  const entry = memStore.get(identifier);
   if (!entry || Date.now() > entry.resetTime) {
-    return {
-      count: 0,
-      remaining: limit,
-      resetTime: Date.now() + WINDOW_MS,
-      isLimited: false,
-    };
+    return { count: 0, remaining: limit, resetTime: Date.now() + WINDOW_MS, isLimited: false };
   }
-  
   return {
     count: entry.count,
     remaining: Math.max(0, limit - entry.count),
@@ -71,104 +92,43 @@ export function getRateLimitInfo(identifier: string, limit: number = DEFAULT_LIM
   };
 }
 
+// ─── Public API ───────────────────────────────────────────────────────────────
+
 /**
- * Get remaining requests for an identifier
+ * Returns true if the request should be allowed, false if rate-limited.
+ * Prefers Upstash Redis; falls back to in-memory when env vars are absent.
  */
-export function getRemainingRequests(identifier: string, limit: number = DEFAULT_LIMIT): number {
-  const entry = rateLimitStore.get(identifier);
-  
-  if (!entry || Date.now() > entry.resetTime) {
-    return limit;
+export async function rateLimit(
+  identifier: string,
+  limit = 10
+): Promise<boolean> {
+  const rl = upstashRatelimit ?? getUpstashRatelimit(limit);
+
+  if (rl) {
+    upstashRatelimit = rl; // cache for subsequent calls
+    const { success } = await rl.limit(identifier);
+    return success;
   }
-  
-  return Math.max(0, limit - entry.count);
+
+  return memRateLimit(identifier, limit);
 }
 
 /**
- * Get time until rate limit resets (in seconds)
+ * Returns rate-limit metadata for the given identifier.
+ * Falls back to in-memory data when Upstash is not configured.
  */
-export function getResetTime(identifier: string): number {
-  const entry = rateLimitStore.get(identifier);
-  
-  if (!entry || Date.now() > entry.resetTime) {
-    return 0;
-  }
-  
-  return Math.ceil((entry.resetTime - Date.now()) / 1000);
+export function getRateLimitInfo(
+  identifier: string,
+  limit = 10
+): { count: number; remaining: number; resetTime: number; isLimited: boolean } | null {
+  return memGetInfo(identifier, limit);
 }
 
-/**
- * Reset rate limit for an identifier (for testing)
- */
+/** Reset in-memory rate limit (useful in tests). */
 export function resetRateLimit(identifier?: string): void {
   if (identifier) {
-    rateLimitStore.delete(identifier);
+    memStore.delete(identifier);
   } else {
-    rateLimitStore.clear();
+    memStore.clear();
   }
-}
-
-/**
- * Clean up expired entries to prevent memory leaks
- */
-function cleanupExpiredEntries(): void {
-  const now = Date.now();
-  for (const [key, entry] of rateLimitStore.entries()) {
-    if (now > entry.resetTime) {
-      rateLimitStore.delete(key);
-    }
-  }
-}
-
-/**
- * Rate limit middleware for API routes
- */
-export function withRateLimit(
-  handler: (req: Request) => Promise<Response>,
-  options: { limit?: number; identifier?: (req: Request) => string } = {}
-) {
-  return async (req: Request): Promise<Response> => {
-    const { limit = DEFAULT_LIMIT, identifier } = options;
-    
-    // Get identifier (IP address or custom)
-    const id = identifier 
-      ? identifier(req) 
-      : req.headers.get('x-forwarded-for')?.split(',')[0] || 
-        req.headers.get('x-real-ip') || 
-        'anonymous';
-    
-    if (!rateLimit(id, limit)) {
-      const resetTime = getResetTime(id);
-      return new Response(
-        JSON.stringify({ 
-          error: 'Too many requests', 
-          retryAfter: resetTime 
-        }),
-        { 
-          status: 429,
-          headers: {
-            'Content-Type': 'application/json',
-            'Retry-After': String(resetTime),
-            'X-RateLimit-Limit': String(limit),
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': String(resetTime),
-          },
-        }
-      );
-    }
-    
-    const response = await handler(req);
-    
-    // Add rate limit headers to response
-    const remaining = getRemainingRequests(id, limit);
-    const headers = new Headers(response.headers);
-    headers.set('X-RateLimit-Limit', String(limit));
-    headers.set('X-RateLimit-Remaining', String(remaining));
-    
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
-  };
 }

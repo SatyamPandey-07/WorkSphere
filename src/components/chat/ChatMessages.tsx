@@ -78,6 +78,7 @@ interface VenueChatCardProps {
     onToggleFavorite: (venue: Venue) => void;
     onRate: (venue: Venue) => void;
     onOpenDetails: (venue: Venue) => void;
+    onBook: (venue: Venue) => void;
 }
 
 export function VenueChatCard({
@@ -87,6 +88,7 @@ export function VenueChatCard({
     onToggleFavorite,
     onRate,
     onOpenDetails,
+    onBook,
 }: VenueChatCardProps) {
     const [photoUrl, setPhotoUrl] = useState<string | null>(null);
     const [photoLoading, setPhotoLoading] = useState(true);
@@ -209,17 +211,29 @@ export function VenueChatCard({
 
                         {/* Action buttons */}
                         <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                            <button
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    trackVenueInteraction("viewed", { id: venue.id, name: venue.name, category: venue.category });
-                                    onOpenDetails(venue);
-                                }}
-                                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs shadow-lg uppercase tracking-widest active:scale-[0.98]"
-                            >
-                                <Info className="w-4 h-4" />
-                                View Full Details
-                            </button>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        trackVenueInteraction("viewed", { id: venue.id, name: venue.name, category: venue.category });
+                                        onOpenDetails(venue);
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-950 hover:bg-zinc-800 transition-all font-black text-xs shadow-lg uppercase tracking-tight active:scale-[0.98]"
+                                >
+                                    <Info className="w-3.5 h-3.5" />
+                                    Details
+                                </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onBook(venue);
+                                    }}
+                                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs shadow-lg uppercase tracking-tight active:scale-[0.98]"
+                                >
+                                    <Zap className="w-3.5 h-3.5 fill-current" />
+                                    Book Now
+                                </button>
+                            </div>
 
                             <div className="flex items-center gap-1.5">
                                 <button
@@ -277,6 +291,7 @@ interface MessageListProps {
     onToggleFavorite: (venue: Venue) => void;
     onRateVenue: (venue: Venue) => void;
     onOpenDetails: (venue: Venue) => void;
+    onBook: (venue: Venue) => void;
     onSuggestionClick: (s: string) => void;
     initialSuggestions: string[];
 }
@@ -293,6 +308,7 @@ export function MessageList({
     onToggleFavorite,
     onRateVenue,
     onOpenDetails,
+    onBook,
     onSuggestionClick,
     initialSuggestions,
 }: MessageListProps) {
@@ -380,8 +396,9 @@ export function MessageList({
                                     isFavorited={favorites.has(venue.id)}
                                     onGetDirections={onGetDirections}
                                     onToggleFavorite={onToggleFavorite}
-                                    onRate={onRateVenue}
+                                    onRate={(v) => onRateVenue(v)}
                                     onOpenDetails={onOpenDetails}
+                                    onBook={onBook}
                                 />
                             ))}
                         </div>

@@ -15,6 +15,7 @@ model User {
   favorites     Favorite[]
   ratings       VenueRating[]
   conversations Conversation[]
+  bookings      Booking[]
 }
 
 model Venue {
@@ -36,6 +37,7 @@ model Venue {
   updatedAt      DateTime      @updatedAt
   ratings        VenueRating[]
   favorites      Favorite[]
+  bookings       Booking[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -91,4 +93,21 @@ model Message {
   createdAt      DateTime     @default(now())
 
   @@index([conversationId])
+}
+
+model Booking {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  venueId        String
+  venue          Venue    @relation(fields: [venueId], references: [id])
+  date           String
+  time           String
+  customerEmail  String
+  customerPhone  String?
+  confirmationId String   @unique
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([venueId])
 }

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { VenueRatingDialog } from "./VenueRatingDialog";
 import { VenueSubmissionModal } from "./VenueSubmissionModal";
+import { BookingModal } from "./chat/BookingModal";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ChatInput, MessageList, Venue, Message } from "./chat/ChatMessages";
 import {
@@ -35,11 +36,19 @@ interface MapUpdate {
     to: { lat: number; lng: number };
     venueName?: string;
   };
+  data?: {
+    center?: { lat: number; lng: number };
+    zoom?: number;
+    animate?: boolean;
+    markers?: any[];
+    routes?: any[];
+  };
 }
 
 interface EnhancedChatbotProps {
   onMapUpdate?: (update: MapUpdate) => void;
   onOpenDetails: (venue: Venue) => void;
+  onBook: (venue: Venue) => void;
   userLocation?: { lat: number; lng: number };
 }
 
@@ -72,7 +81,7 @@ const INITIAL_SUGGESTIONS = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function EnhancedChatbot({ onMapUpdate, onOpenDetails, userLocation }: EnhancedChatbotProps) {
+export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation }: EnhancedChatbotProps) {
   const { isSignedIn } = useUser();
 
   // Core state
@@ -88,6 +97,8 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, userLocation }: En
   const [showFilters, setShowFilters] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
+  const [bookingVenue, setBookingVenue] = useState<Venue | null>(null);
+  const [bookingMode, setBookingMode] = useState<"booking" | "history">("booking");
   const [showVenueSubmission, setShowVenueSubmission] = useState(false);
 
   // Conversations & favorites
@@ -106,11 +117,18 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, userLocation }: En
   const getPreciseLocation = useCallback(() => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (pos) => {
+          const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          setLocation(newLoc);
+          onMapUpdate?.({
+            type: "SET_MAP_VIEW",
+            data: { center: newLoc, zoom: 14, animate: true }
+          });
+        },
         () => setLocation({ lat: 37.7749, lng: -122.4194 })
       );
     }
-  }, []);
+  }, [onMapUpdate]);
 
   useEffect(() => {
     if (!location) {
@@ -120,10 +138,14 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, userLocation }: En
 
   const handleLocationChange = (lat: number, lng: number) => {
     if (lat === 0 && lng === 0) {
-      // Reset to precise location
       getPreciseLocation();
     } else {
-      setLocation({ lat, lng });
+      const newLoc = { lat, lng };
+      setLocation(newLoc);
+      onMapUpdate?.({
+        type: "SET_MAP_VIEW",
+        data: { center: newLoc, zoom: 14, animate: true }
+      });
     }
   };
 
@@ -455,6 +477,10 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, userLocation }: En
         conversations={conversations}
         onLoadConversation={loadConversation}
         onDeleteConversation={deleteConversation}
+        onShowBookings={() => {
+          setBookingMode("history");
+          setBookingVenue(null);
+        }}
       />
 
       <MessageList
@@ -469,6 +495,11 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, userLocation }: En
         onToggleFavorite={handleToggleFavorite}
         onRateVenue={(venue) => setRatingVenue(venue)}
         onOpenDetails={onOpenDetails}
+        onBook={(v) => {
+          setBookingVenue(v);
+          setBookingMode("booking");
+          onBook(v);
+        }}
         onSuggestionClick={handleSuggestionClick}
         initialSuggestions={INITIAL_SUGGESTIONS}
       />
@@ -481,15 +512,23 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, userLocation }: En
       />
 
       {/* Dialogs */}
-      {ratingVenue && (
-        <VenueRatingDialog
-          isOpen={!!ratingVenue}
-          onClose={() => setRatingVenue(null)}
-          venueName={ratingVenue.name}
-          venueId={ratingVenue.id}
-          onSubmit={handleSubmitRating}
-        />
-      )}
+      <VenueRatingDialog
+        isOpen={!!ratingVenue}
+        venueId={ratingVenue?.id || ""}
+        venueName={ratingVenue?.name || ""}
+        onClose={() => setRatingVenue(null)}
+        onSubmit={() => { /* Handle rating */ }}
+      />
+
+      <BookingModal
+        isOpen={!!bookingVenue || bookingMode === "history"}
+        venue={bookingVenue}
+        mode={bookingMode}
+        onClose={() => {
+          setBookingVenue(null);
+          setBookingMode("booking");
+        }}
+      />
 
       <VenueSubmissionModal
         isOpen={showVenueSubmission}

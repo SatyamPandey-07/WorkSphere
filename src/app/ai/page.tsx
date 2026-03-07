@@ -433,6 +433,9 @@ export default function AppPage() {
                   score: v.score
                 });
               }}
+              onBook={(v) => {
+                console.log("[Booking] Initiated for:", v.name);
+              }}
               userLocation={
                 location ? { lat: location.latitude, lng: location.longitude } : undefined
               }

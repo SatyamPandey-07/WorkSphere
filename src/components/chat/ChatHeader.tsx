@@ -20,7 +20,8 @@ import {
     Wifi,
     Zap as Outlets,
     Volume2,
-    BarChart3
+    BarChart3,
+    Inbox
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
@@ -46,6 +47,7 @@ interface ChatHeaderProps {
     conversations: Conversation[];
     onLoadConversation: (id: string) => void;
     onDeleteConversation: (id: string) => void;
+    onShowBookings: () => void;
 }
 
 const GLOBAL_HUBS = [
@@ -68,7 +70,8 @@ export function ChatHeader({
     onNewChat,
     conversations,
     onLoadConversation,
-    onDeleteConversation
+    onDeleteConversation,
+    onShowBookings
 }: ChatHeaderProps) {
     const [isHubOpen, setIsHubOpen] = useState(false);
 
@@ -145,6 +148,15 @@ export function ChatHeader({
                         title="New Chat"
                     >
                         <RotateCcw className="w-4 h-4" />
+                    </button>
+
+                    {/* My Bookings History */}
+                    <button
+                        onClick={onShowBookings}
+                        className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
+                        title="My Residencies"
+                    >
+                        <Inbox className="w-4 h-4" />
                     </button>
 
                     {/* History */}

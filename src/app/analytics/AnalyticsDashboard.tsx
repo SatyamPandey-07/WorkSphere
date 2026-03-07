@@ -2,52 +2,52 @@
 
 import { useEffect, useState } from "react";
 import {
-    BarChart3,
     Users,
     MapPin,
-    MessageSquare,
     Star,
     Heart,
-    Activity,
     Zap,
-    Search,
     Clock,
     ArrowUpRight,
     ShieldCheck,
-    Cpu,
     RefreshCw,
-    Box
+    Calendar,
+    ArrowLeft,
+    Download,
+    Mail,
+    User as UserIcon,
+    History
 } from "lucide-react";
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 
-interface AnalyticsData {
+interface UserAnalytics {
+    profile: {
+        id: string;
+        email: string;
+        firstName: string;
+        lastName: string;
+        joinedAt: string;
+    };
     summary: {
-        totalEvents: number;
-        totalVenues: number;
-        totalUsers: number;
-        totalRatings: number;
+        totalResidencies: number;
         totalFavorites: number;
+        totalRatings: number;
         totalConversations: number;
     };
-    events: {
-        counts: Record<string, number>;
-        recent: any[];
+    history: {
+        bookings: any[];
+        favorites: any[];
+        ratings: any[];
     };
-    categories: Array<{ name: string; count: number }>;
-    agents: Array<{
-        agent: string;
-        avgDuration: number;
-        successRate: number;
-        totalCalls: number;
-    }>;
-    searches: Array<{ query: string; count: number }>;
 }
 
 export default function AnalyticsDashboard() {
-    const [data, setData] = useState<AnalyticsData | null>(null);
+    const { user: clerkUser } = useUser();
+    const [data, setData] = useState<UserAnalytics | null>(null);
     const [loading, setLoading] = useState(true);
 
-    const fetchStats = async () => {
+    const fetchUserStats = async () => {
         setLoading(true);
         try {
             const res = await fetch("/api/analytics");
@@ -61,234 +61,213 @@ export default function AnalyticsDashboard() {
     };
 
     useEffect(() => {
-        fetchStats();
-        const interval = setInterval(fetchStats, 30000); // Auto refresh
-        return () => clearInterval(interval);
+        fetchUserStats();
     }, []);
 
     if (loading && !data) {
         return (
             <div className="min-h-screen bg-white dark:bg-zinc-950 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
-                    <RefreshCw className="w-8 h-8 text-blue-600 animate-spin" />
-                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Syncing Neural Data...</p>
+                    <RefreshCw className="w-12 h-12 text-blue-600 animate-spin" />
+                    <div className="text-center">
+                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500">Decrypting Neural Identity...</p>
+                        <p className="text-[8px] font-bold text-zinc-400 mt-2 uppercase tracking-widest animate-pulse">Syncing Cloud Ledger</p>
+                    </div>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 p-6 font-sans">
-            <div className="max-w-7xl mx-auto space-y-8">
+        <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans selection:bg-blue-500 selection:text-white">
+            <div className="max-w-7xl mx-auto p-6 md:p-12 space-y-12">
 
-                {/* Header Section */}
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-                    <div>
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded shadow-lg shadow-blue-500/20">
-                                L3 SPRINT
-                            </span>
-                            <span className="flex items-center gap-1 text-[10px] font-black text-zinc-400 uppercase tracking-widest">
-                                <ShieldCheck className="w-3 h-3 text-green-500" />
-                                Live Telemetry
-                            </span>
+                {/* Navigation & User Header */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
+                    <div className="space-y-4">
+                        <Link
+                            href="/ai"
+                            className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 hover:text-blue-600 transition-colors group"
+                        >
+                            <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-1 transition-transform" />
+                            Back to Core Hub
+                        </Link>
+                        <div className="flex items-center gap-4">
+                            <div className="w-20 h-20 rounded-[2rem] bg-gradient-to-br from-blue-600 to-indigo-700 p-0.5 shadow-2xl shadow-blue-500/20">
+                                <div className="w-full h-full rounded-[1.9rem] bg-white dark:bg-zinc-900 flex items-center justify-center overflow-hidden">
+                                    {clerkUser?.imageUrl ? (
+                                        <img src={clerkUser.imageUrl} alt="Profile" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <UserIcon className="w-8 h-8 text-zinc-400" />
+                                    )}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="px-2 py-0.5 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 text-[8px] font-black uppercase tracking-[0.2em] rounded">
+                                        VERIFIED MEMBER
+                                    </span>
+                                    <span className="flex items-center gap-1 text-[8px] font-black text-blue-500 uppercase tracking-widest">
+                                        <ShieldCheck className="w-3 h-3" />
+                                        Neural Link Active
+                                    </span>
+                                </div>
+                                <h1 className="text-4xl font-black uppercase tracking-tighter leading-none">
+                                    {data?.profile.firstName || 'Neural'} <span className="text-blue-600">{data?.profile.lastName || 'Profile'}</span>
+                                </h1>
+                                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mt-2 flex items-center gap-2">
+                                    <Mail className="w-3 h-3" /> {data?.profile.email}
+                                </p>
+                            </div>
                         </div>
-                        <h1 className="text-5xl font-black uppercase tracking-tighter leading-none">
-                            Intelligence <span className="text-blue-600">Dashboard</span>
-                        </h1>
-                        <p className="text-zinc-500 font-bold text-xs uppercase tracking-widest mt-2 ml-1">
-                            Real-time workspace node performance and user engagement metrics.
-                        </p>
                     </div>
 
                     <div className="flex items-center gap-3">
                         <button
-                            onClick={fetchStats}
-                            className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl hover:bg-zinc-100 transition-all active:scale-95 shadow-sm"
+                            onClick={fetchUserStats}
+                            className="p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl hover:bg-zinc-50 transition-all active:scale-95 shadow-sm"
                         >
                             <RefreshCw className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
                         </button>
-                        <Link
-                            href="/ai"
-                            className="px-6 py-3 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 !rounded-xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-2 hover:scale-[1.02] transition-all"
-                        >
-                            Back to Core
-                            <ArrowUpRight className="w-4 h-4" />
-                        </Link>
+                        <div className="h-10 w-px bg-zinc-200 dark:bg-zinc-800 mx-2" />
+                        <div className="text-right hidden lg:block">
+                            <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest leading-none mb-1">Total Residencies</p>
+                            <p className="text-2xl font-black text-zinc-900 dark:text-zinc-50 leading-none">{data?.summary.totalResidencies || 0}</p>
+                        </div>
                     </div>
                 </div>
 
-                {/* Global Stats Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                {/* Summary Grid */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                     {[
-                        { label: "Active Nodes", value: data?.summary.totalVenues, icon: MapPin, color: "text-blue-500", bg: "bg-blue-500/10" },
-                        { label: "Neural Signals", value: data?.summary.totalEvents, icon: Activity, color: "text-green-500", bg: "bg-green-500/10" },
-                        { label: "Active Agents", value: data?.agents.length, icon: Cpu, color: "text-purple-500", bg: "bg-purple-500/10" },
-                        { label: "Signal Density", value: data?.summary.totalRatings, icon: Star, color: "text-orange-500", bg: "bg-orange-500/10" },
-                        { label: "Node Saves", value: data?.summary.totalFavorites, icon: Heart, color: "text-red-500", bg: "bg-red-500/10" },
-                        { label: "Total Minds", value: data?.summary.totalUsers, icon: Users, color: "text-cyan-500", bg: "bg-cyan-500/10" },
+                        { label: "Bookings", value: data?.summary.totalResidencies, icon: Calendar, color: "text-blue-500", bg: "bg-blue-500/10" },
+                        { label: "Favorites", value: data?.summary.totalFavorites, icon: Heart, color: "text-red-500", bg: "bg-red-500/10" },
+                        { label: "Ratings", value: data?.summary.totalRatings, icon: Star, color: "text-orange-500", bg: "bg-orange-500/10" },
+                        { label: "Sessions", value: data?.summary.totalConversations, icon: History, color: "text-purple-500", bg: "bg-purple-500/10" },
                     ].map((stat, i) => (
-                        <div key={i} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm group hover:border-blue-500/30 transition-all">
-                            <div className={`p-2 w-max rounded-lg ${stat.bg} mb-4 group-hover:scale-110 transition-transform`}>
-                                <stat.icon className={`w-5 h-5 ${stat.color}`} />
+                        <div key={i} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-[2.5rem] shadow-sm group hover:border-blue-500/30 transition-all hover:shadow-2xl hover:shadow-blue-500/5">
+                            <div className={`p-4 w-max rounded-2xl ${stat.bg} mb-6 group-hover:scale-110 transition-transform`}>
+                                <stat.icon className={`w-8 h-8 ${stat.color}`} />
                             </div>
                             <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1">{stat.label}</div>
-                            <div className="text-2xl font-black leading-none">{stat.value?.toLocaleString()}</div>
+                            <div className="text-4xl font-black leading-none">{stat.value || 0}</div>
                         </div>
                     ))}
                 </div>
 
-                {/* Intelligence Breakdown */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Dual Column Layout: History & Profile */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
 
-                    {/* 1. Agent Performance (High Fidelity Table) */}
-                    <div className="lg:col-span-2 space-y-4">
-                        <h2 className="text-lg font-black uppercase tracking-tighter flex items-center gap-2">
-                            <Zap className="w-5 h-5 text-blue-600" />
-                            Agent Core Performance
-                        </h2>
-                        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden shadow-sm">
-                            <table className="w-full text-left border-collapse">
-                                <thead className="bg-zinc-50 dark:bg-zinc-800/50">
-                                    <tr>
-                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Agent Class</th>
-                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Avg Latency</th>
-                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Success Rate</th>
-                                        <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-400">Throughput</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                    {data?.agents.map((agent, i) => (
-                                        <tr key={i} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="w-8 h-8 rounded-lg bg-blue-600/10 flex items-center justify-center">
-                                                        <Cpu className="w-4 h-4 text-blue-600" />
-                                                    </div>
-                                                    <span className="font-black text-xs uppercase tracking-tight">{agent.agent}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 font-mono text-xs font-bold text-blue-500">{agent.avgDuration}ms</td>
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="flex-1 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                                                        <div
-                                                            className="h-full bg-green-500 rounded-full"
-                                                            style={{ width: `${agent.successRate}%` }}
-                                                        />
-                                                    </div>
-                                                    <span className="text-[10px] font-black">{agent.successRate}%</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 text-zinc-500 font-bold text-xs">{agent.totalCalls} Calls</td>
-                                        </tr>
-                                    ))}
-                                    {(!data?.agents || data.agents.length === 0) && (
-                                        <tr>
-                                            <td colSpan={4} className="px-6 py-12 text-center text-zinc-400 font-bold uppercase text-[10px] tracking-widest">
-                                                Awaiting Agent Telemetry...
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
+                    {/* Recent Bookings (Main Column) */}
+                    <div className="lg:col-span-2 space-y-6">
+                        <div className="flex items-center justify-between">
+                            <h2 className="text-2xl font-black uppercase tracking-tighter flex items-center gap-3">
+                                <History className="w-6 h-6 text-blue-600" />
+                                Residency Ledger
+                            </h2>
+                            <button className="text-[9px] font-black uppercase tracking-widest text-blue-600 hover:bg-blue-600 hover:text-white px-3 py-1 rounded transition-colors">
+                                View Full Chain
+                            </button>
                         </div>
 
-                        {/* Recent Signal Flow (Visual List) */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-                            {/* Categories */}
-                            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6">
-                                <h3 className="text-xs font-black uppercase tracking-widest text-zinc-400 mb-6 flex items-center gap-2">
-                                    <Box className="w-4 h-4 text-purple-500" />
-                                    Node Distribution
-                                </h3>
-                                <div className="space-y-4">
-                                    {data?.categories.map((cat, i) => (
-                                        <div key={i} className="space-y-2">
-                                            <div className="flex justify-between items-end">
-                                                <span className="text-[10px] font-black uppercase tracking-widest">{cat.name.replace('_', ' ')}</span>
-                                                <span className="text-xl font-black leading-none">{cat.count}</span>
-                                            </div>
-                                            <div className="h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full bg-gradient-to-r from-blue-600 to-purple-600"
-                                                    style={{ width: `${(cat.count / (data?.summary.totalVenues || 1)) * 100}%` }}
-                                                />
-                                            </div>
+                        <div className="grid gap-4">
+                            {data?.history.bookings.map((booking, i) => (
+                                <div
+                                    key={i}
+                                    className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] p-6 flex flex-col md:flex-row md:items-center justify-between gap-6 hover:shadow-xl hover:shadow-zinc-900/5 transition-all group"
+                                >
+                                    <div className="flex items-center gap-5">
+                                        <div className="w-16 h-16 rounded-[1.25rem] bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center border border-zinc-100 dark:border-zinc-700">
+                                            <MapPin className="w-6 h-6 text-zinc-300 group-hover:text-blue-500 transition-colors" />
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
+                                        <div>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="text-[8px] font-black text-blue-600 bg-blue-600/10 px-2 py-0.5 rounded uppercase tracking-widest">
+                                                    {booking.venue.category}
+                                                </span>
+                                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                                                    {booking.confirmationId}
+                                                </span>
+                                            </div>
+                                            <h4 className="text-xl font-black uppercase tracking-tight leading-none mb-1">
+                                                {booking.venue.name}
+                                            </h4>
+                                            <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest truncate max-w-[200px]">
+                                                {booking.venue.address}
+                                            </p>
+                                        </div>
+                                    </div>
 
-                            {/* Popular Searches */}
-                            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6">
-                                <h3 className="text-xs font-black uppercase tracking-widest text-zinc-400 mb-6 flex items-center gap-2">
-                                    <Search className="w-4 h-4 text-orange-500" />
-                                    Neural Intent Patterns
-                                </h3>
-                                <div className="flex flex-wrap gap-2">
-                                    {data?.searches.map((s, i) => (
-                                        <div key={i} className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 rounded-lg flex items-center gap-2">
-                                            <span className="text-[10px] font-bold text-zinc-900 dark:text-zinc-50">{s.query}</span>
-                                            <span className="text-[9px] font-black text-blue-600 bg-blue-500/10 px-1 rounded">{s.count}</span>
+                                    <div className="flex items-center gap-6">
+                                        <div className="text-right">
+                                            <p className="text-sm font-black uppercase tracking-tight leading-none mb-1">{booking.date}</p>
+                                            <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{booking.time}</p>
                                         </div>
-                                    ))}
-                                    {(!data?.searches || data.searches.length === 0) && (
-                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest py-4">No patterns recorded</p>
-                                    )}
+                                        <button className="p-4 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-2xl hover:scale-110 transition-transform shadow-lg">
+                                            <Download className="w-5 h-5" />
+                                        </button>
+                                    </div>
                                 </div>
-                            </div>
+                            ))}
+                            {(!data?.history.bookings || data.history.bookings.length === 0) && (
+                                <div className="py-20 bg-white dark:bg-zinc-900/50 rounded-[2.5rem] border border-dashed border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center text-center px-12">
+                                    <Zap className="w-12 h-12 text-zinc-200 mb-4" />
+                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">No Signal History Recorded</p>
+                                    <p className="text-xs text-zinc-500 font-bold mt-2 leading-relaxed">Book a workspace node to begin populating your personal neural ledger.</p>
+                                </div>
+                            )}
                         </div>
                     </div>
 
-                    {/* Side Panel: Signals Activity */}
-                    <div className="space-y-6">
-                        <div className="bg-zinc-900 text-white rounded-3xl p-6 shadow-2xl relative overflow-hidden">
-                            <div className="absolute top-0 right-0 p-8 opacity-10">
-                                <Activity className="w-32 h-32" />
-                            </div>
-                            <h2 className="text-lg font-black uppercase tracking-tighter mb-6 relative">Recent Activity Log</h2>
-                            <div className="space-y-6 relative">
-                                {data?.events.recent.slice(0, 8).map((event: any, i: number) => (
-                                    <div key={i} className="flex gap-4">
-                                        <div className="flex flex-col items-center">
-                                            <div className="w-2 h-2 rounded-full bg-blue-500" />
-                                            <div className="w-px flex-1 bg-zinc-800 mt-2" />
+                    {/* Personal Nodes & Favorites (Side Panel) */}
+                    <div className="space-y-8">
+                        <div>
+                            <h2 className="text-xs font-black uppercase tracking-widest text-zinc-400 mb-6 flex items-center gap-2">
+                                <Heart className="w-4 h-4 text-red-500" />
+                                High-Signal Nodes
+                            </h2>
+                            <div className="space-y-3">
+                                {data?.history.favorites.map((fav, i) => (
+                                    <div key={i} className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-4 rounded-2xl flex items-center gap-3 hover:border-red-500/30 transition-all">
+                                        <div className="w-10 h-10 rounded-xl bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-300">
+                                            <Zap className="w-5 h-5" />
                                         </div>
-                                        <div className="pb-4">
-                                            <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest mb-1">
-                                                {new Date(event.timestamp).toLocaleTimeString()}
-                                            </div>
-                                            <div className="text-xs font-bold uppercase tracking-tight text-white mb-1">
-                                                {event.name.replace('_', ' ')}
-                                            </div>
-                                            <div className="text-[10px] text-zinc-400 font-medium">
-                                                {event.properties?.venueName || event.properties?.query || "Neural interaction logged"}
-                                            </div>
+                                        <div>
+                                            <h5 className="text-[11px] font-black uppercase tracking-tight truncate max-w-[140px]">{fav.venue.name}</h5>
+                                            <p className="text-[8px] font-black text-zinc-400 uppercase tracking-widest">{fav.venue.category}</p>
                                         </div>
+                                        <ArrowUpRight className="w-4 h-4 text-zinc-300 ml-auto" />
                                     </div>
                                 ))}
+                                {(!data?.history.favorites || data.history.favorites.length === 0) && (
+                                    <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest py-4 border-2 border-dashed border-zinc-100 dark:border-zinc-800 rounded-2xl text-center">No favorites logged</p>
+                                )}
                             </div>
                         </div>
 
-                        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center">
-                                    <Zap className="w-5 h-5 text-orange-500" />
+                        <div className="p-8 bg-zinc-900 dark:bg-blue-600 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-10 opacity-10 group-hover:scale-125 transition-transform duration-1000">
+                                <RefreshCw className="w-40 h-40" />
+                            </div>
+                            <h3 className="text-xl font-black uppercase tracking-tighter mb-4 relative">Neural Sync</h3>
+                            <p className="text-[10px] font-bold text-white/60 leading-relaxed relative uppercase tracking-widest">
+                                Your profile is synchronized with the global WorkSphere node network. Every interaction creates a permanent signal in your encrypted ledger.
+                            </p>
+                            <div className="mt-8 flex items-center gap-4 relative">
+                                <div className="text-center">
+                                    <p className="text-2xl font-black leading-none">{data?.summary.totalConversations || 0}</p>
+                                    <p className="text-[8px] font-black uppercase tracking-widest text-white/40">Sessions</p>
                                 </div>
-                                <div>
-                                    <div className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Signal Density</div>
-                                    <div className="text-lg font-black tracking-tight">{Math.round((data?.summary.totalRatings || 0) / (data?.summary.totalVenues || 1) * 100)}% Coverage</div>
+                                <div className="w-px h-8 bg-white/20" />
+                                <div className="text-center">
+                                    <p className="text-2xl font-black leading-none">{data?.summary.totalRatings || 0}</p>
+                                    <p className="text-[8px] font-black uppercase tracking-widest text-white/40">Feedback</p>
                                 </div>
                             </div>
-                            <p className="text-[10px] font-bold text-zinc-500 leading-relaxed">
-                                Neural signal density measures the ratio of verified feedback nodes per workspace entry. High density ensures workspace vibe accuracy.
-                            </p>
                         </div>
                     </div>
 
                 </div>
-
             </div>
         </div>
     );

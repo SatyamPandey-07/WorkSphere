@@ -29,6 +29,22 @@ export async function POST(req: Request) {
 
         const confirmationId = `WS-#${Math.floor(100000 + Math.random() * 900000)}`;
 
+        // 0.5 Ensure Venue exists in local ledger 💎
+        // Venues from search might not be in our DB yet
+        await prisma.venue.upsert({
+            where: { id: venue.id },
+            update: {},
+            create: {
+                id: venue.id,
+                placeId: venue.placeId || venue.id,
+                name: venue.name || "Unknown Venue",
+                latitude: venue.latitude || venue.lat || 0,
+                longitude: venue.longitude || venue.lng || 0,
+                category: venue.category || "other",
+                address: venue.address || null,
+            },
+        });
+
         // 1. Persist to Database 💎
         const booking = await (prisma as any).booking.create({
             data: {

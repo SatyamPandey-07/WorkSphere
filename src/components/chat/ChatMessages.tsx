@@ -17,7 +17,7 @@ import {
     Wifi,
     Zap,
 } from "lucide-react";
-import { RefObject } from "react";
+import { RefObject, useEffect, useState } from "react";
 import { VenueCardSkeleton, ChatMessageSkeleton } from "@/components/ui/skeleton";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
@@ -85,6 +85,35 @@ export function VenueChatCard({
     onToggleFavorite,
     onRate,
 }: VenueChatCardProps) {
+    // ── Lazy-load real venue photo from Google Places ──────────────────────────
+    const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+    const [photoLoading, setPhotoLoading] = useState(true);
+
+    useEffect(() => {
+        let cancelled = false;
+        setPhotoLoading(true);
+
+        const params = new URLSearchParams({
+            name: venue.name,
+            lat: String(venue.lat),
+            lng: String(venue.lng),
+        });
+
+        fetch(`/api/venues/${venue.id}/photo?${params}`)
+            .then((r) => r.json())
+            .then((data: { photoUrl?: string | null }) => {
+                if (!cancelled) {
+                    setPhotoUrl(data.photoUrl ?? null);
+                    setPhotoLoading(false);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) setPhotoLoading(false);
+            });
+
+        return () => { cancelled = true; };
+    }, [venue.id, venue.name, venue.lat, venue.lng]);
+
     const CategoryIcon =
         venue.category === "cafe"
             ? Coffee
@@ -104,80 +133,101 @@ export function VenueChatCard({
                     : "text-zinc-600";
 
     return (
-        <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 bg-white dark:bg-zinc-900 hover:shadow-sm transition-shadow">
-            <div className="flex items-start gap-2">
-                <div className="p-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex-shrink-0">
-                    <CategoryIcon className={`w-4 h-4 ${iconColor}`} />
-                </div>
-                <div className="flex-1 min-w-0">
-                    {/* Name + score */}
-                    <div className="flex items-center gap-2">
-                        <h4 className="font-medium text-sm text-zinc-900 dark:text-zinc-50 truncate">
-                            {venue.name}
-                        </h4>
-                        {venue.score != null && (
-                            <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded flex-shrink-0">
-                                {venue.score}/10
-                            </span>
-                        )}
-                    </div>
-
-                    <p className="text-xs text-zinc-500 capitalize">
+        <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-md transition-shadow">
+            {/* Venue photo */}
+            {photoLoading ? (
+                <div className="w-full h-28 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+            ) : photoUrl ? (
+                <div className="relative w-full h-28 overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                        src={photoUrl}
+                        alt={venue.name}
+                        className="w-full h-full object-cover"
+                        onError={() => setPhotoUrl(null)}
+                    />
+                    {/* Category badge overlay */}
+                    <span className="absolute bottom-1.5 left-2 text-xs px-1.5 py-0.5 rounded bg-black/60 text-white capitalize">
                         {venue.category?.replace("_", " ")}
-                    </p>
+                    </span>
+                </div>
+            ) : null}
 
-                    {venue.address && (
-                        <p className="text-xs text-zinc-400 truncate mt-0.5">{venue.address}</p>
-                    )}
-
-                    {/* Amenity badges */}
-                    <div className="flex items-center gap-2 mt-1">
-                        {venue.wifi && (
-                            <div className="flex items-center gap-0.5">
-                                <Wifi className="w-3 h-3 text-green-600" />
-                                <span className="text-xs text-green-600">WiFi</span>
-                            </div>
-                        )}
-                        {venue.hasOutlets && (
-                            <div className="flex items-center gap-0.5">
-                                <Zap className="w-3 h-3 text-yellow-600" />
-                                <span className="text-xs text-yellow-600">Outlets</span>
-                            </div>
-                        )}
-                        {venue.noiseLevel === "quiet" && (
-                            <div className="flex items-center gap-0.5">
-                                <Volume2 className="w-3 h-3 text-blue-600" />
-                                <span className="text-xs text-blue-600">Quiet</span>
-                            </div>
-                        )}
+            <div className="p-3">
+                <div className="flex items-start gap-2">
+                    <div className="p-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex-shrink-0">
+                        <CategoryIcon className={`w-4 h-4 ${iconColor}`} />
                     </div>
+                    <div className="flex-1 min-w-0">
+                        {/* Name + score */}
+                        <div className="flex items-center gap-2">
+                            <h4 className="font-medium text-sm text-zinc-900 dark:text-zinc-50 truncate">
+                                {venue.name}
+                            </h4>
+                            {venue.score != null && (
+                                <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded flex-shrink-0">
+                                    {venue.score}/10
+                                </span>
+                            )}
+                        </div>
 
-                    {/* Action buttons */}
-                    <div className="flex items-center gap-1 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                        <button
-                            onClick={() => onGetDirections(venue)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
-                        >
-                            <Navigation className="w-3 h-3" />
-                            Directions
-                        </button>
-                        <button
-                            onClick={() => onToggleFavorite(venue)}
-                            className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${isFavorited
-                                ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
-                                : "bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"
-                                }`}
-                        >
-                            <Heart className={`w-3 h-3 ${isFavorited ? "fill-current" : ""}`} />
-                            {isFavorited ? "Saved" : "Save"}
-                        </button>
-                        <button
-                            onClick={() => onRate(venue)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
-                        >
-                            <Star className="w-3 h-3" />
-                            Rate
-                        </button>
+                        <p className="text-xs text-zinc-500 capitalize">
+                            {venue.category?.replace("_", " ")}
+                        </p>
+
+                        {venue.address && (
+                            <p className="text-xs text-zinc-400 truncate mt-0.5">{venue.address}</p>
+                        )}
+
+                        {/* Amenity badges */}
+                        <div className="flex items-center gap-2 mt-1">
+                            {venue.wifi && (
+                                <div className="flex items-center gap-0.5">
+                                    <Wifi className="w-3 h-3 text-green-600" />
+                                    <span className="text-xs text-green-600">WiFi</span>
+                                </div>
+                            )}
+                            {venue.hasOutlets && (
+                                <div className="flex items-center gap-0.5">
+                                    <Zap className="w-3 h-3 text-yellow-600" />
+                                    <span className="text-xs text-yellow-600">Outlets</span>
+                                </div>
+                            )}
+                            {venue.noiseLevel === "quiet" && (
+                                <div className="flex items-center gap-0.5">
+                                    <Volume2 className="w-3 h-3 text-blue-600" />
+                                    <span className="text-xs text-blue-600">Quiet</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-1 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                            <button
+                                onClick={() => onGetDirections(venue)}
+                                className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                            >
+                                <Navigation className="w-3 h-3" />
+                                Directions
+                            </button>
+                            <button
+                                onClick={() => onToggleFavorite(venue)}
+                                className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${isFavorited
+                                    ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
+                                    : "bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                                    }`}
+                            >
+                                <Heart className={`w-3 h-3 ${isFavorited ? "fill-current" : ""}`} />
+                                {isFavorited ? "Saved" : "Save"}
+                            </button>
+                            <button
+                                onClick={() => onRate(venue)}
+                                className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
+                            >
+                                <Star className="w-3 h-3" />
+                                Rate
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

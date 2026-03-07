@@ -30,6 +30,8 @@ model Venue {
   hasOutlets   Boolean       @default(false)
   noiseLevel   String? // quiet, moderate, loud
   crowdsourced Boolean       @default(false)
+  googlePlaceId String?    // Cached Google place_id (for photo lookup)
+  photoReference String?   // Cached Google Places photo_reference
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   ratings      VenueRating[]

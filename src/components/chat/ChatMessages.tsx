@@ -125,20 +125,32 @@ export function VenueChatCard({
                     ? "text-purple-600"
                     : "text-zinc-600";
 
+    // ── Fallback logic ────────────────────────────────────────────────────────
+    const venueFallbacks: Record<string, string> = {
+        cafe: "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=800",
+        library: "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=800",
+        coworking_space: "https://images.unsplash.com/photo-1527192491265-7e15c55b1ed2?auto=format&fit=crop&q=80&w=800",
+        default: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=800"
+    };
+
+    const displayPhoto = photoUrl || venueFallbacks[venue.category] || venueFallbacks.default;
+
     return (
         <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-md transition-shadow">
             {/* Venue photo */}
             {photoLoading ? (
                 <div className="w-full h-40 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
-            ) : photoUrl ? (
+            ) : (
                 <div className="relative w-full h-40 overflow-hidden group/photo">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                        src={photoUrl}
+                        src={displayPhoto}
                         alt={venue.name}
                         className="w-full h-full object-cover transition-transform duration-500 group-hover/photo:scale-110"
-                        onError={() => { setPhotoUrl(null); setPhotoLoading(false); }} // Set to null on error
-                        onLoad={() => setPhotoLoading(false)} // Set loading to false on load
+                        onError={(e) => {
+                            // If the main photo fails, set it to the default fallback
+                            (e.target as HTMLImageElement).src = venueFallbacks.default;
+                        }}
                     />
                     {/* Glass Overlay for Category */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
@@ -155,7 +167,7 @@ export function VenueChatCard({
                         </div>
                     )}
                 </div>
-            ) : null}
+            )}
 
             <div className="p-4">
                 <div className="flex items-start gap-2">

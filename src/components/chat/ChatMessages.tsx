@@ -21,6 +21,7 @@ import {
 import { RefObject, useState, useEffect } from "react";
 import { BrainTerminal } from "./BrainTerminal";
 import { VenueCardSkeleton, ChatMessageSkeleton } from "@/components/ui/skeleton";
+import { trackVenueInteraction } from "@/lib/analytics";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
@@ -209,7 +210,11 @@ export function VenueChatCard({
                         {/* Action buttons */}
                         <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
                             <button
-                                onClick={(e) => { e.stopPropagation(); onOpenDetails(venue); }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    trackVenueInteraction("viewed", { id: venue.id, name: venue.name, category: venue.category });
+                                    onOpenDetails(venue);
+                                }}
                                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs shadow-lg uppercase tracking-widest active:scale-[0.98]"
                             >
                                 <Info className="w-4 h-4" />
@@ -218,17 +223,25 @@ export function VenueChatCard({
 
                             <div className="flex items-center gap-1.5">
                                 <button
-                                    onClick={(e) => { e.stopPropagation(); onGetDirections(venue); }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        trackVenueInteraction("directions", { id: venue.id, name: venue.name, category: venue.category });
+                                        onGetDirections(venue);
+                                    }}
                                     className="flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
                                 >
                                     <Navigation className="w-3 h-3" />
                                     Navigate
                                 </button>
                                 <button
-                                    onClick={(e) => { e.stopPropagation(); onToggleFavorite(venue); }}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        trackVenueInteraction(isFavorited ? "unfavorited" : "favorited", { id: venue.id, name: venue.name, category: venue.category });
+                                        onToggleFavorite(venue);
+                                    }}
                                     className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg transition-all ${isFavorited
                                         ? "bg-red-500 text-white shadow-md shadow-red-500/20"
-                                        : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                                        : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                                         }`}
                                 >
                                     <Heart className={`w-3 h-3 ${isFavorited ? "fill-current" : ""}`} />

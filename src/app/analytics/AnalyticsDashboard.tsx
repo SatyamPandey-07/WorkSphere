@@ -233,7 +233,21 @@ export default function AnalyticsDashboard() {
                                             <MapPin className="w-6 h-6 text-zinc-300 group-hover:text-blue-500 transition-colors" />
                                         </div>
                                         <div>
-                                            <div className="flex items-cen3">
+                                            <div className="flex items-center gap-3 mb-1">
+                                                <h3 className="text-base font-black uppercase tracking-tight">{booking.venue.name}</h3>
+                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                                                    booking.status === 'CONFIRMED' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                                                    booking.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                                    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                                }`}>
+                                                    {booking.status}
+                                                </span>
+                                            </div>
+                                            <p className="text-xs text-zinc-400 font-bold mb-1">{booking.venue.category}</p>
+                                            <p className="text-[10px] text-zinc-400 font-mono">ID: {booking.confirmationId}</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-6">
                                         <div className="text-right">
                                             <p className="text-sm font-black uppercase tracking-tight leading-none mb-1">{booking.date}</p>
                                             <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{booking.time}</p>
@@ -259,24 +273,6 @@ export default function AnalyticsDashboard() {
                                                 <ExternalLink className="w-5 h-5" />
                                             </button>
                                         </div>
-                                    </div>
-                                    <div className="flex items-center gap-6">
-                                        <div className="text-right">
-                                            <p className="text-sm font-black uppercase tracking-tight leading-none mb-1">{booking.date}</p>
-                                            <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{booking.time}</p>
-                                        </div>
-                                        <button 
-                                            onClick={() => handleDownloadReceipt(booking.id, booking.confirmationId)}
-                                            disabled={downloadingId === booking.id}
-                                            className="p-4 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-2xl hover:scale-110 transition-transform shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                                            title="Download Receipt"
-                                        >
-                                            {downloadingId === booking.id ? (
-                                                <RefreshCw className="w-5 h-5 animate-spin" />
-                                            ) : (
-                                                <Download className="w-5 h-5" />
-                                            )}
-                                        </button>
                                     </div>
                                 </div>
                             ))}

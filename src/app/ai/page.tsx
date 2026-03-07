@@ -9,7 +9,7 @@ import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { Loader2, Map as MapIcon, MessageCircle, WifiOff } from "lucide-react";
 import { OfflineIndicator } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
-import { saveVenueOffline, getAllVenueOffline, OfflineVenue } from "@/lib/offlineStorage";
+import { saveVenueOffline, getAllVenuesOffline, OfflineVenue } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { Venue } from "@/components/chat/ChatMessages";
 
@@ -362,8 +362,8 @@ export default function AppPage() {
         <button
           onClick={() => setMobileView("chat")}
           className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${mobileView === "chat"
-              ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
-              : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+            ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
+            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
             }`}
         >
           <MessageCircle className="w-5 h-5" />
@@ -372,8 +372,8 @@ export default function AppPage() {
         <button
           onClick={() => setMobileView("map")}
           className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${mobileView === "map"
-              ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
-              : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+            ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
+            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
             }`}
         >
           <MapIcon className="w-5 h-5" />
@@ -456,7 +456,7 @@ export default function AppPage() {
         isOpen={!!selectedVenue}
         onClose={() => setSelectedVenue(null)}
         isFavorited={false} // Will be handled by state if needed later
-        onGetDirections={(v) => {
+        onGetDirections={(v: Venue) => {
           handleMapUpdate({
             type: "route",
             route: { from: location ? { lat: location.latitude, lng: location.longitude } : { lat: 0, lng: 0 }, to: { lat: v.lat, lng: v.lng } }

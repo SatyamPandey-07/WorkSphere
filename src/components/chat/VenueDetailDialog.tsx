@@ -2,7 +2,7 @@
 
 import {
     X, MapPin, Wifi, Zap, Volume2, Navigation, Heart,
-    ExternalLink, Clock, Coffee, BookOpen, Building2, Star
+    Coffee, BookOpen, Building2, Star
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -58,7 +58,7 @@ export function VenueDetailDialog({
         cafe: "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=1200",
         library: "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=1200",
         coworking_space: "https://images.unsplash.com/photo-1527192491265-7e15c55b1ed2?auto=format&fit=crop&q=80&w=1200",
-        default: "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1200"
+        default: "https://images.unsplash.com/photo-1447366216548-37526070297c?auto=format&fit=crop&q=80&w=1200"
     };
 
     const displayPhoto = photoUrl || venueFallbacks[venue.category || "default"] || venueFallbacks.default;
@@ -74,6 +74,7 @@ export function VenueDetailDialog({
                     {photoLoading ? (
                         <div className="w-full h-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
                     ) : (
+                        /* eslint-disable-next-line @next/next/no-img-element */
                         <img
                             src={displayPhoto}
                             alt={venue.name}
@@ -170,8 +171,8 @@ export function VenueDetailDialog({
                             <button
                                 onClick={() => onToggleFavorite(venue)}
                                 className={`flex-1 flex items-center justify-center gap-2 font-bold py-3 px-6 rounded-2xl transition-all border ${isFavorited
-                                    ? "bg-red-500/10 border-red-500/30 text-red-500 shadow-xl shadow-red-500/10"
-                                    : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                                        ? "bg-red-500/10 border-red-500/30 text-red-500 shadow-xl shadow-red-500/10"
+                                        : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                                     }`}
                             >
                                 <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />

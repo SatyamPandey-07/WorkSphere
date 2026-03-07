@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { VenueRatingDialog } from "./VenueRatingDialog";
 import { VenueSubmissionModal } from "./VenueSubmissionModal";
-import { VenueDetailDialog } from "./chat/VenueDetailDialog";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ChatInput, MessageList, Venue, Message } from "./chat/ChatMessages";
 import {
@@ -73,7 +72,7 @@ const INITIAL_SUGGESTIONS = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotProps) {
+export function EnhancedChatbot({ onMapUpdate, onOpenDetails, userLocation }: EnhancedChatbotProps) {
   const { isSignedIn } = useUser();
 
   // Core state

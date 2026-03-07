@@ -22,7 +22,7 @@
 
 ## 📋 Table of Contents
 
-- [Recent Updates](#-recent-updates-dec-26-27-2025)
+- [Recent Updates](#-recent-updates-mar-7-2026)
 - [Features](#-features)
 - [Tech Stack](#-tech-stack)
 - [Architecture](#-architecture)
@@ -37,6 +37,18 @@
 - [Future Improvements](#-future-improvements)
 - [Contributing](#-contributing)
 - [License](#-license)
+
+---
+
+## ✨ Recent Updates (Mar 7, 2026)
+
+| Area | Change |
+|------|--------|
+| 📸 **Venue Photos** | Migrated from Unsplash → **Pexels API** (20k req/mo free, no billing required) |
+| 📡 **Real-time Updates** | Added **Server-Sent Events (SSE)** stream — live ratings & crowd levels appear instantly |
+| 🎨 **Landing Page** | Complete redesign: dark theme, animated blobs, stats strip, 8 feature cards |
+| 🔒 **Security** | Photo API key proxied server-side — never reaches the browser |
+| 🧹 **Cleanup** | Removed debug endpoints; Foursquare/Google Photos integrations dropped |
 
 ---
 
@@ -57,10 +69,24 @@
 - **Auto-centering**: Map adjusts to show search results
 - **Dark Popups**: Styled popups matching the theme
 
+### 📡 Real-time Venue Updates (NEW)
+
+- **Server-Sent Events (SSE)**: Live venue data pushed from server to client
+- **Live Ratings**: See new reviews appear instantly without refreshing
+- **Availability Updates**: Crowd levels update in real-time
+- **Stable Connections**: Smart reconnect logic prevents connection spam
+
+### 📸 Venue Photos (NEW)
+
+- **Pexels Integration**: High-quality venue photos via Pexels API
+- **Server-side Proxy**: API key never exposed to the browser
+- **DB Caching**: Each venue fetched once, then served from cache
+- **Lazy Loading**: Skeleton shimmer while photo loads, graceful fallback on error
+- **Free tier**: 20,000 requests/month, no billing required
+
 ### 🏢 Venue Enrichment (100% FREE APIs)
 
 - **OpenStreetMap Integration**: Real venue data from OSM Overpass API
-- **Photo Gallery**: Beautiful workspace photos from Unsplash
 - **Amenities Display**: WiFi, outdoor seating, accessibility from OSM
 - **Opening Hours**: Real business hours when available
 - **No Credit Card Required**: All APIs are completely free
@@ -133,7 +159,8 @@
 | **Authentication** | Clerk |
 | **Maps** | React Leaflet + OpenStreetMap |
 | **Venue Data** | OpenStreetMap (Overpass API) - FREE |
-| **Venue Photos** | Unsplash API - FREE |
+| **Venue Photos** | Pexels API - FREE (20k req/mo) |
+| **Real-time** | Server-Sent Events (SSE) |
 | **Routing** | OSRM (Open Source Routing Machine) - FREE |
 | **Testing** | Jest 29, React Testing Library, Playwright |
 | **PWA** | Service Workers + IndexedDB |
@@ -192,11 +219,11 @@
 │  └─────────────────┘  └─────────────────┘  └────────────────┘  │
 │                                                                  │
 │  ┌─────────────────┐  ┌─────────────────┐                      │
-│  │   Unsplash API  │  │    OSRM API     │                      │
+│  │   Pexels API    │  │    OSRM API     │                      │
 │  │                 │  │                 │                      │
 │  │ - Venue Photos  │  │ - Road Routing  │                      │
-│  │ - FREE          │  │ - Polylines     │                      │
-│  │ - No Card Req'd │  │ - FREE          │                      │
+│  │ - 20k/mo FREE   │  │ - Polylines     │                      │
+│  │ - Server Proxy  │  │ - FREE          │                      │
 │  └─────────────────┘  └─────────────────┘                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -294,9 +321,8 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 # AI (Groq)
 GROQ_API_KEY=gsk_...
 
-# Unsplash (Optional - for better venue photos)
-UNSPLASH_ACCESS_KEY=... 
-# Note: Works without key using fallback URLs
+# Pexels (for venue photos - free at pexels.com/api)
+PEXELS_API_KEY=your_pexels_key_here
 ```
 
 ### Getting API Keys
@@ -306,7 +332,7 @@ UNSPLASH_ACCESS_KEY=...
 | **Neon** | [neon.tech](https://neon.tech) | 0.5GB storage | ✅ Yes |
 | **Clerk** | [clerk.com](https://clerk.com) | 10,000 MAU | ✅ Yes |
 | **Groq** | [console.groq.com](https://console.groq.com) | Free API access | ✅ Yes |
-| **Unsplash** | [unsplash.com/developers](https://unsplash.com/developers) | 50 req/hour | ❌ No (has fallback) |
+| **Pexels** | [pexels.com/api](https://www.pexels.com/api/) | 20,000 req/month | ❌ No (has fallback) |
 | **OSM/OSRM** | N/A | Unlimited | ❌ No (public API) |
 
 ---
@@ -401,7 +427,7 @@ model Message {
 | `POST` | `/api/chat` | Main chat endpoint with agent pipeline |
 | `GET` | `/api/venues` | Search venues |
 | `POST` | `/api/venues` | Add crowdsourced venue |
-| `GET` | `/api/venues/enrich` | Enrich venue with OSM + Unsplash data |
+| `GET` | `/api/venues/enrich` | Enrich venue with OSM + Pexels data |
 | `POST` | `/api/venues/[id]/rate` | Rate a venue |
 | `POST` | `/api/venues/updates` | Bulk update venue photos |
 | `GET` | `/api/favorites` | Get user's favorites |
@@ -505,7 +531,7 @@ worksphere/
 │   │   ├── api/               # API routes
 │   │   │   ├── chat/          # Agent pipeline endpoint
 │   │   │   ├── venues/        # Venue CRUD
-│   │   │   │   └── enrich/    # OSM + Unsplash enrichment
+│   │   │   │   └── enrich/    # OSM + Pexels enrichment
 │   │   │   ├── favorites/     # User favorites
 │   │   │   └── conversations/ # Chat history
 │   │   ├── ai/                # Main app page
@@ -531,7 +557,7 @@ worksphere/
 │   │   ├── rateLimit.ts       # Rate limiting
 │   │   ├── analytics.ts       # Event tracking
 │   │   ├── validations.ts     # Zod schemas
-│   │   ├── venues.ts          # OSM + Unsplash integration (NEW)
+│   │   ├── venues.ts          # OSM + Pexels integration (NEW)
 │   │   ├── routing.ts         # OSRM routing (NEW)
 │   │   └── offlineStorage.ts  # IndexedDB for PWA
 │   ├── tools/                 # AI Agent tools
@@ -587,11 +613,9 @@ Try these natural language queries:
 | Priority | Feature | Description |
 |----------|---------|-------------|
 | 🔴 High | **Analytics Dashboard** | Admin page to view search patterns, popular venues, user metrics |
-| 🔴 High | **Real-time Updates** | WebSocket integration for live venue availability |
-| 🟡 Medium | **Mobile App** | React Native version sharing the same API backend |
+| � Medium | **Mobile App** | React Native version sharing the same API backend |
 | 🟡 Medium | **AI Memory** | Cross-conversation learning for personalized recommendations |
 | 🟡 Medium | **Social Features** | Share favorite workspaces, follow other remote workers |
-| 🟢 Low | **Venue Photos** | User-uploaded images of workspaces |
 | 🟢 Low | **Booking Integration** | Reserve desks at coworking spaces via API |
 | 🟢 Low | **Noise Level API** | Real-time noise monitoring hardware integration |
 

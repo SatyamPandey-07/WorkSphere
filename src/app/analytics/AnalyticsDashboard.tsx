@@ -16,7 +16,8 @@ import {
     Download,
     Mail,
     User as UserIcon,
-    History
+    History,
+    ExternalLink
 } from "lucide-react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
@@ -92,6 +93,17 @@ export default function AnalyticsDashboard() {
         } finally {
             setDownloadingId(null);
         }
+    };
+
+    const handleViewVenue = (venue: { name: string; latitude: number; longitude: number; category: string }) => {
+        // Navigate to AI dashboard with venue coordinates in URL
+        const params = new URLSearchParams({
+            venue: venue.name,
+            lat: venue.latitude.toString(),
+            lng: venue.longitude.toString(),
+            category: venue.category
+        });
+        window.open(`/ai?${params.toString()}`, '_blank');
     };
 
     useEffect(() => {
@@ -232,23 +244,32 @@ export default function AnalyticsDashboard() {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-6">
+                                    <div className="flex items-center gap-3">
                                         <div className="text-right">
                                             <p className="text-sm font-black uppercase tracking-tight leading-none mb-1">{booking.date}</p>
                                             <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{booking.time}</p>
                                         </div>
-                                        <button 
-                                            onClick={() => handleDownloadReceipt(booking.id, booking.confirmationId)}
-                                            disabled={downloadingId === booking.id}
-                                            className="p-4 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-2xl hover:scale-110 transition-transform shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-                                            title="Download Receipt"
-                                        >
-                                            {downloadingId === booking.id ? (
-                                                <RefreshCw className="w-5 h-5 animate-spin" />
-                                            ) : (
-                                                <Download className="w-5 h-5" />
-                                            )}
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button 
+                                                onClick={() => handleDownloadReceipt(booking.id, booking.confirmationId)}
+                                                disabled={downloadingId === booking.id}
+                                                className="p-4 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-2xl hover:scale-110 transition-transform shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                                                title="Download Receipt"
+                                            >
+                                                {downloadingId === booking.id ? (
+                                                    <RefreshCw className="w-5 h-5 animate-spin" />
+                                                ) : (
+                                                    <Download className="w-5 h-5" />
+                                                )}
+                                            </button>
+                                            <button
+                                                onClick={() => handleViewVenue(booking.venue)}
+                                                className="p-4 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-2xl hover:scale-110 transition-transform shadow-lg"
+                                                title="View Venue on Map"
+                                            >
+                                                <ExternalLink className="w-5 h-5" />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}

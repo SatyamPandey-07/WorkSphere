@@ -48,7 +48,7 @@ export function VenueSubmissionModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!isSignedIn) {
       setError("Please sign in to suggest a venue");
       return;
@@ -68,9 +68,8 @@ export function VenueSubmissionModal({
     setError(null);
 
     try {
-      // Generate a unique placeId for crowdsourced venues
       const placeId = `crowdsourced_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-      
+
       const response = await fetch("/api/venues", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -95,8 +94,7 @@ export function VenueSubmissionModal({
 
       setSuccess(true);
       onSubmitSuccess?.();
-      
-      // Reset form after success
+
       setTimeout(() => {
         setSuccess(false);
         onClose();
@@ -145,17 +143,17 @@ export function VenueSubmissionModal({
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+      {/* Backdrop - High Contrast Solid for Visibility */}
+      <div
+        className="absolute inset-0 bg-black/95"
         onClick={onClose}
       />
-      
+
       {/* Modal */}
-      <div className="relative w-full max-w-lg bg-white dark:bg-zinc-900 rounded-xl shadow-xl overflow-hidden">
+      <div className="relative w-full max-w-lg bg-white dark:bg-zinc-950 rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden border border-zinc-200 dark:border-zinc-800">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+          <h2 className="text-lg font-black uppercase tracking-tighter text-zinc-900 dark:text-zinc-50">
             Suggest a Workspace
           </h2>
           <button
@@ -168,23 +166,20 @@ export function VenueSubmissionModal({
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
-          {/* Success Message */}
           {success && (
-            <div className="p-3 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg text-sm">
-              ✅ Venue submitted successfully! Thank you for contributing.
+            <div className="p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-lg text-sm font-bold">
+              ✅ Venue submitted successfully!
             </div>
           )}
 
-          {/* Error Message */}
           {error && (
-            <div className="p-3 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg text-sm">
+            <div className="p-3 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-lg text-sm font-bold border border-red-500/20">
               {error}
             </div>
           )}
 
-          {/* Venue Name */}
           <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">
               Venue Name *
             </label>
             <input
@@ -192,34 +187,19 @@ export function VenueSubmissionModal({
               value={formData.name}
               onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
               placeholder="e.g., Blue Bottle Coffee"
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 outline-none"
               required
             />
           </div>
 
-          {/* Address */}
           <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-              Address
-            </label>
-            <input
-              type="text"
-              value={formData.address}
-              onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))}
-              placeholder="e.g., 123 Main St, San Francisco"
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
-          {/* Category */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">
               Category *
             </label>
             <select
               value={formData.category}
               onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value as VenueFormData["category"] }))}
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 outline-none"
             >
               <option value="cafe">☕ Cafe</option>
               <option value="coworking">🏢 Coworking Space</option>
@@ -227,9 +207,8 @@ export function VenueSubmissionModal({
             </select>
           </div>
 
-          {/* Location */}
           <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">
               Location *
             </label>
             <div className="flex gap-2">
@@ -238,135 +217,34 @@ export function VenueSubmissionModal({
                 step="any"
                 value={formData.latitude || ""}
                 onChange={(e) => setFormData(prev => ({ ...prev, latitude: parseFloat(e.target.value) || null }))}
-                placeholder="Latitude"
-                className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                placeholder="Lat"
+                className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 text-sm"
               />
               <input
                 type="number"
                 step="any"
                 value={formData.longitude || ""}
                 onChange={(e) => setFormData(prev => ({ ...prev, longitude: parseFloat(e.target.value) || null }))}
-                placeholder="Longitude"
-                className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                placeholder="Lng"
+                className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 text-sm"
               />
               <button
                 type="button"
                 onClick={handleUseMyLocation}
-                className="px-3 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
+                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md transition-all active:scale-95"
               >
                 <MapPin className="w-5 h-5" />
               </button>
             </div>
           </div>
 
-          {/* WiFi Quality */}
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-              <Wifi className="w-4 h-4 text-blue-600" />
-              WiFi Quality
-            </label>
-            <div className="flex gap-2">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, wifiQuality: n }))}
-                  className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    formData.wifiQuality === n
-                      ? "bg-blue-600 text-white"
-                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Has Outlets */}
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-              <Zap className="w-4 h-4 text-yellow-600" />
-              Power Outlets
-            </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, hasOutlets: true }))}
-                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  formData.hasOutlets
-                    ? "bg-green-600 text-white"
-                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                }`}
-              >
-                Yes, plenty
-              </button>
-              <button
-                type="button"
-                onClick={() => setFormData(prev => ({ ...prev, hasOutlets: false }))}
-                className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  !formData.hasOutlets
-                    ? "bg-red-600 text-white"
-                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                }`}
-              >
-                No / Limited
-              </button>
-            </div>
-          </div>
-
-          {/* Noise Level */}
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-              <Volume2 className="w-4 h-4 text-purple-600" />
-              Noise Level
-            </label>
-            <div className="flex gap-2">
-              {(["quiet", "moderate", "loud"] as const).map((level) => (
-                <button
-                  key={level}
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, noiseLevel: level }))}
-                  className={`flex-1 py-2 text-sm font-medium rounded-lg capitalize transition-colors ${
-                    formData.noiseLevel === level
-                      ? level === "quiet"
-                        ? "bg-green-600 text-white"
-                        : level === "moderate"
-                        ? "bg-yellow-600 text-white"
-                        : "bg-red-600 text-white"
-                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                  }`}
-                >
-                  {level}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={isSubmitting || !isSignedIn}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-lg disabled:opacity-50 transition-all shadow-lg glow-blue active:scale-[0.98]"
           >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Submitting...
-              </>
-            ) : (
-              <>
-                <Send className="w-5 h-5" />
-                Submit Venue
-              </>
-            )}
+            {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit Venue"}
           </button>
-
-          {!isSignedIn && (
-            <p className="text-center text-sm text-zinc-500">
-              Please sign in to suggest a venue
-            </p>
-          )}
         </form>
       </div>
     </div>

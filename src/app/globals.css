@@ -2,15 +2,15 @@
 
 @layer utilities {
   .glass-card {
-    @apply bg-white/70 dark:bg-zinc-900/70 backdrop-blur-md border border-white/20 dark:border-zinc-800/30 shadow-xl;
+    @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl;
   }
-  
+
   .glow-blue {
     box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
   }
-  
+
   .text-glow {
-    text-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+    text-shadow: none;
   }
 }
 
@@ -46,9 +46,12 @@ html {
 
 /* Gradient animation */
 @keyframes gradient {
-  0%, 100% {
+
+  0%,
+  100% {
     background-position: 0% 50%;
   }
+
   50% {
     background-position: 100% 50%;
   }
@@ -64,6 +67,7 @@ html {
     opacity: 0;
     transform: translateY(20px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -76,9 +80,12 @@ html {
 
 /* Pulse glow effect */
 @keyframes pulseGlow {
-  0%, 100% {
+
+  0%,
+  100% {
     box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
   }
+
   50% {
     box-shadow: 0 0 40px rgba(59, 130, 246, 0.5);
   }
@@ -93,13 +100,14 @@ html {
   0% {
     background-position: -200% 0;
   }
+
   100% {
     background-position: 200% 0;
   }
 }
 
 .animate-shimmer {
-  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.2) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -127,6 +135,7 @@ html {
   ::-webkit-scrollbar-thumb {
     background: #374151;
   }
+
   ::-webkit-scrollbar-thumb:hover {
     background: #4b5563;
   }

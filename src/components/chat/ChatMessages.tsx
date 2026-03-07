@@ -33,14 +33,9 @@ export interface Venue {
     address?: string;
     wifi?: boolean;
     hasOutlets?: boolean;
-    noiseLevel?: string;
+    noiseLevel?: "quiet" | "moderate" | "loud";
     score?: number;
-}
-
-interface AgentStep {
-    agent: string;
-    result: Record<string, unknown>;
-    timestamp: number;
+    description?: string;
 }
 
 export interface Message {
@@ -48,19 +43,24 @@ export interface Message {
     role: "user" | "assistant";
     content: string;
     venues?: Venue[];
-    agentSteps?: AgentStep[];
+    agentSteps?: Array<{
+        agent: string;
+        result: Record<string, unknown>;
+        timestamp: number;
+    }>;
     suggestions?: string[];
 }
 
-// ─── Agent icon/colour maps ───────────────────────────────────────────────────
-
-const AGENT_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+const AGENT_ICONS: Record<string, React.ElementType> = {
     Orchestrator: Brain,
-    Context: MapPin,
-    Data: Wifi,
+    Context: SearchIcon,
+    Data: DatabaseIcon,
     Reasoning: Zap,
     Action: Navigation,
 };
+
+function SearchIcon(props: any) { return <span {...props}>🔍</span>; }
+function DatabaseIcon(props: any) { return <span {...props}>💾</span>; }
 
 const AGENT_COLORS: Record<string, string> = {
     Orchestrator: "text-purple-500",
@@ -87,7 +87,6 @@ export function VenueChatCard({
     onRate,
     onOpenDetails,
 }: VenueChatCardProps) {
-    // ── Venue photo — proxied through our API ──────────────────────────
     const [photoUrl, setPhotoUrl] = useState<string | null>(null);
     const [photoLoading, setPhotoLoading] = useState(true);
 
@@ -126,7 +125,6 @@ export function VenueChatCard({
                     ? "text-purple-600"
                     : "text-zinc-600";
 
-    // ── Fallback logic ────────────────────────────────────────────────────────
     const venueFallbacks: Record<string, string> = {
         cafe: "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=800",
         library: "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=800",
@@ -139,34 +137,31 @@ export function VenueChatCard({
     return (
         <div
             onClick={() => onOpenDetails(venue)}
-            className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-xl hover:scale-[1.01] transition-all cursor-pointer active:scale-95"
+            className="border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-2xl hover:scale-[1.02] transition-all cursor-pointer shadow-lg my-2 active:scale-95"
         >
             {/* Venue photo */}
             {photoLoading ? (
-                <div className="w-full h-40 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+                <div className="w-full h-44 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
             ) : (
-                <div className="relative w-full h-40 overflow-hidden group/photo">
+                <div className="relative w-full h-44 overflow-hidden group/photo">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                         src={displayPhoto}
                         alt={venue.name}
                         className="w-full h-full object-cover transition-transform duration-500 group-hover/photo:scale-110"
                         onError={(e) => {
-                            // If the main photo fails, set it to the default fallback
                             (e.target as HTMLImageElement).src = venueFallbacks.default;
                         }}
                     />
-                    {/* Glass Overlay for Category */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                    <span className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold px-2 py-1 rounded-md bg-white/10 backdrop-blur-md text-white border border-white/20">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+                    <span className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-black px-2 py-1 rounded-md bg-zinc-950 border border-zinc-700 text-white">
                         <CategoryIcon className="w-3 h-3" />
                         {venue.category?.replace("_", " ")}
                     </span>
 
-                    {/* Vibe Score Badge */}
                     {venue.score != null && (
-                        <div className="absolute top-3 right-3 flex flex-col items-center justify-center h-10 w-10 rounded-full bg-blue-600/90 backdrop-blur-sm text-white border border-blue-400/30 shadow-lg">
-                            <span className="text-[10px] font-bold leading-none">VIBE</span>
+                        <div className="absolute top-3 right-3 flex flex-col items-center justify-center h-12 w-12 rounded-full bg-blue-600 text-white border-2 border-blue-400 shadow-2xl">
+                            <span className="text-[10px] font-black leading-none uppercase">Vibe</span>
                             <span className="text-sm font-black leading-none">{Math.round(venue.score * 10)}%</span>
                         </div>
                     )}
@@ -174,76 +169,66 @@ export function VenueChatCard({
             )}
 
             <div className="p-4">
-                <div className="flex items-start gap-2">
-                    <div className="p-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex-shrink-0">
-                        <CategoryIcon className={`w-4 h-4 ${iconColor}`} />
+                <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex-shrink-0">
+                        <CategoryIcon className={`w-5 h-5 ${iconColor}`} />
                     </div>
                     <div className="flex-1 min-w-0">
-                        {/* Name + score */}
-                        <div className="flex items-center gap-2">
-                            <h4 className="font-medium text-sm text-zinc-900 dark:text-zinc-50 truncate">
+                        <div className="flex items-center gap-2 mb-0.5">
+                            <h4 className="font-black text-sm text-zinc-900 dark:text-zinc-50 truncate uppercase tracking-tight">
                                 {venue.name}
                             </h4>
-                            {venue.score != null && (
-                                <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded flex-shrink-0">
-                                    {venue.score}/10
-                                </span>
-                            )}
                         </div>
 
-                        <p className="text-xs text-zinc-500 capitalize">
-                            {venue.category?.replace("_", " ")}
-                        </p>
-
                         {venue.address && (
-                            <p className="text-xs text-zinc-400 truncate mt-0.5">{venue.address}</p>
+                            <p className="text-[11px] text-zinc-500 font-medium truncate mb-2">{venue.address}</p>
                         )}
 
                         {/* Amenity badges */}
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex flex-wrap items-center gap-2 mt-2">
                             {venue.wifi && (
-                                <div className="flex items-center gap-0.5">
+                                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-green-500/10 border border-green-500/20">
                                     <Wifi className="w-3 h-3 text-green-600" />
-                                    <span className="text-xs text-green-600">WiFi</span>
+                                    <span className="text-[10px] font-bold text-green-600 uppercase">WiFi</span>
                                 </div>
                             )}
                             {venue.hasOutlets && (
-                                <div className="flex items-center gap-0.5">
+                                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-yellow-500/10 border border-yellow-500/20">
                                     <Zap className="w-3 h-3 text-yellow-600" />
-                                    <span className="text-xs text-yellow-600">Outlets</span>
+                                    <span className="text-[10px] font-bold text-yellow-600 uppercase">Power</span>
                                 </div>
                             )}
                             {venue.noiseLevel === "quiet" && (
-                                <div className="flex items-center gap-0.5">
+                                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/20">
                                     <Volume2 className="w-3 h-3 text-blue-600" />
-                                    <span className="text-xs text-blue-600">Quiet</span>
+                                    <span className="text-[10px] font-bold text-blue-600 uppercase">Quiet</span>
                                 </div>
                             )}
                         </div>
 
                         {/* Action buttons */}
-                        <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                        <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
                             <button
                                 onClick={(e) => { e.stopPropagation(); onOpenDetails(venue); }}
-                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 transition-all font-black text-xs shadow-[0_4px_12px_rgba(147,51,234,0.3)] active:scale-[0.98]"
+                                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs shadow-lg uppercase tracking-widest active:scale-[0.98]"
                             >
                                 <Info className="w-4 h-4" />
-                                VIEW DETAILS
+                                View Full Details
                             </button>
 
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1.5">
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onGetDirections(venue); }}
-                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] uppercase font-bold rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
                                 >
                                     <Navigation className="w-3 h-3" />
                                     Navigate
                                 </button>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onToggleFavorite(venue); }}
-                                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] uppercase font-bold rounded-lg transition-colors ${isFavorited
-                                        ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800"
-                                        : "bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg transition-all ${isFavorited
+                                        ? "bg-red-500 text-white shadow-md shadow-red-500/20"
+                                        : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                                         }`}
                                 >
                                     <Heart className={`w-3 h-3 ${isFavorited ? "fill-current" : ""}`} />
@@ -251,7 +236,7 @@ export function VenueChatCard({
                                 </button>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); onRate(venue); }}
-                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] uppercase font-bold rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
                                 >
                                     <Star className="w-3 h-3" />
                                     Rate
@@ -274,12 +259,12 @@ interface MessageListProps {
     expandedSteps: Record<string, boolean>;
     favorites: Set<string>;
     messagesEndRef: RefObject<HTMLDivElement | null>;
-    onToggleSteps: (messageId: string) => void;
+    onToggleSteps: (id: string) => void;
     onGetDirections: (venue: Venue) => void;
     onToggleFavorite: (venue: Venue) => void;
     onRateVenue: (venue: Venue) => void;
     onOpenDetails: (venue: Venue) => void;
-    onSuggestionClick: (suggestion: string) => void;
+    onSuggestionClick: (s: string) => void;
     initialSuggestions: string[];
 }
 
@@ -300,11 +285,10 @@ export function MessageList({
 }: MessageListProps) {
     return (
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* Empty state */}
             {messages.length === 0 && (
                 <div className="text-center py-8">
                     <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />
-                    <p className="text-zinc-600 dark:text-zinc-400 mb-4">
+                    <p className="text-zinc-900 dark:text-white font-bold mb-4 uppercase text-xs tracking-widest">
                         How can I help you find a workspace today?
                     </p>
                     <div className="grid grid-cols-1 gap-2">
@@ -313,7 +297,7 @@ export function MessageList({
                                 key={i}
                                 onClick={() => onSuggestionClick(s)}
                                 disabled={isLoading}
-                                className="text-left px-4 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors disabled:opacity-50"
+                                className="text-left px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
                             >
                                 {s}
                             </button>
@@ -322,63 +306,46 @@ export function MessageList({
                 </div>
             )}
 
-            {/* Message thread */}
             {messages.map((message) => (
-                <div key={message.id} className="space-y-2">
-                    {/* Bubble */}
-                    <div
-                        className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                    >
+                <div key={message.id} className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <div className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
                         <div
-                            className={`max-w-[85%] rounded-2xl px-4 py-2.5 shadow-sm transition-all hover:shadow-md ${message.role === "user"
-                                ? "bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-tr-none glow-blue"
-                                : "glass-card text-zinc-900 dark:text-zinc-50 rounded-tl-none"
+                            className={`max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${message.role === "user"
+                                ? "bg-zinc-950 border-zinc-800 text-white rounded-tr-none"
+                                : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
                                 }`}
                         >
-                            <div className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</div>
+                            <div className="text-sm font-medium leading-relaxed whitespace-pre-wrap">{message.content}</div>
                         </div>
                     </div>
 
-                    {/* Agent pipeline steps */}
                     {message.agentSteps && message.agentSteps.length > 0 && (
-                        <div className="ml-2 group">
+                        <div className="ml-2">
                             <button
                                 onClick={() => onToggleSteps(message.id)}
-                                className="flex items-center gap-2 px-2 py-1 rounded-md text-[10px] uppercase tracking-widest font-bold text-zinc-400 hover:text-blue-500 hover:bg-blue-500/5 transition-all"
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest font-black text-zinc-500 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 transition-all hover:scale-105"
                             >
-                                <Brain className={`w-3 h-3 ${expandedSteps[message.id] ? "text-blue-500 animate-pulse" : ""}`} />
-                                <span>Agent Reasoning Trace</span>
-                                {expandedSteps[message.id] ? (
-                                    <ChevronUp className="w-3 h-3" />
-                                ) : (
-                                    <ChevronDown className="w-3 h-3" />
-                                )}
+                                <TerminalIcon className="w-3 h-3" />
+                                <span>Agent Reasoning Details</span>
+                                {expandedSteps[message.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                             </button>
 
                             {expandedSteps[message.id] && (
-                                <div className="mt-3 relative space-y-3 border-l-2 border-dashed border-blue-500/30 ml-3.5 pl-6 pb-2">
+                                <div className="mt-3 space-y-2 ml-4">
                                     {message.agentSteps.map((step, idx) => {
                                         const Icon = AGENT_ICONS[step.agent] || Brain;
                                         const color = AGENT_COLORS[step.agent] || "text-zinc-500";
                                         return (
-                                            <div
-                                                key={idx}
-                                                className="relative glass-card rounded-xl p-3 text-xs border-l-4 border-l-blue-500/50 transform transition-all hover:scale-[1.02]"
-                                            >
-                                                {/* Connecting Dot */}
-                                                <div className="absolute -left-[31px] top-4 h-3 w-3 rounded-full bg-blue-500 border-2 border-white dark:border-zinc-950 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
-
-                                                <div className={`flex items-center gap-2 font-bold uppercase tracking-tighter text-[10px] mb-1.5 ${color}`}>
-                                                    <Icon className="w-3.5 h-3.5" />
-                                                    <span>{step.agent} Module</span>
+                                            <div key={idx} className="bg-zinc-950 rounded-xl p-3 text-xs border border-zinc-800">
+                                                <div className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] mb-1 ${color}`}>
+                                                    <Icon className="w-3 h-3" />
+                                                    <span>{step.agent}</span>
                                                 </div>
-                                                <div className="text-zinc-600 dark:text-zinc-400 italic leading-relaxed">
-                                                    "{String(
-                                                        (step.result as { reasoning?: string; summary?: string })
-                                                            .reasoning ||
-                                                        (step.result as { summary?: string }).summary ||
-                                                        JSON.stringify(step.result).slice(0, 150)
-                                                    )}"
+                                                <div className="text-zinc-400 font-mono text-[11px]">
+                                                    {String(
+                                                        (step.result as { reasoning?: string }).reasoning ||
+                                                        JSON.stringify(step.result).slice(0, 100)
+                                                    )}
                                                 </div>
                                             </div>
                                         );
@@ -388,11 +355,10 @@ export function MessageList({
                         </div>
                     )}
 
-                    {/* Venue cards */}
                     {message.venues && message.venues.length > 0 && (
-                        <div className="space-y-2 pl-2">
-                            <p className="text-xs text-zinc-500 font-medium">
-                                Found {message.venues.length} places:
+                        <div className="space-y-3 pl-2">
+                            <p className="text-[10px] uppercase font-black tracking-widest text-zinc-400">
+                                Recommended Venues ({message.venues.length})
                             </p>
                             {message.venues.slice(0, 5).map((venue) => (
                                 <VenueChatCard
@@ -407,44 +373,18 @@ export function MessageList({
                             ))}
                         </div>
                     )}
-
-                    {/* Follow-up suggestions */}
-                    {message.suggestions && message.suggestions.length > 0 && (
-                        <div className="flex flex-wrap gap-2 pl-2">
-                            {message.suggestions.map((s, i) => (
-                                <button
-                                    key={i}
-                                    onClick={() => onSuggestionClick(s)}
-                                    disabled={isLoading}
-                                    className="px-3 py-1 text-xs rounded-full border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors disabled:opacity-50"
-                                >
-                                    {s}
-                                </button>
-                            ))}
-                        </div>
-                    )}
                 </div>
             ))}
 
-            {/* Loading / Brain Terminal */}
             {isLoading && (
                 <div className="space-y-6 pt-4">
                     <BrainTerminal />
-
-                    <div className="space-y-3">
-                        <ChatMessageSkeleton />
-                        <div className="pl-2">
-                            <VenueCardSkeleton />
-                            <VenueCardSkeleton />
-                        </div>
-                    </div>
                 </div>
             )}
 
-            {/* Error */}
             {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-4 py-2 text-sm text-red-600 dark:text-red-400">
-                    Error: {error}
+                <div className="bg-red-950 border-2 border-red-800 rounded-xl px-4 py-3 text-xs font-bold text-red-100">
+                    SYSTEM ERROR: {error}
                 </div>
             )}
 
@@ -452,6 +392,8 @@ export function MessageList({
         </div>
     );
 }
+
+function TerminalIcon(props: any) { return <span {...props}>💻</span>; }
 
 // ─── ChatInput ────────────────────────────────────────────────────────────────
 
@@ -464,41 +406,32 @@ interface ChatInputProps {
 
 export function ChatInput({ input, isLoading, onInputChange, onSubmit }: ChatInputProps) {
     return (
-        <div className="p-4 bg-gradient-to-t from-white dark:from-zinc-950 via-white/80 dark:via-zinc-950/80 to-transparent">
+        <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
             <form
                 id="ws-chat-form"
                 onSubmit={onSubmit}
-                className="glass-card flex gap-2 p-1.5 rounded-2xl glow-blue max-w-4xl mx-auto"
+                className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:border-blue-600 transition-all shadow-inner"
             >
                 <input
                     type="text"
                     value={input}
                     onChange={(e) => onInputChange(e.target.value)}
-                    placeholder="Describe your perfect work vibe..."
+                    placeholder="Where's the focus mode hotspot?"
                     disabled={isLoading}
-                    className="flex-1 px-4 py-3 bg-transparent text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-500 focus:outline-none disabled:opacity-50 text-sm"
+                    className="flex-1 px-4 py-3 bg-transparent text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-500 focus:outline-none disabled:opacity-50 text-sm font-bold"
                 />
                 <button
                     type="submit"
                     disabled={isLoading || !input.trim()}
-                    className="px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl hover:shadow-lg hover:scale-105 disabled:opacity-50 disabled:scale-100 transition-all font-medium flex items-center gap-2"
+                    className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
                 >
                     {isLoading ? (
-                        <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span className="text-[10px] items-center uppercase tracking-widest hidden sm:inline">Thinking</span>
-                        </>
+                        <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
-                        <>
-                            <Send className="w-4 h-4" />
-                            <span className="text-[10px] items-center uppercase tracking-widest hidden sm:inline">Process</span>
-                        </>
+                        <Send className="w-5 h-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
                     )}
                 </button>
             </form>
-            <p className="text-[9px] text-zinc-400 text-center mt-2 uppercase tracking-[0.2em]">
-                Powered by LLaMA 3.1 70B Orchestrated Agents
-            </p>
         </div>
     );
 }

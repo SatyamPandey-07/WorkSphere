@@ -442,21 +442,8 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, userLocation }: En
   return (
     <div className="flex h-full flex-col bg-white dark:bg-zinc-950">
       <ChatHeader
-        location={location}
-        filters={filters}
-        showFilters={showFilters}
-        setShowFilters={setShowFilters}
-        isSignedIn={isSignedIn}
-        showHistory={showHistory}
-        setShowHistory={setShowHistory}
-        conversations={conversations}
-        currentConversationId={currentConversationId}
-        onNewChat={startNewChat}
-        onToggleFilter={toggleFilter}
-        onLoadConversation={loadConversation}
-        onDeleteConversation={deleteConversation}
         onOpenVenueSubmission={() => setShowVenueSubmission(true)}
-        onLocationChange={handleLocationChange}
+        userLocation={userLocation}
       />
 
       <MessageList

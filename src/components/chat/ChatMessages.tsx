@@ -18,6 +18,7 @@ import {
     Zap,
 } from "lucide-react";
 import { RefObject, useState, useEffect } from "react";
+import { BrainTerminal } from "./BrainTerminal";
 import { VenueCardSkeleton, ChatMessageSkeleton } from "@/components/ui/skeleton";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
@@ -396,23 +397,17 @@ export function MessageList({
                 </div>
             ))}
 
-            {/* Loading skeletons */}
+            {/* Loading / Brain Terminal */}
             {isLoading && (
-                <div className="space-y-3">
-                    <div className="flex justify-start">
-                        <div className="bg-zinc-100 dark:bg-zinc-900 rounded-lg px-4 py-3">
-                            <div className="flex items-center gap-2">
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                                <span className="text-xs text-zinc-600 dark:text-zinc-400">
-                                    Running AI agents...
-                                </span>
-                            </div>
+                <div className="space-y-6 pt-4">
+                    <BrainTerminal />
+
+                    <div className="space-y-3">
+                        <ChatMessageSkeleton />
+                        <div className="pl-2">
+                            <VenueCardSkeleton />
+                            <VenueCardSkeleton />
                         </div>
-                    </div>
-                    <ChatMessageSkeleton />
-                    <div className="pl-2">
-                        <VenueCardSkeleton />
-                        <VenueCardSkeleton />
                     </div>
                 </div>
             )}

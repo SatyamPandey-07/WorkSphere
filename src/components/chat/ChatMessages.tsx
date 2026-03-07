@@ -16,6 +16,7 @@ import {
     Volume2,
     Wifi,
     Zap,
+    Info,
 } from "lucide-react";
 import { RefObject, useState, useEffect } from "react";
 import { BrainTerminal } from "./BrainTerminal";
@@ -221,31 +222,41 @@ export function VenueChatCard({
                         </div>
 
                         {/* Action buttons */}
-                        <div className="flex items-center gap-1 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                        <div className="flex flex-col gap-2 mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
                             <button
-                                onClick={(e) => { e.stopPropagation(); onGetDirections(venue); }}
-                                className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                                onClick={(e) => { e.stopPropagation(); onOpenDetails(venue); }}
+                                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 transition-all font-black text-xs shadow-[0_4px_12px_rgba(147,51,234,0.3)] active:scale-[0.98]"
                             >
-                                <Navigation className="w-3 h-3" />
-                                Directions
+                                <Info className="w-4 h-4" />
+                                VIEW DETAILS
                             </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onToggleFavorite(venue); }}
-                                className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${isFavorited
-                                    ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
-                                    : "bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"
-                                    }`}
-                            >
-                                <Heart className={`w-3 h-3 ${isFavorited ? "fill-current" : ""}`} />
-                                {isFavorited ? "Saved" : "Save"}
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onRate(venue); }}
-                                className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
-                            >
-                                <Star className="w-3 h-3" />
-                                Rate
-                            </button>
+
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onGetDirections(venue); }}
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] uppercase font-bold rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                                >
+                                    <Navigation className="w-3 h-3" />
+                                    Navigate
+                                </button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onToggleFavorite(venue); }}
+                                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] uppercase font-bold rounded-lg transition-colors ${isFavorited
+                                        ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800"
+                                        : "bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                                        }`}
+                                >
+                                    <Heart className={`w-3 h-3 ${isFavorited ? "fill-current" : ""}`} />
+                                    {isFavorited ? "Saved" : "Save"}
+                                </button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onRate(venue); }}
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-[10px] uppercase font-bold rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
+                                >
+                                    <Star className="w-3 h-3" />
+                                    Rate
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

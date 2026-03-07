@@ -10,6 +10,7 @@ import {
     Volume2,
     Wifi,
     Zap,
+    Info,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -97,10 +98,11 @@ export function ChatHeader({
                     </Link>
                     <button
                         onClick={onOpenVenueSubmission}
-                        className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-green-600"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-500/10 hover:bg-green-500/20 text-green-600 border border-green-500/30 transition-all font-bold text-xs"
                         title="Suggest a Venue"
                     >
-                        <PlusCircle className="w-5 h-5" />
+                        <PlusCircle className="w-4 h-4" />
+                        ADD
                     </button>
                     {isSignedIn && (
                         <button

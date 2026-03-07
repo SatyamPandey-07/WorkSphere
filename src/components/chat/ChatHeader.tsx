@@ -59,16 +59,22 @@ export function ChatHeader({
     onOpenVenueSubmission,
 }: ChatHeaderProps) {
     return (
-        <div className="border-b border-zinc-200 dark:border-zinc-800 p-4">
+        <div className="glass-card sticky top-0 z-50 p-4 border-b">
             {/* Title row */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                    <h2 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent dark:from-blue-400 dark:to-indigo-400">
                         WorkSphere AI
                     </h2>
-                    <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                        Multi-Agent Workspace Finder
-                    </p>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                        </span>
+                        <p className="text-[10px] uppercase tracking-wider font-bold text-zinc-500">
+                            Multi-Agent Engine v2.0
+                        </p>
+                    </div>
                 </div>
                 <div className="flex items-center gap-2">
                     <Link
@@ -104,8 +110,8 @@ export function ChatHeader({
                     <button
                         onClick={() => setShowFilters(!showFilters)}
                         className={`p-2 rounded-lg transition-colors ${showFilters || Object.keys(filters).length > 0
-                                ? "bg-blue-100 dark:bg-blue-900 text-blue-600"
-                                : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                            ? "bg-blue-100 dark:bg-blue-900 text-blue-600"
+                            : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
                             }`}
                         title="Filters"
                     >
@@ -142,8 +148,8 @@ export function ChatHeader({
                                 key={key}
                                 onClick={() => onToggleFilter(key)}
                                 className={`px-3 py-1.5 text-xs rounded-full flex items-center gap-1.5 transition-colors ${filters[key]
-                                        ? "bg-blue-600 text-white"
-                                        : "bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                                    ? "bg-blue-600 text-white"
+                                    : "bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
                                     }`}
                             >
                                 <Icon className="w-3 h-3" />
@@ -168,8 +174,8 @@ export function ChatHeader({
                                 <div
                                     key={conv.id}
                                     className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${currentConversationId === conv.id
-                                            ? "bg-blue-100 dark:bg-blue-900"
-                                            : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                        ? "bg-blue-100 dark:bg-blue-900"
+                                        : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
                                         }`}
                                     onClick={() => onLoadConversation(conv.id)}
                                 >

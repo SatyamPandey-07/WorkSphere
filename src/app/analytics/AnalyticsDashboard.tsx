@@ -258,7 +258,8 @@ export default function AnalyticsDashboard() {
                                             >
                                                 <ExternalLink className="w-5 h-5" />
                                             </button>
-                                        </div
+                                        </div>
+                                    </div>
                                     <div className="flex items-center gap-6">
                                         <div className="text-right">
                                             <p className="text-sm font-black uppercase tracking-tight leading-none mb-1">{booking.date}</p>

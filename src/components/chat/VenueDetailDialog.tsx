@@ -2,7 +2,7 @@
 
 import {
     X, MapPin, Wifi, Zap, Volume2, Navigation, Heart,
-    Coffee, BookOpen, Building2, Star, Info
+    Coffee, BookOpen, Building2, Star, Info, MessageSquare
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -15,6 +15,7 @@ interface VenueDetailDialogProps {
     onClose: () => void;
     onGetDirections: (venue: Venue) => void;
     onToggleFavorite: (venue: Venue) => void;
+    onRate?: (venue: Venue) => void;
 }
 
 export function VenueDetailDialog({
@@ -24,6 +25,7 @@ export function VenueDetailDialog({
     onClose,
     onGetDirections,
     onToggleFavorite,
+    onRate,
 }: VenueDetailDialogProps) {
     const [photoUrl, setPhotoUrl] = useState<string | null>(null);
     const [photoLoading, setPhotoLoading] = useState(true);
@@ -160,24 +162,36 @@ export function VenueDetailDialog({
                             </p>
                         </div>
 
-                        <div className="flex gap-4 pt-4">
+                        <div className="flex flex-col gap-3 pt-4">
                             <button
                                 onClick={() => onGetDirections(venue)}
-                                className="flex-1 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98]"
+                                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98]"
                             >
                                 <Navigation className="w-5 h-5" />
                                 Navigate
                             </button>
-                            <button
-                                onClick={() => onToggleFavorite(venue)}
-                                className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all border-2 ${isFavorited
-                                        ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
-                                        : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
-                                    }`}
-                            >
-                                <Heart className={`w-5 h-5 ${isFavorited ? "fill-current" : ""}`} />
-                                {isFavorited ? "Saved" : "Save Spot"}
-                            </button>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => onToggleFavorite(venue)}
+                                    className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${
+                                            isFavorited
+                                            ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
+                                            : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
+                                        }`}
+                                >
+                                    <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
+                                    {isFavorited ? "Saved" : "Save"}
+                                </button>
+                                {onRate && (
+                                    <button
+                                        onClick={() => onRate(venue)}
+                                        className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 border-2 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all shadow-md active:scale-[0.98]"
+                                    >
+                                        <Star className="w-4 h-4" />
+                                        Rate
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

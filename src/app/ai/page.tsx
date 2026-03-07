@@ -300,7 +300,17 @@ export default function AppPage() {
       const response = await fetch(`/api/venues/${ratingDialog.venue.id}/rate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(rating),
+        body: JSON.stringify({
+          ...rating,
+          venue: {
+            placeId: ratingDialog.venue.id,
+            name: ratingDialog.venue.name,
+            lat: ratingDialog.venue.position.lat,
+            lng: ratingDialog.venue.position.lng,
+            category: ratingDialog.venue.category,
+            address: ratingDialog.venue.address,
+          }
+        }),
       });
 
       if (!response.ok) {
@@ -308,6 +318,7 @@ export default function AppPage() {
       }
 
       console.log("Rating submitted successfully");
+      alert("✅ Rating submitted! Thank you for helping the community.");
     } catch (error) {
       console.error("Error submitting rating:", error);
       alert("Failed to submit rating. Please try again.");
@@ -466,6 +477,22 @@ export default function AppPage() {
           });
         }}
         onToggleFavorite={() => { }} // Hook into favorite state if needed
+        onRate={(v: Venue) => {
+          // Convert Venue to MapMarker format and open rating dialog
+          setRatingDialog({
+            isOpen: true,
+            venue: {
+              id: v.id,
+              name: v.name,
+              position: { lat: v.lat, lng: v.lng },
+              category: v.category,
+              address: v.address,
+              amenities: { wifi: v.wifi, outlets: v.hasOutlets, quiet: v.noiseLevel === "quiet" }
+            }
+          });
+          // Close the venue detail dialog
+          setSelectedVenue(null);
+        }}
       />
 
       {/* Rating Dialog */}

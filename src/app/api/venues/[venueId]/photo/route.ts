@@ -4,8 +4,9 @@ import { getVenuePhotoUrl } from "@/lib/googlePlaces";
 /**
  * GET /api/venues/[venueId]/photo?name=...&lat=...&lng=...
  *
- * Returns a Google Places photo URL for a venue.
- * The result is cached in the DB after the first call.
+ * Resolves a Google Places photo and proxies the image bytes back.
+ * The API key never leaves the server — the browser just sees our URL.
+ * Response is edge-cached for 24h so repeat renders cost $0.
  */
 export async function GET(
     req: NextRequest,
@@ -19,26 +20,34 @@ export async function GET(
     const lng = parseFloat(searchParams.get("lng") ?? "");
 
     if (!name || isNaN(lat) || isNaN(lng)) {
-        return Response.json(
-            { error: "name, lat, lng query params are required" },
-            { status: 400 }
-        );
+        return new Response(null, { status: 400 });
     }
 
     try {
-        const photoUrl = await getVenuePhotoUrl(venueId, name, lat, lng);
+        // Returns a Google Maps URL that includes the API key — kept server-side
+        const googleUrl = await getVenuePhotoUrl(venueId, name, lat, lng);
 
-        return Response.json(
-            { photoUrl },
-            {
-                headers: {
-                    // Cache at CDN edge for 24 hours — the photo_reference is stable
-                    "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=3600",
-                },
-            }
-        );
+        if (!googleUrl) {
+            return new Response(null, { status: 404 });
+        }
+
+        // Proxy the image — fetch follows Google's 302 redirect to the CDN URL
+        const imageRes = await fetch(googleUrl, { redirect: "follow" });
+
+        if (!imageRes.ok) {
+            return new Response(null, { status: 502 });
+        }
+
+        return new Response(imageRes.body, {
+            headers: {
+                "Content-Type": imageRes.headers.get("Content-Type") || "image/jpeg",
+                // Edge-cache for 24h — photo_reference is stable, cost = $0 on repeat
+                "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=3600",
+            },
+        });
     } catch (err) {
         console.error("[/api/venues/photo] Error:", err);
-        return Response.json({ photoUrl: null }, { status: 200 }); // graceful — never 500 the client
+        return new Response(null, { status: 500 });
     }
 }
+

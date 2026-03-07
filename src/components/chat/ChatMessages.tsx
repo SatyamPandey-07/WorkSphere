@@ -17,7 +17,7 @@ import {
     Wifi,
     Zap,
 } from "lucide-react";
-import { RefObject, useEffect, useState } from "react";
+import { RefObject, useState } from "react";
 import { VenueCardSkeleton, ChatMessageSkeleton } from "@/components/ui/skeleton";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
@@ -85,34 +85,13 @@ export function VenueChatCard({
     onToggleFavorite,
     onRate,
 }: VenueChatCardProps) {
-    // ── Lazy-load real venue photo from Google Places ──────────────────────────
-    const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-    const [photoLoading, setPhotoLoading] = useState(true);
-
-    useEffect(() => {
-        let cancelled = false;
-        setPhotoLoading(true);
-
-        const params = new URLSearchParams({
-            name: venue.name,
-            lat: String(venue.lat),
-            lng: String(venue.lng),
-        });
-
-        fetch(`/api/venues/${venue.id}/photo?${params}`)
-            .then((r) => r.json())
-            .then((data: { photoUrl?: string | null }) => {
-                if (!cancelled) {
-                    setPhotoUrl(data.photoUrl ?? null);
-                    setPhotoLoading(false);
-                }
-            })
-            .catch(() => {
-                if (!cancelled) setPhotoLoading(false);
-            });
-
-        return () => { cancelled = true; };
-    }, [venue.id, venue.name, venue.lat, venue.lng]);
+    // ── Venue photo — proxied through our API (API key stays server-side) ──────
+    const [photoState, setPhotoState] = useState<"loading" | "loaded" | "error">("loading");
+    const photoSrc = `/api/venues/${encodeURIComponent(venue.id)}/photo?${new URLSearchParams({
+        name: venue.name,
+        lat: String(venue.lat),
+        lng: String(venue.lng),
+    })}`;
 
     const CategoryIcon =
         venue.category === "cafe"
@@ -134,24 +113,25 @@ export function VenueChatCard({
 
     return (
         <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-md transition-shadow">
-            {/* Venue photo */}
-            {photoLoading ? (
-                <div className="w-full h-28 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
-            ) : photoUrl ? (
-                <div className="relative w-full h-28 overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                        src={photoUrl}
-                        alt={venue.name}
-                        className="w-full h-full object-cover"
-                        onError={() => setPhotoUrl(null)}
-                    />
-                    {/* Category badge overlay */}
+            {/* Venue photo — image is proxied server-side, key never hits the browser */}
+            <div className={`relative w-full h-28 overflow-hidden ${photoState === "error" ? "hidden" : ""}`}>
+                {photoState === "loading" && (
+                    <div className="absolute inset-0 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+                )}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                    src={photoSrc}
+                    alt={venue.name}
+                    className={`w-full h-full object-cover transition-opacity duration-500 ${photoState === "loaded" ? "opacity-100" : "opacity-0"}`}
+                    onLoad={() => setPhotoState("loaded")}
+                    onError={() => setPhotoState("error")}
+                />
+                {photoState === "loaded" && (
                     <span className="absolute bottom-1.5 left-2 text-xs px-1.5 py-0.5 rounded bg-black/60 text-white capitalize">
                         {venue.category?.replace("_", " ")}
                     </span>
-                </div>
-            ) : null}
+                )}
+            </div>
 
             <div className="p-3">
                 <div className="flex items-start gap-2">

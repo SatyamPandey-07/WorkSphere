@@ -1,149 +1,118 @@
 /**
- * Google Places API — Venue Photo Enrichment
+ * Google Places API (New / v1) — Venue Photo Enrichment
  *
- * Uses the Places API (New) to fetch real photos for venues.
- * photo_reference is cached in the Venue DB row so each venue
- * only ever makes 2 Google API calls (find + details) — ever.
+ * Uses the NEW Places API (places.googleapis.com/v1) — one combined
+ * searchText call returns both the place ID and photos in one shot.
  *
- * Cost: ~$0.034 per unique venue (first lookup only), then $0 forever.
+ * Cost: ~$0.032 per unique venue (first lookup only), then $0 from DB cache.
+ *
+ * Required: Enable "Places API (New)" in Google Cloud Console.
  */
 
 const API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface FindPlaceResult {
-    candidates: Array<{ place_id: string }>;
-    status: string;
-}
-
-interface PlaceDetailsResult {
-    result: {
+interface PlacesSearchResponse {
+    places?: Array<{
+        id: string; // The new place ID format
         photos?: Array<{
-            photo_reference: string;
-            width: number;
-            height: number;
+            name: string; // e.g. "places/ChIJ.../photos/AelY..."
+            widthPx: number;
+            heightPx: number;
         }>;
-    };
-    status: string;
+    }>;
 }
 
-// ─── Core API calls ───────────────────────────────────────────────────────────
+// ─── Core API call (New Places API — single request) ─────────────────────────
 
 /**
- * Step 1: Find Google's place_id for a venue by name + location.
+ * Searches for a venue by name + location using Places API (New).
+ * Returns { googlePlaceId, photoName } in one call.
  */
-export async function findGooglePlaceId(
+async function searchPlace(
     name: string,
     lat: number,
     lng: number
-): Promise<string | null> {
+): Promise<{ googlePlaceId: string; photoName: string } | null> {
     if (!API_KEY) {
         console.warn("[GooglePlaces] GOOGLE_PLACES_API_KEY not set");
         return null;
     }
 
     try {
-        const url = new URL(
-            "https://maps.googleapis.com/maps/api/place/findplacefromtext/json"
+        const res = await fetch(
+            "https://places.googleapis.com/v1/places:searchText",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-Goog-Api-Key": API_KEY,
+                    // Only request the fields we need — minimises cost
+                    "X-Goog-FieldMask": "places.id,places.photos",
+                },
+                body: JSON.stringify({
+                    textQuery: name,
+                    locationBias: {
+                        circle: {
+                            center: { latitude: lat, longitude: lng },
+                            radius: 500.0,
+                        },
+                    },
+                    maxResultCount: 1,
+                }),
+            }
         );
-        url.searchParams.set("input", name);
-        url.searchParams.set("inputtype", "textquery");
-        // Bias results within 200m of the OSM coordinate
-        url.searchParams.set("locationbias", `circle:200@${lat},${lng}`);
-        url.searchParams.set("fields", "place_id");
-        url.searchParams.set("key", API_KEY);
-
-        const res = await fetch(url.toString(), {
-            next: { revalidate: 86400 }, // cache for 24h at edge
-        });
 
         if (!res.ok) {
-            console.error("[GooglePlaces] findplacefromtext failed:", res.status);
+            const text = await res.text();
+            console.error("[GooglePlaces] searchText failed:", res.status, text);
             return null;
         }
 
-        const data: FindPlaceResult = await res.json();
+        const data: PlacesSearchResponse = await res.json();
+        const place = data.places?.[0];
 
-        if (data.status !== "OK" && data.status !== "ZERO_RESULTS") {
-            console.error("[GooglePlaces] findplacefromtext status:", data.status);
-            return null;
-        }
+        if (!place) return null;
 
-        return data.candidates?.[0]?.place_id ?? null;
+        const photoName = place.photos?.[0]?.name ?? null;
+        if (!photoName) return null;
+
+        return { googlePlaceId: place.id, photoName };
     } catch (err) {
-        console.error("[GooglePlaces] findGooglePlaceId error:", err);
+        console.error("[GooglePlaces] searchPlace error:", err);
         return null;
     }
 }
 
-/**
- * Step 2: Get the first photo_reference for a place_id.
- * Only requests the "photos" field to minimize cost.
- */
-export async function getPhotoReference(
-    placeId: string
-): Promise<string | null> {
-    if (!API_KEY) return null;
-
-    try {
-        const url = new URL(
-            "https://maps.googleapis.com/maps/api/place/details/json"
-        );
-        url.searchParams.set("place_id", placeId);
-        url.searchParams.set("fields", "photos"); // ← only pay for photos field
-        url.searchParams.set("key", API_KEY);
-
-        const res = await fetch(url.toString(), {
-            next: { revalidate: 86400 },
-        });
-
-        if (!res.ok) {
-            console.error("[GooglePlaces] place details failed:", res.status);
-            return null;
-        }
-
-        const data: PlaceDetailsResult = await res.json();
-
-        if (data.status !== "OK") {
-            console.error("[GooglePlaces] place details status:", data.status);
-            return null;
-        }
-
-        return data.result?.photos?.[0]?.photo_reference ?? null;
-    } catch (err) {
-        console.error("[GooglePlaces] getPhotoReference error:", err);
-        return null;
-    }
-}
+// ─── Photo URL builder ────────────────────────────────────────────────────────
 
 /**
- * Step 3: Build the photo URL from a photo_reference.
- * This is just a URL — no extra API call, no extra cost.
+ * Builds a photo media URL from a Places API (New) photo resource name.
+ * Format: places/{place_id}/photos/{photo_id}
+ * No extra API call — just a URL construction.
  */
 export function buildPlacePhotoUrl(
-    photoReference: string,
-    maxWidth = 800
+    photoName: string,
+    maxWidthPx = 800
 ): string {
     return (
-        `https://maps.googleapis.com/maps/api/place/photo` +
-        `?maxwidth=${maxWidth}` +
-        `&photoreference=${encodeURIComponent(photoReference)}` +
-        `&key=${API_KEY}`
+        `https://places.googleapis.com/v1/${photoName}/media` +
+        `?maxWidthPx=${maxWidthPx}&key=${API_KEY}`
     );
 }
 
 // ─── High-level helper ────────────────────────────────────────────────────────
 
 /**
- * Gets a real venue photo URL from Google Places.
- * Caches both googlePlaceId and photoReference in the DB so
- * each venue only costs money on the FIRST lookup.
+ * Gets a real venue photo URL from Google Places (New API).
+ * Caches googlePlaceId and photoReference in the DB so each venue
+ * only costs money on the FIRST lookup — all subsequent calls are free.
  *
  * Returns null if the API key is missing or the venue has no photos.
  */
 export async function getVenuePhotoUrl(
-    osmId: string,      // The OSM id (used as placeId in our DB)
+    osmId: string,  // OSM node ID — used as placeId in our DB
     name: string,
     lat: number,
     lng: number
@@ -153,7 +122,7 @@ export async function getVenuePhotoUrl(
     try {
         const { prisma } = await import("@/lib/prisma");
 
-        // 1. Check DB cache first — if we've already resolved this venue, use it
+        // 1. Return cached photo_reference from DB (costs $0)
         const cached = await prisma.venue.findUnique({
             where: { placeId: osmId },
             select: { googlePlaceId: true, photoReference: true },
@@ -163,71 +132,35 @@ export async function getVenuePhotoUrl(
             return buildPlacePhotoUrl(cached.photoReference);
         }
 
-        // 2. Find Google's place_id for the venue
-        const googlePlaceId =
-            cached?.googlePlaceId ?? (await findGooglePlaceId(name, lat, lng));
+        // 2. Call Google Places API (New) — one request gets place ID + photo
+        const result = await searchPlace(name, lat, lng);
+        if (!result) return null;
 
-        if (!googlePlaceId) return null;
+        const { googlePlaceId, photoName } = result;
 
-        // 3. Get a photo_reference
-        const photoReference = await getPhotoReference(googlePlaceId);
-        if (!photoReference) return null;
-
-        // 4. Cache in DB — upsert so it works whether the venue row exists or not
+        // 3. Cache in DB — upsert so it works whether the venue row exists or not
         await prisma.venue
             .upsert({
                 where: { placeId: osmId },
-                update: { googlePlaceId, photoReference },
+                update: { googlePlaceId, photoReference: photoName },
                 create: {
                     placeId: osmId,
                     name,
                     latitude: lat,
                     longitude: lng,
-                    category: "cafe", // default — will be corrected if venue exists
+                    category: "cafe",
                     googlePlaceId,
-                    photoReference,
+                    photoReference: photoName,
                 },
             })
             .catch((err: unknown) => {
-                // Non-fatal — just means the photo won't be cached this request
                 console.warn("[GooglePlaces] DB cache write failed:", err);
             });
 
-        return buildPlacePhotoUrl(photoReference);
+        return buildPlacePhotoUrl(photoName);
     } catch (err) {
         console.error("[GooglePlaces] getVenuePhotoUrl error:", err);
         return null;
     }
 }
 
-/**
- * Batch-fetch photos for multiple venues.
- * Runs in parallel (max 5 concurrent) to stay within rate limits.
- */
-export async function batchGetVenuePhotos(
-    venues: Array<{ id: string; name: string; lat: number; lng: number }>
-): Promise<Map<string, string>> {
-    const photoMap = new Map<string, string>();
-
-    if (!API_KEY || venues.length === 0) return photoMap;
-
-    // Process in chunks of 5 to avoid hammering the API
-    const CHUNK = 5;
-    for (let i = 0; i < venues.length; i += CHUNK) {
-        const chunk = venues.slice(i, i + CHUNK);
-        const results = await Promise.allSettled(
-            chunk.map(async (v) => {
-                const url = await getVenuePhotoUrl(v.id, v.name, v.lat, v.lng);
-                return { id: v.id, url };
-            })
-        );
-
-        for (const result of results) {
-            if (result.status === "fulfilled" && result.value.url) {
-                photoMap.set(result.value.id, result.value.url);
-            }
-        }
-    }
-
-    return photoMap;
-}

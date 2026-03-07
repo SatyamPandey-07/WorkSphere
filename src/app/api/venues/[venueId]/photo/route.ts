@@ -24,10 +24,11 @@ export async function GET(
     }
 
     try {
-        // Returns a Google Maps URL that includes the API key — kept server-side
+        // Returns a proxied Google Places photo URL
         const googleUrl = await getVenuePhotoUrl(venueId, name, lat, lng);
 
         if (!googleUrl) {
+            console.warn(`[photo] No photo found for venue "${name}" (${venueId})`);
             return new Response(null, { status: 404 });
         }
 

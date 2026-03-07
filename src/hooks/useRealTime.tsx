@@ -40,7 +40,7 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
     if (!enabled || venueIds.length === 0) return;
 
     let eventSource: EventSource | null = null;
-    let reconnectTimeout: NodeJS.Timeout;
+    let reconnectTimeout: ReturnType<typeof setTimeout>;
     let currentBackoff = 2000; // Start with 2s
 
     const connect = () => {

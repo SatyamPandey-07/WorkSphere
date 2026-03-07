@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { VenueRatingDialog } from "./VenueRatingDialog";
 import { VenueSubmissionModal } from "./VenueSubmissionModal";
+import { VenueDetailDialog } from "./chat/VenueDetailDialog";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ChatInput, MessageList, Venue, Message } from "./chat/ChatMessages";
 import {
@@ -87,6 +88,7 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
   const [showFilters, setShowFilters] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
+  const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
   const [showVenueSubmission, setShowVenueSubmission] = useState(false);
 
   // Conversations & favorites
@@ -319,6 +321,10 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
     });
   };
 
+  const handleOpenDetails = (venue: Venue) => {
+    setSelectedVenue(venue);
+  };
+
   // ── Filters ───────────────────────────────────────────────────────────────────
   const toggleFilter = (key: keyof Filters) => {
     setFilters((prev) => {
@@ -469,6 +475,7 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
         onGetDirections={handleGetDirections}
         onToggleFavorite={handleToggleFavorite}
         onRateVenue={(venue) => setRatingVenue(venue)}
+        onOpenDetails={handleOpenDetails}
         onSuggestionClick={handleSuggestionClick}
         initialSuggestions={INITIAL_SUGGESTIONS}
       />
@@ -507,6 +514,15 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
             },
           ]);
         }}
+      />
+
+      <VenueDetailDialog
+        venue={selectedVenue}
+        isOpen={!!selectedVenue}
+        isFavorited={selectedVenue ? favorites.has(selectedVenue.id) : false}
+        onClose={() => setSelectedVenue(null)}
+        onGetDirections={handleGetDirections}
+        onToggleFavorite={handleToggleFavorite}
       />
     </div>
   );

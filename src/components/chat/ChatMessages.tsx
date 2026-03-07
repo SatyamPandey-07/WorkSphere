@@ -69,14 +69,13 @@ const AGENT_COLORS: Record<string, string> = {
     Action: "text-pink-500",
 };
 
-// ─── VenueChatCard ────────────────────────────────────────────────────────────
-
 interface VenueChatCardProps {
     venue: Venue;
     isFavorited: boolean;
     onGetDirections: (venue: Venue) => void;
     onToggleFavorite: (venue: Venue) => void;
     onRate: (venue: Venue) => void;
+    onOpenDetails: (venue: Venue) => void;
 }
 
 export function VenueChatCard({
@@ -85,6 +84,7 @@ export function VenueChatCard({
     onGetDirections,
     onToggleFavorite,
     onRate,
+    onOpenDetails,
 }: VenueChatCardProps) {
     // ── Venue photo — proxied through our API ──────────────────────────
     const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -136,7 +136,10 @@ export function VenueChatCard({
     const displayPhoto = photoUrl || venueFallbacks[venue.category] || venueFallbacks.default;
 
     return (
-        <div className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-md transition-shadow">
+        <div
+            onClick={() => onOpenDetails(venue)}
+            className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-xl hover:scale-[1.01] transition-all cursor-pointer active:scale-95"
+        >
             {/* Venue photo */}
             {photoLoading ? (
                 <div className="w-full h-40 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
@@ -220,14 +223,14 @@ export function VenueChatCard({
                         {/* Action buttons */}
                         <div className="flex items-center gap-1 mt-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                             <button
-                                onClick={() => onGetDirections(venue)}
+                                onClick={(e) => { e.stopPropagation(); onGetDirections(venue); }}
                                 className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
                             >
                                 <Navigation className="w-3 h-3" />
                                 Directions
                             </button>
                             <button
-                                onClick={() => onToggleFavorite(venue)}
+                                onClick={(e) => { e.stopPropagation(); onToggleFavorite(venue); }}
                                 className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${isFavorited
                                     ? "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400"
                                     : "bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"
@@ -237,7 +240,7 @@ export function VenueChatCard({
                                 {isFavorited ? "Saved" : "Save"}
                             </button>
                             <button
-                                onClick={() => onRate(venue)}
+                                onClick={(e) => { e.stopPropagation(); onRate(venue); }}
                                 className="flex items-center gap-1 px-2 py-1 text-xs rounded bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-colors"
                             >
                                 <Star className="w-3 h-3" />
@@ -264,6 +267,7 @@ interface MessageListProps {
     onGetDirections: (venue: Venue) => void;
     onToggleFavorite: (venue: Venue) => void;
     onRateVenue: (venue: Venue) => void;
+    onOpenDetails: (venue: Venue) => void;
     onSuggestionClick: (suggestion: string) => void;
     initialSuggestions: string[];
 }
@@ -279,6 +283,7 @@ export function MessageList({
     onGetDirections,
     onToggleFavorite,
     onRateVenue,
+    onOpenDetails,
     onSuggestionClick,
     initialSuggestions,
 }: MessageListProps) {
@@ -386,6 +391,7 @@ export function MessageList({
                                     onGetDirections={onGetDirections}
                                     onToggleFavorite={onToggleFavorite}
                                     onRate={onRateVenue}
+                                    onOpenDetails={onOpenDetails}
                                 />
                             ))}
                         </div>

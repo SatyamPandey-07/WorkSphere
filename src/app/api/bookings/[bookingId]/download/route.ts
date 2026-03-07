@@ -88,7 +88,7 @@ export async function GET(
         const pdfBytes = await pdfDoc.save();
 
         // Return PDF with proper headers
-        return new NextResponse(pdfBytes, {
+        return new NextResponse(Buffer.from(pdfBytes), {
             status: 200,
             headers: {
                 "Content-Type": "application/pdf",

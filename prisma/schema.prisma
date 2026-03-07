@@ -18,24 +18,24 @@ model User {
 }
 
 model Venue {
-  id           String        @id @default(cuid())
-  placeId      String        @unique
-  name         String
-  latitude     Float
-  longitude    Float
-  category     String // cafe, coworking, library
-  address      String?
-  rating       Float?
-  wifiQuality  Int? // 1-5 scale
-  hasOutlets   Boolean       @default(false)
-  noiseLevel   String? // quiet, moderate, loud
-  crowdsourced Boolean       @default(false)
-  googlePlaceId String?    // Cached Google place_id (for photo lookup)
-  photoReference String?   // Cached Google Places photo_reference
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  ratings      VenueRating[]
-  favorites    Favorite[]
+  id             String        @id @default(cuid())
+  placeId        String        @unique
+  name           String
+  latitude       Float
+  longitude      Float
+  category       String        // cafe, coworking, library
+  address        String?
+  rating         Float?
+  wifiQuality    Int?          // 1-5 scale
+  hasOutlets     Boolean       @default(false)
+  noiseLevel     String?       // quiet, moderate, loud
+  crowdsourced   Boolean       @default(false)
+  googlePlaceId  String?       // Cached Google place_id (for photo lookup)
+  photoReference String?       // Cached Google Places photo_reference
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  ratings        VenueRating[]
+  favorites      Favorite[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -47,9 +47,9 @@ model VenueRating {
   user        User     @relation(fields: [userId], references: [id])
   venueId     String
   venue       Venue    @relation(fields: [venueId], references: [id])
-  wifiQuality Int // 1-5
+  wifiQuality Int      // 1-5
   hasOutlets  Boolean
-  noiseLevel  String // quiet, moderate, loud
+  noiseLevel  String   // quiet, moderate, loud
   comment     String?
   createdAt   DateTime @default(now())
 
@@ -85,7 +85,7 @@ model Message {
   id             String       @id @default(cuid())
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id])
-  role           String // user, assistant
+  role           String       // user, assistant
   content        String
   agentName      String?
   createdAt      DateTime     @default(now())

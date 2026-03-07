@@ -40,7 +40,17 @@ interface ChatHeaderProps {
     onLoadConversation: (id: string) => void;
     onDeleteConversation: (id: string) => void;
     onOpenVenueSubmission: () => void;
+    onLocationChange: (lat: number, lng: number) => void;
 }
+
+const GLOBAL_HUBS = [
+    { name: "My Location", lat: null, lng: null },
+    { name: "London (Shoreditch)", lat: 51.5245, lng: -0.0841 },
+    { name: "Tokyo (Shibuya)", lat: 35.6580, lng: 139.7016 },
+    { name: "NYC (Brooklyn)", lat: 40.7128, lng: -73.9442 },
+    { name: "Berlin (Mitte)", lat: 52.5244, lng: 13.4050 },
+    { name: "Bangalore (Indiranagar)", lat: 12.9784, lng: 77.6408 },
+];
 
 export function ChatHeader({
     location,
@@ -57,6 +67,7 @@ export function ChatHeader({
     onLoadConversation,
     onDeleteConversation,
     onOpenVenueSubmission,
+    onLocationChange,
 }: ChatHeaderProps) {
     return (
         <div className="glass-card sticky top-0 z-50 p-4 border-b">
@@ -120,15 +131,38 @@ export function ChatHeader({
                 </div>
             </div>
 
-            {/* Location indicator */}
-            {location && (
-                <div className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
-                    <MapPin className="w-3 h-3" />
-                    <span>
-                        {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
+            {/* Location indicator & Global Teleport */}
+            <div className="mt-2 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-zinc-500">
+                    <MapPin className="w-3 h-3 text-blue-500" />
+                    <span className="font-mono bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-700">
+                        {location ? `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}` : "Detecting..."}
                     </span>
                 </div>
-            )}
+
+                <div className="flex items-center gap-2">
+                    <span className="text-[10px] uppercase tracking-widest font-bold text-zinc-400">Hub:</span>
+                    <select
+                        onChange={(e) => {
+                            const hub = GLOBAL_HUBS.find(h => h.name === e.target.value);
+                            if (hub && hub.lat !== null && hub.lng !== null) {
+                                onLocationChange(hub.lat, hub.lng);
+                            } else if (hub) {
+                                // Reset to true GPS - passing null/undefined can trigger effect to refetch
+                                // Handle this in parent
+                                onLocationChange(0, 0);
+                            }
+                        }}
+                        className="bg-white/10 dark:bg-black/20 backdrop-blur-md border border-white/20 dark:border-zinc-800 rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-tighter text-zinc-700 dark:text-zinc-300 focus:outline-none hover:bg-white/20 dark:hover:bg-zinc-800/50 transition-all"
+                    >
+                        {GLOBAL_HUBS.map(hub => (
+                            <option key={hub.name} value={hub.name} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50">
+                                {hub.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            </div>
 
             {/* Filter panel */}
             {showFilters && (

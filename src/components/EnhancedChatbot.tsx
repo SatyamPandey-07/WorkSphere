@@ -102,14 +102,29 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
   }, [messages]);
 
   // ── Geolocation fallback ─────────────────────────────────────────────────────
-  useEffect(() => {
-    if (!location && "geolocation" in navigator) {
+  const getPreciseLocation = useCallback(() => {
+    if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
         () => setLocation({ lat: 37.7749, lng: -122.4194 })
       );
     }
-  }, [location]);
+  }, []);
+
+  useEffect(() => {
+    if (!location) {
+      getPreciseLocation();
+    }
+  }, [location, getPreciseLocation]);
+
+  const handleLocationChange = (lat: number, lng: number) => {
+    if (lat === 0 && lng === 0) {
+      // Reset to precise location
+      getPreciseLocation();
+    } else {
+      setLocation({ lat, lng });
+    }
+  };
 
   // ── Load conversations & favorites on sign-in ─────────────────────────────
   useEffect(() => {
@@ -440,6 +455,7 @@ export function EnhancedChatbot({ onMapUpdate, userLocation }: EnhancedChatbotPr
         onLoadConversation={loadConversation}
         onDeleteConversation={deleteConversation}
         onOpenVenueSubmission={() => setShowVenueSubmission(true)}
+        onLocationChange={handleLocationChange}
       />
 
       <MessageList

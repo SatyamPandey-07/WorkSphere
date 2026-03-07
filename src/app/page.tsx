@@ -5,7 +5,7 @@ import Image from "next/image";
 import {
   MapPin, Wifi, Zap, Volume2, Clock, Sparkles, Download,
   ArrowRight, Coffee, Camera, Radio, Star, Users, Building2,
-  ChevronRight, Globe
+  ChevronRight, Globe, FileText, BarChart3
 } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
@@ -112,8 +112,8 @@ export default function Home() {
           </h1>
 
           <p className="text-lg md:text-xl text-white/50 mb-10 max-w-2xl mx-auto leading-relaxed">
-            AI-powered workspace discovery. Find cafes, coworking spaces, and libraries
-            with great WiFi, power outlets, and the vibe that gets you in flow.
+            AI-powered workspace discovery with real-time updates, venue ratings, booking history,
+            and PDF receipts. Find cafes, coworking spaces, and libraries with great WiFi, outlets, and vibes.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -154,8 +154,8 @@ export default function Home() {
           {[
             { value: "500+", label: "Venues indexed", icon: <Building2 className="w-4 h-4" /> },
             { value: "5-step", label: "AI agent pipeline", icon: <Sparkles className="w-4 h-4" /> },
-            { value: "Live", label: "Real-time updates", icon: <Radio className="w-4 h-4" /> },
-            { value: "Free", label: "No credit card", icon: <Star className="w-4 h-4" /> },
+            { value: "24hrs", label: "Feature sprint", icon: <Radio className="w-4 h-4" /> },
+            { value: "100%", label: "Free APIs used", icon: <Star className="w-4 h-4" /> },
           ].map((stat, i) => (
             <div key={i} className="p-5 rounded-2xl border border-white/8 bg-white/4 backdrop-blur-sm text-center hover:border-white/15 hover:bg-white/6 transition-all">
               <div className="flex items-center justify-center gap-1.5 text-white/40 text-xs mb-2">
@@ -209,6 +209,15 @@ export default function Home() {
               <p className="text-white/40 text-xs">Powered by Pexels</p>
             </div>
           </div>
+          <div className="absolute -left-6 bottom-1/4 hidden lg:flex items-center gap-3 px-4 py-3 rounded-2xl bg-black/80 border border-white/10 shadow-xl backdrop-blur-md">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center">
+              <Star className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <p className="text-white text-sm font-semibold">Rating System</p>
+              <p className="text-white/40 text-xs">Community-driven</p>
+            </div>
+          </div>
         </div>
 
         {/* Features */}
@@ -218,14 +227,16 @@ export default function Home() {
             <h2 className="text-3xl md:text-4xl font-bold text-white mt-3 mb-4">Built for remote workers</h2>
             <p className="text-white/40 max-w-xl mx-auto">Every feature designed to help you find and enjoy the best workspace for your day.</p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 max-w-5xl mx-auto">
             <FeatureCard icon={<Wifi className="w-5 h-5" />} title="WiFi Quality" description="Find spaces with reliable, fast internet perfect for video calls and heavy uploads." accent="blue" />
             <FeatureCard icon={<Volume2 className="w-5 h-5" />} title="Noise Levels" description="Filter by quiet zones for deep focus or moderate noise for casual sessions." accent="green" />
             <FeatureCard icon={<Zap className="w-5 h-5" />} title="Power Outlets" description="Never run out of battery. Find venues with accessible power outlets nearby." accent="yellow" />
             <FeatureCard icon={<Clock className="w-5 h-5" />} title="Busy Times" description="Avoid crowds with insights on peak hours and the best times to visit." accent="purple" />
             <FeatureCard icon={<Camera className="w-5 h-5" />} title="Venue Photos" description="Browse beautiful real photos of every workspace before you visit, powered by Pexels." accent="pink" isNew />
             <FeatureCard icon={<Radio className="w-5 h-5" />} title="Real-time Updates" description="Live venue availability, new ratings, and crowd info stream directly to your screen." accent="cyan" isNew />
-            <FeatureCard icon={<MapPin className="w-5 h-5" />} title="Smart Routing" description="OSRM-powered real road directions, not straight lines, to your chosen workspace." accent="red" />
+            <FeatureCard icon={<Star className="w-5 h-5" />} title="Venue Ratings" description="Rate workspaces on WiFi quality, outlets, noise, and quietness. Help the community decide." accent="orange" isNew />
+            <FeatureCard icon={<BarChart3 className="w-5 h-5" />} title="Profile Dashboard" description="Track your booking history in the sleek NEURAL LEDGER with status badges and timeline." accent="teal" isNew />
+            <FeatureCard icon={<FileText className="w-5 h-5" />} title="PDF Receipts" description="Download professional booking receipts instantly. Built serverless with pdf-lib." accent="violet" isNew />
             <FeatureCard icon={<Sparkles className="w-5 h-5" />} title="AI-Powered" description="5-agent pipeline understands plain English queries and finds the perfect match." accent="indigo" />
           </div>
         </div>
@@ -240,8 +251,8 @@ export default function Home() {
             {[
               { n: 1, title: "Tell the AI what you need", desc: "Just type naturally: \"Find a quiet cafe with good WiFi and outlets near me\"" },
               { n: 2, title: "5 agents work in parallel", desc: "Orchestrator, Context, Data, Reasoning, and Action agents collaborate to find and rank the best matches." },
-              { n: 3, title: "Explore with photos on the map", desc: "See all options on a dark interactive map with real photos, ratings, and routing." },
-              { n: 4, title: "Rate & help the community", desc: "Share your experience to help other remote workers find the perfect spot." },
+              { n: 3, title: "Explore with photos on the map", desc: "See all options on a dark interactive map with real photos, ratings, live updates, and routing." },
+              { n: 4, title: "Rate, book & download receipts", desc: "Share your experience, track bookings in your dashboard, and download PDF receipts instantly." },
             ].map((step) => (
               <Step key={step.n} number={step.n} title={step.title} description={step.desc} />
             ))}
@@ -261,7 +272,7 @@ export default function Home() {
               Ready to find your<br />perfect workspace?
             </h2>
             <p className="text-blue-100/70 text-lg mb-10 max-w-lg mx-auto">
-              No credit card. No setup. Just great workspaces.
+              10 powerful features. AI-powered search. Real-time updates. All free, forever.
             </p>
             <Link
               href="/ai"
@@ -323,6 +334,9 @@ function FeatureCard({
     cyan:   { glow: "hover:shadow-cyan-500/20",   text: "text-cyan-400",   bg: "bg-cyan-500/10" },
     red:    { glow: "hover:shadow-red-500/20",     text: "text-red-400",    bg: "bg-red-500/10" },
     indigo: { glow: "hover:shadow-indigo-500/20", text: "text-indigo-400", bg: "bg-indigo-500/10" },
+    orange: { glow: "hover:shadow-orange-500/20", text: "text-orange-400", bg: "bg-orange-500/10" },
+    teal:   { glow: "hover:shadow-teal-500/20",   text: "text-teal-400",   bg: "bg-teal-500/10" },
+    violet: { glow: "hover:shadow-violet-500/20", text: "text-violet-400", bg: "bg-violet-500/10" },
   };
   const a = accents[accent];
   return (

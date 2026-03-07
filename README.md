@@ -40,15 +40,21 @@
 
 ---
 
-## ✨ Recent Updates (Mar 7, 2026)
+## ✨ Recent Updates (Mar 8, 2026 - 24 Hour Sprint)
 
 | Area | Change |
 |------|--------|
+| ⭐ **Venue Rating System** | Built comprehensive rating dialog with WiFi quality, power outlets, noise levels, quietness |
+| 📊 **Profile Dashboard** | Complete user analytics dashboard with "NEURAL LEDGER" booking history |
+| 📄 **PDF Receipt Generation** | Serverless-compatible PDF receipts using **pdf-lib** (fixed PDFKit font loading issues) |
+| 💾 **Download Receipts** | Download button for each booking with loading states and automatic file download |
+| 🔗 **External Link to Map** | View any booked venue on the map from booking history with coordinate validation |
+| 📝 **Venue Submission** | Users can submit new venues via modal form with full data collection |
 | 📸 **Venue Photos** | Migrated from Unsplash → **Pexels API** (20k req/mo free, no billing required) |
 | 📡 **Real-time Updates** | Added **Server-Sent Events (SSE)** stream — live ratings & crowd levels appear instantly |
 | 🎨 **Landing Page** | Complete redesign: dark theme, animated blobs, stats strip, 8 feature cards |
 | 🔒 **Security** | Photo API key proxied server-side — never reaches the browser |
-| 🧹 **Cleanup** | Removed debug endpoints; Foursquare/Google Photos integrations dropped |
+| 🐛 **Critical Fixes** | Fixed Vercel build errors: Buffer handling, cuid string IDs, coordinate validation |
 
 ---
 
@@ -108,9 +114,15 @@
 ### ⭐ User Features
 
 - **Favorites System**: Save frequently visited spots
-- **Crowdsourced Ratings**: Rate venues on WiFi, outlets, noise
+- **Crowdsourced Ratings**: Rate venues on WiFi quality, outlets, noise levels, quietness
+- **Rating Dialog**: Beautiful modal with 5-star ratings for each amenity
 - **Conversation History**: Resume previous searches
-- **Venue Suggestions**: Submit new venues to the platform
+- **Venue Suggestions**: Submit new venues via modal form
+- **Profile Dashboard**: Complete analytics dashboard showing booking history
+- **"NEURAL LEDGER"**: Futuristic booking history with confirmation IDs, dates, venue details
+- **Download Receipts**: PDF receipts for each booking with automatic download
+- **View on Map**: External link button to view booked venues on the interactive map
+- **Booking Status**: Visual status badges (Confirmed, Pending, Cancelled)
 
 ### 🔐 Authentication
 
@@ -118,7 +130,16 @@
 - **User Profiles**: Personalized experience
 - **Webhook Sync**: Real-time user data updates
 
-### 📱 Progressive Web App (PWA)
+### � PDF Receipt System
+
+- **Serverless-Compatible**: Uses **pdf-lib** (not PDFKit) for AWS Lambda compatibility
+- **Instant Generation**: PDF receipts generated on-demand for confirmed bookings
+- **Professional Format**: Includes venue details, booking info, confirmation ID, timestamps
+- **Embedded Fonts**: Helvetica and HelveticaBold loaded from pdf-lib (no filesystem dependencies)
+- **Direct Download**: One-click download with loading states and error handling
+- **Fixed Build Issues**: Resolved Buffer/Uint8Array compatibility and cuid ID string handling
+
+### �📱 Progressive Web App (PWA)
 
 - **Installable**: Add to home screen on mobile/desktop
 - **Offline Support**: IndexedDB storage for venues and favorites
@@ -162,6 +183,7 @@
 | **Venue Photos** | Pexels API - FREE (20k req/mo) |
 | **Real-time** | Server-Sent Events (SSE) |
 | **Routing** | OSRM (Open Source Routing Machine) - FREE |
+| **PDF Generation** | pdf-lib 2.x (serverless-compatible) |
 | **Testing** | Jest 29, React Testing Library, Playwright |
 | **PWA** | Service Workers + IndexedDB |
 | **Deployment** | Vercel |

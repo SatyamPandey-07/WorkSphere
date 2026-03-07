@@ -259,7 +259,7 @@ const Map = ({
           <Marker
             key={marker.id}
             position={[marker.position.lat, marker.position.lng]}
-            icon={defaultIcon}
+            icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
           >
             <Popup>
               <div className="text-sm">

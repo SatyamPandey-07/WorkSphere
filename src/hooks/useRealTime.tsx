@@ -31,7 +31,7 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
 
   const clearUpdates = useCallback(() => {
     setUpdates([]);
-  }, []);
+  }, [setUpdates]);
 
   // Stable key — avoids reconnecting when a new array with the same IDs is passed
   const venueIdsKey = venueIds.slice().sort().join(",");
@@ -114,7 +114,7 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [venueIdsKey, enabled]);
+  }, [venueIdsKey, enabled, venueIds]);
 
   return { updates, isConnected, error, clearUpdates };
 }

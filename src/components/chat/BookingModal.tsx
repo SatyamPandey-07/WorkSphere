@@ -80,15 +80,17 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                 }),
             });
 
-            if (!response.ok) throw new Error("Signal transmission failed");
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.details || errorData.error || "Signal transmission failed");
+            }
 
             setStep("success");
             trackEvent("venue_rated", { venueId: venue?.id || "unknown", venueName: venue?.name || "unknown", action: "booking_confirmed" });
-        } catch (err) {
-            console.error("Booking failed:", err);
-            setTimeout(() => {
-                setStep("success");
-            }, 2000);
+        } catch (err: any) {
+            console.error("Booking failure details:", err);
+            setStep("details");
+            alert(`NEURAL SIGNAL ERROR: ${err.message}`);
         }
     };
 

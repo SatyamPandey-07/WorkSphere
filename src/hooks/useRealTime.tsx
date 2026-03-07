@@ -41,8 +41,16 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
 
     let eventSource: EventSource | null = null;
     let reconnectTimeout: NodeJS.Timeout;
+    let currentBackoff = 2000; // Start with 2s
 
     const connect = () => {
+      // Don't even try if we know we're offline
+      if (typeof window !== "undefined" && !window.navigator.onLine) {
+        setIsConnected(false);
+        setError("Browser is offline");
+        return;
+      }
+
       const params = new URLSearchParams();
       venueIds.forEach((id) => params.append("venueId", id));
 
@@ -51,15 +59,15 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       eventSource.onopen = () => {
         setIsConnected(true);
         setError(null);
+        currentBackoff = 2000; // Reset backoff on success
         console.log("[RealTime] Connected to updates stream");
       };
 
       eventSource.onmessage = (event) => {
         try {
           const update = JSON.parse(event.data) as VenueUpdate;
-          // Ignore heartbeat / connected meta-messages
           if (update.type === "rating" || update.type === "availability" || update.type === "new_review") {
-            setUpdates((prev) => [...prev.slice(-49), update]); // Keep last 50 updates
+            setUpdates((prev) => [...prev.slice(-49), update]);
           }
         } catch (e) {
           console.error("[RealTime] Failed to parse update:", e);
@@ -68,21 +76,44 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
 
       eventSource.onerror = () => {
         setIsConnected(false);
-        setError("Connection lost. Reconnecting...");
+        const isOffline = typeof window !== "undefined" && !window.navigator.onLine;
+
+        setError(isOffline ? "Browser is offline" : "Connection failed. Retrying...");
         eventSource?.close();
 
-        // Reconnect after 5 seconds
-        reconnectTimeout = setTimeout(connect, 5000);
+        // Exponential backoff: double the delay up to 60 seconds
+        console.warn(`[RealTime] Connection failed. Retrying in ${currentBackoff / 1000}s...`);
+        reconnectTimeout = setTimeout(connect, currentBackoff);
+        currentBackoff = Math.min(60000, currentBackoff * 2);
       };
     };
+
+    // Handle online/offline events automatically
+    const handleOnline = () => {
+      console.log("[RealTime] Browser online, reconnecting...");
+      currentBackoff = 2000;
+      connect();
+    };
+
+    const handleOffline = () => {
+      console.log("[RealTime] Browser offline, pausing stream");
+      setIsConnected(false);
+      setError("Browser is offline");
+      eventSource?.close();
+      clearTimeout(reconnectTimeout);
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     connect();
 
     return () => {
       eventSource?.close();
       clearTimeout(reconnectTimeout);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [venueIdsKey, enabled]);
 
   return { updates, isConnected, error, clearUpdates };

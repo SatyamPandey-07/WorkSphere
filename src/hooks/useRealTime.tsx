@@ -33,6 +33,9 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
     setUpdates([]);
   }, []);
 
+  // Stable key — avoids reconnecting when a new array with the same IDs is passed
+  const venueIdsKey = venueIds.slice().sort().join(",");
+
   useEffect(() => {
     if (!enabled || venueIds.length === 0) return;
 
@@ -54,7 +57,10 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       eventSource.onmessage = (event) => {
         try {
           const update = JSON.parse(event.data) as VenueUpdate;
-          setUpdates((prev) => [...prev.slice(-49), update]); // Keep last 50 updates
+          // Ignore heartbeat / connected meta-messages
+          if (update.type === "rating" || update.type === "availability" || update.type === "new_review") {
+            setUpdates((prev) => [...prev.slice(-49), update]); // Keep last 50 updates
+          }
         } catch (e) {
           console.error("[RealTime] Failed to parse update:", e);
         }
@@ -76,7 +82,8 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       eventSource?.close();
       clearTimeout(reconnectTimeout);
     };
-  }, [venueIds, enabled]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [venueIdsKey, enabled]);
 
   return { updates, isConnected, error, clearUpdates };
 }

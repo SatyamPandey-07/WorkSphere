@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { EnhancedChatbot } from "@/components/EnhancedChatbot";
 import { VenueRatingDialog } from "@/components/VenueRatingDialog";
@@ -36,19 +36,21 @@ export default function AppPage() {
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
 
-  // Real-time updates for venue changes
-  const venueIds = markers.map(m => m.id);
+  // Stable venueIds reference — must be memoised or a new array every render
+  // causes the SSE connection to be torn down and recreated on every render.
+  const venueIds = useMemo(() => markers.map(m => m.id), [markers]);
   const { updates: realTimeUpdates, isConnected } = useRealTimeUpdates({
     venueIds,
     enabled: venueIds.length > 0 && isOnline,
   });
 
-  // Handle real-time updates
+  // Handle real-time updates (skip heartbeat / connected messages)
   useEffect(() => {
     if (realTimeUpdates.length > 0) {
       const latestUpdate = realTimeUpdates[realTimeUpdates.length - 1];
-      console.log("[RealTime] Venue update received:", latestUpdate);
-      // Could refresh venue data or show notification here
+      if (latestUpdate.type === "rating" || latestUpdate.type === "availability" || latestUpdate.type === "new_review") {
+        console.log("[RealTime] Venue update received:", latestUpdate);
+      }
     }
   }, [realTimeUpdates]);
 

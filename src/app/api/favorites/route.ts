@@ -56,13 +56,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Upsert venue first (create if doesn't exist from Overpass API data)
-    await prisma.venue.upsert({
-      where: { id: venueId },
-      update: {}, // Don't update if exists
+    const targetPlaceId = placeId || venueId;
+
+    // Upsert venue first (identify by placeId)
+    const dbVenue = await prisma.venue.upsert({
+      where: { placeId: targetPlaceId },
+      update: {
+        name: name || "Unknown Venue",
+        address: address || null,
+        category: category || "other",
+      },
       create: {
-        id: venueId,
-        placeId: placeId || venueId,
+        placeId: targetPlaceId,
         name: name || "Unknown Venue",
         latitude: latitude || 0,
         longitude: longitude || 0,
@@ -74,7 +79,7 @@ export async function POST(req: NextRequest) {
     const favorite = await prisma.favorite.create({
       data: {
         userId,
-        venueId,
+        venueId: dbVenue.id,
       },
       include: {
         venue: true,
@@ -114,20 +119,35 @@ export async function DELETE(req: NextRequest) {
 
     // Get venueId from query params
     const { searchParams } = new URL(req.url);
-    const venueId = searchParams.get("venueId");
+    const rawVenueId = searchParams.get("venueId");
 
-    if (!venueId) {
+    if (!rawVenueId) {
       return NextResponse.json(
         { error: "venueId is required" },
         { status: 400 }
       );
     }
 
+    // Identify the venue in our DB (it might be passed as a placeId)
+    const venue = await prisma.venue.findFirst({
+      where: {
+        OR: [
+          { id: rawVenueId },
+          { placeId: rawVenueId }
+        ]
+      },
+      select: { id: true }
+    });
+
+    if (!venue) {
+      return NextResponse.json({ success: true }); // Already gone or never existed
+    }
+
     await prisma.favorite.delete({
       where: {
         userId_venueId: {
           userId,
-          venueId,
+          venueId: venue.id,
         },
       },
     });

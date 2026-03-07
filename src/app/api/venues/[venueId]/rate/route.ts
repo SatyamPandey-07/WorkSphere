@@ -31,32 +31,34 @@ export async function POST(
     const { wifiQuality, hasOutlets, noiseLevel, comment } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
-    // Check if venue exists, create if not (for Overpass API results)
-    let venue = await prisma.venue.findUnique({
-      where: { id: venueId },
+    const targetPlaceId = venueData?.placeId || venueId;
+
+    // Check if venue exists, create/update if not (identify by placeId)
+    const dbVenue = await prisma.venue.upsert({
+      where: { placeId: targetPlaceId },
+      update: {
+        name: venueData?.name || "Unknown Venue",
+        address: venueData?.address || null,
+        category: venueData?.category || "other",
+      },
+      create: {
+        placeId: targetPlaceId,
+        name: venueData?.name || "Unknown Venue",
+        latitude: venueData?.lat || venueData?.latitude || 0,
+        longitude: venueData?.lng || venueData?.longitude || 0,
+        category: venueData?.category || "other",
+        address: venueData?.address || null,
+      },
     });
 
-    if (!venue) {
-      // Create venue from provided data or with defaults
-      venue = await prisma.venue.create({
-        data: {
-          id: venueId,
-          placeId: venueId,
-          name: venueData?.name || "Unknown Venue",
-          latitude: venueData?.lat || 0,
-          longitude: venueData?.lng || 0,
-          category: venueData?.category || "other",
-          address: venueData?.address || null,
-        },
-      });
-    }
+    const finalVenueId = dbVenue.id;
 
     // Upsert rating (user can only have one rating per venue)
     const rating = await prisma.venueRating.upsert({
       where: {
         userId_venueId: {
           userId,
-          venueId,
+          venueId: finalVenueId,
         },
       },
       update: {
@@ -67,7 +69,7 @@ export async function POST(
       },
       create: {
         userId,
-        venueId,
+        venueId: finalVenueId,
         wifiQuality,
         hasOutlets,
         noiseLevel,
@@ -77,7 +79,7 @@ export async function POST(
 
     // Update venue with new averages
     const allRatings = await prisma.venueRating.findMany({
-      where: { venueId },
+      where: { venueId: finalVenueId },
     });
 
     const avgWifi = allRatings.reduce((sum: number, r: { wifiQuality: number }) => sum + r.wifiQuality, 0) / allRatings.length;
@@ -91,7 +93,7 @@ export async function POST(
     const dominantNoise = Object.entries(noiseCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0];
 
     await prisma.venue.update({
-      where: { id: venueId },
+      where: { id: finalVenueId },
       data: {
         wifiQuality: Math.round(avgWifi),
         hasOutlets: outletPercent > 50,
@@ -124,11 +126,26 @@ export async function GET(
 
     const { venueId } = await context.params;
 
+    // Find the venue first to get our internal ID (venueId from URL might be a placeId)
+    const venue = await prisma.venue.findFirst({
+      where: {
+        OR: [
+          { id: venueId },
+          { placeId: venueId }
+        ]
+      },
+      select: { id: true }
+    });
+
+    if (!venue) {
+      return NextResponse.json({ rating: null });
+    }
+
     const rating = await prisma.venueRating.findUnique({
       where: {
         userId_venueId: {
           userId,
-          venueId,
+          venueId: venue.id,
         },
       },
     });

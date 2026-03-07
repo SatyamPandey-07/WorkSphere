@@ -8,7 +8,7 @@
  */
 
 const API_KEY = process.env.FOURSQUARE_API_KEY;
-const BASE_URL = "https://api.foursquare.com/v3";
+const BASE_URL = "https://places.foursquare.com/v3";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

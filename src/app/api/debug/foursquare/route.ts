@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const maskedKey = `${API_KEY.slice(0, 8)}...${API_KEY.slice(-4)}`;
 
     // Step 1: Search for place
-    const searchUrl = new URL("https://api.foursquare.com/v3/places/search");
+    const searchUrl = new URL("https://places.foursquare.com/v3/places/search");
     searchUrl.searchParams.set("query", name);
     searchUrl.searchParams.set("ll", `${lat},${lng}`);
     searchUrl.searchParams.set("radius", "500");
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
 
     // Step 2: Fetch photos for the place
     const photoRes = await fetch(
-        `https://api.foursquare.com/v3/places/${encodeURIComponent(fsqId)}/photos?limit=1&sort=POPULAR`,
+        `https://places.foursquare.com/v3/places/${encodeURIComponent(fsqId)}/photos?limit=1&sort=POPULAR`,
         { headers: { Authorization: API_KEY, Accept: "application/json" } }
     );
 

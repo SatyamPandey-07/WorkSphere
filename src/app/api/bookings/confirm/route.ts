@@ -26,7 +26,7 @@ export async function POST(req: Request) {
         const confirmationId = `WS-#${Math.floor(100000 + Math.random() * 900000)}`;
 
         // 1. Persist to Database 💎
-        const booking = await prisma.booking.create({
+        const booking = await (prisma as any).booking.create({
             data: {
                 userId,
                 venueId: venue.id,

@@ -55,25 +55,27 @@ export async function GET() {
             return NextResponse.json({ error: "User not found in neural ledger" }, { status: 404 });
         }
 
+        const u = user as any;
+
         // 2. Format User-Centric Analytics
         return NextResponse.json({
             profile: {
-                id: user.id,
-                email: user.email,
-                firstName: user.firstName,
-                lastName: user.lastName,
-                joinedAt: user.createdAt
+                id: u.id,
+                email: u.email,
+                firstName: u.firstName,
+                lastName: u.lastName,
+                joinedAt: u.createdAt
             },
             summary: {
-                totalResidencies: user._count.bookings,
-                totalFavorites: user._count.favorites,
-                totalRatings: user._count.ratings,
-                totalConversations: user._count.conversations
+                totalResidencies: u._count?.bookings || 0,
+                totalFavorites: u._count?.favorites || 0,
+                totalRatings: u._count?.ratings || 0,
+                totalConversations: u._count?.conversations || 0
             },
             history: {
-                bookings: user.bookings,
-                favorites: user.favorites,
-                ratings: user.ratings
+                bookings: u.bookings || [],
+                favorites: u.favorites || [],
+                ratings: u.ratings || []
             },
             timestamp: Date.now()
         });

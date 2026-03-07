@@ -9,7 +9,7 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        const bookings = await prisma.booking.findMany({
+        const bookings = await (prisma as any).booking.findMany({
             where: { userId },
             include: {
                 venue: {

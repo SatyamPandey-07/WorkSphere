@@ -46,6 +46,7 @@ export default function AnalyticsDashboard() {
     const { user: clerkUser } = useUser();
     const [data, setData] = useState<UserAnalytics | null>(null);
     const [loading, setLoading] = useState(true);
+    const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
     const fetchUserStats = async () => {
         setLoading(true);
@@ -57,6 +58,39 @@ export default function AnalyticsDashboard() {
             console.error(e);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleDownloadReceipt = async (bookingId: number, confirmationId: string) => {
+        setDownloadingId(bookingId);
+        try {
+            const response = await fetch(`/api/bookings/${bookingId}/download`);
+            
+            if (!response.ok) {
+                throw new Error("Failed to download receipt");
+            }
+
+            // Create blob from response
+            const blob = await response.blob();
+            
+            // Create download link
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `WorkSphere_Receipt_${confirmationId}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            
+            // Cleanup
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            console.log("[Download] Receipt downloaded successfully");
+        } catch (error) {
+            console.error("[Download Error]:", error);
+            alert("Failed to download receipt. Please try again.");
+        } finally {
+            setDownloadingId(null);
         }
     };
 
@@ -203,8 +237,17 @@ export default function AnalyticsDashboard() {
                                             <p className="text-sm font-black uppercase tracking-tight leading-none mb-1">{booking.date}</p>
                                             <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{booking.time}</p>
                                         </div>
-                                        <button className="p-4 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-2xl hover:scale-110 transition-transform shadow-lg">
-                                            <Download className="w-5 h-5" />
+                                        <button 
+                                            onClick={() => handleDownloadReceipt(booking.id, booking.confirmationId)}
+                                            disabled={downloadingId === booking.id}
+                                            className="p-4 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-2xl hover:scale-110 transition-transform shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                                            title="Download Receipt"
+                                        >
+                                            {downloadingId === booking.id ? (
+                                                <RefreshCw className="w-5 h-5 animate-spin" />
+                                            ) : (
+                                                <Download className="w-5 h-5" />
+                                            )}
                                         </button>
                                     </div>
                                 </div>

@@ -4,6 +4,7 @@ import PDFDocument from "pdfkit";
 import { trackEvent } from "@/lib/analytics";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { ensureUserExists } from "@/lib/auth";
 
 // ─── Constants & Clients ──────────────────────────────────────────────────
 
@@ -16,6 +17,9 @@ export async function POST(req: Request) {
         if (!userId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+
+        // 0. Ensure Identity 💎
+        await ensureUserExists(userId);
 
         const { venue, date, time, customerEmail, customerPhone } = await req.json();
 
@@ -110,8 +114,12 @@ export async function POST(req: Request) {
             bookingId: booking.id,
             confirmationId
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error("[Booking API Critical Failure]:", error);
-        return NextResponse.json({ success: false, error: "Internal systems error during confirmation" }, { status: 500 });
+        return NextResponse.json({
+            success: false,
+            error: "Internal systems error during confirmation",
+            details: error.message || String(error)
+        }, { status: 500 });
     }
 }

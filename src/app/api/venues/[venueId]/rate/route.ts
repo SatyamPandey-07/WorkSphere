@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { ensureUserExists } from "@/lib/auth";
 import { venueRatingSchema, validateRequest } from "@/lib/validations";
 
 // POST /api/venues/[venueId]/rate - Add rating
@@ -10,20 +11,23 @@ export async function POST(
 ) {
   try {
     const { userId } = await auth();
-    
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    // Ensure Identity 💎
+    await ensureUserExists(userId);
+
     const { venueId } = await context.params;
     const body = await req.json();
-    
+
     // Validate rating data with Zod
     const validation = validateRequest(venueRatingSchema, body);
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-    
+
     const { wifiQuality, hasOutlets, noiseLevel, comment } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
@@ -78,7 +82,7 @@ export async function POST(
 
     const avgWifi = allRatings.reduce((sum: number, r: { wifiQuality: number }) => sum + r.wifiQuality, 0) / allRatings.length;
     const outletPercent = (allRatings.filter((r: { hasOutlets: boolean }) => r.hasOutlets).length / allRatings.length) * 100;
-    
+
     // Most common noise level
     const noiseCounts: Record<string, number> = {};
     allRatings.forEach((r: { noiseLevel: string }) => {
@@ -113,7 +117,7 @@ export async function GET(
 ) {
   try {
     const { userId } = await auth();
-    
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { ensureUserExists } from "@/lib/auth";
 
 export async function GET() {
     try {
@@ -8,6 +9,9 @@ export async function GET() {
         if (!userId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+
+        // Ensure Identity 💎
+        await ensureUserExists(userId);
 
         const bookings = await (prisma as any).booking.findMany({
             where: { userId },

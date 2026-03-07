@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
+import { ensureUserExists } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,9 @@ export async function GET() {
         if (!userId) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
+
+        // 0. Ensure Identity 💎
+        await ensureUserExists(userId);
 
         // 1. Get User Details with full inclusions
         const user = await prisma.user.findUnique({

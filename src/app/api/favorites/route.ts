@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { ensureUserExists } from "@/lib/auth";
 
 // GET /api/favorites - Get user's favorites
 export async function GET() {
   try {
     const { userId } = await auth();
-    
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Ensure Identity 💎
+    await ensureUserExists(userId);
 
     const favorites = await prisma.favorite.findMany({
       where: { userId },
@@ -35,10 +39,13 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
-    
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Ensure Identity 💎
+    await ensureUserExists(userId);
 
     const { venueId, placeId, name, latitude, longitude, category, address } = await req.json();
 
@@ -77,7 +84,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ favorite }, { status: 201 });
   } catch (error: any) {
     console.error("POST /api/favorites error:", error);
-    
+
     // Handle unique constraint violation (already favorited)
     if (error.code === "P2002") {
       return NextResponse.json(
@@ -97,10 +104,13 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const { userId } = await auth();
-    
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Ensure Identity 💎
+    await ensureUserExists(userId);
 
     // Get venueId from query params
     const { searchParams } = new URL(req.url);

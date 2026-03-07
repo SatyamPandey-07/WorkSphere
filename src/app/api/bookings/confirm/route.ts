@@ -64,9 +64,14 @@ export async function POST(req: Request) {
             }
         });
 
-        // 2. Generate PDF Receipt in Memory
+        // 2. Generate PDF Receipt in Memory (Serverless-Compatible)
         const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-            const doc = new PDFDocument({ margin: 50 });
+            // Use bufferPages: true to avoid font loading issues on Vercel
+            const doc = new PDFDocument({ 
+                margin: 50,
+                bufferPages: true,
+                autoFirstPage: true
+            });
             const chunks: any[] = [];
             doc.on("data", (chunk) => chunks.push(chunk));
             doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -78,14 +83,15 @@ export async function POST(req: Request) {
             // Neural Design Branding
             doc.rect(0, 0, doc.page.width, 10).fill("#3b82f6");
             doc.moveDown(2);
-            doc.fontSize(25).font("Helvetica-Bold").text("WORKSPHERE CONFIRMATION", { align: "center", characterSpacing: 2 });
+            // Use built-in fonts without explicit loading
+            doc.fontSize(25).text("WORKSPHERE CONFIRMATION", { align: "center" });
             doc.moveDown(0.2);
-            doc.fontSize(8).font("Helvetica").fillOpacity(0.5).text("SECURE NEURAL TRANSACTION RECEIPT", { align: "center" });
+            doc.fontSize(8).fillOpacity(0.5).text("SECURE NEURAL TRANSACTION RECEIPT", { align: "center" });
             doc.fillOpacity(1);
 
             doc.moveDown(3);
-            doc.fontSize(10).font("Helvetica-Bold").text("BOOKING DETAILS:");
-            doc.font("Helvetica").text("--------------------------------------------------");
+            doc.fontSize(12).text("BOOKING DETAILS:");
+            doc.fontSize(10).text("--------------------------------------------------");
             doc.text(`REFERENCE ID: ${confirmationId}`);
             doc.text(`VENUE: ${safeText(venue.name)}`);
             doc.text(`CATEGORY: ${safeText(venue.category?.toUpperCase() || "WORKSPACE")}`);
@@ -93,8 +99,8 @@ export async function POST(req: Request) {
             doc.text(`SCHEDULE: ${date} @ ${time}`);
 
             doc.moveDown(2);
-            doc.font("Helvetica-Bold").text("SECURITY PROTOCOL:");
-            doc.font("Helvetica").text("ZERO-FEE ACCESS PROTOCOL ACTIVE");
+            doc.fontSize(12).text("SECURITY PROTOCOL:");
+            doc.fontSize(10).text("ZERO-FEE ACCESS PROTOCOL ACTIVE");
             doc.text("ENCRYPTED VIA WORKSPHERE L3");
 
             doc.moveDown(5);

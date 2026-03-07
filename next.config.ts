@@ -22,6 +22,15 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Bundle PDFKit font data for Vercel serverless
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Copy PDFKit's font data files to the serverless bundle
+      config.resolve.alias.canvas = false;
+      config.resolve.alias.encoding = false;
+    }
+    return config;
+  },
   // Use turbopack config (Next.js 16 default)
   turbopack: {},
 };

@@ -64,9 +64,9 @@ export function VenueDetailDialog({
     const displayPhoto = photoUrl || venueFallbacks[venue.category || "default"] || venueFallbacks.default;
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-300">
             <div
-                className="glass-card w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-2xl animate-in slide-in-from-bottom-8 duration-500"
+                className="bg-white dark:bg-zinc-950 w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] border border-white/10 dark:border-zinc-800 animate-in slide-in-from-bottom-12 zoom-in-95 duration-500"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Hero Image Section */}

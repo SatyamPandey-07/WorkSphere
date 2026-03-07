@@ -9,7 +9,9 @@ import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { Loader2, Map as MapIcon, MessageCircle, WifiOff } from "lucide-react";
 import { OfflineIndicator } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
-import { saveVenueOffline, getAllVenuesOffline, OfflineVenue } from "@/lib/offlineStorage";
+import { saveVenueOffline, getAllVenueOffline, OfflineVenue } from "@/lib/offlineStorage";
+import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
+import { Venue } from "@/components/chat/ChatMessages";
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const Map = dynamic(() => import("@/components/Map"), {
@@ -30,9 +32,10 @@ export default function AppPage() {
     isOpen: boolean;
     venue: MapMarker | null;
   }>({ isOpen: false, venue: null });
+  const [selectedVenue, setSelectedVenue] = useState<MapMarker | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-  
+
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
 
@@ -58,11 +61,11 @@ export default function AppPage() {
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
-    
+
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
     setIsOnline(navigator.onLine);
-    
+
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
@@ -119,7 +122,7 @@ export default function AppPage() {
   useEffect(() => {
     const getLocation = async () => {
       setIsLoadingLocation(true);
-      
+
       // Try browser geolocation first
       if ("geolocation" in navigator) {
         navigator.geolocation.getCurrentPosition(
@@ -216,7 +219,7 @@ export default function AppPage() {
             },
           }));
           setMarkers(newMarkers);
-          
+
           // Auto-center map on new markers
           if (newMarkers.length > 0 && location) {
             setMapView({
@@ -257,11 +260,11 @@ export default function AppPage() {
           (async () => {
             const { getRoute } = await import('@/lib/routing');
             const routeData = await getRoute(
-              update.route!.from, 
-              update.route!.to, 
+              update.route!.from,
+              update.route!.to,
               'walking' // can also be 'driving' or 'cycling'
             );
-            
+
             const newRoute: MapRoute = {
               id: `route-${Date.now()}`,
               path: routeData?.path || [
@@ -273,7 +276,7 @@ export default function AppPage() {
               isHighlighted: true,
             };
             setRoutes([newRoute]);
-            
+
             // Center map between user and destination
             setMapView({
               center: {
@@ -358,22 +361,20 @@ export default function AppPage() {
       <div className="md:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <button
           onClick={() => setMobileView("chat")}
-          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
-            mobileView === "chat"
+          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${mobileView === "chat"
               ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
               : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-          }`}
+            }`}
         >
           <MessageCircle className="w-5 h-5" />
           Chat
         </button>
         <button
           onClick={() => setMobileView("map")}
-          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
-            mobileView === "map"
+          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${mobileView === "map"
               ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
               : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-          }`}
+            }`}
         >
           <MapIcon className="w-5 h-5" />
           Map
@@ -420,6 +421,18 @@ export default function AppPage() {
                   setTimeout(() => setMobileView("map"), 500);
                 }
               }}
+              onOpenDetails={(v) => {
+                // Map the Venue type from chat to the MapMarker type used here
+                setSelectedVenue({
+                  id: v.id,
+                  name: v.name,
+                  position: { lat: v.lat, lng: v.lng },
+                  category: v.category || "cafe",
+                  address: v.address,
+                  amenities: { wifi: v.wifi, outlets: v.hasOutlets, quiet: v.noiseLevel === "quiet" },
+                  score: v.score
+                });
+              }}
               userLocation={
                 location ? { lat: location.latitude, lng: location.longitude } : undefined
               }
@@ -427,6 +440,30 @@ export default function AppPage() {
           </ChatErrorBoundary>
         </div>
       </div>
+
+      {/* Venue Detail Dialog - Root level to avoid clipping */}
+      <VenueDetailDialog
+        venue={selectedVenue ? {
+          id: selectedVenue.id,
+          name: selectedVenue.name,
+          lat: selectedVenue.position.lat,
+          lng: selectedVenue.position.lng,
+          category: selectedVenue.category,
+          address: selectedVenue.address,
+          ...selectedVenue.amenities,
+          score: selectedVenue.score
+        } as Venue : null}
+        isOpen={!!selectedVenue}
+        onClose={() => setSelectedVenue(null)}
+        isFavorited={false} // Will be handled by state if needed later
+        onGetDirections={(v) => {
+          handleMapUpdate({
+            type: "route",
+            route: { from: location ? { lat: location.latitude, lng: location.longitude } : { lat: 0, lng: 0 }, to: { lat: v.lat, lng: v.lng } }
+          });
+        }}
+        onToggleFavorite={() => { }} // Hook into favorite state if needed
+      />
 
       {/* Rating Dialog */}
       <VenueRatingDialog

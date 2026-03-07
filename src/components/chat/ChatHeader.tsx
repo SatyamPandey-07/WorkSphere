@@ -19,10 +19,12 @@ import {
     ChevronRight,
     Wifi,
     Zap as Outlets,
-    Volume2
+    Volume2,
+    BarChart3
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
+import Link from "next/link";
 
 interface Conversation {
     id: string;
@@ -169,6 +171,15 @@ export function ChatHeader({
                         <Filter className="w-4 h-4" />
                     </button>
 
+                    {/* Analytics Link */}
+                    <Link
+                        href="/analytics"
+                        className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden lg:flex"
+                        title="Intelligence Dashboard"
+                    >
+                        <BarChart3 className="w-4 h-4" />
+                    </Link>
+
                     <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
 
                     {/* Add Venue Suggestion Button - High Contrast */}
@@ -282,10 +293,10 @@ export function ChatHeader({
                         <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_5px_rgba(59,130,246,0.8)]" />
                         <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">LATENCY: 14MS</span>
                     </div>
-                    <div className="hidden lg:flex items-center gap-1.5">
+                    <Link href="/analytics" className="hidden lg:flex items-center gap-1.5 hover:opacity-70 transition-opacity">
                         <Activity className="w-3 h-3 text-zinc-400" />
-                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">THROUGHPUT: 1.2 GB/S</span>
-                    </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">ANALYTICS</span>
+                    </Link>
                 </div>
 
                 <div className="flex items-center gap-3">

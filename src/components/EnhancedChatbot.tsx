@@ -444,6 +444,17 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, userLocation }: En
       <ChatHeader
         onOpenVenueSubmission={() => setShowVenueSubmission(true)}
         userLocation={userLocation}
+        onLocationChange={handleLocationChange}
+        filters={filters}
+        showFilters={showFilters}
+        setShowFilters={setShowFilters}
+        onToggleFilter={(key) => toggleFilter(key as keyof Filters)}
+        showHistory={showHistory}
+        setShowHistory={setShowHistory}
+        onNewChat={startNewChat}
+        conversations={conversations}
+        onLoadConversation={loadConversation}
+        onDeleteConversation={deleteConversation}
       />
 
       <MessageList

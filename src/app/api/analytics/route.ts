@@ -24,7 +24,13 @@ export async function GET() {
                     orderBy: { createdAt: "desc" },
                     include: {
                         venue: {
-                            select: { name: true, category: true, address: true }
+                            select: { 
+                                name: true, 
+                                category: true, 
+                                address: true,
+                                latitude: true,
+                                longitude: true
+                            }
                         }
                     }
                 },

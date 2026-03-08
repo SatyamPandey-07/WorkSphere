@@ -96,18 +96,25 @@ model Message {
 }
 
 model Booking {
-  id             String   @id @default(cuid())
+  id             String        @id @default(cuid())
   userId         String
-  user           User     @relation(fields: [userId], references: [id])
+  user           User          @relation(fields: [userId], references: [id])
   venueId        String
-  venue          Venue    @relation(fields: [venueId], references: [id])
+  venue          Venue         @relation(fields: [venueId], references: [id])
   date           String
   time           String
   customerEmail  String
   customerPhone  String?
-  confirmationId String   @unique
-  createdAt      DateTime @default(now())
+  status         BookingStatus @default(CONFIRMED)
+  confirmationId String        @unique
+  createdAt      DateTime      @default(now())
 
   @@index([userId])
   @@index([venueId])
+}
+
+enum BookingStatus {
+  CONFIRMED
+  PENDING
+  CANCELLED
 }

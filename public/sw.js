@@ -1,54 +1,65 @@
 // Service Worker for WorkSphere PWA
-const CACHE_NAME = 'worksphere-v2';
-const OFFLINE_URL = '/offline';
+const CACHE_NAME = "worksphere-v2";
+const OFFLINE_URL = "/offline";
 
 // Assets to cache on install
-const PRECACHE_ASSETS = [
-  '/',
-  '/offline',
-  '/icons/icon.svg',
-  '/manifest.json'
-];
+const PRECACHE_ASSETS = ["/", "/offline", "/icons/icon.svg", "/manifest.json"];
 
 // Install event - precache essential assets
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(PRECACHE_ASSETS);
-    })
+    }),
   );
   self.skipWaiting();
 });
 
 // Activate event - clean up old caches
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
           .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+          .map((name) => caches.delete(name)),
       );
-    })
+    }),
   );
   self.clients.claim();
 });
 
-// Fetch event - network first, fallback to cache
-self.addEventListener('fetch', (event) => {
-  // Skip non-GET requests
-  if (event.request.method !== 'GET') return;
+// Handle Cache-First for maps and images, Network-First for everything else
+if (isExternalAsset) {
+  event.respondWith(
+    caches.open(CACHE_NAME).then((cache) => {
+      return cache.match(event.request).then((cachedResponse) => {
+        // Agar cache mein mil gaya, toh turant return karo
+        if (cachedResponse) {
+          return cachedResponse;
+        }
 
-  // Skip API requests and external URLs
-  const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/api/') || url.origin !== self.location.origin) {
-    return;
-  }
-
+        // Agar cache mein nahi hai, toh network se fetch karo aur cache mein daalo
+        return fetch(event.request)
+          .then((networkResponse) => {
+            // Note: External requests sometimes return status 0 (opaque), we check response.status === 200 || response.status === 0
+            if (
+              networkResponse.status === 200 ||
+              networkResponse.status === 0
+            ) {
+              cache.put(event.request, networkResponse.clone());
+            }
+            return networkResponse;
+          })
+          .catch(() => new Response("Asset Offline", { status: 503 }));
+      });
+    }),
+  );
+} else {
+  // Existing Network-First logic for local assets
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Clone and cache successful responses
         if (response.ok) {
           const responseClone = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
@@ -58,26 +69,21 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(async () => {
-        // Try to serve from cache
         const cachedResponse = await caches.match(event.request);
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        // Return offline page for navigation requests
-        if (event.request.mode === 'navigate') {
+        if (cachedResponse) return cachedResponse;
+        if (event.request.mode === "navigate") {
           return caches.match(OFFLINE_URL);
         }
-        return new Response('Offline', { status: 503 });
-      })
+        return new Response("Offline", { status: 503 });
+      }),
   );
-});
-
+}
 // Background Sync for offline actions
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-favorites') {
+self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-favorites") {
     event.waitUntil(syncFavorites());
   }
-  if (event.tag === 'sync-ratings') {
+  if (event.tag === "sync-ratings") {
     event.waitUntil(syncRatings());
   }
 });
@@ -86,25 +92,25 @@ self.addEventListener('sync', (event) => {
 async function syncFavorites() {
   try {
     const db = await openIndexedDB();
-    const pendingFavorites = await getPendingActions(db, 'favorites');
-    
+    const pendingFavorites = await getPendingActions(db, "favorites");
+
     for (const action of pendingFavorites) {
       try {
-        const response = await fetch('/api/favorites', {
+        const response = await fetch("/api/favorites", {
           method: action.method,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(action.data),
         });
-        
+
         if (response.ok) {
-          await removePendingAction(db, 'favorites', action.id);
+          await removePendingAction(db, "favorites", action.id);
         }
       } catch (error) {
-        console.error('Failed to sync favorite:', error);
+        console.error("Failed to sync favorite:", error);
       }
     }
   } catch (error) {
-    console.error('Sync favorites failed:', error);
+    console.error("Sync favorites failed:", error);
   }
 }
 
@@ -112,40 +118,43 @@ async function syncFavorites() {
 async function syncRatings() {
   try {
     const db = await openIndexedDB();
-    const pendingRatings = await getPendingActions(db, 'ratings');
-    
+    const pendingRatings = await getPendingActions(db, "ratings");
+
     for (const action of pendingRatings) {
       try {
         const response = await fetch(`/api/venues/${action.venueId}/rate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(action.data),
         });
-        
+
         if (response.ok) {
-          await removePendingAction(db, 'ratings', action.id);
+          await removePendingAction(db, "ratings", action.id);
         }
       } catch (error) {
-        console.error('Failed to sync rating:', error);
+        console.error("Failed to sync rating:", error);
       }
     }
   } catch (error) {
-    console.error('Sync ratings failed:', error);
+    console.error("Sync ratings failed:", error);
   }
 }
 
 // IndexedDB helpers
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('worksphere-offline', 1);
-    
+    const request = indexedDB.open("worksphere-offline", 1);
+
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
-    
+
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      if (!db.objectStoreNames.contains('pending-actions')) {
-        db.createObjectStore('pending-actions', { keyPath: 'id', autoIncrement: true });
+      if (!db.objectStoreNames.contains("pending-actions")) {
+        db.createObjectStore("pending-actions", {
+          keyPath: "id",
+          autoIncrement: true,
+        });
       }
     };
   });
@@ -153,13 +162,13 @@ function openIndexedDB() {
 
 function getPendingActions(db, type) {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('pending-actions', 'readonly');
-    const store = tx.objectStore('pending-actions');
+    const tx = db.transaction("pending-actions", "readonly");
+    const store = tx.objectStore("pending-actions");
     const request = store.getAll();
-    
+
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
-      const actions = request.result.filter(a => a.type === type);
+      const actions = request.result.filter((a) => a.type === type);
       resolve(actions);
     };
   });
@@ -167,53 +176,54 @@ function getPendingActions(db, type) {
 
 function removePendingAction(db, type, id) {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction('pending-actions', 'readwrite');
-    const store = tx.objectStore('pending-actions');
+    const tx = db.transaction("pending-actions", "readwrite");
+    const store = tx.objectStore("pending-actions");
     const request = store.delete(id);
-    
+
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve();
   });
 }
 
 // Push notifications
-self.addEventListener('push', (event) => {
+self.addEventListener("push", (event) => {
   if (!event.data) return;
-  
+
   const data = event.data.json();
   const options = {
-    body: data.body || 'New update from WorkSphere',
-    icon: '/icons/icon.svg',
-    badge: '/icons/icon.svg',
+    body: data.body || "New update from WorkSphere",
+    icon: "/icons/icon.svg",
+    badge: "/icons/icon.svg",
     vibrate: [100, 50, 100],
     data: {
-      url: data.url || '/',
+      url: data.url || "/",
     },
     actions: [
-      { action: 'open', title: 'Open' },
-      { action: 'dismiss', title: 'Dismiss' },
+      { action: "open", title: "Open" },
+      { action: "dismiss", title: "Dismiss" },
     ],
   };
-  
+
   event.waitUntil(
-    self.registration.showNotification(data.title || 'WorkSphere', options)
+    self.registration.showNotification(data.title || "WorkSphere", options),
   );
 });
 
 // Notification click handler
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  
-  if (event.action === 'dismiss') return;
-  
-  const url = event.notification.data?.url || '/';
-  
+
+  if (event.action === "dismiss") return;
+
+  const url = event.notification.data?.url || "/";
+
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true })
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
       .then((windowClients) => {
         // Focus existing window if available
         for (const client of windowClients) {
-          if (client.url === url && 'focus' in client) {
+          if (client.url === url && "focus" in client) {
             return client.focus();
           }
         }
@@ -221,6 +231,6 @@ self.addEventListener('notificationclick', (event) => {
         if (clients.openWindow) {
           return clients.openWindow(url);
         }
-      })
+      }),
   );
 });

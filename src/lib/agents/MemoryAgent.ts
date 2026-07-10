@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Groq } from 'groq-sdk';
 
 const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
+  apiKey: process.env.GROQ_API_KEY || 'dummy-key-for-build',
 });
 
 export async function extractAndStoreMemories(conversationId: string) {

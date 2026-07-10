@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useUser } from "@clerk/nextjs";
+import { motion, AnimatePresence } from "framer-motion";
+import { useMultiplayerSession } from "@/hooks/useRealTime";
 import { VenueRatingDialog } from "./VenueRatingDialog";
 import { VenueSubmissionModal } from "./VenueSubmissionModal";
 import { BookingModal } from "./chat/BookingModal";
@@ -50,6 +52,7 @@ interface EnhancedChatbotProps {
   onOpenDetails: (venue: Venue) => void;
   onBook: (venue: Venue) => void;
   userLocation?: { lat: number; lng: number };
+  roomId?: string | null;
 }
 
 interface Filters {
@@ -84,8 +87,71 @@ const INITIAL_SUGGESTIONS = [
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation }: EnhancedChatbotProps) {
-  const { isSignedIn } = useUser();
+export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation, roomId }: EnhancedChatbotProps) {
+  const { isSignedIn, user } = useUser();
+  const { socket, yDoc } = useMultiplayerSession(roomId || null);
+
+  // Presence state
+  const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string }>>({});
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  
+  // Track local cursor
+  useEffect(() => {
+    if (!socket || !roomId) return;
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      // Throttle mouse moves to avoid flooding
+      if (Math.random() > 0.8) {
+        socket.send(JSON.stringify({
+          type: "cursor",
+          x: e.clientX,
+          y: e.clientY,
+          name: user?.firstName || "Anonymous"
+        }));
+      }
+    };
+    
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [socket, roomId, user]);
+
+  // Handle incoming presence
+  useEffect(() => {
+    if (!socket) return;
+    
+    const onMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "cursor") {
+          setCursors(prev => ({
+            ...prev,
+            [data.name]: { x: data.x, y: data.y, name: data.name }
+          }));
+        } else if (data.type === "typing") {
+          setTypingUsers(prev => {
+            if (data.isTyping) {
+              return prev.includes(data.name) ? prev : [...prev, data.name];
+            } else {
+              return prev.filter(n => n !== data.name);
+            }
+          });
+        } else if (data.type === "new-message") {
+          // Prevent duplicates
+          setMessages(prev => {
+            if (prev.some(m => m.id === data.message.id)) return prev;
+            return [...prev, data.message];
+          });
+        } else if (data.type === "map-update") {
+          if (onMapUpdate && data.update) {
+            onMapUpdate(data.update);
+          }
+        }
+      } catch (e) {}
+    };
+    
+    socket.addEventListener("message", onMessage);
+    return () => socket.removeEventListener("message", onMessage);
+  }, [socket]);
 
   // Core state
   const [location, setLocation] = useState(userLocation);
@@ -156,10 +222,13 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     } else {
       const newLoc = { lat, lng };
       setLocation(newLoc);
-      onMapUpdate?.({
-        type: "SET_MAP_VIEW",
-        data: { center: newLoc, zoom: 14, animate: true }
-      });
+      
+      const update = { type: "SET_MAP_VIEW", data: { center: newLoc, zoom: 14, animate: true } };
+      onMapUpdate?.(update);
+      
+      if (socket && roomId) {
+        socket.send(JSON.stringify({ type: "map-update", update }));
+      }
     }
   };
 
@@ -403,9 +472,28 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   );
 
   // ── Main submit ───────────────────────────────────────────────────────────────
+  const handleInputChange = (val: string) => {
+    setInput(val);
+    if (socket && roomId) {
+      socket.send(JSON.stringify({
+        type: "typing",
+        isTyping: val.length > 0,
+        name: user?.firstName || "Anonymous"
+      }));
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
+
+    if (socket && roomId) {
+      socket.send(JSON.stringify({
+        type: "typing",
+        isTyping: false,
+        name: user?.firstName || "Anonymous"
+      }));
+    }
 
     const userMessage = input.trim();
     setInput("");
@@ -422,8 +510,13 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       id: Date.now().toString(),
       role: "user",
       content: userMessage,
+      name: user?.firstName || "Anonymous"
     };
     setMessages((prev) => [...prev, newUserMessage]);
+    
+    if (socket && roomId) {
+      socket.send(JSON.stringify({ type: "new-message", message: newUserMessage }));
+    }
 
     if (location) {
       trackSearch(userMessage, location, filters as Record<string, unknown>);
@@ -464,9 +557,13 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         complexity: data.complexity,
       };
       setMessages((prev) => [...prev, assistantMessage]);
+      
+      if (socket && roomId) {
+        socket.send(JSON.stringify({ type: "new-message", message: assistantMessage }));
+      }
 
       if (data.venues?.length > 0 && onMapUpdate) {
-        onMapUpdate({
+        const update = {
           type: "markers",
           markers: data.venues.map((v: Venue) => ({
             id: v.id,
@@ -478,7 +575,11 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
             wifi: v.wifi,
             score: v.score,
           })),
-        });
+        };
+        onMapUpdate(update);
+        if (socket && roomId) {
+          socket.send(JSON.stringify({ type: "map-update", update }));
+        }
       }
     } catch (err) {
       console.error("Chat error:", err);
@@ -491,7 +592,28 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-full flex-col bg-white dark:bg-zinc-950">
+    <div className="flex h-full flex-col bg-white dark:bg-zinc-950 relative overflow-hidden">
+      {/* Remote Cursors */}
+      <AnimatePresence>
+        {Object.values(cursors).map(cursor => (
+          <motion.div
+            key={cursor.name}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, x: cursor.x, y: cursor.y }}
+            exit={{ opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25, mass: 0.5 }}
+            className="pointer-events-none fixed z-[9999] flex flex-col items-start"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-orange-500 drop-shadow-md">
+              <path d="M5.65376 21.2087L2.61053 2.76633C2.39958 1.48834 3.75545 0.559955 4.88795 1.2059L22.2891 11.1444C23.4795 11.8242 23.3664 13.5786 22.0934 14.108L14.7706 17.1517L12.5976 24.3235C12.1932 25.658 10.366 25.8643 9.68063 24.6548L5.65376 21.2087Z" fill="currentColor"/>
+            </svg>
+            <div className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-4 shadow-md whitespace-nowrap">
+              {cursor.name}
+            </div>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+
       <ChatHeader
         onOpenVenueSubmission={() => setShowVenueSubmission(true)}
         userLocation={location}
@@ -507,6 +629,22 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         conversations={conversations}
         onLoadConversation={loadConversation}
         onDeleteConversation={deleteConversation}
+        roomId={roomId || currentConversationId}
+        onShareSession={() => {
+          let sessionToShare = roomId || currentConversationId;
+          if (!sessionToShare) {
+            sessionToShare = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+            const url = new URL(window.location.href);
+            url.searchParams.set("session", sessionToShare);
+            // Instead of just copying, we need to be in that session too, so let's navigate to it
+            window.location.href = url.toString();
+            return; // the reload will put them in the room
+          }
+          const url = new URL(window.location.href);
+          url.searchParams.set("session", sessionToShare);
+          navigator.clipboard.writeText(url.toString());
+          alert("Session link copied to clipboard!");
+        }}
         onShowBookings={() => {
           setBookingMode("history");
           setBookingVenue(null);
@@ -537,9 +675,15 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       <ChatInput
         input={input}
         isLoading={isLoading}
-        onInputChange={setInput}
+        onInputChange={handleInputChange}
         onSubmit={handleSubmit}
       />
+
+      {typingUsers.length > 0 && (
+        <div className="absolute bottom-[80px] left-4 text-[10px] text-zinc-500 font-medium animate-pulse">
+          {typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
+        </div>
+      )}
 
       {/* Dialogs */}
       <VenueRatingDialog

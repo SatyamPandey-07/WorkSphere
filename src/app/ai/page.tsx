@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { EnhancedChatbot } from "@/components/EnhancedChatbot";
 import { VenueRatingDialog } from "@/components/VenueRatingDialog";
@@ -23,7 +24,7 @@ const Map = dynamic(() => import("@/components/Map"), {
   ),
 });
 
-export default function AppPage() {
+function AppPage() {
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
   const [routes, setRoutes] = useState<MapRoute[]>([]);
@@ -35,6 +36,9 @@ export default function AppPage() {
   const [selectedVenue, setSelectedVenue] = useState<MapMarker | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  
+  const searchParams = useSearchParams();
+  const sessionId = searchParams?.get("session") || null;
 
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
@@ -436,6 +440,7 @@ export default function AppPage() {
         `}>
           <ChatErrorBoundary>
             <EnhancedChatbot
+              roomId={sessionId}
               onMapUpdate={(update) => {
                 handleMapUpdate(update as MapUpdateData);
                 // Auto-switch to map on mobile when markers are added
@@ -526,5 +531,13 @@ export default function AppPage() {
       {/* Offline Indicator */}
       <OfflineIndicator />
     </div>
+  );
+}
+
+export default function AppPageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen bg-zinc-50"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
+      <AppPage />
+    </Suspense>
   );
 }

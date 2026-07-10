@@ -20,7 +20,8 @@ import {
     Zap as Outlets,
     Volume2,
     BarChart3,
-    Inbox
+    Inbox,
+    Share2
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
@@ -55,6 +56,8 @@ interface ChatHeaderProps {
     onLoadConversation: (id: string) => void;
     onDeleteConversation: (id: string) => void;
     onShowBookings: () => void;
+    roomId?: string | null;
+    onShareSession?: () => void;
 }
 
 const GLOBAL_HUBS = [
@@ -80,7 +83,9 @@ export function ChatHeader({
     conversations,
     onLoadConversation,
     onDeleteConversation,
-    onShowBookings
+    onShowBookings,
+    roomId,
+    onShareSession
 }: ChatHeaderProps) {
     const [isHubOpen, setIsHubOpen] = useState(false);
 
@@ -169,6 +174,17 @@ export function ChatHeader({
                     >
                         <RotateCcw className="w-4 h-4" />
                     </button>
+
+                    {/* Share Session */}
+                    {onShareSession && (
+                        <button
+                            onClick={onShareSession}
+                            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-green-600 hover:text-white transition-all active:scale-95"
+                            title="Share Session"
+                        >
+                            <Share2 className="w-4 h-4" />
+                        </button>
+                    )}
 
                     {/* My Bookings History */}
                     <button

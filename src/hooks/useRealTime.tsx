@@ -7,6 +7,9 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import usePartySocket from "partysocket/react";
+import YProvider from "y-partykit/provider";
+import * as Y from "yjs";
 
 interface VenueUpdate {
   type: "rating" | "availability" | "new_review";
@@ -214,4 +217,39 @@ export function ConnectionStatus({ isConnected }: { isConnected: boolean }) {
       Reconnecting...
     </div>
   );
+}
+
+export function useMultiplayerSession(roomId: string | null) {
+  const [provider, setProvider] = useState<YProvider | null>(null);
+  const [yDoc, setYDoc] = useState<Y.Doc | null>(null);
+
+  useEffect(() => {
+    if (!roomId) {
+      setProvider(null);
+      setYDoc(null);
+      return;
+    }
+
+    const doc = new Y.Doc();
+    const newProvider = new YProvider("127.0.0.1:1999", roomId, doc);
+    
+    setYDoc(doc);
+    setProvider(newProvider);
+
+    return () => {
+      newProvider.disconnect();
+      doc.destroy();
+    };
+  }, [roomId]);
+
+  // Use standard websocket for simple presence broadcast
+  const socket = usePartySocket({
+    host: "127.0.0.1:1999",
+    room: roomId || "default",
+    onMessage(event) {
+      // handled in component
+    }
+  });
+
+  return { provider, yDoc, socket };
 }

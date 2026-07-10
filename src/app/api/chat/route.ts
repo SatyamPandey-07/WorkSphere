@@ -63,7 +63,7 @@ For general chat: {"skipAgents": true, "reasoning": "General conversation"}`;
       model: "llama-3.3-70b-versatile",
       messages: [
         { role: "system", content: systemPrompt },
-        { role: "user", content: `User message: "${userMessage}"\nContext: ${context ? JSON.stringify(context) : "None"}` },
+        { role: "user", content: `User message: "${userMessage}"\nContext: ${context ? JSON.stringify(context) : "None"}\nNote: This is a multiplayer session.` },
       ],
       temperature: 0.3,
     });
@@ -739,7 +739,10 @@ export async function POST(req: Request) {
             role: "system",
             content: "You are WorkHub AI, a friendly assistant for finding workspaces. Be helpful and conversational.",
           },
-          ...messages.map((m: any) => ({ role: m.role, content: m.content })),
+          ...messages.map((m: any) => ({ 
+            role: m.role, 
+            content: m.name ? `[User: ${m.name}] ${m.content}` : m.content 
+          })),
         ],
       });
 

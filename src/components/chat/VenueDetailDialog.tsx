@@ -29,10 +29,15 @@ export function VenueDetailDialog({
 }: VenueDetailDialogProps) {
     const [photoUrl, setPhotoUrl] = useState<string | null>(null);
     const [photoLoading, setPhotoLoading] = useState(true);
+    // Real-time score ko track karne ke liye state
+    const [liveScore, setLiveScore] = useState<number | null>(null);
 
+    // Effect 1: Venue badalne par state reset karna aur photo fetch karna
     useEffect(() => {
         if (!venue) return;
 
+        // Naye venue ke aate hi live score ko reset karein
+        setLiveScore(venue.score ?? null);
         setPhotoLoading(true);
         const params = new URLSearchParams({
             name: venue.name,
@@ -49,6 +54,35 @@ export function VenueDetailDialog({
             .catch(() => setPhotoLoading(false));
     }, [venue]);
 
+    // Effect 2: Real-time SSE updates handle karna aur connection terminate karna
+    useEffect(() => {
+        if (!isOpen || !venue) return;
+
+        console.log(`[SSE] Connecting to live stream for venue: ${venue.id}`);
+        const eventSource = new EventSource(`/api/venues/stream?id=${encodeURIComponent(venue.id)}`);
+
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data && typeof data.score === 'number') {
+                    setLiveScore(data.score);
+                }
+            } catch (err) {
+                console.error("Error parsing SSE data:", err);
+            }
+        };
+
+        eventSource.onerror = (error) => {
+            console.error("SSE Connection Error:", error);
+        };
+
+        // CLEANUP: Modal close hone par ya venue badalne par connection kill karega
+        return () => {
+            console.log(`[SSE] Terminating active stream for venue: ${venue.id}`);
+            eventSource.close();
+        };
+    }, [venue, isOpen]);
+
     if (!isOpen || !venue) return null;
 
     const CategoryIcon =
@@ -64,6 +98,7 @@ export function VenueDetailDialog({
     };
 
     const displayPhoto = photoUrl || venueFallbacks[venue.category || "default"] || venueFallbacks.default;
+    const currentScore = liveScore !== null ? liveScore : venue.score;
 
     return (
         <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-zinc-950/95 animate-in fade-in duration-300">
@@ -100,9 +135,9 @@ export function VenueDetailDialog({
                                 <CategoryIcon className="w-3.5 h-3.5" />
                                 {venue.category?.replace('_', ' ')}
                             </span>
-                            {venue.score != null && (
-                                <span className="text-[10px] tracking-widest uppercase font-black bg-white text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded shadow-lg">
-                                    VIBE SCORE: {Math.round(venue.score * 10)}%
+                            {currentScore != null && (
+                                <span className="text-[10px] tracking-widest uppercase font-black bg-white text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded shadow-lg animate-pulse">
+                                    VIBE SCORE: {Math.round(currentScore * 10)}%
                                 </span>
                             )}
                         </div>
@@ -125,8 +160,8 @@ export function VenueDetailDialog({
                                 <Wifi className="w-6 h-6 text-blue-500" />
                             </div>
                             <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">WiFi</span>
-                            <span className="text-sm font-black text-zinc-900 dark:text-zinc-50 leading-none">
-                                {venue.wifiSpeed ? `${venue.wifiSpeed} Mbps` : (venue.wifi ? "Verified" : "TBD")}
+                            <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none">
+                                {venue.wifi ? "Fast" : "TBD"}
                             </span>
                         </div>
                         <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
@@ -134,10 +169,8 @@ export function VenueDetailDialog({
                                 <Zap className="w-6 h-6 text-orange-500" />
                             </div>
                             <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">Power</span>
-                            <span className="text-[10px] font-black text-zinc-900 dark:text-zinc-50 leading-none uppercase tracking-wider">
-                                {venue.outletDensity && venue.outletDensity !== 'none'
-                                    ? venue.outletDensity.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
-                                    : (venue.hasOutlets ? "Available" : "No")}
+                            <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none">
+                                {venue.hasOutlets ? "Yes" : "No"}
                             </span>
                         </div>
                         <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
@@ -161,7 +194,6 @@ export function VenueDetailDialog({
                                 Analysis based on Multi-Agent telemetry suggests this {venue.category || "workspace"}
                                 is optimal for {venue.category === 'cafe' ? 'collaborative sessions' : 'high-focus work'}.
                                 Noise floor is {venue.noiseLevel || "ambient"} and connectivity is verified as {venue.wifi ? 'stable' : 'pending'}.
-                                {venue.hasErgonomic && " The workspace features verified ergonomic chairs and height-adjustable/standing desks."}
                             </p>
                         </div>
 

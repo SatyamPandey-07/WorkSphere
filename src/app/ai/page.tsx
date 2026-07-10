@@ -7,7 +7,7 @@ import { EnhancedChatbot } from "@/components/EnhancedChatbot";
 import { VenueRatingDialog } from "@/components/VenueRatingDialog";
 import { ChatErrorBoundary, MapErrorBoundary } from "@/components/ErrorBoundary";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
-import { Loader2, Map as MapIcon, MessageCircle, WifiOff } from "lucide-react";
+import { Loader2, Map as MapIcon, MessageCircle, WifiOff, X } from "lucide-react";
 import { OfflineIndicator } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import { saveVenueOffline, getAllVenuesOffline, OfflineVenue } from "@/lib/offlineStorage";
@@ -40,6 +40,16 @@ function AppPage() {
   
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get("session") || null;
+
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Auto-dismiss toast notification after 4 seconds
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
@@ -264,38 +274,62 @@ function AppPage() {
 
       case "route":
         // Handle directions request from chatbot
-        if (update.route && location) {
-          // Fetch real road route using OSRM API
-          (async () => {
-            const { getRoute } = await import('@/lib/routing');
-            const routeData = await getRoute(
-              update.route!.from,
-              update.route!.to,
-              'walking' // can also be 'driving' or 'cycling'
-            );
+        if (update.route) {
+          const fromLat = update.route.from?.lat;
+          const fromLng = update.route.from?.lng;
+          const toLat = update.route.to?.lat;
+          const toLng = update.route.to?.lng;
 
-            const newRoute: MapRoute = {
-              id: `route-${Date.now()}`,
-              path: routeData?.path || [
-                { lat: update.route!.from.lat, lng: update.route!.from.lng },
-                { lat: update.route!.to.lat, lng: update.route!.to.lng },
-              ],
-              distance: routeData?.distance,
-              duration: routeData?.duration,
-              isHighlighted: true,
-            };
-            setRoutes([newRoute]);
+          if (
+            fromLat == null || fromLng == null ||
+            toLat == null || toLng == null ||
+            isNaN(Number(fromLat)) || isNaN(Number(fromLng)) ||
+            isNaN(Number(toLat)) || isNaN(Number(toLng))
+          ) {
+            setToast("Route directions unavailable for this venue.");
+            if (location) {
+              setMapView({
+                center: { lat: location.latitude, lng: location.longitude },
+                zoom: 14,
+                animate: true,
+              });
+            }
+            break;
+          }
 
-            // Center map between user and destination
-            setMapView({
-              center: {
-                lat: (update.route!.from.lat + update.route!.to.lat) / 2,
-                lng: (update.route!.from.lng + update.route!.to.lng) / 2,
-              },
-              zoom: 14,
-              animate: true,
-            });
-          })();
+          if (location) {
+            // Fetch real road route using OSRM API
+            (async () => {
+              const { getRoute } = await import('@/lib/routing');
+              const routeData = await getRoute(
+                { lat: Number(fromLat), lng: Number(fromLng) },
+                { lat: Number(toLat), lng: Number(toLng) },
+                'walking'
+              );
+
+              const newRoute: MapRoute = {
+                id: `route-${Date.now()}`,
+                path: routeData?.path || [
+                  { lat: Number(fromLat), lng: Number(fromLng) },
+                  { lat: Number(toLat), lng: Number(toLng) },
+                ],
+                distance: routeData?.distance,
+                duration: routeData?.duration,
+                isHighlighted: true,
+              };
+              setRoutes([newRoute]);
+
+              // Center map between user and destination
+              setMapView({
+                center: {
+                  lat: (Number(fromLat) + Number(toLat)) / 2,
+                  lng: (Number(fromLng) + Number(toLng)) / 2,
+                },
+                zoom: 14,
+                animate: true,
+              });
+            })();
+          }
         }
         break;
     }
@@ -530,6 +564,22 @@ function AppPage() {
         onClose={() => setRatingDialog({ isOpen: false, venue: null })}
         onSubmit={handleRatingSubmit}
       />
+
+      {/* Custom Warning Toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[9999] max-w-sm">
+          <div className="flex items-center gap-3 px-5 py-4 rounded-2xl bg-zinc-950/90 dark:bg-zinc-950/95 backdrop-blur-md border border-zinc-800 text-zinc-100 shadow-2xl transition-all duration-300">
+            <div className="flex-shrink-0 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span className="text-xs font-semibold tracking-tight leading-none uppercase tracking-wider">{toast}</span>
+            <button
+              onClick={() => setToast(null)}
+              className="ml-4 text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Offline Indicator */}
       <OfflineIndicator />

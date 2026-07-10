@@ -291,6 +291,7 @@ export function VenueSubmissionModal({
               />
               {imagePreview && (
                 <div className="relative w-full h-32 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={imagePreview} alt="Preview" className="object-cover w-full h-full" />
                 </div>
               )}

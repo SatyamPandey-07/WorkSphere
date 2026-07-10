@@ -18,7 +18,7 @@ async function testChat() {
   try {
     const data = JSON.parse(text);
     console.log(JSON.stringify(data.agentSteps, null, 2));
-  } catch (e) {
+  } catch (_e) {
     console.log("Server returned an error instead of JSON:");
     console.log(text.substring(0, 500)); // Print first 500 chars of HTML
   }

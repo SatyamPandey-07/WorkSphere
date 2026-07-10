@@ -12,45 +12,56 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Log error to console (Sentry removed)
-    console.error("Global error:", error);
+    console.error("Global crash encountered:", error);
   }, [error]);
 
   return (
-    <html>
-      <body>
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-900 dark:to-zinc-950 p-4">
-          <div className="max-w-md w-full bg-white dark:bg-zinc-800 rounded-2xl shadow-xl p-8 text-center">
-            <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-              <AlertTriangle className="w-8 h-8 text-red-600" />
+    <html lang="en">
+      <body className="antialiased font-sans m-0 p-0 bg-[#050510]">
+        <div className="min-h-screen relative flex items-center justify-center text-white overflow-hidden p-4">
+          {/* Background neon blur blobs */}
+          <div className="absolute inset-0 pointer-events-none">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full bg-red-700/10 blur-[130px]" />
+            <div className="absolute top-1/3 left-1/3 w-[400px] h-[400px] rounded-full bg-orange-700/10 blur-[110px]" />
+            {/* Grid overlay */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.015)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.015)_1px,transparent_1px)] bg-[size:60px_60px]" />
+          </div>
+
+          <div className="relative max-w-md w-full backdrop-blur-xl bg-white/5 border border-white/10 rounded-3xl p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)] text-center">
+            {/* Glowing hazard icon container (Red theme for global crash) */}
+            <div className="relative w-20 h-20 mx-auto mb-8">
+              <div className="absolute inset-0 rounded-full bg-red-500/20 blur-md animate-pulse" />
+              <div className="relative w-20 h-20 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center shadow-lg shadow-red-500/10">
+                <AlertTriangle className="w-10 h-10 text-red-400" />
+              </div>
             </div>
-            
-            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">
-              Something went wrong
+
+            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-red-400 via-purple-400 to-orange-400 bg-clip-text text-transparent mb-3">
+              Application Crashed
             </h1>
-            
-            <p className="text-zinc-600 dark:text-zinc-400 mb-6">
-              We apologize for the inconvenience. An unexpected error has occurred.
+
+            <p className="text-white/60 text-sm leading-relaxed mb-8">
+              A fatal layout or system-level error has occurred. Please try refreshing or go back to the homepage.
             </p>
 
             {error.digest && (
-              <p className="text-xs text-zinc-500 mb-6 font-mono">
-                Error ID: {error.digest}
-              </p>
+              <div className="mb-8 px-4 py-2.5 rounded-xl bg-black/40 border border-white/5 text-[11px] font-mono text-white/40 break-all">
+                Crash ID: {error.digest}
+              </div>
             )}
 
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <div className="flex flex-col sm:flex-row gap-4.5 justify-center">
               <button
                 onClick={reset}
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-red-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-red-500/20 active:scale-[0.98] transition-all cursor-pointer group"
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
                 Try Again
               </button>
-              
+
               <Link
                 href="/"
-                className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-zinc-900 dark:text-zinc-100 rounded-lg font-medium transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/90 hover:text-white font-semibold active:scale-[0.98] transition-all"
               >
                 <Home className="w-4 h-4" />
                 Go Home

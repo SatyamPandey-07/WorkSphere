@@ -7,6 +7,11 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import usePartySocket from "partysocket/react";
+import YProvider from "y-partykit/provider";
+import * as Y from "yjs";
+import { IndexeddbPersistence } from "y-indexeddb";
+import { useSyncStatus } from "@/contexts/SyncStatusContext";
 
 interface VenueUpdate {
   type: "rating" | "availability" | "new_review";
@@ -37,13 +42,16 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
   const venueIdsKey = venueIds.slice().sort().join(",");
 
   useEffect(() => {
-    if (!enabled || venueIds.length === 0) return;
+    const ids = venueIdsKey ? venueIdsKey.split(",") : [];
+    if (!enabled || ids.length === 0) return;
 
     let eventSource: EventSource | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout>;
-    let currentBackoff = 2000; // Start with 2s
+    let currentBackoff = 1000; // Start with 1s
 
     const connect = () => {
+      clearTimeout(reconnectTimeout);
+
       // Don't even try if we know we're offline
       if (typeof window !== "undefined" && !window.navigator.onLine) {
         setIsConnected(false);
@@ -52,14 +60,14 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       }
 
       const params = new URLSearchParams();
-      venueIds.forEach((id) => params.append("venueId", id));
+      ids.forEach((id) => params.append("venueId", id));
 
       eventSource = new EventSource(`/api/venues/updates?${params.toString()}`);
 
       eventSource.onopen = () => {
         setIsConnected(true);
         setError(null);
-        currentBackoff = 2000; // Reset backoff on success
+        currentBackoff = 1000; // Reset backoff on success
         console.log("[RealTime] Connected to updates stream");
       };
 
@@ -81,17 +89,18 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
         setError(isOffline ? "Browser is offline" : "Connection failed. Retrying...");
         eventSource?.close();
 
-        // Exponential backoff: double the delay up to 60 seconds
+        // Exponential backoff: double the delay up to 30 seconds
         console.warn(`[RealTime] Connection failed. Retrying in ${currentBackoff / 1000}s...`);
+        clearTimeout(reconnectTimeout);
         reconnectTimeout = setTimeout(connect, currentBackoff);
-        currentBackoff = Math.min(60000, currentBackoff * 2);
+        currentBackoff = Math.min(30000, currentBackoff * 2);
       };
     };
 
     // Handle online/offline events automatically
     const handleOnline = () => {
       console.log("[RealTime] Browser online, reconnecting...");
-      currentBackoff = 2000;
+      currentBackoff = 1000;
       connect();
     };
 
@@ -114,7 +123,7 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [venueIdsKey, enabled, venueIds]);
+  }, [venueIdsKey, enabled]);
 
   return { updates, isConnected, error, clearUpdates };
 }
@@ -194,20 +203,110 @@ export function usePollingUpdates<T>(
 /**
  * Connection status indicator component
  */
-export function ConnectionStatus({ isConnected }: { isConnected: boolean }) {
-  if (isConnected) {
+export function ConnectionStatus() {
+  const { status } = useSyncStatus();
+
+  if (status === "Synced") {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
-        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-        Live
+      <div className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 whitespace-nowrap shrink-0">
+        <span className="w-2 h-2 bg-green-500 rounded-full" />
+        Synced
+      </div>
+    );
+  }
+
+  if (status === "Offline - Saved Locally") {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap shrink-0">
+        <span className="w-2 h-2 bg-gray-500 rounded-full" />
+        Offline - Saved Locally
+      </div>
+    );
+  }
+
+  if (status === "Syncing...") {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-blue-500 dark:text-blue-400 whitespace-nowrap shrink-0">
+        <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+        Syncing...
       </div>
     );
   }
 
   return (
-    <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
-      <span className="w-2 h-2 bg-amber-500 rounded-full" />
-      Reconnecting...
+    <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 whitespace-nowrap shrink-0">
+      <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+      Connecting
     </div>
   );
+}
+
+export function useMultiplayerSession(roomId: string | null) {
+  const [provider, setProvider] = useState<YProvider | null>(null);
+  const [yDoc, setYDoc] = useState<Y.Doc | null>(null);
+  const { setStatus } = useSyncStatus();
+
+  useEffect(() => {
+    if (!roomId) {
+      setProvider(null);
+      setYDoc(null);
+      setStatus("Offline - Saved Locally");
+      return;
+    }
+
+    const doc = new Y.Doc({ gc: true });
+    
+    // Initialize IndexedDB Persistence first
+    const indexeddbProvider = new IndexeddbPersistence(roomId, doc);
+
+    // Wait for the local data to sync into Y.Doc before connecting to PartyKit
+    indexeddbProvider.on("synced", () => {
+      console.log("[IndexedDB] Synced to local storage");
+      
+      const newProvider = new YProvider("127.0.0.1:1999", roomId, doc);
+      
+      newProvider.on("status", (event: { status: string }) => {
+        if (event.status === "connected") {
+          setStatus("Synced");
+        } else if (event.status === "connecting") {
+          setStatus("Connecting");
+        } else {
+          setStatus("Offline - Saved Locally");
+        }
+      });
+      
+      newProvider.on("sync", (isSynced: boolean) => {
+        if (isSynced) {
+          setStatus("Synced");
+        } else {
+          setStatus("Syncing...");
+        }
+      });
+
+      setProvider(newProvider);
+    });
+    
+    setYDoc(doc);
+
+    const handleOffline = () => setStatus("Offline - Saved Locally");
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("offline", handleOffline);
+      provider?.disconnect();
+      indexeddbProvider.destroy();
+      doc.destroy();
+    };
+  }, [roomId, setStatus, provider]);
+
+  // Use standard websocket for simple presence broadcast
+  const socket = usePartySocket({
+    host: "127.0.0.1:1999",
+    room: roomId || "default",
+    onMessage(_event) {
+      // handled in component
+    }
+  });
+
+  return { provider, yDoc, socket };
 }

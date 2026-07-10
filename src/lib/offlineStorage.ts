@@ -1,7 +1,24 @@
 /**
  * Offline Data Storage using IndexedDB
  * Provides persistent storage for venues, favorites, and search history
+ * Integrated with Yjs for CRDT-based offline state mutation and background sync.
  */
+import * as Y from 'yjs';
+
+// Initialize global Y.Doc for user state
+export const userDoc = new Y.Doc();
+export const yFavorites = userDoc.getMap<OfflineVenue>('favorites');
+export const yRatings = userDoc.getMap<Record<string, unknown>>('ratings');
+
+// Automatically queue Yjs incremental updates for Background Sync
+userDoc.on('update', async (update: Uint8Array) => {
+  try {
+    await queueCrdtUpdate(update);
+  } catch (err) {
+    console.error('Failed to queue CRDT update:', err);
+  }
+});
+
 
 const DB_NAME = 'worksphere-offline';
 const DB_VERSION = 1;
@@ -138,6 +155,10 @@ export async function getAllVenuesOffline(): Promise<OfflineVenue[]> {
  * Save favorite to offline storage
  */
 export async function saveFavoriteOffline(venue: OfflineVenue): Promise<void> {
+  // 1. Update CRDT state (triggers userDoc.on('update') automatically)
+  yFavorites.set(venue.id, venue);
+
+  // 2. Update local IndexedDB for immediate UI reads
   const database = await initOfflineDB();
   
   return new Promise((resolve, reject) => {
@@ -158,6 +179,10 @@ export async function saveFavoriteOffline(venue: OfflineVenue): Promise<void> {
  * Remove favorite from offline storage
  */
 export async function removeFavoriteOffline(id: string): Promise<void> {
+  // 1. Update CRDT state
+  yFavorites.delete(id);
+
+  // 2. Update local IndexedDB
   const database = await initOfflineDB();
   
   return new Promise((resolve, reject) => {
@@ -254,6 +279,38 @@ export async function queuePendingAction(action: {
     });
 
     request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Queue a CRDT update payload
+ */
+export async function queueCrdtUpdate(update: Uint8Array): Promise<void> {
+  const database = await initOfflineDB();
+  
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(['pendingActions'], 'readwrite');
+    const store = transaction.objectStore('pendingActions');
+    
+    const request = store.add({
+      type: 'crdt-sync',
+      data: update,
+      timestamp: Date.now(),
+    });
+
+    request.onsuccess = () => {
+      // Attempt to register background sync if Service Worker is available
+      if ('serviceWorker' in navigator && 'SyncManager' in window) {
+        navigator.serviceWorker.ready.then((swRegistration) => {
+          // Type casting since TS doesn't fully support sync interface yet
+          (swRegistration as any).sync.register('sync-crdt').catch((err: any) => {
+            console.error('Background Sync registration failed:', err);
+          });
+        });
+      }
+      resolve();
+    };
     request.onerror = () => reject(request.error);
   });
 }

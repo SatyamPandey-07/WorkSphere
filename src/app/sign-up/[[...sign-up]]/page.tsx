@@ -70,31 +70,33 @@ export default function SignUpPage() {
             </Link>
           </div>
 
-          <SignUp
-            appearance={{
-              elements: {
-                rootBox: "mx-auto w-full",
-                card: "bg-zinc-900/50 backdrop-blur-xl border border-zinc-800 shadow-2xl rounded-2xl",
-                headerTitle: "text-white text-2xl font-bold",
-                headerSubtitle: "text-zinc-400",
-                socialButtonsBlockButton:
-                  "bg-zinc-800/80 border-zinc-700 text-white hover:bg-zinc-700 transition-all rounded-xl",
-                socialButtonsBlockButtonText: "text-white font-medium",
-                dividerLine: "bg-zinc-700",
-                dividerText: "text-zinc-500",
-                formFieldLabel: "text-zinc-300 font-medium",
-                formFieldInput:
-                  "bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-500 rounded-xl focus:border-purple-500 focus:ring-purple-500/20",
-                footerActionLink: "text-purple-400 hover:text-purple-300 font-medium",
-                formButtonPrimary:
-                  "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-xl shadow-lg shadow-purple-500/20 transition-all",
-                footer: "hidden",
-              },
-            }}
-            routing="path"
-            path="/sign-up"
-            signInUrl="/sign-in"
-          />
+          <div className="w-full">
+            <SignUp
+              appearance={{
+                elements: {
+                  rootBox: "mx-auto w-full",
+                  card: "bg-zinc-900/50 backdrop-blur-xl border border-zinc-800 shadow-2xl rounded-2xl",
+                  headerTitle: "text-white text-2xl font-bold",
+                  headerSubtitle: "text-zinc-400",
+                  socialButtonsBlockButton:
+                    "bg-zinc-800/80 border-zinc-700 text-white hover:bg-zinc-700 transition-all rounded-xl",
+                  socialButtonsBlockButtonText: "text-white font-medium",
+                  dividerLine: "bg-zinc-700",
+                  dividerText: "text-zinc-500",
+                  formFieldLabel: "text-zinc-300 font-medium",
+                  formFieldInput:
+                    "bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-500 rounded-xl focus:border-purple-500 focus:ring-purple-500/20",
+                  footerActionLink: "text-purple-400 hover:text-purple-300 font-medium",
+                  formButtonPrimary:
+                    "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-xl shadow-lg shadow-purple-500/20 transition-all",
+                  footer: "hidden",
+                },
+              }}
+              routing="path"
+              path="/sign-up"
+              signInUrl="/sign-in"
+            />
+          </div>
 
           <p className="mt-6 text-center text-sm text-zinc-500">
             Already have an account?{" "}

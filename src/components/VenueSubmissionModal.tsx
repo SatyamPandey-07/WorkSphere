@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useUser } from "@clerk/nextjs";
-import { X, MapPin, Wifi, Zap, Volume2, Send, Loader2 } from "lucide-react";
+import { X, MapPin, Loader2 } from "lucide-react";
 
 interface VenueSubmissionModalProps {
   isOpen: boolean;
@@ -33,6 +33,9 @@ export function VenueSubmissionModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState("");
 
   const [formData, setFormData] = useState<VenueFormData>({
     name: "",
@@ -66,8 +69,28 @@ export function VenueSubmissionModal({
 
     setIsSubmitting(true);
     setError(null);
+    setUploadStatus("Uploading image...");
 
     try {
+      let imageUrl = null;
+      if (file) {
+        const uploadData = new FormData();
+        uploadData.append("file", file);
+
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          body: uploadData,
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error("Failed to upload image");
+        }
+
+        const jsonResponse = await uploadRes.json();
+        imageUrl = jsonResponse.url;
+      }
+
+      setUploadStatus("Validating with AI...");
       const placeId = `crowdsourced_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
       const response = await fetch("/api/venues", {
@@ -84,6 +107,7 @@ export function VenueSubmissionModal({
           hasOutlets: formData.hasOutlets,
           noiseLevel: formData.noiseLevel,
           crowdsourced: true,
+          imageUrl,
         }),
       });
 
@@ -109,12 +133,28 @@ export function VenueSubmissionModal({
           noiseLevel: "moderate",
           description: "",
         });
+        setFile(null);
+        setImagePreview(null);
+        setUploadStatus("");
       }, 2000);
 
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit venue");
     } finally {
       setIsSubmitting(false);
+      setUploadStatus("");
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0];
+    if (selected) {
+      if (selected.size > 5 * 1024 * 1024) {
+        setError("Image must be smaller than 5MB");
+        return;
+      }
+      setFile(selected);
+      setImagePreview(URL.createObjectURL(selected));
     }
   };
 
@@ -238,12 +278,40 @@ export function VenueSubmissionModal({
             </div>
           </div>
 
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">
+              Venue Photo (Optional)
+            </label>
+            <div className="flex flex-col gap-2">
+              <input
+                type="file"
+                accept="image/jpeg, image/png, image/webp"
+                onChange={handleFileChange}
+                className="block w-full text-sm text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-900/30 dark:file:text-blue-400 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/50"
+              />
+              {imagePreview && (
+                <div className="relative w-full h-32 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={imagePreview} alt="Preview" className="object-cover w-full h-full" />
+                </div>
+              )}
+            </div>
+            <p className="text-[10px] text-zinc-400 mt-1">Photos are scanned by AI to verify amenities.</p>
+          </div>
+
           <button
             type="submit"
             disabled={isSubmitting || !isSignedIn}
             className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-lg disabled:opacity-50 transition-all shadow-lg glow-blue active:scale-[0.98]"
           >
-            {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit Venue"}
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>{uploadStatus || "Submitting..."}</span>
+              </>
+            ) : (
+              "Submit Venue"
+            )}
           </button>
         </form>
       </div>

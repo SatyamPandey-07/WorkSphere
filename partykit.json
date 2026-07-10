@@ -1,0 +1,5 @@
+{
+  "name": "worksphere-multiplayer",
+  "main": "party/server.ts",
+  "compatibilityDate": "2024-03-20"
+}

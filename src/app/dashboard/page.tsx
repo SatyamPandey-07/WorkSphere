@@ -21,6 +21,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import Link from "next/link";
+import { MemoryManager } from "./MemoryManager";
 
 interface AgentMetric {
   agent: string;
@@ -307,6 +308,9 @@ export default function DashboardPage() {
             ))}
           </div>
         </div>
+
+        {/* AI Memory Management */}
+        <MemoryManager />
       </div>
     </div>
   );

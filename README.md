@@ -645,13 +645,17 @@ Try these natural language queries:
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome! Please refer to our comprehensive [Contributing Guide](CONTRIBUTING.md) for details on:
+- Coding standards and styling.
+- Testing guidelines (Jest unit tests and Playwright E2E integration).
+- Required pre-commit quality checks to ensure Vercel build compatibility.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+To get started quickly:
+1. Fork the repository and create your feature branch (`git checkout -b feature/amazing-feature`).
+2. Implement your changes.
+3. Make sure all pre-commit checks pass (`npm run lint`, `npx tsc --noEmit`, and `npm test`).
+4. Commit your changes (`git commit -m 'feat: Add amazing feature'`) and push to your branch.
+5. Open a Pull Request against the `main` branch.
 
 ---
 

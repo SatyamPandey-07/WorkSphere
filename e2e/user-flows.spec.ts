@@ -150,7 +150,7 @@ test.describe('Form Interactions', () => {
 });
 
 test.describe('State Persistence', () => {
-  test('should remember last online time on offline page', async ({ page, context }) => {
+  test('should remember last online time on offline page', async ({ page, context: _context }) => {
     // Set localStorage before visiting offline page
     await page.goto('/');
     await page.evaluate(() => {

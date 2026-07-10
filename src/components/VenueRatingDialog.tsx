@@ -14,6 +14,9 @@ interface VenueRatingDialogProps {
     hasOutlets: boolean;
     noiseLevel: "quiet" | "moderate" | "loud";
     comment?: string;
+    hasErgonomic: boolean;
+    outletDensity: "every_table" | "some_tables" | "wall_seats" | "none";
+    wifiSpeed?: number;
   }) => void;
 }
 
@@ -28,6 +31,9 @@ export function VenueRatingDialog({
   const [hasOutlets, setHasOutlets] = useState<boolean | null>(null);
   const [noiseLevel, setNoiseLevel] = useState<"quiet" | "moderate" | "loud">("moderate");
   const [comment, setComment] = useState("");
+  const [hasErgonomic, setHasErgonomic] = useState(false);
+  const [outletDensity, setOutletDensity] = useState<"every_table" | "some_tables" | "wall_seats" | "none">("none");
+  const [wifiSpeed, setWifiSpeed] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -51,6 +57,9 @@ export function VenueRatingDialog({
         hasOutlets,
         noiseLevel,
         comment: comment.trim() || undefined,
+        hasErgonomic,
+        outletDensity,
+        wifiSpeed: wifiSpeed ? parseInt(wifiSpeed, 10) : undefined,
       });
       
       // Reset form
@@ -58,6 +67,9 @@ export function VenueRatingDialog({
       setHasOutlets(null);
       setNoiseLevel("moderate");
       setComment("");
+      setHasErgonomic(false);
+      setOutletDensity("none");
+      setWifiSpeed("");
       onClose();
     } catch (error) {
       console.error("Error submitting rating:", error);
@@ -174,6 +186,50 @@ export function VenueRatingDialog({
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Wi-Fi Speed (Mbps) */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-50 mb-2">
+              Verified Wi-Fi Speed (Mbps - Optional)
+            </label>
+            <input
+              type="number"
+              value={wifiSpeed}
+              onChange={(e) => setWifiSpeed(e.target.value)}
+              placeholder="e.g. 80"
+              className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {/* Power Outlet Density */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-50 mb-2">
+              Power Outlet Density
+            </label>
+            <select
+              value={outletDensity}
+              onChange={(e) => setOutletDensity(e.target.value as any)}
+              className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="none">None / No Outlets</option>
+              <option value="every_table">Every Table</option>
+              <option value="some_tables">Some Tables</option>
+              <option value="wall_seats">Wall Seats Only</option>
+            </select>
+          </div>
+
+          {/* Ergonomic Setup */}
+          <div className="flex items-center justify-between p-1">
+            <label className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+              Features Ergonomic Seating/Desks?
+            </label>
+            <input
+              type="checkbox"
+              checked={hasErgonomic}
+              onChange={(e) => setHasErgonomic(e.target.checked)}
+              className="w-4 h-4 rounded border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-blue-600 focus:ring-blue-500"
+            />
           </div>
 
           {/* Comment */}

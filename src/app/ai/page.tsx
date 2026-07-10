@@ -1,17 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { EnhancedChatbot } from "@/components/EnhancedChatbot";
 import { VenueRatingDialog } from "@/components/VenueRatingDialog";
 import { ChatErrorBoundary, MapErrorBoundary } from "@/components/ErrorBoundary";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
-import { Loader2, Map as MapIcon, MessageCircle, WifiOff } from "lucide-react";
+import { Loader2, Map as MapIcon, MessageCircle, WifiOff, X } from "lucide-react";
 import { OfflineIndicator } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import { saveVenueOffline, getAllVenuesOffline, OfflineVenue } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { Venue } from "@/components/chat/ChatMessages";
+import { SyncStatusProvider } from "@/contexts/SyncStatusContext";
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const Map = dynamic(() => import("@/components/Map"), {
@@ -23,7 +25,7 @@ const Map = dynamic(() => import("@/components/Map"), {
   ),
 });
 
-export default function AppPage() {
+function AppPage() {
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
   const [routes, setRoutes] = useState<MapRoute[]>([]);
@@ -35,6 +37,19 @@ export default function AppPage() {
   const [selectedVenue, setSelectedVenue] = useState<MapMarker | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  
+  const searchParams = useSearchParams();
+  const sessionId = searchParams?.get("session") || null;
+
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Auto-dismiss toast notification after 4 seconds
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
 
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
@@ -259,45 +274,77 @@ export default function AppPage() {
 
       case "route":
         // Handle directions request from chatbot
-        if (update.route && location) {
-          // Fetch real road route using OSRM API
-          (async () => {
-            const { getRoute } = await import('@/lib/routing');
-            const routeData = await getRoute(
-              update.route!.from,
-              update.route!.to,
-              'walking' // can also be 'driving' or 'cycling'
-            );
+        if (update.route) {
+          const fromLat = update.route.from?.lat;
+          const fromLng = update.route.from?.lng;
+          const toLat = update.route.to?.lat;
+          const toLng = update.route.to?.lng;
 
-            const newRoute: MapRoute = {
-              id: `route-${Date.now()}`,
-              path: routeData?.path || [
-                { lat: update.route!.from.lat, lng: update.route!.from.lng },
-                { lat: update.route!.to.lat, lng: update.route!.to.lng },
-              ],
-              distance: routeData?.distance,
-              duration: routeData?.duration,
-              isHighlighted: true,
-            };
-            setRoutes([newRoute]);
+          if (
+            fromLat == null || fromLng == null ||
+            toLat == null || toLng == null ||
+            isNaN(Number(fromLat)) || isNaN(Number(fromLng)) ||
+            isNaN(Number(toLat)) || isNaN(Number(toLng))
+          ) {
+            setToast("Route directions unavailable for this venue.");
+            if (location) {
+              setMapView({
+                center: { lat: location.latitude, lng: location.longitude },
+                zoom: 14,
+                animate: true,
+              });
+            }
+            break;
+          }
 
-            // Center map between user and destination
-            setMapView({
-              center: {
-                lat: (update.route!.from.lat + update.route!.to.lat) / 2,
-                lng: (update.route!.from.lng + update.route!.to.lng) / 2,
-              },
-              zoom: 14,
-              animate: true,
-            });
-          })();
+          if (location) {
+            // Fetch real road route using OSRM API
+            (async () => {
+              const { getRoute } = await import('@/lib/routing');
+              const routeData = await getRoute(
+                { lat: Number(fromLat), lng: Number(fromLng) },
+                { lat: Number(toLat), lng: Number(toLng) },
+                'walking'
+              );
+
+              const newRoute: MapRoute = {
+                id: `route-${Date.now()}`,
+                path: routeData?.path || [
+                  { lat: Number(fromLat), lng: Number(fromLng) },
+                  { lat: Number(toLat), lng: Number(toLng) },
+                ],
+                distance: routeData?.distance,
+                duration: routeData?.duration,
+                isHighlighted: true,
+              };
+              setRoutes([newRoute]);
+
+              // Center map between user and destination
+              setMapView({
+                center: {
+                  lat: (Number(fromLat) + Number(toLat)) / 2,
+                  lng: (Number(fromLng) + Number(toLng)) / 2,
+                },
+                zoom: 14,
+                animate: true,
+              });
+            })();
+          }
         }
         break;
     }
   };
 
   // Handle venue rating submission
-  const handleRatingSubmit = async (rating: { wifiQuality: number; hasOutlets: boolean; noiseLevel: "quiet" | "moderate" | "loud"; comment?: string }) => {
+  const handleRatingSubmit = async (rating: {
+    wifiQuality: number;
+    hasOutlets: boolean;
+    noiseLevel: "quiet" | "moderate" | "loud";
+    comment?: string;
+    hasErgonomic: boolean;
+    outletDensity: "every_table" | "some_tables" | "wall_seats" | "none";
+    wifiSpeed?: number;
+  }) => {
     if (!ratingDialog.venue) return;
 
     try {
@@ -427,34 +474,44 @@ export default function AppPage() {
           md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
         `}>
           <ChatErrorBoundary>
-            <EnhancedChatbot
-              onMapUpdate={(update) => {
-                handleMapUpdate(update as MapUpdateData);
-                // Auto-switch to map on mobile when markers are added
-                if (update.type === "markers" && update.markers && update.markers.length > 0) {
-                  // Small delay so user sees the results loading
-                  setTimeout(() => setMobileView("map"), 500);
+            <SyncStatusProvider>
+              <EnhancedChatbot
+                roomId={sessionId}
+                onMapUpdate={(update) => {
+                  handleMapUpdate(update as MapUpdateData);
+                  // Auto-switch to map on mobile when markers are added
+                  if (update.type === "markers" && update.markers && update.markers.length > 0) {
+                    // Small delay so user sees the results loading
+                    setTimeout(() => setMobileView("map"), 500);
+                  }
+                }}
+                onOpenDetails={(v) => {
+                  // Map the Venue type from chat to the MapMarker type used here
+                  setSelectedVenue({
+                    id: v.id,
+                    name: v.name,
+                    position: { lat: v.lat, lng: v.lng },
+                    category: v.category || "cafe",
+                    address: v.address,
+                    amenities: {
+                      wifi: v.wifi,
+                      outlets: v.hasOutlets,
+                      quiet: v.noiseLevel === "quiet",
+                      hasErgonomic: v.hasErgonomic,
+                      outletDensity: v.outletDensity,
+                      wifiSpeed: v.wifiSpeed
+                    },
+                    score: v.score
+                  });
+                }}
+                onBook={() => {
+                  // Handled internally by EnhancedChatbot now
+                }}
+                userLocation={
+                  location ? { lat: location.latitude, lng: location.longitude } : undefined
                 }
-              }}
-              onOpenDetails={(v) => {
-                // Map the Venue type from chat to the MapMarker type used here
-                setSelectedVenue({
-                  id: v.id,
-                  name: v.name,
-                  position: { lat: v.lat, lng: v.lng },
-                  category: v.category || "cafe",
-                  address: v.address,
-                  amenities: { wifi: v.wifi, outlets: v.hasOutlets, quiet: v.noiseLevel === "quiet" },
-                  score: v.score
-                });
-              }}
-              onBook={(v) => {
-                console.log("[Booking] Initiated for:", v.name);
-              }}
-              userLocation={
-                location ? { lat: location.latitude, lng: location.longitude } : undefined
-              }
-            />
+              />
+            </SyncStatusProvider>
           </ChatErrorBoundary>
         </div>
       </div>
@@ -508,8 +565,32 @@ export default function AppPage() {
         onSubmit={handleRatingSubmit}
       />
 
+      {/* Custom Warning Toast */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[9999] max-w-sm">
+          <div className="flex items-center gap-3 px-5 py-4 rounded-2xl bg-zinc-950/90 dark:bg-zinc-950/95 backdrop-blur-md border border-zinc-800 text-zinc-100 shadow-2xl transition-all duration-300">
+            <div className="flex-shrink-0 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+            <span className="text-xs font-semibold tracking-tight leading-none uppercase tracking-wider">{toast}</span>
+            <button
+              onClick={() => setToast(null)}
+              className="ml-4 text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Offline Indicator */}
       <OfflineIndicator />
     </div>
+  );
+}
+
+export default function AppPageWrapper() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen bg-zinc-50"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
+      <AppPage />
+    </Suspense>
   );
 }

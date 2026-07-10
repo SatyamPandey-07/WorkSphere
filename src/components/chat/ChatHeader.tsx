@@ -6,7 +6,6 @@ import {
     Terminal,
     Activity,
     ChevronDown,
-    User,
     ShieldCheck,
     Zap,
     LayoutGrid,
@@ -21,11 +20,13 @@ import {
     Zap as Outlets,
     Volume2,
     BarChart3,
-    Inbox
+    Inbox,
+    Share2
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
 import Link from "next/link";
+import { ConnectionStatus } from "@/hooks/useRealTime";
 
 interface Conversation {
     id: string;
@@ -37,10 +38,18 @@ interface ChatHeaderProps {
     onOpenVenueSubmission: () => void;
     userLocation?: { lat: number; lng: number };
     onLocationChange: (lat: number, lng: number) => void;
-    filters: { wifi?: boolean; outlets?: boolean; quiet?: boolean };
+    filters: {
+        wifi?: boolean;
+        outlets?: boolean;
+        quiet?: boolean;
+        ergonomic?: boolean;
+        outletDensity?: "every_table" | "some_tables" | "wall_seats" | "none";
+        wifiSpeedBand?: "basic" | "fast" | "ultra" | "all";
+    };
     showFilters: boolean;
     setShowFilters: (show: boolean) => void;
     onToggleFilter: (filter: string) => void;
+    onSetFilter?: (key: string, value: any) => void;
     showHistory: boolean;
     setShowHistory: (show: boolean) => void;
     onNewChat: () => void;
@@ -48,6 +57,7 @@ interface ChatHeaderProps {
     onLoadConversation: (id: string) => void;
     onDeleteConversation: (id: string) => void;
     onShowBookings: () => void;
+    onShareSession?: () => void;
 }
 
 const GLOBAL_HUBS = [
@@ -66,13 +76,15 @@ export function ChatHeader({
     showFilters,
     setShowFilters,
     onToggleFilter,
+    onSetFilter,
     showHistory,
     setShowHistory,
     onNewChat,
     conversations,
     onLoadConversation,
     onDeleteConversation,
-    onShowBookings
+    onShowBookings,
+    onShareSession
 }: ChatHeaderProps) {
     const [isHubOpen, setIsHubOpen] = useState(false);
 
@@ -117,6 +129,8 @@ export function ChatHeader({
                                 <Activity className="w-2.5 h-2.5" />
                                 V2.4.0
                             </span>
+                            <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+                            <ConnectionStatus />
                         </div>
                     </div>
                 </div>
@@ -161,6 +175,17 @@ export function ChatHeader({
                     >
                         <RotateCcw className="w-4 h-4" />
                     </button>
+
+                    {/* Share Session */}
+                    {onShareSession && (
+                        <button
+                            onClick={onShareSession}
+                            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-green-600 hover:text-white transition-all active:scale-95"
+                            title="Share Session"
+                        >
+                            <Share2 className="w-4 h-4" />
+                        </button>
+                    )}
 
                     {/* My Bookings History */}
                     <button
@@ -233,28 +258,91 @@ export function ChatHeader({
             <div className="relative">
                 {/* Filter Overlay Area - Solid High Contrast */}
                 {showFilters && (
-                    <div className="mt-4 p-3 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-2xl flex flex-wrap gap-2 animate-in slide-in-from-top-2 duration-200">
-                        <button
-                            onClick={() => onToggleFilter('wifi')}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${filters.wifi ? 'bg-orange-600 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700'}`}
-                        >
-                            <Wifi className="w-3 h-3" />
-                            High-Speed WiFi
-                        </button>
-                        <button
-                            onClick={() => onToggleFilter('outlets')}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${filters.outlets ? 'bg-orange-600 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700'}`}
-                        >
-                            <Outlets className="w-3 h-3" />
-                            Power Outlets
-                        </button>
-                        <button
-                            onClick={() => onToggleFilter('quiet')}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${filters.quiet ? 'bg-orange-600 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700'}`}
-                        >
-                            <Volume2 className="w-3 h-3" />
-                            Low Noise
-                        </button>
+                    <div className="mt-4 p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl">
+                        {/* Section 1: Standard Toggles */}
+                        <div>
+                            <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">Amenity Toggles</div>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => onToggleFilter('wifi')}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.wifi ? 'bg-orange-600 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700'}`}
+                                >
+                                    <Wifi className="w-3.5 h-3.5" />
+                                    High-Speed WiFi
+                                </button>
+                                <button
+                                    onClick={() => onToggleFilter('outlets')}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.outlets ? 'bg-orange-600 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700'}`}
+                                >
+                                    <Outlets className="w-3.5 h-3.5" />
+                                    Power Outlets
+                                </button>
+                                <button
+                                    onClick={() => onToggleFilter('quiet')}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.quiet ? 'bg-orange-600 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700'}`}
+                                >
+                                    <Volume2 className="w-3.5 h-3.5" />
+                                    Low Noise
+                                </button>
+                                <button
+                                    onClick={() => onToggleFilter('ergonomic')}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.ergonomic ? 'bg-orange-600 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700'}`}
+                                >
+                                    <Activity className="w-3.5 h-3.5" />
+                                    Ergonomic Setup
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Section 2: Outlet Density Segment */}
+                        <div>
+                            <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">Power Outlet Density</div>
+                            <div className="flex flex-wrap gap-2">
+                                {[
+                                    { label: "All / Any", value: "none" },
+                                    { label: "Every Table", value: "every_table" },
+                                    { label: "Some Tables", value: "some_tables" },
+                                    { label: "Wall Seats Only", value: "wall_seats" }
+                                ].map((density) => (
+                                    <button
+                                        key={density.value}
+                                        onClick={() => onSetFilter && onSetFilter('outletDensity', density.value)}
+                                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                                            (filters.outletDensity || "none") === density.value
+                                                ? 'bg-orange-600 text-white shadow-md'
+                                                : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                                        }`}
+                                    >
+                                        {density.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Section 3: Wi-Fi Speed Bands Segment */}
+                        <div>
+                            <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">Verified Wi-Fi Speed</div>
+                            <div className="flex flex-wrap gap-2">
+                                {[
+                                    { label: "Any Speed", value: "all" },
+                                    { label: "Basic (>10 Mbps)", value: "basic" },
+                                    { label: "Fast (>50 Mbps)", value: "fast" },
+                                    { label: "Ultra (>100 Mbps)", value: "ultra" }
+                                ].map((band) => (
+                                    <button
+                                        key={band.value}
+                                        onClick={() => onSetFilter && onSetFilter('wifiSpeedBand', band.value)}
+                                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                                            (filters.wifiSpeedBand || "all") === band.value
+                                                ? 'bg-orange-600 text-white shadow-md'
+                                                : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                                        }`}
+                                    >
+                                        {band.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
                 )}
 

@@ -30,56 +30,71 @@ self.addEventListener("activate", (event) => {
 });
 
 // Handle Cache-First for maps and images, Network-First for everything else
-if (isExternalAsset) {
-  event.respondWith(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.match(event.request).then((cachedResponse) => {
-        // Agar cache mein mil gaya, toh turant return karo
-        if (cachedResponse) {
-          return cachedResponse;
-        }
+self.addEventListener("fetch", (event) => {
+  // Bypass caching and worker interception for non-GET requests (like POST/PUT/DELETE)
+  if (event.request.method !== "GET") {
+    return;
+  }
 
-        // Agar cache mein nahi hai, toh network se fetch karo aur cache mein daalo
-        return fetch(event.request)
-          .then((networkResponse) => {
-            // Note: External requests sometimes return status 0 (opaque), we check response.status === 200 || response.status === 0
-            if (
-              networkResponse.status === 200 ||
-              networkResponse.status === 0
-            ) {
-              cache.put(event.request, networkResponse.clone());
-            }
-            return networkResponse;
-          })
-          .catch(() => new Response("Asset Offline", { status: 503 }));
-      });
-    }),
-  );
-} else {
-  // Existing Network-First logic for local assets
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response.ok) {
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseClone);
-          });
-        }
-        return response;
-      })
-      .catch(async () => {
-        const cachedResponse = await caches.match(event.request);
-        if (cachedResponse) return cachedResponse;
-        if (event.request.mode === "navigate") {
-          return caches.match(OFFLINE_URL);
-        }
-        return new Response("Offline", { status: 503 });
+  const isExternalAsset =
+    event.request.url.includes("tile.openstreetmap.org") ||
+    event.request.url.includes("images.unsplash.com");
+
+  if (isExternalAsset) {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((cachedResponse) => {
+          // Agar cache mein mil gaya, toh turant return karo
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+
+          // Agar cache mein nahi hai, toh network se fetch karo aur cache mein daalo
+          return fetch(event.request)
+            .then((networkResponse) => {
+              // Note: External requests sometimes return status 0 (opaque), we check response.status === 200 || response.status === 0
+              if (
+                networkResponse.status === 200 ||
+                networkResponse.status === 0
+              ) {
+                cache.put(event.request, networkResponse.clone());
+              }
+              return networkResponse;
+            })
+            .catch(() => new Response("Asset Offline", { status: 503 }));
+        });
       }),
-  );
-}
+    );
+  } else {
+    // Existing Network-First logic for local assets
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const responseClone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cachedResponse = await caches.match(event.request);
+          if (cachedResponse) return cachedResponse;
+          if (event.request.mode === "navigate") {
+            return caches.match(OFFLINE_URL);
+          }
+          return new Response("Offline", { status: 503 });
+        }),
+    );
+  }
+});
 // Background Sync for offline actions
 self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-crdt") {
+    event.waitUntil(syncCrdt());
+  }
+  // Fallbacks for older queues
   if (event.tag === "sync-favorites") {
     event.waitUntil(syncFavorites());
   }
@@ -87,6 +102,42 @@ self.addEventListener("sync", (event) => {
     event.waitUntil(syncRatings());
   }
 });
+
+// Helper to convert Uint8Array to base64 for fetch
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// Sync CRDT when back online
+async function syncCrdt() {
+  try {
+    const db = await openIndexedDB();
+    const pendingActions = await getPendingActions(db, "crdt-sync");
+
+    if (pendingActions.length === 0) return;
+
+    const updates = pendingActions.map(action => arrayBufferToBase64(action.data));
+
+    const response = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates }),
+    });
+
+    if (response.ok) {
+      for (const action of pendingActions) {
+        await removePendingAction(db, "pending-actions", action.id);
+      }
+    }
+  } catch (error) {
+    console.error("Sync CRDT failed:", error);
+  }
+}
 
 // Sync favorites when back online
 async function syncFavorites() {

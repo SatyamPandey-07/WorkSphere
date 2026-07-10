@@ -26,6 +26,7 @@ import {
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
 import Link from "next/link";
+import { ConnectionStatus } from "@/hooks/useRealTime";
 
 interface Conversation {
     id: string;
@@ -56,7 +57,6 @@ interface ChatHeaderProps {
     onLoadConversation: (id: string) => void;
     onDeleteConversation: (id: string) => void;
     onShowBookings: () => void;
-    roomId?: string | null;
     onShareSession?: () => void;
 }
 
@@ -84,7 +84,6 @@ export function ChatHeader({
     onLoadConversation,
     onDeleteConversation,
     onShowBookings,
-    roomId,
     onShareSession
 }: ChatHeaderProps) {
     const [isHubOpen, setIsHubOpen] = useState(false);
@@ -130,6 +129,8 @@ export function ChatHeader({
                                 <Activity className="w-2.5 h-2.5" />
                                 V2.4.0
                             </span>
+                            <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+                            <ConnectionStatus />
                         </div>
                     </div>
                 </div>

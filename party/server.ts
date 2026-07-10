@@ -1,17 +1,12 @@
 import type * as Party from "partykit/server";
 import { onConnect } from "y-partykit";
-import * as Y from "yjs";
 
 export default class WorkspaceServer implements Party.Server {
   constructor(readonly room: Party.Room) {}
 
-  onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
+  onConnect(conn: Party.Connection, _ctx: Party.ConnectionContext) {
     // Yjs connection for shared state (messages, markers)
-    onConnect(conn, this.room, {
-      yjsOptions: {
-        gc: true,
-      },
-    });
+    onConnect(conn, this.room);
 
     // Also handle simple presence via standard WebSockets
     conn.addEventListener("message", (event) => {
@@ -21,7 +16,7 @@ export default class WorkspaceServer implements Party.Server {
           // Broadcast presence/cursor to everyone else in the room
           this.room.broadcast(event.data as string, [conn.id]);
         }
-      } catch (err) {
+      } catch {
         // Not JSON or other error, handled by Yjs
       }
     });

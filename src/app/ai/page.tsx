@@ -13,6 +13,7 @@ import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import { saveVenueOffline, getAllVenuesOffline, OfflineVenue } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { Venue } from "@/components/chat/ChatMessages";
+import { SyncStatusProvider } from "@/contexts/SyncStatusContext";
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const Map = dynamic(() => import("@/components/Map"), {
@@ -439,42 +440,44 @@ function AppPage() {
           md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
         `}>
           <ChatErrorBoundary>
-            <EnhancedChatbot
-              roomId={sessionId}
-              onMapUpdate={(update) => {
-                handleMapUpdate(update as MapUpdateData);
-                // Auto-switch to map on mobile when markers are added
-                if (update.type === "markers" && update.markers && update.markers.length > 0) {
-                  // Small delay so user sees the results loading
-                  setTimeout(() => setMobileView("map"), 500);
+            <SyncStatusProvider>
+              <EnhancedChatbot
+                roomId={sessionId}
+                onMapUpdate={(update) => {
+                  handleMapUpdate(update as MapUpdateData);
+                  // Auto-switch to map on mobile when markers are added
+                  if (update.type === "markers" && update.markers && update.markers.length > 0) {
+                    // Small delay so user sees the results loading
+                    setTimeout(() => setMobileView("map"), 500);
+                  }
+                }}
+                onOpenDetails={(v) => {
+                  // Map the Venue type from chat to the MapMarker type used here
+                  setSelectedVenue({
+                    id: v.id,
+                    name: v.name,
+                    position: { lat: v.lat, lng: v.lng },
+                    category: v.category || "cafe",
+                    address: v.address,
+                    amenities: {
+                      wifi: v.wifi,
+                      outlets: v.hasOutlets,
+                      quiet: v.noiseLevel === "quiet",
+                      hasErgonomic: v.hasErgonomic,
+                      outletDensity: v.outletDensity,
+                      wifiSpeed: v.wifiSpeed
+                    },
+                    score: v.score
+                  });
+                }}
+                onBook={() => {
+                  // Handled internally by EnhancedChatbot now
+                }}
+                userLocation={
+                  location ? { lat: location.latitude, lng: location.longitude } : undefined
                 }
-              }}
-              onOpenDetails={(v) => {
-                // Map the Venue type from chat to the MapMarker type used here
-                setSelectedVenue({
-                  id: v.id,
-                  name: v.name,
-                  position: { lat: v.lat, lng: v.lng },
-                  category: v.category || "cafe",
-                  address: v.address,
-                  amenities: {
-                    wifi: v.wifi,
-                    outlets: v.hasOutlets,
-                    quiet: v.noiseLevel === "quiet",
-                    hasErgonomic: v.hasErgonomic,
-                    outletDensity: v.outletDensity,
-                    wifiSpeed: v.wifiSpeed
-                  },
-                  score: v.score
-                });
-              }}
-              onBook={(v) => {
-                console.log("[Booking] Initiated for:", v.name);
-              }}
-              userLocation={
-                location ? { lat: location.latitude, lng: location.longitude } : undefined
-              }
-            />
+              />
+            </SyncStatusProvider>
           </ChatErrorBoundary>
         </div>
       </div>

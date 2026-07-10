@@ -45,6 +45,7 @@ export interface Message {
     id: string;
     role: "user" | "assistant";
     content: string;
+    name?: string;
     venues?: Venue[];
     agentSteps?: Array<{
         agent: string;

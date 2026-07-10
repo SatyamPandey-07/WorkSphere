@@ -528,7 +528,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         venueId={ratingVenue?.id || ""}
         venueName={ratingVenue?.name || ""}
         onClose={() => setRatingVenue(null)}
-        onSubmit={() => { /* Handle rating */ }}
+        onSubmit={handleSubmitRating}
       />
 
       <BookingModal

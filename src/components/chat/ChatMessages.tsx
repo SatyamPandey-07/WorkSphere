@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { RefObject, useState, useEffect } from "react";
 import { BrainTerminal } from "./BrainTerminal";
-import { VenueCardSkeleton, ChatMessageSkeleton } from "@/components/ui/skeleton";
 import { trackVenueInteraction } from "@/lib/analytics";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────

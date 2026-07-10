@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from "react";
 import {
-    Users,
     MapPin,
     Star,
     Heart,
     Zap,
-    Clock,
     ArrowUpRight,
     ShieldCheck,
     RefreshCw,
@@ -20,6 +18,7 @@ import {
     ExternalLink
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { useUser } from "@clerk/nextjs";
 
 interface UserAnalytics {
@@ -148,7 +147,7 @@ export default function AnalyticsDashboard() {
                             <div className="w-20 h-20 rounded-[2rem] bg-gradient-to-br from-blue-600 to-indigo-700 p-0.5 shadow-2xl shadow-blue-500/20">
                                 <div className="w-full h-full rounded-[1.9rem] bg-white dark:bg-zinc-900 flex items-center justify-center overflow-hidden">
                                     {clerkUser?.imageUrl ? (
-                                        <img src={clerkUser.imageUrl} alt="Profile" className="w-full h-full object-cover" />
+                                        <Image src={clerkUser.imageUrl} alt="Profile" className="w-full h-full object-cover" width={80} height={80} unoptimized />
                                     ) : (
                                         <UserIcon className="w-8 h-8 text-zinc-400" />
                                     )}

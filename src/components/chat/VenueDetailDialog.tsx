@@ -2,7 +2,7 @@
 
 import {
     X, MapPin, Wifi, Zap, Volume2, Navigation, Heart,
-    Coffee, BookOpen, Building2, Star, Info, MessageSquare
+    Coffee, BookOpen, Building2, Star, Info
 } from "lucide-react";
 import { useEffect, useState } from "react";
 

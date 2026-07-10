@@ -4,7 +4,7 @@ import {
     X, ShieldCheck, Zap, CheckCircle2,
     ArrowRight, Loader2, Lock, Banknote, Landmark,
     Calendar, Clock, User, Download, ExternalLink,
-    MapPin, ChevronRight, Inbox, CreditCard
+    MapPin, Inbox, CreditCard
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Venue } from "./ChatMessages";
@@ -35,7 +35,6 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
     const [bookingDate, setBookingDate] = useState("");
     const [bookingTime, setBookingTime] = useState("");
     const [email, setEmail] = useState("");
-    const [phone, setPhone] = useState("");
     const [history, setHistory] = useState<Booking[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -76,7 +75,7 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                     date: bookingDate,
                     time: bookingTime,
                     customerEmail: email,
-                    customerPhone: phone
+                    customerPhone: null
                 }),
             });
 

@@ -5,18 +5,18 @@ import { useState, useEffect } from "react";
 import { ArrowLeft, Shield, Lock, Eye, ShieldAlert, CheckCircle, Mail, MapPin } from "lucide-react";
 import SiteFooter from "@/components/site-footer";
 
+const sections = [
+  { id: "introduction", label: "Introduction" },
+  { id: "info-collect", label: "Information We Collect" },
+  { id: "info-use", label: "How We Use Information" },
+  { id: "cookies", label: "Cookies & Local Storage" },
+  { id: "security", label: "Data Security" },
+  { id: "rights", label: "Your Rights & Choices" },
+  { id: "updates", label: "Updates to Policy" },
+];
+
 export default function PrivacyPolicyPage() {
   const [activeSection, setActiveSection] = useState("introduction");
-
-  const sections = [
-    { id: "introduction", label: "Introduction" },
-    { id: "info-collect", label: "Information We Collect" },
-    { id: "info-use", label: "How We Use Information" },
-    { id: "cookies", label: "Cookies & Local Storage" },
-    { id: "security", label: "Data Security" },
-    { id: "rights", label: "Your Rights & Choices" },
-    { id: "updates", label: "Updates to Policy" },
-  ];
 
   useEffect(() => {
     const handleScroll = () => {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { venueSearchSchema, venueCreateSchema, validateRequest } from "@/lib/validations";
+import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
 
 // GET /api/venues - Search venues
 export async function GET(req: NextRequest) {
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
     }
     
     const { name, latitude, longitude, category, address, wifiQuality, hasOutlets, noiseLevel } = validation.data;
-    const { placeId, rating } = body; // placeId and rating are additional fields
+    const { placeId, rating, imageUrl } = body; // placeId, rating, imageUrl are additional fields
 
     // Validate placeId (required for upsert)
     if (!placeId) {
@@ -91,6 +92,24 @@ export async function POST(req: NextRequest) {
         { error: "placeId is required" },
         { status: 400 }
       );
+    }
+
+    let requiresReview = false;
+
+    // Run Vision Validation if an image was provided
+    if (imageUrl) {
+      const visionResult = await analyzeVenueImage(imageUrl, {
+        hasOutlets,
+        category,
+      });
+
+      // Flag for review if it's not a workspace or if outlets are claimed but not visible (and model is fairly confident)
+      if (
+        !visionResult.isWorkspace ||
+        (hasOutlets && !visionResult.visibleOutlets && visionResult.confidenceScore > 60)
+      ) {
+        requiresReview = true;
+      }
     }
 
     // Upsert venue (update if exists, create if not)
@@ -101,6 +120,8 @@ export async function POST(req: NextRequest) {
         hasOutlets,
         noiseLevel,
         crowdsourced: true,
+        requiresReview,
+        ...(imageUrl && { imageUrl }),
       },
       create: {
         placeId,
@@ -114,6 +135,8 @@ export async function POST(req: NextRequest) {
         hasOutlets: hasOutlets || false,
         noiseLevel,
         crowdsourced: true,
+        requiresReview,
+        imageUrl,
       },
     });
 

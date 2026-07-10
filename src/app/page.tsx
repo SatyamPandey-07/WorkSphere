@@ -53,15 +53,15 @@ export default function Home() {
               WorkSphere
             </span>
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 sm:gap-4">
             <SignedOut>
               <Link href="/sign-in">
-                <button className="px-4 py-2 text-sm text-white/70 hover:text-white font-medium transition-colors">
+                <button className="px-3 sm:px-4 py-2 text-sm text-white/70 hover:text-white font-medium transition-colors whitespace-nowrap">
                   Sign In
                 </button>
               </Link>
               <Link href="/sign-up">
-                <button className="px-5 py-2 text-sm rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105">
+                <button className="px-4 sm:px-5 py-2 text-sm rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105 whitespace-nowrap">
                   Get Started
                 </button>
               </Link>
@@ -69,12 +69,14 @@ export default function Home() {
             <SignedIn>
               <Link
                 href="/ai"
-                className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-white/70 hover:text-white font-medium transition-colors"
+                className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-white/70 hover:text-white font-medium transition-colors whitespace-nowrap"
               >
                 <Coffee className="w-4 h-4" />
                 Dashboard
               </Link>
-              <UserButton afterSignOutUrl="/" />
+              <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0">
+                <UserButton afterSignOutUrl="/" />
+              </div>
             </SignedIn>
           </div>
         </div>

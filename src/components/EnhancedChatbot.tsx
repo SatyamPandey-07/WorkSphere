@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useUser } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayerSession } from "@/hooks/useRealTime";
@@ -89,7 +89,7 @@ const INITIAL_SUGGESTIONS = [
 
 export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation, roomId }: EnhancedChatbotProps) {
   const { isSignedIn, user } = useUser();
-  const { socket } = useMultiplayerSession(roomId || null);
+  const { socket, yDoc } = useMultiplayerSession(roomId || null);
 
   // Presence state
   const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string }>>({});
@@ -146,12 +146,12 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
             onMapUpdate(data.update);
           }
         }
-      } catch {}
+      } catch (e) {}
     };
     
     socket.addEventListener("message", onMessage);
     return () => socket.removeEventListener("message", onMessage);
-  }, [socket, onMapUpdate]);
+  }, [socket]);
 
   // Core state
   const [location, setLocation] = useState(userLocation);
@@ -629,6 +629,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         conversations={conversations}
         onLoadConversation={loadConversation}
         onDeleteConversation={deleteConversation}
+        roomId={roomId || currentConversationId}
         onShareSession={() => {
           let sessionToShare = roomId || currentConversationId;
           if (!sessionToShare) {

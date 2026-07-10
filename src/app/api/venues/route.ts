@@ -121,15 +121,8 @@ export async function POST(req: NextRequest) {
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-<<<<<<< HEAD
-
-    const { name, latitude, longitude, category, address, wifiQuality, hasOutlets, noiseLevel } = validation.data;
-    const { placeId, rating, imageUrl } = body; // placeId, rating, imageUrl are additional fields
-=======
-
     const { name, latitude, longitude, category, address, wifiQuality, hasOutlets, noiseLevel, hasErgonomic, outletDensity, wifiSpeed } = validation.data;
-    const { placeId, rating, imageUrl } = body;
->>>>>>> upstream/main
+    const { placeId, rating, imageUrl } = body; // placeId, rating, imageUrl are additional fields
 
     // Validate placeId (required for upsert)
     if (!placeId) {

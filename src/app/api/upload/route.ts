@@ -29,11 +29,7 @@ export async function POST(request: Request) {
     const result: any = await new Promise((resolve, reject) => {
       cloudinary.uploader.upload_stream(
         { folder: 'worksphere_venues' },
-<<<<<<< HEAD
-        (error, result) => {
-=======
         (error: any, result: any) => {
->>>>>>> upstream/main
           if (error) reject(error);
           else resolve(result);
         }

@@ -38,6 +38,7 @@
     "svix": "^1.96.1",
     "tailwind-merge": "^3.4.0",
     "twilio": "^5.12.2",
+    "yjs": "^13.6.31",
     "zod": "^4.3.6"
   },
   "devDependencies": {

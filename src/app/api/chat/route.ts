@@ -821,7 +821,6 @@ export async function POST(req: Request) {
         });
       }
 
-<<<<<<< HEAD
       // ====== STEP 3: DATA AGENT ======
       console.log("Running Data Agent...");
       const dataStart = Date.now();
@@ -841,12 +840,39 @@ export async function POST(req: Request) {
       console.log("Enriching venues with DB ratings...");
       enrichedVenues = await enrichVenuesWithDBRatings(dataResult.venues as RawVenue[]);
 
+      // Apply advanced filters post-DB enrichment
+      let finalFilteredVenues = enrichedVenues;
+      if (filters) {
+        if (filters.wifi) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifi);
+        if (filters.outlets) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasOutlets);
+        if (filters.quiet) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.noiseLevel === "quiet");
+        if (filters.ergonomic) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasErgonomic);
+        if (filters.outletDensity && filters.outletDensity !== "none") {
+          if (filters.outletDensity === "every_table") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.outletDensity === "every_table");
+          } else if (filters.outletDensity === "some_tables") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => ["every_table", "some_tables"].includes(v.outletDensity));
+          } else if (filters.outletDensity === "wall_seats") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => ["every_table", "some_tables", "wall_seats"].includes(v.outletDensity));
+          }
+        }
+        if (filters.wifiSpeedBand && filters.wifiSpeedBand !== "all") {
+          if (filters.wifiSpeedBand === "basic") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 10);
+          } else if (filters.wifiSpeedBand === "fast") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50);
+          } else if (filters.wifiSpeedBand === "ultra") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100);
+          }
+        }
+      }
+
       if (orchestratorResult.complexity === "simple") {
         console.log("Bypassing Reasoning Agent for Simple query...");
         reasoningResult = {
           summary: "Here are some basic matches.",
           reasoning: "Simple query routing",
-          rankedVenues: enrichedVenues.map(v => ({ ...v, score: 50, pros: [], cons: [], aiSummary: "Matches basic criteria" }))
+          rankedVenues: finalFilteredVenues.map(v => ({ ...v, score: 50, pros: [], cons: [], aiSummary: "Matches basic criteria" }))
         };
         agentSteps.push({
           agent: "Reasoning",
@@ -858,7 +884,7 @@ export async function POST(req: Request) {
         // ====== STEP 4: REASONING AGENT ======
         console.log("Running Reasoning Agent...");
         const reasoningStart = Date.now();
-        reasoningResult = reasoningAgent(enrichedVenues, {
+        reasoningResult = reasoningAgent(finalFilteredVenues, {
           workType: contextResult.parameters.workType,
           amenities: contextResult.parameters.amenities,
         });
@@ -880,53 +906,6 @@ export async function POST(req: Request) {
         await setSemanticCache(userMessage, validLocation ? `${validLocation.lat},${validLocation.lng}` : null, reasoningResult);
       }
     }
-=======
-    // Apply advanced filters post-DB enrichment
-    let finalFilteredVenues = enrichedVenues;
-    if (filters) {
-      if (filters.wifi) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifi);
-      if (filters.outlets) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasOutlets);
-      if (filters.quiet) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.noiseLevel === "quiet");
-      if (filters.ergonomic) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasErgonomic);
-      if (filters.outletDensity && filters.outletDensity !== "none") {
-        if (filters.outletDensity === "every_table") {
-          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.outletDensity === "every_table");
-        } else if (filters.outletDensity === "some_tables") {
-          finalFilteredVenues = finalFilteredVenues.filter((v: any) => ["every_table", "some_tables"].includes(v.outletDensity));
-        } else if (filters.outletDensity === "wall_seats") {
-          finalFilteredVenues = finalFilteredVenues.filter((v: any) => ["every_table", "some_tables", "wall_seats"].includes(v.outletDensity));
-        }
-      }
-      if (filters.wifiSpeedBand && filters.wifiSpeedBand !== "all") {
-        if (filters.wifiSpeedBand === "basic") {
-          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 10);
-        } else if (filters.wifiSpeedBand === "fast") {
-          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50);
-        } else if (filters.wifiSpeedBand === "ultra") {
-          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100);
-        }
-      }
-    }
-
-    // ====== STEP 4: REASONING AGENT ======
-    console.log("Running Reasoning Agent...");
-    const reasoningResult = reasoningAgent(finalFilteredVenues, {
-      workType: contextResult.parameters.workType,
-      amenities: contextResult.parameters.amenities,
-    });
-    agentSteps.push({
-      agent: "Reasoning",
-      result: {
-        summary: reasoningResult.summary,
-        reasoning: reasoningResult.reasoning,
-        topVenues: reasoningResult.rankedVenues.slice(0, 3).map((v) => ({
-          name: v.name,
-          score: v.score,
-        })),
-      },
-      timestamp: Date.now(),
-    });
->>>>>>> upstream/main
 
     // ====== STEP 5: ACTION AGENT ======
     console.log("Running Action Agent...");

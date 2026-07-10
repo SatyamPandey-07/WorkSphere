@@ -91,6 +91,10 @@ self.addEventListener("fetch", (event) => {
 });
 // Background Sync for offline actions
 self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-crdt") {
+    event.waitUntil(syncCrdt());
+  }
+  // Fallbacks for older queues
   if (event.tag === "sync-favorites") {
     event.waitUntil(syncFavorites());
   }
@@ -98,6 +102,42 @@ self.addEventListener("sync", (event) => {
     event.waitUntil(syncRatings());
   }
 });
+
+// Helper to convert Uint8Array to base64 for fetch
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+// Sync CRDT when back online
+async function syncCrdt() {
+  try {
+    const db = await openIndexedDB();
+    const pendingActions = await getPendingActions(db, "crdt-sync");
+
+    if (pendingActions.length === 0) return;
+
+    const updates = pendingActions.map(action => arrayBufferToBase64(action.data));
+
+    const response = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ updates }),
+    });
+
+    if (response.ok) {
+      for (const action of pendingActions) {
+        await removePendingAction(db, "pending-actions", action.id);
+      }
+    }
+  } catch (error) {
+    console.error("Sync CRDT failed:", error);
+  }
+}
 
 // Sync favorites when back online
 async function syncFavorites() {

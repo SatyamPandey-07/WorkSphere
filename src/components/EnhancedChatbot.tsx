@@ -444,6 +444,8 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         venues: data.venues,
         agentSteps: data.agentSteps,
         suggestions: data.suggestions,
+        cached: data.cached,
+        complexity: data.complexity,
       };
       setMessages((prev) => [...prev, assistantMessage]);
 

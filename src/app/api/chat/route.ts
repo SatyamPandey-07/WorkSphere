@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import Groq from "groq-sdk";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 import { chatRequestSchema, validateRequest } from "@/lib/validations";
+import { checkSemanticCache, setSemanticCache } from "@/lib/cache/semanticCache";
 
 export const maxDuration = 60;
 
@@ -27,6 +28,12 @@ async function orchestratorAgent(
   agentsToUse: string[];
   reasoning: string;
   skipAgents: boolean;
+  complexity?: "simple" | "complex";
+  parameters?: {
+    workType?: string;
+    amenities?: string[];
+    location?: string;
+  };
 }> {
   const systemPrompt = `You are the Orchestrator Agent for WorkHub. Analyze user messages and determine which agents are needed.
 
@@ -37,13 +44,17 @@ Available agents:
 - ActionAgent: Updates map UI and generates responses
 
 Rules:
-1. Finding/searching workspaces → Use all 4 agents
-2. Asking about specific venue → DataAgent + ActionAgent
-3. Directions to venue → ActionAgent only
-4. General conversation → Skip agents
+1. Finding/searching workspaces → Use agents.
+2. Determine "complexity". If the user is just asking for a basic category (e.g., "cafes in Brooklyn", "coworking spaces near me"), it is "simple". If they specify exact needs (e.g., "quiet cafe with fast wifi for zoom calls"), it is "complex".
+3. If "complexity" is "simple", you must provide "parameters" with basic workType (e.g., "cafe") and location.
+4. Asking about specific venue → DataAgent + ActionAgent
+5. Directions to venue → ActionAgent only
+6. General conversation → Skip agents
 
 Output ONLY valid JSON:
-{"agentsToUse": ["ContextAgent", "DataAgent", "ReasoningAgent", "ActionAgent"], "reasoning": "reason here", "skipAgents": false}
+{"agentsToUse": ["ContextAgent", "DataAgent", "ReasoningAgent", "ActionAgent"], "reasoning": "Complex requirements", "skipAgents": false, "complexity": "complex"}
+
+For simple searches: {"agentsToUse": ["DataAgent", "ActionAgent"], "reasoning": "Simple search", "skipAgents": false, "complexity": "simple", "parameters": {"workType": "cafe", "location": "Brooklyn", "amenities": []}}
 
 For general chat: {"skipAgents": true, "reasoning": "General conversation"}`;
 
@@ -539,11 +550,13 @@ export async function POST(req: Request) {
 
     // ====== STEP 1: ORCHESTRATOR ======
     console.log("Running Orchestrator Agent...");
+    const orchStart = Date.now();
     const orchestratorResult = await orchestratorAgent(userMessage, { location: validLocation });
     agentSteps.push({
       agent: "Orchestrator",
       result: orchestratorResult,
       timestamp: Date.now(),
+      latencyMs: Date.now() - orchStart,
     });
 
     // If general conversation, respond directly
@@ -563,56 +576,142 @@ export async function POST(req: Request) {
         content: response.choices[0]?.message?.content || "Hello! How can I help you find a workspace today?",
         agentSteps,
         venues: [],
+        cached: false,
       });
     }
 
-    // ====== STEP 2: CONTEXT AGENT ======
-    console.log("Running Context Agent...");
-    const contextResult = await contextAgent(userMessage, validLocation ?? undefined, userId);
-    agentSteps.push({
-      agent: "Context",
-      result: contextResult,
-      timestamp: Date.now(),
-    });
+    // ====== CACHE & ROUTING ======
+    let contextResult: any = null;
+    let dataResult: any = null;
+    let enrichedVenues: any[] = [];
+    let reasoningResult: any = null;
+    let isCached = false;
+    
+    if (orchestratorResult.complexity === "complex") {
+      // Try semantic cache
+      console.log("Checking Semantic Cache...");
+      const cachedResponse = await checkSemanticCache(userMessage, validLocation ? `${validLocation.lat},${validLocation.lng}` : null);
+      
+      if (cachedResponse) {
+        console.log("Semantic Cache Hit!");
+        isCached = true;
+        reasoningResult = cachedResponse;
+        
+        agentSteps.push({
+          agent: "Context",
+          result: { skipped: true, reason: "Cache hit" },
+          timestamp: Date.now(),
+          latencyMs: 1,
+        });
 
-    // ====== STEP 3: DATA AGENT ======
-    console.log("Running Data Agent...");
-    const dataResult = await dataAgent(contextResult.parameters, filters);
-    agentSteps.push({
-      agent: "Data",
-      result: {
-        venueCount: dataResult.venues.length,
-        meta: dataResult.meta,
-        reasoning: dataResult.reasoning,
-      },
-      timestamp: Date.now(),
-    });
+        agentSteps.push({
+          agent: "Data",
+          result: { skipped: true, reason: "Cache hit" },
+          timestamp: Date.now(),
+          latencyMs: 1,
+        });
+        
+        agentSteps.push({
+          agent: "Reasoning",
+          result: {
+            summary: "Served from cache",
+            reasoning: "Matched a highly similar recent query",
+            topVenues: reasoningResult.rankedVenues.slice(0, 3).map((v: any) => ({
+              name: v.name,
+              score: v.score,
+            })),
+          },
+          timestamp: Date.now(),
+          latencyMs: 50,
+        });
+      }
+    }
 
-    // ====== STEP 3b: DB ENRICHMENT ======
-    console.log("Enriching venues with DB ratings...");
-    const enrichedVenues = await enrichVenuesWithDBRatings(dataResult.venues as RawVenue[]);
+    if (!isCached) {
+      if (orchestratorResult.complexity === "simple" && orchestratorResult.parameters) {
+        console.log("Bypassing Context Agent for Simple query...");
+        contextResult = { parameters: orchestratorResult.parameters };
+        agentSteps.push({
+          agent: "Context",
+          result: { skipped: true, parameters: contextResult.parameters },
+          timestamp: Date.now(),
+          latencyMs: 10,
+        });
+      } else {
+        // ====== STEP 2: CONTEXT AGENT ======
+        console.log("Running Context Agent...");
+        const contextStart = Date.now();
+        contextResult = await contextAgent(userMessage, validLocation ?? undefined, userId);
+        agentSteps.push({
+          agent: "Context",
+          result: contextResult,
+          timestamp: Date.now(),
+          latencyMs: Date.now() - contextStart,
+        });
+      }
 
-    // ====== STEP 4: REASONING AGENT ======
-    console.log("Running Reasoning Agent...");
-    const reasoningResult = reasoningAgent(enrichedVenues, {
-      workType: contextResult.parameters.workType,
-      amenities: contextResult.parameters.amenities,
-    });
-    agentSteps.push({
-      agent: "Reasoning",
-      result: {
-        summary: reasoningResult.summary,
-        reasoning: reasoningResult.reasoning,
-        topVenues: reasoningResult.rankedVenues.slice(0, 3).map((v) => ({
-          name: v.name,
-          score: v.score,
-        })),
-      },
-      timestamp: Date.now(),
-    });
+      // ====== STEP 3: DATA AGENT ======
+      console.log("Running Data Agent...");
+      const dataStart = Date.now();
+      dataResult = await dataAgent(contextResult.parameters, filters);
+      agentSteps.push({
+        agent: "Data",
+        result: {
+          venueCount: dataResult.venues.length,
+          meta: dataResult.meta,
+          reasoning: dataResult.reasoning,
+        },
+        timestamp: Date.now(),
+        latencyMs: Date.now() - dataStart,
+      });
+
+      // ====== STEP 3b: DB ENRICHMENT ======
+      console.log("Enriching venues with DB ratings...");
+      enrichedVenues = await enrichVenuesWithDBRatings(dataResult.venues as RawVenue[]);
+
+      if (orchestratorResult.complexity === "simple") {
+        console.log("Bypassing Reasoning Agent for Simple query...");
+        reasoningResult = {
+          summary: "Here are some basic matches.",
+          reasoning: "Simple query routing",
+          rankedVenues: enrichedVenues.map(v => ({ ...v, score: 50, pros: [], cons: [], aiSummary: "Matches basic criteria" }))
+        };
+        agentSteps.push({
+          agent: "Reasoning",
+          result: { skipped: true },
+          timestamp: Date.now(),
+          latencyMs: 10,
+        });
+      } else {
+        // ====== STEP 4: REASONING AGENT ======
+        console.log("Running Reasoning Agent...");
+        const reasoningStart = Date.now();
+        reasoningResult = reasoningAgent(enrichedVenues, {
+          workType: contextResult.parameters.workType,
+          amenities: contextResult.parameters.amenities,
+        });
+        agentSteps.push({
+          agent: "Reasoning",
+          result: {
+            summary: reasoningResult.summary,
+            reasoning: reasoningResult.reasoning,
+            topVenues: reasoningResult.rankedVenues.slice(0, 3).map((v: any) => ({
+              name: v.name,
+              score: v.score,
+            })),
+          },
+          timestamp: Date.now(),
+          latencyMs: Date.now() - reasoningStart,
+        });
+        
+        // Save to cache
+        await setSemanticCache(userMessage, validLocation ? `${validLocation.lat},${validLocation.lng}` : null, reasoningResult);
+      }
+    }
 
     // ====== STEP 5: ACTION AGENT ======
     console.log("Running Action Agent...");
+    const actionStart = Date.now();
     const actionResult = await actionAgent(reasoningResult.rankedVenues, userMessage);
     agentSteps.push({
       agent: "Action",
@@ -621,6 +720,7 @@ export async function POST(req: Request) {
         suggestions: actionResult.suggestions,
       },
       timestamp: Date.now(),
+      latencyMs: Date.now() - actionStart,
     });
 
     // ====== SAVE TO DATABASE (if user is authenticated) ======
@@ -648,6 +748,8 @@ export async function POST(req: Request) {
       mapUpdates: actionResult.mapUpdates,
       suggestions: actionResult.suggestions,
       agentSteps,
+      cached: isCached,
+      complexity: orchestratorResult.complexity,
     });
   } catch (error) {
     console.error("Chat API error:", error);

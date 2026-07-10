@@ -47,8 +47,11 @@ export interface Message {
         agent: string;
         result: Record<string, unknown>;
         timestamp: number;
+        latencyMs?: number;
     }>;
     suggestions?: string[];
+    cached?: boolean;
+    complexity?: string;
 }
 
 const AGENT_ICONS: Record<string, React.ElementType> = {
@@ -349,31 +352,57 @@ export function MessageList({
 
                     {message.agentSteps && message.agentSteps.length > 0 && (
                         <div className="ml-2">
-                            <button
-                                onClick={() => onToggleSteps(message.id)}
-                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest font-black text-zinc-500 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 transition-all hover:scale-105"
-                            >
-                                <TerminalIcon className="w-3 h-3" />
-                                <span>Agent Reasoning Details</span>
-                                {expandedSteps[message.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    onClick={() => onToggleSteps(message.id)}
+                                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] uppercase tracking-widest font-black text-zinc-500 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 transition-all hover:scale-105"
+                                >
+                                    <TerminalIcon className="w-3 h-3" />
+                                    <span>Agent Reasoning Details</span>
+                                    {expandedSteps[message.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                </button>
+                                {message.cached && (
+                                    <span className="flex items-center gap-1 px-2 py-1 rounded bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 text-[10px] font-bold uppercase tracking-wider">
+                                        ⚡ Cached
+                                    </span>
+                                )}
+                                {message.complexity === "simple" && !message.cached && (
+                                    <span className="flex items-center gap-1 px-2 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] font-bold uppercase tracking-wider">
+                                        ⚡ Simple Routing
+                                    </span>
+                                )}
+                            </div>
 
                             {expandedSteps[message.id] && (
                                 <div className="mt-3 space-y-2 ml-4">
                                     {message.agentSteps.map((step, idx) => {
                                         const Icon = AGENT_ICONS[step.agent] || Brain;
                                         const color = AGENT_COLORS[step.agent] || "text-zinc-500";
+                                        const skipped = (step.result as any)?.skipped;
+                                        
                                         return (
-                                            <div key={idx} className="bg-zinc-950 rounded-xl p-3 text-xs border border-zinc-800">
-                                                <div className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] mb-1 ${color}`}>
-                                                    <Icon className="w-3 h-3" />
-                                                    <span>{step.agent}</span>
+                                            <div key={idx} className={`rounded-xl p-3 text-xs border ${skipped ? 'bg-zinc-900/50 border-zinc-800/50 opacity-50' : 'bg-zinc-950 border-zinc-800'}`}>
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <div className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] ${color}`}>
+                                                        <Icon className="w-3 h-3" />
+                                                        <span>{step.agent} {skipped && "(Skipped)"}</span>
+                                                    </div>
+                                                    {step.latencyMs !== undefined && (
+                                                        <span className="text-[10px] text-zinc-500 font-mono font-bold">
+                                                            {step.latencyMs}ms
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div className="text-zinc-400 font-mono text-[11px]">
-                                                    {String(
-                                                        (step.result as { reasoning?: string }).reasoning ||
-                                                        JSON.stringify(step.result).slice(0, 100)
-                                                    )}
+                                                    {(() => {
+                                                        const res = step.result as any;
+                                                        if (res.reasoning) return String(res.reasoning);
+                                                        if (res.reason) return String(res.reason);
+                                                        if (step.agent === 'Action') return `Rendered ${res.markerCount || 0} map markers.`;
+                                                        if (step.agent === 'Context') return res.skipped ? "Skipped." : `Extracted filters: ${JSON.stringify(res.parameters)}`;
+                                                        if (step.agent === 'Data') return res.skipped ? "Skipped." : `Found ${res.venueCount || 0} venues.`;
+                                                        return JSON.stringify(res).slice(0, 100);
+                                                    })()}
                                                 </div>
                                             </div>
                                         );

@@ -134,3 +134,14 @@ model UserMemory {
 
   @@index([userId])
 }
+
+model SemanticCache {
+  id        String   @id @default(cuid())
+  query     String
+  location  String?
+  response  String
+  embedding Unsupported("vector(1024)")?
+  createdAt DateTime @default(now())
+
+  @@index([query])
+}

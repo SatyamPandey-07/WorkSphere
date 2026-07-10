@@ -119,7 +119,7 @@ async function contextAgent(
           input_type: 'search_query',
         }),
       });
-      
+
       if (!embedRes.ok) {
         throw new Error(`Cohere API error: ${embedRes.statusText}`);
       }
@@ -135,7 +135,7 @@ async function contextAgent(
         ORDER BY embedding <=> $1::vector
         LIMIT 3
       `, embeddingString, userId);
-      
+
       if (memories.length > 0) {
         memoryContext = "\\n\\nKNOWN USER PREFERENCES (Must be considered):\\n" + memories.map(m => `- ${m.content}`).join("\\n");
       }
@@ -489,7 +489,7 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
           (ratings.filter((r) => r.hasOutlets).length / ratings.length) * 100;
         const ergonomicPct =
           (ratings.filter((r) => r.hasErgonomic).length / ratings.length) * 100;
-        
+
         const validSpeeds = ratings.filter((r) => r.wifiSpeed !== null && r.wifiSpeed > 0).map((r) => r.wifiSpeed as number);
         const avgSpeed = validSpeeds.length > 0 ? Math.round(validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length) : null;
 
@@ -757,17 +757,17 @@ export async function POST(req: Request) {
     let enrichedVenues: any[] = [];
     let reasoningResult: any = null;
     let isCached = false;
-    
+
     if (orchestratorResult.complexity === "complex") {
       // Try semantic cache
       console.log("Checking Semantic Cache...");
       const cachedResponse = await checkSemanticCache(userMessage, validLocation ? `${validLocation.lat},${validLocation.lng}` : null);
-      
+
       if (cachedResponse) {
         console.log("Semantic Cache Hit!");
         isCached = true;
         reasoningResult = cachedResponse;
-        
+
         agentSteps.push({
           agent: "Context",
           result: { skipped: true, reason: "Cache hit" },
@@ -781,7 +781,7 @@ export async function POST(req: Request) {
           timestamp: Date.now(),
           latencyMs: 1,
         });
-        
+
         agentSteps.push({
           agent: "Reasoning",
           result: {
@@ -821,6 +821,7 @@ export async function POST(req: Request) {
         });
       }
 
+<<<<<<< HEAD
       // ====== STEP 3: DATA AGENT ======
       console.log("Running Data Agent...");
       const dataStart = Date.now();
@@ -840,39 +841,12 @@ export async function POST(req: Request) {
       console.log("Enriching venues with DB ratings...");
       enrichedVenues = await enrichVenuesWithDBRatings(dataResult.venues as RawVenue[]);
 
-      // Apply advanced filters post-DB enrichment
-      let finalFilteredVenues = enrichedVenues;
-      if (filters) {
-        if (filters.wifi) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifi);
-        if (filters.outlets) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasOutlets);
-        if (filters.quiet) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.noiseLevel === "quiet");
-        if (filters.ergonomic) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasErgonomic);
-        if (filters.outletDensity && filters.outletDensity !== "none") {
-          if (filters.outletDensity === "every_table") {
-            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.outletDensity === "every_table");
-          } else if (filters.outletDensity === "some_tables") {
-            finalFilteredVenues = finalFilteredVenues.filter((v: any) => ["every_table", "some_tables"].includes(v.outletDensity));
-          } else if (filters.outletDensity === "wall_seats") {
-            finalFilteredVenues = finalFilteredVenues.filter((v: any) => ["every_table", "some_tables", "wall_seats"].includes(v.outletDensity));
-          }
-        }
-        if (filters.wifiSpeedBand && filters.wifiSpeedBand !== "all") {
-          if (filters.wifiSpeedBand === "basic") {
-            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 10);
-          } else if (filters.wifiSpeedBand === "fast") {
-            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50);
-          } else if (filters.wifiSpeedBand === "ultra") {
-            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100);
-          }
-        }
-      }
-
       if (orchestratorResult.complexity === "simple") {
         console.log("Bypassing Reasoning Agent for Simple query...");
         reasoningResult = {
           summary: "Here are some basic matches.",
           reasoning: "Simple query routing",
-          rankedVenues: finalFilteredVenues.map(v => ({ ...v, score: 50, pros: [], cons: [], aiSummary: "Matches basic criteria" }))
+          rankedVenues: enrichedVenues.map(v => ({ ...v, score: 50, pros: [], cons: [], aiSummary: "Matches basic criteria" }))
         };
         agentSteps.push({
           agent: "Reasoning",
@@ -884,7 +858,7 @@ export async function POST(req: Request) {
         // ====== STEP 4: REASONING AGENT ======
         console.log("Running Reasoning Agent...");
         const reasoningStart = Date.now();
-        reasoningResult = reasoningAgent(finalFilteredVenues, {
+        reasoningResult = reasoningAgent(enrichedVenues, {
           workType: contextResult.parameters.workType,
           amenities: contextResult.parameters.amenities,
         });
@@ -901,11 +875,58 @@ export async function POST(req: Request) {
           timestamp: Date.now(),
           latencyMs: Date.now() - reasoningStart,
         });
-        
+
         // Save to cache
         await setSemanticCache(userMessage, validLocation ? `${validLocation.lat},${validLocation.lng}` : null, reasoningResult);
       }
     }
+=======
+    // Apply advanced filters post-DB enrichment
+    let finalFilteredVenues = enrichedVenues;
+    if (filters) {
+      if (filters.wifi) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifi);
+      if (filters.outlets) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasOutlets);
+      if (filters.quiet) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.noiseLevel === "quiet");
+      if (filters.ergonomic) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasErgonomic);
+      if (filters.outletDensity && filters.outletDensity !== "none") {
+        if (filters.outletDensity === "every_table") {
+          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.outletDensity === "every_table");
+        } else if (filters.outletDensity === "some_tables") {
+          finalFilteredVenues = finalFilteredVenues.filter((v: any) => ["every_table", "some_tables"].includes(v.outletDensity));
+        } else if (filters.outletDensity === "wall_seats") {
+          finalFilteredVenues = finalFilteredVenues.filter((v: any) => ["every_table", "some_tables", "wall_seats"].includes(v.outletDensity));
+        }
+      }
+      if (filters.wifiSpeedBand && filters.wifiSpeedBand !== "all") {
+        if (filters.wifiSpeedBand === "basic") {
+          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 10);
+        } else if (filters.wifiSpeedBand === "fast") {
+          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50);
+        } else if (filters.wifiSpeedBand === "ultra") {
+          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100);
+        }
+      }
+    }
+
+    // ====== STEP 4: REASONING AGENT ======
+    console.log("Running Reasoning Agent...");
+    const reasoningResult = reasoningAgent(finalFilteredVenues, {
+      workType: contextResult.parameters.workType,
+      amenities: contextResult.parameters.amenities,
+    });
+    agentSteps.push({
+      agent: "Reasoning",
+      result: {
+        summary: reasoningResult.summary,
+        reasoning: reasoningResult.reasoning,
+        topVenues: reasoningResult.rankedVenues.slice(0, 3).map((v) => ({
+          name: v.name,
+          score: v.score,
+        })),
+      },
+      timestamp: Date.now(),
+    });
+>>>>>>> upstream/main
 
     // ====== STEP 5: ACTION AGENT ======
     console.log("Running Action Agent...");

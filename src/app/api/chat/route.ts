@@ -78,7 +78,8 @@ For general chat: {"skipAgents": true, "reasoning": "General conversation"}`;
 // ============================================================
 async function contextAgent(
   userMessage: string,
-  userLocation?: { lat: number; lng: number }
+  userLocation?: { lat: number; lng: number },
+  userId?: string | null
 ): Promise<{
   intent: string;
   parameters: {
@@ -92,7 +93,47 @@ async function contextAgent(
   };
   reasoning: string;
 }> {
-  const systemPrompt = `You are the Context Agent. Extract search parameters from user queries.
+  let memoryContext = "";
+  if (userId && process.env.COHERE_API_KEY) {
+    try {
+      const embedRes = await fetch('https://api.cohere.ai/v1/embed', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.COHERE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          texts: [userMessage],
+          model: 'embed-english-v3.0',
+          input_type: 'search_query',
+        }),
+      });
+      
+      if (!embedRes.ok) {
+        throw new Error(`Cohere API error: ${embedRes.statusText}`);
+      }
+
+      const embedData = await embedRes.json();
+      const embedding = embedData.embeddings[0];
+      const embeddingString = `[${embedding.join(',')}]`;
+
+      const memories: any[] = await prisma.$queryRawUnsafe(`
+        SELECT content, 1 - (embedding <=> $1::vector) AS similarity
+        FROM "UserMemory"
+        WHERE "userId" = $2
+        ORDER BY embedding <=> $1::vector
+        LIMIT 3
+      `, embeddingString, userId);
+      
+      if (memories.length > 0) {
+        memoryContext = "\\n\\nKNOWN USER PREFERENCES (Must be considered):\\n" + memories.map(m => `- ${m.content}`).join("\\n");
+      }
+    } catch (e) {
+      console.error('Error fetching AI memories:', e);
+    }
+  }
+
+  const systemPrompt = `You are the Context Agent. Extract search parameters from user queries.${memoryContext}
 
 Extract:
 1. workType: "focus" | "calls" | "collaboration" | "casual"
@@ -527,7 +568,7 @@ export async function POST(req: Request) {
 
     // ====== STEP 2: CONTEXT AGENT ======
     console.log("Running Context Agent...");
-    const contextResult = await contextAgent(userMessage, validLocation ?? undefined);
+    const contextResult = await contextAgent(userMessage, validLocation ?? undefined, userId);
     agentSteps.push({
       agent: "Context",
       result: contextResult,

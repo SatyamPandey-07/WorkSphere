@@ -1,9 +1,11 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
+  provider   = "postgresql"
+  extensions = [vector]
 }
 
 model User {
@@ -16,6 +18,7 @@ model User {
   ratings       VenueRating[]
   conversations Conversation[]
   bookings      Booking[]
+  memories      UserMemory[]
 }
 
 model Venue {
@@ -117,4 +120,15 @@ enum BookingStatus {
   CONFIRMED
   PENDING
   CANCELLED
+}
+
+model UserMemory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  content   String
+  embedding Unsupported("vector(1024)")?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }

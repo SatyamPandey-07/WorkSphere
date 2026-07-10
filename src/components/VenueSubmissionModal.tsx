@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useUser } from "@clerk/nextjs";
-import { X, MapPin, Wifi, Zap, Volume2, Send, Loader2, Camera } from "lucide-react";
+import { X, MapPin, Loader2 } from "lucide-react";
 
 interface VenueSubmissionModalProps {
   isOpen: boolean;

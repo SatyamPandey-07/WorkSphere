@@ -196,7 +196,14 @@ Output ONLY valid JSON:
 // ============================================================
 async function dataAgent(
   params: any,
-  filters?: { wifi?: boolean; outlets?: boolean; quiet?: boolean }
+  filters?: {
+    wifi?: boolean;
+    outlets?: boolean;
+    quiet?: boolean;
+    ergonomic?: boolean;
+    outletDensity?: string;
+    wifiSpeedBand?: string;
+  }
 ): Promise<{
   venues: any[];
   meta: { total: number; source: string };
@@ -244,28 +251,75 @@ async function dataAgent(
       if (!response.ok) continue;
       const data = await response.json();
 
-      let venues = data.elements.slice(0, 15).map((el: any) => ({
-        id: el.id.toString(),
-        name: el.tags?.name || "Unknown Venue",
-        lat: el.lat || el.center?.lat,
-        lng: el.lon || el.center?.lon,
-        category: el.tags?.amenity || "venue",
-        address: el.tags?.["addr:street"]
-          ? `${el.tags["addr:housenumber"] || ""} ${el.tags["addr:street"]}`.trim()
-          : null,
-        wifi: el.tags?.internet_access === "wlan" || el.tags?.internet_access === "yes",
-        hasOutlets: false,
-        noiseLevel: "moderate",
-        rating: null,
-        wifiQuality: el.tags?.internet_access ? 3 : null,
-        openingHours: el.tags?.opening_hours || null,
-      }));
+      let venues = data.elements.slice(0, 15).map((el: any) => {
+        const hasErgonomic = el.tags?.office === "coworking" || el.tags?.ergonomic === "yes" || el.tags?.standing_desk === "yes" || el.tags?.backrest === "yes" || el.tags?.amenity === "coworking_space";
+        let wifiSpeed: number | null = null;
+        const speedTag = el.tags?.["internet_access:speed"] || el.tags?.["download:speed"];
+        if (speedTag) {
+          const match = speedTag.match(/\d+/);
+          if (match) {
+            wifiSpeed = parseInt(match[0], 10);
+          }
+        }
+
+        let outletDensity = "none";
+        if (el.tags?.socket === "yes" || el.tags?.["socket:count"] || el.tags?.["power:outlet"] === "yes") {
+          outletDensity = "some_tables";
+          const count = parseInt(el.tags?.["socket:count"] || "0", 10);
+          if (count > 10) {
+            outletDensity = "every_table";
+          }
+        } else if (el.tags?.amenity === "coworking_space") {
+          outletDensity = "every_table";
+        } else if (el.tags?.amenity === "library") {
+          outletDensity = "wall_seats";
+        }
+
+        return {
+          id: el.id.toString(),
+          name: el.tags?.name || "Unknown Venue",
+          lat: el.lat || el.center?.lat,
+          lng: el.lon || el.center?.lon,
+          category: el.tags?.amenity || "venue",
+          address: el.tags?.["addr:street"]
+            ? `${el.tags["addr:housenumber"] || ""} ${el.tags["addr:street"]}`.trim()
+            : null,
+          wifi: el.tags?.internet_access === "wlan" || el.tags?.internet_access === "yes",
+          hasOutlets: el.tags?.socket === "yes" || el.tags?.["socket:count"] || el.tags?.internet_access ? true : false,
+          noiseLevel: el.tags?.amenity === "library" ? "quiet" : "moderate",
+          rating: null,
+          wifiQuality: el.tags?.internet_access ? 3 : null,
+          openingHours: el.tags?.opening_hours || null,
+          hasErgonomic,
+          outletDensity,
+          wifiSpeed,
+        };
+      });
 
       // Apply filters if provided
       if (filters) {
         if (filters.wifi) venues = venues.filter((v: any) => v.wifi);
         if (filters.outlets) venues = venues.filter((v: any) => v.hasOutlets);
         if (filters.quiet) venues = venues.filter((v: any) => v.noiseLevel === "quiet");
+        if (filters.ergonomic) venues = venues.filter((v: any) => v.hasErgonomic);
+        if (filters.outletDensity && filters.outletDensity !== "none") {
+          if (filters.outletDensity === "every_table") {
+            venues = venues.filter((v: any) => v.outletDensity === "every_table");
+          } else if (filters.outletDensity === "some_tables") {
+            venues = venues.filter((v: any) => ["every_table", "some_tables"].includes(v.outletDensity));
+          } else if (filters.outletDensity === "wall_seats") {
+            venues = venues.filter((v: any) => ["every_table", "some_tables", "wall_seats"].includes(v.outletDensity));
+          }
+        }
+        if (filters.wifiSpeedBand && filters.wifiSpeedBand !== "all") {
+          if (filters.wifiSpeedBand === "basic") {
+            venues = venues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 10);
+          } else if (filters.wifiSpeedBand === "fast") {
+            venues = venues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50);
+          } else if (filters.wifiSpeedBand === "ultra") {
+            venues = venues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100);
+          }
+        }
       }
 
       return {
@@ -279,10 +333,93 @@ async function dataAgent(
     }
   }
 
+  // Fallback to mock data if Overpass API is completely down/rate-limited
+  console.log("Using mock data fallback for location:", location);
+  const mockVenues = [
+    {
+      id: "mock-1",
+      name: "Downtown Creative Coworking",
+      lat: location.lat + 0.002,
+      lng: location.lng - 0.002,
+      category: "coworking_space",
+      address: "123 Main St, Tech District",
+      wifi: true,
+      hasOutlets: true,
+      noiseLevel: "quiet",
+      rating: 4.8,
+      wifiQuality: 5,
+      openingHours: "08:00-22:00",
+      hasErgonomic: true,
+      outletDensity: "every_table",
+      wifiSpeed: 120,
+    },
+    {
+      id: "mock-2",
+      name: "The Daily Grind Cafe",
+      lat: location.lat - 0.003,
+      lng: location.lng + 0.001,
+      category: "cafe",
+      address: "456 Oak Avenue",
+      wifi: true,
+      hasOutlets: true,
+      noiseLevel: "moderate",
+      rating: 4.2,
+      wifiQuality: 4,
+      openingHours: "07:00-19:00",
+      hasErgonomic: false,
+      outletDensity: "some_tables",
+      wifiSpeed: 45,
+    },
+    {
+      id: "mock-3",
+      name: "City Central Library",
+      lat: location.lat + 0.001,
+      lng: location.lng + 0.003,
+      category: "library",
+      address: "789 Library Plaza",
+      wifi: true,
+      hasOutlets: true,
+      noiseLevel: "quiet",
+      rating: 4.6,
+      wifiQuality: 3,
+      openingHours: "09:00-20:00",
+      hasErgonomic: false,
+      outletDensity: "wall_seats",
+      wifiSpeed: 15,
+    },
+  ];
+
+  // Apply filters to mock data as well so the user can test filters
+  let filteredMock = mockVenues;
+  if (filters) {
+    if (filters.wifi) filteredMock = filteredMock.filter((v: any) => v.wifi);
+    if (filters.outlets) filteredMock = filteredMock.filter((v: any) => v.hasOutlets);
+    if (filters.quiet) filteredMock = filteredMock.filter((v: any) => v.noiseLevel === "quiet");
+    if (filters.ergonomic) filteredMock = filteredMock.filter((v: any) => v.hasErgonomic);
+    if (filters.outletDensity && filters.outletDensity !== "none") {
+      if (filters.outletDensity === "every_table") {
+        filteredMock = filteredMock.filter((v: any) => v.outletDensity === "every_table");
+      } else if (filters.outletDensity === "some_tables") {
+        filteredMock = filteredMock.filter((v: any) => ["every_table", "some_tables"].includes(v.outletDensity));
+      } else if (filters.outletDensity === "wall_seats") {
+        filteredMock = filteredMock.filter((v: any) => ["every_table", "some_tables", "wall_seats"].includes(v.outletDensity));
+      }
+    }
+    if (filters.wifiSpeedBand && filters.wifiSpeedBand !== "all") {
+      if (filters.wifiSpeedBand === "basic") {
+        filteredMock = filteredMock.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 10);
+      } else if (filters.wifiSpeedBand === "fast") {
+        filteredMock = filteredMock.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50);
+      } else if (filters.wifiSpeedBand === "ultra") {
+        filteredMock = filteredMock.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100);
+      }
+    }
+  }
+
   return {
-    venues: [],
-    meta: { total: 0, source: "error" },
-    reasoning: "Failed to fetch venues",
+    venues: filteredMock,
+    meta: { total: filteredMock.length, source: "Simulation Fallback" },
+    reasoning: `Returned ${filteredMock.length} simulated fallback venues due to Overpass API offline status`,
   };
 }
 
@@ -303,6 +440,9 @@ interface RawVenue {
   rating: number | null;
   wifiQuality: number | null;
   openingHours: string | null;
+  hasErgonomic: boolean;
+  outletDensity: string;
+  wifiSpeed: number | null;
 }
 
 async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]> {
@@ -319,7 +459,14 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
     // Build a lookup map: placeId → aggregated crowdsourced data
     const dbMap = new Map<
       string,
-      { avgWifi: number | null; outletPct: number; noiseMode: string | null }
+      {
+        avgWifi: number | null;
+        outletPct: number;
+        noiseMode: string | null;
+        hasErgonomic: boolean;
+        outletDensity: string | null;
+        wifiSpeed: number | null;
+      }
     >();
 
     for (const dbV of dbVenues) {
@@ -330,6 +477,9 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
           avgWifi: dbV.wifiQuality ? dbV.wifiQuality * 2 : null, // convert 1-5 → 2-10
           outletPct: dbV.hasOutlets ? 100 : 0,
           noiseMode: dbV.noiseLevel ?? null,
+          hasErgonomic: dbV.hasErgonomic,
+          outletDensity: dbV.outletDensity ?? null,
+          wifiSpeed: dbV.wifiSpeed ?? null,
         });
       } else {
         // Aggregate user ratings
@@ -337,6 +487,21 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
           ratings.reduce((sum, r) => sum + r.wifiQuality, 0) / ratings.length;
         const outletPct =
           (ratings.filter((r) => r.hasOutlets).length / ratings.length) * 100;
+        const ergonomicPct =
+          (ratings.filter((r) => r.hasErgonomic).length / ratings.length) * 100;
+        
+        const validSpeeds = ratings.filter((r) => r.wifiSpeed !== null && r.wifiSpeed > 0).map((r) => r.wifiSpeed as number);
+        const avgSpeed = validSpeeds.length > 0 ? Math.round(validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length) : null;
+
+        const densityCounts: Record<string, number> = {};
+        for (const r of ratings) {
+          if (r.outletDensity) {
+            densityCounts[r.outletDensity] = (densityCounts[r.outletDensity] || 0) + 1;
+          }
+        }
+        const outletDensityMode = Object.keys(densityCounts).length > 0
+          ? Object.entries(densityCounts).reduce((best, [lvl, cnt]) => cnt > (densityCounts[best] ?? 0) ? lvl : best, "none")
+          : "none";
 
         // Mode of noiseLevel
         const noiseCounts: Record<string, number> = {};
@@ -353,6 +518,9 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
           avgWifi: (avgWifi / 5) * 10, // convert 1-5 scale → 0-10
           outletPct,
           noiseMode,
+          hasErgonomic: ergonomicPct >= 50,
+          outletDensity: outletDensityMode,
+          wifiSpeed: avgSpeed,
         });
       }
     }
@@ -369,6 +537,9 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
         hasOutlets: db.outletPct >= 50,
         noiseLevel: db.noiseMode ?? venue.noiseLevel,
         wifiQuality: db.avgWifi,
+        hasErgonomic: db.hasErgonomic,
+        outletDensity: db.outletDensity ?? venue.outletDensity,
+        wifiSpeed: db.wifiSpeed ?? venue.wifiSpeed,
       };
     });
   } catch (err) {
@@ -669,12 +840,39 @@ export async function POST(req: Request) {
       console.log("Enriching venues with DB ratings...");
       enrichedVenues = await enrichVenuesWithDBRatings(dataResult.venues as RawVenue[]);
 
+      // Apply advanced filters post-DB enrichment
+      let finalFilteredVenues = enrichedVenues;
+      if (filters) {
+        if (filters.wifi) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifi);
+        if (filters.outlets) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasOutlets);
+        if (filters.quiet) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.noiseLevel === "quiet");
+        if (filters.ergonomic) finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasErgonomic);
+        if (filters.outletDensity && filters.outletDensity !== "none") {
+          if (filters.outletDensity === "every_table") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.outletDensity === "every_table");
+          } else if (filters.outletDensity === "some_tables") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => ["every_table", "some_tables"].includes(v.outletDensity));
+          } else if (filters.outletDensity === "wall_seats") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => ["every_table", "some_tables", "wall_seats"].includes(v.outletDensity));
+          }
+        }
+        if (filters.wifiSpeedBand && filters.wifiSpeedBand !== "all") {
+          if (filters.wifiSpeedBand === "basic") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 10);
+          } else if (filters.wifiSpeedBand === "fast") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50);
+          } else if (filters.wifiSpeedBand === "ultra") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100);
+          }
+        }
+      }
+
       if (orchestratorResult.complexity === "simple") {
         console.log("Bypassing Reasoning Agent for Simple query...");
         reasoningResult = {
           summary: "Here are some basic matches.",
           reasoning: "Simple query routing",
-          rankedVenues: enrichedVenues.map(v => ({ ...v, score: 50, pros: [], cons: [], aiSummary: "Matches basic criteria" }))
+          rankedVenues: finalFilteredVenues.map(v => ({ ...v, score: 50, pros: [], cons: [], aiSummary: "Matches basic criteria" }))
         };
         agentSteps.push({
           agent: "Reasoning",
@@ -686,7 +884,7 @@ export async function POST(req: Request) {
         // ====== STEP 4: REASONING AGENT ======
         console.log("Running Reasoning Agent...");
         const reasoningStart = Date.now();
-        reasoningResult = reasoningAgent(enrichedVenues, {
+        reasoningResult = reasoningAgent(finalFilteredVenues, {
           workType: contextResult.parameters.workType,
           amenities: contextResult.parameters.amenities,
         });

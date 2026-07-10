@@ -297,7 +297,15 @@ export default function AppPage() {
   };
 
   // Handle venue rating submission
-  const handleRatingSubmit = async (rating: { wifiQuality: number; hasOutlets: boolean; noiseLevel: "quiet" | "moderate" | "loud"; comment?: string }) => {
+  const handleRatingSubmit = async (rating: {
+    wifiQuality: number;
+    hasOutlets: boolean;
+    noiseLevel: "quiet" | "moderate" | "loud";
+    comment?: string;
+    hasErgonomic: boolean;
+    outletDensity: "every_table" | "some_tables" | "wall_seats" | "none";
+    wifiSpeed?: number;
+  }) => {
     if (!ratingDialog.venue) return;
 
     try {
@@ -444,7 +452,14 @@ export default function AppPage() {
                   position: { lat: v.lat, lng: v.lng },
                   category: v.category || "cafe",
                   address: v.address,
-                  amenities: { wifi: v.wifi, outlets: v.hasOutlets, quiet: v.noiseLevel === "quiet" },
+                  amenities: {
+                    wifi: v.wifi,
+                    outlets: v.hasOutlets,
+                    quiet: v.noiseLevel === "quiet",
+                    hasErgonomic: v.hasErgonomic,
+                    outletDensity: v.outletDensity,
+                    wifiSpeed: v.wifiSpeed
+                  },
                   score: v.score
                 });
               }}

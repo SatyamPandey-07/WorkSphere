@@ -36,6 +36,9 @@ export interface Venue {
     noiseLevel?: "quiet" | "moderate" | "loud";
     score?: number;
     description?: string;
+    hasErgonomic?: boolean;
+    outletDensity?: string;
+    wifiSpeed?: number | null;
 }
 
 export interface Message {

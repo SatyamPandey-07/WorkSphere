@@ -28,7 +28,7 @@ export async function POST(
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    const { wifiQuality, hasOutlets, noiseLevel, comment } = validation.data;
+    const { wifiQuality, hasOutlets, noiseLevel, comment, hasErgonomic, outletDensity, wifiSpeed } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
     const targetPlaceId = venueData?.placeId || venueId;
@@ -65,6 +65,9 @@ export async function POST(
         wifiQuality,
         hasOutlets,
         noiseLevel,
+        hasErgonomic,
+        outletDensity,
+        wifiSpeed,
         comment,
       },
       create: {
@@ -73,6 +76,9 @@ export async function POST(
         wifiQuality,
         hasOutlets,
         noiseLevel,
+        hasErgonomic: hasErgonomic || false,
+        outletDensity: outletDensity || "none",
+        wifiSpeed: wifiSpeed || null,
         comment,
       },
     });
@@ -84,6 +90,7 @@ export async function POST(
 
     const avgWifi = allRatings.reduce((sum: number, r: { wifiQuality: number }) => sum + r.wifiQuality, 0) / allRatings.length;
     const outletPercent = (allRatings.filter((r: { hasOutlets: boolean }) => r.hasOutlets).length / allRatings.length) * 100;
+    const ergonomicPercent = (allRatings.filter((r: any) => r.hasErgonomic).length / allRatings.length) * 100;
 
     // Most common noise level
     const noiseCounts: Record<string, number> = {};
@@ -92,12 +99,32 @@ export async function POST(
     });
     const dominantNoise = Object.entries(noiseCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0];
 
+    // Most common outlet density
+    const densityCounts: Record<string, number> = {};
+    allRatings.forEach((r: any) => {
+      if (r.outletDensity) {
+        densityCounts[r.outletDensity] = (densityCounts[r.outletDensity] || 0) + 1;
+      }
+    });
+    const dominantDensity = Object.keys(densityCounts).length > 0
+      ? Object.entries(densityCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0]
+      : "none";
+
+    // Average wifi speed
+    const validSpeeds = allRatings.filter((r: any) => r.wifiSpeed !== null && r.wifiSpeed > 0).map((r: any) => r.wifiSpeed as number);
+    const avgSpeed = validSpeeds.length > 0
+      ? Math.round(validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length)
+      : null;
+
     await prisma.venue.update({
       where: { id: finalVenueId },
       data: {
         wifiQuality: Math.round(avgWifi),
         hasOutlets: outletPercent > 50,
         noiseLevel: dominantNoise,
+        hasErgonomic: ergonomicPercent > 50,
+        outletDensity: dominantDensity,
+        wifiSpeed: avgSpeed,
         crowdsourced: true,
       },
     });

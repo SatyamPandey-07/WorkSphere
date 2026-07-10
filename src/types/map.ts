@@ -17,6 +17,9 @@ export interface MapMarker {
     wifi?: boolean;
     outlets?: boolean;
     quiet?: boolean;
+    hasErgonomic?: boolean;
+    outletDensity?: string;
+    wifiSpeed?: number | null;
   };
 }
 

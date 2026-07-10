@@ -33,6 +33,9 @@ model Venue {
   wifiQuality    Int?          // 1-5 scale
   hasOutlets     Boolean       @default(false)
   noiseLevel     String?       // quiet, moderate, loud
+  hasErgonomic   Boolean       @default(false)
+  outletDensity  String?       // every_table, some_tables, wall_seats, none
+  wifiSpeed      Int?          // in Mbps
   crowdsourced   Boolean       @default(false)
   requiresReview Boolean       @default(false)
   imageUrl       String?
@@ -49,16 +52,19 @@ model Venue {
 }
 
 model VenueRating {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id])
-  venueId     String
-  venue       Venue    @relation(fields: [venueId], references: [id])
-  wifiQuality Int      // 1-5
-  hasOutlets  Boolean
-  noiseLevel  String   // quiet, moderate, loud
-  comment     String?
-  createdAt   DateTime @default(now())
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  venueId       String
+  venue         Venue    @relation(fields: [venueId], references: [id])
+  wifiQuality   Int      // 1-5
+  hasOutlets    Boolean
+  noiseLevel    String   // quiet, moderate, loud
+  hasErgonomic  Boolean  @default(false)
+  outletDensity String?  // every_table, some_tables, wall_seats, none
+  wifiSpeed     Int?     // in Mbps
+  comment       String?
+  createdAt     DateTime @default(now())
 
   @@unique([userId, venueId])
   @@index([venueId])

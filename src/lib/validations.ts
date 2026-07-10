@@ -24,6 +24,9 @@ export const venueSearchSchema = z.object({
   wifi: z.coerce.boolean().optional(),
   outlets: z.coerce.boolean().optional(),
   quiet: z.coerce.boolean().optional(),
+  ergonomic: z.coerce.boolean().optional(),
+  outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional(),
+  wifiSpeedBand: z.enum(["basic", "fast", "ultra", "all"]).optional(),
 });
 
 export const venueCreateSchema = z.object({
@@ -35,6 +38,9 @@ export const venueCreateSchema = z.object({
   wifiQuality: z.number().min(1).max(5).optional(),
   hasOutlets: z.boolean().optional(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]).optional(),
+  hasErgonomic: z.boolean().optional(),
+  outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional(),
+  wifiSpeed: z.number().min(0).max(10000).optional(),
 });
 
 export const venueRatingSchema = z.object({
@@ -42,6 +48,9 @@ export const venueRatingSchema = z.object({
   hasOutlets: z.boolean(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]),
   comment: z.string().max(1000).optional(),
+  hasErgonomic: z.boolean().optional().default(false),
+  outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional().default("none"),
+  wifiSpeed: z.number().min(0).max(10000).optional().nullable(),
 });
 
 // Conversation schemas

@@ -56,6 +56,9 @@ interface Filters {
   wifi?: boolean;
   outlets?: boolean;
   quiet?: boolean;
+  ergonomic?: boolean;
+  outletDensity?: "every_table" | "some_tables" | "wall_seats" | "none";
+  wifiSpeedBand?: "basic" | "fast" | "ultra" | "all";
 }
 
 interface Conversation {
@@ -367,6 +370,19 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     });
   };
 
+  const handleSetFilter = (key: string, value: any) => {
+    setFilters((prev) => {
+      const next = { ...prev };
+      if (value === undefined || value === null || value === "none" || value === "all") {
+        delete next[key as keyof Filters];
+      } else {
+        (next as any)[key] = value;
+      }
+      trackFilterApplied(next);
+      return next;
+    });
+  };
+
   // ── Agent step expand/collapse ────────────────────────────────────────────────
   const toggleSteps = (messageId: string) => {
     setExpandedSteps((prev) => ({ ...prev, [messageId]: !prev[messageId] }));
@@ -484,6 +500,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         showFilters={showFilters}
         setShowFilters={setShowFilters}
         onToggleFilter={(key) => toggleFilter(key as keyof Filters)}
+        onSetFilter={handleSetFilter}
         showHistory={showHistory}
         setShowHistory={setShowHistory}
         onNewChat={startNewChat}

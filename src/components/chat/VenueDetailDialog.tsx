@@ -125,8 +125,8 @@ export function VenueDetailDialog({
                                 <Wifi className="w-6 h-6 text-blue-500" />
                             </div>
                             <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">WiFi</span>
-                            <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none">
-                                {venue.wifi ? "Fast" : "TBD"}
+                            <span className="text-sm font-black text-zinc-900 dark:text-zinc-50 leading-none">
+                                {venue.wifiSpeed ? `${venue.wifiSpeed} Mbps` : (venue.wifi ? "Verified" : "TBD")}
                             </span>
                         </div>
                         <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
@@ -134,8 +134,10 @@ export function VenueDetailDialog({
                                 <Zap className="w-6 h-6 text-orange-500" />
                             </div>
                             <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">Power</span>
-                            <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none">
-                                {venue.hasOutlets ? "Yes" : "No"}
+                            <span className="text-[10px] font-black text-zinc-900 dark:text-zinc-50 leading-none uppercase tracking-wider">
+                                {venue.outletDensity && venue.outletDensity !== 'none'
+                                    ? venue.outletDensity.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())
+                                    : (venue.hasOutlets ? "Available" : "No")}
                             </span>
                         </div>
                         <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
@@ -159,6 +161,7 @@ export function VenueDetailDialog({
                                 Analysis based on Multi-Agent telemetry suggests this {venue.category || "workspace"}
                                 is optimal for {venue.category === 'cafe' ? 'collaborative sessions' : 'high-focus work'}.
                                 Noise floor is {venue.noiseLevel || "ambient"} and connectivity is verified as {venue.wifi ? 'stable' : 'pending'}.
+                                {venue.hasErgonomic && " The workspace features verified ergonomic chairs and height-adjustable/standing desks."}
                             </p>
                         </div>
 

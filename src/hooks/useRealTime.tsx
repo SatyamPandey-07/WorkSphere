@@ -37,13 +37,16 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
   const venueIdsKey = venueIds.slice().sort().join(",");
 
   useEffect(() => {
-    if (!enabled || venueIds.length === 0) return;
+    const ids = venueIdsKey ? venueIdsKey.split(",") : [];
+    if (!enabled || ids.length === 0) return;
 
     let eventSource: EventSource | null = null;
     let reconnectTimeout: ReturnType<typeof setTimeout>;
-    let currentBackoff = 2000; // Start with 2s
+    let currentBackoff = 1000; // Start with 1s
 
     const connect = () => {
+      clearTimeout(reconnectTimeout);
+
       // Don't even try if we know we're offline
       if (typeof window !== "undefined" && !window.navigator.onLine) {
         setIsConnected(false);
@@ -52,14 +55,14 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       }
 
       const params = new URLSearchParams();
-      venueIds.forEach((id) => params.append("venueId", id));
+      ids.forEach((id) => params.append("venueId", id));
 
       eventSource = new EventSource(`/api/venues/updates?${params.toString()}`);
 
       eventSource.onopen = () => {
         setIsConnected(true);
         setError(null);
-        currentBackoff = 2000; // Reset backoff on success
+        currentBackoff = 1000; // Reset backoff on success
         console.log("[RealTime] Connected to updates stream");
       };
 
@@ -81,17 +84,18 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
         setError(isOffline ? "Browser is offline" : "Connection failed. Retrying...");
         eventSource?.close();
 
-        // Exponential backoff: double the delay up to 60 seconds
+        // Exponential backoff: double the delay up to 30 seconds
         console.warn(`[RealTime] Connection failed. Retrying in ${currentBackoff / 1000}s...`);
+        clearTimeout(reconnectTimeout);
         reconnectTimeout = setTimeout(connect, currentBackoff);
-        currentBackoff = Math.min(60000, currentBackoff * 2);
+        currentBackoff = Math.min(30000, currentBackoff * 2);
       };
     };
 
     // Handle online/offline events automatically
     const handleOnline = () => {
       console.log("[RealTime] Browser online, reconnecting...");
-      currentBackoff = 2000;
+      currentBackoff = 1000;
       connect();
     };
 
@@ -114,7 +118,7 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
     };
-  }, [venueIdsKey, enabled, venueIds]);
+  }, [venueIdsKey, enabled]);
 
   return { updates, isConnected, error, clearUpdates };
 }

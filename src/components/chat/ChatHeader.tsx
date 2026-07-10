@@ -6,7 +6,6 @@ import {
     Terminal,
     Activity,
     ChevronDown,
-    User,
     ShieldCheck,
     Zap,
     LayoutGrid,

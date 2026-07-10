@@ -5,18 +5,18 @@ import { useState, useEffect } from "react";
 import { ArrowLeft, Scale, Lock, ShieldAlert, CheckCircle, Mail, MapPin } from "lucide-react";
 import SiteFooter from "@/components/site-footer";
 
+const sections = [
+  { id: "agreement", label: "Acceptance of Terms" },
+  { id: "services", label: "Description of Service" },
+  { id: "accounts", label: "User Accounts" },
+  { id: "conduct", label: "User Conduct & Booking Rules" },
+  { id: "intellectual", label: "Intellectual Property" },
+  { id: "liability", label: "Limitation of Liability" },
+  { id: "termination", label: "Termination & Law" },
+];
+
 export default function TermsOfServicePage() {
   const [activeSection, setActiveSection] = useState("agreement");
-
-  const sections = [
-    { id: "agreement", label: "Acceptance of Terms" },
-    { id: "services", label: "Description of Service" },
-    { id: "accounts", label: "User Accounts" },
-    { id: "conduct", label: "User Conduct & Booking Rules" },
-    { id: "intellectual", label: "Intellectual Property" },
-    { id: "liability", label: "Limitation of Liability" },
-    { id: "termination", label: "Termination & Law" },
-  ];
 
   useEffect(() => {
     const handleScroll = () => {

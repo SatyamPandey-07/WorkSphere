@@ -84,7 +84,7 @@ export function ChatHeader({
     onLoadConversation,
     onDeleteConversation,
     onShowBookings,
-    roomId,
+    roomId: _roomId,
     onShareSession
 }: ChatHeaderProps) {
     const [isHubOpen, setIsHubOpen] = useState(false);

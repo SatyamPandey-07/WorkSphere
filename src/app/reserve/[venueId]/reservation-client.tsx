@@ -5,12 +5,10 @@ import {
   CalendarDays,
   Check,
   Clock3,
-  DoorOpen,
   Monitor,
   RefreshCw,
   Sparkles,
   UsersRound,
-  Wifi,
   Zap,
 } from "lucide-react";
 
@@ -97,7 +95,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
 
   useEffect(() => {
     loadAvailability();
-  }, [date, time, duration]);
+  }, [date, time, duration, loadAvailability]);
 
   useEffect(() => {
     let events: EventSource | null = null;

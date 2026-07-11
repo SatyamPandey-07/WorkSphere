@@ -3,7 +3,7 @@
 import {
     X, ShieldCheck, Zap, CheckCircle2,
     ArrowRight, Loader2, Lock, Banknote, Landmark,
-    Calendar, Clock, User, Download, ExternalLink,
+    Calendar, Clock, User, Download, 
     MapPin, Inbox, CreditCard, CalendarPlus, Mail
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -397,7 +397,7 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                             <div className="flex flex-col gap-3 w-full max-w-sm mt-6">
                                 <div className="flex items-center gap-3 w-full">
                                     <a
-                                        href={getCalendarUrls(venue.name, venue.address, bookingDate, bookingTime).googleUrl}
+                                        href={getCalendarUrls(venue.name, venue.address || "", bookingDate, bookingTime).googleUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="flex-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-black uppercase tracking-widest py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px]"
@@ -406,7 +406,7 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                                         Google
                                     </a>
                                     <a
-                                        href={getCalendarUrls(venue.name, venue.address, bookingDate, bookingTime).outlookUrl}
+                                        href={getCalendarUrls(venue.name, venue.address || "", bookingDate, bookingTime).outlookUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="flex-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-black uppercase tracking-widest py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px]"
@@ -416,7 +416,7 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                                     </a>
                                 </div>
                                 <button
-                                    onClick={() => downloadICS(venue.name, venue.address, bookingDate, bookingTime)}
+                                    onClick={() => downloadICS(venue.name, venue.address || "", bookingDate, bookingTime)}
                                     className="w-full border-2 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-black uppercase tracking-widest py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px]"
                                 >
                                     <Download className="w-4 h-4" />

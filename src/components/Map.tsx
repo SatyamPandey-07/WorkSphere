@@ -145,7 +145,7 @@ const Map = ({
   const clerkUser = useUser();
   const { latitude, longitude } = location;
 
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(process.env.NODE_ENV === "test");
 
   useEffect(() => {
     setMounted(true);

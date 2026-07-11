@@ -17,7 +17,7 @@ if (typeof window !== "undefined") {
 }
 
 export default function InteractiveMap({ markers }: { markers: any[] }) {
-  const [mounted, setMounted] = useState(false);
+  const [mounted, setMounted] = useState(process.env.NODE_ENV === "test");
 
   useEffect(() => {
     setMounted(true);

@@ -110,8 +110,20 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       clearTimeout(reconnectTimeout);
     };
 
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        console.log("[RealTime] Tab became visible, resetting connection");
+        currentBackoff = 1000;
+        if (eventSource) {
+          eventSource.close();
+        }
+        connect();
+      }
+    };
+
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     connect();
 
@@ -120,6 +132,7 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       clearTimeout(reconnectTimeout);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [venueIdsKey, enabled]);
 

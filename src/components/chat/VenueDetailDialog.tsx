@@ -64,27 +64,47 @@ export function VenueDetailDialog({
     useEffect(() => {
         if (!isOpen || !venue) return;
 
-        console.log(`[SSE] Connecting to live stream for venue: ${venue.id}`);
-        const eventSource = new EventSource(`/api/venues/stream?id=${encodeURIComponent(venue.id)}`);
+        let eventSource: EventSource | null = null;
 
-        eventSource.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data && typeof data.score === 'number') {
-                    setLiveScore(data.score);
+        const connect = () => {
+            if (eventSource) {
+                eventSource.close();
+            }
+            console.log(`[SSE] Connecting to live stream for venue: ${venue.id}`);
+            eventSource = new EventSource(`/api/venues/stream?id=${encodeURIComponent(venue.id)}`);
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data && typeof data.score === 'number') {
+                        setLiveScore(data.score);
+                    }
+                } catch (err) {
+                    console.error("Error parsing SSE data:", err);
                 }
-            } catch (err) {
-                console.error("Error parsing SSE data:", err);
+            };
+
+            eventSource.onerror = (error) => {
+                console.error("SSE Connection Error:", error);
+            };
+        };
+
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === "visible") {
+                console.log(`[SSE] Tab visible, resetting connection for venue: ${venue.id}`);
+                connect();
             }
         };
 
-        eventSource.onerror = (error) => {
-            console.error("SSE Connection Error:", error);
-        };
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        connect();
 
         return () => {
             console.log(`[SSE] Terminating active stream for venue: ${venue.id}`);
-            eventSource.close();
+            if (eventSource) {
+                eventSource.close();
+            }
+            document.removeEventListener("visibilitychange", handleVisibilityChange);
         };
     }, [venue, isOpen]);
 

@@ -100,19 +100,41 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   }, [date, time, duration]);
 
   useEffect(() => {
-    const events = new EventSource(
-      `/api/reservations/events?venueId=${encodeURIComponent(venue.id)}`,
-    );
+    let events: EventSource | null = null;
 
-    events.addEventListener("availability", () => {
-      loadAvailability();
-    });
+    const connect = () => {
+      if (events) {
+        events.close();
+      }
+      events = new EventSource(
+        `/api/reservations/events?venueId=${encodeURIComponent(venue.id)}`,
+      );
 
-    events.onerror = () => {
-      // EventSource reconnects automatically.
+      events.addEventListener("availability", () => {
+        loadAvailability();
+      });
+
+      events.onerror = () => {
+        // EventSource reconnects automatically.
+      };
     };
 
-    return () => events.close();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        console.log("[Reservation] Tab visible, resetting connection");
+        connect();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    connect();
+
+    return () => {
+      if (events) {
+        events.close();
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [venue.id, loadAvailability]);
 
   const selected = useMemo(

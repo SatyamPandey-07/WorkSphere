@@ -5,6 +5,7 @@ import {
     Coffee, BookOpen, Building2, Star, Info, Camera, Eye
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 import { Venue } from "./ChatMessages";
 
@@ -37,6 +38,7 @@ export function VenueDetailDialog({
     const [menuPhotos, setMenuPhotos] = useState<string[]>([]);
     const [uploadingMenu, setUploadingMenu] = useState(false);
     const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+    const [wifiPredictions, setWifiPredictions] = useState<any[]>([]);
 
     // Effect 1: Fetch photos and reset state on venue change
     useEffect(() => {
@@ -112,7 +114,15 @@ export function VenueDetailDialog({
     useEffect(() => {
         if (!venue || !isOpen) return;
 
-        if (activeTab === "reviews") {
+        if (activeTab === "overview") {
+            // Fetch wifi predictions
+            fetch(`/api/venues/${encodeURIComponent(venue.id)}/wifi-prediction`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.predictions) setWifiPredictions(data.predictions);
+                })
+                .catch(err => console.error(err));
+        } else if (activeTab === "reviews") {
             setReviews([]);
             fetch(`/api/venues/${encodeURIComponent(venue.id)}/reviews`)
                 .then(r => r.json())
@@ -341,6 +351,41 @@ export function VenueDetailDialog({
                                     </span>
                                 </div>
                             </div>
+
+                            {wifiPredictions.length > 0 && (
+                                <div className="mb-6 bg-white dark:bg-zinc-800 p-5 rounded-2xl border border-zinc-100 dark:border-zinc-700 shadow-sm">
+                                    <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200 mb-1 flex items-center gap-2">
+                                        <Zap className="w-4 h-4 text-blue-500" />
+                                        AI Wifi Prediction
+                                    </h3>
+                                    <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-4">Expected speeds based on crowd telemetry</p>
+                                    <div className="h-40 w-full mt-2">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={wifiPredictions}>
+                                                <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#888' }} />
+                                                <YAxis hide domain={[0, 'dataMax + 10']} />
+                                                <Tooltip
+                                                    cursor={{ fill: 'rgba(0,0,0,0.05)' }}
+                                                    content={({ active, payload }) => {
+                                                        if (active && payload && payload.length) {
+                                                            const data = payload[0].payload;
+                                                            return (
+                                                                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-2.5 rounded shadow-xl">
+                                                                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{data.time}</p>
+                                                                    <p className="text-sm font-bold text-blue-600">{data.speed} Mbps</p>
+                                                                    <p className="text-[10px] uppercase tracking-wider text-zinc-400 mt-1">Crowd: {data.crowd}</p>
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    }}
+                                                />
+                                                <Bar dataKey="speed" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="space-y-6">
                                 <div className="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30">

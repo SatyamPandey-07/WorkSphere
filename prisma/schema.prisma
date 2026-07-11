@@ -58,6 +58,7 @@ model Venue {
   workStatuses   WorkBuddyStatus[]
   sessions       CoworkingSession[]
   seats          VenueSeat[]
+  wifiTelemetry  WifiTelemetry[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -261,3 +262,16 @@ model VenueSeat {
   @@unique([venueId, seatNumber])
   @@index([venueId])
 }
+model WifiTelemetry {
+  id          String   @id @default(cuid())
+  venueId     String
+  venue       Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  download    Float
+  upload      Float
+  latency     Float
+  crowdLevel  String
+  timestamp   DateTime @default(now())
+
+  @@index([venueId])
+}
+

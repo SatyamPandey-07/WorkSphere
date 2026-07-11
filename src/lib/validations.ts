@@ -51,6 +51,7 @@ export const venueRatingSchema = z.object({
   hasErgonomic: z.boolean().optional().default(false),
   outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional().default("none"),
   wifiSpeed: z.number().min(0).max(10000).optional().nullable(),
+  speedtestPhoto: z.string().optional().nullable(),
 });
 
 // Conversation schemas

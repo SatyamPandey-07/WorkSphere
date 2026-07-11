@@ -234,3 +234,73 @@ export async function getAnalyticsSummaryAsync(): Promise<{
 
   return getAnalyticsSummary();
 }
+
+export function clearAnalytics(): void {
+  memQueue.length = 0;
+}
+
+// ─── Agent performance metrics (in-memory, sufficient for dev) ────────────────
+
+interface AgentBucket {
+  durations: number[];
+  successes: number;
+  failures: number;
+}
+
+const agentBuckets = new Map<string, AgentBucket>();
+
+export function recordAgentMetric(agent: string, duration: number, success: boolean): void {
+  const b = agentBuckets.get(agent) ?? { durations: [], successes: 0, failures: 0 };
+  b.durations.push(duration);
+  if (b.durations.length > 100) b.durations.shift();
+  if (success) b.successes++; else b.failures++;
+  agentBuckets.set(agent, b);
+}
+
+export function getAgentMetrics(): Array<{
+  agent: string;
+  avgDuration: number;
+  successRate: number;
+  totalCalls: number;
+}> {
+  return Array.from(agentBuckets.entries()).map(([agent, b]) => {
+    const totalCalls = b.successes + b.failures;
+    const avgDuration =
+      b.durations.length > 0
+        ? b.durations.reduce((a, c) => a + c, 0) / b.durations.length
+        : 0;
+    return {
+      agent,
+      avgDuration: Math.round(avgDuration),
+      successRate: totalCalls > 0 ? Math.round((b.successes / totalCalls) * 100) : 0,
+      totalCalls,
+    };
+  });
+}
+
+// ─── Search pattern tracking ──────────────────────────────────────────────────
+
+interface SearchPattern {
+  query: string;
+  count: number;
+  lastUsed: number;
+}
+
+const searchPatterns = new Map<string, SearchPattern>();
+
+export function recordSearchPattern(query: string): void {
+  const key = query.toLowerCase().trim();
+  const existing = searchPatterns.get(key);
+  if (existing) {
+    existing.count++;
+    existing.lastUsed = Date.now();
+  } else {
+    searchPatterns.set(key, { query: key, count: 1, lastUsed: Date.now() });
+  }
+}
+
+export function getPopularSearches(limit = 10): SearchPattern[] {
+  return Array.from(searchPatterns.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}

@@ -28,7 +28,7 @@ export async function POST(
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    const { wifiQuality, hasOutlets, noiseLevel, comment, hasErgonomic, outletDensity, wifiSpeed } = validation.data;
+    const { wifiQuality, hasOutlets, noiseLevel, comment, hasErgonomic, outletDensity, wifiSpeed, speedtestPhoto } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
     const targetPlaceId = venueData?.placeId || venueId;
@@ -69,6 +69,7 @@ export async function POST(
         outletDensity,
         wifiSpeed,
         comment,
+        speedtestPhoto,
       },
       create: {
         userId,
@@ -80,6 +81,7 @@ export async function POST(
         outletDensity: outletDensity || "none",
         wifiSpeed: wifiSpeed || null,
         comment,
+        speedtestPhoto,
       },
     });
 

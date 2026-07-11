@@ -207,6 +207,49 @@ const Map = ({
     }
   }, [showHeatmap]);
 
+  // Group and spiderfy overlapping markers
+  const spiderfiedMarkers = useMemo(() => {
+    const groups: { [key: string]: any[] } = {};
+    markers.forEach((m) => {
+      if (m && m.position && m.position.lat != null && m.position.lng != null && !isNaN(Number(m.position.lat)) && !isNaN(Number(m.position.lng))) {
+        const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
+        if (!groups[key]) {
+          groups[key] = [];
+        }
+        groups[key].push(m);
+      }
+    });
+
+    const result: any[] = [];
+    Object.keys(groups).forEach((key) => {
+      const groupItems = groups[key];
+      const n = groupItems.length;
+      if (n === 1) {
+        result.push({
+          ...groupItems[0],
+          renderedLat: Number(groupItems[0].position.lat),
+          renderedLng: Number(groupItems[0].position.lng),
+        });
+      } else {
+        const centerLat = Number(groupItems[0].position.lat);
+        const centerLng = Number(groupItems[0].position.lng);
+        // 0.00015 degrees is approx 15 meters
+        const radius = 0.00015;
+        groupItems.forEach((item, index) => {
+          const angle = (2 * Math.PI * index) / n;
+          const offsetLat = centerLat + radius * Math.cos(angle);
+          const offsetLng = centerLng + radius * Math.sin(angle);
+          result.push({
+            ...item,
+            renderedLat: offsetLat,
+            renderedLng: offsetLng,
+          });
+        });
+      }
+    });
+    return result;
+  }, [markers]);
+
 
   // Derive iconUrl directly from clerkUser state
   const iconUrl = useMemo(() => {
@@ -388,45 +431,43 @@ const Map = ({
         {showHeatmap ? (
           <HeatmapOverlay points={heatmapPoints} visible={showHeatmap} />
         ) : (
-          markers
-            .filter((marker) => marker && marker.position && marker.position.lat != null && marker.position.lng != null && !isNaN(Number(marker.position.lat)) && !isNaN(Number(marker.position.lng)))
-            .map((marker) => (
-              <Marker
-                key={marker.id}
-                position={[Number(marker.position.lat), Number(marker.position.lng)]}
-                icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
-              >
-                <Popup>
-                  <div className="text-sm">
-                    <div className="font-semibold text-white">{marker.name}</div>
-                    {marker.category && (
-                      <div className="text-zinc-400">{marker.category}</div>
-                    )}
-                    {marker.address && (
-                      <div className="text-zinc-500 text-xs mt-1">{marker.address}</div>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => {
-                      // Prevent duplicates in queue chain matrix
-                      if (!routingQueue.some(v => v.id === marker.id)) {
-                        const updated = [...routingQueue, {
-                          id: marker.id,
-                          name: marker.name,
-                          latitude: Number(marker.position.lat),
-                          longitude: Number(marker.position.lng)
-                        }];
-                        setRoutingQueue(updated);
-                        calculateOptimizedRoute(updated);
-                      }
-                    }}
-                    className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:bg-blue-600 hover:text-white transition-colors"
-                  >
-                    ➕ Add to Workday Timeline
-                  </button>
-                </Popup>
-              </Marker>
-            ))
+          spiderfiedMarkers.map((marker) => (
+            <Marker
+              key={marker.id}
+              position={[marker.renderedLat, marker.renderedLng]}
+              icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
+            >
+              <Popup>
+                <div className="text-sm">
+                  <div className="font-semibold text-white">{marker.name}</div>
+                  {marker.category && (
+                    <div className="text-zinc-400">{marker.category}</div>
+                  )}
+                  {marker.address && (
+                    <div className="text-zinc-500 text-xs mt-1">{marker.address}</div>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    // Prevent duplicates in queue chain matrix
+                    if (!routingQueue.some(v => v.id === marker.id)) {
+                      const updated = [...routingQueue, {
+                        id: marker.id,
+                        name: marker.name,
+                        latitude: Number(marker.position.lat),
+                        longitude: Number(marker.position.lng)
+                      }];
+                      setRoutingQueue(updated);
+                      calculateOptimizedRoute(updated);
+                    }
+                  }}
+                  className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:bg-blue-600 hover:text-white transition-colors"
+                >
+                  ➕ Add to Workday Timeline
+                </button>
+              </Popup>
+            </Marker>
+          ))
         )}
 
         {/* Render OSRM Optimized Multi-Stop Routing Layer Geometry */}

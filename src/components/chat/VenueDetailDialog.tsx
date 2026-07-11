@@ -2,7 +2,7 @@
 
 import {
     X, MapPin, Wifi, Zap, Volume2, Navigation, Heart,
-    Coffee, BookOpen, Building2, Star, Info
+    Coffee, BookOpen, Building2, Star, Info, AlertTriangle
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -18,6 +18,12 @@ interface VenueDetailDialogProps {
     onRate?: (venue: Venue) => void;
 }
 
+interface VoteMetricState {
+    confidenceScore: number;
+    upvotes: number;
+    downvotes: number;
+}
+
 export function VenueDetailDialog({
     venue,
     isOpen,
@@ -29,14 +35,55 @@ export function VenueDetailDialog({
 }: VenueDetailDialogProps) {
     const [photoUrl, setPhotoUrl] = useState<string | null>(null);
     const [photoLoading, setPhotoLoading] = useState(true);
-    // Real-time score ko track karne ke liye state
     const [liveScore, setLiveScore] = useState<number | null>(null);
+
+    // =========================================================================
+    // COMMUNITY AMENITY VALIDATION STATE DICTIONARY
+    // =========================================================================
+    const [voteMetrics, setVoteMetrics] = useState<Record<string, VoteMetricState>>({
+        wifi: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
+        outlets: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
+    });
+
+    const submitAmenityVote = async (amenityKey: "wifi" | "outlets", isUpvote: boolean) => {
+        if (!venue) return;
+        try {
+            const response = await fetch("/api/venues/amenity-vote", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    venueId: venue.id,
+                    amenity: amenityKey,
+                    isUpvote,
+                }),
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                setVoteMetrics((prev) => ({
+                    ...prev,
+                    [amenityKey]: {
+                        confidenceScore: data.confidenceScore,
+                        upvotes: data.upvotes,
+                        downvotes: data.downvotes,
+                    },
+                }));
+            }
+        } catch (error) {
+            console.error("Failed to post metadata validation toggle:", error);
+        }
+    };
 
     // Effect 1: Venue badalne par state reset karna aur photo fetch karna
     useEffect(() => {
         if (!venue) return;
 
-        // Naye venue ke aate hi live score ko reset karein
+        // Reset verification weights on venue switch
+        setVoteMetrics({
+            wifi: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
+            outlets: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
+        });
+
         setLiveScore(venue.score ?? null);
         setPhotoLoading(true);
         const params = new URLSearchParams({
@@ -76,7 +123,6 @@ export function VenueDetailDialog({
             console.error("SSE Connection Error:", error);
         };
 
-        // CLEANUP: Modal close hone par ya venue badalne par connection kill karega
         return () => {
             console.log(`[SSE] Terminating active stream for venue: ${venue.id}`);
             eventSource.close();
@@ -100,18 +146,35 @@ export function VenueDetailDialog({
     const displayPhoto = photoUrl || venueFallbacks[venue.category || "default"] || venueFallbacks.default;
     const currentScore = liveScore !== null ? liveScore : venue.score;
 
+    // Check low metrics states to explicitly draw notices
+    const wifiLowConfidence = voteMetrics.wifi.confidenceScore < 50;
+    const outletsLowConfidence = venue.hasOutlets && voteMetrics.outlets.confidenceScore < 50;
+
     return (
         <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-zinc-950/95 animate-in fade-in duration-300">
             <div
                 className="bg-white dark:bg-zinc-900 w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] border border-zinc-200 dark:border-zinc-800 animate-in slide-in-from-bottom-12 zoom-in-95 duration-500"
                 onClick={(e) => e.stopPropagation()}
             >
+                {/* AMENITY CONFIDENCE WARNING ALERTS DISPLAY BOARD */}
+                {wifiLowConfidence && (
+                    <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 text-xs text-amber-600 dark:text-amber-400 font-bold">
+                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span>⚠️ Community Warning: Users report WiFi might not be available or is broken.</span>
+                    </div>
+                )}
+                {outletsLowConfidence && (
+                    <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 text-xs text-amber-600 dark:text-amber-400 font-bold">
+                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span>⚠️ Community Warning: Users report Power Outlets might be unavailable.</span>
+                    </div>
+                )}
+
                 {/* Hero Image Section */}
                 <div className="relative h-64 sm:h-80 w-full overflow-hidden">
                     {photoLoading ? (
                         <div className="w-full h-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
                     ) : (
-                        /* eslint-disable-next-line @next/next/no-img-element */
                         <img
                             src={displayPhoto}
                             alt={venue.name}
@@ -136,7 +199,7 @@ export function VenueDetailDialog({
                                 {venue.category?.replace('_', ' ')}
                             </span>
                             {currentScore != null && (
-                                <span className="text-[10px] tracking-widest uppercase font-black bg-white text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded shadow-lg animate-pulse">
+                                <span className="text-[10px] tracking-widest uppercase font-black bg-white text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded shadow-lg">
                                     VIBE SCORE: {Math.round(currentScore * 10)}%
                                 </span>
                             )}
@@ -153,32 +216,57 @@ export function VenueDetailDialog({
 
                 {/* Content Section */}
                 <div className="p-8 bg-white dark:bg-zinc-900 overflow-y-auto max-h-[calc(90vh-320px)]">
-                    {/* Stats Grid */}
+                    
+                    {/* Stats Validation Voting Grid */}
                     <div className="grid grid-cols-3 gap-4 mb-8">
-                        <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
-                            <div className="p-3 rounded-xl bg-blue-500/10 mb-3">
-                                <Wifi className="w-6 h-6 text-blue-500" />
+                        
+                        {/* WiFi Verification Card */}
+                        <div className={`p-4 rounded-2xl flex flex-col items-center text-center border transition-all ${
+                            wifiLowConfidence 
+                                ? "bg-amber-500/5 border-amber-500/30 text-amber-500" 
+                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700"
+                        }`}>
+                            <div className="p-2.5 rounded-xl bg-blue-500/10 mb-2">
+                                <Wifi className="w-5 h-5 text-blue-500" />
                             </div>
-                            <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">WiFi</span>
-                            <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none">
+                            <span className="text-[9px] font-black text-zinc-400 tracking-widest uppercase mb-0.5">WiFi</span>
+                            <span className="text-lg font-black text-zinc-900 dark:text-zinc-50 leading-tight">
                                 {venue.wifi ? "Fast" : "TBD"}
                             </span>
-                        </div>
-                        <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
-                            <div className="p-3 rounded-xl bg-orange-500/10 mb-3">
-                                <Zap className="w-6 h-6 text-orange-500" />
+                            <div className="mt-2 flex items-center gap-2 bg-zinc-200/50 dark:bg-zinc-900 px-2 py-1 rounded-lg text-xs border border-zinc-300 dark:border-zinc-700">
+                                <button onClick={() => submitAmenityVote("wifi", true)} className="hover:scale-125 transition-transform">👍</button>
+                                <span className="font-mono text-[10px] text-zinc-500 font-bold">{voteMetrics.wifi.confidenceScore}%</span>
+                                <button onClick={() => submitAmenityVote("wifi", false)} className="hover:scale-125 transition-transform">👎</button>
                             </div>
-                            <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">Power</span>
-                            <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none">
+                        </div>
+
+                        {/* Power Verification Card */}
+                        <div className={`p-4 rounded-2xl flex flex-col items-center text-center border transition-all ${
+                            outletsLowConfidence 
+                                ? "bg-amber-500/5 border-amber-500/30 text-amber-500" 
+                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700"
+                        }`}>
+                            <div className="p-2.5 rounded-xl bg-orange-500/10 mb-2">
+                                <Zap className="w-5 h-5 text-orange-500" />
+                            </div>
+                            <span className="text-[9px] font-black text-zinc-400 tracking-widest uppercase mb-0.5">Power</span>
+                            <span className="text-lg font-black text-zinc-900 dark:text-zinc-50 leading-tight">
                                 {venue.hasOutlets ? "Yes" : "No"}
                             </span>
-                        </div>
-                        <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
-                            <div className="p-3 rounded-xl bg-pink-500/10 mb-3">
-                                <Volume2 className="w-6 h-6 text-pink-500" />
+                            <div className="mt-2 flex items-center gap-2 bg-zinc-200/50 dark:bg-zinc-900 px-2 py-1 rounded-lg text-xs border border-zinc-300 dark:border-zinc-700">
+                                <button onClick={() => submitAmenityVote("outlets", true)} className="hover:scale-125 transition-transform">👍</button>
+                                <span className="font-mono text-[10px] text-zinc-500 font-bold">{voteMetrics.outlets.confidenceScore}%</span>
+                                <button onClick={() => submitAmenityVote("outlets", false)} className="hover:scale-125 transition-transform">👎</button>
                             </div>
-                            <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">Noise</span>
-                            <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none capitalize">
+                        </div>
+
+                        {/* Noise Level display card (static) */}
+                        <div className="bg-zinc-50 dark:bg-zinc-800 p-4 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700 justify-center">
+                            <div className="p-2.5 rounded-xl bg-pink-500/10 mb-2">
+                                <Volume2 className="w-5 h-5 text-pink-500" />
+                            </div>
+                            <span className="text-[9px] font-black text-zinc-400 tracking-widest uppercase mb-0.5">Noise</span>
+                            <span className="text-lg font-black text-zinc-900 dark:text-zinc-50 leading-none capitalize">
                                 {venue.noiseLevel || "Normal"}
                             </span>
                         </div>
@@ -209,10 +297,10 @@ export function VenueDetailDialog({
                                 <button
                                     onClick={() => onToggleFavorite(venue)}
                                     className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${
-                                            isFavorited
+                                        isFavorited
                                             ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
                                             : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
-                                        }`}
+                                    }`}
                                 >
                                     <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
                                     {isFavorited ? "Saved" : "Save"}

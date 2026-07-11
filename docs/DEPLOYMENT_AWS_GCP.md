@@ -278,6 +278,48 @@ This keeps containerized deployments aligned with the current production workflo
 
 ---
 
+# Example Docker Workflow
+
+The repository does not currently include a production-ready `Dockerfile`. If container support is introduced in the future, the following commands illustrate a typical workflow for building and running WorkSphere inside a Docker container.
+
+## Build the Docker Image
+
+```bash
+docker build -t worksphere:latest .
+```
+
+This command builds the production image using the Dockerfile located in the project root.
+
+## Run the Container
+
+```bash
+docker run \
+  -p 3000:3000 \
+  --env-file .env.local \
+  worksphere:latest
+```
+
+This starts the application inside a container while loading environment variables from the local environment file.
+
+## Verify the Container
+
+After starting the container, verify the following:
+
+- The application is accessible at `http://localhost:3000`.
+- Prisma successfully connects to the configured PostgreSQL database.
+- Static assets load correctly.
+- No runtime errors appear in the application logs.
+
+To inspect the running container logs:
+
+```bash
+docker logs <container-id>
+```
+
+This verification step helps ensure that the container behaves the same way as the local development environment before deploying to AWS ECS or Google Cloud Run.
+
+---
+
 # Deploying to AWS Elastic Container Service (ECS)
 
 Amazon ECS is a managed container orchestration service that allows WorkSphere to run as scalable containerized workloads without requiring direct server management.
@@ -352,6 +394,29 @@ This approach improves security while simplifying configuration changes across e
 
 ---
 
+## Publishing Images to Amazon ECR
+
+A common deployment workflow for Amazon ECS involves pushing the application image to Amazon Elastic Container Registry (ECR) before creating or updating an ECS service.
+
+Example commands:
+
+```bash
+docker build -t worksphere:latest .
+
+docker tag worksphere:latest \
+<account-id>.dkr.ecr.<region>.amazonaws.com/worksphere:latest
+
+docker push \
+<account-id>.dkr.ecr.<region>.amazonaws.com/worksphere:latest
+```
+
+Replace:
+
+- `<account-id>` with your AWS account ID.
+- `<region>` with the AWS region where your ECR repository is hosted.
+
+After the image is uploaded successfully, reference it from your ECS Task Definition to deploy the latest application version.
+
 ## Scaling Considerations
 
 As application traffic grows, ECS can scale container instances horizontally.
@@ -406,6 +471,36 @@ A typical Cloud Run deployment consists of the following steps:
 6. Verify application health and accessibility.
 
 The exact infrastructure may differ depending on organizational requirements, but these steps represent a common production deployment workflow.
+
+---
+
+## Deploying with Google Cloud CLI
+
+Once the production container image is ready, it can be deployed to Cloud Run using the Google Cloud CLI.
+
+Example commands:
+
+```bash
+gcloud builds submit \
+  --tag gcr.io/PROJECT_ID/worksphere
+
+gcloud run deploy worksphere \
+  --image gcr.io/PROJECT_ID/worksphere \
+  --platform managed \
+  --region us-central1
+```
+
+Replace:
+
+- `PROJECT_ID` with your Google Cloud project ID.
+- `us-central1` with the preferred deployment region if required.
+
+Before deployment, ensure that:
+
+- Cloud Run API is enabled.
+- Artifact Registry is configured.
+- Required environment variables are supplied through Cloud Run or Secret Manager.
+- The application can access the configured PostgreSQL database.
 
 ---
 
@@ -506,6 +601,54 @@ If the application starts but behaves unexpectedly:
 - Verify external services are reachable.
 - Check database connectivity.
 - Ensure the application was built using the expected Node.js version.
+
+---
+
+# Post Deployment Verification
+
+After deploying WorkSphere to AWS ECS or Google Cloud Run, perform a few validation checks before making the application available to end users.
+
+## Application Health
+
+Verify that:
+
+- The application starts without runtime errors.
+- The homepage loads successfully.
+- API routes return successful responses.
+- Static assets such as images, fonts, and JavaScript files load correctly.
+
+## Database Connectivity
+
+Confirm that:
+
+- Prisma establishes a successful connection to PostgreSQL.
+- Required database queries execute without errors.
+- Connection credentials are loaded from the deployment environment.
+
+## Environment Variables
+
+Ensure that all required environment variables are available in the deployment platform.
+
+Common examples include:
+
+- `DATABASE_URL`
+- `NEXT_PUBLIC_APP_URL`
+- `GROQ_API_KEY`
+- `CLOUDINARY_API_KEY`
+- `UPSTASH_REDIS_REST_URL`
+
+Missing environment variables are one of the most common causes of deployment failures.
+
+## Monitoring
+
+After deployment, review:
+
+- Application logs
+- Container logs
+- Database logs
+- Cloud platform monitoring dashboards
+
+Monitoring helps identify configuration issues before they affect users.
 
 ---
 

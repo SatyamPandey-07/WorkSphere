@@ -18,8 +18,17 @@ import { Venue } from "@/components/chat/ChatMessages";
 const Map = dynamic(() => import("@/components/Map"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-zinc-100 dark:bg-zinc-900">
-      <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+    <div
+      className="flex h-full w-full items-center justify-center bg-zinc-100 dark:bg-zinc-900"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading interactive map"
+    >
+      <Loader2
+        className="h-8 w-8 animate-spin text-blue-600"
+        aria-hidden="true"
+      />
+      <span className="sr-only">Loading interactive map...</span>
     </div>
   ),
 });
@@ -483,43 +492,43 @@ function AppPage() {
           md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
         `}>
           <ChatErrorBoundary>
-              <EnhancedChatbot
-                roomId={sessionId}
-                onShowToast={(msg) => setToast({ message: msg, type: "warning" })}
-                onMapUpdate={(update) => {
-                  handleMapUpdate(update as MapUpdateData);
-                  // Auto-switch to map on mobile when markers are added
-                  if (update.type === "markers" && update.markers && update.markers.length > 0) {
-                    // Small delay so user sees the results loading
-                    setTimeout(() => setMobileView("map"), 500);
-                  }
-                }}
-                onOpenDetails={(v) => {
-                  // Map the Venue type from chat to the MapMarker type used here
-                  setSelectedVenue({
-                    id: v.id,
-                    name: v.name,
-                    position: { lat: v.lat, lng: v.lng },
-                    category: v.category || "cafe",
-                    address: v.address,
-                    amenities: {
-                      wifi: v.wifi,
-                      outlets: v.hasOutlets,
-                      quiet: v.noiseLevel === "quiet",
-                      hasErgonomic: v.hasErgonomic,
-                      outletDensity: v.outletDensity,
-                      wifiSpeed: v.wifiSpeed
-                    },
-                    score: v.score
-                  });
-                }}
-                onBook={() => {
-                  // Handled internally by EnhancedChatbot now
-                }}
-                userLocation={
-                  location ? { lat: location.latitude, lng: location.longitude } : undefined
+            <EnhancedChatbot
+              roomId={sessionId}
+              onShowToast={(msg) => setToast({ message: msg, type: "warning" })}
+              onMapUpdate={(update) => {
+                handleMapUpdate(update as MapUpdateData);
+                // Auto-switch to map on mobile when markers are added
+                if (update.type === "markers" && update.markers && update.markers.length > 0) {
+                  // Small delay so user sees the results loading
+                  setTimeout(() => setMobileView("map"), 500);
                 }
-              />
+              }}
+              onOpenDetails={(v) => {
+                // Map the Venue type from chat to the MapMarker type used here
+                setSelectedVenue({
+                  id: v.id,
+                  name: v.name,
+                  position: { lat: v.lat, lng: v.lng },
+                  category: v.category || "cafe",
+                  address: v.address,
+                  amenities: {
+                    wifi: v.wifi,
+                    outlets: v.hasOutlets,
+                    quiet: v.noiseLevel === "quiet",
+                    hasErgonomic: v.hasErgonomic,
+                    outletDensity: v.outletDensity,
+                    wifiSpeed: v.wifiSpeed
+                  },
+                  score: v.score
+                });
+              }}
+              onBook={() => {
+                // Handled internally by EnhancedChatbot now
+              }}
+              userLocation={
+                location ? { lat: location.latitude, lng: location.longitude } : undefined
+              }
+            />
           </ChatErrorBoundary>
         </div>
       </div>
@@ -581,8 +590,8 @@ function AppPage() {
         <div className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl bg-zinc-950/80 dark:bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl text-white animate-in slide-in-from-bottom duration-300">
           <div className="h-2 w-2 rounded-full bg-orange-500 animate-pulse shrink-0" />
           <p className="text-xs font-bold uppercase tracking-wide">{toast.message}</p>
-          <button 
-            onClick={() => setToast(null)} 
+          <button
+            onClick={() => setToast(null)}
             className="p-1 rounded-lg hover:bg-white/10 transition-colors ml-2"
           >
             <X className="w-4 h-4 text-zinc-400 hover:text-white" />

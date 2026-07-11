@@ -62,6 +62,7 @@ model Venue {
 
   @@index([latitude, longitude])
   @@index([category])
+  validations     AmenityValidation[]
 }
 
 model VenueRating {
@@ -173,6 +174,31 @@ model SemanticCache {
 
   @@index([query])
 }
+
+model AmenityValidation {
+  id        String   @id @default(cuid())
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  amenity   String   // e.g., "wifi", "outlets", "ergonomic"
+  upvotes   Int      @default(0)
+  downvotes Int      @default(0)
+  votes     AmenityVote[]
+
+  @@unique([venueId, amenity])
+  @@index([venueId])
+}
+
+model AmenityVote {
+  id           String            @id @default(cuid())
+  validationId String
+  validation   AmenityValidation @relation(fields: [validationId], references: [id], onDelete: Cascade)
+  userId       String
+  isUpvote     Boolean           // true = upvote, false = downvote
+  createdAt    DateTime          @default(now())
+
+  @@unique([userId, validationId])
+}
+
 
 model WorkBuddyStatus {
   id        String   @id @default(cuid())

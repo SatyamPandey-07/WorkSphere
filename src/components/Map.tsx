@@ -21,31 +21,36 @@ if (typeof window !== "undefined" && process.env.NODE_ENV !== "test") {
   require("leaflet.heat");
 }
 
-// Custom venue marker for dark theme - purple/blue dot
-const venueIcon = L.divIcon({
-  className: "venue-marker",
-  html: `<div class="venue-dot"></div>`,
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-  popupAnchor: [0, -12],
-});
+// Custom venue marker for dark theme - purple/blue dot - client-safe setup
+let venueIcon: any;
+let destinationIcon: any;
 
-// Destination marker - like the reference image
-const destinationIcon = L.divIcon({
-  className: "destination-marker",
-  html: `<div class="destination-pin"><span>D</span></div>`,
-  iconSize: [32, 32],
-  iconAnchor: [16, 32],
-  popupAnchor: [0, -32],
-});
+if (typeof window !== "undefined") {
+  venueIcon = L.divIcon({
+    className: "venue-marker",
+    html: `<div class="venue-dot"></div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
+  });
 
-// Also fix the global default:
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "/leaflet/marker-icon-2x.png",
-  iconUrl: "/leaflet/marker-icon.png",
-  shadowUrl: "/leaflet/marker-shadow.png",
-});
+  // Destination marker - like the reference image
+  destinationIcon = L.divIcon({
+    className: "destination-marker",
+    html: `<div class="destination-pin"><span>D</span></div>`,
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32],
+  });
+
+  // Also fix the global default:
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: "/leaflet/marker-icon-2x.png",
+    iconUrl: "/leaflet/marker-icon.png",
+    shadowUrl: "/leaflet/marker-shadow.png",
+  });
+}
 
 function MapController({ mapView }: { mapView: MapView | null }) {
   const map = useMap();
@@ -140,6 +145,50 @@ const Map = ({
   const clerkUser = useUser();
   const { latitude, longitude } = location;
 
+  const [mounted, setMounted] = useState(process.env.NODE_ENV === "test");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // =========================================================================
+  // MULTI-STOP ROUTING OPTIMIZER STATE PARAMETERS
+  // =========================================================================
+  const [routingQueue, setRoutingQueue] = useState<any[]>([]);
+  const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
+  const [travelProfile, setTravelProfile] = useState<"foot" | "bike" | "car">("foot");
+
+  // OSRM Multi-Stop coordinate solver engine
+  const calculateOptimizedRoute = async (venuesList = routingQueue) => {
+    if (venuesList.length < 2) {
+      setOptimizedRoute(null);
+      return;
+    }
+
+    const coordinatesString = venuesList
+      .map(venue => `${venue.longitude},${venue.latitude}`)
+      .join(";");
+
+    const osrmProfile = travelProfile === "foot" ? "foot" : travelProfile === "bike" ? "bicycle" : "car";
+    const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${coordinatesString}?overview=full&geometries=geojson&steps=true`;
+
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.code === "Ok") {
+        setOptimizedRoute({
+          coordinates: data.routes[0].geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]]),
+          duration: data.routes[0].duration,
+          distance: data.routes[0].distance,
+          legs: data.routes[0].legs
+        });
+      }
+    } catch (error) {
+      console.error("OSRM Multi-Stop routing resolution failed:", error);
+    }
+  };
+
   // Track heatmap states
   const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
   const [heatmapPoints, setHeatmapPoints] = useState<any[]>([]);
@@ -157,6 +206,7 @@ const Map = ({
         .catch((err) => console.error("Could not populate heatmap context", err));
     }
   }, [showHeatmap]);
+
 
   // Derive iconUrl directly from clerkUser state
   const iconUrl = useMemo(() => {
@@ -187,6 +237,14 @@ const Map = ({
   }, [iconUrl]);
 
   const center: [number, number] = [latitude, longitude];
+
+  if (!mounted) {
+    return (
+      <div className="w-[95%] h-[95%] min-h-[400px] flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
 
   return (
 <>
@@ -348,10 +406,53 @@ const Map = ({
                       <div className="text-zinc-500 text-xs mt-1">{marker.address}</div>
                     )}
                   </div>
+                  <button
+                    onClick={() => {
+                      // Prevent duplicates in queue chain matrix
+                      if (!routingQueue.some(v => v.id === marker.id)) {
+                        const updated = [...routingQueue, {
+                          id: marker.id,
+                          name: marker.name,
+                          latitude: Number(marker.position.lat),
+                          longitude: Number(marker.position.lng)
+                        }];
+                        setRoutingQueue(updated);
+                        calculateOptimizedRoute(updated);
+                      }
+                    }}
+                    className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:bg-blue-600 hover:text-white transition-colors"
+                  >
+                    ➕ Add to Workday Timeline
+                  </button>
                 </Popup>
               </Marker>
             ))
         )}
+
+        {/* Render OSRM Optimized Multi-Stop Routing Layer Geometry */}
+        {optimizedRoute && optimizedRoute.coordinates && optimizedRoute.coordinates.length > 1 && (
+          <Polyline
+            positions={optimizedRoute.coordinates}
+            pathOptions={{
+              color: "#3b82f6", // Electric Blue for Multi-Stop Leg paths
+              weight: 6,
+              opacity: 0.9,
+              lineCap: "round",
+              lineJoin: "round",
+              dashArray: travelProfile === "foot" ? "5, 10" : undefined // Dotted path line if walking
+            }}
+          >
+            <Popup>
+              <div className="text-sm text-white">
+                <div className="font-bold text-blue-400">Optimized Hybrid Schedule</div>
+                <div>Total Distance: {(optimizedRoute.distance / 1000).toFixed(2)} km</div>
+                <div>Est. Travel Time: {Math.round(optimizedRoute.duration / 60)} mins</div>
+              </div>
+            </Popup>
+          </Polyline>
+        )}
+
+
 
         {routes.map((route) => {
           const validPositions = (route.path || [])
@@ -385,6 +486,92 @@ const Map = ({
             </Polyline>
           );
         })}
+        {/* MULTI-STOP ROUTING OPTIMIZER CONTROL INTERFACE OVERLAY */}
+        <div className="absolute bottom-6 left-6 z-[1000] w-80 rounded-xl border border-zinc-800 bg-zinc-950/90 p-4 text-white shadow-2xl backdrop-blur-md">
+          <div className="mb-3 flex items-center justify-between border-b border-zinc-800 pb-2">
+            <h3 className="font-semibold text-sm tracking-wide text-zinc-200">📍 ROUTING OPTIMIZER</h3>
+            {routingQueue.length > 0 && (
+              <button
+                onClick={() => { setRoutingQueue([]); setOptimizedRoute(null); }}
+                className="text-xs text-red-400 hover:text-red-300 transition-colors"
+              >
+                Clear Queue
+              </button>
+            )}
+          </div>
+
+          {/* Travel Mode Selectors */}
+          <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-zinc-900 p-1 text-xs">
+            {(["foot", "bike", "car"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setTravelProfile(mode)}
+                className={`rounded-md py-1.5 font-medium uppercase transition-all ${travelProfile === mode
+                    ? "bg-blue-600 text-white shadow"
+                    : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                  }`}
+              >
+                {mode === "foot" ? "🚶‍♂️ Walk" : mode === "bike" ? "🚴‍♂️ Bike" : "🚗 Drive"}
+              </button>
+            ))}
+          </div>
+
+          {/* Queue Timeline Slots */}
+          {routingQueue.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
+              Click markers or venue listings to chain multiple destinations into your hybrid workday route!
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                {routingQueue.map((venue, idx) => (
+                  <div key={idx} className="flex items-center justify-between rounded-lg bg-zinc-900 p-2 text-xs border border-zinc-800">
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-950 text-[10px] font-bold text-blue-400 border border-blue-800/50">
+                        {idx + 1}
+                      </span>
+                      <span className="truncate font-medium text-zinc-300">{venue.name}</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        const updated = routingQueue.filter((_, i) => i !== idx);
+                        setRoutingQueue(updated);
+                        calculateOptimizedRoute(updated);
+                      }}
+                      className="ml-2 text-zinc-500 hover:text-zinc-300 text-sm"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Optimize Trigger Action Button */}
+              {routingQueue.length >= 2 && (
+                <button
+                  onClick={() => calculateOptimizedRoute()}
+                  className="mt-3 w-full rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:from-blue-500 hover:to-indigo-500 active:scale-[0.98]"
+                >
+                  🚀 Calculate Combined Travel Timeline
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Dynamic Journey Metric Matrix */}
+          {optimizedRoute && (
+            <div className="mt-3 border-t border-zinc-800 pt-3 text-xs text-zinc-400 space-y-1">
+              <div className="flex justify-between">
+                <span>Total Distance:</span>
+                <span className="font-semibold text-zinc-200">{(optimizedRoute.distance / 1000).toFixed(2)} km</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Est. Transit Time:</span>
+                <span className="font-semibold text-zinc-200">{Math.round(optimizedRoute.duration / 60)} mins</span>
+              </div>
+            </div>
+          )}
+        </div>
       </MapContainer>
     </>
   );

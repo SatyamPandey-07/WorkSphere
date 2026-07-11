@@ -274,39 +274,68 @@ function AppPage() {
         break;
 
       case "route":
-        // Handle directions request from chatbot
-        if (update.route && location) {
-          // Fetch real road route using OSRM API
-          (async () => {
-            const { getRoute } = await import('@/lib/routing');
-            const routeData = await getRoute(
-              update.route!.from,
-              update.route!.to,
-              'walking' // can also be 'driving' or 'cycling'
-            );
+        if (update.route) {
+          const toLoc = update.route.to;
 
-            const newRoute: MapRoute = {
-              id: `route-${Date.now()}`,
-              path: routeData?.path || [
-                { lat: update.route!.from.lat, lng: update.route!.from.lng },
-                { lat: update.route!.to.lat, lng: update.route!.to.lng },
-              ],
-              distance: routeData?.distance,
-              duration: routeData?.duration,
-              isHighlighted: true,
-            };
-            setRoutes([newRoute]);
+          const executeRoute = async (fromLoc: { lat: number; lng: number }) => {
+            try {
+              const { getRoute } = await import('@/lib/routing');
+              const routeData = await getRoute(fromLoc, toLoc, 'walking');
 
-            // Center map between user and destination
-            setMapView({
-              center: {
-                lat: (update.route!.from.lat + update.route!.to.lat) / 2,
-                lng: (update.route!.from.lng + update.route!.to.lng) / 2,
+              const newRoute: MapRoute = {
+                id: `route-${Date.now()}`,
+                path: routeData?.path || [
+                  { lat: fromLoc.lat, lng: fromLoc.lng },
+                  { lat: toLoc.lat, lng: toLoc.lng },
+                ],
+                distance: routeData?.distance,
+                duration: routeData?.duration,
+                isHighlighted: true,
+              };
+              setRoutes([newRoute]);
+
+              // Center map between starting location and destination
+              setMapView({
+                center: {
+                  lat: (fromLoc.lat + toLoc.lat) / 2,
+                  lng: (fromLoc.lng + toLoc.lng) / 2,
+                },
+                zoom: 14,
+                animate: true,
+              });
+            } catch (error) {
+              console.error("OSRM routing execution error:", error);
+            }
+          };
+
+          // Try browser geolocation first to check permissions/availability on demand
+          if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                const preciseLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
+                setLocation({ latitude: preciseLoc.lat, longitude: preciseLoc.lng });
+                executeRoute(preciseLoc);
               },
-              zoom: 14,
-              animate: true,
-            });
-          })();
+              (error) => {
+                console.warn("Geolocation failed or blocked during directions request:", error);
+                
+                // Catch geolocation permission errors and display the toast
+                setToast({
+                  message: "Location access denied. Fallback: using map viewport center.",
+                  type: "warning"
+                });
+
+                // Fallback to center of current map viewport, or location state, or default SF
+                const fallbackLoc = mapView?.center || (location ? { lat: location.latitude, lng: location.longitude } : { lat: 37.7749, lng: -122.4194 });
+                executeRoute(fallbackLoc);
+              },
+              { timeout: 5000, enableHighAccuracy: false }
+            );
+          } else {
+            // Fallback for browsers without geolocation support
+            const fallbackLoc = mapView?.center || (location ? { lat: location.latitude, lng: location.longitude } : { lat: 37.7749, lng: -122.4194 });
+            executeRoute(fallbackLoc);
+          }
         }
         break;
     }

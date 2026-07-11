@@ -14,6 +14,7 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     "scripts/**",
     "prisma/seed.js",
+    "scratch/**",
   ]),
   // Custom rules for this project
   {

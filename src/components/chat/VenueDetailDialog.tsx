@@ -47,7 +47,7 @@ export function VenueDetailDialog({
         outlets: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
     });
 
-    const submitAmenityVote = async (amenityKey: "wifi" | "outlets", isUpvote: boolean) => {
+    const _submitAmenityVote = async (amenityKey: "wifi" | "outlets", isUpvote: boolean) => {
         if (!venue) return;
         try {
             const response = await fetch("/api/venues/amenity-vote", {
@@ -85,6 +85,7 @@ export function VenueDetailDialog({
             wifi: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
             outlets: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
         });
+    }, [venue]);
 
     // Tab and dynamic content states
     const [activeTab, setActiveTab] = useState<"overview" | "reviews" | "menu">("overview");
@@ -392,62 +393,7 @@ export function VenueDetailDialog({
 
                 {/* Content Section */}
 
-                <div className="p-8 bg-white dark:bg-zinc-900 overflow-y-auto max-h-[calc(90vh-320px)]">
-                    
-                    {/* Stats Validation Voting Grid */}
-                    <div className="grid grid-cols-3 gap-4 mb-8">
-                        
-                        {/* WiFi Verification Card */}
-                        <div className={`p-4 rounded-2xl flex flex-col items-center text-center border transition-all ${
-                            wifiLowConfidence 
-                                ? "bg-amber-500/5 border-amber-500/30 text-amber-500" 
-                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700"
-                        }`}>
-                            <div className="p-2.5 rounded-xl bg-blue-500/10 mb-2">
-                                <Wifi className="w-5 h-5 text-blue-500" />
-                            </div>
-                            <span className="text-[9px] font-black text-zinc-400 tracking-widest uppercase mb-0.5">WiFi</span>
-                            <span className="text-lg font-black text-zinc-900 dark:text-zinc-50 leading-tight">
-                                {venue.wifi ? "Fast" : "TBD"}
-                            </span>
-                            <div className="mt-2 flex items-center gap-2 bg-zinc-200/50 dark:bg-zinc-900 px-2 py-1 rounded-lg text-xs border border-zinc-300 dark:border-zinc-700">
-                                <button onClick={() => submitAmenityVote("wifi", true)} className="hover:scale-125 transition-transform">👍</button>
-                                <span className="font-mono text-[10px] text-zinc-500 font-bold">{voteMetrics.wifi.confidenceScore}%</span>
-                                <button onClick={() => submitAmenityVote("wifi", false)} className="hover:scale-125 transition-transform">👎</button>
-                            </div>
-                        </div>
 
-                        {/* Power Verification Card */}
-                        <div className={`p-4 rounded-2xl flex flex-col items-center text-center border transition-all ${
-                            outletsLowConfidence 
-                                ? "bg-amber-500/5 border-amber-500/30 text-amber-500" 
-                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700"
-                        }`}>
-                            <div className="p-2.5 rounded-xl bg-orange-500/10 mb-2">
-                                <Zap className="w-5 h-5 text-orange-500" />
-                            </div>
-                            <span className="text-[9px] font-black text-zinc-400 tracking-widest uppercase mb-0.5">Power</span>
-                            <span className="text-lg font-black text-zinc-900 dark:text-zinc-50 leading-tight">
-                                {venue.hasOutlets ? "Yes" : "No"}
-                            </span>
-                            <div className="mt-2 flex items-center gap-2 bg-zinc-200/50 dark:bg-zinc-900 px-2 py-1 rounded-lg text-xs border border-zinc-300 dark:border-zinc-700">
-                                <button onClick={() => submitAmenityVote("outlets", true)} className="hover:scale-125 transition-transform">👍</button>
-                                <span className="font-mono text-[10px] text-zinc-500 font-bold">{voteMetrics.outlets.confidenceScore}%</span>
-                                <button onClick={() => submitAmenityVote("outlets", false)} className="hover:scale-125 transition-transform">👎</button>
-                            </div>
-                        </div>
-
-                        {/* Noise Level display card (static) */}
-                        <div className="bg-zinc-50 dark:bg-zinc-800 p-4 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700 justify-center">
-                            <div className="p-2.5 rounded-xl bg-pink-500/10 mb-2">
-                                <Volume2 className="w-5 h-5 text-pink-500" />
-                            </div>
-                            <span className="text-[9px] font-black text-zinc-400 tracking-widest uppercase mb-0.5">Noise</span>
-                            <span className="text-lg font-black text-zinc-900 dark:text-zinc-50 leading-none capitalize">
-                                {venue.noiseLevel || "Normal"}
-                            </span>
-                        </div>
-                    </div>
 
                 <div className="p-8 bg-white dark:bg-zinc-900 overflow-y-auto max-h-[calc(90vh-360px)]">
                     {activeTab === "overview" && (
@@ -535,27 +481,7 @@ export function VenueDetailDialog({
                                 </div>
 
 
-                        <div className="flex flex-col gap-3 pt-4">
-                            <button
-                                onClick={() => onGetDirections(venue)}
-                                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98]"
-                            >
-                                <Navigation className="w-5 h-5" />
-                                Navigate
-                            </button>
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => onToggleFavorite(venue)}
-                                    className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${
-                                        isFavorited
-                                            ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
-                                            : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
-                                    }`}
-                                >
-                                    <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
-                                    {isFavorited ? "Saved" : "Save"}
-                                </button>
-                                {onRate && (
+
 
                                 <div className="flex flex-col gap-3 pt-4">
 

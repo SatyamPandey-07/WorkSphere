@@ -538,49 +538,120 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
 
       if (!response.ok) throw new Error("Failed to send message");
 
-      const data = await response.json();
-
-      if (data.agentSteps) {
-        (data.agentSteps as AgentStep[]).forEach((step) => {
-          recordAgentMetric(step.agent, Date.now() - startTime, true);
-        });
-      }
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: data.content || "I couldn't generate a response.",
-        venues: data.venues,
-        agentSteps: data.agentSteps,
-        suggestions: data.suggestions,
-        cached: data.cached,
-        complexity: data.complexity,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      const assistantMessageId = (Date.now() + 1).toString();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: assistantMessageId,
+          role: "assistant",
+          content: "",
+        },
+      ]);
       
-      if (socket && roomId) {
-        socket.send(JSON.stringify({ type: "new-message", message: assistantMessage }));
-      }
+      setIsLoading(false); // Stream starts, disable loading spinner
 
-      if (data.venues?.length > 0 && onMapUpdate) {
-        const update = {
-          type: "markers",
-          markers: data.venues.map((v: Venue) => ({
-            id: v.id,
-            lat: v.lat,
-            lng: v.lng,
-            name: v.name,
-            category: v.category,
-            address: v.address,
-            wifi: v.wifi,
-            score: v.score,
-          })),
-        };
-        onMapUpdate(update);
-        if (socket && roomId) {
-          socket.send(JSON.stringify({ type: "map-update", update }));
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let metadata: any = null;
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const chunks = buffer.split(/(?=METADATA:|TEXT:)/);
+          buffer = chunks.pop() || "";
+          
+          for (const chunk of chunks) {
+            if (chunk.startsWith("METADATA:")) {
+              const metaStr = chunk.slice(9).trim();
+              try {
+                metadata = JSON.parse(metaStr);
+                
+                if (metadata.agentSteps) {
+                  (metadata.agentSteps as AgentStep[]).forEach((step) => {
+                    recordAgentMetric(step.agent, Date.now() - startTime, true);
+                  });
+                }
+                
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessageId
+                      ? {
+                          ...m,
+                          venues: metadata.venues,
+                          agentSteps: metadata.agentSteps,
+                          suggestions: metadata.suggestions,
+                          cached: metadata.cached,
+                          complexity: metadata.complexity,
+                        }
+                      : m
+                  )
+                );
+                
+                if (metadata.venues?.length > 0 && onMapUpdate) {
+                  const update = {
+                    type: "markers",
+                    markers: metadata.venues.map((v: Venue) => ({
+                      id: v.id,
+                      lat: v.lat,
+                      lng: v.lng,
+                      name: v.name,
+                      category: v.category,
+                      address: v.address,
+                      wifi: v.wifi,
+                      score: v.score,
+                    })),
+                  };
+                  onMapUpdate(update);
+                  if (socket && roomId) {
+                    socket.send(JSON.stringify({ type: "map-update", update }));
+                  }
+                }
+              } catch(e) {
+                console.error("Failed to parse metadata", e);
+              }
+            } else if (chunk.startsWith("TEXT:")) {
+              const text = chunk.slice(5);
+              setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: m.content + text } : m));
+            }
+          }
+        }
+        
+        // Process remaining buffer
+        if (buffer) {
+          if (buffer.startsWith("METADATA:")) {
+            const metaStr = buffer.slice(9).trim();
+            try { 
+              metadata = JSON.parse(metaStr); 
+              setMessages((prev) =>
+                prev.map((m) => m.id === assistantMessageId ? {
+                  ...m,
+                  venues: metadata.venues,
+                  agentSteps: metadata.agentSteps,
+                  suggestions: metadata.suggestions,
+                  cached: metadata.cached,
+                  complexity: metadata.complexity,
+                } : m)
+              );
+            } catch {}
+          } else if (buffer.startsWith("TEXT:")) {
+            const text = buffer.slice(5);
+            setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: m.content + text } : m));
+          }
         }
       }
+      
+      // Final message sync for socket
+      setMessages((prev) => {
+        const finalMsg = prev.find(m => m.id === assistantMessageId);
+        if (finalMsg && socket && roomId) {
+          socket.send(JSON.stringify({ type: "new-message", message: finalMsg }));
+        }
+        return prev;
+      });
     } catch (err) {
       console.error("Chat error:", err);
       setError("Failed to send message. Please try again.");

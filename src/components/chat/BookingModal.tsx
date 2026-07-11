@@ -4,11 +4,54 @@ import {
     X, ShieldCheck, Zap, CheckCircle2,
     ArrowRight, Loader2, Lock, Banknote, Landmark,
     Calendar, Clock, User, Download, ExternalLink,
-    MapPin, Inbox, CreditCard
+    MapPin, Inbox, CreditCard, CalendarPlus, Mail
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Venue } from "./ChatMessages";
 import { trackEvent } from "@/lib/analytics";
+
+const formatDateTimeForCalendar = (dateStr: string, timeStr: string) => {
+    if (!dateStr || !timeStr) return { start: "", end: "" };
+    const start = new Date(`${dateStr}T${timeStr}`);
+    if (isNaN(start.getTime())) return { start: "", end: "" };
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+    
+    const format = (d: Date) => d.toISOString().replace(/-|:|\.\d\d\d/g, "");
+    
+    return {
+        start: format(start),
+        end: format(end)
+    };
+};
+
+const getCalendarUrls = (venueName: string, venueAddress: string, dateStr: string, timeStr: string) => {
+    const { start, end } = formatDateTimeForCalendar(dateStr, timeStr);
+    const title = encodeURIComponent(`Booking at ${venueName}`);
+    const details = encodeURIComponent(`Hot desk booking at ${venueName}`);
+    const location = encodeURIComponent(venueAddress);
+
+    const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${start}/${end}&details=${details}&location=${location}`;
+    const outlookUrl = `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=${title}&startdt=${start}&enddt=${end}&body=${details}&location=${location}`;
+    
+    return { googleUrl, outlookUrl, start, end };
+};
+
+const downloadICS = (venueName: string, venueAddress: string, dateStr: string, timeStr: string) => {
+    const { start, end } = formatDateTimeForCalendar(dateStr, timeStr);
+    if (!start) return;
+    const title = `Booking at ${venueName}`;
+    const description = `Hot desk booking at ${venueName}`;
+    
+    const icsContent = `BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nDTSTART:${start}\nDTEND:${end}\nSUMMARY:${title}\nDESCRIPTION:${description}\nLOCATION:${venueAddress}\nEND:VEVENT\nEND:VCALENDAR`;
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `booking-${venueName.replace(/\\s+/g, '-').toLowerCase()}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
 
 interface Booking {
     id: string;
@@ -165,14 +208,38 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center gap-3 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
+                                            <div className="flex items-center gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                                                 <button className="flex-1 flex items-center justify-center gap-2 py-3 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all active:scale-95">
                                                     <Download className="w-3.5 h-3.5" />
                                                     Download Receipt
                                                 </button>
-                                                <button className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors">
-                                                    <ExternalLink className="w-4 h-4" />
-                                                </button>
+                                                <div className="flex gap-2">
+                                                    <a
+                                                        href={getCalendarUrls(booking.venue.name, booking.venue.address, booking.date, booking.time).googleUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title="Add to Google Calendar"
+                                                        className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-blue-500"
+                                                    >
+                                                        <CalendarPlus className="w-4 h-4" />
+                                                    </a>
+                                                    <a
+                                                        href={getCalendarUrls(booking.venue.name, booking.venue.address, booking.date, booking.time).outlookUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        title="Add to Outlook"
+                                                        className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-blue-600"
+                                                    >
+                                                        <Mail className="w-4 h-4" />
+                                                    </a>
+                                                    <button
+                                                        onClick={() => downloadICS(booking.venue.name, booking.venue.address, booking.date, booking.time)}
+                                                        title="Download .ics"
+                                                        className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-zinc-600 dark:text-zinc-400"
+                                                    >
+                                                        <Download className="w-4 h-4" />
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     ))}
@@ -327,9 +394,39 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                                 </p>
                             </div>
 
+                            <div className="flex flex-col gap-3 w-full max-w-sm mt-6">
+                                <div className="flex items-center gap-3 w-full">
+                                    <a
+                                        href={getCalendarUrls(venue.name, venue.address, bookingDate, bookingTime).googleUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-black uppercase tracking-widest py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px]"
+                                    >
+                                        <CalendarPlus className="w-4 h-4" />
+                                        Google
+                                    </a>
+                                    <a
+                                        href={getCalendarUrls(venue.name, venue.address, bookingDate, bookingTime).outlookUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 font-black uppercase tracking-widest py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px]"
+                                    >
+                                        <Mail className="w-4 h-4" />
+                                        Outlook
+                                    </a>
+                                </div>
+                                <button
+                                    onClick={() => downloadICS(venue.name, venue.address, bookingDate, bookingTime)}
+                                    className="w-full border-2 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-black uppercase tracking-widest py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px]"
+                                >
+                                    <Download className="w-4 h-4" />
+                                    Download .ics
+                                </button>
+                            </div>
+
                             <button
                                 onClick={onClose}
-                                className="w-full border-2 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 font-black uppercase tracking-widest py-5 rounded-[1.5rem] transition-all active:scale-95"
+                                className="w-full max-w-sm border-2 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 font-black uppercase tracking-widest py-5 rounded-[1.5rem] transition-all active:scale-95"
                             >
                                 Return to Global Hub
                             </button>

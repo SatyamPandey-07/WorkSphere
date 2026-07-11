@@ -19,7 +19,7 @@ import {
 } from "@/lib/analytics";
 import { saveFavoriteOffline } from "@/lib/offlineStorage";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// Types
 
 interface MapUpdate {
   type: string;
@@ -53,6 +53,7 @@ interface EnhancedChatbotProps {
   onBook: (venue: Venue) => void;
   userLocation?: { lat: number; lng: number };
   roomId?: string | null;
+  onShowToast?: (msg: string) => void;
 }
 
 interface Filters {
@@ -76,7 +77,7 @@ interface AgentStep {
   timestamp: number;
 }
 
-// ─── Static suggestion chips ──────────────────────────────────────────────────
+// Static suggestion chips
 
 const INITIAL_SUGGESTIONS = [
   "Find a quiet cafe with good WiFi near me",
@@ -85,20 +86,20 @@ const INITIAL_SUGGESTIONS = [
   "Find libraries with outlets",
 ];
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// Component
 
-export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation, roomId }: EnhancedChatbotProps) {
+export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation, roomId, onShowToast }: EnhancedChatbotProps) {
   const { isSignedIn, user } = useUser();
   const { socket } = useMultiplayerSession(roomId || null);
 
   // Presence state
   const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string }>>({});
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  
+
   // Track local cursor
   useEffect(() => {
     if (!socket || !roomId) return;
-    
+
     const handleMouseMove = (e: MouseEvent) => {
       // Throttle mouse moves to avoid flooding
       if (Math.random() > 0.8) {
@@ -110,7 +111,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         }));
       }
     };
-    
+
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, [socket, roomId, user]);
@@ -118,7 +119,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   // Handle incoming presence
   useEffect(() => {
     if (!socket) return;
-    
+
     const onMessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
@@ -146,9 +147,9 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
             onMapUpdate(data.update);
           }
         }
-      } catch {}
+      } catch { }
     };
-    
+
     socket.addEventListener("message", onMessage);
     return () => socket.removeEventListener("message", onMessage);
   }, [socket, onMapUpdate]);
@@ -177,12 +178,12 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  // ── Auto-scroll ──────────────────────────────────────────────────────────────
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ── Geolocation fallback ─────────────────────────────────────────────────────
+  // Geolocation fallback
   const getPreciseLocation = useCallback(() => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -222,17 +223,17 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     } else {
       const newLoc = { lat, lng };
       setLocation(newLoc);
-      
+
       const update = { type: "SET_MAP_VIEW", data: { center: newLoc, zoom: 14, animate: true } };
       onMapUpdate?.(update);
-      
+
       if (socket && roomId) {
         socket.send(JSON.stringify({ type: "map-update", update }));
       }
     }
   };
 
-  // ── Load conversations & favorites on sign-in ─────────────────────────────
+  // Load conversations & favorites on sign-in
   useEffect(() => {
     if (isSignedIn) {
       loadConversations();
@@ -240,7 +241,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     }
   }, [isSignedIn]);
 
-  // ── Conversations ────────────────────────────────────────────────────────────
+  // Conversations
   const loadConversations = async () => {
     try {
       const res = await fetch("/api/conversations");
@@ -312,7 +313,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     setShowHistory(false);
   };
 
-  // ── Favorites ────────────────────────────────────────────────────────────────
+  // Favorites
   const loadFavorites = async () => {
     try {
       const res = await fetch("/api/favorites");
@@ -377,7 +378,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     }
   };
 
-  // ── Rating ───────────────────────────────────────────────────────────────────
+  // Rating
   const handleSubmitRating = async (rating: {
     wifiQuality: number;
     hasOutlets: boolean;
@@ -412,7 +413,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     }
   };
 
-  // ── Directions ───────────────────────────────────────────────────────────────
+  // Directions
   const handleGetDirections = (venue: Venue) => {
     if (!location || !onMapUpdate) return;
     onMapUpdate({
@@ -425,7 +426,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     });
   };
 
-  // ── Filters ───────────────────────────────────────────────────────────────────
+  // Filters
   const toggleFilter = (key: keyof Filters) => {
     setFilters((prev) => {
       const next = { ...prev };
@@ -452,12 +453,12 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     });
   };
 
-  // ── Agent step expand/collapse ────────────────────────────────────────────────
+  // Agent step expand/collapse
   const toggleSteps = (messageId: string) => {
     setExpandedSteps((prev) => ({ ...prev, [messageId]: !prev[messageId] }));
   };
 
-  // ── Suggestion click ─────────────────────────────────────────────────────────
+  // Suggestion click
   const handleSuggestionClick = useCallback(
     (suggestion: string) => {
       if (isLoading) return;
@@ -471,7 +472,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     [isLoading]
   );
 
-  // ── Main submit ───────────────────────────────────────────────────────────────
+  // Main submit
   const handleInputChange = (val: string) => {
     setInput(val);
     if (socket && roomId) {
@@ -513,7 +514,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       name: user?.firstName || "Anonymous"
     };
     setMessages((prev) => [...prev, newUserMessage]);
-    
+
     if (socket && roomId) {
       socket.send(JSON.stringify({ type: "new-message", message: newUserMessage }));
     }
@@ -536,9 +537,18 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         }),
       });
 
-      if (!response.ok) throw new Error("Failed to send message");
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error("High traffic detected. Please wait a few seconds and try searching again.");
+        }
+        throw new Error("Failed to send message");
+      }
 
       const data = await response.json();
+
+      if (data.highTraffic) {
+        onShowToast?.("High traffic detected. Please wait a few seconds and try searching again.");
+      }
 
       if (data.agentSteps) {
         (data.agentSteps as AgentStep[]).forEach((step) => {
@@ -557,7 +567,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         complexity: data.complexity,
       };
       setMessages((prev) => [...prev, assistantMessage]);
-      
+
       if (socket && roomId) {
         socket.send(JSON.stringify({ type: "new-message", message: assistantMessage }));
       }
@@ -583,14 +593,18 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       }
     } catch (err) {
       console.error("Chat error:", err);
-      setError("Failed to send message. Please try again.");
+      const errMsg = err instanceof Error ? err.message : "Failed to send message. Please try again.";
+      setError(errMsg);
+      if (errMsg.includes("High traffic detected")) {
+        onShowToast?.(errMsg);
+      }
       trackError(err instanceof Error ? err : new Error(String(err)), "chat_submit");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // Render
   return (
     <div className="flex h-full flex-col bg-white dark:bg-zinc-950 relative overflow-hidden">
       {/* Remote Cursors */}
@@ -605,7 +619,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
             className="pointer-events-none fixed z-[9999] flex flex-col items-start"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-orange-500 drop-shadow-md">
-              <path d="M5.65376 21.2087L2.61053 2.76633C2.39958 1.48834 3.75545 0.559955 4.88795 1.2059L22.2891 11.1444C23.4795 11.8242 23.3664 13.5786 22.0934 14.108L14.7706 17.1517L12.5976 24.3235C12.1932 25.658 10.366 25.8643 9.68063 24.6548L5.65376 21.2087Z" fill="currentColor"/>
+              <path d="M5.65376 21.2087L2.61053 2.76633C2.39958 1.48834 3.75545 0.559955 4.88795 1.2059L22.2891 11.1444C23.4795 11.8242 23.3664 13.5786 22.0934 14.108L14.7706 17.1517L12.5976 24.3235C12.1932 25.658 10.366 25.8643 9.68063 24.6548L5.65376 21.2087Z" fill="currentColor" />
             </svg>
             <div className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-4 shadow-md whitespace-nowrap">
               {cursor.name}

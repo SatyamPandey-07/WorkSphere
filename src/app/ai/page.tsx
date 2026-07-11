@@ -37,7 +37,7 @@ function AppPage() {
   const [selectedVenue, setSelectedVenue] = useState<MapMarker | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-  
+
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get("session") || null;
 
@@ -369,7 +369,7 @@ function AppPage() {
       }
 
       console.log("Rating submitted successfully");
-      alert("✅ Rating submitted! Thank you for helping the community.");
+      alert("Rating submitted! Thank you for helping the community.");
     } catch (error) {
       console.error("Error submitting rating:", error);
       alert("Failed to submit rating. Please try again.");
@@ -477,6 +477,7 @@ function AppPage() {
             <SyncStatusProvider>
               <EnhancedChatbot
                 roomId={sessionId}
+                onShowToast={setToast}
                 onMapUpdate={(update) => {
                   handleMapUpdate(update as MapUpdateData);
                   // Auto-switch to map on mobile when markers are added

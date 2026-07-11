@@ -20,6 +20,7 @@ model User {
   bookings       Booking[]
   memories       UserMemory[]
   crdtState      Bytes?
+  preferencesSummary String?
   createdVenues  Venue[]            @relation("VenueCreator")
   workStatus     WorkBuddyStatus?
   hostedSessions CoworkingSession[] @relation("SessionHost")

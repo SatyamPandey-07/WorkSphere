@@ -4,6 +4,7 @@ import Groq from "groq-sdk";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 import { chatRequestSchema, validateRequest } from "@/lib/validations";
 import { checkSemanticCache, setSemanticCache } from "@/lib/cache/semanticCache";
+import { extractAndStoreMemories, updateUserPreferencesSummary } from "@/lib/agents/MemoryAgent";
 
 export const maxDuration = 60;
 
@@ -105,39 +106,47 @@ async function contextAgent(
   reasoning: string;
 }> {
   let memoryContext = "";
-  if (userId && process.env.COHERE_API_KEY) {
+  if (userId) {
     try {
-      const embedRes = await fetch('https://api.cohere.ai/v1/embed', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.COHERE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          texts: [userMessage],
-          model: 'embed-english-v3.0',
-          input_type: 'search_query',
-        }),
+      const dbUser = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { preferencesSummary: true }
       });
-
-      if (!embedRes.ok) {
-        throw new Error(`Cohere API error: ${embedRes.statusText}`);
+      if (dbUser?.preferencesSummary) {
+        memoryContext += `\n\nUSER PROFILE PREFERENCES SUMMARY (Must be considered): ${dbUser.preferencesSummary}`;
       }
 
-      const embedData = await embedRes.json();
-      const embedding = embedData.embeddings[0];
-      const embeddingString = `[${embedding.join(',')}]`;
+      if (process.env.COHERE_API_KEY) {
+        const embedRes = await fetch('https://api.cohere.ai/v1/embed', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.COHERE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            texts: [userMessage],
+            model: 'embed-english-v3.0',
+            input_type: 'search_query',
+          }),
+        });
 
-      const memories: any[] = await prisma.$queryRawUnsafe(`
-        SELECT content, 1 - (embedding <=> $1::vector) AS similarity
-        FROM "UserMemory"
-        WHERE "userId" = $2
-        ORDER BY embedding <=> $1::vector
-        LIMIT 3
-      `, embeddingString, userId);
+        if (embedRes.ok) {
+          const embedData = await embedRes.json();
+          const embedding = embedData.embeddings[0];
+          const embeddingString = `[${embedding.join(',')}]`;
 
-      if (memories.length > 0) {
-        memoryContext = "\\n\\nKNOWN USER PREFERENCES (Must be considered):\\n" + memories.map(m => `- ${m.content}`).join("\\n");
+          const memories: any[] = await prisma.$queryRawUnsafe(`
+            SELECT content, 1 - (embedding <=> $1::vector) AS similarity
+            FROM "UserMemory"
+            WHERE "userId" = $2
+            ORDER BY embedding <=> $1::vector
+            LIMIT 3
+          `, embeddingString, userId);
+
+          if (memories.length > 0) {
+            memoryContext += "\n\nRECENT SEMANTIC USER MEMORIES:\n" + memories.map(m => `- ${m.content}`).join("\n");
+          }
+        }
       }
     } catch (e) {
       console.error('Error fetching AI memories:', e);
@@ -787,6 +796,11 @@ export async function POST(req: Request) {
                 where: { id: conversationId },
                 data: { updatedAt: new Date() },
               });
+
+              // Trigger background preference learning & summary updates
+              extractAndStoreMemories(conversationId)
+                .then(() => updateUserPreferencesSummary(userId))
+                .catch((err) => console.error("[GeneralChat] Background preference sync failed:", err));
             } catch (dbError) {
               console.error("Database save error:", dbError);
             }
@@ -1030,6 +1044,11 @@ Address the user's query and include UI components if helpful.`;
               where: { id: conversationId },
               data: { updatedAt: new Date() },
             });
+
+            // Trigger background preference learning & summary updates
+            extractAndStoreMemories(conversationId)
+              .then(() => updateUserPreferencesSummary(userId))
+              .catch((err) => console.error("[ActionAgent] Background preference sync failed:", err));
           } catch (dbError) {
             console.error("Database save error:", dbError);
           }

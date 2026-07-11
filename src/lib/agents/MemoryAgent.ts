@@ -95,3 +95,74 @@ ${transcript}
 
   return { status: 'extracted', count: storedMemories.length, memories: storedMemories };
 }
+
+/**
+ * Consolidate user stated memories, favorites, and recent reviews/ratings
+ * into a single unified profile summary and write it to User.preferencesSummary.
+ */
+export async function updateUserPreferencesSummary(userId: string): Promise<string | null> {
+  try {
+    // 1. Fetch user memories
+    const memories = await prisma.userMemory.findMany({
+      where: { userId },
+      select: { content: true },
+      orderBy: { createdAt: 'desc' },
+      take: 15
+    });
+
+    // 2. Fetch favorites
+    const favorites = await prisma.favorite.findMany({
+      where: { userId },
+      include: { venue: true },
+      take: 10
+    });
+
+    // 3. Fetch ratings
+    const ratings = await prisma.venueRating.findMany({
+      where: { userId },
+      include: { venue: true },
+      take: 10
+    });
+
+    if (memories.length === 0 && favorites.length === 0 && ratings.length === 0) {
+      return null;
+    }
+
+    const memoryText = memories.map(m => m.content).join(", ");
+    const favoritesText = favorites.map(f => `${f.venue.name} (${f.venue.category})`).join(", ");
+    const ratingsText = ratings.map(r => {
+      return `${r.venue.name}: rated WiFi ${r.wifiQuality}/5, Noise: ${r.noiseLevel}, Outlets: ${r.hasOutlets ? 'yes' : 'no'}`;
+    }).join("\n");
+
+    const summaryPrompt = `
+You are a User Profile Analyst. Summarize the user's workspace preferences into a single, concise natural language sentence (under 50 words) from the first-person perspective (e.g., "I prefer quiet libraries and cafes with standing desks and fast WiFi for focus work, and I dislike noisy spaces.").
+
+Inputs:
+- User-stated memories/preferences: ${memoryText || "None"}
+- Favorite venues: ${favoritesText || "None"}
+- Recent ratings:
+${ratingsText || "None"}
+
+Provide ONLY the summary sentence. Do not add intro or outro text.
+Summary:`;
+
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: summaryPrompt }],
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.3,
+    });
+
+    const summary = completion.choices[0]?.message?.content?.trim() || "";
+
+    if (summary) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { preferencesSummary: summary }
+      });
+      return summary;
+    }
+  } catch (error) {
+    console.error("Error updating user preferences summary:", error);
+  }
+  return null;
+}

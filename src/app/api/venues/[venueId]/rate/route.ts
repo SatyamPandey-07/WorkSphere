@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { venueRatingSchema, validateRequest } from "@/lib/validations";
+import { updateUserPreferencesSummary } from "@/lib/agents/MemoryAgent";
 
 // POST /api/venues/[venueId]/rate - Add rating
 export async function POST(
@@ -145,6 +146,11 @@ export async function POST(
         crowdsourced: true,
       },
     });
+
+    // Trigger background preference summary consolidation
+    updateUserPreferencesSummary(userId).catch((err) =>
+      console.error("[RateAPI] Background preference sync failed:", err)
+    );
 
     return NextResponse.json({ rating }, { status: 201 });
   } catch (error) {

@@ -72,6 +72,8 @@ model VenueRating {
   wifiSpeed     Int? // in Mbps
   comment       String?
   createdAt     DateTime @default(now())
+  avgDecibels   Float?
+  peakDecibels  Float?
 
   @@unique([userId, venueId])
   @@index([venueId])
@@ -134,6 +136,7 @@ model Booking {
 
   @@index([userId])
   @@index([venueId])
+  @@index([seatId])
 }
 
 enum BookingStatus {

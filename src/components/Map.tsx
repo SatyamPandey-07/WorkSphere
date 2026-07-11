@@ -10,15 +10,14 @@ import {
   Polyline,
   useMap,
 } from "react-leaflet";
-import L from "leaflet";
 
-// @ts-expect-error - styles are handled by next built-in CSS loader
+import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet.heat";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
 
 // Import Leaflet Heatmap Plugin safely only on client-side
 if (typeof window !== "undefined") {
-  // @ts-ignore
   require("leaflet.heat");
 }
 

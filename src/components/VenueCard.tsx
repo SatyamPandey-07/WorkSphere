@@ -4,6 +4,7 @@ import { MapMarker } from "@/types/map";
 import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2, TreePine, Accessibility } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
 
 interface VenueEnrichData {
   found: boolean;
@@ -223,6 +224,11 @@ export function VenueCard({
               📏 {venue.distance}
             </div>
           )}
+          {enrichData?.venueId && (
+  <div className="mt-4">
+    <NoiseTimeChart venueId={enrichData.venueId} />
+  </div>
+)}
         </div>
 
         {/* Actions */}

@@ -1,8 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Star } from "lucide-react";
+import { Star, X } from "lucide-react";
+import {
+  NoiseMeasurement,
+  NoiseMeter,
+} from "@/components/noise/NoiseMeter";
 
 interface VenueRatingDialogProps {
   venueName: string;
@@ -13,6 +17,8 @@ interface VenueRatingDialogProps {
     wifiQuality: number;
     hasOutlets: boolean;
     noiseLevel: "quiet" | "moderate" | "loud";
+    avgDecibels?: number;
+    peakDecibels?: number;
     comment?: string;
     hasErgonomic: boolean;
     outletDensity: "every_table" | "some_tables" | "wall_seats" | "none";
@@ -29,11 +35,16 @@ export function VenueRatingDialog({
 }: VenueRatingDialogProps) {
   const [wifiQuality, setWifiQuality] = useState(3);
   const [hasOutlets, setHasOutlets] = useState<boolean | null>(null);
-  const [noiseLevel, setNoiseLevel] = useState<"quiet" | "moderate" | "loud">("moderate");
+  const [noiseLevel, setNoiseLevel] = useState<
+    "quiet" | "moderate" | "loud"
+  >("moderate");
+  const [measurement, setMeasurement] = useState<NoiseMeasurement | null>(null);
   const [comment, setComment] = useState("");
   const [hasErgonomic, setHasErgonomic] = useState(false);
-  const [outletDensity, setOutletDensity] = useState<"every_table" | "some_tables" | "wall_seats" | "none">("none");
-  const [wifiSpeed, setWifiSpeed] = useState<string>("");
+  const [outletDensity, setOutletDensity] = useState<
+    "every_table" | "some_tables" | "wall_seats" | "none"
+  >("none");
+  const [wifiSpeed, setWifiSpeed] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -41,31 +52,33 @@ export function VenueRatingDialog({
     setMounted(true);
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+
     if (hasOutlets === null) {
       alert("Please indicate if outlets are available");
       return;
     }
 
     setIsSubmitting(true);
-    
+
     try {
       await onSubmit({
         wifiQuality,
         hasOutlets,
         noiseLevel,
+        avgDecibels: measurement?.averageDb,
+        peakDecibels: measurement?.peakDb,
         comment: comment.trim() || undefined,
         hasErgonomic,
         outletDensity,
         wifiSpeed: wifiSpeed ? parseInt(wifiSpeed, 10) : undefined,
       });
-      
-      // Reset form
+
       setWifiQuality(3);
       setHasOutlets(null);
       setNoiseLevel("moderate");
+      setMeasurement(null);
       setComment("");
       setHasErgonomic(false);
       setOutletDensity("none");
@@ -80,194 +93,201 @@ export function VenueRatingDialog({
 
   if (!isOpen || !mounted) return null;
 
-  const dialogContent = (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50">
-      <div className="bg-white dark:bg-zinc-900 rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Rate {venueName}
-          </h2>
+  return createPortal(
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+      <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
+          <div>
+            <h2 className="text-xl font-semibold text-zinc-900 dark:text-white">
+              Rate {venueName}
+            </h2>
+            <p className="text-xs text-zinc-500">
+              Add subjective feedback and optional measured noise data.
+            </p>
+          </div>
+
           <button
+            type="button"
             onClick={onClose}
-            className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+            className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
-            <X className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-6">
-          {/* WiFi Quality */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-50 mb-2">
+        <form onSubmit={handleSubmit} className="space-y-6 p-5">
+          <section>
+            <label className="mb-2 block text-sm font-medium">
               WiFi Quality
             </label>
+
             <div className="flex items-center gap-2">
               {[1, 2, 3, 4, 5].map((rating) => (
                 <button
                   key={rating}
                   type="button"
                   onClick={() => setWifiQuality(rating)}
-                  className={`p-2 rounded-lg transition-colors ${
+                  className={`rounded-lg p-2 transition ${
                     rating <= wifiQuality
-                      ? "bg-blue-100 dark:bg-blue-900/20"
-                      : "bg-zinc-100 dark:bg-zinc-800"
+                      ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30"
+                      : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
                   }`}
                 >
-                  <Star
-                    className={`w-6 h-6 ${
-                      rating <= wifiQuality
-                        ? "text-blue-600 fill-current"
-                        : "text-zinc-400"
-                    }`}
-                  />
+                  <Star className="h-5 w-5 fill-current" />
                 </button>
               ))}
-              <span className="ml-2 text-sm text-zinc-600 dark:text-zinc-400">
+
+              <span className="ml-2 text-sm text-zinc-500">
                 {wifiQuality}/5
               </span>
             </div>
-          </div>
+          </section>
 
-          {/* Outlets */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-50 mb-2">
+          <section>
+            <label className="mb-2 block text-sm font-medium">
               Power Outlets Available?
             </label>
+
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setHasOutlets(true)}
-                className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                className={`flex-1 rounded-lg px-4 py-2 font-medium ${
                   hasOutlets === true
                     ? "bg-green-600 text-white"
-                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                    : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                 }`}
               >
                 Yes
               </button>
+
               <button
                 type="button"
                 onClick={() => setHasOutlets(false)}
-                className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
+                className={`flex-1 rounded-lg px-4 py-2 font-medium ${
                   hasOutlets === false
                     ? "bg-red-600 text-white"
-                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                    : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                 }`}
               >
                 No
               </button>
             </div>
-          </div>
+          </section>
 
-          {/* Noise Level */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-50 mb-2">
-              Noise Level
+          <section>
+            <label className="mb-2 block text-sm font-medium">
+              Subjective Noise Level
             </label>
+
             <div className="grid grid-cols-3 gap-2">
               {(["quiet", "moderate", "loud"] as const).map((level) => (
                 <button
                   key={level}
                   type="button"
                   onClick={() => setNoiseLevel(level)}
-                  className={`px-4 py-2 rounded-lg font-medium capitalize transition-colors ${
+                  className={`rounded-lg px-4 py-2 font-medium capitalize ${
                     noiseLevel === level
                       ? level === "quiet"
                         ? "bg-green-600 text-white"
                         : level === "moderate"
-                        ? "bg-orange-600 text-white"
-                        : "bg-red-600 text-white"
-                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+                          ? "bg-orange-600 text-white"
+                          : "bg-red-600 text-white"
+                      : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                   }`}
                 >
                   {level}
                 </button>
               ))}
             </div>
-          </div>
+          </section>
 
-          {/* Wi-Fi Speed (Mbps) */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-50 mb-2">
+          <NoiseMeter onMeasured={setMeasurement} />
+
+          <section>
+            <label className="mb-2 block text-sm font-medium">
               Verified Wi-Fi Speed (Mbps - Optional)
             </label>
+
             <input
               type="number"
               value={wifiSpeed}
-              onChange={(e) => setWifiSpeed(e.target.value)}
+              onChange={(event) => setWifiSpeed(event.target.value)}
               placeholder="e.g. 80"
-              className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
             />
-          </div>
+          </section>
 
-          {/* Power Outlet Density */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-50 mb-2">
+          <section>
+            <label className="mb-2 block text-sm font-medium">
               Power Outlet Density
             </label>
+
             <select
               value={outletDensity}
-              onChange={(e) => setOutletDensity(e.target.value as any)}
-              className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onChange={(event) =>
+                setOutletDensity(
+                  event.target.value as
+                    | "every_table"
+                    | "some_tables"
+                    | "wall_seats"
+                    | "none",
+                )
+              }
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
             >
               <option value="none">None / No Outlets</option>
               <option value="every_table">Every Table</option>
               <option value="some_tables">Some Tables</option>
               <option value="wall_seats">Wall Seats Only</option>
             </select>
-          </div>
+          </section>
 
-          {/* Ergonomic Setup */}
-          <div className="flex items-center justify-between p-1">
-            <label className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-              Features Ergonomic Seating/Desks?
-            </label>
+          <label className="flex items-center gap-3 text-sm">
             <input
               type="checkbox"
               checked={hasErgonomic}
-              onChange={(e) => setHasErgonomic(e.target.checked)}
-              className="w-4 h-4 rounded border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-blue-600 focus:ring-blue-500"
+              onChange={(event) => setHasErgonomic(event.target.checked)}
+              className="h-4 w-4 rounded"
             />
-          </div>
+            Features Ergonomic Seating/Desks?
+          </label>
 
-          {/* Comment */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-900 dark:text-zinc-50 mb-2">
+          <section>
+            <label className="mb-2 block text-sm font-medium">
               Comments (optional)
             </label>
+
             <textarea
               value={comment}
-              onChange={(e) => setComment(e.target.value)}
+              onChange={(event) => setComment(event.target.value)}
               placeholder="Share your experience..."
               rows={3}
-              className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
             />
-          </div>
+          </section>
 
-          {/* Submit */}
           <div className="flex gap-2">
             <button
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="flex-1 px-4 py-2 rounded-lg font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 disabled:opacity-50 transition-colors"
+              className="flex-1 rounded-lg bg-zinc-100 px-4 py-2 font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
             >
               Cancel
             </button>
+
             <button
               type="submit"
               disabled={isSubmitting || hasOutlets === null}
-              className="flex-1 px-4 py-2 rounded-lg font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
             >
               {isSubmitting ? "Submitting..." : "Submit Rating"}
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
-
-  return createPortal(dialogContent, document.body);
 }

@@ -151,3 +151,43 @@ html {
 ::selection {
   background: rgba(59, 130, 246, 0.3);
 }
+
+/* ------------------------------------------------------------------
+   Fallback for older Android WebView engines that do not support the
+   CSS color-mix() function, which Tailwind v4 uses internally to
+   generate opacity-modifier utilities (e.g. bg-blue-700/10). Without
+   this fallback, unsupported color-mix() values fail and the affected
+   elements render as flat black instead of the intended translucent
+   neon gradient/border colors.
+
+   Scope: the "neon blur blob" backgrounds and glowing card borders
+   described in issue #153. Modern browsers are unaffected and keep
+   using Tailwind's normal color-mix()-based output, since this block
+   only applies inside @supports not (...).
+   ------------------------------------------------------------------ */
+@supports not (background: color-mix(in oklab, red, red)) {
+  /* Neon blur blobs - background/error/marketing pages */
+  .bg-blue-700\/10   { background-color: rgba(29, 78, 216, 0.1); }
+  .bg-blue-700\/20   { background-color: rgba(29, 78, 216, 0.2); }
+  .bg-purple-700\/10 { background-color: rgba(126, 34, 206, 0.1); }
+  .bg-purple-700\/15 { background-color: rgba(126, 34, 206, 0.15); }
+  .bg-red-700\/10    { background-color: rgba(185, 28, 28, 0.1); }
+  .bg-orange-700\/10 { background-color: rgba(194, 65, 12, 0.1); }
+  .bg-cyan-700\/10   { background-color: rgba(14, 116, 144, 0.1); }
+  .bg-violet-700\/15 { background-color: rgba(109, 40, 217, 0.15); }
+  .bg-violet-700\/20 { background-color: rgba(109, 40, 217, 0.2); }
+  .bg-amber-500\/10  { background-color: rgba(245, 158, 11, 0.1); }
+  .bg-amber-500\/20  { background-color: rgba(245, 158, 11, 0.2); }
+  .bg-red-500\/10    { background-color: rgba(239, 68, 68, 0.1); }
+  .bg-red-500\/20    { background-color: rgba(239, 68, 68, 0.2); }
+
+  /* Glowing card borders */
+  .border-amber-500\/30  { border-color: rgba(245, 158, 11, 0.3); }
+  .border-red-500\/30    { border-color: rgba(239, 68, 68, 0.3); }
+  .border-blue-500\/30   { border-color: rgba(59, 130, 246, 0.3); }
+  .border-purple-500\/30 { border-color: rgba(168, 85, 247, 0.3); }
+  .border-violet-400\/20 { border-color: rgba(167, 139, 250, 0.2); }
+  .border-emerald-400\/20 { border-color: rgba(52, 211, 153, 0.2); }
+}
+
+

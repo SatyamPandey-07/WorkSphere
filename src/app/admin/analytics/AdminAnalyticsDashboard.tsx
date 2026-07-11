@@ -279,7 +279,7 @@ export default function AdminAnalyticsDashboard() {
                   />
                   <YAxis allowDecimals={false} stroke="#71717a" fontSize={12} />
                   <Tooltip
-                    labelFormatter={(value) => compactDate(String(value))}
+                    labelFormatter={(value: any) => compactDate(String(value))}
                     contentStyle={{
                       background: "#111114",
                       border: "1px solid #27272a",
@@ -319,7 +319,7 @@ export default function AdminAnalyticsDashboard() {
                   />
                   <YAxis domain={[0, 5]} stroke="#71717a" fontSize={12} />
                   <Tooltip
-                    labelFormatter={(value) => compactDate(String(value))}
+                    labelFormatter={(value: any) => compactDate(String(value))}
                     contentStyle={{
                       background: "#111114",
                       border: "1px solid #27272a",

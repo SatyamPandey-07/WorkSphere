@@ -7,7 +7,7 @@ import { EnhancedChatbot } from "@/components/EnhancedChatbot";
 import { VenueRatingDialog } from "@/components/VenueRatingDialog";
 import { ChatErrorBoundary, MapErrorBoundary } from "@/components/ErrorBoundary";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
-import { Loader2, Map as MapIcon, MessageCircle, WifiOff } from "lucide-react";
+import { Loader2, Map as MapIcon, MessageCircle, WifiOff, X } from "lucide-react";
 import { OfflineIndicator } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import { saveVenueOffline, getAllVenuesOffline, OfflineVenue } from "@/lib/offlineStorage";
@@ -36,7 +36,19 @@ function AppPage() {
   const [selectedVenue, setSelectedVenue] = useState<MapMarker | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-  
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "error" | "warning" | "success";
+  } | null>(null);
+
+  // Auto-dismiss toast after 4 seconds
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get("session") || null;
 
@@ -138,7 +150,7 @@ function AppPage() {
             setIsLoadingLocation(false);
           },
           async (error) => {
-            console.error("Geolocation error:", error);
+            console.warn("Geolocation error:", error);
             // Fallback to IP-based location API
             try {
               const response = await fetch("/api/location");
@@ -334,7 +346,7 @@ function AppPage() {
       }
 
       console.log("Rating submitted successfully");
-      alert("✅ Rating submitted! Thank you for helping the community.");
+      alert("Rating submitted! Thank you for helping the community.");
     } catch (error) {
       console.error("Error submitting rating:", error);
       alert("Failed to submit rating. Please try again.");
@@ -439,42 +451,43 @@ function AppPage() {
           md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
         `}>
           <ChatErrorBoundary>
-            <EnhancedChatbot
-              roomId={sessionId}
-              onMapUpdate={(update) => {
-                handleMapUpdate(update as MapUpdateData);
-                // Auto-switch to map on mobile when markers are added
-                if (update.type === "markers" && update.markers && update.markers.length > 0) {
-                  // Small delay so user sees the results loading
-                  setTimeout(() => setMobileView("map"), 500);
+              <EnhancedChatbot
+                roomId={sessionId}
+                onShowToast={(msg) => setToast({ message: msg, type: "warning" })}
+                onMapUpdate={(update) => {
+                  handleMapUpdate(update as MapUpdateData);
+                  // Auto-switch to map on mobile when markers are added
+                  if (update.type === "markers" && update.markers && update.markers.length > 0) {
+                    // Small delay so user sees the results loading
+                    setTimeout(() => setMobileView("map"), 500);
+                  }
+                }}
+                onOpenDetails={(v) => {
+                  // Map the Venue type from chat to the MapMarker type used here
+                  setSelectedVenue({
+                    id: v.id,
+                    name: v.name,
+                    position: { lat: v.lat, lng: v.lng },
+                    category: v.category || "cafe",
+                    address: v.address,
+                    amenities: {
+                      wifi: v.wifi,
+                      outlets: v.hasOutlets,
+                      quiet: v.noiseLevel === "quiet",
+                      hasErgonomic: v.hasErgonomic,
+                      outletDensity: v.outletDensity,
+                      wifiSpeed: v.wifiSpeed
+                    },
+                    score: v.score
+                  });
+                }}
+                onBook={() => {
+                  // Handled internally by EnhancedChatbot now
+                }}
+                userLocation={
+                  location ? { lat: location.latitude, lng: location.longitude } : undefined
                 }
-              }}
-              onOpenDetails={(v) => {
-                // Map the Venue type from chat to the MapMarker type used here
-                setSelectedVenue({
-                  id: v.id,
-                  name: v.name,
-                  position: { lat: v.lat, lng: v.lng },
-                  category: v.category || "cafe",
-                  address: v.address,
-                  amenities: {
-                    wifi: v.wifi,
-                    outlets: v.hasOutlets,
-                    quiet: v.noiseLevel === "quiet",
-                    hasErgonomic: v.hasErgonomic,
-                    outletDensity: v.outletDensity,
-                    wifiSpeed: v.wifiSpeed
-                  },
-                  score: v.score
-                });
-              }}
-              onBook={(v) => {
-                console.log("[Booking] Initiated for:", v.name);
-              }}
-              userLocation={
-                location ? { lat: location.latitude, lng: location.longitude } : undefined
-              }
-            />
+              />
           </ChatErrorBoundary>
         </div>
       </div>
@@ -530,6 +543,20 @@ function AppPage() {
 
       {/* Offline Indicator */}
       <OfflineIndicator />
+
+      {/* Glassmorphic Toast Warning Card */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl bg-zinc-950/80 dark:bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl text-white animate-in slide-in-from-bottom duration-300">
+          <div className="h-2 w-2 rounded-full bg-orange-500 animate-pulse shrink-0" />
+          <p className="text-xs font-bold uppercase tracking-wide">{toast.message}</p>
+          <button 
+            onClick={() => setToast(null)} 
+            className="p-1 rounded-lg hover:bg-white/10 transition-colors ml-2"
+          >
+            <X className="w-4 h-4 text-zinc-400 hover:text-white" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -206,7 +206,7 @@ async function dataAgent(
   }
 ): Promise<{
   venues: any[];
-  meta: { total: number; source: string };
+  meta: { total: number; source: string; highTraffic?: boolean };
   reasoning: string;
 }> {
   const { location, radius = 2000, category: _category = ["all"] } = params;
@@ -240,6 +240,8 @@ async function dataAgent(
     "https://lz4.overpass-api.de/api/interpreter",
   ];
 
+  let overpassFailed = true;
+
   for (const endpoint of endpoints) {
     try {
       const response = await fetch(endpoint, {
@@ -250,6 +252,7 @@ async function dataAgent(
 
       if (!response.ok) continue;
       const data = await response.json();
+      overpassFailed = false;
 
       let venues = data.elements.slice(0, 15).map((el: any) => {
         const hasErgonomic = el.tags?.office === "coworking" || el.tags?.ergonomic === "yes" || el.tags?.standing_desk === "yes" || el.tags?.backrest === "yes" || el.tags?.amenity === "coworking_space";
@@ -418,7 +421,7 @@ async function dataAgent(
 
   return {
     venues: filteredMock,
-    meta: { total: filteredMock.length, source: "Simulation Fallback" },
+    meta: { total: filteredMock.length, source: "Simulation Fallback", highTraffic: overpassFailed },
     reasoning: `Returned ${filteredMock.length} simulated fallback venues due to Overpass API offline status`,
   };
 }
@@ -998,6 +1001,7 @@ Address the user's query and include UI components if helpful.`;
           agentSteps,
           cached: isCached,
           complexity: orchestratorResult.complexity,
+          highTraffic: dataResult?.meta?.highTraffic || false,
         };
         controller.enqueue(new TextEncoder().encode(`METADATA:${JSON.stringify(metadata)}\n\n`));
 

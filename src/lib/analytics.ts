@@ -234,3 +234,68 @@ export async function getAnalyticsSummaryAsync(): Promise<{
 
   return getAnalyticsSummary();
 }
+
+export function getAgentMetrics(): {
+  agent: string;
+  avgDuration: number;
+  successRate: number;
+  totalCalls: number;
+}[] {
+  const agents: Record<string, { totalDuration: number; successes: number; count: number }> = {};
+  
+  for (const event of memQueue) {
+    if (event.name === "agent_completed" && event.properties) {
+      const agent = String(event.properties.agent);
+      const duration = Number(event.properties.durationMs ?? 0);
+      const success = Boolean(event.properties.success);
+      
+      if (!agents[agent]) {
+        agents[agent] = { totalDuration: 0, successes: 0, count: 0 };
+      }
+      agents[agent].totalDuration += duration;
+      if (success) agents[agent].successes += 1;
+      agents[agent].count += 1;
+    }
+  }
+  
+  return Object.entries(agents).map(([agent, data]) => ({
+    agent,
+    avgDuration: data.count > 0 ? data.totalDuration / data.count : 0,
+    successRate: data.count > 0 ? data.successes / data.count : 0,
+    totalCalls: data.count,
+  }));
+}
+
+export function getPopularSearches(limit: number = 10): {
+  query: string;
+  count: number;
+  lastUsed: number;
+}[] {
+  const searches: Record<string, { count: number; lastUsed: number }> = {};
+  
+  for (const event of memQueue) {
+    if (event.name === "search_performed" && event.properties) {
+      const query = String(event.properties.query ?? "");
+      if (!query) continue;
+      
+      if (!searches[query]) {
+        searches[query] = { count: 0, lastUsed: 0 };
+      }
+      searches[query].count += 1;
+      searches[query].lastUsed = Math.max(searches[query].lastUsed, event.timestamp);
+    }
+  }
+  
+  return Object.entries(searches)
+    .map(([query, data]) => ({
+      query,
+      count: data.count,
+      lastUsed: data.lastUsed,
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
+export function clearAnalytics(): void {
+  memQueue.length = 0;
+}

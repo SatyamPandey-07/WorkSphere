@@ -593,9 +593,10 @@ function reasoningAgent(
 
     // Extra bonus for explicitly-requested features
     let amenityBonus = 0;
-    if (amenities.includes("wifi") && wifiScore >= 6) amenityBonus += 1;
-    if (amenities.includes("quiet") && venue.noiseLevel === "quiet") amenityBonus += 1;
-    if (amenities.includes("outlets") && venue.hasOutlets) amenityBonus += 1;
+    const safeAmenities = amenities || [];
+    if (safeAmenities.includes("wifi") && wifiScore >= 6) amenityBonus += 1;
+    if (safeAmenities.includes("quiet") && venue.noiseLevel === "quiet") amenityBonus += 1;
+    if (safeAmenities.includes("outlets") && venue.hasOutlets) amenityBonus += 1;
 
     const totalScore =
       wifiScore * w.wifi +
@@ -732,12 +733,13 @@ export async function POST(req: Request) {
 
     // If general conversation, respond directly
     if (orchestratorResult.skipAgents) {
-      const response = await getGroqClient().chat.completions.create({
+      const responseStream = await getGroqClient().chat.completions.create({
         model: "llama-3.3-70b-versatile",
+        stream: true,
         messages: [
           {
             role: "system",
-            content: "You are WorkHub AI, a friendly assistant for finding workspaces. Be helpful and conversational.",
+            content: "You are WorkHub AI, a friendly assistant for finding workspaces. Be helpful and conversational. When appropriate to show data, output <ui-component name=\"DataTable\" props='{\"columns\": [...], \"data\": [...]}' /> or <ui-component name=\"Map\" props='{\"markers\": [...]}' />.",
           },
           ...messages.map((m: any) => ({ 
             role: m.role, 
@@ -746,12 +748,51 @@ export async function POST(req: Request) {
         ],
       });
 
-      return Response.json({
-        content: response.choices[0]?.message?.content || "Hello! How can I help you find a workspace today?",
-        agentSteps,
-        venues: [],
-        cached: false,
+      const stream = new ReadableStream({
+        async start(controller) {
+          const metadata = {
+            venues: [],
+            agentSteps,
+            cached: false,
+            suggestions: [],
+            complexity: orchestratorResult.complexity,
+          };
+          controller.enqueue(new TextEncoder().encode(`METADATA:${JSON.stringify(metadata)}\n\n`));
+
+          let fullContent = "";
+          try {
+            for await (const chunk of responseStream) {
+              const text = chunk.choices[0]?.delta?.content || "";
+              if (text) {
+                fullContent += text;
+                controller.enqueue(new TextEncoder().encode(`TEXT:${text}`));
+              }
+            }
+          } catch(e) {
+            console.error("Stream error:", e);
+          }
+          
+          if (userId && conversationId) {
+            try {
+              await prisma.message.create({
+                data: { conversationId, role: "user", content: userMessage },
+              });
+              await prisma.message.create({
+                data: { conversationId, role: "assistant", content: fullContent, agentName: "GeneralChat" },
+              });
+              await prisma.conversation.update({
+                where: { id: conversationId },
+                data: { updatedAt: new Date() },
+              });
+            } catch (dbError) {
+              console.error("Database save error:", dbError);
+            }
+          }
+          
+          controller.close();
+        }
       });
+      return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" } });
     }
 
     // ====== CACHE & ROUTING ======
@@ -924,34 +965,77 @@ export async function POST(req: Request) {
       latencyMs: Date.now() - actionStart,
     });
 
-    // ====== SAVE TO DATABASE (if user is authenticated) ======
-    try {
-      const { userId } = await auth();
-      if (userId && conversationId) {
-        await prisma.message.create({
-          data: { conversationId, role: "user", content: userMessage },
-        });
-        await prisma.message.create({
-          data: { conversationId, role: "assistant", content: actionResult.message, agentName: "ActionAgent" },
-        });
-        await prisma.conversation.update({
-          where: { id: conversationId },
-          data: { updatedAt: new Date() },
-        });
-      }
-    } catch (dbError) {
-      console.error("Database save error:", dbError);
-    }
+    // ====== GENERATE STREAM RESPONSE ======
+    const groq = getGroqClient();
+    const systemPrompt = `You are WorkHub AI, a helpful workspace assistant. 
+You can use Generative UI. When you need to show a map, use:
+<ui-component name="Map" props='{"markers": [{"lat": ..., "lng": ..., "name": "...", "category": "..."}]}' />
+When you need to show a table, use:
+<ui-component name="DataTable" props='{"columns": ["Name", "Category", "Score"], "data": [{"Name": "...", "Category": "...", "Score": "..."}]}' />
+Here are the top venues found: ${JSON.stringify(reasoningResult.rankedVenues.map((v:any)=>({name: v.name, category: v.category, lat: v.lat, lng: v.lng, score: v.score})))}
+Address the user's query and include UI components if helpful.`;
 
-    return Response.json({
-      content: actionResult.message,
-      venues: reasoningResult.rankedVenues,
-      mapUpdates: actionResult.mapUpdates,
-      suggestions: actionResult.suggestions,
-      agentSteps,
-      cached: isCached,
-      complexity: orchestratorResult.complexity,
+    const llmMessages = [
+      { role: "system", content: systemPrompt },
+      ...messages.map((m: any) => ({ 
+        role: m.role, 
+        content: m.name ? `[User: ${m.name}] ${m.content}` : m.content 
+      })),
+    ];
+
+    const responseStream = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      stream: true,
+      messages: llmMessages as any,
     });
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const metadata = {
+          venues: reasoningResult.rankedVenues,
+          mapUpdates: actionResult.mapUpdates,
+          suggestions: actionResult.suggestions,
+          agentSteps,
+          cached: isCached,
+          complexity: orchestratorResult.complexity,
+        };
+        controller.enqueue(new TextEncoder().encode(`METADATA:${JSON.stringify(metadata)}\n\n`));
+
+        let fullContent = "";
+        try {
+          for await (const chunk of responseStream) {
+            const text = chunk.choices[0]?.delta?.content || "";
+            if (text) {
+              fullContent += text;
+              controller.enqueue(new TextEncoder().encode(`TEXT:${text}`));
+            }
+          }
+        } catch(e) {
+          console.error("Stream error", e);
+        }
+        
+        if (userId && conversationId) {
+          try {
+            await prisma.message.create({
+              data: { conversationId, role: "user", content: userMessage },
+            });
+            await prisma.message.create({
+              data: { conversationId, role: "assistant", content: fullContent, agentName: "ActionAgent" },
+            });
+            await prisma.conversation.update({
+              where: { id: conversationId },
+              data: { updatedAt: new Date() },
+            });
+          } catch (dbError) {
+            console.error("Database save error:", dbError);
+          }
+        }
+        
+        controller.close();
+      }
+    });
+
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" } });
   } catch (error) {
     console.error("Chat API error:", error);
     return Response.json(

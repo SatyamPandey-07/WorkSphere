@@ -21,6 +21,7 @@ import {
 import { RefObject, useState, useEffect } from "react";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
+import { MessageRenderer } from "./GenerativeUI";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
@@ -350,7 +351,13 @@ export function MessageList({
                                 : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
                                 }`}
                         >
-                            <div className="text-sm font-medium leading-relaxed whitespace-pre-wrap">{message.content}</div>
+                            <div className="text-sm font-medium leading-relaxed">
+                                {message.role === "assistant" ? (
+                                    <MessageRenderer content={message.content} />
+                                ) : (
+                                    <span className="whitespace-pre-wrap">{message.content}</span>
+                                )}
+                            </div>
                         </div>
                     </div>
 

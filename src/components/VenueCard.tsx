@@ -1,5 +1,5 @@
 "use client";
-
+import { VenueShareButton } from "@/components/social/VenueShareButton";
 import { MapMarker } from "@/types/map";
 import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2, TreePine, Accessibility } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -251,6 +251,12 @@ export function VenueCard({
               <ExternalLink className="w-4 h-4" />
             </a>
           )}
+          {enrichData?.venueId && (
+  <VenueShareButton
+    venueId={enrichData.venueId}
+    venueName={venue.name}
+  />
+)}
         </div>
       </div>
     </div>

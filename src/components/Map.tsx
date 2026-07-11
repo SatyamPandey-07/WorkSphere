@@ -75,18 +75,15 @@ function AutoCenter({
 
   useEffect(() => {
     if (!map) return;
-    const validMarkers = markers.filter(
-      (m) => m && m.position && m.position.lat != null && m.position.lng != null && !isNaN(Number(m.position.lat)) && !isNaN(Number(m.position.lng))
-    );
 
     const bounds = L.latLngBounds([
       userLocation,
-      ...validMarkers.map(
-        (m) => [Number(m.position.lat), Number(m.position.lng)] as [number, number]
+      ...markers.map(
+        (m) => [m.position.lat, m.position.lng] as [number, number]
       ),
     ]);
 
-    if (validMarkers.length > 0) {
+    if (markers.length > 0) {
       map.flyToBounds(bounds, { padding: [100, 100] });
     } else {
       map.setView(userLocation, 13);
@@ -330,6 +327,7 @@ const Map = ({
           </Marker>
         )}
 
+
         {showHeatmap ? (
           <HeatmapOverlay points={heatmapPoints} visible={showHeatmap} />
         ) : (
@@ -388,6 +386,51 @@ const Map = ({
             </Polyline>
           );
         })}
+
+        {markers.map((marker) => (
+          <Marker
+            key={marker.id}
+            position={[marker.position.lat, marker.position.lng]}
+            icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
+          >
+            <Popup>
+              <div className="text-sm">
+                <div className="font-semibold text-white">{marker.name}</div>
+                {marker.category && (
+                  <div className="text-zinc-400">{marker.category}</div>
+                )}
+                {marker.address && (
+                  <div className="text-zinc-500 text-xs mt-1">{marker.address}</div>
+                )}
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+        {routes.map((route) => (
+          <Polyline
+            key={route.id}
+            positions={route.path.map(p => [p.lat, p.lng])}
+            pathOptions={{
+              color: route.isHighlighted ? "#22c55e" : "#22c55e", // Green route like the reference
+              weight: 6,
+              opacity: 0.9,
+              lineCap: "round",
+              lineJoin: "round",
+            }}
+          >
+            {route.distance && (
+              <Popup>
+                <div className="text-sm">
+                  Distance: {(route.distance / 1000).toFixed(1)} km
+                  {route.duration && (
+                    <div>Time: {Math.round(route.duration / 60)} min</div>
+                  )}
+                </div>
+              </Popup>
+            )}
+          </Polyline>
+        ))}
       </MapContainer>
     </>
   );

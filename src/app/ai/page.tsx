@@ -8,7 +8,7 @@ import { VenueRatingDialog } from "@/components/VenueRatingDialog";
 import { ChatErrorBoundary, MapErrorBoundary } from "@/components/ErrorBoundary";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { Loader2, Map as MapIcon, MessageCircle, WifiOff, X } from "lucide-react";
-import { OfflineIndicator } from "@/hooks/usePWA";
+import { OfflineIndicator, PWABanner } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import { saveVenueOffline, getAllVenuesOffline, OfflineVenue } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
@@ -575,6 +575,9 @@ function AppPage() {
 
       {/* Offline Indicator */}
       <OfflineIndicator />
+
+      {/* PWA Install Banner */}
+      <PWABanner />
 
       {/* Glassmorphic Toast Warning Card */}
       {toast && (

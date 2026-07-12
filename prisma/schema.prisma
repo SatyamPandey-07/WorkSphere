@@ -32,6 +32,7 @@ model User {
   ownedFolders   Folder[]           @relation("FolderOwner")
   folderMemberships FolderMember[]  @relation("FolderMembership")
   addedFolderVenues FolderVenue[]   @relation("FolderVenueAdder")
+  webhookEndpoints  WebhookEndpoint[]
 }
 
 model Venue {
@@ -400,5 +401,42 @@ enum FolderRole {
   OWNER
   EDITOR
   MEMBER
+}
+
+enum WebhookEventType {
+  DOCUMENT_SIGNED
+  AI_WORKFLOW_COMPLETED
+  MAP_GEOFENCE_BREACHED
+  VENUE_CREATED
+  REVIEW_SUBMITTED
+}
+
+model WebhookEndpoint {
+  id          String             @id @default(cuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url         String
+  secret      String             // For Svix HMAC signing
+  eventTypes  WebhookEventType[] // Array of subscribed events
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  
+  logs        WebhookDeliveryLog[]
+
+  @@index([userId])
+}
+
+model WebhookDeliveryLog {
+  id          String           @id @default(cuid())
+  endpointId  String
+  endpoint    WebhookEndpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  eventType   String
+  payload     Json
+  status      String           // e.g. "SUCCESS", "FAILED"
+  statusCode  Int?
+  createdAt   DateTime         @default(now())
+
+  @@index([endpointId])
 }
 

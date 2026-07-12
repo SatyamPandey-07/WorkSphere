@@ -44,6 +44,9 @@ interface ChatHeaderProps {
         ergonomic?: boolean;
         outletDensity?: "every_table" | "some_tables" | "wall_seats" | "none";
         wifiSpeedBand?: "basic" | "fast" | "ultra" | "all";
+        hasPhoneBooths?: boolean;
+        hasNoMusic?: boolean;
+        hasQuietZone?: boolean;
     };
     showFilters: boolean;
     setShowFilters: (show: boolean) => void;
@@ -84,7 +87,7 @@ export function ChatHeader({
     onLoadConversation,
     onDeleteConversation,
     onShowBookings,
-    roomId,
+    roomId: _roomId,
     onShareSession
 }: ChatHeaderProps) {
     const [isHubOpen, setIsHubOpen] = useState(false);
@@ -195,6 +198,15 @@ export function ChatHeader({
                         <Inbox className="w-4 h-4" />
                     </button>
 
+                    {/* Collections */}
+                    <Link
+                        href="/collections"
+                        className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
+                        title="Collections"
+                    >
+                        <LayoutGrid className="w-4 h-4" />
+                    </Link>
+
                     {/* History */}
                     <button
                         onClick={() => { setShowHistory(!showHistory); setShowFilters(false); }}
@@ -289,6 +301,31 @@ export function ChatHeader({
                                 >
                                     <Activity className="w-3.5 h-3.5" />
                                     Ergonomic Setup
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Section: Acoustic Environment */}
+                        <div>
+                            <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">Acoustic Environment</div>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => onToggleFilter('hasPhoneBooths')}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.hasPhoneBooths ? 'bg-orange-600 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700'}`}
+                                >
+                                    Phone Booths Available
+                                </button>
+                                <button
+                                    onClick={() => onToggleFilter('hasNoMusic')}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.hasNoMusic ? 'bg-orange-600 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700'}`}
+                                >
+                                    No Background Music
+                                </button>
+                                <button
+                                    onClick={() => onToggleFilter('hasQuietZone')}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.hasQuietZone ? 'bg-orange-600 text-white shadow-md' : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700'}`}
+                                >
+                                    Strict Silence Zones
                                 </button>
                             </div>
                         </div>

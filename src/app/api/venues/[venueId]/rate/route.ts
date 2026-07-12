@@ -40,6 +40,9 @@ export async function POST(
       outletDensity,
       wifiSpeed,
       speedtestPhoto,
+      hasPhoneBooths,
+      hasNoMusic,
+      hasQuietZone,
     } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
@@ -84,6 +87,9 @@ export async function POST(
         wifiSpeed,
         comment,
         speedtestPhoto,
+        hasPhoneBooths,
+        hasNoMusic,
+        hasQuietZone,
       },
       create: {
         userId,
@@ -98,6 +104,9 @@ export async function POST(
         wifiSpeed: wifiSpeed || null,
         comment,
         speedtestPhoto,
+        hasPhoneBooths: hasPhoneBooths || false,
+        hasNoMusic: hasNoMusic || false,
+        hasQuietZone: hasQuietZone || false,
       },
     });
 
@@ -109,6 +118,9 @@ export async function POST(
     const avgWifi = allRatings.reduce((sum: number, r: { wifiQuality: number }) => sum + r.wifiQuality, 0) / allRatings.length;
     const outletPercent = (allRatings.filter((r: { hasOutlets: boolean }) => r.hasOutlets).length / allRatings.length) * 100;
     const ergonomicPercent = (allRatings.filter((r: any) => r.hasErgonomic).length / allRatings.length) * 100;
+    const phoneBoothsPercent = (allRatings.filter((r: any) => r.hasPhoneBooths).length / allRatings.length) * 100;
+    const noMusicPercent = (allRatings.filter((r: any) => r.hasNoMusic).length / allRatings.length) * 100;
+    const quietZonePercent = (allRatings.filter((r: any) => r.hasQuietZone).length / allRatings.length) * 100;
 
     // Most common noise level
     const noiseCounts: Record<string, number> = {};
@@ -143,6 +155,9 @@ export async function POST(
         hasErgonomic: ergonomicPercent > 50,
         outletDensity: dominantDensity,
         wifiSpeed: avgSpeed,
+        hasPhoneBooths: phoneBoothsPercent > 50,
+        hasNoMusic: noMusicPercent > 50,
+        hasQuietZone: quietZonePercent > 50,
         crowdsourced: true,
       },
     });

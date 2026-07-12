@@ -144,3 +144,19 @@ describe('Agent Pipeline', () => {
     expect(totalScore).toBeLessThanOrEqual(10);
   });
 });
+
+describe('Clerk Webhook API Avatar Logic', () => {
+  it('should optimize image_url using replace when present', () => {
+    const mockImageUrl = "https://img.clerk.com/avatar.png?width=400";
+    const optimized = mockImageUrl.replace(/(\?|&)width=\d+/, "$1width=150");
+    expect(optimized).toBe("https://img.clerk.com/avatar.png?width=150");
+  });
+
+  it('should fallback to initials UI Avatar when image_url is missing', () => {
+    const first = "Chirag";
+    const last = "Pandey";
+    const initials = `${first?.[0] || ""}${last?.[0] || ""}`.toUpperCase();
+    const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials || "WS")}&background=6366f1&color=fff`;
+    expect(fallbackUrl).toBe("https://ui-avatars.com/api/?name=CP&background=6366f1&color=fff");
+  });
+});

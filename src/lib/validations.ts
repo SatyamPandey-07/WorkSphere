@@ -27,6 +27,9 @@ export const venueSearchSchema = z.object({
   ergonomic: z.coerce.boolean().optional(),
   outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional(),
   wifiSpeedBand: z.enum(["basic", "fast", "ultra", "all"]).optional(),
+  hasPhoneBooths: z.coerce.boolean().optional(),
+  hasNoMusic: z.coerce.boolean().optional(),
+  hasQuietZone: z.coerce.boolean().optional(),
 });
 
 export const venueCreateSchema = z.object({
@@ -41,6 +44,9 @@ export const venueCreateSchema = z.object({
   hasErgonomic: z.boolean().optional(),
   outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional(),
   wifiSpeed: z.number().min(0).max(10000).optional(),
+  hasPhoneBooths: z.boolean().optional(),
+  hasNoMusic: z.boolean().optional(),
+  hasQuietZone: z.boolean().optional(),
 });
 
 export const venueRatingSchema = z.object({
@@ -54,6 +60,9 @@ export const venueRatingSchema = z.object({
   speedtestPhoto: z.string().optional().nullable(),
   avgDecibels: z.number().min(20).max(130).optional().nullable(),
   peakDecibels: z.number().min(20).max(140).optional().nullable(),
+  hasPhoneBooths: z.boolean().optional().default(false),
+  hasNoMusic: z.boolean().optional().default(false),
+  hasQuietZone: z.boolean().optional().default(false),
 });
 
 // Conversation schemas

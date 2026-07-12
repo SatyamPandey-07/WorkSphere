@@ -8,7 +8,7 @@ import { VenueRatingDialog } from "@/components/VenueRatingDialog";
 import { ChatErrorBoundary, MapErrorBoundary } from "@/components/ErrorBoundary";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { Loader2, Map as MapIcon, MessageCircle, WifiOff, X } from "lucide-react";
-import { OfflineIndicator } from "@/hooks/usePWA";
+import { OfflineIndicator, PWABanner } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import { saveVenueOffline, getAllVenuesOffline, OfflineVenue } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
@@ -18,8 +18,17 @@ import { Venue } from "@/components/chat/ChatMessages";
 const Map = dynamic(() => import("@/components/Map"), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full flex items-center justify-center bg-zinc-100 dark:bg-zinc-900">
-      <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+    <div
+      className="flex h-full w-full items-center justify-center bg-zinc-100 dark:bg-zinc-900"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading interactive map"
+    >
+      <Loader2
+        className="h-8 w-8 animate-spin text-blue-600"
+        aria-hidden="true"
+      />
+      <span className="sr-only">Loading interactive map...</span>
     </div>
   ),
 });
@@ -274,39 +283,68 @@ function AppPage() {
         break;
 
       case "route":
-        // Handle directions request from chatbot
-        if (update.route && location) {
-          // Fetch real road route using OSRM API
-          (async () => {
-            const { getRoute } = await import('@/lib/routing');
-            const routeData = await getRoute(
-              update.route!.from,
-              update.route!.to,
-              'walking' // can also be 'driving' or 'cycling'
-            );
+        if (update.route) {
+          const toLoc = update.route.to;
 
-            const newRoute: MapRoute = {
-              id: `route-${Date.now()}`,
-              path: routeData?.path || [
-                { lat: update.route!.from.lat, lng: update.route!.from.lng },
-                { lat: update.route!.to.lat, lng: update.route!.to.lng },
-              ],
-              distance: routeData?.distance,
-              duration: routeData?.duration,
-              isHighlighted: true,
-            };
-            setRoutes([newRoute]);
+          const executeRoute = async (fromLoc: { lat: number; lng: number }) => {
+            try {
+              const { getRoute } = await import('@/lib/routing');
+              const routeData = await getRoute(fromLoc, toLoc, 'walking');
 
-            // Center map between user and destination
-            setMapView({
-              center: {
-                lat: (update.route!.from.lat + update.route!.to.lat) / 2,
-                lng: (update.route!.from.lng + update.route!.to.lng) / 2,
+              const newRoute: MapRoute = {
+                id: `route-${Date.now()}`,
+                path: routeData?.path || [
+                  { lat: fromLoc.lat, lng: fromLoc.lng },
+                  { lat: toLoc.lat, lng: toLoc.lng },
+                ],
+                distance: routeData?.distance,
+                duration: routeData?.duration,
+                isHighlighted: true,
+              };
+              setRoutes([newRoute]);
+
+              // Center map between starting location and destination
+              setMapView({
+                center: {
+                  lat: (fromLoc.lat + toLoc.lat) / 2,
+                  lng: (fromLoc.lng + toLoc.lng) / 2,
+                },
+                zoom: 14,
+                animate: true,
+              });
+            } catch (error) {
+              console.error("OSRM routing execution error:", error);
+            }
+          };
+
+          // Try browser geolocation first to check permissions/availability on demand
+          if ("geolocation" in navigator) {
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                const preciseLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
+                setLocation({ latitude: preciseLoc.lat, longitude: preciseLoc.lng });
+                executeRoute(preciseLoc);
               },
-              zoom: 14,
-              animate: true,
-            });
-          })();
+              (error) => {
+                console.warn("Geolocation failed or blocked during directions request:", error);
+                
+                // Catch geolocation permission errors and display the toast
+                setToast({
+                  message: "Location access denied. Fallback: using map viewport center.",
+                  type: "warning"
+                });
+
+                // Fallback to center of current map viewport, or location state, or default SF
+                const fallbackLoc = mapView?.center || (location ? { lat: location.latitude, lng: location.longitude } : { lat: 37.7749, lng: -122.4194 });
+                executeRoute(fallbackLoc);
+              },
+              { timeout: 5000, enableHighAccuracy: false }
+            );
+          } else {
+            // Fallback for browsers without geolocation support
+            const fallbackLoc = mapView?.center || (location ? { lat: location.latitude, lng: location.longitude } : { lat: 37.7749, lng: -122.4194 });
+            executeRoute(fallbackLoc);
+          }
         }
         break;
     }
@@ -355,7 +393,10 @@ function AppPage() {
 
   if (!location || isLoadingLocation) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gradient-to-br from-zinc-50 via-blue-50/30 to-zinc-50 dark:from-black dark:via-blue-950/10 dark:to-black">
+      <div 
+        className="flex items-center justify-center h-screen bg-gradient-to-br from-zinc-50 via-blue-50/30 to-zinc-50 dark:from-black dark:via-blue-950/10 dark:to-black"
+        style={{ backgroundImage: "linear-gradient(135deg, #fafafa 0%, rgba(219, 234, 254, 0.3) 50%, #fafafa 100%)" }}
+      >
         <div className="text-center p-8 max-w-md">
           <div className="relative mx-auto mb-6 w-20 h-20">
             <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 animate-pulse flex items-center justify-center">
@@ -451,43 +492,43 @@ function AppPage() {
           md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
         `}>
           <ChatErrorBoundary>
-              <EnhancedChatbot
-                roomId={sessionId}
-                onShowToast={(msg) => setToast({ message: msg, type: "warning" })}
-                onMapUpdate={(update) => {
-                  handleMapUpdate(update as MapUpdateData);
-                  // Auto-switch to map on mobile when markers are added
-                  if (update.type === "markers" && update.markers && update.markers.length > 0) {
-                    // Small delay so user sees the results loading
-                    setTimeout(() => setMobileView("map"), 500);
-                  }
-                }}
-                onOpenDetails={(v) => {
-                  // Map the Venue type from chat to the MapMarker type used here
-                  setSelectedVenue({
-                    id: v.id,
-                    name: v.name,
-                    position: { lat: v.lat, lng: v.lng },
-                    category: v.category || "cafe",
-                    address: v.address,
-                    amenities: {
-                      wifi: v.wifi,
-                      outlets: v.hasOutlets,
-                      quiet: v.noiseLevel === "quiet",
-                      hasErgonomic: v.hasErgonomic,
-                      outletDensity: v.outletDensity,
-                      wifiSpeed: v.wifiSpeed
-                    },
-                    score: v.score
-                  });
-                }}
-                onBook={() => {
-                  // Handled internally by EnhancedChatbot now
-                }}
-                userLocation={
-                  location ? { lat: location.latitude, lng: location.longitude } : undefined
+            <EnhancedChatbot
+              roomId={sessionId}
+              onShowToast={(msg) => setToast({ message: msg, type: "warning" })}
+              onMapUpdate={(update) => {
+                handleMapUpdate(update as MapUpdateData);
+                // Auto-switch to map on mobile when markers are added
+                if (update.type === "markers" && update.markers && update.markers.length > 0) {
+                  // Small delay so user sees the results loading
+                  setTimeout(() => setMobileView("map"), 500);
                 }
-              />
+              }}
+              onOpenDetails={(v) => {
+                // Map the Venue type from chat to the MapMarker type used here
+                setSelectedVenue({
+                  id: v.id,
+                  name: v.name,
+                  position: { lat: v.lat, lng: v.lng },
+                  category: v.category || "cafe",
+                  address: v.address,
+                  amenities: {
+                    wifi: v.wifi,
+                    outlets: v.hasOutlets,
+                    quiet: v.noiseLevel === "quiet",
+                    hasErgonomic: v.hasErgonomic,
+                    outletDensity: v.outletDensity,
+                    wifiSpeed: v.wifiSpeed
+                  },
+                  score: v.score
+                });
+              }}
+              onBook={() => {
+                // Handled internally by EnhancedChatbot now
+              }}
+              userLocation={
+                location ? { lat: location.latitude, lng: location.longitude } : undefined
+              }
+            />
           </ChatErrorBoundary>
         </div>
       </div>
@@ -544,13 +585,16 @@ function AppPage() {
       {/* Offline Indicator */}
       <OfflineIndicator />
 
+      {/* PWA Install Banner */}
+      <PWABanner />
+
       {/* Glassmorphic Toast Warning Card */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl bg-zinc-950/80 dark:bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl text-white animate-in slide-in-from-bottom duration-300">
           <div className="h-2 w-2 rounded-full bg-orange-500 animate-pulse shrink-0" />
           <p className="text-xs font-bold uppercase tracking-wide">{toast.message}</p>
-          <button 
-            onClick={() => setToast(null)} 
+          <button
+            onClick={() => setToast(null)}
             className="p-1 rounded-lg hover:bg-white/10 transition-colors ml-2"
           >
             <X className="w-4 h-4 text-zinc-400 hover:text-white" />

@@ -1,21 +1,4 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma"; 
-
-interface VenueData {
-  id: string;
-  latitude: number;
-  longitude: number;
-}
-
-interface ActiveBookingGroup {
-  venueId: string;
-  _count: { id: number };
-}
-
-interface RatingData {
-  venueId: string;
-  noiseLevel: string | null;
-}
 
 export async function GET() {
   /* =========================================================================

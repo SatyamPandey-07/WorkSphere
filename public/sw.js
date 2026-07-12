@@ -36,11 +36,33 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  const isVenuesApi = event.request.url.includes("/api/venues");
   const isExternalAsset =
     event.request.url.includes("tile.openstreetmap.org") ||
     event.request.url.includes("images.unsplash.com");
 
-  if (isExternalAsset) {
+  if (isVenuesApi) {
+    // Network-First strategy for /api/venues
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const responseClone = response.clone();
+            event.waitUntil(
+              caches.open(CACHE_NAME).then((cache) => {
+                return cache.put(event.request, responseClone);
+              })
+            );
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cachedResponse = await caches.match(event.request);
+          if (cachedResponse) return cachedResponse;
+          return new Response("Offline", { status: 503 });
+        }),
+    );
+  } else if (isExternalAsset) {
     event.respondWith(
       caches.open(CACHE_NAME).then((cache) => {
         return cache.match(event.request).then((cachedResponse) => {
@@ -285,3 +307,4 @@ self.addEventListener("notificationclick", (event) => {
       }),
   );
 });
+

@@ -24,6 +24,9 @@ interface VenueRatingDialogProps {
     outletDensity: "every_table" | "some_tables" | "wall_seats" | "none";
     wifiSpeed?: number;
     speedtestPhoto?: string;
+    hasPhoneBooths?: boolean;
+    hasNoMusic?: boolean;
+    hasQuietZone?: boolean;
   }) => void;
 }
 
@@ -50,6 +53,9 @@ export function VenueRatingDialog({
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [hasPhoneBooths, setHasPhoneBooths] = useState(false);
+  const [hasNoMusic, setHasNoMusic] = useState(false);
+  const [hasQuietZone, setHasQuietZone] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -144,6 +150,9 @@ export function VenueRatingDialog({
         outletDensity,
         wifiSpeed: wifiSpeed ? parseInt(wifiSpeed, 10) : undefined,
         speedtestPhoto: speedtestPhoto || undefined,
+        hasPhoneBooths,
+        hasNoMusic,
+        hasQuietZone,
       });
 
       setWifiQuality(3);
@@ -155,6 +164,9 @@ export function VenueRatingDialog({
       setOutletDensity("none");
       setWifiSpeed("");
       setSpeedtestPhoto(null);
+      setHasPhoneBooths(false);
+      setHasNoMusic(false);
+      setHasQuietZone(false);
       onClose();
     } catch (error) {
       console.error("Error submitting rating:", error);
@@ -368,6 +380,36 @@ export function VenueRatingDialog({
               className="h-4 w-4 rounded"
             />
             Features Ergonomic Seating/Desks?
+          </label>
+
+          <label className="flex items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={hasPhoneBooths}
+              onChange={(event) => setHasPhoneBooths(event.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            Phone Booths Available?
+          </label>
+
+          <label className="flex items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={hasNoMusic}
+              onChange={(event) => setHasNoMusic(event.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            No Background Music?
+          </label>
+
+          <label className="flex items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={hasQuietZone}
+              onChange={(event) => setHasQuietZone(event.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            Strict Silence / Quiet Zones?
           </label>
 
           <section>

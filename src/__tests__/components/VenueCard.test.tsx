@@ -61,7 +61,7 @@ describe('VenueCard', () => {
       />
     );
 
-    expect(screen.getByText(/WiFi/)).toBeInTheDocument();
+    expect(screen.getAllByText(/WiFi/)[0]).toBeInTheDocument();
   });
 
   it('shows Outlets indicator when venue has outlets', () => {
@@ -74,7 +74,7 @@ describe('VenueCard', () => {
       />
     );
 
-    expect(screen.getByText(/Outlets/)).toBeInTheDocument();
+    expect(screen.getAllByText(/Outlets/)[0]).toBeInTheDocument();
   });
 
   it('calls onGetDirections when Directions button is clicked', () => {

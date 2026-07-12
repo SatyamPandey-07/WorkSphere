@@ -14,6 +14,12 @@ function getGroqClient(): Groq {
   if (!groq) {
     groq = new Groq({
       apiKey: process.env.GROQ_API_KEY || '',
+      // Explicit bounds so sustained rate-limit exhaustion (HTTP 429)
+      // fails fast with a catchable error instead of the SDK's default
+      // internal retry behavior hanging the request indefinitely,
+      // which was surfacing as an infinite loading state on the client.
+      maxRetries: 2,
+      timeout: 20000, // 20s
     });
   }
   return groq;
@@ -212,6 +218,9 @@ async function dataAgent(
     ergonomic?: boolean;
     outletDensity?: string;
     wifiSpeedBand?: string;
+    hasPhoneBooths?: boolean;
+    hasNoMusic?: boolean;
+    hasQuietZone?: boolean;
   }
 ): Promise<{
   venues: any[];
@@ -305,6 +314,9 @@ async function dataAgent(
           hasErgonomic,
           outletDensity,
           wifiSpeed,
+          hasPhoneBooths: false,
+          hasNoMusic: false,
+          hasQuietZone: false,
         };
       });
 
@@ -332,6 +344,9 @@ async function dataAgent(
             venues = venues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100);
           }
         }
+        if (filters.hasPhoneBooths) venues = venues.filter((v: any) => v.hasPhoneBooths);
+        if (filters.hasNoMusic) venues = venues.filter((v: any) => v.hasNoMusic);
+        if (filters.hasQuietZone) venues = venues.filter((v: any) => v.hasQuietZone);
       }
 
       return {
@@ -364,6 +379,9 @@ async function dataAgent(
       hasErgonomic: true,
       outletDensity: "every_table",
       wifiSpeed: 120,
+      hasPhoneBooths: true,
+      hasNoMusic: true,
+      hasQuietZone: true,
     },
     {
       id: "mock-2",
@@ -426,6 +444,9 @@ async function dataAgent(
         filteredMock = filteredMock.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100);
       }
     }
+    if (filters.hasPhoneBooths) filteredMock = filteredMock.filter((v: any) => v.hasPhoneBooths);
+    if (filters.hasNoMusic) filteredMock = filteredMock.filter((v: any) => v.hasNoMusic);
+    if (filters.hasQuietZone) filteredMock = filteredMock.filter((v: any) => v.hasQuietZone);
   }
 
   return {
@@ -455,6 +476,9 @@ interface RawVenue {
   hasErgonomic: boolean;
   outletDensity: string;
   wifiSpeed: number | null;
+  hasPhoneBooths: boolean;
+  hasNoMusic: boolean;
+  hasQuietZone: boolean;
 }
 
 async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]> {
@@ -476,6 +500,9 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
         outletPct: number;
         noiseMode: string | null;
         hasErgonomic: boolean;
+        hasPhoneBooths: boolean;
+        hasNoMusic: boolean;
+        hasQuietZone: boolean;
         outletDensity: string | null;
         wifiSpeed: number | null;
       }
@@ -490,6 +517,9 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
           outletPct: dbV.hasOutlets ? 100 : 0,
           noiseMode: dbV.noiseLevel ?? null,
           hasErgonomic: dbV.hasErgonomic,
+          hasPhoneBooths: dbV.hasPhoneBooths,
+          hasNoMusic: dbV.hasNoMusic,
+          hasQuietZone: dbV.hasQuietZone,
           outletDensity: dbV.outletDensity ?? null,
           wifiSpeed: dbV.wifiSpeed ?? null,
         });
@@ -501,6 +531,12 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
           (ratings.filter((r) => r.hasOutlets).length / ratings.length) * 100;
         const ergonomicPct =
           (ratings.filter((r) => r.hasErgonomic).length / ratings.length) * 100;
+        const phoneBoothsPct =
+          (ratings.filter((r) => r.hasPhoneBooths).length / ratings.length) * 100;
+        const noMusicPct =
+          (ratings.filter((r) => r.hasNoMusic).length / ratings.length) * 100;
+        const quietZonePct =
+          (ratings.filter((r) => r.hasQuietZone).length / ratings.length) * 100;
 
         const validSpeeds = ratings.filter((r) => r.wifiSpeed !== null && r.wifiSpeed > 0).map((r) => r.wifiSpeed as number);
         const avgSpeed = validSpeeds.length > 0 ? Math.round(validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length) : null;
@@ -531,6 +567,9 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
           outletPct,
           noiseMode,
           hasErgonomic: ergonomicPct >= 50,
+          hasPhoneBooths: phoneBoothsPct >= 50,
+          hasNoMusic: noMusicPct >= 50,
+          hasQuietZone: quietZonePct >= 50,
           outletDensity: outletDensityMode,
           wifiSpeed: avgSpeed,
         });
@@ -550,6 +589,9 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
         noiseLevel: db.noiseMode ?? venue.noiseLevel,
         wifiQuality: db.avgWifi,
         hasErgonomic: db.hasErgonomic,
+        hasPhoneBooths: db.hasPhoneBooths,
+        hasNoMusic: db.hasNoMusic,
+        hasQuietZone: db.hasQuietZone,
         outletDensity: db.outletDensity ?? venue.outletDensity,
         wifiSpeed: db.wifiSpeed ?? venue.wifiSpeed,
       };

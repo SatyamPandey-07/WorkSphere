@@ -5,14 +5,16 @@ import {
   CalendarDays,
   Check,
   Clock3,
-  DoorOpen,
   Monitor,
   RefreshCw,
   Sparkles,
   UsersRound,
-  Wifi,
   Zap,
+  CalendarPlus,
+  Mail,
+  Download,
 } from "lucide-react";
+import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 
 type Seat = {
   id: string;
@@ -54,6 +56,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
   const [message, setMessage] = useState("");
+  const [confirmationId, setConfirmationId] = useState<string | null>(null);
 
   const loadAvailability = useCallback(async () => {
     setLoading(true);
@@ -97,22 +100,44 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
 
   useEffect(() => {
     loadAvailability();
-  }, [date, time, duration]);
+  }, [date, time, duration, loadAvailability]);
 
   useEffect(() => {
-    const events = new EventSource(
-      `/api/reservations/events?venueId=${encodeURIComponent(venue.id)}`,
-    );
+    let events: EventSource | null = null;
 
-    events.addEventListener("availability", () => {
-      loadAvailability();
-    });
+    const connect = () => {
+      if (events) {
+        events.close();
+      }
+      events = new EventSource(
+        `/api/reservations/events?venueId=${encodeURIComponent(venue.id)}`,
+      );
 
-    events.onerror = () => {
-      // EventSource reconnects automatically.
+      events.addEventListener("availability", () => {
+        loadAvailability();
+      });
+
+      events.onerror = () => {
+        // EventSource reconnects automatically.
+      };
     };
 
-    return () => events.close();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        console.log("[Reservation] Tab visible, resetting connection");
+        connect();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    connect();
+
+    return () => {
+      if (events) {
+        events.close();
+      }
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [venue.id, loadAvailability]);
 
   const selected = useMemo(
@@ -130,6 +155,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
 
     setBooking(true);
     setMessage("");
+    setConfirmationId(null);
 
     const response = await fetch("/api/reservations/book", {
       method: "POST",
@@ -156,6 +182,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
     setMessage(
       `${selected.seatNumber} confirmed. Reference: ${payload.confirmationId}`,
     );
+    setConfirmationId(payload.confirmationId);
     setSelectedSeat(null);
     setBooking(false);
     await loadAvailability();
@@ -180,8 +207,34 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
         </header>
 
         {message && (
-          <div className="mb-6 rounded-2xl border border-violet-400/20 bg-violet-400/10 px-4 py-3 text-sm text-violet-100">
-            {message}
+          <div className="mb-6 rounded-2xl border border-violet-400/20 bg-violet-400/10 p-5 text-sm text-violet-100">
+            <p className="font-semibold">{message}</p>
+            {confirmationId && (
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <a
+                  href={getCalendarUrls(venue.name, venue.address || "", date, time).googleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 rounded-xl bg-violet-600/20 border border-violet-500/30 px-4 py-2 hover:bg-violet-600/40 transition-colors"
+                >
+                  <CalendarPlus className="h-4 w-4" /> Add to Google
+                </a>
+                <a
+                  href={getCalendarUrls(venue.name, venue.address || "", date, time).outlookUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 rounded-xl bg-violet-600/20 border border-violet-500/30 px-4 py-2 hover:bg-violet-600/40 transition-colors"
+                >
+                  <Mail className="h-4 w-4" /> Add to Outlook
+                </a>
+                <button
+                  onClick={() => downloadICS(venue.name, venue.address || "", date, time)}
+                  className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10 transition-colors text-zinc-300"
+                >
+                  <Download className="h-4 w-4" /> Download .ics
+                </button>
+              </div>
+            )}
           </div>
         )}
 

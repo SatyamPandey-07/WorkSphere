@@ -14,6 +14,7 @@ export async function GET() {
             id: true,
             firstName: true,
             lastName: true,
+            imageUrl: true,
           },
         },
         rsvps: {
@@ -23,10 +24,14 @@ export async function GET() {
                 id: true,
                 firstName: true,
                 lastName: true,
+                imageUrl: true,
               },
             },
           },
           orderBy: { createdAt: "asc" },
+        },
+        _count: {
+          select: { rsvps: true },
         },
       },
       orderBy: { startsAt: "asc" },
@@ -38,45 +43,89 @@ export async function GET() {
   }
 }
 
-// POST /api/social/sessions - Create a new coworking session
-export async function POST(request: Request) {
+export async function POST(req: Request) {
   try {
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
     }
+
+    // Ensure user is synced in DB
     await ensureUserExists(userId);
 
-    const body = await request.json();
+    const body = await req.json();
     const { title, description, venueId, startsAt, endsAt, maxGuests } = body;
 
     if (!title || !venueId || !startsAt || !endsAt) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // Generate unique slug
+    // Verify venue exists
+    const venue = await prisma.venue.findUnique({
+      where: { id: venueId },
+    });
+    if (!venue) {
+      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+    }
+
+    // Create unique slug
     const baseSlug = title
       .toLowerCase()
+      .trim()
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "");
-    const slug = `${baseSlug}-${Date.now().toString().slice(-6)}`;
+      .replace(/^-|-$/g, "");
+    const randomSuffix = Math.random().toString(36).substring(2, 7);
+    const slug = `${baseSlug}-${randomSuffix}`;
 
+    // Create session and automatically RSVP the host
     const session = await prisma.coworkingSession.create({
       data: {
         title,
         description,
-        venueId,
         slug,
         startsAt: new Date(startsAt),
         endsAt: new Date(endsAt),
-        maxGuests: maxGuests ? parseInt(maxGuests, 10) : null,
+        maxGuests: maxGuests ? Number(maxGuests) : null,
         hostId: userId,
+        venueId,
+        rsvps: {
+          create: {
+            userId,
+            status: "GOING",
+          },
+        },
+      },
+      include: {
+        venue: true,
+        host: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            imageUrl: true,
+          },
+        },
+        rsvps: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+        _count: {
+          select: { rsvps: true },
+        },
       },
     });
 
-    return NextResponse.json(session, { status: 201 });
+    return NextResponse.json(session);
   } catch (error) {
-    console.error("POST /api/social/sessions error:", error);
+    console.error("Failed to create session:", error);
     return NextResponse.json({ error: "Failed to create session" }, { status: 500 });
   }
 }

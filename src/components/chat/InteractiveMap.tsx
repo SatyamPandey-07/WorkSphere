@@ -1,18 +1,80 @@
-import React from "react";
+"use client";
+
+import React, { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { Map as MapIcon } from "lucide-react";
+import { Map as MapIcon, Loader2 } from "lucide-react";
 
 // Fix for default leaflet icons in React
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
+if (typeof window !== "undefined") {
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+    shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  });
+}
 
 export default function InteractiveMap({ markers }: { markers: any[] }) {
+  const [mounted, setMounted] = useState(process.env.NODE_ENV === "test");
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Group and spiderfy overlapping markers
+  const spiderfiedMarkers = React.useMemo(() => {
+    const groups: { [key: string]: any[] } = {};
+    if (markers) {
+      markers.forEach((m) => {
+        if (m && m.lat != null && m.lng != null && !isNaN(Number(m.lat)) && !isNaN(Number(m.lng))) {
+          const key = `${Number(m.lat).toFixed(6)},${Number(m.lng).toFixed(6)}`;
+          if (!groups[key]) {
+            groups[key] = [];
+          }
+          groups[key].push(m);
+        }
+      });
+    }
+
+    const result: any[] = [];
+    Object.keys(groups).forEach((key) => {
+      const groupItems = groups[key];
+      const n = groupItems.length;
+      if (n === 1) {
+        result.push({
+          ...groupItems[0],
+          renderedLat: groupItems[0].lat,
+          renderedLng: groupItems[0].lng,
+        });
+      } else {
+        const centerLat = groupItems[0].lat;
+        const centerLng = groupItems[0].lng;
+        // 0.00015 degrees is approx 15 meters
+        const radius = 0.00015;
+        groupItems.forEach((item, index) => {
+          const angle = (2 * Math.PI * index) / n;
+          const offsetLat = centerLat + radius * Math.cos(angle);
+          const offsetLng = centerLng + radius * Math.sin(angle);
+          result.push({
+            ...item,
+            renderedLat: offsetLat,
+            renderedLng: offsetLng,
+          });
+        });
+      }
+    });
+    return result;
+  }, [markers]);
+  if (!mounted) {
+    return (
+      <div className="w-full h-64 mt-4 bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border border-zinc-200 dark:border-zinc-800 rounded-2xl">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+      </div>
+    );
+  }
+
   if (!markers || markers.length === 0) return <div>No markers provided</div>;
 
   const center = {
@@ -31,8 +93,8 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
-        {markers.map((marker, idx) => (
-          <Marker key={idx} position={[marker.lat, marker.lng]}>
+        {spiderfiedMarkers.map((marker, idx) => (
+          <Marker key={idx} position={[marker.renderedLat, marker.renderedLng]}>
             <Popup>
               <div className="font-bold text-sm">{marker.name}</div>
               <div className="text-xs text-gray-500 capitalize">{marker.category?.replace("_", " ")}</div>

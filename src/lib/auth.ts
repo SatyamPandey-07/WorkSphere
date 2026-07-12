@@ -24,12 +24,20 @@ export async function ensureUserExists(userId: string) {
     }
 
     // 3. Persist to local database
+    const initials = `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`.toUpperCase();
+    const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials || "WS")}&background=6366f1&color=fff`;
+
+    const imageUrl = user.imageUrl
+      ? user.imageUrl.replace(/(\?|&)sz=\d+/, "$1sz=150").replace(/(\?|&)width=\d+/, "$1width=150")
+      : fallbackUrl;
+
     return await prisma.user.create({
         data: {
             id: user.id,
             email: user.emailAddresses[0]?.emailAddress,
             firstName: user.firstName,
             lastName: user.lastName,
+            imageUrl,
         },
     });
 }

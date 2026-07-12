@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayerSession } from "@/hooks/useRealTime";
@@ -62,6 +62,9 @@ interface Filters {
   ergonomic?: boolean;
   outletDensity?: "every_table" | "some_tables" | "wall_seats" | "none";
   wifiSpeedBand?: "basic" | "fast" | "ultra" | "all";
+  hasPhoneBooths?: boolean;
+  hasNoMusic?: boolean;
+  hasQuietZone?: boolean;
 }
 
 interface Conversation {
@@ -90,7 +93,7 @@ const INITIAL_SUGGESTIONS = [
 export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation, roomId, onShowToast }: EnhancedChatbotProps) {
   const { isSignedIn, user } = useUser();
   const { getToken } = useAuth();
-  const { socket, yDoc } = useMultiplayerSession(roomId || null);
+  const { socket } = useMultiplayerSession(roomId || null);
 
   // Presence state
   const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string }>>({});
@@ -152,7 +155,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
 
     socket.addEventListener("message", onMessage);
     return () => socket.removeEventListener("message", onMessage);
-  }, [socket]);
+  }, [socket, onMapUpdate]);
 
   // Core state
   const [location, setLocation] = useState(userLocation);
@@ -383,7 +386,16 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     wifiQuality: number;
     hasOutlets: boolean;
     noiseLevel: "quiet" | "moderate" | "loud";
+    avgDecibels?: number;
+    peakDecibels?: number;
     comment?: string;
+    hasErgonomic: boolean;
+    outletDensity: "every_table" | "some_tables" | "wall_seats" | "none";
+    wifiSpeed?: number;
+    speedtestPhoto?: string;
+    hasPhoneBooths?: boolean;
+    hasNoMusic?: boolean;
+    hasQuietZone?: boolean;
   }) => {
     if (!ratingVenue || !isSignedIn) return;
     try {

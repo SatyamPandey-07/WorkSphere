@@ -109,12 +109,19 @@ export function VenueChatCard({
 
         setPhotoLoading(true);
         fetch(`/api/venues/${encodeURIComponent(venue.id)}/photo?${params}`)
-            .then(r => r.json())
-            .then(data => {
-                if (data.photoUrl) setPhotoUrl(data.photoUrl);
-                setPhotoLoading(false);
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Failed to load venue photo");
+                }
+
+                setPhotoUrl(response.url);
             })
-            .catch(() => setPhotoLoading(false));
+            .catch(() => {
+                setPhotoUrl(null);
+            })
+            .finally(() => {
+                setPhotoLoading(false);
+            });
     }, [venue.id, venue.name, venue.lat, venue.lng]);
 
     const CategoryIcon =
@@ -390,7 +397,7 @@ export function MessageList({
                                         const Icon = AGENT_ICONS[step.agent] || Brain;
                                         const color = AGENT_COLORS[step.agent] || "text-zinc-500";
                                         const skipped = (step.result as any)?.skipped;
-                                        
+
                                         return (
                                             <div key={idx} className={`rounded-xl p-3 text-xs border ${skipped ? 'bg-zinc-900/50 border-zinc-800/50 opacity-50' : 'bg-zinc-950 border-zinc-800'}`}>
                                                 <div className="flex items-center justify-between mb-1">

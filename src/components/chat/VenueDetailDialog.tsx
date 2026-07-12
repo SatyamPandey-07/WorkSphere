@@ -108,12 +108,19 @@ export function VenueDetailDialog({
         });
 
         fetch(`/api/venues/${encodeURIComponent(venue.id)}/photo?${params}`)
-            .then(r => r.json())
-            .then(data => {
-                if (data.photoUrl) setPhotoUrl(data.photoUrl);
-                setPhotoLoading(false);
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Failed to load venue photo");
+                }
+
+                setPhotoUrl(response.url);
             })
-            .catch(() => setPhotoLoading(false));
+            .catch(() => {
+                setPhotoUrl(null);
+            })
+            .finally(() => {
+                setPhotoLoading(false);
+            });
     }, [venue]);
 
     // Effect 2: Handle real-time SSE updates
@@ -369,11 +376,10 @@ export function VenueDetailDialog({
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
-                            className={`pb-1 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
-                                activeTab === tab.id
+                            className={`pb-1 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${activeTab === tab.id
                                     ? "border-blue-600 text-blue-600"
                                     : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-                            }`}
+                                }`}
                         >
                             {tab.label}
                         </button>
@@ -467,37 +473,36 @@ export function VenueDetailDialog({
                                 </div>
                             </div>
 
-                        <div className="flex flex-col gap-3 pt-4">
+                            <div className="flex flex-col gap-3 pt-4">
+                                <button
+                                    onClick={() => onGetDirections(venue)}
+                                    className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98]"
+                                >
+                                    <Navigation className="w-5 h-5" />
+                                    Navigate
+                                </button>
+                                <div className="flex gap-3">
                                     <button
-                                        onClick={() => onGetDirections(venue)}
-                                        className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98]"
-                                    >
-                                        <Navigation className="w-5 h-5" />
-                                        Navigate
-                                    </button>
-                                    <div className="flex gap-3">
-                                        <button
-                                            onClick={() => onToggleFavorite(venue)}
-                                            className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${
-                                                isFavorited
-                                                    ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
-                                                    : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
+                                        onClick={() => onToggleFavorite(venue)}
+                                        className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${isFavorited
+                                                ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
+                                                : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
                                             }`}
+                                    >
+                                        <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
+                                        {isFavorited ? "Saved" : "Save"}
+                                    </button>
+                                    {onRate && (
+                                        <button
+                                            onClick={() => onRate(venue)}
+                                            className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 border-2 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all shadow-md active:scale-[0.98]"
                                         >
-                                            <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
-                                            {isFavorited ? "Saved" : "Save"}
+                                            <Star className="w-4 h-4" />
+                                            Rate
                                         </button>
-                                        {onRate && (
-                                            <button
-                                                onClick={() => onRate(venue)}
-                                                className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 border-2 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all shadow-md active:scale-[0.98]"
-                                            >
-                                                <Star className="w-4 h-4" />
-                                                Rate
-                                            </button>
-                                        )}
-                                    </div>
+                                    )}
                                 </div>
+                            </div>
                         </>
                     )}
 
@@ -576,7 +581,7 @@ export function VenueDetailDialog({
                                     {menuPhotos.map((photo: string, i: number) => (
                                         <div key={i} className="relative h-32 rounded-xl overflow-hidden border border-zinc-100 dark:border-zinc-800 group/item cursor-pointer" onClick={() => setPreviewPhoto(photo)}>
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img src={photo} alt={`Menu ${i+1}`} className="w-full h-full object-cover transition-transform group-hover/item:scale-105 duration-300" />
+                                            <img src={photo} alt={`Menu ${i + 1}`} className="w-full h-full object-cover transition-transform group-hover/item:scale-105 duration-300" />
                                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center">
                                                 <Eye className="w-6 h-6 text-white" />
                                             </div>

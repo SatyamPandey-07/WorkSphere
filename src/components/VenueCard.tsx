@@ -472,7 +472,7 @@ export function VenueCard({
       </div>
       {showFolderModal && venue.id && (
         <AddToFolderModal
-          venueId={venue.id}
+          venue={venue}
           onClose={() => setShowFolderModal(false)}
         />
       )}

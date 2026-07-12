@@ -2,10 +2,11 @@
 
 import {
     X, MapPin, Wifi, Zap, Volume2, Navigation, Heart,
-    Coffee, BookOpen, Building2, Star, Info, AlertTriangle, Camera, Eye
+    Coffee, BookOpen, Building2, Star, Info, AlertTriangle, Camera, Eye, Globe2
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { useTranslation } from "react-i18next";
 
 import { Venue } from "./ChatMessages";
 
@@ -37,6 +38,9 @@ export function VenueDetailDialog({
     const [photoUrl, setPhotoUrl] = useState<string | null>(null);
     const [photoLoading, setPhotoLoading] = useState(true);
     const [liveScore, setLiveScore] = useState<number | null>(null);
+    const { t } = useTranslation();
+    const [translatingReviewId, setTranslatingReviewId] = useState<string | null>(null);
+    const [translatedReviews, setTranslatedReviews] = useState<Record<string, string>>({});
 
     // =========================================================================
     // COMMUNITY AMENITY VALIDATION STATE DICTIONARY
@@ -80,6 +84,41 @@ export function VenueDetailDialog({
             }
         } catch (error) {
             console.error("Failed to post metadata validation toggle:", error);
+        }
+    };
+
+    const handleTranslate = async (review: any) => {
+        if (!review.comment || translatedReviews[review.id]) return;
+        
+        setTranslatingReviewId(review.id);
+        try {
+            const langCode = navigator.language || "en";
+            let targetLanguageName = "English";
+            try {
+                targetLanguageName = new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode) || langCode;
+            } catch (e) {
+                targetLanguageName = langCode;
+            }
+
+            const response = await fetch("/api/translate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    text: review.comment,
+                    targetLanguage: targetLanguageName
+                }),
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setTranslatedReviews(prev => ({
+                    ...prev,
+                    [review.id]: data.translatedText
+                }));
+            }
+        } catch (error) {
+            console.error("Translation failed:", error);
+        } finally {
+            setTranslatingReviewId(null);
         }
     };
 
@@ -370,7 +409,7 @@ export function VenueDetailDialog({
                 <div className="flex border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 px-8 py-3 gap-6">
                     {[
                         { id: "overview", label: "Overview" },
-                        { id: "reviews", label: "Reviews" },
+                        { id: "reviews", label: t("venue.reviews") },
                         { id: "menu", label: "Menus & Prices" }
                     ].map(tab => (
                         <button
@@ -511,8 +550,8 @@ export function VenueDetailDialog({
                             {reviews.length === 0 ? (
                                 <div className="py-12 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl text-center px-4">
                                     <Info className="w-8 h-8 text-zinc-400 mx-auto mb-2" />
-                                    <p className="text-xs font-black uppercase tracking-wider text-zinc-500">No Reviews Yet</p>
-                                    <p className="text-[10px] text-zinc-400 mt-1">Be the first to share your workspace rating.</p>
+                                    <p className="text-xs font-black uppercase tracking-wider text-zinc-500">{t("venue.noReviewsYet")}</p>
+                                    <p className="text-[10px] text-zinc-400 mt-1">{t("venue.beTheFirst")}</p>
                                 </div>
                             ) : (
                                 reviews.map((review: any, idx: number) => (
@@ -523,11 +562,11 @@ export function VenueDetailDialog({
                                                     {review.user?.firstName || 'Nomad'} {review.user?.lastName || 'Scout'}
                                                 </span>
                                                 <div className="flex items-center gap-1.5 mt-1 text-[9px] font-mono text-zinc-500">
-                                                    <span>WiFi: {review.wifiQuality}/5</span>
+                                                    <span>{t("venue.wifi")}: {review.wifiQuality}/5</span>
                                                     <span>•</span>
-                                                    <span>Power: {review.hasOutlets ? 'Yes' : 'No'}</span>
+                                                    <span>{t("venue.power")}: {review.hasOutlets ? t("venue.yes") : t("venue.no")}</span>
                                                     <span>•</span>
-                                                    <span>Noise: {review.noiseLevel}</span>
+                                                    <span>{t("venue.noise")}: {review.noiseLevel}</span>
                                                 </div>
                                             </div>
                                             {review.wifiSpeed && (
@@ -537,9 +576,21 @@ export function VenueDetailDialog({
                                             )}
                                         </div>
                                         {review.comment && (
-                                            <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300 leading-relaxed bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
-                                                {review.comment}
-                                            </p>
+                                            <div className="space-y-2">
+                                                <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300 leading-relaxed bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                                                    {translatedReviews[review.id] || review.comment}
+                                                </p>
+                                                {!translatedReviews[review.id] && (
+                                                    <button
+                                                        onClick={() => handleTranslate(review)}
+                                                        disabled={translatingReviewId === review.id}
+                                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50"
+                                                    >
+                                                        <Globe2 className="w-3 h-3" />
+                                                        {translatingReviewId === review.id ? t("venue.translating") : t("venue.translate")}
+                                                    </button>
+                                                )}
+                                            </div>
                                         )}
                                         {review.speedtestPhoto && (
                                             <button
@@ -547,7 +598,7 @@ export function VenueDetailDialog({
                                                 className="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-blue-600 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg border border-blue-500/20 transition-all active:scale-95"
                                             >
                                                 <Eye className="w-3.5 h-3.5" />
-                                                View Speedtest Screenshot
+                                                {t("venue.viewSpeedtest")}
                                             </button>
                                         )}
                                     </div>

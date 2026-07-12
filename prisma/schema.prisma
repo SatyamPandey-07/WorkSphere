@@ -26,6 +26,9 @@ model User {
   workStatus     WorkBuddyStatus?
   hostedSessions CoworkingSession[] @relation("SessionHost")
   sessionRsvps   SessionRsvp[]
+  isAdmin        Boolean            @default(false)
+  flagsReported  FlaggedItem[]
+  adminAuditLogs AdminAuditLog[]
 }
 
 model Venue {
@@ -302,3 +305,39 @@ model WifiTelemetry {
   @@index([venueId])
 }
 
+enum FlagType {
+  VENUE
+  REVIEW
+}
+
+enum FlagStatus {
+  PENDING
+  DISMISSED
+  RESOLVED
+}
+
+model FlaggedItem {
+  id           String     @id @default(cuid())
+  type         FlagType
+  itemId       String
+  reason       String
+  status       FlagStatus @default(PENDING)
+  reportedById String
+  reportedBy   User       @relation(fields: [reportedById], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([status])
+  @@index([itemId])
+}
+
+model AdminAuditLog {
+  id          String   @id @default(cuid())
+  adminId     String
+  admin       User     @relation(fields: [adminId], references: [id])
+  action      String
+  entityType  String
+  entityId    String
+  details     String?
+  createdAt   DateTime @default(now())
+}

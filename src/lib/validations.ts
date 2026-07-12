@@ -31,6 +31,9 @@ export const venueSearchSchema = z.object({
   hasNoMusic: z.coerce.boolean().optional(),
   hasQuietZone: z.coerce.boolean().optional(),
   lighting: z.enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"]).optional(),
+  petsAllowedIndoors: z.coerce.boolean().optional(),
+  patioOnly: z.coerce.boolean().optional(),
+  waterBowlsProvided: z.coerce.boolean().optional(),
 });
 
 export const venueCreateSchema = z.object({
@@ -49,6 +52,9 @@ export const venueCreateSchema = z.object({
   hasNoMusic: z.boolean().optional(),
   hasQuietZone: z.boolean().optional(),
   lighting: z.enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"]).optional(),
+  petsAllowedIndoors: z.boolean().optional(),
+  patioOnly: z.boolean().optional(),
+  waterBowlsProvided: z.boolean().optional(),
 });
 
 export const venueRatingSchema = z.object({
@@ -66,6 +72,9 @@ export const venueRatingSchema = z.object({
   hasNoMusic: z.boolean().optional().default(false),
   hasQuietZone: z.boolean().optional().default(false),
   lighting: z.enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"]).optional(),
+  petsAllowedIndoors: z.boolean().optional().default(false),
+  patioOnly: z.boolean().optional().default(false),
+  waterBowlsProvided: z.boolean().optional().default(false),
 });
 
 // Conversation schemas

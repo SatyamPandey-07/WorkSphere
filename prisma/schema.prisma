@@ -51,6 +51,9 @@ model Venue {
   hasPhoneBooths Boolean            @default(false)
   hasNoMusic     Boolean            @default(false)
   hasQuietZone   Boolean            @default(false)
+  petsAllowedIndoors Boolean        @default(false)
+  patioOnly          Boolean        @default(false)
+  waterBowlsProvided Boolean        @default(false)
   outletDensity  String? // every_table, some_tables, wall_seats, none
   wifiSpeed      Int? // in Mbps
   crowdsourced   Boolean            @default(false)

@@ -54,7 +54,7 @@ export function VenueCard({
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showFolderModal, setShowFolderModal] = useState(false);
 
- // =========================================================================
+  // =========================================================================
   // COMMUNITY VERIFICATION VOTE STATE TRACKING SYSTEM
   // =========================================================================
   const [voteMetrics, setVoteMetrics] = useState<Record<string, VoteMetricState>>({
@@ -114,7 +114,7 @@ export function VenueCard({
   useEffect(() => {
     async function enrichVenue() {
       if (!venue.position) return;
-      
+
       setIsLoading(true);
       try {
         const params = new URLSearchParams({
@@ -122,7 +122,7 @@ export function VenueCard({
           lat: venue.position.lat.toString(),
           lng: venue.position.lng.toString(),
         });
-        
+
         const response = await fetch(`/api/venues/enrich?${params}`);
         if (response.ok) {
           const data = await response.json();
@@ -161,7 +161,7 @@ export function VenueCard({
 
   return (
     <div className="relative border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-lg transition-all">
-      
+
       {/* CROWDSOURCED CONFIDENCE CRITICAL WARNING BANNERS */}
       {wifiLowConfidence && (
         <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
@@ -220,11 +220,10 @@ export function VenueCard({
           </div>
           <button
             onClick={handleFavorite}
-            className={`p-2 rounded-lg transition-colors ${
-              isFavorited
+            className={`p-2 rounded-lg transition-colors ${isFavorited
                 ? "bg-red-100 dark:bg-red-900/20 text-red-600"
                 : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
-            }`}
+              }`}
           >
             <Heart className={`w-5 h-5 ${isFavorited ? "fill-current" : ""}`} />
           </button>
@@ -288,18 +287,17 @@ export function VenueCard({
         {/* INTERACTIVE AMENITY VERIFICATION TAG TRACKING ROW */}
         <div className="flex flex-col gap-2 mb-4 border-t border-zinc-100 dark:border-zinc-800 pt-3">
           <span className="text-[10px] font-bold text-zinc-400 tracking-wider uppercase">Verify Amenities:</span>
-          
+
           <div className="flex flex-wrap gap-2">
             {/* WiFi Tag Check Node */}
             {venue.wifiQuality && !voteMetrics.wifi.hidden && (
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
-                voteMetrics.wifi.confidenceScore < 60 
-                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500" 
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.wifi.confidenceScore < 60
+                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
                   : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-              }`}>
+                }`}>
                 <Wifi className="w-3.5 h-3.5 text-blue-500" />
                 <span className="font-medium font-mono text-[11px]">WiFi ({voteMetrics.wifi.confidenceScore}%)</span>
-                
+
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("wifi", true)}
@@ -315,14 +313,13 @@ export function VenueCard({
 
             {/* Outlets Tag Check Node */}
             {venue.hasOutlets && !voteMetrics.outlets.hidden && (
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
-                voteMetrics.outlets.confidenceScore < 60 
-                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500" 
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.outlets.confidenceScore < 60
+                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
                   : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-              }`}>
+                }`}>
                 <Zap className="w-3.5 h-3.5 text-yellow-500" />
                 <span className="font-medium font-mono text-[11px]">Outlets ({voteMetrics.outlets.confidenceScore}%)</span>
-                
+
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("outlets", true)}
@@ -338,14 +335,13 @@ export function VenueCard({
 
             {/* Ergonomic Seating Tag Check Node */}
             {venue.amenities?.hasErgonomic && !voteMetrics.ergonomic.hidden && (
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
-                voteMetrics.ergonomic.confidenceScore < 60 
-                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500" 
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.ergonomic.confidenceScore < 60
+                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
                   : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-              }`}>
+                }`}>
                 <Accessibility className="w-3.5 h-3.5 text-purple-500" />
                 <span className="font-medium font-mono text-[11px]">Ergonomic ({voteMetrics.ergonomic.confidenceScore}%)</span>
-                
+
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("ergonomic", true)}
@@ -362,13 +358,11 @@ export function VenueCard({
             {/* Noise profile badge */}
             {venue.noiseLevel && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
-                <Volume2 className={`w-3.5 h-3.5 ${
-                  venue.noiseLevel === "quiet" ? "text-green-600" : venue.noiseLevel === "moderate" ? "text-orange-600" : "text-red-600"
-                }`} />
+                <Volume2 className={`w-3.5 h-3.5 ${venue.noiseLevel === "quiet" ? "text-green-600" : venue.noiseLevel === "moderate" ? "text-orange-600" : "text-red-600"
+                  }`} />
                 <span className="capitalize">{venue.noiseLevel}</span>
               </div>
             )}
-            
             {/* Lighting profile badge */}
             {venue.lighting && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
@@ -382,9 +376,9 @@ export function VenueCard({
                 📏 {venue.distance}
               </div>
             )}
+          </div>
         </div>
-      </div>
-        
+
         {/* Amenities */}
         <div className="flex flex-wrap gap-2 mb-4">
           {venue.wifiQuality && venue.wifiQuality >= 3 && (
@@ -399,16 +393,32 @@ export function VenueCard({
               <span>Outlets</span>
             </div>
           )}
+          {venue.petsAllowedIndoors && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🐶 Pets Allowed</span>
+            </div>
+          )}
+
+          {venue.patioOnly && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🌿 Patio Only</span>
+            </div>
+          )}
+
+          {venue.waterBowlsProvided && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>💧 Water Bowls</span>
+            </div>
+          )}
           {venue.noiseLevel && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Volume2
-                className={`w-4 h-4 ${
-                  venue.noiseLevel === "quiet"
+                className={`w-4 h-4 ${venue.noiseLevel === "quiet"
                     ? "text-green-600"
                     : venue.noiseLevel === "moderate"
-                    ? "text-orange-600"
-                    : "text-red-600"
-                }`}
+                      ? "text-orange-600"
+                      : "text-red-600"
+                  }`}
               />
               <span className="capitalize">{venue.noiseLevel}</span>
             </div>
@@ -425,10 +435,10 @@ export function VenueCard({
             </div>
           )}
           {enrichData?.venueId && (
-  <div className="mt-4">
-    <NoiseTimeChart venueId={enrichData.venueId} />
-  </div>
-)}
+            <div className="mt-4">
+              <NoiseTimeChart venueId={enrichData.venueId} />
+            </div>
+          )}
 
         </div>
 
@@ -468,20 +478,20 @@ export function VenueCard({
             </a>
           )}
           {enrichData?.venueId && (
-  <VenueShareButton
-    venueId={enrichData.venueId}
-    venueName={venue.name}
-  />
-)}
+            <VenueShareButton
+              venueId={enrichData.venueId}
+              venueName={venue.name}
+            />
+          )}
 
-{enrichData?.venueId && (
-  <a
-    href={`/reserve/${enrichData.venueId}`}
-    className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500"
-  >
-    Reserve desk
-  </a>
-)}
+          {enrichData?.venueId && (
+            <a
+              href={`/reserve/${enrichData.venueId}`}
+              className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500"
+            >
+              Reserve desk
+            </a>
+          )}
         </div>
       </div>
       {showFolderModal && venue.id && (

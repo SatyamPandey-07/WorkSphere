@@ -32,7 +32,7 @@ jobs:
           INSTALL_EXIT=$?
           cat install_output.log
           if [ $INSTALL_EXIT -ne 0 ]; then
-            echo "INSTALL_FAILED=true" >> $GITHUB_ENV
+            echo "true" > install_failed.txt
             exit $INSTALL_EXIT
           fi
 
@@ -45,7 +45,7 @@ jobs:
           LINT_EXIT=$?
           cat lint_output.log
           if [ $LINT_EXIT -ne 0 ]; then
-            echo "LINT_FAILED=true" >> $GITHUB_ENV
+            echo "true" > lint_failed.txt
             exit $LINT_EXIT
           fi
 
@@ -55,7 +55,7 @@ jobs:
           BUILD_EXIT=$?
           cat build_output.log
           if [ $BUILD_EXIT -ne 0 ]; then
-            echo "BUILD_FAILED=true" >> $GITHUB_ENV
+            echo "true" > build_failed.txt
             exit $BUILD_EXIT
           fi
 
@@ -65,58 +65,19 @@ jobs:
           TEST_EXIT=$?
           cat test_output.log
           if [ $TEST_EXIT -ne 0 ]; then
-            echo "TEST_FAILED=true" >> $GITHUB_ENV
+            echo "true" > test_failed.txt
             exit $TEST_EXIT
           fi
 
-      - name: Post Failure Comment on PR
-        if: failure() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+      - name: Upload CI Logs and Markers
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            const fs = require('fs');
-            let commentBody = '## CI Check Failed\n\nHi @' + context.payload.sender.login + ', thank you for your contribution to **WorkSphere**! Unfortunately, one or more CI checks failed on your PR. Please review the output below and push a fix to your branch.\n\n---\n\n';
-
-            if (process.env.INSTALL_FAILED === 'true' && fs.existsSync('install_output.log')) {
-              const log = fs.readFileSync('install_output.log', 'utf8');
-              commentBody += '### Dependency Installation Failure\n\n**What failed:** `npm ci` was unable to install packages.\n\n**How to fix:** Run `npm install` locally, commit your updated `package-lock.json`, and push again.\n\n<details><summary>Full log output</summary>\n\n```\n' + log.slice(-2000) + '\n```\n\n</details>\n\n---\n\n';
-            }
-
-            if (process.env.LINT_FAILED === 'true' && fs.existsSync('lint_output.log')) {
-              const log = fs.readFileSync('lint_output.log', 'utf8');
-              commentBody += '### Lint Failure\n\n**What failed:** ESLint found errors or warnings in your code.\n\n**How to fix:** Run `npm run lint` locally to see all issues, then fix them. Common issues include unused variables, missing semicolons, or incorrect imports.\n\n<details><summary>Full lint output</summary>\n\n```\n' + log.slice(-2000) + '\n```\n\n</details>\n\n---\n\n';
-            }
-
-            if (process.env.BUILD_FAILED === 'true' && fs.existsSync('build_output.log')) {
-              const log = fs.readFileSync('build_output.log', 'utf8');
-              commentBody += '### Build / TypeScript Failure\n\n**What failed:** The Next.js production build or TypeScript compiler threw errors.\n\n**How to fix:** Run `npm run build` locally to reproduce. Fix any TypeScript type errors or missing module imports shown in the log below.\n\n<details><summary>Full build output</summary>\n\n```\n' + log.slice(-2000) + '\n```\n\n</details>\n\n---\n\n';
-            }
-
-            if (process.env.TEST_FAILED === 'true' && fs.existsSync('test_output.log')) {
-              const log = fs.readFileSync('test_output.log', 'utf8');
-              commentBody += '### Unit Test Failure\n\n**What failed:** One or more unit tests did not pass.\n\n**How to fix:** Run `npm test` locally to see which tests are failing and fix the underlying logic.\n\n<details><summary>Full test output</summary>\n\n```\n' + log.slice(-2000) + '\n```\n\n</details>\n\n---\n\n';
-            }
-
-            commentBody += '_Once all issues are resolved and your checks are green, a maintainer will review and merge your PR. Thank you for your patience!_';
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: commentBody
-            });
-
-      - name: Post Success Comment on PR
-        if: success() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: '## All CI Checks Passed\n\nGreat work @' + context.payload.sender.login + '! All checks passed:\n\n- Dependency installation\n- ESLint code quality\n- Next.js production build\n- TypeScript type checking\n- Unit tests\n\nYour PR is ready for maintainer review. A maintainer will look at it shortly!'
-            });
+          name: ci-logs
+          path: |
+            *_output.log
+            *_failed.txt
+          retention-days: 1
 
   auto-approve:
     runs-on: ubuntu-latest

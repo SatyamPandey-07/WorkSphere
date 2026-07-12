@@ -182,7 +182,7 @@ export function ChatHeader({
                     {onShareSession && (
                         <button
                             onClick={onShareSession}
-                            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-green-600 hover:text-white transition-all active:scale-95"
+                            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-green-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
                             title="Share Session"
                         >
                             <Share2 className="w-4 h-4" />
@@ -192,7 +192,7 @@ export function ChatHeader({
                     {/* My Bookings History */}
                     <button
                         onClick={onShowBookings}
-                        className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
+                        className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
                         title="My Residencies"
                     >
                         <Inbox className="w-4 h-4" />
@@ -201,7 +201,7 @@ export function ChatHeader({
                     {/* Collections */}
                     <Link
                         href="/collections"
-                        className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
+                        className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
                         title="Collections"
                     >
                         <LayoutGrid className="w-4 h-4" />
@@ -245,7 +245,7 @@ export function ChatHeader({
                     {/* Add Venue Suggestion Button - High Contrast */}
                     <button
                         onClick={onOpenVenueSubmission}
-                        className="flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-green-500/20 transition-all border border-green-400/30 active:scale-95 group"
+                        className="items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-green-500/20 transition-all border border-green-400/30 active:scale-95 group hidden sm:flex"
                         title="Suggest a new workspace"
                     >
                         <PlusCircle className="w-4 h-4 group-hover:rotate-90 transition-transform" />

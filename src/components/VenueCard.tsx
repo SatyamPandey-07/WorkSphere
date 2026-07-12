@@ -36,6 +36,8 @@ interface VoteMetricState {
   confidenceScore: number;
   upvotes: number;
   downvotes: number;
+  hidden: boolean;
+  userVote: boolean | null;
 }
 
 export function VenueCard({
@@ -49,16 +51,33 @@ export function VenueCard({
   const [isLoading, setIsLoading] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
 
-  // =========================================================================
+ // =========================================================================
   // COMMUNITY VERIFICATION VOTE STATE TRACKING SYSTEM
   // =========================================================================
   const [voteMetrics, setVoteMetrics] = useState<Record<string, VoteMetricState>>({
-    wifi: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
-    outlets: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
+    wifi: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+    outlets: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+    ergonomic: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
   });
 
+  // Load real vote metrics from the database on mount
+  useEffect(() => {
+    async function loadVoteMetrics() {
+      try {
+        const response = await fetch(`/api/venues/${venue.id}/amenity-votes`);
+        if (response.ok) {
+          const data = await response.json();
+          setVoteMetrics((prev) => ({ ...prev, ...data.metrics }));
+        }
+      } catch (error) {
+        console.error("Failed to load amenity vote metrics:", error);
+      }
+    }
+    loadVoteMetrics();
+  }, [venue.id]);
+
   // Async dynamic vote submittal query processor
-  const submitAmenityVote = async (amenityKey: "wifi" | "outlets", isUpvote: boolean) => {
+  const submitAmenityVote = async (amenityKey: "wifi" | "outlets" | "ergonomic", isUpvote: boolean) => {
     try {
       const response = await fetch("/api/venues/amenity-vote", {
         method: "POST",
@@ -78,6 +97,8 @@ export function VenueCard({
             confidenceScore: data.confidenceScore,
             upvotes: data.upvotes,
             downvotes: data.downvotes,
+            hidden: data.hidden,
+            userVote: isUpvote,
           },
         }));
       }
@@ -131,8 +152,9 @@ export function VenueCard({
   const amenities = enrichData?.amenities;
 
   // Determine low confidence threshold parameters to trigger notice blocks
-  const wifiLowConfidence = venue.wifiQuality && voteMetrics.wifi.confidenceScore < 50;
-  const outletsLowConfidence = venue.hasOutlets && voteMetrics.outlets.confidenceScore < 50;
+  const wifiLowConfidence = venue.wifiQuality && voteMetrics.wifi.hidden;
+  const outletsLowConfidence = venue.hasOutlets && voteMetrics.outlets.hidden;
+  const ergonomicLowConfidence = venue.amenities?.hasErgonomic && voteMetrics.ergonomic.hidden;
 
   return (
     <div className="relative border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-lg transition-all">
@@ -148,6 +170,12 @@ export function VenueCard({
         <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           <span>Users report **Power Outlets** might be broken or missing.</span>
+        </div>
+      )}
+      {ergonomicLowConfidence && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span>Users report **ergonomic seating** may not be available here.</span>
         </div>
       )}
 
@@ -260,9 +288,9 @@ export function VenueCard({
           
           <div className="flex flex-wrap gap-2">
             {/* WiFi Tag Check Node */}
-            {venue.wifiQuality && (
+            {venue.wifiQuality && !voteMetrics.wifi.hidden && (
               <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
-                voteMetrics.wifi.confidenceScore < 50 
+                voteMetrics.wifi.confidenceScore < 60 
                   ? "border-amber-500/30 bg-amber-500/5 text-amber-500" 
                   : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
               }`}>
@@ -270,16 +298,22 @@ export function VenueCard({
                 <span className="font-medium font-mono text-[11px]">WiFi ({voteMetrics.wifi.confidenceScore}%)</span>
                 
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
-                  <button onClick={() => submitAmenityVote("wifi", true)} className="hover:text-green-500 transition-colors">👍</button>
-                  <button onClick={() => submitAmenityVote("wifi", false)} className="hover:text-red-500 transition-colors">👎</button>
+                  <button
+                    onClick={() => submitAmenityVote("wifi", true)}
+                    className={`transition-colors ${voteMetrics.wifi.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("wifi", false)}
+                    className={`transition-colors ${voteMetrics.wifi.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
                 </div>
               </div>
             )}
 
             {/* Outlets Tag Check Node */}
-            {venue.hasOutlets && (
+            {venue.hasOutlets && !voteMetrics.outlets.hidden && (
               <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
-                voteMetrics.outlets.confidenceScore < 50 
+                voteMetrics.outlets.confidenceScore < 60 
                   ? "border-amber-500/30 bg-amber-500/5 text-amber-500" 
                   : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
               }`}>
@@ -287,8 +321,37 @@ export function VenueCard({
                 <span className="font-medium font-mono text-[11px]">Outlets ({voteMetrics.outlets.confidenceScore}%)</span>
                 
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
-                  <button onClick={() => submitAmenityVote("outlets", true)} className="hover:text-green-500 transition-colors">👍</button>
-                  <button onClick={() => submitAmenityVote("outlets", false)} className="hover:text-red-500 transition-colors">👎</button>
+                  <button
+                    onClick={() => submitAmenityVote("outlets", true)}
+                    className={`transition-colors ${voteMetrics.outlets.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("outlets", false)}
+                    className={`transition-colors ${voteMetrics.outlets.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
+                </div>
+              </div>
+            )}
+
+            {/* Ergonomic Seating Tag Check Node */}
+            {venue.amenities?.hasErgonomic && !voteMetrics.ergonomic.hidden && (
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                voteMetrics.ergonomic.confidenceScore < 60 
+                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500" 
+                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+              }`}>
+                <Accessibility className="w-3.5 h-3.5 text-purple-500" />
+                <span className="font-medium font-mono text-[11px]">Ergonomic ({voteMetrics.ergonomic.confidenceScore}%)</span>
+                
+                <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <button
+                    onClick={() => submitAmenityVote("ergonomic", true)}
+                    className={`transition-colors ${voteMetrics.ergonomic.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("ergonomic", false)}
+                    className={`transition-colors ${voteMetrics.ergonomic.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
                 </div>
               </div>
             )}

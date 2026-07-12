@@ -21,7 +21,10 @@ import {
     Volume2,
     BarChart3,
     Inbox,
-    Share2
+    Share2,
+    Pencil,
+    Check,
+    X
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
@@ -58,6 +61,7 @@ interface ChatHeaderProps {
     conversations: Conversation[];
     onLoadConversation: (id: string) => void;
     onDeleteConversation: (id: string) => void;
+    onRenameConversation: (id: string, title: string) => void;
     onShowBookings: () => void;
     roomId?: string | null;
     onShareSession?: () => void;
@@ -86,11 +90,27 @@ export function ChatHeader({
     conversations,
     onLoadConversation,
     onDeleteConversation,
+    onRenameConversation,
     onShowBookings,
     roomId: _roomId,
     onShareSession
 }: ChatHeaderProps) {
     const [isHubOpen, setIsHubOpen] = useState(false);
+    const [renamingId, setRenamingId] = useState<string | null>(null);
+    const [renameValue, setRenameValue] = useState("");
+
+    const startRenaming = (conv: Conversation) => {
+        setRenamingId(conv.id);
+        setRenameValue(conv.title);
+    };
+
+    const commitRename = (id: string) => {
+        const trimmed = renameValue.trim();
+        if (trimmed) {
+            onRenameConversation(id, trimmed);
+        }
+        setRenamingId(null);
+    };
 
     const getActiveHubName = () => {
         if (!userLocation) return "Global Hubs";
@@ -397,31 +417,67 @@ export function ChatHeader({
                             <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
                                 {conversations.map((conv) => (
                                     <div key={conv.id} className="group flex items-center justify-between p-3 hover:bg-white dark:hover:bg-zinc-800 transition-colors">
-                                        <button
-                                            onClick={() => onLoadConversation(conv.id)}
-                                            className="flex-1 text-left min-w-0"
-                                        >
-                                            <p className="text-[11px] font-bold text-zinc-900 dark:text-zinc-100 truncate uppercase tracking-tight">
-                                                {conv.title}
-                                            </p>
-                                            <p className="text-[9px] text-zinc-500 font-medium">
-                                                {new Date(conv.updatedAt).toLocaleDateString()}
-                                            </p>
-                                        </button>
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button
-                                                onClick={() => onDeleteConversation(conv.id)}
-                                                className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button
-                                                onClick={() => onLoadConversation(conv.id)}
-                                                className="p-1.5 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                                            >
-                                                <ChevronRight className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
+                                        {renamingId === conv.id ? (
+                                            <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                                                <input
+                                                    autoFocus
+                                                    value={renameValue}
+                                                    onChange={(e) => setRenameValue(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter") commitRename(conv.id);
+                                                        if (e.key === "Escape") setRenamingId(null);
+                                                    }}
+                                                    onBlur={() => commitRename(conv.id)}
+                                                    className="flex-1 min-w-0 text-[11px] font-bold uppercase tracking-tight bg-white dark:bg-zinc-900 border border-purple-400 rounded px-2 py-1 text-zinc-900 dark:text-zinc-100 outline-none"
+                                                />
+                                                <button
+                                                    onMouseDown={(e) => { e.preventDefault(); commitRename(conv.id); }}
+                                                    className="p-1.5 rounded-md text-zinc-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button
+                                                    onMouseDown={(e) => { e.preventDefault(); setRenamingId(null); }}
+                                                    className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={() => onLoadConversation(conv.id)}
+                                                    className="flex-1 text-left min-w-0"
+                                                >
+                                                    <p className="text-[11px] font-bold text-zinc-900 dark:text-zinc-100 truncate uppercase tracking-tight">
+                                                        {conv.title}
+                                                    </p>
+                                                    <p className="text-[9px] text-zinc-500 font-medium">
+                                                        {new Date(conv.updatedAt).toLocaleDateString()}
+                                                    </p>
+                                                </button>
+                                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={() => startRenaming(conv)}
+                                                        className="p-1.5 rounded-md text-zinc-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+                                                    >
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => onDeleteConversation(conv.id)}
+                                                        className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => onLoadConversation(conv.id)}
+                                                        className="p-1.5 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                                    >
+                                                        <ChevronRight className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 ))}
                             </div>

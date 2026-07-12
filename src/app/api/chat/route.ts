@@ -261,13 +261,20 @@ async function dataAgent(
   let overpassFailed = true;
 
   for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 10000);
     try {
       const response = await fetch(endpoint, {
         method: "POST",
         body: `data=${encodeURIComponent(query)}`,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        signal: controller.signal,
       });
-
+      
       if (!response.ok) continue;
       const data = await response.json();
       overpassFailed = false;
@@ -355,8 +362,14 @@ async function dataAgent(
         reasoning: `Found ${venues.length} venues within ${radius}m`,
       };
     } catch (error) {
-      console.error("Data agent error:", error);
+      if (error instanceof Error && error.name === "AbortError") {
+        console.warn(`Overpass API request to ${endpoint} timed out after 10 seconds.`);
+      } else {
+        console.error("Data agent error:", error);
+      }
       continue;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

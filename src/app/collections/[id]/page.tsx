@@ -6,6 +6,7 @@ import { ArrowLeft, Users, Link as LinkIcon, Trash2, MapPin, Loader2, RefreshCw 
 import { useRouter } from "next/navigation";
 import usePartySocket from "partysocket/react";
 import Image from "next/image";
+import { ComparisonTool } from "@/components/collections/ComparisonTool";
 
 export default function FolderDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -122,6 +123,8 @@ export default function FolderDetailsPage({ params }: { params: Promise<{ id: st
               )}
            </div>
         </div>
+
+        <ComparisonTool currentFolder={folder} />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-4">

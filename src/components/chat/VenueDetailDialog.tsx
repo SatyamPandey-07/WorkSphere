@@ -85,6 +85,7 @@ export function VenueDetailDialog({
             wifi: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
             outlets: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
         });
+    }, [venue]);
 
     // Tab and dynamic content states
     const [activeTab, setActiveTab] = useState<"overview" | "reviews" | "menu">("overview");
@@ -449,7 +450,6 @@ export function VenueDetailDialog({
                         </div>
                     </div>
 
-                <div className="p-8 bg-white dark:bg-zinc-900 overflow-y-auto max-h-[calc(90vh-360px)]">
                     {activeTab === "overview" && (
                         <>
                             {/* Stats Grid */}
@@ -533,31 +533,9 @@ export function VenueDetailDialog({
                                         {venue.hasErgonomic && " The workspace features verified ergonomic chairs and height-adjustable/standing desks."}
                                     </p>
                                 </div>
-
+                            </div>
 
                         <div className="flex flex-col gap-3 pt-4">
-                            <button
-                                onClick={() => onGetDirections(venue)}
-                                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98]"
-                            >
-                                <Navigation className="w-5 h-5" />
-                                Navigate
-                            </button>
-                            <div className="flex gap-3">
-                                <button
-                                    onClick={() => onToggleFavorite(venue)}
-                                    className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${
-                                        isFavorited
-                                            ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
-                                            : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
-                                    }`}
-                                >
-                                    <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
-                                    {isFavorited ? "Saved" : "Save"}
-                                </button>
-                                {onRate && (
-
-                                <div className="flex flex-col gap-3 pt-4">
 
                                     <button
                                         onClick={() => onGetDirections(venue)}
@@ -589,7 +567,6 @@ export function VenueDetailDialog({
                                         )}
                                     </div>
                                 </div>
-                            </div>
                         </>
                     )}
 

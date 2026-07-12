@@ -309,6 +309,7 @@ export function VenueCard({
               </div>
             )}
           </div>
+        </div>
 
         {/* Amenities */}
         <div className="flex flex-wrap gap-2 mb-4">

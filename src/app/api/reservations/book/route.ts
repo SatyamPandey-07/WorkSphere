@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { publishVenueAvailability } from "@/lib/reservations/event-bus";
+import { notifySlackOnReservation } from "@/lib/notifications/slack";
 
 function toMinutes(value: string) {
   const [hours, minutes] = value.split(":").map(Number);
@@ -131,10 +132,23 @@ export async function POST(request: NextRequest) {
         select: {
           name: true,
           address: true,
+          latitude: true,
+          longitude: true,
         },
       },
       seat: true,
     },
+  });
+
+   notifySlackOnReservation({
+    userId,
+    venueName: booking.venue.name,
+    venueAddress: booking.venue.address,
+    latitude: booking.venue.latitude,
+    longitude: booking.venue.longitude,
+    date,
+    time,
+    durationMinutes: duration,
   });
 
   publishVenueAvailability(venueId, {

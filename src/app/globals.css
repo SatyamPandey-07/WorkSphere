@@ -24,6 +24,12 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --color-primary: #7c3aed;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #27272a;
+  --color-secondary-foreground: #f4f4f5;
+  --color-destructive: #dc2626;
+  --color-destructive-foreground: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {

@@ -26,6 +26,8 @@ model User {
   workStatus     WorkBuddyStatus?
   hostedSessions CoworkingSession[] @relation("SessionHost")
   sessionRsvps   SessionRsvp[]
+  slackWebhookUrl     String?
+  slackNotifyEnabled  Boolean           @default(true)
 }
 
 model Venue {

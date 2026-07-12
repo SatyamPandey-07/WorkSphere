@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { auth } from '@clerk/nextjs/server';
 import { revalidatePath } from 'next/cache';
 import crypto from 'crypto';
+import { isValidDiscordWebhookUrl } from '@/lib/discord';
+import { ensureUserExists } from '@/lib/auth';
 
 export async function createWebhookEndpoint(data: { url: string, eventTypes: any[] }) {
   const { userId } = await auth();
@@ -67,4 +69,33 @@ export async function deleteWebhookEndpoint(endpointId: string) {
   });
 
   revalidatePath('/dashboard/webhooks');
+}
+export async function saveDiscordWebhookUrl(url: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error('Unauthorized');
+
+  await ensureUserExists(userId);
+
+  const trimmed = url.trim();
+  if (trimmed && !isValidDiscordWebhookUrl(trimmed)) {
+    throw new Error('That doesn\'t look like a valid Discord webhook URL');
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { discordWebhookUrl: trimmed || null },
+  });
+
+  revalidatePath('/dashboard/webhooks');
+}
+export async function getDiscordWebhookUrl() {
+  const { userId } = await auth();
+  if (!userId) return null;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { discordWebhookUrl: true },
+  });
+
+  return user?.discordWebhookUrl ?? null;
 }

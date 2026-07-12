@@ -15,6 +15,7 @@ model User {
   lastName       String?
   imageUrl       String?
   createdAt      DateTime           @default(now())
+  discordWebhookUrl String?
   favorites      Favorite[]
   ratings        VenueRating[]
   conversations  Conversation[]

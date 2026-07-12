@@ -1,7 +1,7 @@
 "use client";
 
 import { useUser } from "@clerk/nextjs";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -97,6 +97,42 @@ function AutoCenter({
   return null;
 }
 
+// Tracks the map's settled zoom level so spiderfied marker offsets can be
+// recalculated relative to it. The `zoomend` handler is debounced so that
+// rapid zoom actions (e.g. zoom out then quickly double-click to zoom in)
+// don't trigger a recalculation on every intermediate animation frame -
+// only once the zoom transition has actually settled, avoiding the stale
+// pre-zoom offsets that caused clustered markers to render on top of each
+// other mid-transition.
+function ZoomWatcher({
+  onZoomSettled,
+  delay = 150,
+}: {
+  onZoomSettled: (zoom: number) => void;
+  delay?: number;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+
+    const scheduleUpdate = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => onZoomSettled(map.getZoom()), delay);
+    };
+
+    map.on("zoomend", scheduleUpdate);
+    scheduleUpdate(); // capture the initial zoom too
+
+    return () => {
+      clearTimeout(timer);
+      map.off("zoomend", scheduleUpdate);
+    };
+  }, [map, onZoomSettled, delay]);
+
+  return null;
+}
+
 // Subcomponent to handle rendering the Leaflet heatmap layer seamlessly
 function HeatmapOverlay({ points, visible }: { points: any[]; visible: boolean }) {
   const map = useMap();
@@ -144,6 +180,14 @@ const Map = ({
 }) => {
   const clerkUser = useUser();
   const { latitude, longitude } = location;
+
+  // Settled zoom level (debounced via ZoomWatcher), used to keep spiderfied
+  // marker offsets at a consistent on-screen pixel separation regardless of
+  // how far the user has zoomed in/out.
+  const [settledZoom, setSettledZoom] = useState<number>(13);
+  const handleZoomSettled = useCallback((zoom: number) => {
+    setSettledZoom(zoom);
+  }, []);
 
   // =========================================================================
   // MULTI-STOP ROUTING OPTIMIZER STATE PARAMETERS
@@ -227,11 +271,18 @@ const Map = ({
       } else {
         const centerLat = Number(groupItems[0].position.lat);
         const centerLng = Number(groupItems[0].position.lng);
-        // Base radius of ~200 meters to visually separate markers at default zoom
-        const baseRadius = 0.002;
-        // Expand slightly if many markers share the location
-        const radius = baseRadius + (0.0002 * n);
-        
+
+        // Keep a consistent ~24px on-screen separation between spiderfied
+        // markers at any zoom level, instead of a fixed degree offset that
+        // only looked right at the default zoom and collapsed to
+        // sub-pixel distances once the user zoomed out (Web Mercator
+        // meters-per-pixel formula).
+        const metersPerPixel =
+          (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
+          Math.pow(2, settledZoom);
+        const targetPixelSeparation = 24 + 2 * n; // spread out a bit more if many markers share the location
+        const radius = (metersPerPixel * targetPixelSeparation) / 111320; // meters -> degrees latitude
+
         groupItems.forEach((item, index) => {
           const angle = (2 * Math.PI * index) / n;
           const offsetLat = centerLat + radius * Math.cos(angle);
@@ -245,7 +296,7 @@ const Map = ({
       }
     });
     return result;
-  }, [markers]);
+  }, [markers, settledZoom]);
 
 
   // Derive iconUrl directly from clerkUser state
@@ -409,6 +460,7 @@ const Map = ({
         />
         <MapController mapView={mapView} />
         <AutoCenter markers={markers} userLocation={center} />
+        <ZoomWatcher onZoomSettled={handleZoomSettled} />
 
         {customIcon && (
           <Marker position={center} icon={customIcon}>

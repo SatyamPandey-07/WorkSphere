@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useUser, useAuth } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayerSession } from "@/hooks/useRealTime";
 import { VenueRatingDialog } from "./VenueRatingDialog";
@@ -16,7 +16,12 @@ import {
   trackError,
   trackAgentPerformance,
 } from "@/lib/analytics";
-import { saveFavoriteOffline } from "@/lib/offlineStorage";
+import {
+  saveFavoriteOffline,
+  saveSearchOffline,
+  getSearchOffline,
+  getAllSearchesOffline,
+} from "@/lib/offlineStorage";
 
 // Types
 
@@ -92,7 +97,7 @@ const INITIAL_SUGGESTIONS = [
 
 export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation, roomId, onShowToast }: EnhancedChatbotProps) {
   const { isSignedIn, user } = useUser();
-  const { getToken } = useAuth();
+ 
   const { socket } = useMultiplayerSession(roomId || null);
 
   // Presence state
@@ -399,13 +404,9 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   }) => {
     if (!ratingVenue || !isSignedIn) return;
     try {
-      const token = await getToken();
       await fetch(`/api/venues/${ratingVenue.id}/rate`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...rating,
           venue: {
@@ -615,6 +616,22 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
                       : m
                   )
                 );
+
+              try {
+              await saveSearchOffline(
+               userMessage,
+               (metadata.venues ?? []).map((v: Venue) => ({
+               id: v.id,
+               name: v.name,
+               latitude: v.lat,
+               longitude: v.lng,
+               category: v.category,
+               address: v.address,
+               }))
+               );
+               } catch (err) {
+                console.warn("Failed to cache search:", err);
+              }
                 
                 if (metadata.venues?.length > 0 && onMapUpdate) {
                   const update = {
@@ -661,6 +678,22 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
                   complexity: metadata.complexity,
                 } : m)
               );
+
+              try {
+                await saveSearchOffline(
+                  userMessage,
+                  (metadata.venues ?? []).map((v: Venue) => ({
+                    id: v.id,
+                    name: v.name,
+                    latitude: v.lat,
+                    longitude: v.lng,
+                    category: v.category,
+                    address: v.address,
+                  }))
+                );
+              } catch (err) {
+                console.warn("Failed to cache search:", err);
+              }
             } catch {}
           } else if (buffer.startsWith("TEXT:")) {
             const text = buffer.slice(5);
@@ -680,6 +713,67 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     } catch (err) {
       console.error("Chat error:", err);
       const errMsg = err instanceof Error ? err.message : "Failed to send message. Please try again.";
+try {
+        const cached = await getSearchOffline(userMessage);
+
+        if (cached) {
+          const venues: Venue[] = cached.results.map(v => ({
+            id: v.id,
+            name: v.name,
+            lat: v.latitude,
+            lng: v.longitude,
+            category: v.category ?? "coworking_space",
+            address: v.address,
+          }));
+
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: "assistant",
+              content:
+                "📦 You're offline. Showing your cached search results.",
+              venues,
+              cached: true,
+            },
+          ]);
+
+          if (onMapUpdate) {
+            onMapUpdate({
+              type: "markers",
+              markers: venues.map(v => ({
+                id: v.id,
+                lat: v.lat,
+                lng: v.lng,
+                name: v.name,
+                category: v.category,
+                address: v.address,
+              })),
+            });
+          }
+
+          setIsLoading(false);
+          return;
+        }
+
+        const recentSearches = await getAllSearchesOffline();
+        if (recentSearches.length > 0) {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: "assistant",
+              content:
+                "📡 You're offline and we don't have a cached result for that search. Try one of your recent searches:",
+              suggestions: recentSearches.map(s => s.query),
+            },
+          ]);
+          setIsLoading(false);
+          return;
+        }
+      } catch (offlineError) {
+        console.error(offlineError);
+      }
       setError(errMsg);
       if (errMsg.includes("High traffic detected")) {
         onShowToast?.(errMsg);

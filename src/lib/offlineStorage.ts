@@ -216,13 +216,15 @@ export async function getFavoritesOffline(): Promise<OfflineVenue[]> {
 /**
  * Save search results for offline use
  */
+const MAX_SEARCH_HISTORY = 15;
+
 export async function saveSearchOffline(query: string, results: OfflineVenue[]): Promise<void> {
   const database = await initOfflineDB();
-  
-  return new Promise((resolve, reject) => {
+
+  await new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(['searches'], 'readwrite');
     const store = transaction.objectStore('searches');
-    
+
     const request = store.put({
       query: query.toLowerCase().trim(),
       results,
@@ -230,6 +232,55 @@ export async function saveSearchOffline(query: string, results: OfflineVenue[]):
     });
 
     request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+
+  await trimSearchHistory();
+}
+
+/**
+ * Keep only the most recent MAX_SEARCH_HISTORY cached searches
+ */
+async function trimSearchHistory(): Promise<void> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(['searches'], 'readwrite');
+    const store = transaction.objectStore('searches');
+    const index = store.index('timestamp');
+
+    // Keys ordered oldest -> newest by the timestamp index
+    const request = index.getAllKeys();
+
+    request.onsuccess = () => {
+      const keys = request.result as IDBValidKey[];
+      if (keys.length > MAX_SEARCH_HISTORY) {
+        const keysToDelete = keys.slice(0, keys.length - MAX_SEARCH_HISTORY);
+        keysToDelete.forEach((key) => store.delete(key));
+      }
+      resolve();
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Get all cached searches, most recent first
+ */
+export async function getAllSearchesOffline(): Promise<OfflineSearch[]> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(['searches'], 'readonly');
+    const store = transaction.objectStore('searches');
+    const index = store.index('timestamp');
+
+    const request = index.getAll();
+
+    request.onsuccess = () => {
+      const results = (request.result || []) as OfflineSearch[];
+      resolve(results.reverse());
+    };
     request.onerror = () => reject(request.error);
   });
 }

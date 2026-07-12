@@ -188,17 +188,22 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   // Geolocation fallback
   const getPreciseLocation = useCallback(() => {
     if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setLocation(newLoc);
-          onMapUpdate?.({
-            type: "SET_MAP_VIEW",
-            data: { center: newLoc, zoom: 14, animate: true }
-          });
-        },
-        () => setLocation({ lat: 37.7749, lng: -122.4194 })
-      );
+      try {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            setLocation(newLoc);
+            onMapUpdate?.({
+              type: "SET_MAP_VIEW",
+              data: { center: newLoc, zoom: 14, animate: true }
+            });
+          },
+          () => setLocation({ lat: 37.7749, lng: -122.4194 })
+        );
+      } catch (err) {
+        console.warn("Geolocation sync error in chatbot:", err);
+        setLocation({ lat: 37.7749, lng: -122.4194 });
+      }
     }
   }, [onMapUpdate]);
 

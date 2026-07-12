@@ -178,16 +178,21 @@ export function VenueSubmissionModal({
         longitude: userLocation.lng,
       }));
     } else if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setFormData(prev => ({
-            ...prev,
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          }));
-        },
-        () => setError("Could not get your location")
-      );
+      try {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setFormData(prev => ({
+              ...prev,
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+            }));
+          },
+          () => setError("Could not get your location")
+        );
+      } catch (err) {
+        console.warn("Geolocation sync error in submission modal:", err);
+        setError("Could not get your location");
+      }
     }
   };
 

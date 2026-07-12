@@ -54,8 +54,6 @@ export function calculateMetrics(venues: { venue: Venue }[]) {
 }
 
 export function MetricsWidget({ venues, title = "Collection Metrics", isCompact = false }: MetricsWidgetProps) {
-  const unusedVariableToTriggerLintError = "Hello World";
-  
   const { speed, quietness, outlets } = calculateMetrics(venues);
 
   return (

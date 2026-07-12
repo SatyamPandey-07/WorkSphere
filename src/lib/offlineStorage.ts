@@ -21,7 +21,7 @@ userDoc.on('update', async (update: Uint8Array) => {
 
 
 const DB_NAME = 'worksphere-offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export interface OfflineVenue {
   id: string;

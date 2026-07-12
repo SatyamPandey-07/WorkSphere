@@ -2,7 +2,8 @@
 
 import {
     X, MapPin, Wifi, Zap, Volume2, Navigation, Heart,
-    Coffee, BookOpen, Building2, Star, Info, AlertTriangle, Camera, Eye, Globe2, Sun
+    Coffee, BookOpen, Building2, Star, Info, AlertTriangle, Camera, Eye, Globe2, Sun,
+    VolumeX, Calendar, Printer
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
@@ -24,6 +25,8 @@ interface VoteMetricState {
     confidenceScore: number;
     upvotes: number;
     downvotes: number;
+    hidden: boolean;
+    userVote: boolean | null;
 }
 
 export function VenueDetailDialog({
@@ -46,8 +49,11 @@ export function VenueDetailDialog({
     // COMMUNITY AMENITY VALIDATION STATE DICTIONARY
     // =========================================================================
     const [voteMetrics, setVoteMetrics] = useState<Record<string, VoteMetricState>>({
-        wifi: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
-        outlets: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
+        wifi: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+        outlets: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+        silentRoom: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+        studyTable: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+        scanner: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
     });
 
     // Tab and dynamic content states
@@ -58,7 +64,10 @@ export function VenueDetailDialog({
     const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
     const [wifiPredictions, setWifiPredictions] = useState<any[]>([]);
 
-    const _submitAmenityVote = async (amenityKey: "wifi" | "outlets", isUpvote: boolean) => {
+    const _submitAmenityVote = async (
+        amenityKey: "wifi" | "outlets" | "silentRoom" | "studyTable" | "scanner",
+        isUpvote: boolean
+    ) => {
         if (!venue) return;
         try {
             const response = await fetch("/api/venues/amenity-vote", {
@@ -79,6 +88,8 @@ export function VenueDetailDialog({
                         confidenceScore: data.confidenceScore,
                         upvotes: data.upvotes,
                         downvotes: data.downvotes,
+                        hidden: data.hidden,
+                        userVote: isUpvote,
                     },
                 }));
             }
@@ -124,14 +135,29 @@ export function VenueDetailDialog({
 
     // Effect 1: Venue badalne par state reset karna aur photo fetch karna
     useEffect(() => {
-        if (!venue) return;
+        if (!venue || !isOpen) return;
 
-        // Reset verification weights on venue switch
-        setVoteMetrics({
-            wifi: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
-            outlets: { confidenceScore: 100, upvotes: 6, downvotes: 0 },
-        });
-    }, [venue]);
+        const venueId = venue.id;
+        async function loadVoteMetrics() {
+            try {
+                const response = await fetch(`/api/venues/${venueId}/amenity-votes`);
+                if (response.ok) {
+                    const data = await response.json();
+                    setVoteMetrics((prev) => ({
+                        wifi: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+                        outlets: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+                        silentRoom: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+                        studyTable: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+                        scanner: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+                        ...data.metrics
+                    }));
+                }
+            } catch (error) {
+                console.error("Failed to load amenity vote metrics:", error);
+            }
+        }
+        loadVoteMetrics();
+    }, [venue, isOpen]);
 
 
 
@@ -342,8 +368,13 @@ export function VenueDetailDialog({
     const displayPhoto = photoUrl || venueFallbacks[venue.category || "default"] || venueFallbacks.default;
     const currentScore = liveScore !== null ? liveScore : venue.score;
 
-    const wifiLowConfidence = voteMetrics.wifi.confidenceScore < 50;
-    const outletsLowConfidence = venue.hasOutlets && voteMetrics.outlets.confidenceScore < 50;
+    const wifiLowConfidence = voteMetrics.wifi.hidden;
+    const outletsLowConfidence = venue.hasOutlets && voteMetrics.outlets.hidden;
+
+    const isLibrary = venue.category?.toLowerCase() === "library";
+    const silentRoomLowConfidence = isLibrary && voteMetrics.silentRoom.hidden;
+    const studyTableLowConfidence = isLibrary && voteMetrics.studyTable.hidden;
+    const scannerLowConfidence = isLibrary && voteMetrics.scanner.hidden;
 
     return (
         <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-zinc-950/95 animate-in fade-in duration-300">
@@ -361,6 +392,24 @@ export function VenueDetailDialog({
                     <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 text-xs text-amber-600 dark:text-amber-400 font-bold">
                         <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
                         <span>⚠️ Community Warning: Users report Power Outlets might be unavailable.</span>
+                    </div>
+                )}
+                {silentRoomLowConfidence && (
+                    <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 text-xs text-amber-600 dark:text-amber-400 font-bold">
+                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span>⚠️ Community Warning: Users report Strict Silent Rooms might be unavailable.</span>
+                    </div>
+                )}
+                {studyTableLowConfidence && (
+                    <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 text-xs text-amber-600 dark:text-amber-400 font-bold">
+                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span>⚠️ Community Warning: Users report Bookable Study Tables might be unavailable.</span>
+                    </div>
+                )}
+                {scannerLowConfidence && (
+                    <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-6 py-2.5 text-xs text-amber-600 dark:text-amber-400 font-bold">
+                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span>⚠️ Community Warning: Users report Scanners/Printers might be unavailable.</span>
                     </div>
                 )}
 
@@ -518,6 +567,123 @@ export function VenueDetailDialog({
                                         Noise floor is {venue.noiseLevel || "ambient"} and connectivity is verified as {venue.wifi ? 'stable' : 'pending'}.
                                         {venue.hasErgonomic && " The workspace features verified ergonomic chairs and height-adjustable/standing desks."}
                                     </p>
+                                </div>
+                            </div>
+
+                            {/* INTERACTIVE AMENITY VERIFICATION TAG TRACKING ROW */}
+                            <div className="flex flex-col gap-2 mt-6 border-t border-zinc-100 dark:border-zinc-800 pt-4">
+                                <span className="text-[10px] font-bold text-zinc-400 tracking-wider uppercase">Verify Amenities:</span>
+
+                                <div className="flex flex-wrap gap-2">
+                                    {/* WiFi Tag Check Node */}
+                                    {!voteMetrics.wifi.hidden && (
+                                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.wifi.confidenceScore < 60
+                                            ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                                            : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                                            }`}>
+                                            <Wifi className="w-3.5 h-3.5 text-blue-500" />
+                                            <span className="font-medium font-mono text-[11px]">WiFi ({voteMetrics.wifi.confidenceScore}%)</span>
+
+                                            <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                                                <button
+                                                    onClick={() => _submitAmenityVote("wifi", true)}
+                                                    className={`transition-colors ${voteMetrics.wifi.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                                                >👍</button>
+                                                <button
+                                                    onClick={() => _submitAmenityVote("wifi", false)}
+                                                    className={`transition-colors ${voteMetrics.wifi.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                                                >👎</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Outlets Tag Check Node */}
+                                    {venue.hasOutlets && !voteMetrics.outlets.hidden && (
+                                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.outlets.confidenceScore < 60
+                                            ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                                            : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                                            }`}>
+                                            <Zap className="w-3.5 h-3.5 text-yellow-500" />
+                                            <span className="font-medium font-mono text-[11px]">Outlets ({voteMetrics.outlets.confidenceScore}%)</span>
+
+                                            <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                                                <button
+                                                    onClick={() => _submitAmenityVote("outlets", true)}
+                                                    className={`transition-colors ${voteMetrics.outlets.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                                                >👍</button>
+                                                <button
+                                                    onClick={() => _submitAmenityVote("outlets", false)}
+                                                    className={`transition-colors ${voteMetrics.outlets.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                                                >👎</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Strict Silent Rooms Tag */}
+                                    {isLibrary && !voteMetrics.silentRoom.hidden && (
+                                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.silentRoom.confidenceScore < 60
+                                            ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                                            : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                                            }`}>
+                                            <VolumeX className="w-3.5 h-3.5 text-emerald-500" />
+                                            <span className="font-medium font-mono text-[11px]">Silent Room ({voteMetrics.silentRoom.confidenceScore}%)</span>
+
+                                            <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                                                <button
+                                                    onClick={() => _submitAmenityVote("silentRoom", true)}
+                                                    className={`transition-colors ${voteMetrics.silentRoom.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                                                >👍</button>
+                                                <button
+                                                    onClick={() => _submitAmenityVote("silentRoom", false)}
+                                                    className={`transition-colors ${voteMetrics.silentRoom.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                                                >👎</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Bookable Study Tables Tag */}
+                                    {isLibrary && !voteMetrics.studyTable.hidden && (
+                                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.studyTable.confidenceScore < 60
+                                            ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                                            : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                                            }`}>
+                                            <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                                            <span className="font-medium font-mono text-[11px]">Study Tables ({voteMetrics.studyTable.confidenceScore}%)</span>
+
+                                            <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                                                <button
+                                                    onClick={() => _submitAmenityVote("studyTable", true)}
+                                                    className={`transition-colors ${voteMetrics.studyTable.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                                                >👍</button>
+                                                <button
+                                                    onClick={() => _submitAmenityVote("studyTable", false)}
+                                                    className={`transition-colors ${voteMetrics.studyTable.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                                                >👎</button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Scanners/Printers Tag */}
+                                    {isLibrary && !voteMetrics.scanner.hidden && (
+                                        <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.scanner.confidenceScore < 60
+                                            ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                                            : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                                            }`}>
+                                            <Printer className="w-3.5 h-3.5 text-cyan-500" />
+                                            <span className="font-medium font-mono text-[11px]">Scanners/Printers ({voteMetrics.scanner.confidenceScore}%)</span>
+
+                                            <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                                                <button
+                                                    onClick={() => _submitAmenityVote("scanner", true)}
+                                                    className={`transition-colors ${voteMetrics.scanner.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                                                >👍</button>
+                                                <button
+                                                    onClick={() => _submitAmenityVote("scanner", false)}
+                                                    className={`transition-colors ${voteMetrics.scanner.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                                                >👎</button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

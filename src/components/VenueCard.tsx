@@ -1,7 +1,7 @@
 "use client";
 import { VenueShareButton } from "@/components/social/VenueShareButton";
 import { MapMarker } from "@/types/map";
-import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2, TreePine, Accessibility, AlertTriangle, Sun } from "lucide-react";
+import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2, TreePine, Accessibility, AlertTriangle, Sun, VolumeX, Calendar, Printer } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
@@ -61,6 +61,9 @@ export function VenueCard({
     wifi: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
     outlets: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
     ergonomic: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+    silentRoom: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+    studyTable: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+    scanner: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
   });
 
   // Load real vote metrics from the database on mount
@@ -80,7 +83,10 @@ export function VenueCard({
   }, [venue.id]);
 
   // Async dynamic vote submittal query processor
-  const submitAmenityVote = async (amenityKey: "wifi" | "outlets" | "ergonomic", isUpvote: boolean) => {
+  const submitAmenityVote = async (
+    amenityKey: "wifi" | "outlets" | "ergonomic" | "silentRoom" | "studyTable" | "scanner",
+    isUpvote: boolean
+  ) => {
     try {
       const response = await fetch("/api/venues/amenity-vote", {
         method: "POST",
@@ -159,20 +165,42 @@ export function VenueCard({
   const outletsLowConfidence = venue.hasOutlets && voteMetrics.outlets.hidden;
   const ergonomicLowConfidence = venue.amenities?.hasErgonomic && voteMetrics.ergonomic.hidden;
 
-  return (
-    <div className="relative border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-lg transition-all">
+  const isLibrary = venue.category?.toLowerCase() === "library";
+  const silentRoomLowConfidence = isLibrary && voteMetrics.silentRoom.hidden;
+  const studyTableLowConfidence = isLibrary && voteMetrics.studyTable.hidden;
+  const scannerLowConfidence = isLibrary && voteMetrics.scanner.hidden;
 
-      {/* CROWDSOURCED CONFIDENCE CRITICAL WARNING BANNERS */}
+  return (
+    <div className="bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative">
+      
       {wifiLowConfidence && (
-        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
           <span>Users report reliable **WiFi** might not be available here.</span>
         </div>
       )}
       {outletsLowConfidence && (
-        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
           <span>Users report **Power Outlets** might be broken or missing.</span>
+        </div>
+      )}
+      {silentRoomLowConfidence && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span>Users report **Strict Silent Rooms** might not be available here.</span>
+        </div>
+      )}
+      {studyTableLowConfidence && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span>Users report **Bookable Study Tables** might not be available here.</span>
+        </div>
+      )}
+      {scannerLowConfidence && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span>Users report **Scanners/Printers** might not be available here.</span>
         </div>
       )}
       {ergonomicLowConfidence && (
@@ -350,6 +378,72 @@ export function VenueCard({
                   <button
                     onClick={() => submitAmenityVote("ergonomic", false)}
                     className={`transition-colors ${voteMetrics.ergonomic.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
+                </div>
+              </div>
+            )}
+
+            {/* Strict Silent Rooms Tag */}
+            {isLibrary && !voteMetrics.silentRoom.hidden && (
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.silentRoom.confidenceScore < 60
+                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}>
+                <VolumeX className="w-3.5 h-3.5 text-emerald-500" />
+                <span className="font-medium font-mono text-[11px]">Silent Room ({voteMetrics.silentRoom.confidenceScore}%)</span>
+
+                <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <button
+                    onClick={() => submitAmenityVote("silentRoom", true)}
+                    className={`transition-colors ${voteMetrics.silentRoom.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("silentRoom", false)}
+                    className={`transition-colors ${voteMetrics.silentRoom.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
+                </div>
+              </div>
+            )}
+
+            {/* Bookable Study Tables Tag */}
+            {isLibrary && !voteMetrics.studyTable.hidden && (
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.studyTable.confidenceScore < 60
+                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}>
+                <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                <span className="font-medium font-mono text-[11px]">Study Tables ({voteMetrics.studyTable.confidenceScore}%)</span>
+
+                <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <button
+                    onClick={() => submitAmenityVote("studyTable", true)}
+                    className={`transition-colors ${voteMetrics.studyTable.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("studyTable", false)}
+                    className={`transition-colors ${voteMetrics.studyTable.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
+                </div>
+              </div>
+            )}
+
+            {/* Scanners/Printers Tag */}
+            {isLibrary && !voteMetrics.scanner.hidden && (
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.scanner.confidenceScore < 60
+                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}>
+                <Printer className="w-3.5 h-3.5 text-cyan-500" />
+                <span className="font-medium font-mono text-[11px]">Scanners/Printers ({voteMetrics.scanner.confidenceScore}%)</span>
+
+                <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <button
+                    onClick={() => submitAmenityVote("scanner", true)}
+                    className={`transition-colors ${voteMetrics.scanner.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("scanner", false)}
+                    className={`transition-colors ${voteMetrics.scanner.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >👎</button>
                 </div>
               </div>

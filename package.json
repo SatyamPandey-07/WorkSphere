@@ -41,7 +41,7 @@
     "prisma": "^7.8.0",
     "radix-ui": "^1.6.2",
     "react": "19.2.7",
-    "react-dom": "19.2.3",
+    "react-dom": "19.2.7",
     "react-i18next": "^17.0.9",
     "react-leaflet": "^5.0.0",
     "recharts": "^3.9.2",

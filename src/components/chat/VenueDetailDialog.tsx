@@ -107,7 +107,7 @@ export function VenueDetailDialog({
             let targetLanguageName = "English";
             try {
                 targetLanguageName = new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode) || langCode;
-            } catch (e) {
+            } catch {
                 targetLanguageName = langCode;
             }
 
@@ -143,7 +143,7 @@ export function VenueDetailDialog({
                 const response = await fetch(`/api/venues/${venueId}/amenity-votes`);
                 if (response.ok) {
                     const data = await response.json();
-                    setVoteMetrics((prev) => ({
+                    setVoteMetrics(() => ({
                         wifi: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
                         outlets: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
                         silentRoom: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },

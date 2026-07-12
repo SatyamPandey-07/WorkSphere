@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
         // We'll call Svix API.
         
         try {
-          const response = await svix.message.create(event.userId, {
+          await svix.message.create(event.userId, {
             eventType: event.type,
             eventId: event.id,
             payload: event.data,

@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { Map as MapIcon, Loader2 } from "lucide-react";
+import { Map as MapIcon } from "lucide-react";
 
 // Fix for default leaflet icons in React
 if (typeof window !== "undefined") {
@@ -17,12 +17,6 @@ if (typeof window !== "undefined") {
 }
 
 export default function InteractiveMap({ markers }: { markers: any[] }) {
-  const [mounted, setMounted] = useState(process.env.NODE_ENV === "test");
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   // Group and spiderfy overlapping markers
   const spiderfiedMarkers = React.useMemo(() => {
     const groups: { [key: string]: any[] } = {};
@@ -67,14 +61,6 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
     });
     return result;
   }, [markers]);
-  if (!mounted) {
-    return (
-      <div className="w-full h-64 mt-4 bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border border-zinc-200 dark:border-zinc-800 rounded-2xl">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
-      </div>
-    );
-  }
-
   if (!markers || markers.length === 0) return <div>No markers provided</div>;
 
   const center = {

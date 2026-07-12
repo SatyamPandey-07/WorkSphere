@@ -145,12 +145,6 @@ const Map = ({
   const clerkUser = useUser();
   const { latitude, longitude } = location;
 
-  const [mounted, setMounted] = useState(process.env.NODE_ENV === "test");
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   // =========================================================================
   // MULTI-STOP ROUTING OPTIMIZER STATE PARAMETERS
   // =========================================================================
@@ -280,14 +274,6 @@ const Map = ({
   }, [iconUrl]);
 
   const center: [number, number] = [latitude, longitude];
-
-  if (!mounted) {
-    return (
-      <div className="w-[95%] h-[95%] min-h-[400px] flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
 
   return (
 <>

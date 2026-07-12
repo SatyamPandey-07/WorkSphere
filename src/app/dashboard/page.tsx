@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { MemoryManager } from "./MemoryManager";
+import { NotificationSettings } from "./NotificationSettings";
 
 interface AgentMetric {
   agent: string;
@@ -328,8 +329,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* AI Memory Management */}
-        <MemoryManager />
+        {/* Settings & AI Memory Management */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          <NotificationSettings />
+          <MemoryManager />
+        </div>
       </div>
     </div>
   );

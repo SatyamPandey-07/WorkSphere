@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { Groq } from "groq-sdk";
 
 const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY,
+  apiKey: process.env.GROQ_API_KEY || "dummy-key-for-build",
 });
 
 export async function POST(req: Request) {

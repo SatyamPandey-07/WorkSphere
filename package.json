@@ -41,7 +41,7 @@
     "react-leaflet": "^5.0.0",
     "recharts": "^3.9.2",
     "svix": "^1.96.1",
-    "tailwind-merge": "^3.4.0",
+    "tailwind-merge": "^3.6.0",
     "twilio": "^5.12.2",
     "y-partykit": "^0.0.33",
     "yjs": "^13.6.31",

@@ -14,6 +14,8 @@ export interface MapMarker {
   patioOnly?: boolean;
   waterBowlsProvided?: boolean;
   noiseLevel?: string;
+  lighting?: string;
+  hasErgonomic?: boolean;
   distance?: string;
   address?: string;
   amenities?: {

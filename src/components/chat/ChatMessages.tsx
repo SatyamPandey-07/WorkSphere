@@ -41,6 +41,7 @@ export interface Venue {
     description?: string;
     hasErgonomic?: boolean;
     outletDensity?: string;
+    lighting?: string;
     wifiSpeed?: number | null;
 }
 
@@ -229,7 +230,7 @@ export function VenueChatCard({
 
                         {/* Action buttons */}
                         <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -253,7 +254,7 @@ export function VenueChatCard({
                                 </button>
                             </div>
 
-                            <div className="flex items-center gap-1.5">
+                            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5">
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();

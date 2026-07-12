@@ -11,7 +11,7 @@ export const WebhookEventSchema = z.object({
   ]),
   userId: z.string(),
   timestamp: z.string().datetime(),
-  data: z.record(z.any()),
+  data: z.record(z.string(), z.any()),
 });
 
 export type WebhookEvent = z.infer<typeof WebhookEventSchema>;

@@ -52,7 +52,7 @@ export function WebhookForm() {
           required
           placeholder="https://your-domain.com/webhook"
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrl(e.target.value)}
           className="bg-zinc-950 border-zinc-800 text-zinc-100"
         />
       </div>

@@ -1,7 +1,7 @@
 "use client";
 import { VenueShareButton } from "@/components/social/VenueShareButton";
 import { MapMarker } from "@/types/map";
-import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2, TreePine, Accessibility, AlertTriangle } from "lucide-react";
+import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2, TreePine, Accessibility, AlertTriangle, Sun } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
@@ -363,7 +363,14 @@ export function VenueCard({
                 <span className="capitalize">{venue.noiseLevel}</span>
               </div>
             )}
-
+            {/* Lighting profile badge */}
+            {venue.lighting && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
+                <Sun className="w-3.5 h-3.5 text-amber-500" />
+                <span className="capitalize">{venue.lighting.replace("_", " ")}</span>
+              </div>
+            )}
+            
             {venue.distance && (
               <div className="text-xs text-zinc-500 self-center ml-auto font-medium">
                 📏 {venue.distance}
@@ -414,6 +421,12 @@ export function VenueCard({
                   }`}
               />
               <span className="capitalize">{venue.noiseLevel}</span>
+            </div>
+          )}
+          {venue.lighting && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <Sun className="w-4 h-4 text-amber-500" />
+              <span className="capitalize">{venue.lighting.replace("_", " ")}</span>
             </div>
           )}
           {venue.distance && (

@@ -2,7 +2,7 @@
 
 import {
     X, MapPin, Wifi, Zap, Volume2, Navigation, Heart,
-    Coffee, BookOpen, Building2, Star, Info, AlertTriangle, Camera, Eye, Globe2
+    Coffee, BookOpen, Building2, Star, Info, AlertTriangle, Camera, Eye, Globe2, Sun
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
@@ -430,7 +430,7 @@ export function VenueDetailDialog({
                 <div className="p-8 bg-white dark:bg-zinc-900 overflow-y-auto max-h-[calc(90vh-320px)]">
                     {activeTab === "overview" && (
                         <>
-                            <div className="grid grid-cols-3 gap-4 mb-8">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                                 <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
                                     <div className="p-3 rounded-xl bg-blue-500/10 mb-3">
                                         <Wifi className="w-6 h-6 text-blue-500" />
@@ -458,6 +458,15 @@ export function VenueDetailDialog({
                                     <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">Noise</span>
                                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none capitalize">
                                         {venue.noiseLevel || "Normal"}
+                                    </span>
+                                </div>
+                                <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
+                                    <div className="p-3 rounded-xl bg-amber-500/10 mb-3">
+                                        <Sun className="w-6 h-6 text-amber-500" />
+                                    </div>
+                                    <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">Lighting</span>
+                                    <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none capitalize text-center leading-tight">
+                                        {venue.lighting ? venue.lighting.replace("_", " ") : "Normal"}
                                     </span>
                                 </div>
                             </div>

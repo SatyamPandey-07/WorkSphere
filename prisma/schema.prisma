@@ -65,6 +65,7 @@ model Venue {
   menuPhotos     String[]      @default([])
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+  lighting       String?
   ratings        VenueRating[]
   favorites      Favorite[]
   bookings       Booking[]
@@ -101,6 +102,7 @@ model VenueRating {
   createdAt     DateTime @default(now())
   avgDecibels   Float?
   peakDecibels  Float?
+  lighting      String?
 
   @@unique([userId, venueId])
   @@index([venueId])

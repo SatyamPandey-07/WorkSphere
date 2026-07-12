@@ -3,7 +3,7 @@
 import {
     X, ShieldCheck, Zap, CheckCircle2,
     ArrowRight, Loader2, Lock, Banknote, Landmark,
-    Calendar, Clock, User, Download, ExternalLink,
+    Calendar, Clock, User, Download, 
     MapPin, Inbox, CreditCard, CalendarPlus, Mail
 } from "lucide-react";
 import { useState, useEffect } from "react";

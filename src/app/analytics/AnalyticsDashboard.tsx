@@ -32,7 +32,7 @@ const useUser = () => {
             }
         };
     }
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, react-hooks/rules-of-hooks
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require("@clerk/nextjs").useUser();
 };
 

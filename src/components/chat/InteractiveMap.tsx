@@ -67,7 +67,6 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
     });
     return result;
   }, [markers]);
-
   if (!mounted) {
     return (
       <div className="w-full h-64 mt-4 bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center border border-zinc-200 dark:border-zinc-800 rounded-2xl">

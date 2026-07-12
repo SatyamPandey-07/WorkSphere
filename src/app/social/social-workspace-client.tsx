@@ -3,13 +3,13 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
-  CheckCircle2,
+  
   Clock3,
   Copy,
   ExternalLink,
   MapPin,
   RefreshCw,
-  Share2,
+  
   Sparkles,
   UserRoundCheck,
   UsersRound,

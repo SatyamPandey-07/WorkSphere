@@ -5,7 +5,7 @@ import {
   CalendarDays,
   Check,
   Clock3,
-  Copy,
+  
   MapPin,
   Navigation,
   Share2,

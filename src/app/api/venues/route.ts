@@ -9,6 +9,12 @@ export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
 
+    // Fallback: If no coordinates are provided, return all venues
+    if (!searchParams.get("lat") || !searchParams.get("lng")) {
+      const venues = await prisma.venue.findMany();
+      return NextResponse.json(venues);
+    }
+
     // Validate search params with Zod
     const validation = validateRequest(venueSearchSchema, {
       lat: searchParams.get("lat"),

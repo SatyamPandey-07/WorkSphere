@@ -14,6 +14,12 @@ function getGroqClient(): Groq {
   if (!groq) {
     groq = new Groq({
       apiKey: process.env.GROQ_API_KEY || '',
+      // Explicit bounds so sustained rate-limit exhaustion (HTTP 429)
+      // fails fast with a catchable error instead of the SDK's default
+      // internal retry behavior hanging the request indefinitely,
+      // which was surfacing as an infinite loading state on the client.
+      maxRetries: 2,
+      timeout: 20000, // 20s
     });
   }
   return groq;

@@ -37,6 +37,7 @@ type Props = {
         id: string;
         firstName: string | null;
         lastName: string | null;
+        imageUrl: string | null;
       };
     }>;
   };
@@ -170,9 +171,18 @@ export default function SessionDetailClient({ session }: Props) {
 
                   return (
                     <div key={item.user.id} className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-500/15 text-violet-200">
-                        <Check className="h-4 w-4" />
-                      </span>
+                      {item.user.imageUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img 
+                          src={item.user.imageUrl} 
+                          alt={name} 
+                          className="h-9 w-9 rounded-full object-cover border border-white/10" 
+                        />
+                      ) : (
+                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-500/15 text-violet-200">
+                          <Check className="h-4 w-4" />
+                        </span>
+                      )}
                       <span className="text-sm text-zinc-300">{name}</span>
                     </div>
                   );

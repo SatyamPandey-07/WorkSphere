@@ -1,5 +1,32 @@
 import '@testing-library/jest-dom';
 
+// Mock Leaflet global variable L
+global.L = {
+  map: jest.fn().mockReturnValue({
+    setView: jest.fn().mockReturnThis(),
+    on: jest.fn(),
+    remove: jest.fn(),
+  }),
+  tileLayer: jest.fn().mockReturnValue({
+    addTo: jest.fn(),
+  }),
+  marker: jest.fn().mockReturnValue({
+    addTo: jest.fn().mockReturnThis(),
+    bindPopup: jest.fn().mockReturnThis(),
+  }),
+  divIcon: jest.fn(),
+  heatLayer: jest.fn().mockReturnValue({
+    addTo: jest.fn(),
+  }),
+  extend: jest.fn(),
+  Class: {
+    extend: jest.fn().mockReturnThis(),
+  },
+  Layer: {
+    extend: jest.fn().mockReturnThis(),
+  },
+};
+
 // Mock next/navigation
 jest.mock('next/navigation', () => ({
   useRouter: () => ({

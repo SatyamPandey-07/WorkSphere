@@ -88,6 +88,16 @@ Typical Markdown features that are safe to support include:
 - Code blocks
 
 If future features require HTML rendering alongside Markdown, ensure that the generated output is sanitized before it reaches the UI.
+
+### Example
+
+Unsafe Markdown input:
+
+```md
+Click here <script>alert("XSS")</script>
+```
+
+The rendered output should preserve valid Markdown while preventing executable HTML or JavaScript from being rendered.
 ---
 
 # Cross-Site Scripting (XSS) Prevention
@@ -129,6 +139,13 @@ A typical configuration might look like this:
 
 Whenever a new API endpoint is introduced, review its CORS configuration before deployment.
 
+Additional recommendations:
+
+- Return only the headers required by the client.
+- Reject requests from unknown origins whenever possible.
+- Review CORS policies whenever a new public API endpoint is introduced.
+- Enable credentials only for trusted origins that require authenticated requests.
+
 ---
 
 # General Security Best Practices
@@ -149,6 +166,19 @@ Following these practices helps reduce common security risks and keeps the proje
 
 ---
 
+# Common Security Mistakes
+
+When contributing to WorkSphere, avoid the following practices:
+
+- Rendering untrusted HTML directly.
+- Accepting user input without server-side validation.
+- Allowing unrestricted Markdown or HTML rendering.
+- Using wildcard (`*`) CORS policies for authenticated endpoints.
+- Logging secrets, tokens, or sensitive user information.
+- Trusting client-side validation as the only validation layer.
+
+Review security-sensitive changes carefully before opening a pull request.
+
 # Developer Checklist
 
 Before opening a pull request, make sure that:
@@ -162,6 +192,17 @@ Before opening a pull request, make sure that:
 - [ ] Documentation has been updated if security-related behavior has changed.
 
 ---
+
+# Security Review Checklist
+
+Before merging security-related changes, verify that:
+
+- User input is validated on the server.
+- HTML output is sanitized before rendering.
+- Markdown rendering cannot execute scripts.
+- API endpoints expose only the required origins.
+- Secrets are stored securely and never committed to the repository.
+- Error messages do not expose sensitive implementation details.
 
 # References
 

@@ -36,6 +36,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Bypass service worker interception for download endpoints to prevent binary stream locking
+  if (event.request.url.includes("/download")) {
+    return;
+  }
+
   const isVenuesApi = event.request.url.includes("/api/venues");
   const isExternalAsset =
     event.request.url.includes("tile.openstreetmap.org") ||

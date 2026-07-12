@@ -188,8 +188,11 @@ export async function GET() {
             },
             timestamp: Date.now()
         });
-    } catch (error) {
+    } catch (error: any) {
         console.error("Personalized Analytics API Error:", error);
-        return NextResponse.json({ error: "Failed to fetch neural profile" }, { status: 500 });
+        const errorMessage = process.env.NODE_ENV !== "production"
+            ? `${error.message || error}`
+            : "Failed to fetch neural profile";
+        return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 }

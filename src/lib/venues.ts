@@ -4,7 +4,15 @@
  * - Unsplash for photos
  */
 
+import { LRUCache } from './cache';
+
 const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY || process.env.NEXT_PUBLIC_UNSPLASH_ACCESS_KEY;
+
+// Cache instances
+// Search cache: capacity 100, TTL 15 minutes (900000ms)
+const searchCache = new LRUCache<VenueData[]>(100, 900000);
+// Details cache: capacity 200, TTL 30 minutes (1800000ms)
+const detailsCache = new LRUCache<VenueData>(200, 1800000);
 
 // =============================================================================
 // Types
@@ -52,6 +60,15 @@ export async function searchVenuesOSM(
   } = {}
 ): Promise<VenueData[]> {
   const { query, radius = 2000, limit = 20 } = options;
+
+  // Round coordinates to 3 decimal places to increase cache hits (approx 110m grid)
+  const cacheKey = `osm_search:${lat.toFixed(3)}:${lng.toFixed(3)}:${radius}:${query || 'all'}`;
+  const cachedResult = searchCache.get(cacheKey);
+  if (cachedResult) {
+    console.log('[OSM Cache] Hit for:', cacheKey);
+    return cachedResult.slice(0, limit);
+  }
+
 
   // Use Overpass API for POI search (cafes, coworking, libraries)
   // Search both nodes and ways (buildings are often ways in OSM)
@@ -135,18 +152,22 @@ export async function searchVenuesOSM(
       });
 
     // Filter by query if provided
+    let finalResult = venues;
     if (query) {
       const q = query.toLowerCase();
-      const filtered = venues.filter(v => 
+      finalResult = venues.filter(v => 
         v.name.toLowerCase().includes(q) ||
         v.categories.some(c => c.name.toLowerCase().includes(q))
-      ).slice(0, limit);
-      console.log('[OSM] Filtered by query:', filtered.length, 'venues');
-      return filtered;
+      );
+      console.log('[OSM] Filtered by query:', finalResult.length, 'venues');
     }
 
-    console.log('[OSM] Returning:', venues.length, 'venues');
-    return venues.slice(0, limit);
+    console.log('[OSM] Returning:', finalResult.length, 'venues');
+    
+    // Cache the full result set (unlimited by query limit here if we want, but limiting for memory)
+    searchCache.set(cacheKey, finalResult);
+    
+    return finalResult.slice(0, limit);
   } catch (error) {
     console.error('[OSM] Search error:', error);
     // Fallback to Nominatim search
@@ -341,6 +362,12 @@ export async function searchAndEnrichVenues(
  * Get venue details by OSM ID
  */
 export async function getVenueDetails(osmId: string): Promise<VenueData | null> {
+  const cachedDetails = detailsCache.get(osmId);
+  if (cachedDetails) {
+    console.log('[OSM Cache] Details hit for:', osmId);
+    return cachedDetails;
+  }
+
   // Extract numeric ID from 'osm-123456' format
   const numericId = osmId.replace('osm-', '');
   
@@ -365,7 +392,7 @@ export async function getVenueDetails(osmId: string): Promise<VenueData | null> 
     
     const photos = await getVenuePhotos(place.display_name, category, 5);
 
-    return {
+    const venueData: VenueData = {
       id: osmId,
       name: place.display_name?.split(',')[0] || place.name,
       location: {
@@ -386,6 +413,9 @@ export async function getVenueDetails(osmId: string): Promise<VenueData | null> 
       website: place.extratags?.website,
       phone: place.extratags?.phone,
     };
+
+    detailsCache.set(osmId, venueData);
+    return venueData;
   } catch (error) {
     console.error('OSM details error:', error);
     return null;

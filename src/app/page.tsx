@@ -5,7 +5,7 @@ import Image from "next/image";
 import {
   MapPin, Wifi, Zap, Volume2, Clock, Sparkles, Download,
   ArrowRight, Coffee, Camera, Radio, Star, Users, Building2,
-  ChevronRight, FileText, BarChart3, ArrowUp
+  ChevronRight, FileText, BarChart3, ArrowUp, LayoutGrid
 } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
@@ -74,6 +74,13 @@ export default function Home() {
                 <Coffee className="w-4 h-4" />
                 Dashboard
               </Link>
+              <Link
+                href="/collections"
+                className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-white/70 hover:text-white font-medium transition-colors whitespace-nowrap"
+              >
+                <LayoutGrid className="w-4 h-4" />
+                Collections
+              </Link>
               <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0">
                 <UserButton afterSignOutUrl="/" />
               </div>
@@ -124,6 +131,9 @@ export default function Home() {
               <Link
                 href="/sign-up"
                 className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
+                style={{
+                  backgroundImage: "linear-gradient(to right, #2563eb, #7c3aed)",
+                }}
               >
                 Start for Free
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -139,6 +149,9 @@ export default function Home() {
               <Link
                 href="/ai"
                 className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
+                style={{
+                  backgroundImage: "linear-gradient(to right, #2563eb, #7c3aed)",
+                }}
               >
                 Open Dashboard
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />

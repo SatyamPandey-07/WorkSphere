@@ -10,7 +10,16 @@ export interface MapMarker {
   score?: number;
   wifiQuality?: number;
   hasOutlets?: boolean;
+  petsAllowedIndoors?: boolean;
+  patioOnly?: boolean;
+  waterBowlsProvided?: boolean;
+  singleOriginBeans?: boolean;
+  specialtyEspresso?: boolean;
+  oatAlmondMilk?: boolean;
+  pourOverAvailable?: boolean;
   noiseLevel?: string;
+  lighting?: string;
+  hasErgonomic?: boolean;
   distance?: string;
   address?: string;
   amenities?: {
@@ -20,6 +29,11 @@ export interface MapMarker {
     hasErgonomic?: boolean;
     outletDensity?: string;
     wifiSpeed?: number | null;
+
+    singleOriginBeans?: boolean;
+    specialtyEspresso?: boolean;
+    oatAlmondMilk?: boolean;
+    pourOverAvailable?: boolean;
   };
 }
 

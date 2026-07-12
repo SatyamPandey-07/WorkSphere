@@ -1,9 +1,12 @@
 "use client";
-
+import { VenueShareButton } from "@/components/social/VenueShareButton";
 import { MapMarker } from "@/types/map";
-import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2, TreePine, Accessibility } from "lucide-react";
+import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2, TreePine, Accessibility, AlertTriangle, Sun, VolumeX, Calendar, Printer } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
+import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
+import { FolderPlus } from "lucide-react";
 
 interface VenueEnrichData {
   found: boolean;
@@ -31,6 +34,14 @@ interface VenueCardProps {
   onRate?: (venue: MapMarker) => void;
 }
 
+interface VoteMetricState {
+  confidenceScore: number;
+  upvotes: number;
+  downvotes: number;
+  hidden: boolean;
+  userVote: boolean | null;
+}
+
 export function VenueCard({
   venue,
   onGetDirections,
@@ -41,12 +52,75 @@ export function VenueCard({
   const [enrichData, setEnrichData] = useState<VenueEnrichData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [showFolderModal, setShowFolderModal] = useState(false);
+
+  // =========================================================================
+  // COMMUNITY VERIFICATION VOTE STATE TRACKING SYSTEM
+  // =========================================================================
+  const [voteMetrics, setVoteMetrics] = useState<Record<string, VoteMetricState>>({
+    wifi: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+    outlets: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+    ergonomic: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+    silentRoom: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+    studyTable: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+    scanner: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+  });
+
+  // Load real vote metrics from the database on mount
+  useEffect(() => {
+    async function loadVoteMetrics() {
+      try {
+        const response = await fetch(`/api/venues/${venue.id}/amenity-votes`);
+        if (response.ok) {
+          const data = await response.json();
+          setVoteMetrics((prev) => ({ ...prev, ...data.metrics }));
+        }
+      } catch (error) {
+        console.error("Failed to load amenity vote metrics:", error);
+      }
+    }
+    loadVoteMetrics();
+  }, [venue.id]);
+
+  // Async dynamic vote submittal query processor
+  const submitAmenityVote = async (
+    amenityKey: "wifi" | "outlets" | "ergonomic" | "silentRoom" | "studyTable" | "scanner",
+    isUpvote: boolean
+  ) => {
+    try {
+      const response = await fetch("/api/venues/amenity-vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          venueId: venue.id,
+          amenity: amenityKey,
+          isUpvote,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setVoteMetrics((prev) => ({
+          ...prev,
+          [amenityKey]: {
+            confidenceScore: data.confidenceScore,
+            upvotes: data.upvotes,
+            downvotes: data.downvotes,
+            hidden: data.hidden,
+            userVote: isUpvote,
+          },
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to post metadata verification score:", error);
+    }
+  };
 
   // Fetch venue data from OSM + Unsplash (FREE)
   useEffect(() => {
     async function enrichVenue() {
       if (!venue.position) return;
-      
+
       setIsLoading(true);
       try {
         const params = new URLSearchParams({
@@ -54,7 +128,7 @@ export function VenueCard({
           lat: venue.position.lat.toString(),
           lng: venue.position.lng.toString(),
         });
-        
+
         const response = await fetch(`/api/venues/enrich?${params}`);
         if (response.ok) {
           const data = await response.json();
@@ -86,8 +160,56 @@ export function VenueCard({
   const photos = enrichData?.photos || [];
   const amenities = enrichData?.amenities;
 
+  // Determine low confidence threshold parameters to trigger notice blocks
+  const wifiLowConfidence = venue.wifiQuality && voteMetrics.wifi.hidden;
+  const outletsLowConfidence = venue.hasOutlets && voteMetrics.outlets.hidden;
+  const ergonomicLowConfidence = venue.amenities?.hasErgonomic && voteMetrics.ergonomic.hidden;
+
+  const isLibrary = venue.category?.toLowerCase() === "library";
+  const silentRoomLowConfidence = isLibrary && voteMetrics.silentRoom.hidden;
+  const studyTableLowConfidence = isLibrary && voteMetrics.studyTable.hidden;
+  const scannerLowConfidence = isLibrary && voteMetrics.scanner.hidden;
+
   return (
-    <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-lg transition-all">
+    <div className="bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative">
+      
+      {wifiLowConfidence && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span>Users report reliable **WiFi** might not be available here.</span>
+        </div>
+      )}
+      {outletsLowConfidence && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span>Users report **Power Outlets** might be broken or missing.</span>
+        </div>
+      )}
+      {silentRoomLowConfidence && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span>Users report **Strict Silent Rooms** might not be available here.</span>
+        </div>
+      )}
+      {studyTableLowConfidence && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span>Users report **Bookable Study Tables** might not be available here.</span>
+        </div>
+      )}
+      {scannerLowConfidence && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span>Users report **Scanners/Printers** might not be available here.</span>
+        </div>
+      )}
+      {ergonomicLowConfidence && (
+        <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+          <span>Users report **ergonomic seating** may not be available here.</span>
+        </div>
+      )}
+
       {/* Photo Section */}
       {photos.length > 0 && (
         <div className="relative h-32 bg-zinc-100 dark:bg-zinc-800 cursor-pointer" onClick={nextPhoto}>
@@ -126,11 +248,10 @@ export function VenueCard({
           </div>
           <button
             onClick={handleFavorite}
-            className={`p-2 rounded-lg transition-colors ${
-              isFavorited
-                ? "bg-red-100 dark:bg-red-900/20 text-red-600"
-                : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
-            }`}
+            className={`p-2 rounded-lg transition-colors ${isFavorited
+              ? "bg-red-100 dark:bg-red-900/20 text-red-600"
+              : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
+              }`}
           >
             <Heart className={`w-5 h-5 ${isFavorited ? "fill-current" : ""}`} />
           </button>
@@ -158,13 +279,13 @@ export function VenueCard({
           )}
         </div>
 
-        {/* Amenities from OSM */}
+        {/* OpenStreetMap Base Feature List */}
         {amenities && (
           <div className="flex items-center gap-3 mb-3">
             {amenities.wifi && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <Wifi className="w-3 h-3" />
-                <span>WiFi</span>
+                <span>WiFi Verified</span>
               </div>
             )}
             {amenities.outdoor_seating && (
@@ -190,6 +311,168 @@ export function VenueCard({
           </div>
         )}
 
+
+        {/* INTERACTIVE AMENITY VERIFICATION TAG TRACKING ROW */}
+        <div className="flex flex-col gap-2 mb-4 border-t border-zinc-100 dark:border-zinc-800 pt-3">
+          <span className="text-[10px] font-bold text-zinc-400 tracking-wider uppercase">Verify Amenities:</span>
+
+          <div className="flex flex-wrap gap-2">
+            {/* WiFi Tag Check Node */}
+            {venue.wifiQuality && !voteMetrics.wifi.hidden && (
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.wifi.confidenceScore < 60
+                ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}>
+                <Wifi className="w-3.5 h-3.5 text-blue-500" />
+                <span className="font-medium font-mono text-[11px]">WiFi ({voteMetrics.wifi.confidenceScore}%)</span>
+
+                <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <button
+                    onClick={() => submitAmenityVote("wifi", true)}
+                    className={`transition-colors ${voteMetrics.wifi.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("wifi", false)}
+                    className={`transition-colors ${voteMetrics.wifi.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
+                </div>
+              </div>
+            )}
+
+            {/* Outlets Tag Check Node */}
+            {venue.hasOutlets && !voteMetrics.outlets.hidden && (
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.outlets.confidenceScore < 60
+                ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}>
+                <Zap className="w-3.5 h-3.5 text-yellow-500" />
+                <span className="font-medium font-mono text-[11px]">Outlets ({voteMetrics.outlets.confidenceScore}%)</span>
+
+                <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <button
+                    onClick={() => submitAmenityVote("outlets", true)}
+                    className={`transition-colors ${voteMetrics.outlets.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("outlets", false)}
+                    className={`transition-colors ${voteMetrics.outlets.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
+                </div>
+              </div>
+            )}
+
+            {/* Ergonomic Seating Tag Check Node */}
+            {venue.amenities?.hasErgonomic && !voteMetrics.ergonomic.hidden && (
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.ergonomic.confidenceScore < 60
+                ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}>
+                <Accessibility className="w-3.5 h-3.5 text-purple-500" />
+                <span className="font-medium font-mono text-[11px]">Ergonomic ({voteMetrics.ergonomic.confidenceScore}%)</span>
+
+                <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <button
+                    onClick={() => submitAmenityVote("ergonomic", true)}
+                    className={`transition-colors ${voteMetrics.ergonomic.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("ergonomic", false)}
+                    className={`transition-colors ${voteMetrics.ergonomic.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
+                </div>
+              </div>
+            )}
+
+            {/* Strict Silent Rooms Tag */}
+            {isLibrary && !voteMetrics.silentRoom.hidden && (
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.silentRoom.confidenceScore < 60
+                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}>
+                <VolumeX className="w-3.5 h-3.5 text-emerald-500" />
+                <span className="font-medium font-mono text-[11px]">Silent Room ({voteMetrics.silentRoom.confidenceScore}%)</span>
+
+                <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <button
+                    onClick={() => submitAmenityVote("silentRoom", true)}
+                    className={`transition-colors ${voteMetrics.silentRoom.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("silentRoom", false)}
+                    className={`transition-colors ${voteMetrics.silentRoom.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
+                </div>
+              </div>
+            )}
+
+            {/* Bookable Study Tables Tag */}
+            {isLibrary && !voteMetrics.studyTable.hidden && (
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.studyTable.confidenceScore < 60
+                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}>
+                <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                <span className="font-medium font-mono text-[11px]">Study Tables ({voteMetrics.studyTable.confidenceScore}%)</span>
+
+                <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <button
+                    onClick={() => submitAmenityVote("studyTable", true)}
+                    className={`transition-colors ${voteMetrics.studyTable.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("studyTable", false)}
+                    className={`transition-colors ${voteMetrics.studyTable.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
+                </div>
+              </div>
+            )}
+
+            {/* Scanners/Printers Tag */}
+            {isLibrary && !voteMetrics.scanner.hidden && (
+              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.scanner.confidenceScore < 60
+                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}>
+                <Printer className="w-3.5 h-3.5 text-cyan-500" />
+                <span className="font-medium font-mono text-[11px]">Scanners/Printers ({voteMetrics.scanner.confidenceScore}%)</span>
+
+                <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <button
+                    onClick={() => submitAmenityVote("scanner", true)}
+                    className={`transition-colors ${voteMetrics.scanner.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                  >👍</button>
+                  <button
+                    onClick={() => submitAmenityVote("scanner", false)}
+                    className={`transition-colors ${voteMetrics.scanner.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                  >👎</button>
+                </div>
+              </div>
+            )}
+
+            {/* Noise profile badge */}
+            {venue.noiseLevel && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
+                <Volume2 className={`w-3.5 h-3.5 ${venue.noiseLevel === "quiet" ? "text-green-600" : venue.noiseLevel === "moderate" ? "text-orange-600" : "text-red-600"
+                  }`} />
+                <span className="capitalize">{venue.noiseLevel}</span>
+              </div>
+            )}
+            {/* Lighting profile badge */}
+            {venue.lighting && (
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
+                <Sun className="w-3.5 h-3.5 text-amber-500" />
+                <span className="capitalize">{venue.lighting.replace("_", " ")}</span>
+              </div>
+            )}
+
+            {venue.distance && (
+              <div className="text-xs text-zinc-500 self-center ml-auto font-medium">
+                📏 {venue.distance}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Amenities */}
         <div className="flex flex-wrap gap-2 mb-4">
           {venue.wifiQuality && venue.wifiQuality >= 3 && (
@@ -204,18 +487,63 @@ export function VenueCard({
               <span>Outlets</span>
             </div>
           )}
+          {venue.petsAllowedIndoors && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🐶 Pets Allowed</span>
+            </div>
+          )}
+
+          {venue.patioOnly && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🌿 Patio Only</span>
+            </div>
+          )}
+
+          {venue.waterBowlsProvided && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>💧 Water Bowls</span>
+            </div>
+          )}
+          {venue.singleOriginBeans && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>☕ Single-Origin</span>
+            </div>
+          )}
+
+          {venue.specialtyEspresso && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>⚙️ Specialty Espresso</span>
+            </div>
+          )}
+
+          {venue.oatAlmondMilk && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🥛 Oat/Almond Milk</span>
+            </div>
+          )}
+
+          {venue.pourOverAvailable && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🫖 Pour Over</span>
+            </div>
+          )}
           {venue.noiseLevel && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Volume2
-                className={`w-4 h-4 ${
-                  venue.noiseLevel === "quiet"
-                    ? "text-green-600"
-                    : venue.noiseLevel === "moderate"
+                className={`w-4 h-4 ${venue.noiseLevel === "quiet"
+                  ? "text-green-600"
+                  : venue.noiseLevel === "moderate"
                     ? "text-orange-600"
                     : "text-red-600"
-                }`}
+                  }`}
               />
               <span className="capitalize">{venue.noiseLevel}</span>
+            </div>
+          )}
+          {venue.lighting && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <Sun className="w-4 h-4 text-amber-500" />
+              <span className="capitalize">{venue.lighting.replace("_", " ")}</span>
             </div>
           )}
           {venue.distance && (
@@ -223,6 +551,12 @@ export function VenueCard({
               📏 {venue.distance}
             </div>
           )}
+          {enrichData?.venueId && (
+            <div className="mt-4">
+              <NoiseTimeChart venueId={enrichData.venueId} />
+            </div>
+          )}
+
         </div>
 
         {/* Actions */}
@@ -241,6 +575,15 @@ export function VenueCard({
             <MessageSquare className="w-4 h-4" />
             Rate
           </button>
+          {venue.id && (
+            <button
+              onClick={() => setShowFolderModal(true)}
+              className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+              title="Add to Collection"
+            >
+              <FolderPlus className="w-4 h-4" />
+            </button>
+          )}
           {enrichData?.website && (
             <a
               href={enrichData.website}
@@ -251,8 +594,29 @@ export function VenueCard({
               <ExternalLink className="w-4 h-4" />
             </a>
           )}
+          {enrichData?.venueId && (
+            <VenueShareButton
+              venueId={enrichData.venueId}
+              venueName={venue.name}
+            />
+          )}
+
+          {enrichData?.venueId && (
+            <a
+              href={`/reserve/${enrichData.venueId}`}
+              className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500"
+            >
+              Reserve desk
+            </a>
+          )}
         </div>
       </div>
+      {showFolderModal && venue.id && (
+        <AddToFolderModal
+          venue={venue}
+          onClose={() => setShowFolderModal(false)}
+        />
+      )}
     </div>
   );
 }

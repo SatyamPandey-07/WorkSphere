@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { venueRatingSchema, validateRequest } from "@/lib/validations";
+import { updateUserPreferencesSummary } from "@/lib/agents/MemoryAgent";
 
 // POST /api/venues/[venueId]/rate - Add rating
 export async function POST(
@@ -28,7 +29,22 @@ export async function POST(
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    const { wifiQuality, hasOutlets, noiseLevel, comment, hasErgonomic, outletDensity, wifiSpeed } = validation.data;
+    const {
+      wifiQuality,
+      hasOutlets,
+      noiseLevel,
+      avgDecibels,
+      peakDecibels,
+      comment,
+      hasErgonomic,
+      outletDensity,
+      wifiSpeed,
+      speedtestPhoto,
+      hasPhoneBooths,
+      hasNoMusic,
+      hasQuietZone,
+      lighting,
+    } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
     const targetPlaceId = venueData?.placeId || venueId;
@@ -65,10 +81,17 @@ export async function POST(
         wifiQuality,
         hasOutlets,
         noiseLevel,
+        avgDecibels: avgDecibels || null,
+        peakDecibels: peakDecibels || null,
         hasErgonomic,
         outletDensity,
         wifiSpeed,
         comment,
+        speedtestPhoto,
+        hasPhoneBooths,
+        hasNoMusic,
+        hasQuietZone,
+        lighting,
       },
       create: {
         userId,
@@ -76,10 +99,17 @@ export async function POST(
         wifiQuality,
         hasOutlets,
         noiseLevel,
+        avgDecibels: avgDecibels || null,
+        peakDecibels: peakDecibels || null,
         hasErgonomic: hasErgonomic || false,
         outletDensity: outletDensity || "none",
         wifiSpeed: wifiSpeed || null,
         comment,
+        speedtestPhoto,
+        hasPhoneBooths: hasPhoneBooths || false,
+        hasNoMusic: hasNoMusic || false,
+        hasQuietZone: hasQuietZone || false,
+        lighting: lighting || null,
       },
     });
 
@@ -91,6 +121,9 @@ export async function POST(
     const avgWifi = allRatings.reduce((sum: number, r: { wifiQuality: number }) => sum + r.wifiQuality, 0) / allRatings.length;
     const outletPercent = (allRatings.filter((r: { hasOutlets: boolean }) => r.hasOutlets).length / allRatings.length) * 100;
     const ergonomicPercent = (allRatings.filter((r: any) => r.hasErgonomic).length / allRatings.length) * 100;
+    const phoneBoothsPercent = (allRatings.filter((r: any) => r.hasPhoneBooths).length / allRatings.length) * 100;
+    const noMusicPercent = (allRatings.filter((r: any) => r.hasNoMusic).length / allRatings.length) * 100;
+    const quietZonePercent = (allRatings.filter((r: any) => r.hasQuietZone).length / allRatings.length) * 100;
 
     // Most common noise level
     const noiseCounts: Record<string, number> = {};
@@ -98,6 +131,17 @@ export async function POST(
       noiseCounts[r.noiseLevel] = (noiseCounts[r.noiseLevel] || 0) + 1;
     });
     const dominantNoise = Object.entries(noiseCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0];
+
+    // Most common lighting
+    const lightingCounts: Record<string, number> = {};
+    allRatings.forEach((r: any) => {
+      if (r.lighting) {
+        lightingCounts[r.lighting] = (lightingCounts[r.lighting] || 0) + 1;
+      }
+    });
+    const dominantLighting = Object.keys(lightingCounts).length > 0
+      ? Object.entries(lightingCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0]
+      : null;
 
     // Most common outlet density
     const densityCounts: Record<string, number> = {};
@@ -125,9 +169,18 @@ export async function POST(
         hasErgonomic: ergonomicPercent > 50,
         outletDensity: dominantDensity,
         wifiSpeed: avgSpeed,
+        hasPhoneBooths: phoneBoothsPercent > 50,
+        hasNoMusic: noMusicPercent > 50,
+        hasQuietZone: quietZonePercent > 50,
+        lighting: dominantLighting,
         crowdsourced: true,
       },
     });
+
+    // Trigger background preference summary consolidation
+    updateUserPreferencesSummary(userId).catch((err) =>
+      console.error("[RateAPI] Background preference sync failed:", err)
+    );
 
     return NextResponse.json({ rating }, { status: 201 });
   } catch (error) {

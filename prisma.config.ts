@@ -11,7 +11,11 @@ export default defineConfig({
   datasource: {
     url: process.env.DATABASE_URL
   },
+  migrations: {
+    seed: 'node prisma/seed.js'
+  },
   migrate: {
+    seed: 'node prisma/seed.js',
     adapter: async () => {
       // Dynamic import for postgres adapter
       const { PrismaPg } = await import('@prisma/adapter-pg')

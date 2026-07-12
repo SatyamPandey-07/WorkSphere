@@ -1,0 +1,15 @@
+{
+  "venue": {
+    "reviews": "Reviews",
+    "noReviewsYet": "No Reviews Yet",
+    "beTheFirst": "Be the first to share your workspace rating.",
+    "wifi": "WiFi",
+    "power": "Power",
+    "noise": "Noise",
+    "yes": "Yes",
+    "no": "No",
+    "viewSpeedtest": "View Speedtest Screenshot",
+    "translate": "Translate",
+    "translating": "Translating..."
+  }
+}

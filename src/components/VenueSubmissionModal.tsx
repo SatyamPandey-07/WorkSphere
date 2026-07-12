@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/nextjs";
 import { X, MapPin, Loader2 } from "lucide-react";
 
 interface VenueSubmissionModalProps {
@@ -21,6 +21,13 @@ interface VenueFormData {
   hasOutlets: boolean;
   noiseLevel: "quiet" | "moderate" | "loud";
   description: string;
+  hasPhoneBooths: boolean;
+  hasNoMusic: boolean;
+  hasQuietZone: boolean;
+  singleOriginBeans: boolean;
+  specialtyEspresso: boolean;
+  oatAlmondMilk: boolean;
+  pourOverAvailable: boolean;
 }
 
 export function VenueSubmissionModal({
@@ -30,6 +37,7 @@ export function VenueSubmissionModal({
   onSubmitSuccess,
 }: VenueSubmissionModalProps) {
   const { isSignedIn } = useUser();
+  const { getToken } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -47,6 +55,13 @@ export function VenueSubmissionModal({
     hasOutlets: false,
     noiseLevel: "moderate",
     description: "",
+    hasPhoneBooths: false,
+    hasNoMusic: false,
+    hasQuietZone: false,
+    singleOriginBeans: false,
+    specialtyEspresso: false,
+    oatAlmondMilk: false,
+    pourOverAvailable: false,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -72,6 +87,7 @@ export function VenueSubmissionModal({
     setUploadStatus("Uploading image...");
 
     try {
+      const token = await getToken();
       let imageUrl = null;
       if (file) {
         const uploadData = new FormData();
@@ -79,6 +95,9 @@ export function VenueSubmissionModal({
 
         const uploadRes = await fetch("/api/upload", {
           method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+          },
           body: uploadData,
         });
 
@@ -95,7 +114,10 @@ export function VenueSubmissionModal({
 
       const response = await fetch("/api/venues", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
         body: JSON.stringify({
           placeId,
           name: formData.name,
@@ -106,6 +128,13 @@ export function VenueSubmissionModal({
           wifiQuality: formData.wifiQuality,
           hasOutlets: formData.hasOutlets,
           noiseLevel: formData.noiseLevel,
+          hasPhoneBooths: formData.hasPhoneBooths,
+          hasNoMusic: formData.hasNoMusic,
+          hasQuietZone: formData.hasQuietZone,
+          singleOriginBeans: formData.singleOriginBeans,
+          specialtyEspresso: formData.specialtyEspresso,
+          oatAlmondMilk: formData.oatAlmondMilk,
+          pourOverAvailable: formData.pourOverAvailable,
           crowdsourced: true,
           imageUrl,
         }),
@@ -132,6 +161,13 @@ export function VenueSubmissionModal({
           hasOutlets: false,
           noiseLevel: "moderate",
           description: "",
+          hasPhoneBooths: false,
+          hasNoMusic: false,
+          hasQuietZone: false,
+          singleOriginBeans: false,
+          specialtyEspresso: false,
+          oatAlmondMilk: false,
+          pourOverAvailable: false,
         });
         setFile(null);
         setImagePreview(null);
@@ -166,16 +202,21 @@ export function VenueSubmissionModal({
         longitude: userLocation.lng,
       }));
     } else if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setFormData(prev => ({
-            ...prev,
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          }));
-        },
-        () => setError("Could not get your location")
-      );
+      try {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setFormData(prev => ({
+              ...prev,
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+            }));
+          },
+          () => setError("Could not get your location")
+        );
+      } catch (err) {
+        console.warn("Geolocation sync error in submission modal:", err);
+        setError("Could not get your location");
+      }
     }
   };
 
@@ -298,6 +339,103 @@ export function VenueSubmissionModal({
             </div>
             <p className="text-[10px] text-zinc-400 mt-1">Photos are scanned by AI to verify amenities.</p>
           </div>
+
+          <div className="space-y-2 border-t border-zinc-100 dark:border-zinc-800 pt-3">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">
+              Acoustic Amenities
+            </label>
+            <div className="grid grid-cols-1 gap-2">
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.hasPhoneBooths}
+                  onChange={(e) => setFormData(prev => ({ ...prev, hasPhoneBooths: e.target.checked }))}
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                Phone Booths Available
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.hasNoMusic}
+                  onChange={(e) => setFormData(prev => ({ ...prev, hasNoMusic: e.target.checked }))}
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                No Background Music
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.hasQuietZone}
+                  onChange={(e) => setFormData(prev => ({ ...prev, hasQuietZone: e.target.checked }))}
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                Strict Silence Zones
+              </label>
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.singleOriginBeans}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      singleOriginBeans: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                ☕ Single-Origin Beans
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.specialtyEspresso}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      specialtyEspresso: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                ⚙️ Specialty Espresso Machine
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.oatAlmondMilk}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      oatAlmondMilk: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                🥛 Oat / Almond Milk Available
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.pourOverAvailable}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      pourOverAvailable: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                🫖 Pour-Over Available
+              </label>
+            </div>
+          </div>
+
 
           <button
             type="submit"

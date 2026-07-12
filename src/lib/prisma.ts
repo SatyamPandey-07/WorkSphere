@@ -1,16 +1,33 @@
 import { PrismaClient } from "@prisma/client";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { recordQueryDuration } from "@/lib/dbTelemetry";
 
 const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined;
+  prisma: ReturnType<typeof createPrismaClient> | undefined;
 };
 
 // Prisma 7 requires a driver adapter for PostgreSQL
 function createPrismaClient() {
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const adapter = new PrismaPg(pool);
-  return new PrismaClient({ adapter });
+
+  // Client extension (Prisma 7 replacement for the old $use middleware)
+  // records per-query duration for the admin system-telemetry dashboard.
+  return new PrismaClient({ adapter }).$extends({
+    query: {
+      $allModels: {
+        async $allOperations({ model, operation, args, query }) {
+          const start = performance.now();
+          try {
+            return await query(args);
+          } finally {
+            recordQueryDuration(model ?? operation, performance.now() - start);
+          }
+        },
+      },
+    },
+  });
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();

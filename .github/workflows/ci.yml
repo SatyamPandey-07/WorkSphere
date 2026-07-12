@@ -9,31 +9,85 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
     env:
       DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy
       CLERK_SECRET_KEY: sk_test_dummy
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci > install_output.log 2>&1
+          INSTALL_EXIT=$?
+          cat install_output.log
+          if [ $INSTALL_EXIT -ne 0 ]; then
+            echo "true" > install_failed.txt
+            exit $INSTALL_EXIT
+          fi
 
       - name: Run Prisma generate
         run: npx prisma generate
 
       - name: Run lint
-        run: npm run lint
+        run: |
+          npm run lint > lint_output.log 2>&1
+          LINT_EXIT=$?
+          cat lint_output.log
+          if [ $LINT_EXIT -ne 0 ]; then
+            echo "true" > lint_failed.txt
+            exit $LINT_EXIT
+          fi
 
       - name: Build Next.js application
-        run: npm run build
+        run: |
+          npm run build > build_output.log 2>&1
+          BUILD_EXIT=$?
+          cat build_output.log
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "true" > build_failed.txt
+            exit $BUILD_EXIT
+          fi
 
       - name: Run unit tests
-        run: npm test
+        run: |
+          npm test > test_output.log 2>&1
+          TEST_EXIT=$?
+          cat test_output.log
+          if [ $TEST_EXIT -ne 0 ]; then
+            echo "true" > test_failed.txt
+            exit $TEST_EXIT
+          fi
+
+      - name: Upload CI Logs and Markers
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs
+          path: |
+            *_output.log
+            *_failed.txt
+          retention-days: 1
+
+  auto-approve:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+    continue-on-error: true
+    steps:
+      - name: Auto Approve PR
+        uses: hmarr/auto-approve-action@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}

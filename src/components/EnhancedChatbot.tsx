@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useUser, useAuth } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayerSession } from "@/hooks/useRealTime";
 import { VenueRatingDialog } from "./VenueRatingDialog";
@@ -14,12 +14,21 @@ import {
   trackVenueInteraction,
   trackFilterApplied,
   trackError,
-  recordSearchPattern,
-  recordAgentMetric,
+  trackAgentPerformance,
 } from "@/lib/analytics";
-import { saveFavoriteOffline } from "@/lib/offlineStorage";
+import {
+  saveFavoriteOffline,
+  saveSearchOffline,
+  getSearchOffline,
+  getAllSearchesOffline,
+  queueConversationRename,
+  queueConversationDelete,
+  getPendingConversationEdits,
+  applyPendingConversationEdits,
+  flushConversationEditQueue,
+} from "@/lib/offlineStorage";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// Types
 
 interface MapUpdate {
   type: string;
@@ -53,6 +62,7 @@ interface EnhancedChatbotProps {
   onBook: (venue: Venue) => void;
   userLocation?: { lat: number; lng: number };
   roomId?: string | null;
+  onShowToast?: (msg: string) => void;
 }
 
 interface Filters {
@@ -62,6 +72,13 @@ interface Filters {
   ergonomic?: boolean;
   outletDensity?: "every_table" | "some_tables" | "wall_seats" | "none";
   wifiSpeedBand?: "basic" | "fast" | "ultra" | "all";
+  hasPhoneBooths?: boolean;
+  hasNoMusic?: boolean;
+  hasQuietZone?: boolean;
+  singleOriginBeans?: boolean;
+  specialtyEspresso?: boolean;
+  oatAlmondMilk?: boolean;
+  pourOverAvailable?: boolean;
 }
 
 interface Conversation {
@@ -76,7 +93,7 @@ interface AgentStep {
   timestamp: number;
 }
 
-// ─── Static suggestion chips ──────────────────────────────────────────────────
+// Static suggestion chips
 
 const INITIAL_SUGGESTIONS = [
   "Find a quiet cafe with good WiFi near me",
@@ -85,20 +102,22 @@ const INITIAL_SUGGESTIONS = [
   "Find libraries with outlets",
 ];
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// Component
 
-export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation, roomId }: EnhancedChatbotProps) {
+export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation, roomId, onShowToast }: EnhancedChatbotProps) {
   const { isSignedIn, user } = useUser();
-  const { socket, yDoc } = useMultiplayerSession(roomId || null);
+  const { getToken } = useAuth();
+
+  const { socket } = useMultiplayerSession(roomId || null);
 
   // Presence state
   const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string }>>({});
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  
+
   // Track local cursor
   useEffect(() => {
     if (!socket || !roomId) return;
-    
+
     const handleMouseMove = (e: MouseEvent) => {
       // Throttle mouse moves to avoid flooding
       if (Math.random() > 0.8) {
@@ -110,7 +129,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         }));
       }
     };
-    
+
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, [socket, roomId, user]);
@@ -118,7 +137,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   // Handle incoming presence
   useEffect(() => {
     if (!socket) return;
-    
+
     const onMessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data);
@@ -146,12 +165,12 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
             onMapUpdate(data.update);
           }
         }
-      } catch (e) {}
+      } catch { }
     };
-    
+
     socket.addEventListener("message", onMessage);
     return () => socket.removeEventListener("message", onMessage);
-  }, [socket]);
+  }, [socket, onMapUpdate]);
 
   // Core state
   const [location, setLocation] = useState(userLocation);
@@ -177,25 +196,30 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  // ── Auto-scroll ──────────────────────────────────────────────────────────────
+  // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // ── Geolocation fallback ─────────────────────────────────────────────────────
+  // Geolocation fallback
   const getPreciseLocation = useCallback(() => {
     if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          setLocation(newLoc);
-          onMapUpdate?.({
-            type: "SET_MAP_VIEW",
-            data: { center: newLoc, zoom: 14, animate: true }
-          });
-        },
-        () => setLocation({ lat: 37.7749, lng: -122.4194 })
-      );
+      try {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            setLocation(newLoc);
+            onMapUpdate?.({
+              type: "SET_MAP_VIEW",
+              data: { center: newLoc, zoom: 14, animate: true }
+            });
+          },
+          () => setLocation({ lat: 37.7749, lng: -122.4194 })
+        );
+      } catch (err) {
+        console.warn("Geolocation sync error in chatbot:", err);
+        setLocation({ lat: 37.7749, lng: -122.4194 });
+      }
     }
   }, [onMapUpdate]);
 
@@ -222,17 +246,17 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     } else {
       const newLoc = { lat, lng };
       setLocation(newLoc);
-      
+
       const update = { type: "SET_MAP_VIEW", data: { center: newLoc, zoom: 14, animate: true } };
       onMapUpdate?.(update);
-      
+
       if (socket && roomId) {
         socket.send(JSON.stringify({ type: "map-update", update }));
       }
     }
   };
 
-  // ── Load conversations & favorites on sign-in ─────────────────────────────
+  // Load conversations & favorites on sign-in
   useEffect(() => {
     if (isSignedIn) {
       loadConversations();
@@ -240,13 +264,19 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     }
   }, [isSignedIn]);
 
-  // ── Conversations ────────────────────────────────────────────────────────────
+  // Conversations
   const loadConversations = async () => {
     try {
       const res = await fetch("/api/conversations");
       if (res.ok) {
         const data = await res.json();
-        setConversations(data.conversations || []);
+        const rawConversations: Conversation[] = data.conversations || [];
+        // Apply any not-yet-synced offline renames/deletes on top of the
+        // server (or SW-cached) list, so a reload while offline — or before
+        // background sync has run — doesn't revert local edits. See #266.
+        const pendingEdits = await getPendingConversationEdits();
+        const merged = applyPendingConversationEdits(rawConversations, pendingEdits);
+        setConversations(merged);
       }
     } catch (e) {
       console.error("Failed to load conversations:", e);
@@ -294,17 +324,65 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   };
 
   const deleteConversation = async (id: string) => {
+    // Reflect the change in the sidebar immediately regardless of connectivity,
+    // so the UI never feels unresponsive while offline (see #266).
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (currentConversationId === id) {
+      setCurrentConversationId(null);
+      setMessages([]);
+    }
+
+    if (!navigator.onLine) {
+      await queueConversationDelete(id);
+      return;
+    }
+
     try {
-      await fetch(`/api/conversations/${id}`, { method: "DELETE" });
-      await loadConversations();
-      if (currentConversationId === id) {
-        setCurrentConversationId(null);
-        setMessages([]);
-      }
+      const res = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`Delete failed with status ${res.status}`);
     } catch (e) {
-      console.error("Failed to delete conversation:", e);
+      console.error("Failed to delete conversation, queuing for retry:", e);
+      await queueConversationDelete(id);
     }
   };
+
+  const renameConversation = async (id: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title: trimmed } : c)));
+
+    if (!navigator.onLine) {
+      await queueConversationRename(id, trimmed);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed }),
+      });
+      if (!res.ok) throw new Error(`Rename failed with status ${res.status}`);
+    } catch (e) {
+      console.error("Failed to rename conversation, queuing for retry:", e);
+      await queueConversationRename(id, trimmed);
+    }
+  };
+
+  // Flush any queued offline conversation edits as soon as connectivity
+  // returns — a foreground fallback alongside the service worker's
+  // Background Sync registration (which some browsers, e.g. Safari, don't
+  // support at all).
+  useEffect(() => {
+    const handleOnline = () => {
+      flushConversationEditQueue().then(() => {
+        if (isSignedIn) loadConversations();
+      });
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [isSignedIn]);
 
   const startNewChat = () => {
     setCurrentConversationId(null);
@@ -312,7 +390,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     setShowHistory(false);
   };
 
-  // ── Favorites ────────────────────────────────────────────────────────────────
+  // Favorites
   const loadFavorites = async () => {
     try {
       const res = await fetch("/api/favorites");
@@ -377,18 +455,31 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     }
   };
 
-  // ── Rating ───────────────────────────────────────────────────────────────────
+  // Rating
   const handleSubmitRating = async (rating: {
     wifiQuality: number;
     hasOutlets: boolean;
     noiseLevel: "quiet" | "moderate" | "loud";
+    avgDecibels?: number;
+    peakDecibels?: number;
     comment?: string;
+    hasErgonomic: boolean;
+    outletDensity: "every_table" | "some_tables" | "wall_seats" | "none";
+    wifiSpeed?: number;
+    speedtestPhoto?: string;
+    hasPhoneBooths?: boolean;
+    hasNoMusic?: boolean;
+    hasQuietZone?: boolean;
   }) => {
     if (!ratingVenue || !isSignedIn) return;
     try {
+      const token = await getToken();
       await fetch(`/api/venues/${ratingVenue.id}/rate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
         body: JSON.stringify({
           ...rating,
           venue: {
@@ -412,7 +503,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     }
   };
 
-  // ── Directions ───────────────────────────────────────────────────────────────
+  // Directions
   const handleGetDirections = (venue: Venue) => {
     if (!location || !onMapUpdate) return;
     onMapUpdate({
@@ -425,7 +516,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     });
   };
 
-  // ── Filters ───────────────────────────────────────────────────────────────────
+  // Filters
   const toggleFilter = (key: keyof Filters) => {
     setFilters((prev) => {
       const next = { ...prev };
@@ -452,12 +543,12 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     });
   };
 
-  // ── Agent step expand/collapse ────────────────────────────────────────────────
+  // Agent step expand/collapse
   const toggleSteps = (messageId: string) => {
     setExpandedSteps((prev) => ({ ...prev, [messageId]: !prev[messageId] }));
   };
 
-  // ── Suggestion click ─────────────────────────────────────────────────────────
+  // Suggestion click
   const handleSuggestionClick = useCallback(
     (suggestion: string) => {
       if (isLoading) return;
@@ -471,7 +562,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     [isLoading]
   );
 
-  // ── Main submit ───────────────────────────────────────────────────────────────
+  // Main submit
   const handleInputChange = (val: string) => {
     setInput(val);
     if (socket && roomId) {
@@ -513,14 +604,13 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       name: user?.firstName || "Anonymous"
     };
     setMessages((prev) => [...prev, newUserMessage]);
-    
+
     if (socket && roomId) {
       socket.send(JSON.stringify({ type: "new-message", message: newUserMessage }));
     }
 
     if (location) {
       trackSearch(userMessage, location, filters as Record<string, unknown>);
-      recordSearchPattern(userMessage);
     }
 
     try {
@@ -536,61 +626,238 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         }),
       });
 
-      if (!response.ok) throw new Error("Failed to send message");
-
-      const data = await response.json();
-
-      if (data.agentSteps) {
-        (data.agentSteps as AgentStep[]).forEach((step) => {
-          recordAgentMetric(step.agent, Date.now() - startTime, true);
-        });
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error("High traffic detected. Please wait a few seconds and try searching again.");
+        }
+        throw new Error("Failed to send message");
       }
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: data.content || "I couldn't generate a response.",
-        venues: data.venues,
-        agentSteps: data.agentSteps,
-        suggestions: data.suggestions,
-        cached: data.cached,
-        complexity: data.complexity,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
+      const assistantMessageId = (Date.now() + 1).toString();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: assistantMessageId,
+          role: "assistant",
+          content: "",
+        },
+      ]);
       
-      if (socket && roomId) {
-        socket.send(JSON.stringify({ type: "new-message", message: assistantMessage }));
-      }
+      setIsLoading(false); // Stream starts, disable loading spinner
 
-      if (data.venues?.length > 0 && onMapUpdate) {
-        const update = {
-          type: "markers",
-          markers: data.venues.map((v: Venue) => ({
-            id: v.id,
-            lat: v.lat,
-            lng: v.lng,
-            name: v.name,
-            category: v.category,
-            address: v.address,
-            wifi: v.wifi,
-            score: v.score,
-          })),
-        };
-        onMapUpdate(update);
-        if (socket && roomId) {
-          socket.send(JSON.stringify({ type: "map-update", update }));
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let metadata: any = null;
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const chunks = buffer.split(/(?=METADATA:|TEXT:)/);
+          buffer = chunks.pop() || "";
+          
+          for (const chunk of chunks) {
+            if (chunk.startsWith("METADATA:")) {
+              const metaStr = chunk.slice(9).trim();
+              try {
+                metadata = JSON.parse(metaStr);
+                
+                if (metadata.highTraffic) {
+                  onShowToast?.("High traffic detected. Please wait a few seconds and try searching again.");
+                }
+
+                if (metadata.agentSteps) {
+                  (metadata.agentSteps as AgentStep[]).forEach((step) => {
+                    trackAgentPerformance(step.agent, Date.now() - startTime, true);
+                  });
+                }
+                
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantMessageId
+                      ? {
+                          ...m,
+                          venues: metadata.venues,
+                          agentSteps: metadata.agentSteps,
+                          suggestions: metadata.suggestions,
+                          cached: metadata.cached,
+                          complexity: metadata.complexity,
+                        }
+                      : m
+                  )
+                );
+
+              try {
+              await saveSearchOffline(
+               userMessage,
+               (metadata.venues ?? []).map((v: Venue) => ({
+               id: v.id,
+               name: v.name,
+               latitude: v.lat,
+               longitude: v.lng,
+               category: v.category,
+               address: v.address,
+               }))
+               );
+               } catch (err) {
+                console.warn("Failed to cache search:", err);
+              }
+                
+                if (metadata.venues?.length > 0 && onMapUpdate) {
+                  const update = {
+                    type: "markers",
+                    markers: metadata.venues.map((v: Venue) => ({
+                      id: v.id,
+                      lat: v.lat,
+                      lng: v.lng,
+                      name: v.name,
+                      category: v.category,
+                      address: v.address,
+                      wifi: v.wifi,
+                      score: v.score,
+                    })),
+                  };
+                  onMapUpdate(update);
+                  if (socket && roomId) {
+                    socket.send(JSON.stringify({ type: "map-update", update }));
+                  }
+                }
+              } catch(e) {
+                console.error("Failed to parse metadata", e);
+              }
+            } else if (chunk.startsWith("TEXT:")) {
+              const text = chunk.slice(5);
+              setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: m.content + text } : m));
+            }
+          }
+        }
+        
+        // Process remaining buffer
+        if (buffer) {
+          if (buffer.startsWith("METADATA:")) {
+            const metaStr = buffer.slice(9).trim();
+            try { 
+              metadata = JSON.parse(metaStr); 
+              setMessages((prev) =>
+                prev.map((m) => m.id === assistantMessageId ? {
+                  ...m,
+                  venues: metadata.venues,
+                  agentSteps: metadata.agentSteps,
+                  suggestions: metadata.suggestions,
+                  cached: metadata.cached,
+                  complexity: metadata.complexity,
+                } : m)
+              );
+
+              try {
+                await saveSearchOffline(
+                  userMessage,
+                  (metadata.venues ?? []).map((v: Venue) => ({
+                    id: v.id,
+                    name: v.name,
+                    latitude: v.lat,
+                    longitude: v.lng,
+                    category: v.category,
+                    address: v.address,
+                  }))
+                );
+              } catch (err) {
+                console.warn("Failed to cache search:", err);
+              }
+            } catch {}
+          } else if (buffer.startsWith("TEXT:")) {
+            const text = buffer.slice(5);
+            setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: m.content + text } : m));
+          }
         }
       }
+      
+      // Final message sync for socket
+      setMessages((prev) => {
+        const finalMsg = prev.find(m => m.id === assistantMessageId);
+        if (finalMsg && socket && roomId) {
+          socket.send(JSON.stringify({ type: "new-message", message: finalMsg }));
+        }
+        return prev;
+      });
     } catch (err) {
       console.error("Chat error:", err);
-      setError("Failed to send message. Please try again.");
+      const errMsg = err instanceof Error ? err.message : "Failed to send message. Please try again.";
+try {
+        const cached = await getSearchOffline(userMessage);
+
+        if (cached) {
+          const venues: Venue[] = cached.results.map(v => ({
+            id: v.id,
+            name: v.name,
+            lat: v.latitude,
+            lng: v.longitude,
+            category: v.category ?? "coworking_space",
+            address: v.address,
+          }));
+
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: "assistant",
+              content:
+                "📦 You're offline. Showing your cached search results.",
+              venues,
+              cached: true,
+            },
+          ]);
+
+          if (onMapUpdate) {
+            onMapUpdate({
+              type: "markers",
+              markers: venues.map(v => ({
+                id: v.id,
+                lat: v.lat,
+                lng: v.lng,
+                name: v.name,
+                category: v.category,
+                address: v.address,
+              })),
+            });
+          }
+
+          setIsLoading(false);
+          return;
+        }
+
+        const recentSearches = await getAllSearchesOffline();
+        if (recentSearches.length > 0) {
+          setMessages(prev => [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              role: "assistant",
+              content:
+                "📡 You're offline and we don't have a cached result for that search. Try one of your recent searches:",
+              suggestions: recentSearches.map(s => s.query),
+            },
+          ]);
+          setIsLoading(false);
+          return;
+        }
+      } catch (offlineError) {
+        console.error(offlineError);
+      }
+      setError(errMsg);
+      if (errMsg.includes("High traffic detected")) {
+        onShowToast?.(errMsg);
+      }
       trackError(err instanceof Error ? err : new Error(String(err)), "chat_submit");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // Render
   return (
     <div className="flex h-full flex-col bg-white dark:bg-zinc-950 relative overflow-hidden">
       {/* Remote Cursors */}
@@ -605,7 +872,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
             className="pointer-events-none fixed z-[9999] flex flex-col items-start"
           >
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-orange-500 drop-shadow-md">
-              <path d="M5.65376 21.2087L2.61053 2.76633C2.39958 1.48834 3.75545 0.559955 4.88795 1.2059L22.2891 11.1444C23.4795 11.8242 23.3664 13.5786 22.0934 14.108L14.7706 17.1517L12.5976 24.3235C12.1932 25.658 10.366 25.8643 9.68063 24.6548L5.65376 21.2087Z" fill="currentColor"/>
+              <path d="M5.65376 21.2087L2.61053 2.76633C2.39958 1.48834 3.75545 0.559955 4.88795 1.2059L22.2891 11.1444C23.4795 11.8242 23.3664 13.5786 22.0934 14.108L14.7706 17.1517L12.5976 24.3235C12.1932 25.658 10.366 25.8643 9.68063 24.6548L5.65376 21.2087Z" fill="currentColor" />
             </svg>
             <div className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-4 shadow-md whitespace-nowrap">
               {cursor.name}
@@ -629,6 +896,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         conversations={conversations}
         onLoadConversation={loadConversation}
         onDeleteConversation={deleteConversation}
+        onRenameConversation={renameConversation}
         roomId={roomId || currentConversationId}
         onShareSession={() => {
           let sessionToShare = roomId || currentConversationId;

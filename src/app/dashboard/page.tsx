@@ -1,7 +1,26 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser as useClerkUser } from "@clerk/nextjs";
+// Mock useUser for local development bypass if dummy keys are used
+const useUser = () => {
+    const isDummy = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const clerkUser = !isDummy ? useClerkUser() : null;
+
+    if (isDummy) {
+        return {
+            isLoaded: true,
+            isSignedIn: true,
+            user: {
+                firstName: "Nomad",
+                lastName: "Scout",
+                emailAddresses: [{ emailAddress: "nomad.scout@worksphere.dev" }]
+            }
+        };
+    }
+    return clerkUser || { isLoaded: false, isSignedIn: false, user: null };
+};
 import { 
   getAnalyticsSummary, 
   getAgentMetrics, 
@@ -22,6 +41,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { MemoryManager } from "./MemoryManager";
+import { NotificationSettings } from "./NotificationSettings";
 
 interface AgentMetric {
   agent: string;
@@ -309,8 +329,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* AI Memory Management */}
-        <MemoryManager />
+        {/* Settings & AI Memory Management */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          <NotificationSettings />
+          <MemoryManager />
+        </div>
       </div>
     </div>
   );

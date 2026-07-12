@@ -59,6 +59,9 @@ jest.mock('react-leaflet', () => ({
     setView: mockSetView,
     flyTo: mockFlyTo,
     flyToBounds: mockFlyToBounds,
+    getZoom: jest.fn(() => 13),
+    on: jest.fn(),
+    off: jest.fn(),
   }),
 }));
 

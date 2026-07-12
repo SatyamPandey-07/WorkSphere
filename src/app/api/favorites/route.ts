@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
+import { updateUserPreferencesSummary } from "@/lib/agents/MemoryAgent";
 
 // GET /api/favorites - Get user's favorites
 export async function GET() {
@@ -86,6 +87,11 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    // Trigger background preference summary consolidation
+    updateUserPreferencesSummary(userId).catch((err) =>
+      console.error("[FavoriteAPI POST] Background preference sync failed:", err)
+    );
+
     return NextResponse.json({ favorite }, { status: 201 });
   } catch (error: any) {
     console.error("POST /api/favorites error:", error);
@@ -151,6 +157,11 @@ export async function DELETE(req: NextRequest) {
         },
       },
     });
+
+    // Trigger background preference summary consolidation
+    updateUserPreferencesSummary(userId).catch((err) =>
+      console.error("[FavoriteAPI DELETE] Background preference sync failed:", err)
+    );
 
     return NextResponse.json({ success: true });
   } catch (error) {

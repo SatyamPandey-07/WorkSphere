@@ -37,8 +37,10 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
     const [bookingDate, setBookingDate] = useState("");
     const [bookingTime, setBookingTime] = useState("");
     const [email, setEmail] = useState("");
-    const [history, setHistory] = useState<Booking[]>([]);
+   const [history, setHistory] = useState<Booking[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [isExporting, setIsExporting] = useState(false);
 
     useEffect(() => {
         if (!isOpen) {
@@ -54,11 +56,59 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
             const res = await fetch("/api/bookings/history");
             const data = await res.json();
             setHistory(data.bookings || []);
+            setSelectedIds(new Set());
             setStep("history");
         } catch (err) {
             console.error("Failed to fetch history:", err);
         } finally {
             setLoadingHistory(false);
+        }
+    };
+
+    const toggleSelected = (id: string) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        setSelectedIds((prev) =>
+            prev.size === history.length ? new Set() : new Set(history.map((b) => b.id))
+        );
+    };
+
+    const handleDownloadSingle = (bookingId: string) => {
+        window.open(`/api/bookings/${bookingId}/download`, "_blank");
+    };
+
+    const handleBulkExport = async (format: "pdf" | "csv") => {
+        setIsExporting(true);
+        try {
+            const response = await fetch("/api/bookings/export", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ bookingIds: Array.from(selectedIds), format }),
+            });
+
+            if (!response.ok) throw new Error("Export failed");
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `WorkSphere_Expenses.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error("Bulk export failed:", err);
+            alert("Failed to export selected bookings.");
+        } finally {
+            setIsExporting(false);
         }
     };
 
@@ -137,72 +187,134 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                                     </div>
                                 </div>
                             ) : (
-                                <div className="grid gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                                    {history.map((booking) => (
-                                        <div
-                                            key={booking.id}
-                                            className="group relative bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-3xl p-6 hover:border-blue-500/50 transition-all hover:shadow-xl hover:shadow-blue-500/5"
-                                        >
-                                            <div className="flex justify-between items-start mb-4">
-                                                <div>
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="text-[8px] font-black bg-blue-600 text-white px-2 py-0.5 rounded uppercase tracking-widest">
-                                                            {booking.venue.category}
-                                                        </span>
-                                                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-                                                            {booking.confirmationId}
-                                                        </span>
+                                <>
+                                    <div className="flex items-center justify-between px-1">
+                                        <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 cursor-pointer select-none">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.size === history.length && history.length > 0}
+                                                onChange={toggleSelectAll}
+                                                className="w-4 h-4 accent-blue-600 cursor-pointer"
+                                            />
+                                            Select All ({history.length})
+                                        </label>
+                                        {selectedIds.size > 0 && (
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-500">
+                                                {selectedIds.size} Selected
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div className="grid gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                        {history.map((booking) => (
+                                            <div
+                                                key={booking.id}
+                                                className={`group relative bg-zinc-50 dark:bg-zinc-800/50 border rounded-3xl p-6 transition-all hover:shadow-xl hover:shadow-blue-500/5 ${
+                                                    selectedIds.has(booking.id)
+                                                        ? "border-blue-500 ring-2 ring-blue-500/20"
+                                                        : "border-zinc-200 dark:border-zinc-700 hover:border-blue-500/50"
+                                                }`}
+                                            >
+                                                <div className="flex justify-between items-start mb-4">
+                                                    <div className="flex items-start gap-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedIds.has(booking.id)}
+                                                            onChange={() => toggleSelected(booking.id)}
+                                                            className="w-4 h-4 mt-1 accent-blue-600 cursor-pointer shrink-0"
+                                                        />
+                                                        <div>
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className="text-[8px] font-black bg-blue-600 text-white px-2 py-0.5 rounded uppercase tracking-widest">
+                                                                    {booking.venue.category}
+                                                                </span>
+                                                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                                                                    {booking.confirmationId}
+                                                                </span>
+                                                            </div>
+                                                            <h4 className="text-lg font-black uppercase tracking-tight group-hover:text-blue-500 transition-colors">
+                                                                {booking.venue.name}
+                                                            </h4>
+                                                            <p className="text-[10px] text-zinc-500 font-bold flex items-center gap-1 uppercase tracking-widest mt-1">
+                                                                <MapPin className="w-3 h-3" />
+                                                                {booking.venue.address}
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                    <h4 className="text-lg font-black uppercase tracking-tight group-hover:text-blue-500 transition-colors">
-                                                        {booking.venue.name}
-                                                    </h4>
-                                                    <p className="text-[10px] text-zinc-500 font-bold flex items-center gap-1 uppercase tracking-widest mt-1">
-                                                        <MapPin className="w-3 h-3" />
-                                                        {booking.venue.address}
-                                                    </p>
+                                                    <div className="text-right">
+                                                        <p className="text-sm font-black text-zinc-900 dark:text-zinc-100">{booking.date}</p>
+                                                        <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{booking.time}</p>
+                                                    </div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <p className="text-sm font-black text-zinc-900 dark:text-zinc-100">{booking.date}</p>
-                                                    <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{booking.time}</p>
+
+                                                <div className="flex items-center gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
+                                                    <button
+                                                        onClick={() => handleDownloadSingle(booking.id)}
+                                                        className="flex-1 flex items-center justify-center gap-2 py-3 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all active:scale-95"
+                                                    >
+                                                        <Download className="w-3.5 h-3.5" />
+                                                        Download Receipt
+                                                    </button>
+                                                    <div className="flex gap-2">
+                                                        <a
+                                                            href={getCalendarUrls(booking.venue.name, booking.venue.address, booking.date, booking.time).googleUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title="Add to Google Calendar"
+                                                            className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-blue-500"
+                                                        >
+                                                            <CalendarPlus className="w-4 h-4" />
+                                                        </a>
+
+
+                                                        <a
+                                                            href={getCalendarUrls(booking.venue.name, booking.venue.address, booking.date, booking.time).outlookUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            title="Add to Outlook"
+                                                            className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-blue-600"
+                                                        >
+                                                            <Mail className="w-4 h-4" />
+                                                        </a>
+                                                        <button
+                                                            onClick={() => downloadICS(booking.venue.name, booking.venue.address, booking.date, booking.time)}
+                                                            title="Download .ics"
+                                                            className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-zinc-600 dark:text-zinc-400"
+                                                        >
+                                                            <Download className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
+                                        ))}
+                                    </div>
 
-                                            <div className="flex items-center gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
-                                                <button className="flex-1 flex items-center justify-center gap-2 py-3 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all active:scale-95">
+                                    {selectedIds.size > 0 && (
+                                        <div className="sticky bottom-0 left-0 right-0 flex items-center justify-between gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-4 shadow-2xl">
+                                            <span className="text-xs font-black uppercase tracking-widest text-zinc-600 dark:text-zinc-300">
+                                                {selectedIds.size} booking{selectedIds.size > 1 ? "s" : ""} selected
+                                            </span>
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => handleBulkExport("csv")}
+                                                    disabled={isExporting}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all disabled:opacity-50"
+                                                >
                                                     <Download className="w-3.5 h-3.5" />
-                                                    Download Receipt
+                                                    Export CSV
                                                 </button>
-                                                <div className="flex gap-2">
-                                                    <a
-                                                        href={getCalendarUrls(booking.venue.name, booking.venue.address, booking.date, booking.time).googleUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        title="Add to Google Calendar"
-                                                        className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-blue-500"
-                                                    >
-                                                        <CalendarPlus className="w-4 h-4" />
-                                                    </a>
-                                                    <a
-                                                        href={getCalendarUrls(booking.venue.name, booking.venue.address, booking.date, booking.time).outlookUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        title="Add to Outlook"
-                                                        className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-blue-600"
-                                                    >
-                                                        <Mail className="w-4 h-4" />
-                                                    </a>
-                                                    <button
-                                                        onClick={() => downloadICS(booking.venue.name, booking.venue.address, booking.date, booking.time)}
-                                                        title="Download .ics"
-                                                        className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-zinc-600 dark:text-zinc-400"
-                                                    >
-                                                        <Download className="w-4 h-4" />
-                                                    </button>
-                                                </div>
+                                                <button
+                                                    onClick={() => handleBulkExport("pdf")}
+                                                    disabled={isExporting}
+                                                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all disabled:opacity-50"
+                                                >
+                                                    {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                                                    Export PDF
+                                                </button>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     )}

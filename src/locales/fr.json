@@ -1,0 +1,15 @@
+{
+  "venue": {
+    "reviews": "Avis",
+    "noReviewsYet": "Aucun avis pour le moment",
+    "beTheFirst": "Soyez le premier à évaluer votre espace de travail.",
+    "wifi": "WiFi",
+    "power": "Prises",
+    "noise": "Bruit",
+    "yes": "Oui",
+    "no": "Non",
+    "viewSpeedtest": "Voir la capture Speedtest",
+    "translate": "Traduire",
+    "translating": "Traduction..."
+  }
+}

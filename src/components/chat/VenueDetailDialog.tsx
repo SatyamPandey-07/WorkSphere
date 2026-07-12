@@ -2,10 +2,11 @@
 
 import {
     X, MapPin, Wifi, Zap, Volume2, Navigation, Heart,
-    Coffee, BookOpen, Building2, Star, Info, AlertTriangle, Camera, Eye
+    Coffee, BookOpen, Building2, Star, Info, AlertTriangle, Camera, Eye, Globe2, Sun
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { useTranslation } from "react-i18next";
 
 import { Venue } from "./ChatMessages";
 
@@ -37,6 +38,9 @@ export function VenueDetailDialog({
     const [photoUrl, setPhotoUrl] = useState<string | null>(null);
     const [photoLoading, setPhotoLoading] = useState(true);
     const [liveScore, setLiveScore] = useState<number | null>(null);
+    const { t } = useTranslation();
+    const [translatingReviewId, setTranslatingReviewId] = useState<string | null>(null);
+    const [translatedReviews, setTranslatedReviews] = useState<Record<string, string>>({});
 
     // =========================================================================
     // COMMUNITY AMENITY VALIDATION STATE DICTIONARY
@@ -83,6 +87,41 @@ export function VenueDetailDialog({
         }
     };
 
+    const handleTranslate = async (review: any) => {
+        if (!review.comment || translatedReviews[review.id]) return;
+        
+        setTranslatingReviewId(review.id);
+        try {
+            const langCode = navigator.language || "en";
+            let targetLanguageName = "English";
+            try {
+                targetLanguageName = new Intl.DisplayNames(['en'], { type: 'language' }).of(langCode) || langCode;
+            } catch (e) {
+                targetLanguageName = langCode;
+            }
+
+            const response = await fetch("/api/translate", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    text: review.comment,
+                    targetLanguage: targetLanguageName
+                }),
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setTranslatedReviews(prev => ({
+                    ...prev,
+                    [review.id]: data.translatedText
+                }));
+            }
+        } catch (error) {
+            console.error("Translation failed:", error);
+        } finally {
+            setTranslatingReviewId(null);
+        }
+    };
+
     // Effect 1: Venue badalne par state reset karna aur photo fetch karna
     useEffect(() => {
         if (!venue) return;
@@ -108,12 +147,19 @@ export function VenueDetailDialog({
         });
 
         fetch(`/api/venues/${encodeURIComponent(venue.id)}/photo?${params}`)
-            .then(r => r.json())
-            .then(data => {
-                if (data.photoUrl) setPhotoUrl(data.photoUrl);
-                setPhotoLoading(false);
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Failed to load venue photo");
+                }
+
+                setPhotoUrl(response.url);
             })
-            .catch(() => setPhotoLoading(false));
+            .catch(() => {
+                setPhotoUrl(null);
+            })
+            .finally(() => {
+                setPhotoLoading(false);
+            });
     }, [venue]);
 
     // Effect 2: Handle real-time SSE updates
@@ -363,17 +409,16 @@ export function VenueDetailDialog({
                 <div className="flex border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 px-8 py-3 gap-6">
                     {[
                         { id: "overview", label: "Overview" },
-                        { id: "reviews", label: "Reviews" },
+                        { id: "reviews", label: t("venue.reviews") },
                         { id: "menu", label: "Menus & Prices" }
                     ].map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id as any)}
-                            className={`pb-1 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
-                                activeTab === tab.id
+                            className={`pb-1 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${activeTab === tab.id
                                     ? "border-blue-600 text-blue-600"
                                     : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-                            }`}
+                                }`}
                         >
                             {tab.label}
                         </button>
@@ -385,7 +430,7 @@ export function VenueDetailDialog({
                 <div className="p-8 bg-white dark:bg-zinc-900 overflow-y-auto max-h-[calc(90vh-320px)]">
                     {activeTab === "overview" && (
                         <>
-                            <div className="grid grid-cols-3 gap-4 mb-8">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                                 <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
                                     <div className="p-3 rounded-xl bg-blue-500/10 mb-3">
                                         <Wifi className="w-6 h-6 text-blue-500" />
@@ -413,6 +458,15 @@ export function VenueDetailDialog({
                                     <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">Noise</span>
                                     <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none capitalize">
                                         {venue.noiseLevel || "Normal"}
+                                    </span>
+                                </div>
+                                <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
+                                    <div className="p-3 rounded-xl bg-amber-500/10 mb-3">
+                                        <Sun className="w-6 h-6 text-amber-500" />
+                                    </div>
+                                    <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">Lighting</span>
+                                    <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none capitalize text-center leading-tight">
+                                        {venue.lighting ? venue.lighting.replace("_", " ") : "Normal"}
                                     </span>
                                 </div>
                             </div>
@@ -467,37 +521,36 @@ export function VenueDetailDialog({
                                 </div>
                             </div>
 
-                        <div className="flex flex-col gap-3 pt-4">
+                            <div className="flex flex-col gap-3 pt-4">
+                                <button
+                                    onClick={() => onGetDirections(venue)}
+                                    className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98]"
+                                >
+                                    <Navigation className="w-5 h-5" />
+                                    Navigate
+                                </button>
+                                <div className="flex gap-3">
                                     <button
-                                        onClick={() => onGetDirections(venue)}
-                                        className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98]"
-                                    >
-                                        <Navigation className="w-5 h-5" />
-                                        Navigate
-                                    </button>
-                                    <div className="flex gap-3">
-                                        <button
-                                            onClick={() => onToggleFavorite(venue)}
-                                            className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${
-                                                isFavorited
-                                                    ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
-                                                    : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
+                                        onClick={() => onToggleFavorite(venue)}
+                                        className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${isFavorited
+                                                ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
+                                                : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
                                             }`}
+                                    >
+                                        <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
+                                        {isFavorited ? "Saved" : "Save"}
+                                    </button>
+                                    {onRate && (
+                                        <button
+                                            onClick={() => onRate(venue)}
+                                            className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 border-2 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all shadow-md active:scale-[0.98]"
                                         >
-                                            <Heart className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`} />
-                                            {isFavorited ? "Saved" : "Save"}
+                                            <Star className="w-4 h-4" />
+                                            Rate
                                         </button>
-                                        {onRate && (
-                                            <button
-                                                onClick={() => onRate(venue)}
-                                                className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 border-2 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all shadow-md active:scale-[0.98]"
-                                            >
-                                                <Star className="w-4 h-4" />
-                                                Rate
-                                            </button>
-                                        )}
-                                    </div>
+                                    )}
                                 </div>
+                            </div>
                         </>
                     )}
 
@@ -506,8 +559,8 @@ export function VenueDetailDialog({
                             {reviews.length === 0 ? (
                                 <div className="py-12 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl text-center px-4">
                                     <Info className="w-8 h-8 text-zinc-400 mx-auto mb-2" />
-                                    <p className="text-xs font-black uppercase tracking-wider text-zinc-500">No Reviews Yet</p>
-                                    <p className="text-[10px] text-zinc-400 mt-1">Be the first to share your workspace rating.</p>
+                                    <p className="text-xs font-black uppercase tracking-wider text-zinc-500">{t("venue.noReviewsYet")}</p>
+                                    <p className="text-[10px] text-zinc-400 mt-1">{t("venue.beTheFirst")}</p>
                                 </div>
                             ) : (
                                 reviews.map((review: any, idx: number) => (
@@ -518,11 +571,11 @@ export function VenueDetailDialog({
                                                     {review.user?.firstName || 'Nomad'} {review.user?.lastName || 'Scout'}
                                                 </span>
                                                 <div className="flex items-center gap-1.5 mt-1 text-[9px] font-mono text-zinc-500">
-                                                    <span>WiFi: {review.wifiQuality}/5</span>
+                                                    <span>{t("venue.wifi")}: {review.wifiQuality}/5</span>
                                                     <span>•</span>
-                                                    <span>Power: {review.hasOutlets ? 'Yes' : 'No'}</span>
+                                                    <span>{t("venue.power")}: {review.hasOutlets ? t("venue.yes") : t("venue.no")}</span>
                                                     <span>•</span>
-                                                    <span>Noise: {review.noiseLevel}</span>
+                                                    <span>{t("venue.noise")}: {review.noiseLevel}</span>
                                                 </div>
                                             </div>
                                             {review.wifiSpeed && (
@@ -532,9 +585,21 @@ export function VenueDetailDialog({
                                             )}
                                         </div>
                                         {review.comment && (
-                                            <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300 leading-relaxed bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
-                                                {review.comment}
-                                            </p>
+                                            <div className="space-y-2">
+                                                <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300 leading-relaxed bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                                                    {translatedReviews[review.id] || review.comment}
+                                                </p>
+                                                {!translatedReviews[review.id] && (
+                                                    <button
+                                                        onClick={() => handleTranslate(review)}
+                                                        disabled={translatingReviewId === review.id}
+                                                        className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50"
+                                                    >
+                                                        <Globe2 className="w-3 h-3" />
+                                                        {translatingReviewId === review.id ? t("venue.translating") : t("venue.translate")}
+                                                    </button>
+                                                )}
+                                            </div>
                                         )}
                                         {review.speedtestPhoto && (
                                             <button
@@ -542,7 +607,7 @@ export function VenueDetailDialog({
                                                 className="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-blue-600 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg border border-blue-500/20 transition-all active:scale-95"
                                             >
                                                 <Eye className="w-3.5 h-3.5" />
-                                                View Speedtest Screenshot
+                                                {t("venue.viewSpeedtest")}
                                             </button>
                                         )}
                                     </div>
@@ -576,7 +641,7 @@ export function VenueDetailDialog({
                                     {menuPhotos.map((photo: string, i: number) => (
                                         <div key={i} className="relative h-32 rounded-xl overflow-hidden border border-zinc-100 dark:border-zinc-800 group/item cursor-pointer" onClick={() => setPreviewPhoto(photo)}>
                                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img src={photo} alt={`Menu ${i+1}`} className="w-full h-full object-cover transition-transform group-hover/item:scale-105 duration-300" />
+                                            <img src={photo} alt={`Menu ${i + 1}`} className="w-full h-full object-cover transition-transform group-hover/item:scale-105 duration-300" />
                                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center">
                                                 <Eye className="w-6 h-6 text-white" />
                                             </div>

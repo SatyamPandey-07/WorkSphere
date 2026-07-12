@@ -43,6 +43,7 @@ export async function POST(
       hasPhoneBooths,
       hasNoMusic,
       hasQuietZone,
+      lighting,
     } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
@@ -90,6 +91,7 @@ export async function POST(
         hasPhoneBooths,
         hasNoMusic,
         hasQuietZone,
+        lighting,
       },
       create: {
         userId,
@@ -107,6 +109,7 @@ export async function POST(
         hasPhoneBooths: hasPhoneBooths || false,
         hasNoMusic: hasNoMusic || false,
         hasQuietZone: hasQuietZone || false,
+        lighting: lighting || null,
       },
     });
 
@@ -128,6 +131,17 @@ export async function POST(
       noiseCounts[r.noiseLevel] = (noiseCounts[r.noiseLevel] || 0) + 1;
     });
     const dominantNoise = Object.entries(noiseCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0];
+
+    // Most common lighting
+    const lightingCounts: Record<string, number> = {};
+    allRatings.forEach((r: any) => {
+      if (r.lighting) {
+        lightingCounts[r.lighting] = (lightingCounts[r.lighting] || 0) + 1;
+      }
+    });
+    const dominantLighting = Object.keys(lightingCounts).length > 0
+      ? Object.entries(lightingCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0]
+      : null;
 
     // Most common outlet density
     const densityCounts: Record<string, number> = {};
@@ -158,6 +172,7 @@ export async function POST(
         hasPhoneBooths: phoneBoothsPercent > 50,
         hasNoMusic: noMusicPercent > 50,
         hasQuietZone: quietZonePercent > 50,
+        lighting: dominantLighting,
         crowdsourced: true,
       },
     });

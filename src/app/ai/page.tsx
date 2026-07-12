@@ -304,6 +304,17 @@ function AppPage() {
           const toLoc = update.route.to;
 
           const executeRoute = async (fromLoc: { lat: number; lng: number }) => {
+            if (!fromLoc || typeof fromLoc.lat !== 'number' || typeof fromLoc.lng !== 'number' || 
+                !toLoc || typeof toLoc.lat !== 'number' || typeof toLoc.lng !== 'number' ||
+                isNaN(fromLoc.lat) || isNaN(fromLoc.lng) || isNaN(toLoc.lat) || isNaN(toLoc.lng)) {
+              console.error("OSRM routing execution error: Invalid coordinates provided", { fromLoc, toLoc });
+              setToast({
+                message: "Could not calculate route due to invalid location coordinates.",
+                type: "error"
+              });
+              return;
+            }
+
             try {
               const { getRoute } = await import('@/lib/routing');
               const routeData = await getRoute(fromLoc, toLoc, 'walking');
@@ -353,7 +364,17 @@ function AppPage() {
                   });
 
                   // Fallback to center of current map viewport, or location state, or default SF
-                  const fallbackLoc = mapView?.center || (location ? { lat: location.latitude, lng: location.longitude } : { lat: 37.7749, lng: -122.4194 });
+                  let fallbackLoc = { lat: 37.7749, lng: -122.4194 }; // Default SF
+                  
+                  if (mapView?.center && typeof mapView.center.lat === 'number') {
+                    fallbackLoc = mapView.center;
+                  } else if (mapView?.center && 'latitude' in mapView.center && typeof (mapView.center as any).latitude === 'number') {
+                    // Catch AI sending latitude instead of lat
+                    fallbackLoc = { lat: (mapView.center as any).latitude, lng: (mapView.center as any).longitude };
+                  } else if (location && typeof location.latitude === 'number') {
+                    fallbackLoc = { lat: location.latitude, lng: location.longitude };
+                  }
+                  
                   executeRoute(fallbackLoc);
                 },
                 { timeout: 5000, enableHighAccuracy: false }
@@ -364,12 +385,30 @@ function AppPage() {
                 message: "Location access blocked. Fallback: using map viewport center.",
                 type: "warning"
               });
-              const fallbackLoc = mapView?.center || (location ? { lat: location.latitude, lng: location.longitude } : { lat: 37.7749, lng: -122.4194 });
+              let fallbackLoc = { lat: 37.7749, lng: -122.4194 }; // Default SF
+              
+              if (mapView?.center && typeof mapView.center.lat === 'number') {
+                fallbackLoc = mapView.center;
+              } else if (mapView?.center && 'latitude' in mapView.center && typeof (mapView.center as any).latitude === 'number') {
+                fallbackLoc = { lat: (mapView.center as any).latitude, lng: (mapView.center as any).longitude };
+              } else if (location && typeof location.latitude === 'number') {
+                fallbackLoc = { lat: location.latitude, lng: location.longitude };
+              }
+              
               executeRoute(fallbackLoc);
             }
           } else {
             // Fallback for browsers without geolocation support
-            const fallbackLoc = mapView?.center || (location ? { lat: location.latitude, lng: location.longitude } : { lat: 37.7749, lng: -122.4194 });
+            let fallbackLoc = { lat: 37.7749, lng: -122.4194 }; // Default SF
+            
+            if (mapView?.center && typeof mapView.center.lat === 'number') {
+              fallbackLoc = mapView.center;
+            } else if (mapView?.center && 'latitude' in mapView.center && typeof (mapView.center as any).latitude === 'number') {
+              fallbackLoc = { lat: (mapView.center as any).latitude, lng: (mapView.center as any).longitude };
+            } else if (location && typeof location.latitude === 'number') {
+              fallbackLoc = { lat: location.latitude, lng: location.longitude };
+            }
+            
             executeRoute(fallbackLoc);
           }
         }

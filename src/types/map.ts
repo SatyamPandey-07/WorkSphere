@@ -10,7 +10,12 @@ export interface MapMarker {
   score?: number;
   wifiQuality?: number;
   hasOutlets?: boolean;
+  petsAllowedIndoors?: boolean;
+  patioOnly?: boolean;
+  waterBowlsProvided?: boolean;
   noiseLevel?: string;
+  lighting?: string;
+  hasErgonomic?: boolean;
   distance?: string;
   address?: string;
   amenities?: {

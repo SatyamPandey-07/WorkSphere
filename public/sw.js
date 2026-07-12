@@ -1,5 +1,5 @@
 // Service Worker for WorkSphere PWA
-const CACHE_NAME = "worksphere-v2";
+const CACHE_NAME = "worksphere-v3";
 const OFFLINE_URL = "/offline";
 
 // Assets to cache on install
@@ -33,6 +33,11 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   // Bypass caching and worker interception for non-GET requests (like POST/PUT/DELETE)
   if (event.request.method !== "GET") {
+    return;
+  }
+
+  // Bypass service worker interception for download endpoints to prevent binary stream locking
+  if (event.request.url.includes("/download")) {
     return;
   }
 
@@ -216,15 +221,36 @@ async function syncRatings() {
 // IndexedDB helpers
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("worksphere-offline", 1);
+    const request = indexedDB.open("worksphere-offline", 2);
 
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      if (!db.objectStoreNames.contains("pending-actions")) {
-        db.createObjectStore("pending-actions", {
+      
+      // Venues store
+      if (!db.objectStoreNames.contains('venues')) {
+        const venuesStore = db.createObjectStore('venues', { keyPath: 'id' });
+        venuesStore.createIndex('type', 'type', { unique: false });
+        venuesStore.createIndex('savedAt', 'savedAt', { unique: false });
+      }
+
+      // Favorites store
+      if (!db.objectStoreNames.contains('favorites')) {
+        const favoritesStore = db.createObjectStore('favorites', { keyPath: 'id' });
+        favoritesStore.createIndex('savedAt', 'savedAt', { unique: false });
+      }
+
+      // Search history store
+      if (!db.objectStoreNames.contains('searches')) {
+        const searchesStore = db.createObjectStore('searches', { keyPath: 'query' });
+        searchesStore.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+
+      // Pending actions store (unified name)
+      if (!db.objectStoreNames.contains("pendingActions")) {
+        db.createObjectStore("pendingActions", {
           keyPath: "id",
           autoIncrement: true,
         });
@@ -235,8 +261,8 @@ function openIndexedDB() {
 
 function getPendingActions(db, type) {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction("pending-actions", "readonly");
-    const store = tx.objectStore("pending-actions");
+    const tx = db.transaction("pendingActions", "readonly");
+    const store = tx.objectStore("pendingActions");
     const request = store.getAll();
 
     request.onerror = () => reject(request.error);
@@ -249,8 +275,8 @@ function getPendingActions(db, type) {
 
 function removePendingAction(db, type, id) {
   return new Promise((resolve, reject) => {
-    const tx = db.transaction("pending-actions", "readwrite");
-    const store = tx.objectStore("pending-actions");
+    const tx = db.transaction("pendingActions", "readwrite");
+    const store = tx.objectStore("pendingActions");
     const request = store.delete(id);
 
     request.onerror = () => reject(request.error);

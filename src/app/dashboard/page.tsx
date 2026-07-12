@@ -1,9 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useUser as useClerkUser } from "@clerk/nextjs";
 // Mock useUser for local development bypass if dummy keys are used
 const useUser = () => {
-    if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk") {
+    const isDummy = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const clerkUser = !isDummy ? useClerkUser() : null;
+
+    if (isDummy) {
         return {
             isLoaded: true,
             isSignedIn: true,
@@ -14,8 +19,7 @@ const useUser = () => {
             }
         };
     }
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require("@clerk/nextjs").useUser();
+    return clerkUser || { isLoaded: false, isSignedIn: false, user: null };
 };
 import { 
   getAnalyticsSummary, 

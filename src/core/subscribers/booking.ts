@@ -11,6 +11,9 @@ eventBus.on("booking:confirmed", async (payload) => {
   const { bookingId, confirmationId, venue, customerEmail, date, time } = payload;
   const targetEmail = customerEmail || "pandeysatyam1802@gmail.com";
 
+  let pdfDoc: PDFDocument | null = null;
+  let pdfBuffer: Buffer | null = null;
+
   try {
     // Retrieve booking and user details to get customerName
     const dbBooking = await prisma.booking.findUnique({
@@ -20,7 +23,7 @@ eventBus.on("booking:confirmed", async (payload) => {
     const customerName = dbBooking?.user ? `${dbBooking.user.firstName || ""} ${dbBooking.user.lastName || ""}`.trim() : "";
 
     // 1. Generate PDF Receipt in Memory
-    const pdfDoc = await PDFDocument.create();
+    pdfDoc = await PDFDocument.create();
     const page = pdfDoc.addPage([595, 842]);
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -78,7 +81,7 @@ eventBus.on("booking:confirmed", async (payload) => {
 
     drawSafeText("Thank you for choosing WorkSphere. Your workspace is ready for you.", { x: 100, y: yPosition, size: 8, font, color: rgb(0.4, 0.4, 0.4) });
 
-    const pdfBuffer = Buffer.from(await pdfDoc.save());
+    pdfBuffer = Buffer.from(await pdfDoc.save());
 
     // 2. Transmit Email via Nodemailer
     if (SMTP_USER && SMTP_PASS && targetEmail) {
@@ -109,6 +112,19 @@ eventBus.on("booking:confirmed", async (payload) => {
     }
   } catch (error) {
     console.error("[BookingConfirmedEvent] Error generating PDF or sending email:", error);
+  } finally {
+    // Explicitly clear references for immediate garbage collection
+    pdfDoc = null;
+    pdfBuffer = null;
+
+    // Trigger garbage collection if exposed/available
+    if (typeof global !== 'undefined' && (global as any).gc) {
+      try {
+        (global as any).gc();
+      } catch (gcErr) {
+        console.warn("[PDF GC Warning]: Failed to trigger global.gc()", gcErr);
+      }
+    }
   }
 
   // 3. Analytics Telemetry

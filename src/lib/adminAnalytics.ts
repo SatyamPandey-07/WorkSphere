@@ -7,9 +7,9 @@ type AnalyticsEvent = {
   timestamp: number;
 };
 
-type RangeKey = "7d" | "30d" | "90d";
+export type RangeKey = "7d" | "30d" | "90d";
 
-const RANGE_DAYS: Record<RangeKey, number> = {
+export const RANGE_DAYS: Record<RangeKey, number> = {
   "7d": 7,
   "30d": 30,
   "90d": 90,
@@ -21,18 +21,18 @@ const STOP_WORDS = new Set([
   "find", "show", "looking", "want", "need",
 ]);
 
-function startDateForRange(range: RangeKey) {
+ export function startDateForRange(range: RangeKey) {
   const start = new Date();
   start.setUTCHours(0, 0, 0, 0);
   start.setUTCDate(start.getUTCDate() - (RANGE_DAYS[range] - 1));
   return start;
 }
 
-function isoDay(value: Date | number) {
+export function isoDay(value: Date | number) {
   return new Date(value).toISOString().slice(0, 10);
 }
 
-function createDaySeries(start: Date) {
+export function createDaySeries(start: Date) {
   const result: Record<string, number> = {};
   const cursor = new Date(start);
   const today = new Date();

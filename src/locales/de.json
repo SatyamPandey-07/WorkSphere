@@ -1,0 +1,15 @@
+{
+  "venue": {
+    "reviews": "Bewertungen",
+    "noReviewsYet": "Noch keine Bewertungen",
+    "beTheFirst": "Seien Sie der Erste, der Ihren Arbeitsbereich bewertet.",
+    "wifi": "WLAN",
+    "power": "Steckdosen",
+    "noise": "Lärm",
+    "yes": "Ja",
+    "no": "Nein",
+    "viewSpeedtest": "Speedtest-Screenshot anzeigen",
+    "translate": "Übersetzen",
+    "translating": "Übersetzen..."
+  }
+}

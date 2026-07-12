@@ -15,6 +15,7 @@ model User {
   lastName       String?
   imageUrl       String?
   createdAt      DateTime           @default(now())
+  discordWebhookUrl String?
   favorites      Favorite[]
   ratings        VenueRating[]
   conversations  Conversation[]
@@ -29,6 +30,10 @@ model User {
   isAdmin        Boolean            @default(false)
   flagsReported  FlaggedItem[]
   adminAuditLogs AdminAuditLog[]
+  ownedFolders   Folder[]           @relation("FolderOwner")
+  folderMemberships FolderMember[]  @relation("FolderMembership")
+  addedFolderVenues FolderVenue[]   @relation("FolderVenueAdder")
+  webhookEndpoints  WebhookEndpoint[]
 }
 
 model Venue {
@@ -47,6 +52,9 @@ model Venue {
   hasPhoneBooths Boolean            @default(false)
   hasNoMusic     Boolean            @default(false)
   hasQuietZone   Boolean            @default(false)
+  petsAllowedIndoors Boolean        @default(false)
+  patioOnly          Boolean        @default(false)
+  waterBowlsProvided Boolean        @default(false)
   outletDensity  String? // every_table, some_tables, wall_seats, none
   wifiSpeed      Int? // in Mbps
   crowdsourced   Boolean            @default(false)
@@ -57,6 +65,7 @@ model Venue {
   menuPhotos     String[]      @default([])
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
+  lighting       String?
   ratings        VenueRating[]
   favorites      Favorite[]
   bookings       Booking[]
@@ -70,6 +79,7 @@ model Venue {
   @@index([latitude, longitude])
   @@index([category])
   validations     AmenityValidation[]
+  folderVenues    FolderVenue[]
 }
 
 model VenueRating {
@@ -92,6 +102,7 @@ model VenueRating {
   createdAt     DateTime @default(now())
   avgDecibels   Float?
   peakDecibels  Float?
+  lighting      String?
 
   @@unique([userId, venueId])
   @@index([venueId])
@@ -347,3 +358,91 @@ model AdminAuditLog {
   details     String?
   createdAt   DateTime @default(now())
 }
+
+model Folder {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  owner       User           @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  inviteToken String?        @unique
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  
+  venues      FolderVenue[]
+  members     FolderMember[]
+
+  @@index([ownerId])
+}
+
+model FolderVenue {
+  id        String   @id @default(cuid())
+  folderId  String
+  folder    Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  addedById String
+  addedBy   User     @relation("FolderVenueAdder", fields: [addedById], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([folderId, venueId])
+  @@index([folderId])
+}
+
+model FolderMember {
+  id        String     @id @default(cuid())
+  folderId  String
+  folder    Folder     @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User       @relation("FolderMembership", fields: [userId], references: [id], onDelete: Cascade)
+  role      FolderRole @default(MEMBER)
+  joinedAt  DateTime   @default(now())
+
+  @@unique([folderId, userId])
+  @@index([folderId])
+  @@index([userId])
+}
+
+enum FolderRole {
+  OWNER
+  EDITOR
+  MEMBER
+}
+
+enum WebhookEventType {
+  DOCUMENT_SIGNED
+  AI_WORKFLOW_COMPLETED
+  MAP_GEOFENCE_BREACHED
+  VENUE_CREATED
+  REVIEW_SUBMITTED
+}
+
+model WebhookEndpoint {
+  id          String             @id @default(cuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url         String
+  secret      String             // For Svix HMAC signing
+  eventTypes  WebhookEventType[] // Array of subscribed events
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  
+  logs        WebhookDeliveryLog[]
+
+  @@index([userId])
+}
+
+model WebhookDeliveryLog {
+  id          String           @id @default(cuid())
+  endpointId  String
+  endpoint    WebhookEndpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  eventType   String
+  payload     Json
+  status      String           // e.g. "SUCCESS", "FAILED"
+  statusCode  Int?
+  createdAt   DateTime         @default(now())
+
+  @@index([endpointId])
+}
+

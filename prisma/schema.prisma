@@ -9,20 +9,21 @@ datasource db {
 }
 
 model User {
-  id             String             @id
-  email          String?            @unique
-  firstName      String?
-  lastName       String?
-  imageUrl       String?
-  createdAt      DateTime           @default(now())
-  discordWebhookUrl String?
-  favorites      Favorite[]
-  ratings        VenueRating[]
-  conversations  Conversation[]
-  bookings       Booking[]
-  memories       UserMemory[]
-  crdtState      Bytes?
+  id                 String             @id
+  email              String?            @unique
+  firstName          String?
+  lastName           String?
+  imageUrl           String?
+  createdAt          DateTime           @default(now())
+  discordWebhookUrl  String?
+  favorites          Favorite[]
+  ratings            VenueRating[]
+  conversations      Conversation[]
+  bookings           Booking[]
+  memories           UserMemory[]
+  crdtState          Bytes?
   preferencesSummary String?
+<<<<<<< HEAD
   createdVenues  Venue[]            @relation("VenueCreator")
   workStatus     WorkBuddyStatus?
   hostedSessions CoworkingSession[] @relation("SessionHost")
@@ -36,75 +37,96 @@ model User {
   webhookEndpoints  WebhookEndpoint[]
   phoneNumber       String?
   smsAlertsEnabled  Boolean            @default(false)
+=======
+  createdVenues      Venue[]            @relation("VenueCreator")
+  workStatus         WorkBuddyStatus?
+  hostedSessions     CoworkingSession[] @relation("SessionHost")
+  sessionRsvps       SessionRsvp[]
+  isAdmin            Boolean            @default(false)
+  flagsReported      FlaggedItem[]
+  adminAuditLogs     AdminAuditLog[]
+  ownedFolders       Folder[]           @relation("FolderOwner")
+  folderMemberships  FolderMember[]     @relation("FolderMembership")
+  addedFolderVenues  FolderVenue[]      @relation("FolderVenueAdder")
+  webhookEndpoints   WebhookEndpoint[]
+>>>>>>> cb03d98 (feat: add coffee quality filter support)
 }
 
 model Venue {
-  id             String             @id @default(cuid())
-  placeId        String             @unique
-  name           String
-  latitude       Float
-  longitude      Float
-  category       String // cafe, coworking, library
-  address        String?
-  rating         Float?
-  wifiQuality    Int? // 1-5 scale
-  hasOutlets     Boolean            @default(false)
-  noiseLevel     String? // quiet, moderate, loud
-  hasErgonomic   Boolean            @default(false)
-  hasPhoneBooths Boolean            @default(false)
-  hasNoMusic     Boolean            @default(false)
-  hasQuietZone   Boolean            @default(false)
-  petsAllowedIndoors Boolean        @default(false)
-  patioOnly          Boolean        @default(false)
-  waterBowlsProvided Boolean        @default(false)
-  outletDensity  String? // every_table, some_tables, wall_seats, none
-  wifiSpeed      Int? // in Mbps
-  crowdsourced   Boolean            @default(false)
-  requiresReview Boolean            @default(false)
-  imageUrl       String?
-  googlePlaceId  String?       // Cached Google place_id (for photo lookup)
-  photoReference String?       // Cached Google Places photo_reference
-  menuPhotos     String[]      @default([])
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  lighting       String?
-  ratings        VenueRating[]
-  favorites      Favorite[]
-  bookings       Booking[]
-  creatorId      String?
-  creator        User?              @relation("VenueCreator", fields: [creatorId], references: [id])
-  workStatuses   WorkBuddyStatus[]
-  sessions       CoworkingSession[]
-  seats          VenueSeat[]
-  wifiTelemetry  WifiTelemetry[]
+  id                 String              @id @default(cuid())
+  placeId            String              @unique
+  name               String
+  latitude           Float
+  longitude          Float
+  category           String // cafe, coworking, library
+  address            String?
+  rating             Float?
+  wifiQuality        Int? // 1-5 scale
+  hasOutlets         Boolean             @default(false)
+  singleOriginBeans  Boolean             @default(false)
+  specialtyEspresso  Boolean             @default(false)
+  oatAlmondMilk      Boolean             @default(false)
+  pourOverAvailable  Boolean             @default(false)
+  noiseLevel         String? // quiet, moderate, loud
+  hasErgonomic       Boolean             @default(false)
+  hasPhoneBooths     Boolean             @default(false)
+  hasNoMusic         Boolean             @default(false)
+  hasQuietZone       Boolean             @default(false)
+  petsAllowedIndoors Boolean             @default(false)
+  patioOnly          Boolean             @default(false)
+  waterBowlsProvided Boolean             @default(false)
+  outletDensity      String? // every_table, some_tables, wall_seats, none
+  wifiSpeed          Int? // in Mbps
+  crowdsourced       Boolean             @default(false)
+  requiresReview     Boolean             @default(false)
+  imageUrl           String?
+  googlePlaceId      String? // Cached Google place_id (for photo lookup)
+  photoReference     String? // Cached Google Places photo_reference
+  menuPhotos         String[]            @default([])
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  lighting           String?
+  ratings            VenueRating[]
+  favorites          Favorite[]
+  bookings           Booking[]
+  creatorId          String?
+  creator            User?               @relation("VenueCreator", fields: [creatorId], references: [id])
+  workStatuses       WorkBuddyStatus[]
+  sessions           CoworkingSession[]
+  seats              VenueSeat[]
+  wifiTelemetry      WifiTelemetry[]
+  validations        AmenityValidation[]
+  folderVenues       FolderVenue[]
 
   @@index([latitude, longitude])
   @@index([category])
-  validations     AmenityValidation[]
-  folderVenues    FolderVenue[]
 }
 
 model VenueRating {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  venueId       String
-  venue         Venue    @relation(fields: [venueId], references: [id])
-  wifiQuality   Int // 1-5
-  hasOutlets    Boolean
-  noiseLevel    String // quiet, moderate, loud
-  hasErgonomic  Boolean  @default(false)
-  hasPhoneBooths Boolean  @default(false)
-  hasNoMusic     Boolean  @default(false)
-  hasQuietZone   Boolean  @default(false)
-  outletDensity String? // every_table, some_tables, wall_seats, none
-  wifiSpeed     Int? // in Mbps
-  comment       String?
-  speedtestPhoto String?
-  createdAt     DateTime @default(now())
-  avgDecibels   Float?
-  peakDecibels  Float?
-  lighting      String?
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  venueId           String
+  venue             Venue    @relation(fields: [venueId], references: [id])
+  wifiQuality       Int // 1-5
+  hasOutlets        Boolean
+  singleOriginBeans Boolean  @default(false)
+  specialtyEspresso Boolean  @default(false)
+  oatAlmondMilk     Boolean  @default(false)
+  pourOverAvailable Boolean  @default(false)
+  noiseLevel        String // quiet, moderate, loud
+  hasErgonomic      Boolean  @default(false)
+  hasPhoneBooths    Boolean  @default(false)
+  hasNoMusic        Boolean  @default(false)
+  hasQuietZone      Boolean  @default(false)
+  outletDensity     String? // every_table, some_tables, wall_seats, none
+  wifiSpeed         Int? // in Mbps
+  comment           String?
+  speedtestPhoto    String?
+  createdAt         DateTime @default(now())
+  avgDecibels       Float?
+  peakDecibels      Float?
+  lighting          String?
 
   @@unique([userId, venueId])
   @@index([venueId])
@@ -199,12 +221,12 @@ model SemanticCache {
 }
 
 model AmenityValidation {
-  id        String   @id @default(cuid())
+  id        String        @id @default(cuid())
   venueId   String
-  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  amenity   String   // e.g., "wifi", "outlets", "ergonomic"
-  upvotes   Int      @default(0)
-  downvotes Int      @default(0)
+  venue     Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  amenity   String // e.g., "wifi", "outlets", "ergonomic"
+  upvotes   Int           @default(0)
+  downvotes Int           @default(0)
   votes     AmenityVote[]
 
   @@unique([venueId, amenity])
@@ -216,12 +238,11 @@ model AmenityVote {
   validationId String
   validation   AmenityValidation @relation(fields: [validationId], references: [id], onDelete: Cascade)
   userId       String
-  isUpvote     Boolean           // true = upvote, false = downvote
+  isUpvote     Boolean // true = upvote, false = downvote
   createdAt    DateTime          @default(now())
 
   @@unique([userId, validationId])
 }
-
 
 model WorkBuddyStatus {
   id        String   @id @default(cuid())
@@ -311,15 +332,16 @@ model VenueSeat {
   @@unique([venueId, seatNumber])
   @@index([venueId])
 }
+
 model WifiTelemetry {
-  id          String   @id @default(cuid())
-  venueId     String
-  venue       Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  download    Float
-  upload      Float
-  latency     Float
-  crowdLevel  String
-  timestamp   DateTime @default(now())
+  id         String   @id @default(cuid())
+  venueId    String
+  venue      Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  download   Float
+  upload     Float
+  latency    Float
+  crowdLevel String
+  timestamp  DateTime @default(now())
 
   @@index([venueId])
 }
@@ -351,28 +373,28 @@ model FlaggedItem {
 }
 
 model AdminAuditLog {
-  id          String   @id @default(cuid())
-  adminId     String
-  admin       User     @relation(fields: [adminId], references: [id])
-  action      String
-  entityType  String
-  entityId    String
-  details     String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  adminId    String
+  admin      User     @relation(fields: [adminId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  details    String?
+  createdAt  DateTime @default(now())
 }
 
 model Folder {
-  id          String         @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
   description String?
   ownerId     String
-  owner       User           @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  inviteToken String?        @unique
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  
-  venues      FolderVenue[]
-  members     FolderMember[]
+  owner       User     @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  inviteToken String?  @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  venues  FolderVenue[]
+  members FolderMember[]
 
   @@index([ownerId])
 }
@@ -392,13 +414,13 @@ model FolderVenue {
 }
 
 model FolderMember {
-  id        String     @id @default(cuid())
-  folderId  String
-  folder    Folder     @relation(fields: [folderId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User       @relation("FolderMembership", fields: [userId], references: [id], onDelete: Cascade)
-  role      FolderRole @default(MEMBER)
-  joinedAt  DateTime   @default(now())
+  id       String     @id @default(cuid())
+  folderId String
+  folder   Folder     @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User       @relation("FolderMembership", fields: [userId], references: [id], onDelete: Cascade)
+  role     FolderRole @default(MEMBER)
+  joinedAt DateTime   @default(now())
 
   @@unique([folderId, userId])
   @@index([folderId])
@@ -420,31 +442,30 @@ enum WebhookEventType {
 }
 
 model WebhookEndpoint {
-  id          String             @id @default(cuid())
-  userId      String
-  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  url         String
-  secret      String             // For Svix HMAC signing
-  eventTypes  WebhookEventType[] // Array of subscribed events
-  isActive    Boolean            @default(true)
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  
-  logs        WebhookDeliveryLog[]
+  id         String             @id @default(cuid())
+  userId     String
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url        String
+  secret     String // For Svix HMAC signing
+  eventTypes WebhookEventType[] // Array of subscribed events
+  isActive   Boolean            @default(true)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  logs WebhookDeliveryLog[]
 
   @@index([userId])
 }
 
 model WebhookDeliveryLog {
-  id          String           @id @default(cuid())
-  endpointId  String
-  endpoint    WebhookEndpoint  @relation(fields: [endpointId], references: [id], onDelete: Cascade)
-  eventType   String
-  payload     Json
-  status      String           // e.g. "SUCCESS", "FAILED"
-  statusCode  Int?
-  createdAt   DateTime         @default(now())
+  id         String          @id @default(cuid())
+  endpointId String
+  endpoint   WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  eventType  String
+  payload    Json
+  status     String // e.g. "SUCCESS", "FAILED"
+  statusCode Int?
+  createdAt  DateTime        @default(now())
 
   @@index([endpointId])
 }
-

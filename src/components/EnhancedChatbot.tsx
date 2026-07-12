@@ -70,6 +70,10 @@ interface Filters {
   hasPhoneBooths?: boolean;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
+  singleOriginBeans?: boolean;
+  specialtyEspresso?: boolean;
+  oatAlmondMilk?: boolean;
+  pourOverAvailable?: boolean;
 }
 
 interface Conversation {

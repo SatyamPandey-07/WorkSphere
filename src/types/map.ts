@@ -13,6 +13,10 @@ export interface MapMarker {
   petsAllowedIndoors?: boolean;
   patioOnly?: boolean;
   waterBowlsProvided?: boolean;
+  singleOriginBeans?: boolean;
+  specialtyEspresso?: boolean;
+  oatAlmondMilk?: boolean;
+  pourOverAvailable?: boolean;
   noiseLevel?: string;
   lighting?: string;
   hasErgonomic?: boolean;
@@ -25,6 +29,11 @@ export interface MapMarker {
     hasErgonomic?: boolean;
     outletDensity?: string;
     wifiSpeed?: number | null;
+
+    singleOriginBeans?: boolean;
+    specialtyEspresso?: boolean;
+    oatAlmondMilk?: boolean;
+    pourOverAvailable?: boolean;
   };
 }
 

@@ -203,7 +203,21 @@ const Map = ({
       return;
     }
 
-    const coordinatesString = venuesList
+    // Guard: remove consecutive duplicate stops (same lat/lng) —
+    // sending identical consecutive coordinates to OSRM can trigger
+    // a crash/error response.
+    const dedupedList = venuesList.filter((venue, idx) => {
+      if (idx === 0) return true;
+      const prev = venuesList[idx - 1];
+      return !(venue.latitude === prev.latitude && venue.longitude === prev.longitude);
+    });
+
+    if (dedupedList.length < 2) {
+      setOptimizedRoute(null);
+      return;
+    }
+
+    const coordinatesString = dedupedList
       .map(venue => `${venue.longitude},${venue.latitude}`)
       .join(";");
 

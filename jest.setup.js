@@ -1,4 +1,20 @@
 import '@testing-library/jest-dom';
+import { TextEncoder, TextDecoder } from 'util';
+import { webcrypto } from 'crypto';
+
+// jsdom doesn't provide these globals; Node's implementations are drop-in
+// replacements and let us test Edge-runtime-style code (e.g. src/lib/csrf.ts)
+// under the standard jsdom test environment.
+if (typeof global.TextEncoder === 'undefined') {
+  global.TextEncoder = TextEncoder;
+  global.TextDecoder = TextDecoder;
+}
+if (typeof global.crypto === 'undefined' || !global.crypto.subtle) {
+  Object.defineProperty(global, 'crypto', {
+    value: webcrypto,
+    configurable: true,
+  });
+}
 
 // Mock Leaflet global variable L
 global.L = {

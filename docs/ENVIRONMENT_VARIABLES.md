@@ -14,6 +14,7 @@ The application handles third-party services using environment parameters loaded
 | `DIRECT_URL` | **Required** | Neon.tech / Postgres | Unpooled migration execution endpoint (Session Mode) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | **Required** | Clerk Auth | Client-side user state interceptor token |
 | `CLERK_SECRET_KEY` | **Required** | Clerk Auth | Server-side secure authentication wrapper key |
+| `CSRF_SECRET` | *Optional* | Internal | HMAC secret used to sign CSRF tokens (`src/lib/csrf.ts`). Falls back to `CLERK_SECRET_KEY` if unset; a dev-only fallback is used outside production. Set this explicitly in production for a dedicated secret. |
 | `GROQ_API_KEY` | **Required** | Groq Cloud | Injects rapid LLM text generation capabilities into the Chat API |
 | `PEXELS_API_KEY` | *Optional* | Pexels Media | Sources real-world workplace dynamic fallback layouts and imagery |
 | `SMTP_SERVER` / `SMTP_PASSWORD` | *Optional* | Custom Mailer | Outbound operational system transactional email dispatch |

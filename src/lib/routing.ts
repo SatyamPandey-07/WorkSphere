@@ -18,7 +18,7 @@ export interface RouteResult {
 export async function getRoute(
   from: { lat: number; lng: number },
   to: { lat: number; lng: number },
-  profile: 'driving' | 'walking' | 'cycling' = 'walking'
+  profile: "driving" | "walking" | "cycling" = "walking",
 ): Promise<RouteResult | null> {
   // Guard: if start and destination are identical, skip the OSRM call
   // entirely — avoids malformed/edge-case responses from the routing API.
@@ -33,17 +33,17 @@ export async function getRoute(
   try {
     // OSRM uses lng,lat format (opposite of most APIs)
     const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
-    
+
     // Use public OSRM demo server (free, no API key)
     // For production, consider self-hosting or use paid service
     const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?overview=full&geometries=geojson`;
 
     const response = await fetch(url, {
-      headers: { 'Content-Type': 'application/json' },
+      headers: { "Content-Type": "application/json" },
     });
 
     if (!response.ok) {
-      console.error('OSRM routing failed:', response.status);
+      console.error("OSRM routing failed:", response.status);
       return null;
     }
 
@@ -54,7 +54,7 @@ export async function getRoute(
     }
 
     const route = data.routes[0];
-    
+
     // Convert GeoJSON coordinates [lng, lat] to our format {lat, lng}
     const path = route.geometry.coordinates.map((coord: [number, number]) => ({
       lat: coord[1],
@@ -67,7 +67,7 @@ export async function getRoute(
       duration: route.duration, // seconds
     };
   } catch (error) {
-    console.error('Error fetching route:', error);
+    console.error("Error fetching route:", error);
     return null;
   }
 }
@@ -79,22 +79,22 @@ export async function getRoute(
 export async function getRouteORS(
   from: { lat: number; lng: number },
   to: { lat: number; lng: number },
-  profile: 'driving-car' | 'foot-walking' | 'cycling-regular' = 'foot-walking',
-  apiKey?: string
+  profile: "driving-car" | "foot-walking" | "cycling-regular" = "foot-walking",
+  apiKey?: string,
 ): Promise<RouteResult | null> {
   if (!apiKey) {
-    console.warn('OpenRouteService requires API key');
+    console.warn("OpenRouteService requires API key");
     return null;
   }
 
   try {
-    const url = 'https://api.openrouteservice.org/v2/directions/' + profile;
-    
+    const url = "https://api.openrouteservice.org/v2/directions/" + profile;
+
     const response = await fetch(url, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': apiKey,
+        "Content-Type": "application/json",
+        Authorization: apiKey,
       },
       body: JSON.stringify({
         coordinates: [
@@ -105,7 +105,7 @@ export async function getRouteORS(
     });
 
     if (!response.ok) {
-      console.error('ORS routing failed:', response.status);
+      console.error("ORS routing failed:", response.status);
       return null;
     }
 
@@ -124,7 +124,7 @@ export async function getRouteORS(
       duration: route.summary.duration,
     };
   } catch (error) {
-    console.error('Error fetching ORS route:', error);
+    console.error("Error fetching ORS route:", error);
     return null;
   }
 }

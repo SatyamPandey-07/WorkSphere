@@ -1,6 +1,17 @@
-
 import { NextResponse } from 'next/server';
 import { processUpcomingReservationAlerts } from '@/lib/reminderCron';
+import { prisma } from "@/lib/prisma";
+import nodemailer from "nodemailer";
+import twilio from "twilio";
+import { Redis } from "@upstash/redis";
+
+// Setup Redis to track sent reminders
+let redis: any = null;
+try {
+  redis = Redis.fromEnv();
+} catch (e) {
+  console.warn("Redis client could not be initialized from env:", e);
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -14,14 +25,6 @@ export async function GET(request: Request) {
   await processUpcomingReservationAlerts();
   return NextResponse.json({ success: true, timestamp: new Date().toISOString() });
 }
-
-import { prisma } from "@/lib/prisma";
-import nodemailer from "nodemailer";
-import twilio from "twilio";
-import { Redis } from "@upstash/redis";
-
-// Setup Redis to track sent reminders
-const redis = Redis.fromEnv();
 
 export async function POST(req: Request) {
   // Protect cron endpoint using authorization bearer secret
@@ -63,11 +66,12 @@ export async function POST(req: Request) {
 
     for (const session of sessions) {
       const redisKey = `session-reminder:${session.id}`;
-      const alreadySent = await redis.get(redisKey);
-      if (alreadySent) continue;
-
-      // Mark as sent in Redis immediately to prevent duplicate runs
-      await redis.set(redisKey, "sent", { ex: 3600 }); // Expire key in 1 hour
+      if (redis) {
+        const alreadySent = await redis.get(redisKey);
+        if (alreadySent) continue;
+        // Mark as sent in Redis immediately to prevent duplicate runs
+        await redis.set(redisKey, "sent", { ex: 3600 }); // Expire key in 1 hour
+      }
 
       // Compile lists of recipients
       const recipients = [
@@ -175,4 +179,3 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
-

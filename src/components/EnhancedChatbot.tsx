@@ -110,7 +110,6 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   const { isSignedIn, user } = useUser();
 
   const { socket, yDoc } = useMultiplayerSession(roomId || null);
-
   const { getToken } = useAuth();
 
 
@@ -193,8 +192,9 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
             onMapUpdate(data.update);
           }
         }
-      } catch (e) {}
-
+      } catch (e) {
+        console.error("Failed to parse WebSocket message:", e);
+      }
     };
 
     socket.addEventListener("message", onMessage);

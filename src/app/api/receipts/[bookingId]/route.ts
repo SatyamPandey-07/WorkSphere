@@ -13,7 +13,6 @@ export async function GET(request: Request, { params }: { params: Promise<{ book
     if (!booking) {
       return new NextResponse('Booking record not found', { status: 404 });
     }
-
     // --- FIX IMPLEMENTATION ---
     // Instead of passing raw symbols like '₹' or '¥' directly to the PDF text stream,
     // utilize the sanitizer to translate symbols into standard text strings safely.

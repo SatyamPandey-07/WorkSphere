@@ -18,7 +18,12 @@ export async function fetchOSRMRoute(
   const osrmProfile =
     profile === "walking" ? "foot" : profile === "cycling" ? "bicycle" : "driving";
 
-  const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+  // Use local OSRM server if configured, otherwise fall back to public server
+  const osrmBase = typeof window !== 'undefined' && (window as any).__OSRM_URL__ 
+    ? (window as any).__OSRM_URL__
+    : 'https://router.project-osrm.org';
+  
+  const url = `${osrmBase}/route/v1/${osrmProfile}/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
 
   try {
     const response = await fetch(url, { 
@@ -29,7 +34,7 @@ export async function fetchOSRMRoute(
     clearTimeout(timeoutId); // Clear timeout instantly upon successful resolution
 
     if (!response.ok) {
-      throw new Error(`OSRM engine returned invalid status payload: ${response.status}`);
+      throw new Error(`OSRM engine returned invalid status payload: ${response.status} from ${url}`);
     }
 
     return await response.json();
@@ -38,7 +43,7 @@ export async function fetchOSRMRoute(
 
     // 2. Explicitly catch the Abort Error thrown by the controller signal
     if (error.name === 'AbortError') {
-      throw new Error('Network latency timeout. Unable to connect to routing servers.');
+      throw new Error(`Network latency timeout. Unable to connect to routing servers at ${osrmBase}.`);
     }
 
     throw error;

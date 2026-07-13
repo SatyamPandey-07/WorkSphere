@@ -82,6 +82,7 @@ export const venueRatingSchema = z.object({
   wifiQuality: z.number().min(1).max(5),
   hasOutlets: z.boolean(),
   powerTypes: z.array(z.string()).optional(),
+  outletLocations: z.array(z.string()).optional(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]),
   comment: z.string().max(1000).optional(),
   hasErgonomic: z.boolean().optional().default(false),

@@ -75,12 +75,32 @@ export function useRealtimeCapacity(venueId: string) {
       }
     };
 
+    const handleOnline = () => {
+      console.log('[RealtimeCapacity] Browser online, reconnecting...');
+      connectRealtime();
+    };
+
+    const handleOffline = () => {
+      console.log('[RealtimeCapacity] Browser offline, pausing stream');
+      setStatus('frozen');
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+      if (heartbeatTimeoutRef.current) {
+        clearTimeout(heartbeatTimeoutRef.current);
+      }
+    };
+
     window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
 
     return () => {
       if (eventSourceRef.current) eventSourceRef.current.close();
       if (heartbeatTimeoutRef.current) clearTimeout(heartbeatTimeoutRef.current);
       window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
     };
   }, [venueId]);
 

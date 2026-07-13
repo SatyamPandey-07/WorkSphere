@@ -16,6 +16,7 @@ model User {
   imageUrl           String?
   createdAt          DateTime           @default(now())
   discordWebhookUrl  String?
+  telegramWebhookUrl String?
   favorites          Favorite[]
   ratings            VenueRating[]
   conversations      Conversation[]
@@ -64,6 +65,7 @@ model Venue {
   waterBowlsProvided Boolean             @default(false)
   outletDensity      String? // every_table, some_tables, wall_seats, none
   powerTypes         String[]            @default([])
+  outletLocations    String[]            @default([])
   wifiSpeed          Int? // in Mbps
   crowdsourced       Boolean             @default(false)
   requiresReview     Boolean             @default(false)
@@ -110,6 +112,7 @@ model VenueRating {
   hasQuietZone      Boolean  @default(false)
   outletDensity     String? // every_table, some_tables, wall_seats, none
   powerTypes        String[] // usb_c, ac_wall, wireless
+  outletLocations   String[] // under_tables, wall_mounted, center_island, bar_counter
   wifiSpeed         Int? // in Mbps
   comment           String?
   speedtestPhoto    String?

@@ -68,7 +68,6 @@ describe('Notifications and Reminders API', () => {
       expect(voteState.upvotes).toBe(13);
     });
   });
-
   describe('POST /api/bookings/export', () => {
     it('returns 400 when no bookings are selected', async () => {
       const response = { status: 400, error: "No bookings selected" };

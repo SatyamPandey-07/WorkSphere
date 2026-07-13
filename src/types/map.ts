@@ -25,6 +25,8 @@ export interface MapMarker {
   address?: string;
   musicStyle?: string;
   hasPhoneBooths?: boolean;
+  outletLocations?: string[];
+  outletDensity?: string;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
   amenities?: {

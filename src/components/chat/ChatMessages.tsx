@@ -47,6 +47,7 @@ export interface Venue {
     hasPhoneBooths?: boolean;
     hasNoMusic?: boolean;
     hasQuietZone?: boolean;
+    outletLocations?: string[];
 }
 
 export interface Message {

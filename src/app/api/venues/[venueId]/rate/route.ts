@@ -50,6 +50,7 @@ export async function POST(
       lighting,
       musicStyle,
       powerTypes,
+      outletLocations,
     } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
@@ -104,6 +105,7 @@ export async function POST(
         lighting,
         musicStyle,
         powerTypes: powerTypes || [],
+        outletLocations: outletLocations || [],
       },
       create: {
         userId,
@@ -128,6 +130,7 @@ export async function POST(
         lighting: lighting || null,
         musicStyle,
         powerTypes: powerTypes || [],
+        outletLocations: outletLocations || [],
       },
     });
 
@@ -217,6 +220,11 @@ export async function POST(
       new Set(allRatings.flatMap((r: any) => r.powerTypes || [])),
     );
 
+    // Aggregate outlet locations (unique union of all outletLocations in all ratings)
+    const aggregatedOutletLocations = Array.from(
+      new Set(allRatings.flatMap((r: any) => r.outletLocations || [])),
+    );
+
     // Average wifi speed
     const validSpeeds = allRatings
       .filter((r: any) => r.wifiSpeed !== null && r.wifiSpeed > 0)
@@ -254,6 +262,7 @@ export async function POST(
         lighting: dominantLighting,
         musicStyle: dominantMusic,
         powerTypes: aggregatedPowerTypes,
+        outletLocations: aggregatedOutletLocations,
         crowdsourced: true,
       },
     });

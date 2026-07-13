@@ -829,6 +829,20 @@ export function VenueCard({
                 <span>Wireless</span>
               </div>
             )}
+          {venue.hasOutlets && venue.outletDensity && venue.outletDensity !== "none" && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>
+                {venue.outletDensity === "every_table" && "🔋 Every Table"}
+                {venue.outletDensity === "some_tables" && "🔌 Some Tables"}
+                {venue.outletDensity === "wall_seats" && "🔌 Wall Seats Only"}
+              </span>
+            </div>
+          )}
+          {venue.outletLocations && venue.outletLocations.length > 0 && (
+            <div className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+              <span>🗺️ {venue.outletLocations.map(l => l.replace('_', ' ')).join(', ')}</span>
+            </div>
+          )}
           {venue.petsAllowedIndoors && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <span>🐶 Pets Allowed</span>

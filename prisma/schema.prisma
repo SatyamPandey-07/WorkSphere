@@ -169,6 +169,7 @@ model Booking {
   status          BookingStatus @default(CONFIRMED)
   confirmationId  String        @unique
   createdAt       DateTime      @default(now())
+  projectBillingCode String?
   seatId          String?
   seatNumber      String?
   duration        Int?

@@ -1,6 +1,7 @@
 import { ensureUserExists } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
+// @ts-expect-error: @pdf-lib/fontkit lacks type definitions
 import fontkit from "@pdf-lib/fontkit";
 import fs from "fs";
 import { NextRequest, NextResponse } from "next/server";
@@ -177,6 +178,13 @@ export async function GET(
     });
     yPosition -= 18;
     drawSafeText(`SCHEDULE: ${booking.date} @ ${booking.time}`, {
+      x: 50,
+      y: yPosition,
+      size: 10,
+      font,
+    });
+    yPosition -= 18;
+    drawSafeText(`BILLING CODE: ${booking.projectBillingCode || "N/A"}`, {
       x: 50,
       y: yPosition,
       size: 10,

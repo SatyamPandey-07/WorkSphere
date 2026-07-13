@@ -118,6 +118,29 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string }>>({});
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
 
+
+  // Core state
+  const [location, setLocation] = useState(userLocation);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // UI state
+  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
+  const [filters, setFilters] = useState<Filters>({});
+  const [showFilters, setShowFilters] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
+  const [bookingVenue, setBookingVenue] = useState<Venue | null>(null);
+  const [bookingMode, setBookingMode] = useState<"booking" | "history">("booking");
+  const [showVenueSubmission, setShowVenueSubmission] = useState(false);
+
+  // Conversations & favorites
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+
   // Track local cursor
   useEffect(() => {
     if (!socket || !roomId) return;
@@ -176,28 +199,6 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     socket.addEventListener("message", onMessage);
     return () => socket.removeEventListener("message", onMessage);
   }, [socket]);
-
-  // Core state
-  const [location, setLocation] = useState(userLocation);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // UI state
-  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
-  const [filters, setFilters] = useState<Filters>({});
-  const [showFilters, setShowFilters] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
-  const [bookingVenue, setBookingVenue] = useState<Venue | null>(null);
-  const [bookingMode, setBookingMode] = useState<"booking" | "history">("booking");
-  const [showVenueSubmission, setShowVenueSubmission] = useState(false);
-
-  // Conversations & favorites
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -261,16 +262,9 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     }
   };
 
-  // Load conversations & favorites on sign-in
-  useEffect(() => {
-    if (isSignedIn) {
-      loadConversations();
-      loadFavorites();
-    }
-  }, [isSignedIn]);
 
   // Conversations
-  const loadConversations = async () => {
+  async function loadConversations() {
     try {
       const res = await fetch("/api/conversations");
       if (res.ok) {
@@ -396,7 +390,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   };
 
   // Favorites
-  const loadFavorites = async () => {
+  async function loadFavorites() {
     try {
       const res = await fetch("/api/favorites");
       if (res.ok) {
@@ -409,6 +403,14 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       console.error("Failed to load favorites:", e);
     }
   };
+
+  // Load conversations & favorites on sign-in
+  useEffect(() => {
+    if (isSignedIn) {
+      loadConversations();
+      loadFavorites();
+    }
+  }, [isSignedIn]);
 
   const handleToggleFavorite = async (venue: Venue) => {
     if (!isSignedIn) {

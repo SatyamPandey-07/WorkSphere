@@ -6,8 +6,8 @@ import { ArrowLeft, Users, Link as LinkIcon, Trash2, MapPin, Loader2, Globe, Che
 import { useUser as useClerkUser } from "@clerk/nextjs";
 
 const useUser = () => {
+    const clerkUser = useClerkUser();
     const isDummy = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
-    const clerkUser = !isDummy ? useClerkUser() : null;
 
     if (isDummy) {
         return {

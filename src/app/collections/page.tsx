@@ -7,8 +7,8 @@ import Image from "next/image";
 import { useUser as useClerkUser } from "@clerk/nextjs";
 
 const useUser = () => {
+    const clerkUser = useClerkUser();
     const isDummy = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
-    const clerkUser = !isDummy ? useClerkUser() : null;
 
     if (isDummy) {
         return {
@@ -37,14 +37,6 @@ export default function CollectionsPage() {
   const [newFolderPublic, setNewFolderPublic] = useState(false);
   const [activeTab, setActiveTab] = useState<'my' | 'public'>('my');
 
-  useEffect(() => {
-    if (activeTab === 'public') {
-      fetchPublicFolders();
-    } else {
-      fetchFolders();
-    }
-  }, [activeTab]);
-
   const fetchFolders = async () => {
     try {
       setLoading(true);
@@ -70,6 +62,14 @@ export default function CollectionsPage() {
       setLoadingPublic(false);
     }
   };
+
+  useEffect(() => {
+    if (activeTab === 'public') {
+      fetchPublicFolders();
+    } else {
+      fetchFolders();
+    }
+  }, [activeTab]);
 
   const createFolder = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -42,15 +42,7 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isExporting, setIsExporting] = useState(false);
 
-    useEffect(() => {
-        if (!isOpen) {
-            setStep(mode === "history" ? "history" : "details");
-        } else if (mode === "history") {
-            fetchHistory();
-        }
-    }, [isOpen, mode]);
-
-    const fetchHistory = async () => {
+    async function fetchHistory() {
         setLoadingHistory(true);
         try {
             const res = await fetch("/api/bookings/history");
@@ -64,6 +56,14 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
             setLoadingHistory(false);
         }
     };
+
+    useEffect(() => {
+        if (!isOpen) {
+            setStep(mode === "history" ? "history" : "details");
+        } else if (mode === "history") {
+            fetchHistory();
+        }
+    }, [isOpen, mode]);
 
     const toggleSelected = (id: string) => {
         setSelectedIds((prev) => {

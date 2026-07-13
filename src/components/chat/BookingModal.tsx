@@ -23,6 +23,7 @@ interface Booking {
         address: string;
     };
     createdAt: string;
+    duration?: number | null;
 }
 
 interface BookingModalProps {
@@ -37,10 +38,47 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
     const [bookingDate, setBookingDate] = useState("");
     const [bookingTime, setBookingTime] = useState("");
     const [email, setEmail] = useState("");
-   const [history, setHistory] = useState<Booking[]>([]);
+    const [history, setHistory] = useState<Booking[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
     const [isExporting, setIsExporting] = useState(false);
+    const [dateFilter, setDateFilter] = useState("all");
+
+    const getFilteredHistory = () => {
+        if (dateFilter === "all") return history;
+        const now = new Date();
+        const currentYear = now.getFullYear();
+
+        return history.filter((b) => {
+            const bDate = new Date(b.date);
+            if (isNaN(bDate.getTime())) return true;
+
+            const bMonth = bDate.getMonth();
+            const bYear = bDate.getFullYear();
+
+            switch (dateFilter) {
+                case "current_month":
+                    return bMonth === now.getMonth() && bYear === currentYear;
+                case "last_month": {
+                    const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+                    const lastMonthYear = now.getMonth() === 0 ? currentYear - 1 : currentYear;
+                    return bMonth === lastMonth && bYear === lastMonthYear;
+                }
+                case "q1":
+                    return bMonth >= 0 && bMonth <= 2 && bYear === currentYear;
+                case "q2":
+                    return bMonth >= 3 && bMonth <= 5 && bYear === currentYear;
+                case "q3":
+                    return bMonth >= 6 && bMonth <= 8 && bYear === currentYear;
+                case "q4":
+                    return bMonth >= 9 && bMonth <= 11 && bYear === currentYear;
+                default:
+                    return true;
+            }
+        });
+    };
+
+    const filteredHistory = getFilteredHistory();
 
     useEffect(() => {
         if (!isOpen) {
@@ -56,7 +94,6 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
             const res = await fetch("/api/bookings/history");
             const data = await res.json();
             setHistory(data.bookings || []);
-            setSelectedIds(new Set());
             setStep("history");
         } catch (err) {
             console.error("Failed to fetch history:", err);
@@ -76,7 +113,7 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
 
     const toggleSelectAll = () => {
         setSelectedIds((prev) =>
-            prev.size === history.length ? new Set() : new Set(history.map((b) => b.id))
+            prev.size === filteredHistory.length ? new Set() : new Set(filteredHistory.map((b) => b.id))
         );
     };
 
@@ -188,15 +225,37 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                                 </div>
                             ) : (
                                 <>
-                                    <div className="flex items-center justify-between px-1">
+                                    <div className="flex flex-col gap-4 mb-4 pb-4 border-b border-zinc-100 dark:border-zinc-800">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Date Range Filter:</span>
+                                            <select
+                                                value={dateFilter}
+                                                onChange={(e) => {
+                                                    setDateFilter(e.target.value);
+                                                    setSelectedIds(new Set());
+                                                }}
+                                                className="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                                            >
+                                                <option value="all">All Bookings</option>
+                                                <option value="current_month">Current Month</option>
+                                                <option value="last_month">Last Month</option>
+                                                <option value="q1">Q1 (Jan - Mar)</option>
+                                                <option value="q2">Q2 (Apr - Jun)</option>
+                                                <option value="q3">Q3 (Jul - Sep)</option>
+                                                <option value="q4">Q4 (Oct - Dec)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between px-1 mb-4">
                                         <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 cursor-pointer select-none">
                                             <input
                                                 type="checkbox"
-                                                checked={selectedIds.size === history.length && history.length > 0}
+                                                checked={selectedIds.size === filteredHistory.length && filteredHistory.length > 0}
                                                 onChange={toggleSelectAll}
                                                 className="w-4 h-4 accent-blue-600 cursor-pointer"
                                             />
-                                            Select All ({history.length})
+                                            Select All ({filteredHistory.length})
                                         </label>
                                         {selectedIds.size > 0 && (
                                             <span className="text-[10px] font-black uppercase tracking-widest text-blue-500">
@@ -206,7 +265,12 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                                     </div>
 
                                     <div className="grid gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                                        {history.map((booking) => (
+                                        {filteredHistory.map((booking) => {
+                                            const hours = booking.duration || 1;
+                                            const price = hours * 15;
+                                            const tax = price * 0.08;
+                                            const total = price + tax;
+                                            return (
                                             <div
                                                 key={booking.id}
                                                 className={`group relative bg-zinc-50 dark:bg-zinc-800/50 border rounded-3xl p-6 transition-all hover:shadow-xl hover:shadow-blue-500/5 ${
@@ -244,6 +308,7 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                                                     <div className="text-right">
                                                         <p className="text-sm font-black text-zinc-900 dark:text-zinc-100">{booking.date}</p>
                                                         <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">{booking.time}</p>
+                                                        <p className="text-[10px] font-bold text-zinc-400 mt-2">Total: ${total.toFixed(2)}</p>
                                                     </div>
                                                 </div>
 
@@ -286,7 +351,8 @@ export function BookingModal({ venue, isOpen, onClose, mode = "booking" }: Booki
                                                     </div>
                                                 </div>
                                             </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
 
                                     {selectedIds.size > 0 && (

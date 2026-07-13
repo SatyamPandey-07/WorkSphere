@@ -67,7 +67,21 @@ export async function POST(req: NextRequest) {
 
     drawSafeText(summaryPage, `TOTAL BOOKINGS: ${bookings.length}`, { x: 50, y, size: 12, font: boldFont });
     y -= 20;
-    drawSafeText(summaryPage, "COST: FREE (ZERO-FEE ACCESS PROTOCOL)", { x: 50, y, size: 10, font });
+
+    let overallSubtotal = 0;
+    let overallTax = 0;
+    let overallTotal = 0;
+    for (const booking of bookings) {
+      const hours = booking.duration || 1;
+      const price = hours * 15;
+      const tax = Number((price * 0.08).toFixed(2));
+      const total = Number((price + tax).toFixed(2));
+      overallSubtotal += price;
+      overallTax += tax;
+      overallTotal += total;
+    }
+
+    drawSafeText(summaryPage, `SUBTOTAL: $${overallSubtotal.toFixed(2)}  |  TAX (8%): $${overallTax.toFixed(2)}  |  TOTAL: $${overallTotal.toFixed(2)}`, { x: 50, y, size: 10, font: boldFont });
     y -= 30;
     drawSafeText(summaryPage, "-".repeat(60), { x: 50, y, size: 10, font });
     y -= 25;
@@ -76,9 +90,14 @@ export async function POST(req: NextRequest) {
       if (y < 80) {
         y = height - 50;
       }
+      const hours = booking.duration || 1;
+      const price = hours * 15;
+      const tax = Number((price * 0.08).toFixed(2));
+      const total = Number((price + tax).toFixed(2));
+
       drawSafeText(
         summaryPage,
-        `${safeText(booking.confirmationId || `WS-#${booking.id}`)}  |  ${safeText(booking.venue.name)}  |  ${safeText(booking.date)} @ ${safeText(booking.time)}`,
+        `${safeText(booking.confirmationId || `WS-#${booking.id}`)}  |  ${safeText(booking.venue.name)}  |  $${total.toFixed(2)}`,
         { x: 50, y, size: 9, font }
       );
       y -= 18;
@@ -99,7 +118,7 @@ export async function POST(req: NextRequest) {
 
       drawSafeText(page, "WORKSPHERE CONFIRMATION", { x: 150, y: py, size: 24, font: boldFont, color: rgb(0, 0, 0) });
       py -= 15;
-      drawSafeText(page, "SECURE NEURAL TRANSACTION RECEIPT", { x: 180, y: py, size: 8, font, color: rgb(0.5, 0.5, 0.5) });
+      drawSafeText(page, "SECURE TRANSACTION RECEIPT", { x: 190, y: py, size: 8, font, color: rgb(0.5, 0.5, 0.5) });
       py -= 50;
 
       drawSafeText(page, "BOOKING DETAILS:", { x: 50, y: py, size: 12, font: boldFont });
@@ -117,13 +136,31 @@ export async function POST(req: NextRequest) {
       drawSafeText(page, `SCHEDULE: ${safeText(booking.date)} @ ${safeText(booking.time)}`, { x: 50, y: py, size: 10, font });
       py -= 18;
       drawSafeText(page, `CUSTOMER: ${safeText(customerName || booking.customerEmail || "N/A")}`, { x: 50, y: py, size: 10, font });
+      py -= 30;
+
+      const hours = booking.duration || 1;
+      const price = hours * 15;
+      const tax = Number((price * 0.08).toFixed(2));
+      const total = Number((price + tax).toFixed(2));
+
+      drawSafeText(page, "PRICING & MEMBERSHIP CHARGES:", { x: 50, y: py, size: 12, font: boldFont });
+      py -= 15;
+      drawSafeText(page, "-".repeat(50), { x: 50, y: py, size: 10, font });
+      py -= 20;
+      drawSafeText(page, `HOURLY RATE: $15.00/hr (DURATION: ${hours} hrs)`, { x: 50, y: py, size: 10, font });
+      py -= 18;
+      drawSafeText(page, `SUBTOTAL: $${price.toFixed(2)}`, { x: 50, y: py, size: 10, font });
+      py -= 18;
+      drawSafeText(page, `TAX (8%): $${tax.toFixed(2)}`, { x: 50, y: py, size: 10, font });
+      py -= 18;
+      drawSafeText(page, `TOTAL EXPENSED: $${total.toFixed(2)}`, { x: 50, y: py, size: 10, font: boldFont });
       py -= 40;
 
       drawSafeText(page, "SECURITY PROTOCOL:", { x: 50, y: py, size: 12, font: boldFont });
       py -= 18;
-      drawSafeText(page, "ZERO-FEE ACCESS PROTOCOL ACTIVE", { x: 50, y: py, size: 10, font });
+      drawSafeText(page, "MEMBERSHIP EXPENSE VALIDATION ACTIVE", { x: 50, y: py, size: 10, font });
       py -= 18;
-      drawSafeText(page, "ENCRYPTED VIA WORKSPHERE L3", { x: 50, y: py, size: 10, font });
+      drawSafeText(page, "ENCRYPTED VIA WORKSPHERE SECURE PROT", { x: 50, y: py, size: 10, font });
     }
 
     const pdfBytes = await pdfDoc.save();

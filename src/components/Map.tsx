@@ -83,7 +83,7 @@ function AutoCenter({
     const bounds = L.latLngBounds([
       userLocation,
       ...markers.map(
-        (m) => [m.position.lat, m.position.lng] as [number, number]
+        (m) => [m.position.lat, m.position.lng] as [number, number],
       ),
     ]);
 
@@ -134,7 +134,13 @@ function ZoomWatcher({
 }
 
 // Subcomponent to handle rendering the Leaflet heatmap layer seamlessly
-function HeatmapOverlay({ points, visible }: { points: any[]; visible: boolean }) {
+function HeatmapOverlay({
+  points,
+  visible,
+}: {
+  points: any[];
+  visible: boolean;
+}) {
   const map = useMap();
 
   useEffect(() => {
@@ -144,8 +150,8 @@ function HeatmapOverlay({ points, visible }: { points: any[]; visible: boolean }
     const gradient = {
       0.3: "#1e3a8a", // Deep Blue (Quiet)
       0.55: "#3b82f6", // Bright Blue (Moderate)
-      0.8: "#8b5cf6",  // Velvet Purple (Busy)
-      1.0: "#d946ef",  // Neon Pink/Fuchsia (High Activity levels)
+      0.8: "#8b5cf6", // Velvet Purple (Busy)
+      1.0: "#d946ef", // Neon Pink/Fuchsia (High Activity levels)
     };
 
     const heatLayer = (L as any).heatLayer(points, {
@@ -194,7 +200,9 @@ const Map = ({
   // =========================================================================
   const [routingQueue, setRoutingQueue] = useState<any[]>([]);
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
-  const [travelProfile, setTravelProfile] = useState<"foot" | "bike" | "car">("foot");
+  const [travelProfile, setTravelProfile] = useState<"foot" | "bike" | "car">(
+    "foot",
+  );
 
   // OSRM Multi-Stop coordinate solver engine
   const calculateOptimizedRoute = async (venuesList = routingQueue) => {
@@ -203,11 +211,32 @@ const Map = ({
       return;
     }
 
-    const coordinatesString = venuesList
-      .map(venue => `${venue.longitude},${venue.latitude}`)
+    // Guard: remove consecutive duplicate stops (same lat/lng) —
+    // sending identical consecutive coordinates to OSRM can trigger
+    // a crash/error response.
+    const dedupedList = venuesList.filter((venue, idx) => {
+      if (idx === 0) return true;
+      const prev = venuesList[idx - 1];
+      return !(
+        venue.latitude === prev.latitude && venue.longitude === prev.longitude
+      );
+    });
+
+    if (dedupedList.length < 2) {
+      setOptimizedRoute(null);
+      return;
+    }
+
+    const coordinatesString = dedupedList
+      .map((venue) => `${venue.longitude},${venue.latitude}`)
       .join(";");
 
-    const osrmProfile = travelProfile === "foot" ? "foot" : travelProfile === "bike" ? "bicycle" : "car";
+    const osrmProfile =
+      travelProfile === "foot"
+        ? "foot"
+        : travelProfile === "bike"
+          ? "bicycle"
+          : "car";
     const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${coordinatesString}?overview=full&geometries=geojson&steps=true`;
 
     try {
@@ -216,10 +245,12 @@ const Map = ({
 
       if (data.code === "Ok") {
         setOptimizedRoute({
-          coordinates: data.routes[0].geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]]),
+          coordinates: data.routes[0].geometry.coordinates.map(
+            (coord: [number, number]) => [coord[1], coord[0]],
+          ),
           duration: data.routes[0].duration,
           distance: data.routes[0].distance,
-          legs: data.routes[0].legs
+          legs: data.routes[0].legs,
         });
       }
     } catch (error) {
@@ -241,7 +272,9 @@ const Map = ({
             setHeatmapPoints(resData.data);
           }
         })
-        .catch((err) => console.error("Could not populate heatmap context", err));
+        .catch((err) =>
+          console.error("Could not populate heatmap context", err),
+        );
     }
   }, [showHeatmap]);
 
@@ -249,7 +282,14 @@ const Map = ({
   const spiderfiedMarkers = useMemo(() => {
     const groups: { [key: string]: any[] } = {};
     markers.forEach((m) => {
-      if (m && m.position && m.position.lat != null && m.position.lng != null && !isNaN(Number(m.position.lat)) && !isNaN(Number(m.position.lng))) {
+      if (
+        m &&
+        m.position &&
+        m.position.lat != null &&
+        m.position.lng != null &&
+        !isNaN(Number(m.position.lat)) &&
+        !isNaN(Number(m.position.lng))
+      ) {
         const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
         if (!groups[key]) {
           groups[key] = [];
@@ -298,7 +338,6 @@ const Map = ({
     return result;
   }, [markers, settledZoom]);
 
-
   // Derive iconUrl directly from clerkUser state
   const iconUrl = useMemo(() => {
     if (clerkUser.isLoaded && clerkUser.user?.hasImage) {
@@ -330,9 +369,10 @@ const Map = ({
   const center: [number, number] = [latitude, longitude];
 
   return (
-<>
-      <style dangerouslySetInnerHTML={{
-        __html: `
+    <>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
         .custom-user-marker {
           /* This container itself doesn't need styles */
         }
@@ -427,7 +467,9 @@ const Map = ({
           right: 20px;
           z-index: 1000;
         }
-      `}} />
+      `,
+        }}
+      />
 
       <MapContainer
         center={center}
@@ -436,7 +478,7 @@ const Map = ({
           width: "95%",
           height: "95%",
           borderRadius: "12px",
-          position: "relative"
+          position: "relative",
         }}
       >
         <div className="map-heatmap-toggle">
@@ -449,7 +491,9 @@ const Map = ({
                 : "bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800"
             }`}
           >
-            {showHeatmap ? "📍 Show Venue Markers" : "🔥 Show Live Crowd Heatmap"}
+            {showHeatmap
+              ? "📍 Show Venue Markers"
+              : "🔥 Show Live Crowd Heatmap"}
           </button>
         </div>
 
@@ -468,7 +512,6 @@ const Map = ({
           </Marker>
         )}
 
-
         {showHeatmap ? (
           <HeatmapOverlay points={heatmapPoints} visible={showHeatmap} />
         ) : (
@@ -485,19 +528,24 @@ const Map = ({
                     <div className="text-zinc-400">{marker.category}</div>
                   )}
                   {marker.address && (
-                    <div className="text-zinc-500 text-xs mt-1">{marker.address}</div>
+                    <div className="text-zinc-500 text-xs mt-1">
+                      {marker.address}
+                    </div>
                   )}
                 </div>
                 <button
                   onClick={() => {
                     // Prevent duplicates in queue chain matrix
-                    if (!routingQueue.some(v => v.id === marker.id)) {
-                      const updated = [...routingQueue, {
-                        id: marker.id,
-                        name: marker.name,
-                        latitude: Number(marker.position.lat),
-                        longitude: Number(marker.position.lng)
-                      }];
+                    if (!routingQueue.some((v) => v.id === marker.id)) {
+                      const updated = [
+                        ...routingQueue,
+                        {
+                          id: marker.id,
+                          name: marker.name,
+                          latitude: Number(marker.position.lat),
+                          longitude: Number(marker.position.lng),
+                        },
+                      ];
                       setRoutingQueue(updated);
                       calculateOptimizedRoute(updated);
                     }
@@ -512,33 +560,48 @@ const Map = ({
         )}
 
         {/* Render OSRM Optimized Multi-Stop Routing Layer Geometry */}
-        {optimizedRoute && optimizedRoute.coordinates && optimizedRoute.coordinates.length > 1 && (
-          <Polyline
-            positions={optimizedRoute.coordinates}
-            pathOptions={{
-              color: "#3b82f6", // Electric Blue for Multi-Stop Leg paths
-              weight: 6,
-              opacity: 0.9,
-              lineCap: "round",
-              lineJoin: "round",
-              dashArray: travelProfile === "foot" ? "5, 10" : undefined // Dotted path line if walking
-            }}
-          >
-            <Popup>
-              <div className="text-sm text-white">
-                <div className="font-bold text-blue-400">Optimized Hybrid Schedule</div>
-                <div>Total Distance: {(optimizedRoute.distance / 1000).toFixed(2)} km</div>
-                <div>Est. Travel Time: {Math.round(optimizedRoute.duration / 60)} mins</div>
-              </div>
-            </Popup>
-          </Polyline>
-        )}
-
-
+        {optimizedRoute &&
+          optimizedRoute.coordinates &&
+          optimizedRoute.coordinates.length > 1 && (
+            <Polyline
+              positions={optimizedRoute.coordinates}
+              pathOptions={{
+                color: "#3b82f6", // Electric Blue for Multi-Stop Leg paths
+                weight: 6,
+                opacity: 0.9,
+                lineCap: "round",
+                lineJoin: "round",
+                dashArray: travelProfile === "foot" ? "5, 10" : undefined, // Dotted path line if walking
+              }}
+            >
+              <Popup>
+                <div className="text-sm text-white">
+                  <div className="font-bold text-blue-400">
+                    Optimized Hybrid Schedule
+                  </div>
+                  <div>
+                    Total Distance:{" "}
+                    {(optimizedRoute.distance / 1000).toFixed(2)} km
+                  </div>
+                  <div>
+                    Est. Travel Time: {Math.round(optimizedRoute.duration / 60)}{" "}
+                    mins
+                  </div>
+                </div>
+              </Popup>
+            </Polyline>
+          )}
 
         {routes.map((route) => {
           const validPositions = (route.path || [])
-            .filter((p) => p && p.lat != null && p.lng != null && !isNaN(Number(p.lat)) && !isNaN(Number(p.lng)))
+            .filter(
+              (p) =>
+                p &&
+                p.lat != null &&
+                p.lng != null &&
+                !isNaN(Number(p.lat)) &&
+                !isNaN(Number(p.lng)),
+            )
             .map((p) => [Number(p.lat), Number(p.lng)] as [number, number]);
 
           if (validPositions.length < 2) return null;
@@ -571,10 +634,15 @@ const Map = ({
         {/* MULTI-STOP ROUTING OPTIMIZER CONTROL INTERFACE OVERLAY */}
         <div className="absolute bottom-6 left-6 z-[1000] w-80 rounded-xl border border-zinc-800 bg-zinc-950/90 p-4 text-white shadow-2xl backdrop-blur-md">
           <div className="mb-3 flex items-center justify-between border-b border-zinc-800 pb-2">
-            <h3 className="font-semibold text-sm tracking-wide text-zinc-200">📍 ROUTING OPTIMIZER</h3>
+            <h3 className="font-semibold text-sm tracking-wide text-zinc-200">
+              📍 ROUTING OPTIMIZER
+            </h3>
             {routingQueue.length > 0 && (
               <button
-                onClick={() => { setRoutingQueue([]); setOptimizedRoute(null); }}
+                onClick={() => {
+                  setRoutingQueue([]);
+                  setOptimizedRoute(null);
+                }}
                 className="text-xs text-red-400 hover:text-red-300 transition-colors"
               >
                 Clear Queue
@@ -588,12 +656,17 @@ const Map = ({
               <button
                 key={mode}
                 onClick={() => setTravelProfile(mode)}
-                className={`rounded-md py-1.5 font-medium uppercase transition-all ${travelProfile === mode
+                className={`rounded-md py-1.5 font-medium uppercase transition-all ${
+                  travelProfile === mode
                     ? "bg-blue-600 text-white shadow"
                     : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                  }`}
+                }`}
               >
-                {mode === "foot" ? "🚶‍♂️ Walk" : mode === "bike" ? "🚴‍♂️ Bike" : "🚗 Drive"}
+                {mode === "foot"
+                  ? "🚶‍♂️ Walk"
+                  : mode === "bike"
+                    ? "🚴‍♂️ Bike"
+                    : "🚗 Drive"}
               </button>
             ))}
           </div>
@@ -601,22 +674,30 @@ const Map = ({
           {/* Queue Timeline Slots */}
           {routingQueue.length === 0 ? (
             <div className="rounded-lg border border-dashed border-zinc-800 p-6 text-center text-xs text-zinc-500">
-              Click markers or venue listings to chain multiple destinations into your hybrid workday route!
+              Click markers or venue listings to chain multiple destinations
+              into your hybrid workday route!
             </div>
           ) : (
             <div className="space-y-2">
               <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
                 {routingQueue.map((venue, idx) => (
-                  <div key={idx} className="flex items-center justify-between rounded-lg bg-zinc-900 p-2 text-xs border border-zinc-800">
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between rounded-lg bg-zinc-900 p-2 text-xs border border-zinc-800"
+                  >
                     <div className="flex items-center gap-2 truncate">
                       <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-950 text-[10px] font-bold text-blue-400 border border-blue-800/50">
                         {idx + 1}
                       </span>
-                      <span className="truncate font-medium text-zinc-300">{venue.name}</span>
+                      <span className="truncate font-medium text-zinc-300">
+                        {venue.name}
+                      </span>
                     </div>
                     <button
                       onClick={() => {
-                        const updated = routingQueue.filter((_, i) => i !== idx);
+                        const updated = routingQueue.filter(
+                          (_, i) => i !== idx,
+                        );
                         setRoutingQueue(updated);
                         calculateOptimizedRoute(updated);
                       }}
@@ -645,11 +726,15 @@ const Map = ({
             <div className="mt-3 border-t border-zinc-800 pt-3 text-xs text-zinc-400 space-y-1">
               <div className="flex justify-between">
                 <span>Total Distance:</span>
-                <span className="font-semibold text-zinc-200">{(optimizedRoute.distance / 1000).toFixed(2)} km</span>
+                <span className="font-semibold text-zinc-200">
+                  {(optimizedRoute.distance / 1000).toFixed(2)} km
+                </span>
               </div>
               <div className="flex justify-between">
                 <span>Est. Transit Time:</span>
-                <span className="font-semibold text-zinc-200">{Math.round(optimizedRoute.duration / 60)} mins</span>
+                <span className="font-semibold text-zinc-200">
+                  {Math.round(optimizedRoute.duration / 60)} mins
+                </span>
               </div>
             </div>
           )}

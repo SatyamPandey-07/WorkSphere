@@ -6,12 +6,19 @@ interface RouteCoordinates {
 /**
  * Fetches routing vectors from the OSRM engine with a strict timeout execution boundary.
  */
-export async function fetchOSRMRoute(start: RouteCoordinates, end: RouteCoordinates) {
+export async function fetchOSRMRoute(
+  start: RouteCoordinates,
+  end: RouteCoordinates,
+  profile: "driving" | "walking" | "cycling" = "driving",
+) {
   // 1. Initialize the AbortController tracking interface
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5000); // Strict 5-second boundary
 
-  const url = `https://router.project-osrm.org/route/v1/driving/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
+  const osrmProfile =
+    profile === "walking" ? "foot" : profile === "cycling" ? "bicycle" : "driving";
+
+  const url = `https://router.project-osrm.org/route/v1/${osrmProfile}/${start.lng},${start.lat};${end.lng},${end.lat}?overview=full&geometries=geojson`;
 
   try {
     const response = await fetch(url, { 

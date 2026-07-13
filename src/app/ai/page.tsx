@@ -63,6 +63,7 @@ function AppPage() {
 
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
+  const [routeProfile, setRouteProfile] = useState<"walking" | "cycling" | "driving">("walking");
 
   // Stable venueIds reference — must be memoised or a new array every render
   // causes the SSE connection to be torn down and recreated on every render.
@@ -317,7 +318,7 @@ function AppPage() {
 
             try {
               const { getRoute } = await import('@/lib/routing');
-              const routeData = await getRoute(fromLoc, toLoc, 'walking');
+              const routeData = await getRoute(fromLoc, toLoc, routeProfile);
 
               const newRoute: MapRoute = {
                 id: `route-${Date.now()}`,
@@ -569,6 +570,55 @@ function AppPage() {
           ${mobileView === "chat" ? "flex" : "hidden"} 
           md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
         `}>
+          {/* Route Profile Toggle Widget */}
+          {routes.length > 0 && (
+            <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                  Route Profile
+                </span>
+                {routes[0].duration && (
+                  <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                    {Math.round(routes[0].duration / 60)} mins • {(routes[0].distance! / 1000).toFixed(1)} km
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {(["walking", "cycling", "driving"] as const).map((profile) => (
+                  <button
+                    key={profile}
+                    onClick={async () => {
+                      setRouteProfile(profile);
+                      // Re-calculate route with new profile
+                      if (routes.length > 0 && location) {
+                        const { getRoute } = await import('@/lib/routing');
+                        const lastRoute = routes[0];
+                        // We need the original destination. For now, we take the last point of the path.
+                        const destination = lastRoute.path[lastRoute.path.length - 1];
+                        const routeData = await getRoute(location, destination, profile);
+                        if (routeData) {
+                          setRoutes([{
+                            ...lastRoute,
+                            path: routeData.path,
+                            distance: routeData.distance,
+                            duration: routeData.duration,
+                          }]);
+                        }
+                      }
+                    }}
+                    className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${
+                      routeProfile === profile
+                        ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
+                        : "bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-750"
+                    }`}
+                  >
+                    {profile === "walking" ? "🚶‍♂️" : profile === "cycling" ? "🚴‍♂️" : "🚗"}
+                    <span className="capitalize">{profile}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <ChatErrorBoundary>
             <EnhancedChatbot
               roomId={sessionId}

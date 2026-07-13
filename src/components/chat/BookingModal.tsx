@@ -103,14 +103,6 @@ export function BookingModal({
 
   const filteredHistory = getFilteredHistory();
 
-  useEffect(() => {
-    if (!isOpen) {
-      setStep(mode === "history" ? "history" : "details");
-    } else if (mode === "history") {
-      fetchHistory();
-    }
-  }, [isOpen, mode]);
-
   const fetchHistory = async () => {
     setLoadingHistory(true);
     try {
@@ -124,6 +116,14 @@ export function BookingModal({
       setLoadingHistory(false);
     }
   };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setStep(mode === "history" ? "history" : "details");
+    } else if (mode === "history") {
+      fetchHistory();
+    }
+  }, [isOpen, mode]);
 
   const toggleSelected = (id: string) => {
     setSelectedIds((prev) => {

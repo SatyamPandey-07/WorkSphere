@@ -10,10 +10,6 @@ export default function CollectionsPage() {
   const [creating, setCreating] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
 
-  useEffect(() => {
-    fetchFolders();
-  }, []);
-
   const fetchFolders = async () => {
     try {
       setLoading(true);
@@ -26,6 +22,10 @@ export default function CollectionsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchFolders();
+  }, []);
 
   const createFolder = async (e: React.FormEvent) => {
     e.preventDefault();

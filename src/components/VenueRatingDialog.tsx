@@ -28,6 +28,7 @@ interface VenueRatingDialogProps {
     hasNoMusic?: boolean;
     hasQuietZone?: boolean;
     musicStyle?: string;
+    outletLocations?: string[];
   }) => void;
 }
 
@@ -41,6 +42,7 @@ export function VenueRatingDialog({
   const [wifiQuality, setWifiQuality] = useState(3);
   const [hasOutlets, setHasOutlets] = useState<boolean | null>(null);
   const [powerTypes, setPowerTypes] = useState<string[]>([]);
+  const [outletLocations, setOutletLocations] = useState<string[]>([]);
   const [noiseLevel, setNoiseLevel] = useState<"quiet" | "moderate" | "loud">(
     "moderate",
   );
@@ -162,11 +164,13 @@ export function VenueRatingDialog({
         hasNoMusic,
         hasQuietZone,
         musicStyle: musicStyle || undefined,
+        outletLocations: hasOutlets ? outletLocations : [],
       });
 
       setWifiQuality(3);
       setHasOutlets(null);
       setPowerTypes([]);
+      setOutletLocations([]);
       setNoiseLevel("moderate");
       setMeasurement(null);
       setComment("");
@@ -272,44 +276,86 @@ export function VenueRatingDialog({
           </section>
 
           {hasOutlets === true && (
-            <section className="animate-in fade-in slide-in-from-top-2 duration-300">
-              <label className="mb-2 block text-sm font-medium">
-                Outlet Types Available
-              </label>
+            <>
+              <section className="animate-in fade-in slide-in-from-top-2 duration-300">
+                <label className="mb-2 block text-sm font-medium">
+                  Outlet Types Available
+                </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {[
-                  { id: "usb_c", label: "USB-C PD ports" },
-                  { id: "ac_wall", label: "Standard AC wall plug" },
-                  { id: "wireless", label: "Wireless charging pads" },
-                ].map((type) => (
-                  <label
-                    key={type.id}
-                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition ${
-                      powerTypes.includes(type.id)
-                        ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"
-                        : "bg-white border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={powerTypes.includes(type.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setPowerTypes([...powerTypes, type.id]);
-                        } else {
-                          setPowerTypes(
-                            powerTypes.filter((t) => t !== type.id),
-                          );
-                        }
-                      }}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm">{type.label}</span>
-                  </label>
-                ))}
-              </div>
-            </section>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {[
+                    { id: "usb_c", label: "USB-C PD ports" },
+                    { id: "ac_wall", label: "Standard AC wall plug" },
+                    { id: "wireless", label: "Wireless charging pads" },
+                  ].map((type) => (
+                    <label
+                      key={type.id}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition ${
+                        powerTypes.includes(type.id)
+                          ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"
+                          : "bg-white border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={powerTypes.includes(type.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setPowerTypes([...powerTypes, type.id]);
+                          } else {
+                            setPowerTypes(
+                              powerTypes.filter((t) => t !== type.id),
+                            );
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">{type.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="animate-in fade-in slide-in-from-top-2 duration-300">
+                <label className="mb-2 block text-sm font-medium">
+                  Outlet Locations
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    { id: "under_tables", label: "Under tables" },
+                    { id: "wall_mounted", label: "Wall-mounted" },
+                    { id: "center_island", label: "Center-island tables only" },
+                    { id: "bar_counter", label: "At bar counter" },
+                  ].map((loc) => (
+                    <label
+                      key={loc.id}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition ${
+                        outletLocations.includes(loc.id)
+                          ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"
+                          : "bg-white border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={outletLocations.includes(loc.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setOutletLocations([...outletLocations, loc.id]);
+                          } else {
+                            setOutletLocations(
+                              outletLocations.filter((l) => l !== loc.id),
+                            );
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">{loc.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            </>
           )}
 
           <section>

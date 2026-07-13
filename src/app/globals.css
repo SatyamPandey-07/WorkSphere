@@ -42,6 +42,8 @@ body {
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;
+  scrollbar-color: var(--color-zinc-300) transparent;
+  scrollbar-width: thin;
 }
 
 /* Gradient animation */
@@ -123,21 +125,25 @@ html {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--color-zinc-300);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--color-zinc-400);
 }
 
 @media (prefers-color-scheme: dark) {
+  html {
+    scrollbar-color: var(--color-zinc-700) transparent;
+  }
+
   ::-webkit-scrollbar-thumb {
-    background: #374151;
+    background: var(--color-zinc-700);
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #4b5563;
+    background: var(--color-zinc-600);
   }
 }
 

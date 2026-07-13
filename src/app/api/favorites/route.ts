@@ -77,8 +77,15 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const favorite = await prisma.favorite.create({
-      data: {
+    const favorite = await prisma.favorite.upsert({
+      where: {
+        userId_venueId: {
+          userId,
+          venueId: dbVenue.id,
+        },
+      },
+      update: {},
+      create: {
         userId,
         venueId: dbVenue.id,
       },
@@ -149,14 +156,18 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: true }); // Already gone or never existed
     }
 
-    await prisma.favorite.delete({
-      where: {
-        userId_venueId: {
-          userId,
-          venueId: venue.id,
+    try {
+      await prisma.favorite.delete({
+        where: {
+          userId_venueId: {
+            userId,
+            venueId: venue.id,
+          },
         },
-      },
-    });
+      });
+    } catch (error: any) {
+      if (error.code !== "P2025") throw error; // already deleted — treat as success
+    }
 
     // Trigger background preference summary consolidation
     updateUserPreferencesSummary(userId).catch((err) =>

@@ -26,6 +26,7 @@ export interface ExportableBooking {
   confirmationId: string;
   date: string;
   time: string;
+  duration?: number | null;
   venue: {
     name: string;
     category: string;
@@ -34,7 +35,7 @@ export interface ExportableBooking {
 }
 
 export function bookingsToCSV(bookings: ExportableBooking[]): string {
-  const header = ["Confirmation ID", "Venue", "Category", "Address", "Date", "Time"];
+  const header = ["Confirmation ID", "Venue", "Category", "Address", "Date", "Time", "Price ($)", "Tax ($)", "Total ($)"];
 
   const escapeCsv = (value: string) => {
     const v = value ?? "";
@@ -44,18 +45,26 @@ export function bookingsToCSV(bookings: ExportableBooking[]): string {
     return v;
   };
 
-  const rows = bookings.map((b) =>
-    [
+  const rows = bookings.map((b) => {
+    const hours = b.duration || 1;
+    const price = hours * 15;
+    const tax = Number((price * 0.08).toFixed(2));
+    const total = Number((price + tax).toFixed(2));
+
+    return [
       b.confirmationId || `WS-#${b.id}`,
       b.venue.name,
       b.venue.category || "",
       b.venue.address || "",
       b.date,
       b.time,
+      price.toFixed(2),
+      tax.toFixed(2),
+      total.toFixed(2),
     ]
       .map((cell) => escapeCsv(String(cell)))
       .join(",")
-  );
+  });
 
   return [header.join(","), ...rows].join("\n");
 }

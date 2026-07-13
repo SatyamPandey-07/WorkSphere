@@ -393,6 +393,196 @@ export async function processPendingActions(): Promise<Array<{
 }
 
 /**
+ * Conversation history offline edits (issue #266)
+ *
+ * Renaming/deleting a conversation while offline queues a "conversation-rename"
+ * or "conversation-delete" pendingAction, exactly like favorites/ratings already
+ * do. A Background Sync tag ("sync-conversations") is registered so the service
+ * worker flushes the queue as soon as connectivity returns; `flushConversationEditQueue`
+ * below is a foreground fallback for browsers (Safari/iOS) that don't support the
+ * Background Sync API.
+ */
+
+export interface ConversationEditAction {
+  id: number;
+  type: "conversation-rename" | "conversation-delete";
+  conversationId: string;
+  title?: string;
+  timestamp: number;
+}
+
+/**
+ * Queue a rename. If an earlier queued rename for the same conversation hasn't
+ * synced yet, it's replaced (only the latest title matters) rather than piling
+ * up redundant sync work.
+ */
+export async function queueConversationRename(conversationId: string, title: string): Promise<void> {
+  const database = await initOfflineDB();
+
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(["pendingActions"], "readwrite");
+    const store = transaction.objectStore("pendingActions");
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const existing = (request.result as ConversationEditAction[]).filter(
+        (a) => a.type === "conversation-rename" && a.conversationId === conversationId
+      );
+      existing.forEach((a) => store.delete(a.id));
+
+      store.add({
+        type: "conversation-rename",
+        conversationId,
+        title,
+        timestamp: Date.now(),
+      });
+    };
+    request.onerror = () => reject(request.error);
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+
+  await registerConversationSync();
+}
+
+/**
+ * Queue a delete. Any pending rename for the same conversation is dropped —
+ * there's no point syncing a title change for a thread that's about to be
+ * deleted anyway.
+ */
+export async function queueConversationDelete(conversationId: string): Promise<void> {
+  const database = await initOfflineDB();
+
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(["pendingActions"], "readwrite");
+    const store = transaction.objectStore("pendingActions");
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const staleRenames = (request.result as ConversationEditAction[]).filter(
+        (a) => a.type === "conversation-rename" && a.conversationId === conversationId
+      );
+      staleRenames.forEach((a) => store.delete(a.id));
+
+      store.add({
+        type: "conversation-delete",
+        conversationId,
+        timestamp: Date.now(),
+      });
+    };
+    request.onerror = () => reject(request.error);
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+
+  await registerConversationSync();
+}
+
+async function registerConversationSync(): Promise<void> {
+  if ("serviceWorker" in navigator && "SyncManager" in window) {
+    try {
+      const swRegistration = await navigator.serviceWorker.ready;
+      await (swRegistration as any).sync.register("sync-conversations");
+    } catch (err) {
+      console.error("Background Sync registration failed:", err);
+    }
+  }
+}
+
+/**
+ * All queued (not-yet-synced) conversation rename/delete actions, oldest first.
+ */
+export async function getPendingConversationEdits(): Promise<ConversationEditAction[]> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(["pendingActions"], "readonly");
+    const store = transaction.objectStore("pendingActions");
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const actions = (request.result as ConversationEditAction[])
+        .filter((a) => a.type === "conversation-rename" || a.type === "conversation-delete")
+        .sort((a, b) => a.timestamp - b.timestamp);
+      resolve(actions);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Applies queued rename/delete edits on top of a server-fetched (possibly
+ * stale/cached) conversation list, so a reload while offline — or before the
+ * background sync has fired — still reflects the user's local edits instead
+ * of reverting them.
+ */
+export function applyPendingConversationEdits<T extends { id: string; title: string }>(
+  conversations: T[],
+  pendingEdits: ConversationEditAction[]
+): T[] {
+  const deletedIds = new Set(
+    pendingEdits.filter((a) => a.type === "conversation-delete").map((a) => a.conversationId)
+  );
+  const latestTitleById = new Map<string, string>();
+  for (const edit of pendingEdits) {
+    if (edit.type === "conversation-rename" && edit.title !== undefined) {
+      latestTitleById.set(edit.conversationId, edit.title);
+    }
+  }
+
+  return conversations
+    .filter((c) => !deletedIds.has(c.id))
+    .map((c) => (latestTitleById.has(c.id) ? { ...c, title: latestTitleById.get(c.id)! } : c));
+}
+
+async function removePendingActionById(id: number): Promise<void> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(["pendingActions"], "readwrite");
+    const store = transaction.objectStore("pendingActions");
+    const request = store.delete(id);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/**
+ * Foreground fallback: sends every queued conversation edit to the server and
+ * removes it from the queue on success. Safe to call opportunistically (e.g.
+ * on the browser's `online` event) in addition to the service worker's
+ * Background Sync handler — both simply no-op once the queue is empty.
+ */
+export async function flushConversationEditQueue(): Promise<void> {
+  const pending = await getPendingConversationEdits();
+
+  for (const action of pending) {
+    try {
+      let response: Response;
+      if (action.type === "conversation-delete") {
+        response = await fetch(`/api/conversations/${action.conversationId}`, { method: "DELETE" });
+      } else {
+        response = await fetch(`/api/conversations/${action.conversationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: action.title }),
+        });
+      }
+
+      if (response.ok) {
+        await removePendingActionById(action.id);
+      }
+    } catch (err) {
+      // Still offline or request failed — leave it queued for the next attempt.
+      console.error("Failed to sync conversation edit:", err);
+    }
+  }
+}
+
+/**
  * Clear old cached data
  */
 export async function cleanupOldData(maxAge: number = 7 * 24 * 60 * 60 * 1000): Promise<void> {

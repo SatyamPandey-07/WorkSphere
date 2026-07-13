@@ -172,6 +172,30 @@ function HeatmapOverlay({
 
   return null;
 }
+function ResizeWatcher({ delay = 150 }: { delay?: number }) {
+  const map = useMap();
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+
+    const handleResize = () => {
+      clearTimeout(timer);
+
+      timer = setTimeout(() => {
+        map.invalidateSize();
+      }, delay);
+    };
+
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [map, delay]);
+
+  return null;
+}
 
 const Map = ({
   location,
@@ -505,6 +529,7 @@ const Map = ({
         <MapController mapView={mapView} />
         <AutoCenter markers={markers} userLocation={center} />
         <ZoomWatcher onZoomSettled={handleZoomSettled} />
+        <ResizeWatcher />
 
         {customIcon && (
           <Marker position={center} icon={customIcon}>

@@ -13,6 +13,7 @@ import {
 
 import usePartySocket from "partysocket/react";
 import Image from "next/image";
+import { ComparisonTool } from "@/components/collections/ComparisonTool";
 
 export default function FolderDetailsPage({
   params,
@@ -146,6 +147,8 @@ export default function FolderDetailsPage({
             )}
           </div>
         </div>
+
+        <ComparisonTool currentFolder={folder} />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-4">

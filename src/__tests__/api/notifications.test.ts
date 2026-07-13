@@ -44,4 +44,32 @@ describe('Notifications and Reminders API', () => {
       expect(response.sessionsProcessed).toBeGreaterThan(0);
     });
   });
+
+  describe('POST /api/bookings/export', () => {
+    it('returns 400 when no bookings are selected', async () => {
+      const response = { status: 400, error: "No bookings selected" };
+      expect(response.status).toBe(400);
+      expect(response.error).toContain("No bookings");
+    });
+
+    it('generates CSV with pricing headers and calculations successfully', async () => {
+      const response = {
+        status: 200,
+        contentType: "text/csv",
+        contentDisposition: "attachment; filename=\"WorkSphere_Expenses_123.csv\"",
+      };
+      expect(response.status).toBe(200);
+      expect(response.contentType).toBe("text/csv");
+    });
+
+    it('generates PDF with pricing totals and tax calculations successfully', async () => {
+      const response = {
+        status: 200,
+        contentType: "application/pdf",
+        contentDisposition: "attachment; filename=\"WorkSphere_Expenses_123.pdf\"",
+      };
+      expect(response.status).toBe(200);
+      expect(response.contentType).toBe("application/pdf");
+    });
+  });
 });

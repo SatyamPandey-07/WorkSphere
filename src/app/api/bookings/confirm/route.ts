@@ -25,39 +25,57 @@ export async function POST(req: Request) {
         const confirmationId = `WS-#${Math.floor(100000 + Math.random() * 900000)}`;
         const targetPlaceId = venue.placeId || venue.id;
 
-        // 0.5 Ensure Venue exists in local ledger 💎
-        // Venues from search might not be in our DB yet
-        // We upsert by placeId because that is the unique physical identifier
-        const dbVenue = await prisma.venue.upsert({
-            where: { placeId: targetPlaceId },
-            update: {
-                // Update basic info if it's missing or from a fresh search
-                name: venue.name || "Unknown Venue",
-                address: venue.address || null,
-                category: venue.category || "other",
-            },
-            create: {
-                placeId: targetPlaceId,
-                name: venue.name || "Unknown Venue",
-                latitude: venue.latitude || venue.lat || 0,
-                longitude: venue.longitude || venue.lng || 0,
-                category: venue.category || "other",
-                address: venue.address || null,
-            },
-        });
+        // --- CONCURRENCY FIX IMPLEMENTATION ---
+        // Wrap database steps inside an interactive transaction to prevent key collisions
+        const { booking, dbVenue } = await prisma.$transaction(async (tx) => {
+            
+            // 0.5 Ensure Venue exists in local ledger via transaction client
+            const localVenue = await tx.venue.upsert({
+                where: { placeId: targetPlaceId },
+                update: {
+                    name: venue.name || "Unknown Venue",
+                    address: venue.address || null,
+                    category: venue.category || "other",
+                },
+                create: {
+                    placeId: targetPlaceId,
+                    name: venue.name || "Unknown Venue",
+                    latitude: venue.latitude || venue.lat || 0,
+                    longitude: venue.longitude || venue.lng || 0,
+                    category: venue.category || "other",
+                    address: venue.address || null,
+                },
+            });
 
-        // 1. Persist to Database 💎
-        const booking = await (prisma as any).booking.create({
-            data: {
-                userId,
-                venueId: dbVenue.id, // Use the ID from our verified ledger record
-                date,
-                time,
-                customerEmail: customerEmail || "pandeysatyam1802@gmail.com",
-                customerPhone: customerPhone || null,
-                confirmationId,
+            // Double check race condition inside the isolated transaction window
+            const existingBooking = await tx.booking.findFirst({
+                where: {
+                    venueId: localVenue.id,
+                    date: date,
+                    time: time,
+                },
+            });
+
+            if (existingBooking) {
+                throw new Error("COLLISION: This workspace slot has already been claimed by another runtime thread.");
             }
+
+            // 1. Persist to Database safely using transaction context
+            const newBooking = await (tx as any).booking.create({
+                data: {
+                    userId,
+                    venueId: localVenue.id,
+                    date,
+                    time,
+                    customerEmail: customerEmail || "pandeysatyam1802@gmail.com",
+                    customerPhone: customerPhone || null,
+                    confirmationId,
+                }
+            });
+
+            return { booking: newBooking, dbVenue: localVenue };
         });
+        // --- END OF FIX ---
 
         // 2. Emit Booking Confirmed Event to handle Side-Effects (PDF, Email, Analytics)
         await eventBus.emit("booking:confirmed", {
@@ -81,6 +99,16 @@ export async function POST(req: Request) {
         });
     } catch (error: any) {
         console.error("[Booking API Critical Failure]:", error);
+
+        // Catch standard Prisma unique constraint violations (P2002) cleanly
+        if (error.code === 'P2002' || error.message?.includes("COLLISION")) {
+            return NextResponse.json({
+                success: false,
+                error: "Reservation collision intercepted. Please try selecting another slot.",
+                details: error.message
+            }, { status: 409 });
+        }
+
         return NextResponse.json({
             success: false,
             error: "Internal systems error during confirmation",

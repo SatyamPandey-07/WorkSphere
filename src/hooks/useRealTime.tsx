@@ -259,7 +259,7 @@ export function useMultiplayerSession(roomId: string | null) {
   const socket = usePartySocket({
     host: "127.0.0.1:1999",
     room: roomId || "default",
-    onMessage(_event) {
+    onMessage(event) {
       // handled in component
     }
   });

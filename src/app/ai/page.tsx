@@ -560,7 +560,10 @@ function AppPage() {
           <ChatErrorBoundary>
             <EnhancedChatbot
               roomId={sessionId}
+
+
               onShowToast={(msg) => setToast({ message: msg, type: "warning" })}
+
               onMapUpdate={(update) => {
                 handleMapUpdate(update as MapUpdateData);
                 // Auto-switch to map on mobile when markers are added
@@ -588,7 +591,9 @@ function AppPage() {
                   score: v.score
                 });
               }}
-              onBook={() => {
+
+              onBook={(v) => {
+                console.log("[Booking] Initiated for:", v.name);
                 // Handled internally by EnhancedChatbot now
               }}
               userLocation={

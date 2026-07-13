@@ -249,8 +249,8 @@ export function VenueCard({
           <button
             onClick={handleFavorite}
             className={`p-2 rounded-lg transition-colors ${isFavorited
-                ? "bg-red-100 dark:bg-red-900/20 text-red-600"
-                : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
+              ? "bg-red-100 dark:bg-red-900/20 text-red-600"
+              : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
               }`}
           >
             <Heart className={`w-5 h-5 ${isFavorited ? "fill-current" : ""}`} />
@@ -320,8 +320,8 @@ export function VenueCard({
             {/* WiFi Tag Check Node */}
             {venue.wifiQuality && !voteMetrics.wifi.hidden && (
               <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.wifi.confidenceScore < 60
-                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}>
                 <Wifi className="w-3.5 h-3.5 text-blue-500" />
                 <span className="font-medium font-mono text-[11px]">WiFi ({voteMetrics.wifi.confidenceScore}%)</span>
@@ -342,8 +342,8 @@ export function VenueCard({
             {/* Outlets Tag Check Node */}
             {venue.hasOutlets && !voteMetrics.outlets.hidden && (
               <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.outlets.confidenceScore < 60
-                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}>
                 <Zap className="w-3.5 h-3.5 text-yellow-500" />
                 <span className="font-medium font-mono text-[11px]">Outlets ({voteMetrics.outlets.confidenceScore}%)</span>
@@ -364,8 +364,8 @@ export function VenueCard({
             {/* Ergonomic Seating Tag Check Node */}
             {venue.amenities?.hasErgonomic && !voteMetrics.ergonomic.hidden && (
               <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.ergonomic.confidenceScore < 60
-                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}>
                 <Accessibility className="w-3.5 h-3.5 text-purple-500" />
                 <span className="font-medium font-mono text-[11px]">Ergonomic ({voteMetrics.ergonomic.confidenceScore}%)</span>
@@ -464,7 +464,7 @@ export function VenueCard({
                 <span className="capitalize">{venue.lighting.replace("_", " ")}</span>
               </div>
             )}
-            
+
             {venue.distance && (
               <div className="text-xs text-zinc-500 self-center ml-auto font-medium">
                 📏 {venue.distance}
@@ -504,14 +504,37 @@ export function VenueCard({
               <span>💧 Water Bowls</span>
             </div>
           )}
+          {venue.singleOriginBeans && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>☕ Single-Origin</span>
+            </div>
+          )}
+
+          {venue.specialtyEspresso && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>⚙️ Specialty Espresso</span>
+            </div>
+          )}
+
+          {venue.oatAlmondMilk && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🥛 Oat/Almond Milk</span>
+            </div>
+          )}
+
+          {venue.pourOverAvailable && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🫖 Pour Over</span>
+            </div>
+          )}
           {venue.noiseLevel && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Volume2
                 className={`w-4 h-4 ${venue.noiseLevel === "quiet"
-                    ? "text-green-600"
-                    : venue.noiseLevel === "moderate"
-                      ? "text-orange-600"
-                      : "text-red-600"
+                  ? "text-green-600"
+                  : venue.noiseLevel === "moderate"
+                    ? "text-orange-600"
+                    : "text-red-600"
                   }`}
               />
               <span className="capitalize">{venue.noiseLevel}</span>

@@ -24,6 +24,10 @@ interface VenueFormData {
   hasPhoneBooths: boolean;
   hasNoMusic: boolean;
   hasQuietZone: boolean;
+  singleOriginBeans: boolean;
+  specialtyEspresso: boolean;
+  oatAlmondMilk: boolean;
+  pourOverAvailable: boolean;
 }
 
 export function VenueSubmissionModal({
@@ -54,6 +58,10 @@ export function VenueSubmissionModal({
     hasPhoneBooths: false,
     hasNoMusic: false,
     hasQuietZone: false,
+    singleOriginBeans: false,
+    specialtyEspresso: false,
+    oatAlmondMilk: false,
+    pourOverAvailable: false,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -106,7 +114,7 @@ export function VenueSubmissionModal({
 
       const response = await fetch("/api/venues", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
@@ -123,6 +131,10 @@ export function VenueSubmissionModal({
           hasPhoneBooths: formData.hasPhoneBooths,
           hasNoMusic: formData.hasNoMusic,
           hasQuietZone: formData.hasQuietZone,
+          singleOriginBeans: formData.singleOriginBeans,
+          specialtyEspresso: formData.specialtyEspresso,
+          oatAlmondMilk: formData.oatAlmondMilk,
+          pourOverAvailable: formData.pourOverAvailable,
           crowdsourced: true,
           imageUrl,
         }),
@@ -152,6 +164,10 @@ export function VenueSubmissionModal({
           hasPhoneBooths: false,
           hasNoMusic: false,
           hasQuietZone: false,
+          singleOriginBeans: false,
+          specialtyEspresso: false,
+          oatAlmondMilk: false,
+          pourOverAvailable: false,
         });
         setFile(null);
         setImagePreview(null);
@@ -358,8 +374,68 @@ export function VenueSubmissionModal({
                 />
                 Strict Silence Zones
               </label>
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.singleOriginBeans}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      singleOriginBeans: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                ☕ Single-Origin Beans
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.specialtyEspresso}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      specialtyEspresso: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                ⚙️ Specialty Espresso Machine
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.oatAlmondMilk}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      oatAlmondMilk: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                🥛 Oat / Almond Milk Available
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.pourOverAvailable}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      pourOverAvailable: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                🫖 Pour-Over Available
+              </label>
             </div>
           </div>
+
 
           <button
             type="submit"

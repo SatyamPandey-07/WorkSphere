@@ -20,6 +20,16 @@ export async function getRoute(
   to: { lat: number; lng: number },
   profile: 'driving' | 'walking' | 'cycling' = 'walking'
 ): Promise<RouteResult | null> {
+  // Guard: if start and destination are identical, skip the OSRM call
+  // entirely — avoids malformed/edge-case responses from the routing API.
+  if (from.lat === to.lat && from.lng === to.lng) {
+    return {
+      path: [{ lat: from.lat, lng: from.lng }],
+      distance: 0,
+      duration: 0,
+    };
+  }
+
   try {
     // OSRM uses lng,lat format (opposite of most APIs)
     const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;

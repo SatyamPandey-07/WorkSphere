@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, message: 'Event emitted to queue' });
-  } catch (error) {
+  } catch {
     return NextResponse.json({ error: 'Failed to emit event' }, { status: 500 });
   }
 }

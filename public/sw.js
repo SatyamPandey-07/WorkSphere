@@ -128,6 +128,9 @@ self.addEventListener("sync", (event) => {
   if (event.tag === "sync-ratings") {
     event.waitUntil(syncRatings());
   }
+  if (event.tag === "sync-conversations") {
+    event.waitUntil(syncConversations());
+  }
 });
 
 // Helper to convert Uint8Array to base64 for fetch
@@ -215,6 +218,57 @@ async function syncRatings() {
     }
   } catch (error) {
     console.error("Sync ratings failed:", error);
+  }
+}
+
+// Sync queued conversation renames/deletes when back online (issue #266)
+async function syncConversations() {
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction("pendingActions", "readonly");
+    const store = tx.objectStore("pendingActions");
+    const allActions = await new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+
+    const pending = allActions
+      .filter((a) => a.type === "conversation-rename" || a.type === "conversation-delete")
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    // Defensive de-dupe in case a rename and a later delete for the same
+    // conversation both slipped into the queue (client-side queuing already
+    // guards against this, but the service worker reads independently).
+    const deletedIds = new Set(
+      pending.filter((a) => a.type === "conversation-delete").map((a) => a.conversationId)
+    );
+
+    for (const action of pending) {
+      if (action.type === "conversation-rename" && deletedIds.has(action.conversationId)) {
+        await removePendingAction(db, "pendingActions", action.id);
+        continue;
+      }
+
+      try {
+        const response =
+          action.type === "conversation-delete"
+            ? await fetch(`/api/conversations/${action.conversationId}`, { method: "DELETE" })
+            : await fetch(`/api/conversations/${action.conversationId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: action.title }),
+              });
+
+        if (response.ok) {
+          await removePendingAction(db, "pendingActions", action.id);
+        }
+      } catch (error) {
+        console.error("Failed to sync conversation edit:", error);
+      }
+    }
+  } catch (error) {
+    console.error("Sync conversations failed:", error);
   }
 }
 
@@ -333,4 +387,35 @@ self.addEventListener("notificationclick", (event) => {
       }),
   );
 });
+
+import { getQueuedFavorites, dequeueOfflineAction } from '../src/lib/offlineStore';
+
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-favorites') {
+    event.waitUntil(syncFavoritesOutbox());
+  }
+});
+
+async function syncFavoritesOutbox() {
+  try {
+    const actions = await getQueuedFavorites();
+    
+    for (const action of actions) {
+      const response = await fetch('/api/favorites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ venueId: action.venueId, action: action.action }),
+      });
+
+      if (response.ok && action.id) {
+        // Remove from IndexedDB outbox queue on successful endpoint ingestion
+        await dequeueOfflineAction(action.id);
+      }
+    }
+  } catch (error) {
+    console.error('Background synchronization pipeline failed to complete:', error);
+  }
+}
+
+
 

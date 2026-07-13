@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import i18n from "i18next";
 import { initReactI18next, I18nextProvider } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
+import { useCsrfToken } from "@/hooks/useCsrfToken";
 
 import en from "../locales/en.json";
 import es from "../locales/es.json";
@@ -31,6 +32,11 @@ i18n
 
 export default function I18nProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
+
+  // Ensures a CSRF token is fetched on load and automatically re-issued
+  // whenever the locale changes, so form submissions right after a language
+  // switch never hit a stale/missing token. See issue #201.
+  useCsrfToken();
 
   useEffect(() => {
     setMounted(true);

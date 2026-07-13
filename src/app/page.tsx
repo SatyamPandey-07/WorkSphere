@@ -5,7 +5,7 @@ import Image from "next/image";
 import {
   MapPin, Wifi, Zap, Volume2, Clock, Sparkles, Download,
   ArrowRight, Coffee, Camera, Radio, Star, Users, Building2,
-  ChevronRight, FileText, BarChart3, ArrowUp, ShieldCheck, Server, Terminal, Globe, Filter, LayoutGrid
+  ChevronRight, FileText, BarChart3, ArrowUp, LayoutGrid
 } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";

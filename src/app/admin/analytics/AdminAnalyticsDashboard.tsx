@@ -386,7 +386,7 @@ export default function AdminAnalyticsDashboard() {
             </div>
 
             <div className="space-y-4">
-              {(data?.amenities ?? []).map((item, _index) => {
+              {(data?.amenities ?? []).map((item) => {
                 const topCount = data?.amenities[0]?.count || 1;
                 const width = Math.max((item.count / topCount) * 100, 5);
 

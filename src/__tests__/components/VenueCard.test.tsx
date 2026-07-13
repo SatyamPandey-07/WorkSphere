@@ -96,4 +96,18 @@ describe('VenueCard', () => {
     expect(screen.getByText('Directions')).toBeInTheDocument();
     expect(screen.getByText('Rate')).toBeInTheDocument();
   });
+
+  it('renders study-specific verification tags for library category', async () => {
+    const mockLibrary = {
+      ...mockVenue,
+      id: 'test-library-1',
+      name: 'Central Library',
+      category: 'library',
+    };
+    await renderVenueCard(mockLibrary);
+
+    expect(screen.getByText(/Silent Room/)).toBeInTheDocument();
+    expect(screen.getByText(/Study Tables/)).toBeInTheDocument();
+    expect(screen.getByText(/Scanners\/Printers/)).toBeInTheDocument();
+  });
 });

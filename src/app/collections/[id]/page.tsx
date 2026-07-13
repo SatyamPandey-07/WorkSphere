@@ -2,15 +2,15 @@
 
 import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
-import { ArrowLeft, Users, Link as LinkIcon, Trash2, MapPin, Loader2, RefreshCw } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { ArrowLeft, Users, Link as LinkIcon, Trash2, MapPin, Loader2 } from "lucide-react";
+
 import usePartySocket from "partysocket/react";
 import Image from "next/image";
+import { ComparisonTool } from "@/components/collections/ComparisonTool";
 
 export default function FolderDetailsPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const { id } = resolvedParams;
-  const router = useRouter();
   
   const [folder, setFolder] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -30,7 +30,7 @@ export default function FolderDetailsPage({ params }: { params: Promise<{ id: st
       } else {
         setError(data.error || "Failed to load folder");
       }
-    } catch (e) {
+    } catch {
       setError("An error occurred");
     } finally {
       setLoading(false);
@@ -51,7 +51,7 @@ export default function FolderDetailsPage({ params }: { params: Promise<{ id: st
         if (data.type === "refresh") {
           fetchFolder();
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
     },
@@ -122,6 +122,8 @@ export default function FolderDetailsPage({ params }: { params: Promise<{ id: st
               )}
            </div>
         </div>
+
+        <ComparisonTool currentFolder={folder} />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 space-y-4">

@@ -21,7 +21,10 @@ import {
     Volume2,
     BarChart3,
     Inbox,
-    Share2
+    Share2,
+    Pencil,
+    Check,
+    X
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
@@ -47,6 +50,10 @@ interface ChatHeaderProps {
         hasPhoneBooths?: boolean;
         hasNoMusic?: boolean;
         hasQuietZone?: boolean;
+        singleOriginBeans?: boolean;
+        specialtyEspresso?: boolean;
+        oatAlmondMilk?: boolean;
+        pourOverAvailable?: boolean;
     };
     showFilters: boolean;
     setShowFilters: (show: boolean) => void;
@@ -58,6 +65,7 @@ interface ChatHeaderProps {
     conversations: Conversation[];
     onLoadConversation: (id: string) => void;
     onDeleteConversation: (id: string) => void;
+    onRenameConversation: (id: string, title: string) => void;
     onShowBookings: () => void;
     roomId?: string | null;
     onShareSession?: () => void;
@@ -86,11 +94,31 @@ export function ChatHeader({
     conversations,
     onLoadConversation,
     onDeleteConversation,
+    onRenameConversation,
     onShowBookings,
+
+    roomId,
+
     roomId: _roomId,
+
     onShareSession
 }: ChatHeaderProps) {
     const [isHubOpen, setIsHubOpen] = useState(false);
+    const [renamingId, setRenamingId] = useState<string | null>(null);
+    const [renameValue, setRenameValue] = useState("");
+
+    const startRenaming = (conv: Conversation) => {
+        setRenamingId(conv.id);
+        setRenameValue(conv.title);
+    };
+
+    const commitRename = (id: string) => {
+        const trimmed = renameValue.trim();
+        if (trimmed) {
+            onRenameConversation(id, trimmed);
+        }
+        setRenamingId(null);
+    };
 
     const getActiveHubName = () => {
         if (!userLocation) return "Global Hubs";
@@ -304,7 +332,54 @@ export function ChatHeader({
                                 </button>
                             </div>
                         </div>
+                        {/* Section: Coffee Quality */}
+                        <div>
+                            <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
+                                Coffee Quality
+                            </div>
 
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={() => onToggleFilter("singleOriginBeans")}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.singleOriginBeans
+                                            ? "bg-orange-600 text-white shadow-md"
+                                            : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                                        }`}
+                                >
+                                    ☕ Single-Origin Beans
+                                </button>
+
+                                <button
+                                    onClick={() => onToggleFilter("specialtyEspresso")}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.specialtyEspresso
+                                            ? "bg-orange-600 text-white shadow-md"
+                                            : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                                        }`}
+                                >
+                                    ☕ Specialty Espresso
+                                </button>
+
+                                <button
+                                    onClick={() => onToggleFilter("oatAlmondMilk")}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.oatAlmondMilk
+                                            ? "bg-orange-600 text-white shadow-md"
+                                            : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                                        }`}
+                                >
+                                    🥛 Oat / Almond Milk
+                                </button>
+
+                                <button
+                                    onClick={() => onToggleFilter("pourOverAvailable")}
+                                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.pourOverAvailable
+                                            ? "bg-orange-600 text-white shadow-md"
+                                            : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                                        }`}
+                                >
+                                    ☕ Pour-Over
+                                </button>
+                            </div>
+                        </div>
                         {/* Section: Acoustic Environment */}
                         <div>
                             <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">Acoustic Environment</div>
@@ -343,11 +418,10 @@ export function ChatHeader({
                                     <button
                                         key={density.value}
                                         onClick={() => onSetFilter && onSetFilter('outletDensity', density.value)}
-                                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                                            (filters.outletDensity || "none") === density.value
+                                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${(filters.outletDensity || "none") === density.value
                                                 ? 'bg-orange-600 text-white shadow-md'
                                                 : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700'
-                                        }`}
+                                            }`}
                                     >
                                         {density.label}
                                     </button>
@@ -368,11 +442,10 @@ export function ChatHeader({
                                     <button
                                         key={band.value}
                                         onClick={() => onSetFilter && onSetFilter('wifiSpeedBand', band.value)}
-                                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
-                                            (filters.wifiSpeedBand || "all") === band.value
+                                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${(filters.wifiSpeedBand || "all") === band.value
                                                 ? 'bg-orange-600 text-white shadow-md'
                                                 : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700'
-                                        }`}
+                                            }`}
                                     >
                                         {band.label}
                                     </button>
@@ -397,31 +470,67 @@ export function ChatHeader({
                             <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
                                 {conversations.map((conv) => (
                                     <div key={conv.id} className="group flex items-center justify-between p-3 hover:bg-white dark:hover:bg-zinc-800 transition-colors">
-                                        <button
-                                            onClick={() => onLoadConversation(conv.id)}
-                                            className="flex-1 text-left min-w-0"
-                                        >
-                                            <p className="text-[11px] font-bold text-zinc-900 dark:text-zinc-100 truncate uppercase tracking-tight">
-                                                {conv.title}
-                                            </p>
-                                            <p className="text-[9px] text-zinc-500 font-medium">
-                                                {new Date(conv.updatedAt).toLocaleDateString()}
-                                            </p>
-                                        </button>
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                            <button
-                                                onClick={() => onDeleteConversation(conv.id)}
-                                                className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                            <button
-                                                onClick={() => onLoadConversation(conv.id)}
-                                                className="p-1.5 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                                            >
-                                                <ChevronRight className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
+                                        {renamingId === conv.id ? (
+                                            <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                                                <input
+                                                    autoFocus
+                                                    value={renameValue}
+                                                    onChange={(e) => setRenameValue(e.target.value)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === "Enter") commitRename(conv.id);
+                                                        if (e.key === "Escape") setRenamingId(null);
+                                                    }}
+                                                    onBlur={() => commitRename(conv.id)}
+                                                    className="flex-1 min-w-0 text-[11px] font-bold uppercase tracking-tight bg-white dark:bg-zinc-900 border border-purple-400 rounded px-2 py-1 text-zinc-900 dark:text-zinc-100 outline-none"
+                                                />
+                                                <button
+                                                    onMouseDown={(e) => { e.preventDefault(); commitRename(conv.id); }}
+                                                    className="p-1.5 rounded-md text-zinc-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                </button>
+                                                <button
+                                                    onMouseDown={(e) => { e.preventDefault(); setRenamingId(null); }}
+                                                    className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={() => onLoadConversation(conv.id)}
+                                                    className="flex-1 text-left min-w-0"
+                                                >
+                                                    <p className="text-[11px] font-bold text-zinc-900 dark:text-zinc-100 truncate uppercase tracking-tight">
+                                                        {conv.title}
+                                                    </p>
+                                                    <p className="text-[9px] text-zinc-500 font-medium">
+                                                        {new Date(conv.updatedAt).toLocaleDateString()}
+                                                    </p>
+                                                </button>
+                                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <button
+                                                        onClick={() => startRenaming(conv)}
+                                                        className="p-1.5 rounded-md text-zinc-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+                                                    >
+                                                        <Pencil className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => onDeleteConversation(conv.id)}
+                                                        className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => onLoadConversation(conv.id)}
+                                                        className="p-1.5 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                                    >
+                                                        <ChevronRight className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 ))}
                             </div>

@@ -14,6 +14,11 @@ export interface AppEvents {
   };
   // Add more events as needed
   "user:created": { userId: string; email: string };
+  "checkin:confirmed": {
+    userId: string;
+    userName: string;
+    venue: { id: string; name: string; category: string; address?: string | null; latitude?: number | null; longitude?: number | null };
+  };
 }
 
 export type EventName = keyof AppEvents;

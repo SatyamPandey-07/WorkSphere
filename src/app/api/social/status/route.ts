@@ -1,6 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { eventBus } from "@/core/events";
+import "@/core/subscribers/telegram";
 
 export async function GET() {
   const statuses = await prisma.workBuddyStatus.findMany({
@@ -83,6 +85,20 @@ export async function POST(request: NextRequest) {
       user: {
         select: { firstName: true, lastName: true },
       },
+    },
+  });
+
+  const userName = `${status.user?.firstName || ""} ${status.user?.lastName || ""}`.trim() || "Someone";
+  await eventBus.emit("checkin:confirmed", {
+    userId,
+    userName,
+    venue: {
+      id: status.venue.id,
+      name: status.venue.name,
+      category: status.venue.category,
+      address: status.venue.address,
+      latitude: status.venue.latitude,
+      longitude: status.venue.longitude,
     },
   });
 

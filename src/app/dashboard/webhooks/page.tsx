@@ -1,8 +1,9 @@
-import { getWebhookEndpoints, getDiscordWebhookUrl } from './actions';
+import { getWebhookEndpoints, getDiscordWebhookUrl, getTelegramWebhookUrl } from './actions';
 import { WebhookForm } from '@/components/webhooks/WebhookForm';
 import { WebhookList } from '@/components/webhooks/WebhookList';
 import { DeliveryLogs } from '@/components/webhooks/DeliveryLogs';
 import { DiscordSettings } from './DiscordSettings';
+import { TelegramSettings } from './TelegramSettings';
 import { Suspense } from 'react';
 
 export const metadata = {
@@ -12,6 +13,7 @@ export const metadata = {
 export default async function WebhooksPage() {
   const endpoints = await getWebhookEndpoints();
   const discordUrl = await getDiscordWebhookUrl();
+  const telegramUrl = await getTelegramWebhookUrl();
 
   return (
     <div className="max-w-5xl mx-auto py-12 px-4 sm:px-6 lg:px-8 space-y-12">
@@ -26,6 +28,7 @@ export default async function WebhooksPage() {
         <div className="lg:col-span-1 space-y-6">
           <WebhookForm />
           <DiscordSettings initialUrl={discordUrl} />
+          <TelegramSettings initialUrl={telegramUrl} />
         </div>
         
         <div className="lg:col-span-2 space-y-8">

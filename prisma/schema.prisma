@@ -16,6 +16,7 @@ model User {
   imageUrl           String?
   createdAt          DateTime           @default(now())
   discordWebhookUrl  String?
+  telegramWebhookUrl String?
   favorites          Favorite[]
   ratings            VenueRating[]
   conversations      Conversation[]

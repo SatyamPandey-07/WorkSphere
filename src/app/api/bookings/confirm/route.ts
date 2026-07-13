@@ -6,6 +6,7 @@ import { eventBus } from "@/core/events";
 import "@/core/subscribers/booking";
 import "@/core/subscribers/booking";
 import "@/core/subscribers/discord";
+import "@/core/subscribers/telegram";
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();

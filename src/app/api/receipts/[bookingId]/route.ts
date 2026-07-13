@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
-import prisma from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 import { sanitizeCurrencyForPDF } from '@/lib/pdfUtils';
-// Assume your existing PDF constructor package (e.g., pdfkit) is imported here
 
-export async function GET(request: Request, { params }: { params: { bookingId: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ bookingId: string }> }) {
   try {
+    const { bookingId } = await params;
     const booking = await prisma.booking.findUnique({
-      where: { id: params.bookingId },
+      where: { id: bookingId },
       include: { venue: true, user: true }
     });
 
@@ -14,10 +14,8 @@ export async function GET(request: Request, { params }: { params: { bookingId: s
       return new NextResponse('Booking record not found', { status: 404 });
     }
 
-    // --- FIX IMPLEMENTATION ---
-    // Instead of passing raw symbols like '₹' or '¥' directly to the PDF text stream,
-    // utilize the sanitizer to translate symbols into standard text strings safely.
-    const printablePrice = sanitizeCurrencyForPDF(booking.totalPrice, booking.currencyCode);
+    const bookingAny = booking as any;
+    const printablePrice = sanitizeCurrencyForPDF(bookingAny.totalPrice ?? 0, bookingAny.currencyCode ?? 'USD');
     
     // Example compiler string text injection context:
     // doc.text(`Total Amount Paid: ${printablePrice}`, 50, 200);

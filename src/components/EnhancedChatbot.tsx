@@ -2,8 +2,6 @@
 
 
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import { useUser } from "@clerk/nextjs";
-import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayerSession } from "@/hooks/useRealTime";
@@ -111,10 +109,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   const { isSignedIn, user } = useUser();
 
   const { socket, yDoc } = useMultiplayerSession(roomId || null);
-
   const { getToken } = useAuth();
-
-  const { socket } = useMultiplayerSession(roomId || null);
 
 
   // Presence state
@@ -173,10 +168,9 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
           }
         }
 
-      } catch (e) {}
-
-      } catch { }
-
+      } catch (e) {
+        console.error("Failed to parse WebSocket message:", e);
+      }
     };
 
     socket.addEventListener("message", onMessage);

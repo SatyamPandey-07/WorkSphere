@@ -594,10 +594,7 @@ function AppPage() {
 
               onBook={(v) => {
                 console.log("[Booking] Initiated for:", v.name);
-
-              onBook={() => {
                 // Handled internally by EnhancedChatbot now
-
               }}
               userLocation={
                 location ? { lat: location.latitude, lng: location.longitude } : undefined

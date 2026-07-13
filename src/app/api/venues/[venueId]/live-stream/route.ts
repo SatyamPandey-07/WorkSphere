@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
-export async function GET(request: Request, { params }: { params: { venueId: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ venueId: string }> }) {
+  const { venueId } = await params;
   const responseStream = new TransformStream();
   const writer = responseStream.writable.getWriter();
   const encoder = new TextEncoder();

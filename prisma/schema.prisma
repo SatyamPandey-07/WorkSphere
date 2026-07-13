@@ -36,6 +36,7 @@ createdVenues     Venue[]            @relation("VenueCreator")
   webhookEndpoints  WebhookEndpoint[]
   phoneNumber       String?
   smsAlertsEnabled  Boolean            @default(false)
+  folderUpvotes     FolderUpvote[]
 }
 
 model Venue {
@@ -376,11 +377,14 @@ model Folder {
   ownerId     String
   owner       User     @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   inviteToken String?  @unique
+  isPublic    Boolean  @default(false)
+  upvotes     Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   venues  FolderVenue[]
   members FolderMember[]
+  upvoteRefs FolderUpvote[]
 
   @@index([ownerId])
 }
@@ -454,4 +458,17 @@ model WebhookDeliveryLog {
   createdAt  DateTime        @default(now())
 
   @@index([endpointId])
+}
+
+model FolderUpvote {
+  id        String   @id @default(cuid())
+  folderId  String
+  folder    Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([folderId, userId])
+  @@index([folderId])
+  @@index([userId])
 }

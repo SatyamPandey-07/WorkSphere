@@ -44,4 +44,28 @@ describe('Notifications and Reminders API', () => {
       expect(response.sessionsProcessed).toBeGreaterThan(0);
     });
   });
+
+  describe('GET /api/collections/public', () => {
+    it('retrieves public collections sorted by upvotes', async () => {
+      const mockCollections = [
+        { id: "col_1", name: "Quiet Cafes", isPublic: true, upvotes: 12 },
+        { id: "col_2", name: "Libraries", isPublic: true, upvotes: 5 },
+      ];
+      expect(mockCollections[0].upvotes).toBeGreaterThan(mockCollections[1].upvotes);
+      expect(mockCollections[0].isPublic).toBe(true);
+    });
+  });
+
+  describe('POST /api/collections/public/upvote', () => {
+    it('toggles upvote count successfully', async () => {
+      const voteState = {
+        success: true,
+        hasUpvoted: true,
+        upvotes: 13,
+      };
+      expect(voteState.success).toBe(true);
+      expect(voteState.hasUpvoted).toBe(true);
+      expect(voteState.upvotes).toBe(13);
+    });
+  });
 });

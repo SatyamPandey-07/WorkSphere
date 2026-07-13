@@ -134,25 +134,26 @@ function ZoomWatcher({
 }
 
 // Subcomponent to handle rendering the Leaflet heatmap layer seamlessly
+const CROWD_GRADIENT = {
+  0.3: "#1e3a8a", // Deep Blue (Quiet)
+  0.55: "#3b82f6", // Bright Blue (Moderate)
+  0.8: "#8b5cf6", // Velvet Purple (Busy)
+  1.0: "#d946ef", // Neon Pink/Fuchsia (High Activity levels)
+};
+
 function HeatmapOverlay({
   points,
   visible,
+  gradient = CROWD_GRADIENT,
 }: {
   points: any[];
   visible: boolean;
+  gradient?: Record<number, string>;
 }) {
   const map = useMap();
 
   useEffect(() => {
     if (!map || !visible || points.length === 0) return;
-
-    // Glowing purple/blue gradient zones as outlined in issue parameters
-    const gradient = {
-      0.3: "#1e3a8a", // Deep Blue (Quiet)
-      0.55: "#3b82f6", // Bright Blue (Moderate)
-      0.8: "#8b5cf6", // Velvet Purple (Busy)
-      1.0: "#d946ef", // Neon Pink/Fuchsia (High Activity levels)
-    };
 
     const heatLayer = (L as any).heatLayer(points, {
       radius: 30,
@@ -168,7 +169,7 @@ function HeatmapOverlay({
         map.removeLayer(heatLayer);
       }
     };
-  }, [map, points, visible]);
+  }, [map, points, visible, gradient]);
 
   return null;
 }
@@ -286,6 +287,21 @@ const Map = ({
   const [showHeatmap, setShowHeatmap] = useState<boolean>(false);
   const [heatmapPoints, setHeatmapPoints] = useState<any[]>([]);
 
+  // Noise-level heatmap states (Issue #135)
+  const [showNoiseHeatmap, setShowNoiseHeatmap] = useState<boolean>(false);
+  const [noiseHeatmapPoints, setNoiseHeatmapPoints] = useState<any[]>([]);
+
+  // Green (<45dB) -> Yellow (45-65dB) -> Red (>65dB), banded rather than
+  // blended so the zones read as distinct quiet/moderate/loud regions.
+  const NOISE_GRADIENT = {
+    0.0: "#22c55e",
+    0.357: "#22c55e",
+    0.358: "#eab308",
+    0.643: "#eab308",
+    0.644: "#ef4444",
+    1.0: "#ef4444",
+  };
+
   // Async load data context when layer UI toggles active
   useEffect(() => {
     if (showHeatmap) {
@@ -301,6 +317,21 @@ const Map = ({
         );
     }
   }, [showHeatmap]);
+
+  useEffect(() => {
+    if (showNoiseHeatmap) {
+      fetch("/api/map/noise-heatmap")
+        .then((res) => res.json())
+        .then((resData) => {
+          if (resData.success) {
+            setNoiseHeatmapPoints(resData.data);
+          }
+        })
+        .catch((err) =>
+          console.error("Could not populate noise heatmap context", err),
+        );
+    }
+  }, [showNoiseHeatmap]);
 
   // Group and spiderfy overlapping markers
   const spiderfiedMarkers = useMemo(() => {
@@ -485,12 +516,12 @@ const Map = ({
         }
         
         /* Floating toggle position above canvas layers */
-        .map-heatmap-toggle {
-          position: absolute;
-          top: 20px;
-          right: 20px;
-          z-index: 1000;
-        }
+        .map-noise-toggle {
+  position: absolute;
+  top: 68px;
+  right: 20px;
+  z-index: 1000;
+}
       `,
         }}
       />
@@ -508,7 +539,10 @@ const Map = ({
         <div className="map-heatmap-toggle">
           <button
             type="button"
-            onClick={() => setShowHeatmap(!showHeatmap)}
+            onClick={() => {
+              setShowHeatmap(!showHeatmap);
+              if (!showHeatmap) setShowNoiseHeatmap(false);
+            }}
             className={`px-4 py-2 text-xs font-semibold rounded-lg shadow-md border transition-all duration-200 ${
               showHeatmap
                 ? "bg-purple-600 text-white border-purple-500 hover:bg-purple-700"
@@ -518,6 +552,25 @@ const Map = ({
             {showHeatmap
               ? "📍 Show Venue Markers"
               : "🔥 Show Live Crowd Heatmap"}
+          </button>
+        </div>
+
+        <div className="map-noise-toggle">
+          <button
+            type="button"
+            onClick={() => {
+              setShowNoiseHeatmap(!showNoiseHeatmap);
+              if (!showNoiseHeatmap) setShowHeatmap(false);
+            }}
+            className={`px-4 py-2 text-xs font-semibold rounded-lg shadow-md border transition-all duration-200 ${
+              showNoiseHeatmap
+                ? "bg-green-600 text-white border-green-500 hover:bg-green-700"
+                : "bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800"
+            }`}
+          >
+            {showNoiseHeatmap
+              ? "📍 Show Venue Markers"
+              : "🔊 Show Noise Levels"}
           </button>
         </div>
 
@@ -539,6 +592,12 @@ const Map = ({
 
         {showHeatmap ? (
           <HeatmapOverlay points={heatmapPoints} visible={showHeatmap} />
+        ) : showNoiseHeatmap ? (
+          <HeatmapOverlay
+            points={noiseHeatmapPoints}
+            visible={showNoiseHeatmap}
+            gradient={NOISE_GRADIENT}
+          />
         ) : (
           spiderfiedMarkers.map((marker) => (
             <Marker

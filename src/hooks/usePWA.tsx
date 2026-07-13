@@ -12,22 +12,14 @@ interface BeforeInstallPromptEvent extends Event {
  * Hook to register service worker and manage PWA state
  */
 export function useServiceWorker() {
-  const [isInstalled] = useState(() => {
-    // Initialize state from window on first render (SSR safe)
-    if (typeof window !== 'undefined') {
-      return window.matchMedia('(display-mode: standalone)').matches;
-    }
-    return false;
-  });
-  const [isOnline, setIsOnline] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return navigator.onLine;
-    }
-    return true;
-  });
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
   const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null);
 
   useEffect(() => {
+    setIsInstalled(window.matchMedia('(display-mode: standalone)').matches);
+    setIsOnline(navigator.onLine);
+
     // Register service worker
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker

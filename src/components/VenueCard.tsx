@@ -1,7 +1,28 @@
 "use client";
 import { VenueShareButton } from "@/components/social/VenueShareButton";
 import { MapMarker } from "@/types/map";
-import { Star, Wifi, Zap, Volume2, Navigation, Heart, MessageSquare, Clock, ExternalLink, Loader2, TreePine, Accessibility, AlertTriangle, Sun, VolumeX, Calendar, Printer } from "lucide-react";
+import {
+  Star,
+  Wifi,
+  Zap,
+  Volume2,
+  Navigation,
+  Heart,
+  MessageSquare,
+  Clock,
+  ExternalLink,
+  Loader2,
+  TreePine,
+  Accessibility,
+  AlertTriangle,
+  Sun,
+  VolumeX,
+  Calendar,
+  Printer,
+  Plug,
+  Smartphone,
+  BatteryCharging,
+} from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
@@ -57,13 +78,51 @@ export function VenueCard({
   // =========================================================================
   // COMMUNITY VERIFICATION VOTE STATE TRACKING SYSTEM
   // =========================================================================
-  const [voteMetrics, setVoteMetrics] = useState<Record<string, VoteMetricState>>({
-    wifi: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
-    outlets: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
-    ergonomic: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
-    silentRoom: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
-    studyTable: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
-    scanner: { confidenceScore: 100, upvotes: 0, downvotes: 0, hidden: false, userVote: null },
+  const [voteMetrics, setVoteMetrics] = useState<
+    Record<string, VoteMetricState>
+  >({
+    wifi: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
+    outlets: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
+    ergonomic: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
+    silentRoom: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
+    studyTable: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
+    scanner: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
   });
 
   // Load real vote metrics from the database on mount
@@ -84,8 +143,14 @@ export function VenueCard({
 
   // Async dynamic vote submittal query processor
   const submitAmenityVote = async (
-    amenityKey: "wifi" | "outlets" | "ergonomic" | "silentRoom" | "studyTable" | "scanner",
-    isUpvote: boolean
+    amenityKey:
+      | "wifi"
+      | "outlets"
+      | "ergonomic"
+      | "silentRoom"
+      | "studyTable"
+      | "scanner",
+    isUpvote: boolean,
   ) => {
     try {
       const response = await fetch("/api/venues/amenity-vote", {
@@ -163,7 +228,8 @@ export function VenueCard({
   // Determine low confidence threshold parameters to trigger notice blocks
   const wifiLowConfidence = venue.wifiQuality && voteMetrics.wifi.hidden;
   const outletsLowConfidence = venue.hasOutlets && voteMetrics.outlets.hidden;
-  const ergonomicLowConfidence = venue.amenities?.hasErgonomic && voteMetrics.ergonomic.hidden;
+  const ergonomicLowConfidence =
+    venue.amenities?.hasErgonomic && voteMetrics.ergonomic.hidden;
 
   const isLibrary = venue.category?.toLowerCase() === "library";
   const silentRoomLowConfidence = isLibrary && voteMetrics.silentRoom.hidden;
@@ -172,47 +238,61 @@ export function VenueCard({
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative">
-      
       {wifiLowConfidence && (
         <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span>Users report reliable **WiFi** might not be available here.</span>
+          <span>
+            Users report reliable **WiFi** might not be available here.
+          </span>
         </div>
       )}
       {outletsLowConfidence && (
         <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span>Users report **Power Outlets** might be broken or missing.</span>
+          <span>
+            Users report **Power Outlets** might be broken or missing.
+          </span>
         </div>
       )}
       {silentRoomLowConfidence && (
         <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span>Users report **Strict Silent Rooms** might not be available here.</span>
+          <span>
+            Users report **Strict Silent Rooms** might not be available here.
+          </span>
         </div>
       )}
       {studyTableLowConfidence && (
         <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span>Users report **Bookable Study Tables** might not be available here.</span>
+          <span>
+            Users report **Bookable Study Tables** might not be available here.
+          </span>
         </div>
       )}
       {scannerLowConfidence && (
         <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span>Users report **Scanners/Printers** might not be available here.</span>
+          <span>
+            Users report **Scanners/Printers** might not be available here.
+          </span>
         </div>
       )}
       {ergonomicLowConfidence && (
         <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-          <span>Users report **ergonomic seating** may not be available here.</span>
+          <span>
+            Users report **ergonomic seating** may not be available here.
+          </span>
         </div>
       )}
 
       {/* Photo Section */}
       {photos.length > 0 && (
-        <div className="relative h-32 bg-zinc-100 dark:bg-zinc-800 cursor-pointer" onClick={nextPhoto}>
+        <div
+          className="relative h-32 bg-zinc-100 dark:bg-zinc-800 cursor-pointer"
+          onClick={nextPhoto}
+        >
           <Image
             src={photos[photoIndex]}
             alt={venue.name}
@@ -240,7 +320,9 @@ export function VenueCard({
           <div className="flex-1">
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
               {venue.name}
-              {isLoading && <Loader2 className="w-3 h-3 animate-spin text-blue-500" />}
+              {isLoading && (
+                <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+              )}
             </h3>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {venue.address || "Address not available"}
@@ -248,10 +330,11 @@ export function VenueCard({
           </div>
           <button
             onClick={handleFavorite}
-            className={`p-2 rounded-lg transition-colors ${isFavorited
-              ? "bg-red-100 dark:bg-red-900/20 text-red-600"
-              : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
-              }`}
+            className={`p-2 rounded-lg transition-colors ${
+              isFavorited
+                ? "bg-red-100 dark:bg-red-900/20 text-red-600"
+                : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
+            }`}
           >
             <Heart className={`w-5 h-5 ${isFavorited ? "fill-current" : ""}`} />
           </button>
@@ -263,7 +346,9 @@ export function VenueCard({
             <div className="flex items-center gap-1">
               <Star className="w-4 h-4 text-yellow-500 fill-current" />
               <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                {typeof displayRating === 'number' ? displayRating.toFixed(1) : displayRating}
+                {typeof displayRating === "number"
+                  ? displayRating.toFixed(1)
+                  : displayRating}
               </span>
             </div>
           )}
@@ -311,140 +396,195 @@ export function VenueCard({
           </div>
         )}
 
-
         {/* INTERACTIVE AMENITY VERIFICATION TAG TRACKING ROW */}
         <div className="flex flex-col gap-2 mb-4 border-t border-zinc-100 dark:border-zinc-800 pt-3">
-          <span className="text-[10px] font-bold text-zinc-400 tracking-wider uppercase">Verify Amenities:</span>
+          <span className="text-[10px] font-bold text-zinc-400 tracking-wider uppercase">
+            Verify Amenities:
+          </span>
 
           <div className="flex flex-wrap gap-2">
             {/* WiFi Tag Check Node */}
             {venue.wifiQuality && !voteMetrics.wifi.hidden && (
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.wifi.confidenceScore < 60
-                ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                }`}>
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                  voteMetrics.wifi.confidenceScore < 60
+                    ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                    : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}
+              >
                 <Wifi className="w-3.5 h-3.5 text-blue-500" />
-                <span className="font-medium font-mono text-[11px]">WiFi ({voteMetrics.wifi.confidenceScore}%)</span>
+                <span className="font-medium font-mono text-[11px]">
+                  WiFi ({voteMetrics.wifi.confidenceScore}%)
+                </span>
 
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("wifi", true)}
                     className={`transition-colors ${voteMetrics.wifi.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
-                  >👍</button>
+                  >
+                    👍
+                  </button>
                   <button
                     onClick={() => submitAmenityVote("wifi", false)}
                     className={`transition-colors ${voteMetrics.wifi.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
-                  >👎</button>
+                  >
+                    👎
+                  </button>
                 </div>
               </div>
             )}
 
             {/* Outlets Tag Check Node */}
             {venue.hasOutlets && !voteMetrics.outlets.hidden && (
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.outlets.confidenceScore < 60
-                ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                }`}>
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                  voteMetrics.outlets.confidenceScore < 60
+                    ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                    : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}
+              >
                 <Zap className="w-3.5 h-3.5 text-yellow-500" />
-                <span className="font-medium font-mono text-[11px]">Outlets ({voteMetrics.outlets.confidenceScore}%)</span>
+                <span className="font-medium font-mono text-[11px]">
+                  Outlets ({voteMetrics.outlets.confidenceScore}%)
+                </span>
 
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("outlets", true)}
                     className={`transition-colors ${voteMetrics.outlets.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
-                  >👍</button>
+                  >
+                    👍
+                  </button>
                   <button
                     onClick={() => submitAmenityVote("outlets", false)}
                     className={`transition-colors ${voteMetrics.outlets.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
-                  >👎</button>
+                  >
+                    👎
+                  </button>
                 </div>
               </div>
             )}
 
             {/* Ergonomic Seating Tag Check Node */}
             {venue.amenities?.hasErgonomic && !voteMetrics.ergonomic.hidden && (
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.ergonomic.confidenceScore < 60
-                ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                }`}>
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                  voteMetrics.ergonomic.confidenceScore < 60
+                    ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                    : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}
+              >
                 <Accessibility className="w-3.5 h-3.5 text-purple-500" />
-                <span className="font-medium font-mono text-[11px]">Ergonomic ({voteMetrics.ergonomic.confidenceScore}%)</span>
+                <span className="font-medium font-mono text-[11px]">
+                  Ergonomic ({voteMetrics.ergonomic.confidenceScore}%)
+                </span>
 
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("ergonomic", true)}
                     className={`transition-colors ${voteMetrics.ergonomic.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
-                  >👍</button>
+                  >
+                    👍
+                  </button>
                   <button
                     onClick={() => submitAmenityVote("ergonomic", false)}
                     className={`transition-colors ${voteMetrics.ergonomic.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
-                  >👎</button>
+                  >
+                    👎
+                  </button>
                 </div>
               </div>
             )}
 
             {/* Strict Silent Rooms Tag */}
             {isLibrary && !voteMetrics.silentRoom.hidden && (
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.silentRoom.confidenceScore < 60
-                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                }`}>
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                  voteMetrics.silentRoom.confidenceScore < 60
+                    ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                    : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}
+              >
                 <VolumeX className="w-3.5 h-3.5 text-emerald-500" />
-                <span className="font-medium font-mono text-[11px]">Silent Room ({voteMetrics.silentRoom.confidenceScore}%)</span>
+                <span className="font-medium font-mono text-[11px]">
+                  Silent Room ({voteMetrics.silentRoom.confidenceScore}%)
+                </span>
 
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("silentRoom", true)}
                     className={`transition-colors ${voteMetrics.silentRoom.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
-                  >👍</button>
+                  >
+                    👍
+                  </button>
                   <button
                     onClick={() => submitAmenityVote("silentRoom", false)}
                     className={`transition-colors ${voteMetrics.silentRoom.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
-                  >👎</button>
+                  >
+                    👎
+                  </button>
                 </div>
               </div>
             )}
 
             {/* Bookable Study Tables Tag */}
             {isLibrary && !voteMetrics.studyTable.hidden && (
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.studyTable.confidenceScore < 60
-                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                }`}>
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                  voteMetrics.studyTable.confidenceScore < 60
+                    ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                    : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}
+              >
                 <Calendar className="w-3.5 h-3.5 text-indigo-500" />
-                <span className="font-medium font-mono text-[11px]">Study Tables ({voteMetrics.studyTable.confidenceScore}%)</span>
+                <span className="font-medium font-mono text-[11px]">
+                  Study Tables ({voteMetrics.studyTable.confidenceScore}%)
+                </span>
 
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("studyTable", true)}
                     className={`transition-colors ${voteMetrics.studyTable.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
-                  >👍</button>
+                  >
+                    👍
+                  </button>
                   <button
                     onClick={() => submitAmenityVote("studyTable", false)}
                     className={`transition-colors ${voteMetrics.studyTable.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
-                  >👎</button>
+                  >
+                    👎
+                  </button>
                 </div>
               </div>
             )}
 
             {/* Scanners/Printers Tag */}
             {isLibrary && !voteMetrics.scanner.hidden && (
-              <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${voteMetrics.scanner.confidenceScore < 60
-                  ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                  : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
-                }`}>
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                  voteMetrics.scanner.confidenceScore < 60
+                    ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                    : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+                }`}
+              >
                 <Printer className="w-3.5 h-3.5 text-cyan-500" />
-                <span className="font-medium font-mono text-[11px]">Scanners/Printers ({voteMetrics.scanner.confidenceScore}%)</span>
+                <span className="font-medium font-mono text-[11px]">
+                  Scanners/Printers ({voteMetrics.scanner.confidenceScore}%)
+                </span>
 
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("scanner", true)}
                     className={`transition-colors ${voteMetrics.scanner.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
-                  >👍</button>
+                  >
+                    👍
+                  </button>
                   <button
                     onClick={() => submitAmenityVote("scanner", false)}
                     className={`transition-colors ${voteMetrics.scanner.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
-                  >👎</button>
+                  >
+                    👎
+                  </button>
                 </div>
               </div>
             )}
@@ -452,8 +592,15 @@ export function VenueCard({
             {/* Noise profile badge */}
             {venue.noiseLevel && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
-                <Volume2 className={`w-3.5 h-3.5 ${venue.noiseLevel === "quiet" ? "text-green-600" : venue.noiseLevel === "moderate" ? "text-orange-600" : "text-red-600"
-                  }`} />
+                <Volume2
+                  className={`w-3.5 h-3.5 ${
+                    venue.noiseLevel === "quiet"
+                      ? "text-green-600"
+                      : venue.noiseLevel === "moderate"
+                        ? "text-orange-600"
+                        : "text-red-600"
+                  }`}
+                />
                 <span className="capitalize">{venue.noiseLevel}</span>
               </div>
             )}
@@ -461,7 +608,9 @@ export function VenueCard({
             {venue.lighting && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
                 <Sun className="w-3.5 h-3.5 text-amber-500" />
-                <span className="capitalize">{venue.lighting.replace("_", " ")}</span>
+                <span className="capitalize">
+                  {venue.lighting.replace("_", " ")}
+                </span>
               </div>
             )}
 
@@ -481,12 +630,37 @@ export function VenueCard({
               <span>WiFi {venue.wifiQuality}/5</span>
             </div>
           )}
-          {venue.hasOutlets && (
-            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <Zap className="w-4 h-4 text-yellow-600" />
-              <span>Outlets</span>
-            </div>
-          )}
+          {venue.hasOutlets &&
+            (!venue.powerTypes || venue.powerTypes.length === 0) && (
+              <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+                <Zap className="w-4 h-4 text-yellow-600" />
+                <span>Outlets</span>
+              </div>
+            )}
+          {venue.hasOutlets &&
+            venue.powerTypes &&
+            venue.powerTypes.includes("ac_wall") && (
+              <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+                <Plug className="w-4 h-4 text-yellow-600" />
+                <span>AC Outlets</span>
+              </div>
+            )}
+          {venue.hasOutlets &&
+            venue.powerTypes &&
+            venue.powerTypes.includes("usb_c") && (
+              <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+                <Smartphone className="w-4 h-4 text-blue-500" />
+                <span>USB-C PD</span>
+              </div>
+            )}
+          {venue.hasOutlets &&
+            venue.powerTypes &&
+            venue.powerTypes.includes("wireless") && (
+              <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+                <BatteryCharging className="w-4 h-4 text-green-500" />
+                <span>Wireless</span>
+              </div>
+            )}
           {venue.petsAllowedIndoors && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <span>🐶 Pets Allowed</span>
@@ -530,12 +704,13 @@ export function VenueCard({
           {venue.noiseLevel && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Volume2
-                className={`w-4 h-4 ${venue.noiseLevel === "quiet"
-                  ? "text-green-600"
-                  : venue.noiseLevel === "moderate"
-                    ? "text-orange-600"
-                    : "text-red-600"
-                  }`}
+                className={`w-4 h-4 ${
+                  venue.noiseLevel === "quiet"
+                    ? "text-green-600"
+                    : venue.noiseLevel === "moderate"
+                      ? "text-orange-600"
+                      : "text-red-600"
+                }`}
               />
               <span className="capitalize">{venue.noiseLevel}</span>
             </div>
@@ -543,7 +718,9 @@ export function VenueCard({
           {venue.lighting && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Sun className="w-4 h-4 text-amber-500" />
-              <span className="capitalize">{venue.lighting.replace("_", " ")}</span>
+              <span className="capitalize">
+                {venue.lighting.replace("_", " ")}
+              </span>
             </div>
           )}
           {venue.distance && (
@@ -556,7 +733,6 @@ export function VenueCard({
               <NoiseTimeChart venueId={enrichData.venueId} />
             </div>
           )}
-
         </div>
 
         {/* Actions */}

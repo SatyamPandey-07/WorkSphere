@@ -9,10 +9,13 @@ export const chatMessageSchema = z.object({
 export const chatRequestSchema = z.object({
   messages: z.array(chatMessageSchema).min(1),
   conversationId: z.string().optional().nullable(),
-  location: z.object({
-    lat: z.number().min(-90).max(90),
-    lng: z.number().min(-180).max(180),
-  }).optional().nullable(),
+  location: z
+    .object({
+      lat: z.number().min(-90).max(90),
+      lng: z.number().min(-180).max(180),
+    })
+    .optional()
+    .nullable(),
 });
 
 // Venue schemas
@@ -25,7 +28,9 @@ export const venueSearchSchema = z.object({
   outlets: z.coerce.boolean().optional(),
   quiet: z.coerce.boolean().optional(),
   ergonomic: z.coerce.boolean().optional(),
-  outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional(),
+  outletDensity: z
+    .enum(["every_table", "some_tables", "wall_seats", "none"])
+    .optional(),
   wifiSpeedBand: z.enum(["basic", "fast", "ultra", "all"]).optional(),
   hasPhoneBooths: z.coerce.boolean().optional(),
   hasNoMusic: z.coerce.boolean().optional(),
@@ -34,7 +39,9 @@ export const venueSearchSchema = z.object({
   specialtyEspresso: z.coerce.boolean().optional(),
   oatAlmondMilk: z.coerce.boolean().optional(),
   pourOverAvailable: z.coerce.boolean().optional(),
-  lighting: z.enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"]).optional(),
+  lighting: z
+    .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
+    .optional(),
   petsAllowedIndoors: z.coerce.boolean().optional(),
   patioOnly: z.coerce.boolean().optional(),
   waterBowlsProvided: z.coerce.boolean().optional(),
@@ -54,12 +61,16 @@ export const venueCreateSchema = z.object({
   specialtyEspresso: z.boolean().optional(),
   oatAlmondMilk: z.boolean().optional(),
   pourOverAvailable: z.boolean().optional(),
-  outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional(),
+  outletDensity: z
+    .enum(["every_table", "some_tables", "wall_seats", "none"])
+    .optional(),
   wifiSpeed: z.number().min(0).max(10000).optional(),
   hasPhoneBooths: z.boolean().optional(),
   hasNoMusic: z.boolean().optional(),
   hasQuietZone: z.boolean().optional(),
-  lighting: z.enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"]).optional(),
+  lighting: z
+    .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
+    .optional(),
   petsAllowedIndoors: z.boolean().optional(),
   patioOnly: z.boolean().optional(),
   waterBowlsProvided: z.boolean().optional(),
@@ -68,10 +79,14 @@ export const venueCreateSchema = z.object({
 export const venueRatingSchema = z.object({
   wifiQuality: z.number().min(1).max(5),
   hasOutlets: z.boolean(),
+  powerTypes: z.array(z.string()).optional(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]),
   comment: z.string().max(1000).optional(),
   hasErgonomic: z.boolean().optional().default(false),
-  outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional().default("none"),
+  outletDensity: z
+    .enum(["every_table", "some_tables", "wall_seats", "none"])
+    .optional()
+    .default("none"),
   wifiSpeed: z.number().min(0).max(10000).optional().nullable(),
   speedtestPhoto: z.string().optional().nullable(),
   avgDecibels: z.number().min(20).max(130).optional().nullable(),
@@ -83,7 +98,9 @@ export const venueRatingSchema = z.object({
   specialtyEspresso: z.boolean().optional().default(false),
   oatAlmondMilk: z.boolean().optional().default(false),
   pourOverAvailable: z.boolean().optional().default(false),
-  lighting: z.enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"]).optional(),
+  lighting: z
+    .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
+    .optional(),
   petsAllowedIndoors: z.boolean().optional().default(false),
   patioOnly: z.boolean().optional().default(false),
   waterBowlsProvided: z.boolean().optional().default(false),
@@ -122,19 +139,26 @@ export type Favorite = z.infer<typeof favoriteSchema>;
 export type Location = z.infer<typeof locationSchema>;
 
 // Validation helper
-export function validateRequest<T>(schema: z.ZodSchema<T>, data: unknown): { 
-  success: true; 
-  data: T; 
-} | { 
-  success: false; 
-  error: string; 
-} {
+export function validateRequest<T>(
+  schema: z.ZodSchema<T>,
+  data: unknown,
+):
+  | {
+      success: true;
+      data: T;
+    }
+  | {
+      success: false;
+      error: string;
+    } {
   const result = schema.safeParse(data);
   if (result.success) {
     return { success: true, data: result.data };
   }
-  return { 
-    success: false, 
-    error: result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+  return {
+    success: false,
+    error: result.error.issues
+      .map((e) => `${e.path.join(".")}: ${e.message}`)
+      .join(", "),
   };
 }

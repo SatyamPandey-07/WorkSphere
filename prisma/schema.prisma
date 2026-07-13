@@ -62,6 +62,7 @@ model Venue {
   patioOnly          Boolean             @default(false)
   waterBowlsProvided Boolean             @default(false)
   outletDensity      String? // every_table, some_tables, wall_seats, none
+  powerTypes         String[]            @default([])
   wifiSpeed          Int? // in Mbps
   crowdsourced       Boolean             @default(false)
   requiresReview     Boolean             @default(false)
@@ -106,6 +107,7 @@ model VenueRating {
   hasNoMusic        Boolean  @default(false)
   hasQuietZone      Boolean  @default(false)
   outletDensity     String? // every_table, some_tables, wall_seats, none
+  powerTypes        String[] // usb_c, ac_wall, wireless
   wifiSpeed         Int? // in Mbps
   comment           String?
   speedtestPhoto    String?

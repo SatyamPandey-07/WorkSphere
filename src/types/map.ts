@@ -10,6 +10,7 @@ export interface MapMarker {
   score?: number;
   wifiQuality?: number;
   hasOutlets?: boolean;
+  powerTypes?: string[];
   petsAllowedIndoors?: boolean;
   patioOnly?: boolean;
   waterBowlsProvided?: boolean;
@@ -28,6 +29,7 @@ export interface MapMarker {
     quiet?: boolean;
     hasErgonomic?: boolean;
     outletDensity?: string;
+    powerTypes?: string[];
     wifiSpeed?: number | null;
 
     singleOriginBeans?: boolean;

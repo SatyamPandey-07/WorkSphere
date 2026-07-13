@@ -3,10 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Star, X } from "lucide-react";
-import {
-  NoiseMeasurement,
-  NoiseMeter,
-} from "@/components/noise/NoiseMeter";
+import { NoiseMeasurement, NoiseMeter } from "@/components/noise/NoiseMeter";
 
 interface VenueRatingDialogProps {
   venueName: string;
@@ -16,6 +13,7 @@ interface VenueRatingDialogProps {
   onSubmit: (rating: {
     wifiQuality: number;
     hasOutlets: boolean;
+    powerTypes?: string[];
     noiseLevel: "quiet" | "moderate" | "loud";
     avgDecibels?: number;
     peakDecibels?: number;
@@ -23,7 +21,8 @@ interface VenueRatingDialogProps {
     hasErgonomic: boolean;
     outletDensity: "every_table" | "some_tables" | "wall_seats" | "none";
     wifiSpeed?: number;
-    lighting?: "natural_daylight" | "warm_ambient" | "fluorescent" | "bright_white";
+    lighting?:
+      "natural_daylight" | "warm_ambient" | "fluorescent" | "bright_white";
     speedtestPhoto?: string;
     hasPhoneBooths?: boolean;
     hasNoMusic?: boolean;
@@ -40,9 +39,10 @@ export function VenueRatingDialog({
 }: VenueRatingDialogProps) {
   const [wifiQuality, setWifiQuality] = useState(3);
   const [hasOutlets, setHasOutlets] = useState<boolean | null>(null);
-  const [noiseLevel, setNoiseLevel] = useState<
-    "quiet" | "moderate" | "loud"
-  >("moderate");
+  const [powerTypes, setPowerTypes] = useState<string[]>([]);
+  const [noiseLevel, setNoiseLevel] = useState<"quiet" | "moderate" | "loud">(
+    "moderate",
+  );
   const [measurement, setMeasurement] = useState<NoiseMeasurement | null>(null);
   const [comment, setComment] = useState("");
   const [hasErgonomic, setHasErgonomic] = useState(false);
@@ -57,7 +57,9 @@ export function VenueRatingDialog({
   const [hasPhoneBooths, setHasPhoneBooths] = useState(false);
   const [hasNoMusic, setHasNoMusic] = useState(false);
   const [hasQuietZone, setHasQuietZone] = useState(false);
-  const [lighting, setLighting] = useState<"natural_daylight" | "warm_ambient" | "fluorescent" | "bright_white" | "">("");
+  const [lighting, setLighting] = useState<
+    "natural_daylight" | "warm_ambient" | "fluorescent" | "bright_white" | ""
+  >("");
 
   useEffect(() => {
     setMounted(true);
@@ -97,7 +99,7 @@ export function VenueRatingDialog({
               resolve(blob || file);
             },
             "image/jpeg",
-            0.8
+            0.8,
           );
         };
       };
@@ -144,6 +146,7 @@ export function VenueRatingDialog({
       await onSubmit({
         wifiQuality,
         hasOutlets,
+        powerTypes: hasOutlets ? powerTypes : [],
         noiseLevel,
         avgDecibels: measurement?.averageDb,
         peakDecibels: measurement?.peakDb,
@@ -160,6 +163,7 @@ export function VenueRatingDialog({
 
       setWifiQuality(3);
       setHasOutlets(null);
+      setPowerTypes([]);
       setNoiseLevel("moderate");
       setMeasurement(null);
       setComment("");
@@ -263,6 +267,47 @@ export function VenueRatingDialog({
             </div>
           </section>
 
+          {hasOutlets === true && (
+            <section className="animate-in fade-in slide-in-from-top-2 duration-300">
+              <label className="mb-2 block text-sm font-medium">
+                Outlet Types Available
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  { id: "usb_c", label: "USB-C PD ports" },
+                  { id: "ac_wall", label: "Standard AC wall plug" },
+                  { id: "wireless", label: "Wireless charging pads" },
+                ].map((type) => (
+                  <label
+                    key={type.id}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition ${
+                      powerTypes.includes(type.id)
+                        ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"
+                        : "bg-white border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={powerTypes.includes(type.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setPowerTypes([...powerTypes, type.id]);
+                        } else {
+                          setPowerTypes(
+                            powerTypes.filter((t) => t !== type.id),
+                          );
+                        }
+                      }}
+                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm">{type.label}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <label className="mb-2 block text-sm font-medium">
               Subjective Noise Level
@@ -315,7 +360,9 @@ export function VenueRatingDialog({
               {uploadingPhoto ? (
                 <div className="flex flex-col items-center gap-2 py-4">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                  <span className="text-xs text-zinc-500">Processing & uploading image...</span>
+                  <span className="text-xs text-zinc-500">
+                    Processing & uploading image...
+                  </span>
                 </div>
               ) : speedtestPhoto ? (
                 <div className="w-full flex flex-col items-center gap-3">
@@ -335,10 +382,23 @@ export function VenueRatingDialog({
                 </div>
               ) : (
                 <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer gap-2 py-4">
-                  <svg className="w-8 h-8 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  <svg
+                    className="w-8 h-8 text-zinc-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    ></path>
                   </svg>
-                  <span className="text-xs text-zinc-500 font-medium">Click to select speedtest image</span>
+                  <span className="text-xs text-zinc-500 font-medium">
+                    Click to select speedtest image
+                  </span>
                   <input
                     type="file"
                     accept="image/*"
@@ -361,10 +421,7 @@ export function VenueRatingDialog({
               onChange={(event) =>
                 setOutletDensity(
                   event.target.value as
-                    | "every_table"
-                    | "some_tables"
-                    | "wall_seats"
-                    | "none",
+                    "every_table" | "some_tables" | "wall_seats" | "none",
                 )
               }
               className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
@@ -391,7 +448,7 @@ export function VenueRatingDialog({
                     | "warm_ambient"
                     | "fluorescent"
                     | "bright_white"
-                    | ""
+                    | "",
                 )
               }
               className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"

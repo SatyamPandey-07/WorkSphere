@@ -9,7 +9,7 @@ const createFolderSchema = z.object({
 });
 
 // GET /api/folders - List all folders for the user (owned or member)
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   try {
     const { userId } = await auth();
     if (!userId) {

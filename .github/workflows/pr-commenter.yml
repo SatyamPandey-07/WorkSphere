@@ -1,0 +1,169 @@
+name: PR Commenter
+
+on:
+  workflow_run:
+    workflows: ["Continuous Integration", "PR Quality Check"]
+    types:
+      - completed
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request'
+    permissions:
+      pull-requests: write
+      checks: read
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-logs
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Post PR Comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Get PR details
+            const prs = context.payload.workflow_run.pull_requests;
+            if (!prs || prs.length === 0) {
+              console.log('No pull requests found for this workflow run.');
+              return;
+            }
+            const prNumber = prs[0].number;
+            const senderLogin = context.payload.workflow_run.actor.login;
+            const headSha = context.payload.workflow_run.head_sha;
+            
+            // Fetch all check runs for this specific PR commit ref
+            const { data: checksData } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: headSha,
+            });
+            const checkRuns = checksData.check_runs;
+            
+            let totalChecks = checkRuns.length;
+            let successful = 0;
+            let failing = [];
+            let pending = 0;
+            let tableRows = [];
+            
+            const suggestions = {
+              'PR Quality Check': 'PR description must link an issue (e.g. `Fixes #123`). If no issue exists, add `[skip-issue]` to the PR title, or use `typo` / `chore` in the title to bypass this check.',
+              'Continuous Integration': 'Lint, build, or tests failed. See details below or run `npm run lint` / `npm run build` locally to diagnose.',
+              'Vercel': 'Vercel deployment authorization is required. If you are an external contributor, a maintainer must approve your Vercel deployment preview.'
+            };
+            
+            for (const run of checkRuns) {
+              // Ignore the commenter workflow itself in the list to avoid recursion/clutter
+              if (run.name.toLowerCase().includes('commenter')) {
+                totalChecks--;
+                continue;
+              }
+              
+              let statusEmoji = '⏳';
+              let conclusionStr = run.conclusion || 'running';
+              
+              if (run.status === 'completed') {
+                if (run.conclusion === 'success') {
+                  statusEmoji = '✅';
+                  successful++;
+                } else if (['failure', 'timed_out', 'action_required'].includes(run.conclusion)) {
+                  statusEmoji = '❌';
+                  failing.push(run);
+                } else {
+                  statusEmoji = '⚪'; // skipped, neutral
+                }
+              } else {
+                pending++;
+              }
+              
+              tableRows.push(`| ${statusEmoji} | **${run.name}** | \`${conclusionStr}\` | [Details](${run.html_url}) |`);
+            }
+            
+            let commentBody = '<!-- worksphere-ci-status-bot -->\n';
+            commentBody += `## 📊 Pull Request Check Status\n\n`;
+            commentBody += `Hi @${senderLogin}, here is the current status of the checks for your commit (\`${headSha.slice(0, 7)}\`):\n\n`;
+            
+            if (failing.length > 0) {
+              commentBody += `### ⚠️ **${failing.length} of ${totalChecks} check(s) failing**\n`;
+              commentBody += `Please resolve the check errors below so your PR can be merged.\n\n`;
+            } else if (pending > 0) {
+              commentBody += `### ⏳ **${pending} check(s) still running**\n`;
+              commentBody += `Checks are in progress. This report will auto-update as they finish.\n\n`;
+            } else {
+              commentBody += `### ✅ **All ${totalChecks} checks passed!**\n`;
+              commentBody += `Your PR is ready for maintainer review.\n\n`;
+            }
+            
+            commentBody += `| Status | Check Name | Conclusion | Link |\n`;
+            commentBody += `| :---: | :--- | :--- | :--- |\n`;
+            commentBody += tableRows.join('\n') + `\n\n---\n\n`;
+            
+            if (failing.length > 0) {
+              commentBody += `### 🛠️ How to fix the failures:\n\n`;
+              
+              for (const run of failing) {
+                let suggestion = 'Inspect the details link above for raw failure logs.';
+                for (const [key, val] of Object.entries(suggestions)) {
+                  if (run.name.toLowerCase().includes(key.toLowerCase())) {
+                    suggestion = val;
+                    break;
+                  }
+                }
+                commentBody += `#### ❌ **${run.name}**\n- **Fix:** ${suggestion}\n\n`;
+              }
+              
+              // If build-and-test logs were uploaded, parse and embed them
+              if (fs.existsSync('install_failed.txt') && fs.existsSync('install_output.log')) {
+                const log = fs.readFileSync('install_output.log', 'utf8');
+                commentBody += `**Log Output:**\n<details><summary>Click to view npm install failure logs</summary>\n\n\`\`\`\n${log.slice(-1500)}\n\`\`\`\n\n</details>\n\n---\n\n`;
+              }
+              
+              if (fs.existsSync('lint_failed.txt') && fs.existsSync('lint_output.log')) {
+                const log = fs.readFileSync('lint_output.log', 'utf8');
+                commentBody += `**Log Output:**\n<details><summary>Click to view ESLint warnings/errors</summary>\n\n\`\`\`\n${log.slice(-1500)}\n\`\`\`\n\n</details>\n\n---\n\n`;
+              }
+              
+              if (fs.existsSync('build_failed.txt') && fs.existsSync('build_output.log')) {
+                const log = fs.readFileSync('build_output.log', 'utf8');
+                commentBody += `**Log Output:**\n<details><summary>Click to view Next.js compile/TypeScript errors</summary>\n\n\`\`\`\n${log.slice(-1500)}\n\`\`\`\n\n</details>\n\n---\n\n`;
+              }
+              
+              if (fs.existsSync('test_failed.txt') && fs.existsSync('test_output.log')) {
+                const log = fs.readFileSync('test_output.log', 'utf8');
+                commentBody += `**Log Output:**\n<details><summary>Click to view unit test failures</summary>\n\n\`\`\`\n${log.slice(-1500)}\n\`\`\`\n\n</details>\n\n---\n\n`;
+              }
+            }
+            
+            // Search for an existing status comment from this bot on the PR
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+            });
+            
+            const botComment = comments.find(c => c.body.includes('<!-- worksphere-ci-status-bot -->'));
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+              console.log(`Updated existing status comment for PR #${prNumber}`);
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: commentBody
+              });
+              console.log(`Created new status comment for PR #${prNumber}`);
+            }

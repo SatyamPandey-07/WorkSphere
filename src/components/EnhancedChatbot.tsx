@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayerSession } from "@/hooks/useRealTime";
@@ -21,6 +22,11 @@ import {
   saveSearchOffline,
   getSearchOffline,
   getAllSearchesOffline,
+  queueConversationRename,
+  queueConversationDelete,
+  getPendingConversationEdits,
+  applyPendingConversationEdits,
+  flushConversationEditQueue,
 } from "@/lib/offlineStorage";
 
 // Types
@@ -70,6 +76,10 @@ interface Filters {
   hasPhoneBooths?: boolean;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
+  singleOriginBeans?: boolean;
+  specialtyEspresso?: boolean;
+  oatAlmondMilk?: boolean;
+  pourOverAvailable?: boolean;
 }
 
 interface Conversation {
@@ -97,9 +107,11 @@ const INITIAL_SUGGESTIONS = [
 
 export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation, roomId, onShowToast }: EnhancedChatbotProps) {
   const { isSignedIn, user } = useUser();
+
+  const { socket, yDoc } = useMultiplayerSession(roomId || null);
   const { getToken } = useAuth();
 
-  const { socket } = useMultiplayerSession(roomId || null);
+
 
   // Presence state
   const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string }>>({});
@@ -156,12 +168,14 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
             onMapUpdate(data.update);
           }
         }
-      } catch { }
+      } catch (e) {
+        console.error("Failed to parse WebSocket message:", e);
+      }
     };
 
     socket.addEventListener("message", onMessage);
     return () => socket.removeEventListener("message", onMessage);
-  }, [socket, onMapUpdate]);
+  }, [socket]);
 
   // Core state
   const [location, setLocation] = useState(userLocation);
@@ -261,7 +275,13 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       const res = await fetch("/api/conversations");
       if (res.ok) {
         const data = await res.json();
-        setConversations(data.conversations || []);
+        const rawConversations: Conversation[] = data.conversations || [];
+        // Apply any not-yet-synced offline renames/deletes on top of the
+        // server (or SW-cached) list, so a reload while offline — or before
+        // background sync has run — doesn't revert local edits. See #266.
+        const pendingEdits = await getPendingConversationEdits();
+        const merged = applyPendingConversationEdits(rawConversations, pendingEdits);
+        setConversations(merged);
       }
     } catch (e) {
       console.error("Failed to load conversations:", e);
@@ -309,17 +329,65 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   };
 
   const deleteConversation = async (id: string) => {
+    // Reflect the change in the sidebar immediately regardless of connectivity,
+    // so the UI never feels unresponsive while offline (see #266).
+    setConversations((prev) => prev.filter((c) => c.id !== id));
+    if (currentConversationId === id) {
+      setCurrentConversationId(null);
+      setMessages([]);
+    }
+
+    if (!navigator.onLine) {
+      await queueConversationDelete(id);
+      return;
+    }
+
     try {
-      await fetch(`/api/conversations/${id}`, { method: "DELETE" });
-      await loadConversations();
-      if (currentConversationId === id) {
-        setCurrentConversationId(null);
-        setMessages([]);
-      }
+      const res = await fetch(`/api/conversations/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(`Delete failed with status ${res.status}`);
     } catch (e) {
-      console.error("Failed to delete conversation:", e);
+      console.error("Failed to delete conversation, queuing for retry:", e);
+      await queueConversationDelete(id);
     }
   };
+
+  const renameConversation = async (id: string, title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed) return;
+
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title: trimmed } : c)));
+
+    if (!navigator.onLine) {
+      await queueConversationRename(id, trimmed);
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed }),
+      });
+      if (!res.ok) throw new Error(`Rename failed with status ${res.status}`);
+    } catch (e) {
+      console.error("Failed to rename conversation, queuing for retry:", e);
+      await queueConversationRename(id, trimmed);
+    }
+  };
+
+  // Flush any queued offline conversation edits as soon as connectivity
+  // returns — a foreground fallback alongside the service worker's
+  // Background Sync registration (which some browsers, e.g. Safari, don't
+  // support at all).
+  useEffect(() => {
+    const handleOnline = () => {
+      flushConversationEditQueue().then(() => {
+        if (isSignedIn) loadConversations();
+      });
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [isSignedIn]);
 
   const startNewChat = () => {
     setCurrentConversationId(null);
@@ -833,6 +901,10 @@ try {
         conversations={conversations}
         onLoadConversation={loadConversation}
         onDeleteConversation={deleteConversation}
+
+
+        onRenameConversation={renameConversation}
+
         roomId={roomId || currentConversationId}
         onShareSession={() => {
           let sessionToShare = roomId || currentConversationId;

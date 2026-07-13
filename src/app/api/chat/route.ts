@@ -221,6 +221,10 @@ async function dataAgent(
     hasPhoneBooths?: boolean;
     hasNoMusic?: boolean;
     hasQuietZone?: boolean;
+    singleOriginBeans?: boolean;
+    specialtyEspresso?: boolean;
+    oatAlmondMilk?: boolean;
+    pourOverAvailable?: boolean;
   }
 ): Promise<{
   venues: any[];
@@ -324,6 +328,10 @@ async function dataAgent(
           hasPhoneBooths: false,
           hasNoMusic: false,
           hasQuietZone: false,
+          singleOriginBeans: false,
+          specialtyEspresso: false,
+          oatAlmondMilk: false,
+          pourOverAvailable: false,
         };
       });
 
@@ -352,6 +360,17 @@ async function dataAgent(
           }
         }
         if (filters.hasPhoneBooths) venues = venues.filter((v: any) => v.hasPhoneBooths);
+        if (filters.singleOriginBeans)
+          venues = venues.filter((v: any) => v.singleOriginBeans);
+
+        if (filters.specialtyEspresso)
+          venues = venues.filter((v: any) => v.specialtyEspresso);
+
+        if (filters.oatAlmondMilk)
+          venues = venues.filter((v: any) => v.oatAlmondMilk);
+
+        if (filters.pourOverAvailable)
+          venues = venues.filter((v: any) => v.pourOverAvailable);
         if (filters.hasNoMusic) venues = venues.filter((v: any) => v.hasNoMusic);
         if (filters.hasQuietZone) venues = venues.filter((v: any) => v.hasQuietZone);
       }
@@ -395,6 +414,10 @@ async function dataAgent(
       hasPhoneBooths: true,
       hasNoMusic: true,
       hasQuietZone: true,
+      singleOriginBeans: true,
+      specialtyEspresso: true,
+      oatAlmondMilk: true,
+      pourOverAvailable: true,
     },
     {
       id: "mock-2",
@@ -412,6 +435,10 @@ async function dataAgent(
       hasErgonomic: false,
       outletDensity: "some_tables",
       wifiSpeed: 45,
+      singleOriginBeans: false,
+      specialtyEspresso: true,
+      oatAlmondMilk: true,
+      pourOverAvailable: true,
     },
     {
       id: "mock-3",
@@ -429,6 +456,10 @@ async function dataAgent(
       hasErgonomic: false,
       outletDensity: "wall_seats",
       wifiSpeed: 15,
+      singleOriginBeans: false,
+      specialtyEspresso: false,
+      oatAlmondMilk: false,
+      pourOverAvailable: false,
     },
   ];
 
@@ -808,9 +839,9 @@ export async function POST(req: Request) {
             role: "system",
             content: "You are WorkHub AI, a friendly assistant for finding workspaces. Be helpful and conversational. When appropriate to show data, output <ui-component name=\"DataTable\" props='{\"columns\": [...], \"data\": [...]}' /> or <ui-component name=\"Map\" props='{\"markers\": [...]}' />.",
           },
-          ...messages.map((m: any) => ({ 
-            role: m.role, 
-            content: m.name ? `[User: ${m.name}] ${m.content}` : m.content 
+          ...messages.map((m: any) => ({
+            role: m.role,
+            content: m.name ? `[User: ${m.name}] ${m.content}` : m.content
           })),
         ],
       });
@@ -835,10 +866,10 @@ export async function POST(req: Request) {
                 controller.enqueue(new TextEncoder().encode(`TEXT:${text}`));
               }
             }
-          } catch(e) {
+          } catch (e) {
             console.error("Stream error:", e);
           }
-          
+
           if (userId && conversationId) {
             try {
               await prisma.message.create({
@@ -860,7 +891,7 @@ export async function POST(req: Request) {
               console.error("Database save error:", dbError);
             }
           }
-          
+
           controller.close();
         }
       });
@@ -1044,14 +1075,14 @@ You can use Generative UI. When you need to show a map, use:
 <ui-component name="Map" props='{"markers": [{"lat": ..., "lng": ..., "name": "...", "category": "..."}]}' />
 When you need to show a table, use:
 <ui-component name="DataTable" props='{"columns": ["Name", "Category", "Score"], "data": [{"Name": "...", "Category": "...", "Score": "..."}]}' />
-Here are the top venues found: ${JSON.stringify(reasoningResult.rankedVenues.map((v:any)=>({name: v.name, category: v.category, lat: v.lat, lng: v.lng, score: v.score})))}
+Here are the top venues found: ${JSON.stringify(reasoningResult.rankedVenues.map((v: any) => ({ name: v.name, category: v.category, lat: v.lat, lng: v.lng, score: v.score })))}
 Address the user's query and include UI components if helpful.`;
 
     const llmMessages = [
       { role: "system", content: systemPrompt },
-      ...messages.map((m: any) => ({ 
-        role: m.role, 
-        content: m.name ? `[User: ${m.name}] ${m.content}` : m.content 
+      ...messages.map((m: any) => ({
+        role: m.role,
+        content: m.name ? `[User: ${m.name}] ${m.content}` : m.content
       })),
     ];
 
@@ -1083,10 +1114,10 @@ Address the user's query and include UI components if helpful.`;
               controller.enqueue(new TextEncoder().encode(`TEXT:${text}`));
             }
           }
-        } catch(e) {
+        } catch (e) {
           console.error("Stream error", e);
         }
-        
+
         if (userId && conversationId) {
           try {
             await prisma.message.create({
@@ -1108,7 +1139,7 @@ Address the user's query and include UI components if helpful.`;
             console.error("Database save error:", dbError);
           }
         }
-        
+
         controller.close();
       }
     });

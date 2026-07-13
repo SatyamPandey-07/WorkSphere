@@ -1,16 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { Svix } from 'svix';
-import { EventBus } from '@/lib/events/bus';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from "next/server";
+import { Svix } from "svix";
+import { EventBus } from "@/lib/events/bus";
+import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   // This endpoint should ideally be protected by a secret token in production
-  const authHeader = req.headers.get('authorization');
+  const authHeader = req.headers.get("authorization");
   if (authHeader !== `Bearer ${process.env.WORKER_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const svix = new Svix(process.env.SVIX_TOKEN || '');
+  const svix = new Svix(process.env.SVIX_TOKEN || "");
 
   try {
     // We can pop multiple events in a loop or just one
@@ -25,18 +25,18 @@ export async function POST(req: NextRequest) {
           userId: event.userId,
           isActive: true,
           eventTypes: {
-            has: event.type
-          }
-        }
+            has: event.type,
+          },
+        },
       });
 
       if (endpoints.length > 0) {
         // Option A: If we are using Svix fully, we dispatch by userId (App ID)
         // Svix will route it to the endpoints configured for that App in Svix.
         // We'll call Svix API.
-        
+
         try {
-          const response = await svix.message.create(event.userId, {
+          await svix.message.create(event.userId, {
             eventType: event.type,
             eventId: event.id,
             payload: event.data,
@@ -49,22 +49,22 @@ export async function POST(req: NextRequest) {
                 endpointId: ep.id,
                 eventType: event.type,
                 payload: event.data,
-                status: 'DISPATCHED_TO_SVIX',
-                statusCode: 202
-              }
+                status: "DISPATCHED_TO_SVIX",
+                statusCode: 202,
+              },
             });
           }
         } catch (err: any) {
-          console.error('[Worker] Svix dispatch failed:', err);
+          console.error("[Worker] Svix dispatch failed:", err);
           for (const ep of endpoints) {
             await prisma.webhookDeliveryLog.create({
               data: {
                 endpointId: ep.id,
                 eventType: event.type,
                 payload: event.data,
-                status: 'FAILED',
-                statusCode: err.status || 500
-              }
+                status: "FAILED",
+                statusCode: err.status || 500,
+              },
             });
           }
         }
@@ -77,7 +77,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, processed: eventsProcessed });
   } catch (error) {
-    console.error('[Worker] Error processing webhooks:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error("[Worker] Error processing webhooks:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }
+// Trigger Husky

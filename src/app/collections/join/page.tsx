@@ -39,7 +39,7 @@ function JoinContent() {
           setStatus("error");
           setMessage(data.error || "Failed to join collection.");
         }
-      } catch (e) {
+      } catch {
         setStatus("error");
         setMessage("An unexpected error occurred.");
       }

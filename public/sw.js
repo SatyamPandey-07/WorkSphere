@@ -56,7 +56,7 @@ self.addEventListener("fetch", (event) => {
             event.waitUntil(
               caches.open(CACHE_NAME).then((cache) => {
                 return cache.put(event.request, responseClone);
-              })
+              }),
             );
           }
           return response;
@@ -128,11 +128,14 @@ self.addEventListener("sync", (event) => {
   if (event.tag === "sync-ratings") {
     event.waitUntil(syncRatings());
   }
+  if (event.tag === "sync-conversations") {
+    event.waitUntil(syncConversations());
+  }
 });
 
 // Helper to convert Uint8Array to base64 for fetch
 function arrayBufferToBase64(buffer) {
-  let binary = '';
+  let binary = "";
   const bytes = new Uint8Array(buffer);
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
@@ -140,15 +143,20 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
+let isSyncingCrdt = false;
 // Sync CRDT when back online
 async function syncCrdt() {
+  if (isSyncingCrdt) return;
+  isSyncingCrdt = true;
   try {
     const db = await openIndexedDB();
     const pendingActions = await getPendingActions(db, "crdt-sync");
 
     if (pendingActions.length === 0) return;
 
-    const updates = pendingActions.map(action => arrayBufferToBase64(action.data));
+    const updates = pendingActions.map((action) =>
+      arrayBufferToBase64(action.data),
+    );
 
     const response = await fetch("/api/sync", {
       method: "POST",
@@ -158,30 +166,52 @@ async function syncCrdt() {
 
     if (response.ok) {
       for (const action of pendingActions) {
-        await removePendingAction(db, "pending-actions", action.id);
+        await removePendingAction(db, action.id);
       }
     }
   } catch (error) {
     console.error("Sync CRDT failed:", error);
+  } finally {
+    isSyncingCrdt = false;
   }
 }
 
+let isSyncingFavorites = false;
 // Sync favorites when back online
 async function syncFavorites() {
+  if (isSyncingFavorites) return;
+  isSyncingFavorites = true;
   try {
     const db = await openIndexedDB();
-    const pendingFavorites = await getPendingActions(db, "favorites");
+    const pendingFavorites = await getPendingActions(db, [
+      "favorite",
+      "unfavorite",
+      "favorites",
+    ]);
 
     for (const action of pendingFavorites) {
       try {
-        const response = await fetch("/api/favorites", {
-          method: action.method,
+        const url =
+          action.type === "unfavorite"
+            ? `/api/favorites?venueId=${action.venueId}`
+            : "/api/favorites";
+        const method =
+          action.type === "unfavorite" ? "DELETE" : action.method || "POST";
+        const body =
+          action.type === "favorite"
+            ? JSON.stringify(action.data)
+            : action.data
+              ? JSON.stringify(action.data)
+              : undefined;
+
+        const response = await fetch(url, {
+          method,
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(action.data),
+          body,
         });
 
         if (response.ok) {
-          await removePendingAction(db, "favorites", action.id);
+          await removePendingAction(db, action.id);
         }
       } catch (error) {
         console.error("Failed to sync favorite:", error);
@@ -189,14 +219,19 @@ async function syncFavorites() {
     }
   } catch (error) {
     console.error("Sync favorites failed:", error);
+  } finally {
+    isSyncingFavorites = false;
   }
 }
 
+let isSyncingRatings = false;
 // Sync ratings when back online
 async function syncRatings() {
+  if (isSyncingRatings) return;
+  isSyncingRatings = true;
   try {
     const db = await openIndexedDB();
-    const pendingRatings = await getPendingActions(db, "ratings");
+    const pendingRatings = await getPendingActions(db, ["ratings", "rate"]);
 
     for (const action of pendingRatings) {
       try {
@@ -207,7 +242,7 @@ async function syncRatings() {
         });
 
         if (response.ok) {
-          await removePendingAction(db, "ratings", action.id);
+          await removePendingAction(db, action.id);
         }
       } catch (error) {
         console.error("Failed to sync rating:", error);
@@ -215,37 +250,109 @@ async function syncRatings() {
     }
   } catch (error) {
     console.error("Sync ratings failed:", error);
+  } finally {
+    isSyncingRatings = false;
+  }
+}
+
+// Sync queued conversation renames/deletes when back online (issue #266)
+async function syncConversations() {
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction("pendingActions", "readonly");
+    const store = tx.objectStore("pendingActions");
+    const allActions = await new Promise((resolve, reject) => {
+      const request = store.getAll();
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
+    });
+
+    const pending = allActions
+      .filter(
+        (a) =>
+          a.type === "conversation-rename" || a.type === "conversation-delete",
+      )
+      .sort((a, b) => a.timestamp - b.timestamp);
+
+    // Defensive de-dupe in case a rename and a later delete for the same
+    // conversation both slipped into the queue (client-side queuing already
+    // guards against this, but the service worker reads independently).
+    const deletedIds = new Set(
+      pending
+        .filter((a) => a.type === "conversation-delete")
+        .map((a) => a.conversationId),
+    );
+
+    for (const action of pending) {
+      if (
+        action.type === "conversation-rename" &&
+        deletedIds.has(action.conversationId)
+      ) {
+        await removePendingAction(db, action.id);
+        continue;
+      }
+
+      try {
+        const response =
+          action.type === "conversation-delete"
+            ? await fetch(`/api/conversations/${action.conversationId}`, {
+                method: "DELETE",
+              })
+            : await fetch(`/api/conversations/${action.conversationId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: action.title }),
+              });
+
+        if (response.ok) {
+          await removePendingAction(db, action.id);
+        }
+      } catch (error) {
+        console.error("Failed to sync conversation edit:", error);
+      }
+    }
+  } catch (error) {
+    console.error("Sync conversations failed:", error);
   }
 }
 
 // IndexedDB helpers
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("worksphere-offline", 2);
+    const request = indexedDB.open("worksphere-offline", 3);
 
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      
+
       // Venues store
-      if (!db.objectStoreNames.contains('venues')) {
-        const venuesStore = db.createObjectStore('venues', { keyPath: 'id' });
-        venuesStore.createIndex('type', 'type', { unique: false });
-        venuesStore.createIndex('savedAt', 'savedAt', { unique: false });
+      if (!db.objectStoreNames.contains("venues")) {
+        const venuesStore = db.createObjectStore("venues", { keyPath: "id" });
+        venuesStore.createIndex("type", "type", { unique: false });
+        venuesStore.createIndex("savedAt", "savedAt", { unique: false });
       }
 
       // Favorites store
-      if (!db.objectStoreNames.contains('favorites')) {
-        const favoritesStore = db.createObjectStore('favorites', { keyPath: 'id' });
-        favoritesStore.createIndex('savedAt', 'savedAt', { unique: false });
+      if (!db.objectStoreNames.contains("favorites")) {
+        const favoritesStore = db.createObjectStore("favorites", {
+          keyPath: "id",
+        });
+        favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
       }
 
       // Search history store
-      if (!db.objectStoreNames.contains('searches')) {
-        const searchesStore = db.createObjectStore('searches', { keyPath: 'query' });
-        searchesStore.createIndex('timestamp', 'timestamp', { unique: false });
+      if (!db.objectStoreNames.contains("searches")) {
+        const searchesStore = db.createObjectStore("searches", {
+          keyPath: "query",
+        });
+        searchesStore.createIndex("timestamp", "timestamp", { unique: false });
+      }
+
+      // Migration
+      if (db.objectStoreNames.contains("pending-actions")) {
+        db.deleteObjectStore("pending-actions");
       }
 
       // Pending actions store (unified name)
@@ -267,17 +374,21 @@ function getPendingActions(db, type) {
 
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
-      const actions = request.result.filter((a) => a.type === type);
+      const actions = request.result.filter((a) => {
+        if (Array.isArray(type)) return type.includes(a.type);
+        return a.type === type;
+      });
       resolve(actions);
     };
   });
 }
 
-function removePendingAction(db, type, id) {
+function removePendingAction(db, typeOrId, id) {
+  const actionId = id !== undefined ? id : typeOrId;
   return new Promise((resolve, reject) => {
     const tx = db.transaction("pendingActions", "readwrite");
     const store = tx.objectStore("pendingActions");
-    const request = store.delete(id);
+    const request = store.delete(actionId);
 
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve();
@@ -334,3 +445,40 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
+import {
+  getQueuedFavorites,
+  dequeueOfflineAction,
+} from "../src/lib/offlineStore";
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-favorites") {
+    event.waitUntil(syncFavoritesOutbox());
+  }
+});
+
+async function syncFavoritesOutbox() {
+  try {
+    const actions = await getQueuedFavorites();
+
+    for (const action of actions) {
+      const response = await fetch("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          venueId: action.venueId,
+          action: action.action,
+        }),
+      });
+
+      if (response.ok && action.id) {
+        // Remove from IndexedDB outbox queue on successful endpoint ingestion
+        await dequeueOfflineAction(action.id);
+      }
+    }
+  } catch (error) {
+    console.error(
+      "Background synchronization pipeline failed to complete:",
+      error,
+    );
+  }
+}

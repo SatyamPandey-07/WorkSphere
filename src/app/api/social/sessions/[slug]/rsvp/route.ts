@@ -58,20 +58,37 @@ export async function POST(
     }
   }
 
-  const rsvp = await prisma.sessionRsvp.upsert({
-    where: {
-      sessionId_userId: {
+  try {
+    const rsvp = await prisma.sessionRsvp.upsert({
+      where: {
+        sessionId_userId: {
+          sessionId: session.id,
+          userId,
+        },
+      },
+      update: { status: status as "GOING" | "MAYBE" | "DECLINED" },
+      create: {
         sessionId: session.id,
         userId,
+        status: status as "GOING" | "MAYBE" | "DECLINED",
       },
-    },
-    update: { status: status as "GOING" | "MAYBE" | "DECLINED" },
-    create: {
-      sessionId: session.id,
-      userId,
-      status: status as "GOING" | "MAYBE" | "DECLINED",
-    },
-  });
+    });
 
-  return NextResponse.json(rsvp);
+    return NextResponse.json(rsvp);
+  } catch (error: any) {
+    // Handle concurrent insert collisions by falling back to update
+    if (error.code === "P2002") {
+      const rsvp = await prisma.sessionRsvp.update({
+        where: {
+          sessionId_userId: {
+            sessionId: session.id,
+            userId,
+          },
+        },
+        data: { status: status as "GOING" | "MAYBE" | "DECLINED" },
+      });
+      return NextResponse.json(rsvp);
+    }
+    throw error;
+  }
 }

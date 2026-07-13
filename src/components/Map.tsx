@@ -428,6 +428,10 @@ const Map = ({
       <style
         dangerouslySetInnerHTML={{
           __html: `
+        /* Webkit/iOS Safari hardware acceleration fixes to prevent overlapping/jitter during zoom animations */
+        .leaflet-marker-icon, .leaflet-pane {
+          will-change: transform;
+        }
         .custom-user-marker {
           /* This container itself doesn't need styles */
         }

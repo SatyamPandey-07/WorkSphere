@@ -73,6 +73,7 @@ model Venue {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   lighting           String?
+  musicStyle         String?
   ratings            VenueRating[]
   favorites          Favorite[]
   bookings           Booking[]
@@ -114,6 +115,7 @@ model VenueRating {
   avgDecibels       Float?
   peakDecibels      Float?
   lighting          String?
+  musicStyle        String?
 
   @@unique([userId, venueId])
   @@index([venueId])

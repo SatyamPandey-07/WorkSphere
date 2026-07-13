@@ -38,13 +38,14 @@ export async function GET(req: NextRequest) {
       specialtyEspresso: searchParams.get("specialtyEspresso"),
       oatAlmondMilk: searchParams.get("oatAlmondMilk"),
       pourOverAvailable: searchParams.get("pourOverAvailable"),
+      musicStyle: searchParams.get("musicStyle"),
     });
 
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    const { lat, lng, radius, category, wifi, outlets, quiet, ergonomic, outletDensity, wifiSpeedBand, hasPhoneBooths, hasNoMusic, hasQuietZone, lighting, petsAllowedIndoors, patioOnly, waterBowlsProvided, singleOriginBeans, specialtyEspresso, oatAlmondMilk, pourOverAvailable} = validation.data;
+    const { lat, lng, radius, category, wifi, outlets, quiet, ergonomic, outletDensity, wifiSpeedBand, hasPhoneBooths, hasNoMusic, hasQuietZone, lighting, petsAllowedIndoors, patioOnly, waterBowlsProvided, singleOriginBeans, specialtyEspresso, oatAlmondMilk, pourOverAvailable, musicStyle} = validation.data;
 
     // Simple bounding box search (for PostgreSQL without PostGIS)
     // Approximate: 1 degree ≈ 111km
@@ -113,6 +114,16 @@ export async function GET(req: NextRequest) {
     if (hasQuietZone) {
       where.hasQuietZone = true;
     }
+    if (musicStyle && musicStyle !== "all") {
+      if (musicStyle === "no_music") {
+        where.OR = [
+          { musicStyle: "no_music" },
+          { hasNoMusic: true }
+        ];
+      } else {
+        where.musicStyle = musicStyle;
+      }
+    }
     if (singleOriginBeans) {
       where.singleOriginBeans = true;
     }
@@ -180,7 +191,7 @@ export async function POST(req: NextRequest) {
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-    const { name, latitude, longitude, category, address, wifiQuality, hasOutlets, noiseLevel, hasErgonomic, outletDensity, wifiSpeed, hasPhoneBooths, hasNoMusic, hasQuietZone, lighting, petsAllowedIndoors, patioOnly, waterBowlsProvided, singleOriginBeans, specialtyEspresso, oatAlmondMilk, pourOverAvailable } = validation.data;
+    const { name, latitude, longitude, category, address, wifiQuality, hasOutlets, noiseLevel, hasErgonomic, outletDensity, wifiSpeed, hasPhoneBooths, hasNoMusic, hasQuietZone, lighting, petsAllowedIndoors, patioOnly, waterBowlsProvided, singleOriginBeans, specialtyEspresso, oatAlmondMilk, pourOverAvailable, musicStyle } = validation.data;
     const { placeId, rating, imageUrl } = body; // placeId, rating, imageUrl are additional fields
 
     // Validate placeId (required for upsert)
@@ -230,6 +241,7 @@ export async function POST(req: NextRequest) {
         specialtyEspresso,
         oatAlmondMilk,
         pourOverAvailable,
+        musicStyle,
         crowdsourced: true,
         requiresReview,
         ...(imageUrl && { imageUrl }),
@@ -259,6 +271,7 @@ export async function POST(req: NextRequest) {
         specialtyEspresso: specialtyEspresso || false,
         oatAlmondMilk: oatAlmondMilk || false,
         pourOverAvailable: pourOverAvailable || false,
+        musicStyle,
         crowdsourced: true,
         requiresReview,
         imageUrl,

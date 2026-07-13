@@ -44,6 +44,7 @@ export async function POST(
       hasNoMusic,
       hasQuietZone,
       lighting,
+      musicStyle,
     } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
@@ -92,6 +93,7 @@ export async function POST(
         hasNoMusic,
         hasQuietZone,
         lighting,
+        musicStyle,
       },
       create: {
         userId,
@@ -110,6 +112,7 @@ export async function POST(
         hasNoMusic: hasNoMusic || false,
         hasQuietZone: hasQuietZone || false,
         lighting: lighting || null,
+        musicStyle,
       },
     });
 
@@ -160,6 +163,17 @@ export async function POST(
       ? Math.round(validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length)
       : null;
 
+    // Most common music style
+    const musicCounts: Record<string, number> = {};
+    allRatings.forEach((r: any) => {
+      if (r.musicStyle) {
+        musicCounts[r.musicStyle] = (musicCounts[r.musicStyle] || 0) + 1;
+      }
+    });
+    const dominantMusic = Object.keys(musicCounts).length > 0
+      ? Object.entries(musicCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0]
+      : null;
+
     await prisma.venue.update({
       where: { id: finalVenueId },
       data: {
@@ -173,6 +187,7 @@ export async function POST(
         hasNoMusic: noMusicPercent > 50,
         hasQuietZone: quietZonePercent > 50,
         lighting: dominantLighting,
+        musicStyle: dominantMusic,
         crowdsourced: true,
       },
     });

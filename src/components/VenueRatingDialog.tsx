@@ -28,6 +28,7 @@ interface VenueRatingDialogProps {
     hasPhoneBooths?: boolean;
     hasNoMusic?: boolean;
     hasQuietZone?: boolean;
+    musicStyle?: string;
   }) => void;
 }
 
@@ -43,6 +44,7 @@ export function VenueRatingDialog({
   const [noiseLevel, setNoiseLevel] = useState<
     "quiet" | "moderate" | "loud"
   >("moderate");
+  const [musicStyle, setMusicStyle] = useState("");
   const [measurement, setMeasurement] = useState<NoiseMeasurement | null>(null);
   const [comment, setComment] = useState("");
   const [hasErgonomic, setHasErgonomic] = useState(false);
@@ -156,6 +158,7 @@ export function VenueRatingDialog({
         hasPhoneBooths,
         hasNoMusic,
         hasQuietZone,
+        musicStyle: musicStyle || undefined,
       });
 
       setWifiQuality(3);
@@ -171,6 +174,7 @@ export function VenueRatingDialog({
       setHasNoMusic(false);
       setHasQuietZone(false);
       setLighting("");
+      setMusicStyle("");
       onClose();
     } catch (error) {
       console.error("Error submitting rating:", error);
@@ -402,6 +406,34 @@ export function VenueRatingDialog({
               <option value="fluorescent">Fluorescent</option>
               <option value="bright_white">Bright White</option>
             </select>
+          </section>
+
+          {/* Background Music Style */}
+          <section>
+            <label className="mb-2 block text-sm font-medium">
+              Background Music Style
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: "Lo-Fi / Chill Beats", value: "lofi" },
+                { label: "Classical / Jazz Background", value: "classical_jazz" },
+                { label: "No Music Played", value: "no_music" },
+                { label: "Not Specified / Other", value: "" },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setMusicStyle(option.value)}
+                  className={`rounded-lg px-4 py-2 text-xs font-semibold text-center border transition-all ${
+                    musicStyle === option.value
+                      ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                      : "bg-zinc-50 border-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 hover:bg-zinc-100"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </section>
 
           <label className="flex items-center gap-3 text-sm">

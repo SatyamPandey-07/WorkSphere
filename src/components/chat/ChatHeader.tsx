@@ -54,6 +54,7 @@ interface ChatHeaderProps {
         specialtyEspresso?: boolean;
         oatAlmondMilk?: boolean;
         pourOverAvailable?: boolean;
+        musicStyle?: "all" | "lofi" | "classical_jazz" | "no_music";
     };
     showFilters: boolean;
     setShowFilters: (show: boolean) => void;
@@ -448,6 +449,30 @@ export function ChatHeader({
                                             }`}
                                     >
                                         {band.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Section 4: Background Music Style Segment */}
+                        <div>
+                            <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">Background Music Style</div>
+                            <div className="flex flex-wrap gap-2">
+                                {[
+                                    { label: "Any Style", value: "all" },
+                                    { label: "Lo-Fi / Chill Beats", value: "lofi" },
+                                    { label: "Classical / Jazz", value: "classical_jazz" },
+                                    { label: "No Music Played", value: "no_music" }
+                                ].map((style) => (
+                                    <button
+                                        key={style.value}
+                                        onClick={() => onSetFilter && onSetFilter('musicStyle', style.value)}
+                                        className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${(filters.musicStyle || "all") === style.value
+                                                ? 'bg-orange-600 text-white shadow-md'
+                                                : 'bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                                            }`}
+                                    >
+                                        {style.label}
                                     </button>
                                 ))}
                             </div>

@@ -567,6 +567,28 @@ export function VenueDetailDialog({
                                         Noise floor is {venue.noiseLevel || "ambient"} and connectivity is verified as {venue.wifi ? 'stable' : 'pending'}.
                                         {venue.hasErgonomic && " The workspace features verified ergonomic chairs and height-adjustable/standing desks."}
                                     </p>
+                                    <div className="flex flex-wrap gap-2 mt-4">
+                                        {venue.musicStyle === "lofi" && (
+                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                                                <span>🎵 Lo-Fi/Chill Beats</span>
+                                            </div>
+                                        )}
+                                        {venue.musicStyle === "classical_jazz" && (
+                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                                                <span>🎷 Classical/Jazz Background</span>
+                                            </div>
+                                        )}
+                                        {(venue.musicStyle === "no_music" || venue.hasNoMusic) && (
+                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                                                <span>🔇 No Music Played</span>
+                                            </div>
+                                        )}
+                                        {venue.hasPhoneBooths && (
+                                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                                                <span>📞 Soundproof Booths Available</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 

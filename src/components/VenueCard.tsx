@@ -527,6 +527,26 @@ export function VenueCard({
               <span>🫖 Pour Over</span>
             </div>
           )}
+          {venue.musicStyle === "lofi" && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🎵 Lo-Fi/Chill Beats</span>
+            </div>
+          )}
+          {venue.musicStyle === "classical_jazz" && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🎷 Classical/Jazz Background</span>
+            </div>
+          )}
+          {(venue.musicStyle === "no_music" || venue.hasNoMusic) && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>🔇 No Music Played</span>
+            </div>
+          )}
+          {venue.hasPhoneBooths && (
+            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+              <span>📞 Soundproof Booths Available</span>
+            </div>
+          )}
           {venue.noiseLevel && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Volume2

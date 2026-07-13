@@ -112,6 +112,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   const { getToken } = useAuth();
 
 
+
   // Presence state
   const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string }>>({});
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -167,7 +168,6 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
             onMapUpdate(data.update);
           }
         }
-
       } catch (e) {
         console.error("Failed to parse WebSocket message:", e);
       }

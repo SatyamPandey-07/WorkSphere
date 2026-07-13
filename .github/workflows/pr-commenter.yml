@@ -2,7 +2,7 @@ name: PR Commenter
 
 on:
   workflow_run:
-    workflows: ["Continuous Integration"]
+    workflows: ["Continuous Integration", "PR Quality Check"]
     types:
       - completed
 
@@ -12,6 +12,7 @@ jobs:
     if: github.event.workflow_run.event == 'pull_request'
     permissions:
       pull-requests: write
+      checks: read
     steps:
       - name: Download artifact
         uses: actions/download-artifact@v4
@@ -28,7 +29,7 @@ jobs:
             const fs = require('fs');
             const path = require('path');
             
-            // Get PR number from the triggering workflow run
+            // Get PR details
             const prs = context.payload.workflow_run.pull_requests;
             if (!prs || prs.length === 0) {
               console.log('No pull requests found for this workflow run.');
@@ -36,42 +37,133 @@ jobs:
             }
             const prNumber = prs[0].number;
             const senderLogin = context.payload.workflow_run.actor.login;
+            const headSha = context.payload.workflow_run.head_sha;
             
-            const isSuccess = context.payload.workflow_run.conclusion === 'success';
+            // Fetch all check runs for this specific PR commit ref
+            const { data: checksData } = await github.rest.checks.listForRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: headSha,
+            });
+            const checkRuns = checksData.check_runs;
             
-            let commentBody = '';
+            let totalChecks = checkRuns.length;
+            let successful = 0;
+            let failing = [];
+            let pending = 0;
+            let tableRows = [];
             
-            if (isSuccess) {
-              commentBody = `## All CI Checks Passed\n\nGreat work @${senderLogin}! All checks passed:\n- Dependency installation\n- ESLint code quality\n- Next.js production build\n- TypeScript type checking\n- Unit tests\n\nYour PR is ready for maintainer review. A maintainer will look at it shortly!`;
-            } else {
-              commentBody = `## CI Check Failed\n\nHi @${senderLogin}, thank you for your contribution to **WorkSphere**! Unfortunately, one or more CI checks failed on your PR. Please review the output below and push a fix to your branch.\n\n---\n\n`;
+            const suggestions = {
+              'PR Quality Check': 'PR description must link an issue (e.g. `Fixes #123`). If no issue exists, add `[skip-issue]` to the PR title, or use `typo` / `chore` in the title to bypass this check.',
+              'Continuous Integration': 'Lint, build, or tests failed. See details below or run `npm run lint` / `npm run build` locally to diagnose.',
+              'Vercel': 'Vercel deployment authorization is required. If you are an external contributor, a maintainer must approve your Vercel deployment preview.'
+            };
+            
+            for (const run of checkRuns) {
+              // Ignore the commenter workflow itself in the list to avoid recursion/clutter
+              if (run.name.toLowerCase().includes('commenter')) {
+                totalChecks--;
+                continue;
+              }
               
+              let statusEmoji = '⏳';
+              let conclusionStr = run.conclusion || 'running';
+              
+              if (run.status === 'completed') {
+                if (run.conclusion === 'success') {
+                  statusEmoji = '✅';
+                  successful++;
+                } else if (['failure', 'timed_out', 'action_required'].includes(run.conclusion)) {
+                  statusEmoji = '❌';
+                  failing.push(run);
+                } else {
+                  statusEmoji = '⚪'; // skipped, neutral
+                }
+              } else {
+                pending++;
+              }
+              
+              tableRows.push(`| ${statusEmoji} | **${run.name}** | \`${conclusionStr}\` | [Details](${run.html_url}) |`);
+            }
+            
+            let commentBody = '<!-- worksphere-ci-status-bot -->\n';
+            commentBody += `## 📊 Pull Request Check Status\n\n`;
+            commentBody += `Hi @${senderLogin}, here is the current status of the checks for your commit (\`${headSha.slice(0, 7)}\`):\n\n`;
+            
+            if (failing.length > 0) {
+              commentBody += `### ⚠️ **${failing.length} of ${totalChecks} check(s) failing**\n`;
+              commentBody += `Please resolve the check errors below so your PR can be merged.\n\n`;
+            } else if (pending > 0) {
+              commentBody += `### ⏳ **${pending} check(s) still running**\n`;
+              commentBody += `Checks are in progress. This report will auto-update as they finish.\n\n`;
+            } else {
+              commentBody += `### ✅ **All ${totalChecks} checks passed!**\n`;
+              commentBody += `Your PR is ready for maintainer review.\n\n`;
+            }
+            
+            commentBody += `| Status | Check Name | Conclusion | Link |\n`;
+            commentBody += `| :---: | :--- | :--- | :--- |\n`;
+            commentBody += tableRows.join('\n') + `\n\n---\n\n`;
+            
+            if (failing.length > 0) {
+              commentBody += `### 🛠️ How to fix the failures:\n\n`;
+              
+              for (const run of failing) {
+                let suggestion = 'Inspect the details link above for raw failure logs.';
+                for (const [key, val] of Object.entries(suggestions)) {
+                  if (run.name.toLowerCase().includes(key.toLowerCase())) {
+                    suggestion = val;
+                    break;
+                  }
+                }
+                commentBody += `#### ❌ **${run.name}**\n- **Fix:** ${suggestion}\n\n`;
+              }
+              
+              // If build-and-test logs were uploaded, parse and embed them
               if (fs.existsSync('install_failed.txt') && fs.existsSync('install_output.log')) {
                 const log = fs.readFileSync('install_output.log', 'utf8');
-                commentBody += `### Dependency Installation Failure\n\n**What failed:** \`npm ci\` was unable to install packages.\n\n**How to fix:** Run \`npm install\` locally, commit your updated \`package-lock.json\`, and push again.\n\n<details><summary>Full log output</summary>\n\n\`\`\`\n${log.slice(-2000)}\n\`\`\`\n\n</details>\n\n---\n\n`;
+                commentBody += `**Log Output:**\n<details><summary>Click to view npm install failure logs</summary>\n\n\`\`\`\n${log.slice(-1500)}\n\`\`\`\n\n</details>\n\n---\n\n`;
               }
               
               if (fs.existsSync('lint_failed.txt') && fs.existsSync('lint_output.log')) {
                 const log = fs.readFileSync('lint_output.log', 'utf8');
-                commentBody += `### Lint Failure\n\n**What failed:** ESLint found errors or warnings in your code.\n\n**How to fix:** Run \`npm run lint\` locally to see all issues, then fix them.\n\n<details><summary>Full lint output</summary>\n\n\`\`\`\n${log.slice(-2000)}\n\`\`\`\n\n</details>\n\n---\n\n`;
+                commentBody += `**Log Output:**\n<details><summary>Click to view ESLint warnings/errors</summary>\n\n\`\`\`\n${log.slice(-1500)}\n\`\`\`\n\n</details>\n\n---\n\n`;
               }
               
               if (fs.existsSync('build_failed.txt') && fs.existsSync('build_output.log')) {
                 const log = fs.readFileSync('build_output.log', 'utf8');
-                commentBody += `### Build / TypeScript Failure\n\n**What failed:** The Next.js production build or TypeScript compiler threw errors.\n\n**How to fix:** Run \`npm run build\` locally to reproduce. Fix any TypeScript type errors or missing module imports.\n\n<details><summary>Full build output</summary>\n\n\`\`\`\n${log.slice(-2000)}\n\`\`\`\n\n</details>\n\n---\n\n`;
+                commentBody += `**Log Output:**\n<details><summary>Click to view Next.js compile/TypeScript errors</summary>\n\n\`\`\`\n${log.slice(-1500)}\n\`\`\`\n\n</details>\n\n---\n\n`;
               }
               
               if (fs.existsSync('test_failed.txt') && fs.existsSync('test_output.log')) {
                 const log = fs.readFileSync('test_output.log', 'utf8');
-                commentBody += `### Unit Test Failure\n\n**What failed:** One or more unit tests did not pass.\n\n**How to fix:** Run \`npm test\` locally to see which tests are failing.\n\n<details><summary>Full test output</summary>\n\n\`\`\`\n${log.slice(-2000)}\n\`\`\`\n\n</details>\n\n---\n\n`;
+                commentBody += `**Log Output:**\n<details><summary>Click to view unit test failures</summary>\n\n\`\`\`\n${log.slice(-1500)}\n\`\`\`\n\n</details>\n\n---\n\n`;
               }
-              
-              commentBody += `_Once all issues are resolved and your checks are green, a maintainer will review and merge your PR. Thank you for your patience!_`;
             }
             
-            await github.rest.issues.createComment({
+            // Search for an existing status comment from this bot on the PR
+            const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
-              body: commentBody
             });
+            
+            const botComment = comments.find(c => c.body.includes('<!-- worksphere-ci-status-bot -->'));
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: commentBody
+              });
+              console.log(`Updated existing status comment for PR #${prNumber}`);
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: commentBody
+              });
+              console.log(`Created new status comment for PR #${prNumber}`);
+            }

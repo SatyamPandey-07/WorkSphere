@@ -10,6 +10,7 @@ import {
   MapPin,
   Loader2,
   Globe,
+  FileDown,
 } from "lucide-react";
 
 import usePartySocket from "partysocket/react";
@@ -30,6 +31,30 @@ export default function FolderDetailsPage({
   const [inviteToken, setInviteToken] = useState("");
   const [generatingInvite, setGeneratingInvite] = useState(false);
   const [updatingPublic, setUpdatingPublic] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportBilling = async () => {
+    try {
+      setExporting(true);
+      const response = await fetch(`/api/folders/${id}/export-billing`);
+      if (!response.ok) throw new Error("Export failed");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `billing-export-${folder.name.toLowerCase().replace(/\s+/g, "-")}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Billing export error:", error);
+      alert("Failed to export billing codes. Please try again.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const fetchFolder = useCallback(async () => {
     try {
@@ -243,6 +268,32 @@ export default function FolderDetailsPage({
           </div>
 
           <div className="md:col-span-1 space-y-6">
+            {/* Billing Export Section */}
+            {userRole !== "VIEWER" && (
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-zinc-900 dark:text-white flex items-center gap-2 mb-4">
+                  <FileDown className="w-5 h-5 text-emerald-500" /> Billing &
+                  Audit
+                </h2>
+                <p className="text-xs text-zinc-500 mb-4">
+                  Export all confirmed bookings within this workspace folder as
+                  a CSV formatted for corporate billing software.
+                </p>
+                <button
+                  onClick={handleExportBilling}
+                  disabled={exporting}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-xl text-sm transition-all disabled:opacity-50 shadow-lg shadow-emerald-500/20 active:scale-[0.98]"
+                >
+                  {exporting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileDown className="w-4 h-4" />
+                  )}
+                  Export Expense Codes
+                </button>
+              </div>
+            )}
+
             {/* Share / Public Settings Toggle */}
             {userRole === "OWNER" && (
               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm">

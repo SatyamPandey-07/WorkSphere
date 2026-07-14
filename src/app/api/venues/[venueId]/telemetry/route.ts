@@ -4,7 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ venueId: string }> },
+  { params }: { params: Promise<{ venueId: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -13,7 +13,7 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { venueId } = await context.params;
+    const { venueId } = await params;
     const body = await req.json();
 
     const { download, upload, latency, crowdLevel } = body;

@@ -254,7 +254,6 @@ export async function POST(
       Object.keys(musicCounts).length > 0
         ? Object.entries(musicCounts).reduce((a, b) => (b[1] > a[1] ? b : a))[0]
         : null;
-
     const petsAllowedIndoorsPercent =
       (allRatings.filter((r: any) => r.petsAllowedIndoors).length /
         allRatings.length) *

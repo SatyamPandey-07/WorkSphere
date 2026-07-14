@@ -225,9 +225,9 @@ const Map = ({
   // =========================================================================
   const [routingQueue, setRoutingQueue] = useState<any[]>([]);
   const [optimizedRoute, setOptimizedRoute] = useState<any>(null);
-  const [travelProfile, setTravelProfile] = useState<"walking" | "cycling" | "driving">(
-    "walking",
-  );
+  const [travelProfile, setTravelProfile] = useState<
+    "walking" | "cycling" | "driving"
+  >("walking");
 
   // OSRM Multi-Stop coordinate solver engine
   const calculateOptimizedRoute = async (venuesList = routingQueue) => {
@@ -428,6 +428,10 @@ const Map = ({
       <style
         dangerouslySetInnerHTML={{
           __html: `
+        /* Webkit/iOS Safari hardware acceleration fixes to prevent overlapping/jitter during zoom animations */
+        .leaflet-marker-icon, .leaflet-pane {
+          will-change: transform;
+        }
         .custom-user-marker {
           /* This container itself doesn't need styles */
         }

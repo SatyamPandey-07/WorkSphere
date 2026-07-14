@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { publishVenueAvailability } from "@/lib/reservations/event-bus";
+import { eventBus } from "@/core/events";
+import "@/core/subscribers/guests";
 
 function toMinutes(value: string) {
   const [hours, minutes] = value.split(":").map(Number);
@@ -40,7 +42,17 @@ export async function POST(request: NextRequest) {
   const time = typeof body.time === "string" ? body.time : "";
   const duration = Number(body.duration);
   const amenitiesNeeded = Array.isArray(body.amenitiesNeeded)
-    ? body.amenitiesNeeded.filter((item: unknown): item is string => typeof item === "string").slice(0, 10)
+    ? body.amenitiesNeeded
+        .filter((item: unknown): item is string => typeof item === "string")
+        .slice(0, 10)
+    : [];
+  const guestEmails: Array<{ email: string; name?: string }> = Array.isArray(
+    body.guests,
+  )
+    ? body.guests
+        .filter((g: any) => g && typeof g.email === "string")
+        .map((g: any) => ({ email: g.email, name: g.name || undefined }))
+        .slice(0, 20)
     : [];
 
   if (
@@ -88,12 +100,7 @@ export async function POST(request: NextRequest) {
   });
 
   const conflict = existingBookings.some((booking) =>
-    overlaps(
-      booking.time,
-      booking.duration ?? 60,
-      time,
-      duration,
-    ),
+    overlaps(booking.time, booking.duration ?? 60, time, duration),
   );
 
   if (conflict) {
@@ -120,9 +127,7 @@ export async function POST(request: NextRequest) {
           ? body.customerEmail
           : "guest@worksphere.local",
       customerPhone:
-        typeof body.customerPhone === "string"
-          ? body.customerPhone
-          : null,
+        typeof body.customerPhone === "string" ? body.customerPhone : null,
       confirmationId,
       status: "CONFIRMED",
     },
@@ -136,6 +141,41 @@ export async function POST(request: NextRequest) {
       seat: true,
     },
   });
+
+  // Create BookingGuest records if guests were provided
+  if (guestEmails.length > 0) {
+    try {
+      await Promise.all(
+        guestEmails.map((guest) =>
+          (prisma as any).bookingGuest.create({
+            data: {
+              bookingId: booking.id,
+              email: guest.email,
+              name: guest.name || null,
+              status: "PENDING",
+            },
+          }),
+        ),
+      );
+    } catch (err) {
+      console.error("[BookAPI] Failed to create guest records:", err);
+    }
+
+    // Emit booking:confirmed event so the guest subscriber picks them up
+    await eventBus.emit("booking:confirmed", {
+      bookingId: booking.id,
+      confirmationId,
+      venue: {
+        id: venueId,
+        name: seat.venue.name,
+        category: seat.venue.category || "workspace",
+        address: seat.venue.address || undefined,
+      },
+      customerEmail: body.customerEmail || "guest@worksphere.local",
+      date,
+      time,
+    });
+  }
 
   publishVenueAvailability(venueId, {
     type: "seat_reserved",
@@ -151,6 +191,7 @@ export async function POST(request: NextRequest) {
       success: true,
       booking,
       confirmationId,
+      guestsAdded: guestEmails.length,
     },
     { status: 201 },
   );

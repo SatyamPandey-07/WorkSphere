@@ -12,13 +12,26 @@ export interface AppEvents {
     date: string;
     time: string;
   };
+  "booking:guest-invited": {
+    bookingId: string;
+    guestEmail: string;
+    guestName?: string;
+    inviteResult: "sent" | "failed";
+    error?: string;
+  };
+  "booking:guest-cancelled": {
+    bookingId: string;
+    guestEmail: string;
+  };
   // Add more events as needed
   "user:created": { userId: string; email: string };
 }
 
 export type EventName = keyof AppEvents;
 
-export type EventHandler<T extends EventName> = (payload: AppEvents[T]) => void | Promise<void>;
+export type EventHandler<T extends EventName> = (
+  payload: AppEvents[T],
+) => void | Promise<void>;
 
 export class EventBus {
   private static instance: EventBus;
@@ -61,14 +74,20 @@ export class EventBus {
    * unless explicitly awaited or run using waitUntil. For standard Node.js environments,
    * they will run to completion.
    */
-  public async emit<T extends EventName>(event: T, payload: AppEvents[T]): Promise<void> {
+  public async emit<T extends EventName>(
+    event: T,
+    payload: AppEvents[T],
+  ): Promise<void> {
     const handlers = this.listeners[event] as Set<EventHandler<T>> | undefined;
     if (handlers) {
-      const promises = Array.from(handlers).map(handler => {
+      const promises = Array.from(handlers).map((handler) => {
         try {
           return handler(payload);
         } catch (error) {
-          console.error(`[EventBus] Error in synchronous handler for event '${event}':`, error);
+          console.error(
+            `[EventBus] Error in synchronous handler for event '${event}':`,
+            error,
+          );
         }
       });
 

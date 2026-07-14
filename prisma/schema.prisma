@@ -15,7 +15,8 @@ model User {
   lastName           String?
   imageUrl           String?
   createdAt          DateTime           @default(now())
-  discordWebhookUrl  String?
+  discordWebhookUrl   String?
+  whatsappWebhookUrl  String?
   favorites          Favorite[]
   ratings            VenueRating[]
   conversations      Conversation[]
@@ -175,10 +176,35 @@ model Booking {
   duration        Int?
   amenitiesNeeded String[]      @default([])
   seat            VenueSeat?    @relation(fields: [seatId], references: [id])
+  guests          BookingGuest[]
 
   @@index([userId])
   @@index([venueId])
   @@index([seatId])
+}
+
+model BookingGuest {
+  id          String        @id @default(cuid())
+  bookingId   String
+  booking     Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  email       String
+  name        String?
+  phone       String?
+  status      GuestStatus   @default(PENDING)
+  calendarUid String?
+  sentAt      DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@unique([bookingId, email])
+  @@index([bookingId])
+}
+
+enum GuestStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
 }
 
 enum BookingStatus {

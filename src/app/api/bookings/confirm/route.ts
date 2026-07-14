@@ -4,8 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { eventBus } from "@/core/events";
 import "@/core/subscribers/booking";
-import "@/core/subscribers/booking";
 import "@/core/subscribers/discord";
+import "@/core/subscribers/whatsapp";
+import "@/core/subscribers/guests";
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();

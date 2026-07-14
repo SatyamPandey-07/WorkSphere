@@ -3,8 +3,23 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import I18nProvider from "../components/I18nProvider";
+import { ThemeProvider } from "../components/ThemeProvider";
 
 import { headers } from "next/headers";
+
+const THEME_INIT_SCRIPT = `
+(function () {
+  try {
+    var stored = localStorage.getItem("worksphere-theme");
+    var theme = stored === "light" || stored === "dark"
+      ? stored
+      : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    var root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    root.style.colorScheme = theme;
+  } catch (e) {}
+})();
+`;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -61,9 +76,11 @@ export default async function RootLayout({
   const isDummyKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
 
   const innerContent = (
-    <I18nProvider>
-      {children}
-    </I18nProvider>
+    <ThemeProvider>
+      <I18nProvider>
+        {children}
+      </I18nProvider>
+    </ThemeProvider>
   );
 
   const bodyContent = (isDummyKey && isAnalyticsPage) ? innerContent : (
@@ -86,6 +103,9 @@ export default async function RootLayout({
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
+        {/* Sets the theme class before first paint so the sun/moon icon
+            never flashes the wrong state on load. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}

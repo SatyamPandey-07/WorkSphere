@@ -1,7 +1,6 @@
 "use client";
 
-
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayerSession } from "@/hooks/useRealTime";
@@ -105,16 +104,23 @@ const INITIAL_SUGGESTIONS = [
 
 // Component
 
-export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocation, roomId, onShowToast }: EnhancedChatbotProps) {
+export function EnhancedChatbot({
+  onMapUpdate,
+  onOpenDetails,
+  onBook,
+  userLocation,
+  roomId,
+  onShowToast,
+}: EnhancedChatbotProps) {
   const { isSignedIn, user } = useUser();
 
-  const { socket, yDoc } = useMultiplayerSession(roomId || null);
+  const { socket } = useMultiplayerSession(roomId || null);
   const { getToken } = useAuth();
 
-
-
   // Presence state
-  const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string }>>({});
+  const [cursors, setCursors] = useState<
+    Record<string, { x: number; y: number; name: string }>
+  >({});
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
 
   // Track local cursor
@@ -124,18 +130,84 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     const handleMouseMove = (e: MouseEvent) => {
       // Throttle mouse moves to avoid flooding
       if (Math.random() > 0.8) {
-        socket.send(JSON.stringify({
-          type: "cursor",
-          x: e.clientX,
-          y: e.clientY,
-          name: user?.firstName || "Anonymous"
-        }));
+        socket.send(
+          JSON.stringify({
+            type: "cursor",
+            x: e.clientX,
+            y: e.clientY,
+            name: user?.firstName || "Anonymous",
+          }),
+        );
       }
     };
 
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, [socket, roomId, user]);
+
+  // Core state
+  const [location, setLocation] = useState(userLocation);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // UI state
+  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [filters, setFilters] = useState<Filters>({});
+  const [showFilters, setShowFilters] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
+  const [bookingVenue, setBookingVenue] = useState<Venue | null>(null);
+  const [bookingMode, setBookingMode] = useState<"booking" | "history">(
+    "booking",
+  );
+  const [showVenueSubmission, setShowVenueSubmission] = useState(false);
+
+  // Conversations & favorites
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<
+    string | null
+  >(null);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const res = await fetch("/api/conversations");
+      if (res.ok) {
+        const data = await res.json();
+        const rawConversations: Conversation[] = data.conversations || [];
+        const pendingEdits = await getPendingConversationEdits();
+        const merged = applyPendingConversationEdits(
+          rawConversations,
+          pendingEdits,
+        );
+        setConversations(merged);
+      }
+    } catch (e) {
+      console.error("Failed to load conversations:", e);
+    }
+  }, []);
+
+  const loadFavorites = useCallback(async () => {
+    try {
+      const res = await fetch("/api/favorites");
+      if (res.ok) {
+        const data = await res.json();
+        setFavorites(
+          new Set<string>(
+            data.favorites?.map((f: { venueId: string }) => f.venueId) || [],
+          ),
+        );
+      }
+    } catch (e) {
+      console.error("Failed to load favorites:", e);
+    }
+  }, []);
 
   // Handle incoming presence
   useEffect(() => {
@@ -145,22 +217,22 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       try {
         const data = JSON.parse(event.data);
         if (data.type === "cursor") {
-          setCursors(prev => ({
+          setCursors((prev) => ({
             ...prev,
-            [data.name]: { x: data.x, y: data.y, name: data.name }
+            [data.name]: { x: data.x, y: data.y, name: data.name },
           }));
         } else if (data.type === "typing") {
-          setTypingUsers(prev => {
+          setTypingUsers((prev) => {
             if (data.isTyping) {
               return prev.includes(data.name) ? prev : [...prev, data.name];
             } else {
-              return prev.filter(n => n !== data.name);
+              return prev.filter((n) => n !== data.name);
             }
           });
         } else if (data.type === "new-message") {
           // Prevent duplicates
-          setMessages(prev => {
-            if (prev.some(m => m.id === data.message.id)) return prev;
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === data.message.id)) return prev;
             return [...prev, data.message];
           });
         } else if (data.type === "map-update") {
@@ -175,31 +247,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
 
     socket.addEventListener("message", onMessage);
     return () => socket.removeEventListener("message", onMessage);
-  }, [socket]);
-
-  // Core state
-  const [location, setLocation] = useState(userLocation);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // UI state
-  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
-  const [filters, setFilters] = useState<Filters>({});
-  const [showFilters, setShowFilters] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
-  const [bookingVenue, setBookingVenue] = useState<Venue | null>(null);
-  const [bookingMode, setBookingMode] = useState<"booking" | "history">("booking");
-  const [showVenueSubmission, setShowVenueSubmission] = useState(false);
-
-  // Conversations & favorites
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
-  const [favorites, setFavorites] = useState<Set<string>>(new Set());
-
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  }, [socket, onMapUpdate]);
 
   // Auto-scroll
   useEffect(() => {
@@ -212,14 +260,17 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       try {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
-            const newLoc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            const newLoc = {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+            };
             setLocation(newLoc);
             onMapUpdate?.({
               type: "SET_MAP_VIEW",
-              data: { center: newLoc, zoom: 14, animate: true }
+              data: { center: newLoc, zoom: 14, animate: true },
             });
           },
-          () => setLocation({ lat: 37.7749, lng: -122.4194 })
+          () => setLocation({ lat: 37.7749, lng: -122.4194 }),
         );
       } catch (err) {
         console.warn("Geolocation sync error in chatbot:", err);
@@ -237,7 +288,11 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   useEffect(() => {
     if (userLocation) {
       setLocation((prev) => {
-        if (prev && prev.lat === userLocation.lat && prev.lng === userLocation.lng) {
+        if (
+          prev &&
+          prev.lat === userLocation.lat &&
+          prev.lng === userLocation.lng
+        ) {
           return prev;
         }
         return userLocation;
@@ -252,7 +307,10 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       const newLoc = { lat, lng };
       setLocation(newLoc);
 
-      const update = { type: "SET_MAP_VIEW", data: { center: newLoc, zoom: 14, animate: true } };
+      const update = {
+        type: "SET_MAP_VIEW",
+        data: { center: newLoc, zoom: 14, animate: true },
+      };
       onMapUpdate?.(update);
 
       if (socket && roomId) {
@@ -267,26 +325,9 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       loadConversations();
       loadFavorites();
     }
-  }, [isSignedIn]);
+  }, [isSignedIn, loadConversations, loadFavorites]);
 
   // Conversations
-  const loadConversations = async () => {
-    try {
-      const res = await fetch("/api/conversations");
-      if (res.ok) {
-        const data = await res.json();
-        const rawConversations: Conversation[] = data.conversations || [];
-        // Apply any not-yet-synced offline renames/deletes on top of the
-        // server (or SW-cached) list, so a reload while offline — or before
-        // background sync has run — doesn't revert local edits. See #266.
-        const pendingEdits = await getPendingConversationEdits();
-        const merged = applyPendingConversationEdits(rawConversations, pendingEdits);
-        setConversations(merged);
-      }
-    } catch (e) {
-      console.error("Failed to load conversations:", e);
-    }
-  };
 
   const createConversation = async (): Promise<string | null> => {
     if (!isSignedIn) return null;
@@ -315,11 +356,17 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
         const data = await res.json();
         setCurrentConversationId(id);
         setMessages(
-          data.messages.map((m: { id: string; role: "user" | "assistant"; content: string }) => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-          }))
+          data.messages.map(
+            (m: {
+              id: string;
+              role: "user" | "assistant";
+              content: string;
+            }) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+            }),
+          ),
         );
         setShowHistory(false);
       }
@@ -355,7 +402,9 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     const trimmed = title.trim();
     if (!trimmed) return;
 
-    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, title: trimmed } : c)));
+    setConversations((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, title: trimmed } : c)),
+    );
 
     if (!navigator.onLine) {
       await queueConversationRename(id, trimmed);
@@ -387,7 +436,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     };
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
-  }, [isSignedIn]);
+  }, [isSignedIn, loadConversations]);
 
   const startNewChat = () => {
     setCurrentConversationId(null);
@@ -396,19 +445,6 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   };
 
   // Favorites
-  const loadFavorites = async () => {
-    try {
-      const res = await fetch("/api/favorites");
-      if (res.ok) {
-        const data = await res.json();
-        setFavorites(
-          new Set<string>(data.favorites?.map((f: { venueId: string }) => f.venueId) || [])
-        );
-      }
-    } catch (e) {
-      console.error("Failed to load favorites:", e);
-    }
-  };
 
   const handleToggleFavorite = async (venue: Venue) => {
     if (!isSignedIn) {
@@ -424,7 +460,11 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
           next.delete(venue.id);
           return next;
         });
-        trackVenueInteraction("unfavorited", { id: venue.id, name: venue.name, category: venue.category });
+        trackVenueInteraction("unfavorited", {
+          id: venue.id,
+          name: venue.name,
+          category: venue.category,
+        });
       } else {
         await fetch("/api/favorites", {
           method: "POST",
@@ -440,7 +480,11 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
           }),
         });
         setFavorites((prev) => new Set(prev).add(venue.id));
-        trackVenueInteraction("favorited", { id: venue.id, name: venue.name, category: venue.category });
+        trackVenueInteraction("favorited", {
+          id: venue.id,
+          name: venue.name,
+          category: venue.category,
+        });
         try {
           await saveFavoriteOffline({
             id: venue.id,
@@ -456,7 +500,10 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       }
     } catch (e) {
       console.error("Failed to toggle favorite:", e);
-      trackError(e instanceof Error ? e : new Error(String(e)), "favorite_toggle");
+      trackError(
+        e instanceof Error ? e : new Error(String(e)),
+        "favorite_toggle",
+      );
     }
   };
 
@@ -481,9 +528,9 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       const token = await getToken();
       await fetch(`/api/venues/${ratingVenue.id}/rate`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           ...rating,
@@ -504,7 +551,10 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       setRatingVenue(null);
     } catch (e) {
       console.error("Failed to submit rating:", e);
-      trackError(e instanceof Error ? e : new Error(String(e)), "rating_submit");
+      trackError(
+        e instanceof Error ? e : new Error(String(e)),
+        "rating_submit",
+      );
     }
   };
 
@@ -538,7 +588,12 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
   const handleSetFilter = (key: string, value: any) => {
     setFilters((prev) => {
       const next = { ...prev };
-      if (value === undefined || value === null || value === "none" || value === "all") {
+      if (
+        value === undefined ||
+        value === null ||
+        value === "none" ||
+        value === "all"
+      ) {
         delete next[key as keyof Filters];
       } else {
         (next as any)[key] = value;
@@ -560,22 +615,26 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       setInput(suggestion);
       // Submit on next tick after state settles
       setTimeout(() => {
-        const form = document.getElementById("ws-chat-form") as HTMLFormElement | null;
+        const form = document.getElementById(
+          "ws-chat-form",
+        ) as HTMLFormElement | null;
         form?.requestSubmit();
       }, 50);
     },
-    [isLoading]
+    [isLoading],
   );
 
   // Main submit
   const handleInputChange = (val: string) => {
     setInput(val);
     if (socket && roomId) {
-      socket.send(JSON.stringify({
-        type: "typing",
-        isTyping: val.length > 0,
-        name: user?.firstName || "Anonymous"
-      }));
+      socket.send(
+        JSON.stringify({
+          type: "typing",
+          isTyping: val.length > 0,
+          name: user?.firstName || "Anonymous",
+        }),
+      );
     }
   };
 
@@ -584,11 +643,13 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
     if (!input.trim() || isLoading) return;
 
     if (socket && roomId) {
-      socket.send(JSON.stringify({
-        type: "typing",
-        isTyping: false,
-        name: user?.firstName || "Anonymous"
-      }));
+      socket.send(
+        JSON.stringify({
+          type: "typing",
+          isTyping: false,
+          name: user?.firstName || "Anonymous",
+        }),
+      );
     }
 
     const userMessage = input.trim();
@@ -606,12 +667,14 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
       id: Date.now().toString(),
       role: "user",
       content: userMessage,
-      name: user?.firstName || "Anonymous"
+      name: user?.firstName || "Anonymous",
     };
     setMessages((prev) => [...prev, newUserMessage]);
 
     if (socket && roomId) {
-      socket.send(JSON.stringify({ type: "new-message", message: newUserMessage }));
+      socket.send(
+        JSON.stringify({ type: "new-message", message: newUserMessage }),
+      );
     }
 
     if (location) {
@@ -633,7 +696,9 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
 
       if (!response.ok) {
         if (response.status === 429) {
-          throw new Error("High traffic detected. Please wait a few seconds and try searching again.");
+          throw new Error(
+            "High traffic detected. Please wait a few seconds and try searching again.",
+          );
         }
         throw new Error("Failed to send message");
       }
@@ -647,7 +712,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
           content: "",
         },
       ]);
-      
+
       setIsLoading(false); // Stream starts, disable loading spinner
 
       const reader = response.body?.getReader();
@@ -663,23 +728,29 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
           buffer += decoder.decode(value, { stream: true });
           const chunks = buffer.split(/(?=METADATA:|TEXT:)/);
           buffer = chunks.pop() || "";
-          
+
           for (const chunk of chunks) {
             if (chunk.startsWith("METADATA:")) {
               const metaStr = chunk.slice(9).trim();
               try {
                 metadata = JSON.parse(metaStr);
-                
+
                 if (metadata.highTraffic) {
-                  onShowToast?.("High traffic detected. Please wait a few seconds and try searching again.");
+                  onShowToast?.(
+                    "High traffic detected. Please wait a few seconds and try searching again.",
+                  );
                 }
 
                 if (metadata.agentSteps) {
                   (metadata.agentSteps as AgentStep[]).forEach((step) => {
-                    trackAgentPerformance(step.agent, Date.now() - startTime, true);
+                    trackAgentPerformance(
+                      step.agent,
+                      Date.now() - startTime,
+                      true,
+                    );
                   });
                 }
-                
+
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
@@ -691,26 +762,26 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
                           cached: metadata.cached,
                           complexity: metadata.complexity,
                         }
-                      : m
-                  )
+                      : m,
+                  ),
                 );
 
-              try {
-              await saveSearchOffline(
-               userMessage,
-               (metadata.venues ?? []).map((v: Venue) => ({
-               id: v.id,
-               name: v.name,
-               latitude: v.lat,
-               longitude: v.lng,
-               category: v.category,
-               address: v.address,
-               }))
-               );
-               } catch (err) {
-                console.warn("Failed to cache search:", err);
-              }
-                
+                try {
+                  await saveSearchOffline(
+                    userMessage,
+                    (metadata.venues ?? []).map((v: Venue) => ({
+                      id: v.id,
+                      name: v.name,
+                      latitude: v.lat,
+                      longitude: v.lng,
+                      category: v.category,
+                      address: v.address,
+                    })),
+                  );
+                } catch (err) {
+                  console.warn("Failed to cache search:", err);
+                }
+
                 if (metadata.venues?.length > 0 && onMapUpdate) {
                   const update = {
                     type: "markers",
@@ -730,31 +801,41 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
                     socket.send(JSON.stringify({ type: "map-update", update }));
                   }
                 }
-              } catch(e) {
+              } catch (e) {
                 console.error("Failed to parse metadata", e);
               }
             } else if (chunk.startsWith("TEXT:")) {
               const text = chunk.slice(5);
-              setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: m.content + text } : m));
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMessageId
+                    ? { ...m, content: m.content + text }
+                    : m,
+                ),
+              );
             }
           }
         }
-        
+
         // Process remaining buffer
         if (buffer) {
           if (buffer.startsWith("METADATA:")) {
             const metaStr = buffer.slice(9).trim();
-            try { 
-              metadata = JSON.parse(metaStr); 
+            try {
+              metadata = JSON.parse(metaStr);
               setMessages((prev) =>
-                prev.map((m) => m.id === assistantMessageId ? {
-                  ...m,
-                  venues: metadata.venues,
-                  agentSteps: metadata.agentSteps,
-                  suggestions: metadata.suggestions,
-                  cached: metadata.cached,
-                  complexity: metadata.complexity,
-                } : m)
+                prev.map((m) =>
+                  m.id === assistantMessageId
+                    ? {
+                        ...m,
+                        venues: metadata.venues,
+                        agentSteps: metadata.agentSteps,
+                        suggestions: metadata.suggestions,
+                        cached: metadata.cached,
+                        complexity: metadata.complexity,
+                      }
+                    : m,
+                ),
               );
 
               try {
@@ -767,7 +848,7 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
                     longitude: v.lng,
                     category: v.category,
                     address: v.address,
-                  }))
+                  })),
                 );
               } catch (err) {
                 console.warn("Failed to cache search:", err);
@@ -775,27 +856,38 @@ export function EnhancedChatbot({ onMapUpdate, onOpenDetails, onBook, userLocati
             } catch {}
           } else if (buffer.startsWith("TEXT:")) {
             const text = buffer.slice(5);
-            setMessages(prev => prev.map(m => m.id === assistantMessageId ? { ...m, content: m.content + text } : m));
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantMessageId
+                  ? { ...m, content: m.content + text }
+                  : m,
+              ),
+            );
           }
         }
       }
-      
+
       // Final message sync for socket
       setMessages((prev) => {
-        const finalMsg = prev.find(m => m.id === assistantMessageId);
+        const finalMsg = prev.find((m) => m.id === assistantMessageId);
         if (finalMsg && socket && roomId) {
-          socket.send(JSON.stringify({ type: "new-message", message: finalMsg }));
+          socket.send(
+            JSON.stringify({ type: "new-message", message: finalMsg }),
+          );
         }
         return prev;
       });
     } catch (err) {
       console.error("Chat error:", err);
-      const errMsg = err instanceof Error ? err.message : "Failed to send message. Please try again.";
-try {
+      const errMsg =
+        err instanceof Error
+          ? err.message
+          : "Failed to send message. Please try again.";
+      try {
         const cached = await getSearchOffline(userMessage);
 
         if (cached) {
-          const venues: Venue[] = cached.results.map(v => ({
+          const venues: Venue[] = cached.results.map((v) => ({
             id: v.id,
             name: v.name,
             lat: v.latitude,
@@ -804,13 +896,12 @@ try {
             address: v.address,
           }));
 
-          setMessages(prev => [
+          setMessages((prev) => [
             ...prev,
             {
               id: Date.now().toString(),
               role: "assistant",
-              content:
-                "📦 You're offline. Showing your cached search results.",
+              content: "📦 You're offline. Showing your cached search results.",
               venues,
               cached: true,
             },
@@ -819,7 +910,7 @@ try {
           if (onMapUpdate) {
             onMapUpdate({
               type: "markers",
-              markers: venues.map(v => ({
+              markers: venues.map((v) => ({
                 id: v.id,
                 lat: v.lat,
                 lng: v.lng,
@@ -836,14 +927,14 @@ try {
 
         const recentSearches = await getAllSearchesOffline();
         if (recentSearches.length > 0) {
-          setMessages(prev => [
+          setMessages((prev) => [
             ...prev,
             {
               id: Date.now().toString(),
               role: "assistant",
               content:
                 "📡 You're offline and we don't have a cached result for that search. Try one of your recent searches:",
-              suggestions: recentSearches.map(s => s.query),
+              suggestions: recentSearches.map((s) => s.query),
             },
           ]);
           setIsLoading(false);
@@ -856,7 +947,10 @@ try {
       if (errMsg.includes("High traffic detected")) {
         onShowToast?.(errMsg);
       }
-      trackError(err instanceof Error ? err : new Error(String(err)), "chat_submit");
+      trackError(
+        err instanceof Error ? err : new Error(String(err)),
+        "chat_submit",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -867,17 +961,31 @@ try {
     <div className="flex h-full flex-col bg-white dark:bg-zinc-950 relative overflow-hidden">
       {/* Remote Cursors */}
       <AnimatePresence>
-        {Object.values(cursors).map(cursor => (
+        {Object.values(cursors).map((cursor) => (
           <motion.div
             key={cursor.name}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, x: cursor.x, y: cursor.y }}
             exit={{ opacity: 0 }}
-            transition={{ type: "spring", stiffness: 300, damping: 25, mass: 0.5 }}
+            transition={{
+              type: "spring",
+              stiffness: 300,
+              damping: 25,
+              mass: 0.5,
+            }}
             className="pointer-events-none fixed z-[9999] flex flex-col items-start"
           >
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="text-orange-500 drop-shadow-md">
-              <path d="M5.65376 21.2087L2.61053 2.76633C2.39958 1.48834 3.75545 0.559955 4.88795 1.2059L22.2891 11.1444C23.4795 11.8242 23.3664 13.5786 22.0934 14.108L14.7706 17.1517L12.5976 24.3235C12.1932 25.658 10.366 25.8643 9.68063 24.6548L5.65376 21.2087Z" fill="currentColor" />
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              className="text-orange-500 drop-shadow-md"
+            >
+              <path
+                d="M5.65376 21.2087L2.61053 2.76633C2.39958 1.48834 3.75545 0.559955 4.88795 1.2059L22.2891 11.1444C23.4795 11.8242 23.3664 13.5786 22.0934 14.108L14.7706 17.1517L12.5976 24.3235C12.1932 25.658 10.366 25.8643 9.68063 24.6548L5.65376 21.2087Z"
+                fill="currentColor"
+              />
             </svg>
             <div className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-4 shadow-md whitespace-nowrap">
               {cursor.name}
@@ -902,14 +1010,15 @@ try {
         onLoadConversation={loadConversation}
         onDeleteConversation={deleteConversation}
 
-
         onRenameConversation={renameConversation}
 
         roomId={roomId || currentConversationId}
         onShareSession={() => {
           let sessionToShare = roomId || currentConversationId;
           if (!sessionToShare) {
-            sessionToShare = Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+            sessionToShare =
+              Date.now().toString(36) +
+              Math.random().toString(36).substring(2, 7);
             const url = new URL(window.location.href);
             url.searchParams.set("session", sessionToShare);
             // Instead of just copying, we need to be in that session too, so let's navigate to it
@@ -957,7 +1066,8 @@ try {
 
       {typingUsers.length > 0 && (
         <div className="absolute bottom-[80px] left-4 text-[10px] text-zinc-500 font-medium animate-pulse">
-          {typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...
+          {typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"}{" "}
+          typing...
         </div>
       )}
 
@@ -992,7 +1102,10 @@ try {
               role: "assistant",
               content:
                 "🎉 Thank you for suggesting a venue! It has been added to our database and will appear in future searches.",
-              suggestions: ["Search for workspaces nearby", "Show my favorites"],
+              suggestions: [
+                "Search for workspaces nearby",
+                "Show my favorites",
+              ],
             },
           ]);
         }}

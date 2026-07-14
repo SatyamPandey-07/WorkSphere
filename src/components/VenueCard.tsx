@@ -49,6 +49,7 @@ export function VenueCard({
   onRate,
 }: VenueCardProps) {
   const [isFavorited, setIsFavorited] = useState(false);
+  const [isSavingFavorite, setIsSavingFavorite] = useState(false);
   const [enrichData, setEnrichData] = useState<VenueEnrichData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
@@ -145,16 +146,20 @@ export function VenueCard({
   }, [venue.name, venue.position]);
 
   const handleFavorite = async () => {
-  if (isSavingFavorite) return; // ignore rapid double-clicks
+    if (isSavingFavorite) return; // ignore rapid double-clicks
 
-  setIsSavingFavorite(true);
-  setIsFavorited(!isFavorited);
-  try {
-    await onSaveFavorite?.(venue);
-  } finally {
-    setIsSavingFavorite(false);
-  }
-};
+    const previous = isFavorited;
+    setIsSavingFavorite(true);
+    setIsFavorited(!previous);
+    try {
+      await onSaveFavorite?.(venue);
+    } catch (err) {
+      setIsFavorited(previous); // revert optimistic update on failure
+      console.error("Failed to save favorite:", err);
+    } finally {
+      setIsSavingFavorite(false);
+    }
+  };
 
   // Cycle through photos
   const nextPhoto = () => {

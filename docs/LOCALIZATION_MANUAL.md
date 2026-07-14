@@ -116,12 +116,8 @@ namespaced key rather than hardcoding copy.
 ## 3. Key / Namespace Format
 
 Translation files live in `src/locales/<lang-code>.json`, one file per
-locale. Note that in i18next terms, all of this content is registered under
-the single, default **`translation` namespace** (see the `resources` map in
-`I18nProvider.tsx`: `en: { translation: en }`, etc.). Within that namespace,
-keys are grouped by a top-level **feature key/prefix**, similar to how
-separate i18next namespaces are sometimes used. Today there is a single
-feature prefix, `venue`:
+locale, and all keys are nested under a top-level **namespace object** that
+groups related strings. Today there is a single namespace, `venue`:
 
 ```json
 {

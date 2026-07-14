@@ -7,7 +7,7 @@ import crypto from "crypto";
 // POST /api/folders/[id]/invites - Generate or regenerate invite token
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -22,10 +22,14 @@ export async function POST(
       return NextResponse.json({ error: "Folder not found" }, { status: 404 });
     }
     if (!hasAccess || (role !== "OWNER" && role !== "EDITOR")) {
-      return NextResponse.json({ error: "Forbidden. Only owner or editor can generate invites." }, { status: 403 });
+      return NextResponse.json(
+        { error: "Forbidden. Only owner or editor can generate invites." },
+        { status: 403 },
+      );
     }
 
-    const inviteToken = crypto.randomBytes(16).toString("hex");
+    const timestamp = Date.now();
+    const inviteToken = `${crypto.randomBytes(16).toString("hex")}_${timestamp}`;
 
     const updatedFolder = await prisma.folder.update({
       where: { id },
@@ -37,7 +41,7 @@ export async function POST(
     console.error(`POST /api/folders/invites error:`, error);
     return NextResponse.json(
       { error: "Failed to generate invite token" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

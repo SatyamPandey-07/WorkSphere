@@ -45,6 +45,9 @@ export const venueSearchSchema = z.object({
   petsAllowedIndoors: z.coerce.boolean().optional(),
   patioOnly: z.coerce.boolean().optional(),
   waterBowlsProvided: z.coerce.boolean().optional(),
+  dogFriendly: z.coerce.boolean().optional(),
+  catsAllowed: z.coerce.boolean().optional(),
+  musicStyle: z.enum(["lofi", "classical_jazz", "no_music", "all"]).optional(),
 });
 
 export const venueCreateSchema = z.object({
@@ -74,12 +77,16 @@ export const venueCreateSchema = z.object({
   petsAllowedIndoors: z.boolean().optional(),
   patioOnly: z.boolean().optional(),
   waterBowlsProvided: z.boolean().optional(),
+  dogFriendly: z.boolean().optional(),
+  catsAllowed: z.boolean().optional(),
+  musicStyle: z.string().optional(),
 });
 
 export const venueRatingSchema = z.object({
   wifiQuality: z.number().min(1).max(5),
   hasOutlets: z.boolean(),
   powerTypes: z.array(z.string()).optional(),
+  outletLocations: z.array(z.string()).optional(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]),
   comment: z.string().max(1000).optional(),
   hasErgonomic: z.boolean().optional().default(false),
@@ -88,6 +95,13 @@ export const venueRatingSchema = z.object({
     .optional()
     .default("none"),
   wifiSpeed: z.number().min(0).max(10000).optional().nullable(),
+  downloadSpeed: z.number().min(0).max(10000).optional().nullable(),
+  uploadSpeed: z.number().min(0).max(10000).optional().nullable(),
+  latency: z.number().min(0).max(1000).optional().nullable(),
+  crowdLevel: z
+    .enum(["empty", "moderate", "busy", "very busy"])
+    .optional()
+    .nullable(),
   speedtestPhoto: z.string().optional().nullable(),
   avgDecibels: z.number().min(20).max(130).optional().nullable(),
   peakDecibels: z.number().min(20).max(140).optional().nullable(),
@@ -104,6 +118,9 @@ export const venueRatingSchema = z.object({
   petsAllowedIndoors: z.boolean().optional().default(false),
   patioOnly: z.boolean().optional().default(false),
   waterBowlsProvided: z.boolean().optional().default(false),
+  dogFriendly: z.boolean().optional().default(false),
+  catsAllowed: z.boolean().optional().default(false),
+  musicStyle: z.string().optional().nullable(),
 });
 
 // Conversation schemas

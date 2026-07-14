@@ -13,11 +13,7 @@ export function AddToFolderModal({ venue, onClose }: AddToFolderModalProps) {
   const [loading, setLoading] = useState(true);
   const [addingTo, setAddingTo] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchFolders();
-  }, []);
-
-  const fetchFolders = async () => {
+  async function fetchFolders() {
     try {
       const res = await fetch("/api/folders");
       const data = await res.json();
@@ -28,6 +24,10 @@ export function AddToFolderModal({ venue, onClose }: AddToFolderModalProps) {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchFolders();
+  }, []);
 
   const addToFolder = async (folderId: string) => {
     setAddingTo(folderId);

@@ -60,7 +60,27 @@ export default async function RootLayout({
 
   const isDummyKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
 
-  const content = (
+  const innerContent = (
+    <I18nProvider>
+      {children}
+    </I18nProvider>
+  );
+
+  const bodyContent = (isDummyKey && isAnalyticsPage) ? innerContent : (
+    <ClerkProvider
+      publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk"}
+      appearance={{
+        elements: {
+          formButtonPrimary: "bg-blue-600 hover:bg-blue-700",
+          card: "shadow-xl",
+        },
+      }}
+    >
+      {innerContent}
+    </ClerkProvider>
+  );
+
+  return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
@@ -69,29 +89,10 @@ export default async function RootLayout({
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        suppressHydrationWarning
       >
-        <I18nProvider>
-          {children}
-        </I18nProvider>
+        {bodyContent}
       </body>
     </html>
-  );
-
-  if (isDummyKey && isAnalyticsPage) {
-    return content;
-  }
-
-  return (
-    <ClerkProvider
-      publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY || "pk_test_ZW5hYmxlZC1jYXQtNDguY2xlcmsuYWNjb3VudHMuZGV2JA"}
-      appearance={{
-        elements: {
-          formButtonPrimary: "bg-blue-600 hover:bg-blue-700",
-          card: "shadow-xl",
-        },
-      }}
-    >
-      {content}
-    </ClerkProvider>
   );
 }

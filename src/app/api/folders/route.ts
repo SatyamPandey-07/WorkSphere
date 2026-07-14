@@ -6,6 +6,7 @@ import { z } from "zod";
 const createFolderSchema = z.object({
   name: z.string().min(1, "Folder name is required").max(100),
   description: z.string().max(500).optional(),
+  isPublic: z.boolean().optional(),
 });
 
 // GET /api/folders - List all folders for the user (owned or member)
@@ -56,12 +57,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: validation.error.format() }, { status: 400 });
     }
 
-    const { name, description } = validation.data;
+    const { name, description, isPublic } = validation.data;
 
     const folder = await prisma.folder.create({
       data: {
         name,
         description,
+        isPublic: isPublic ?? false,
         ownerId: userId,
         members: {
           create: {

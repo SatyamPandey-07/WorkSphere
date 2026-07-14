@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import { venueSearchSchema, venueCreateSchema, validateRequest } from "@/lib/validations";
+import {
+  venueSearchSchema,
+  venueCreateSchema,
+  validateRequest,
+} from "@/lib/validations";
 import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
 
 // GET /api/venues - Search venues
@@ -34,22 +38,50 @@ export async function GET(req: NextRequest) {
       petsAllowedIndoors: searchParams.get("petsAllowedIndoors"),
       patioOnly: searchParams.get("patioOnly"),
       waterBowlsProvided: searchParams.get("waterBowlsProvided"),
+      dogFriendly: searchParams.get("dogFriendly"),
+      catsAllowed: searchParams.get("catsAllowed"),
       singleOriginBeans: searchParams.get("singleOriginBeans"),
       specialtyEspresso: searchParams.get("specialtyEspresso"),
       oatAlmondMilk: searchParams.get("oatAlmondMilk"),
       pourOverAvailable: searchParams.get("pourOverAvailable"),
+      musicStyle: searchParams.get("musicStyle"),
     });
 
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    const { lat, lng, radius, category, wifi, outlets, quiet, ergonomic, outletDensity, wifiSpeedBand, hasPhoneBooths, hasNoMusic, hasQuietZone, lighting, petsAllowedIndoors, patioOnly, waterBowlsProvided, singleOriginBeans, specialtyEspresso, oatAlmondMilk, pourOverAvailable} = validation.data;
+    const {
+      lat,
+      lng,
+      radius,
+      category,
+      wifi,
+      outlets,
+      quiet,
+      ergonomic,
+      outletDensity,
+      wifiSpeedBand,
+      hasPhoneBooths,
+      hasNoMusic,
+      hasQuietZone,
+      lighting,
+      petsAllowedIndoors,
+      patioOnly,
+      waterBowlsProvided,
+      dogFriendly,
+      catsAllowed,
+      singleOriginBeans,
+      specialtyEspresso,
+      oatAlmondMilk,
+      pourOverAvailable,
+      musicStyle,
+    } = validation.data;
 
     // Simple bounding box search (for PostgreSQL without PostGIS)
     // Approximate: 1 degree ≈ 111km
-    const latDelta = (radius / 1000) / 111;
-    const lngDelta = (radius / 1000) / (111 * Math.cos(lat * Math.PI / 180));
+    const latDelta = radius / 1000 / 111;
+    const lngDelta = radius / 1000 / (111 * Math.cos((lat * Math.PI) / 180));
 
     const where: any = {
       latitude: {
@@ -88,7 +120,9 @@ export async function GET(req: NextRequest) {
       } else if (outletDensity === "some_tables") {
         where.outletDensity = { in: ["every_table", "some_tables"] };
       } else if (outletDensity === "wall_seats") {
-        where.outletDensity = { in: ["every_table", "some_tables", "wall_seats"] };
+        where.outletDensity = {
+          in: ["every_table", "some_tables", "wall_seats"],
+        };
       }
     }
 
@@ -112,6 +146,13 @@ export async function GET(req: NextRequest) {
 
     if (hasQuietZone) {
       where.hasQuietZone = true;
+    }
+    if (musicStyle && musicStyle !== "all") {
+      if (musicStyle === "no_music") {
+        where.OR = [{ musicStyle: "no_music" }, { hasNoMusic: true }];
+      } else {
+        where.musicStyle = musicStyle;
+      }
     }
     if (singleOriginBeans) {
       where.singleOriginBeans = true;
@@ -140,6 +181,14 @@ export async function GET(req: NextRequest) {
       where.waterBowlsProvided = true;
     }
 
+    if (dogFriendly) {
+      where.dogFriendly = true;
+    }
+
+    if (catsAllowed) {
+      where.catsAllowed = true;
+    }
+
     if (lighting) {
       where.lighting = lighting;
     }
@@ -159,7 +208,7 @@ export async function GET(req: NextRequest) {
     console.error("GET /api/venues error:", error);
     return NextResponse.json(
       { error: "Failed to fetch venues" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -180,14 +229,40 @@ export async function POST(req: NextRequest) {
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-    const { name, latitude, longitude, category, address, wifiQuality, hasOutlets, noiseLevel, hasErgonomic, outletDensity, wifiSpeed, hasPhoneBooths, hasNoMusic, hasQuietZone, lighting, petsAllowedIndoors, patioOnly, waterBowlsProvided, singleOriginBeans, specialtyEspresso, oatAlmondMilk, pourOverAvailable } = validation.data;
+    const {
+      name,
+      latitude,
+      longitude,
+      category,
+      address,
+      wifiQuality,
+      hasOutlets,
+      noiseLevel,
+      hasErgonomic,
+      outletDensity,
+      wifiSpeed,
+      hasPhoneBooths,
+      hasNoMusic,
+      hasQuietZone,
+      lighting,
+      petsAllowedIndoors,
+      patioOnly,
+      waterBowlsProvided,
+      dogFriendly,
+      catsAllowed,
+      singleOriginBeans,
+      specialtyEspresso,
+      oatAlmondMilk,
+      pourOverAvailable,
+      musicStyle,
+    } = validation.data;
     const { placeId, rating, imageUrl } = body; // placeId, rating, imageUrl are additional fields
 
     // Validate placeId (required for upsert)
     if (!placeId) {
       return NextResponse.json(
         { error: "placeId is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -203,7 +278,9 @@ export async function POST(req: NextRequest) {
       // Flag for review if it's not a workspace or if outlets are claimed but not visible (and model is fairly confident)
       if (
         !visionResult.isWorkspace ||
-        (hasOutlets && !visionResult.visibleOutlets && visionResult.confidenceScore > 60)
+        (hasOutlets &&
+          !visionResult.visibleOutlets &&
+          visionResult.confidenceScore > 60)
       ) {
         requiresReview = true;
       }
@@ -226,10 +303,13 @@ export async function POST(req: NextRequest) {
         petsAllowedIndoors,
         patioOnly,
         waterBowlsProvided,
+        dogFriendly,
+        catsAllowed,
         singleOriginBeans,
         specialtyEspresso,
         oatAlmondMilk,
         pourOverAvailable,
+        musicStyle,
         crowdsourced: true,
         requiresReview,
         ...(imageUrl && { imageUrl }),
@@ -255,10 +335,13 @@ export async function POST(req: NextRequest) {
         petsAllowedIndoors: petsAllowedIndoors || false,
         patioOnly: patioOnly || false,
         waterBowlsProvided: waterBowlsProvided || false,
+        dogFriendly: dogFriendly || false,
+        catsAllowed: catsAllowed || false,
         singleOriginBeans: singleOriginBeans || false,
         specialtyEspresso: specialtyEspresso || false,
         oatAlmondMilk: oatAlmondMilk || false,
         pourOverAvailable: pourOverAvailable || false,
+        musicStyle,
         crowdsourced: true,
         requiresReview,
         imageUrl,
@@ -271,7 +354,7 @@ export async function POST(req: NextRequest) {
     console.error("POST /api/venues error:", error);
     return NextResponse.json(
       { error: "Failed to create venue" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -7,6 +7,7 @@ import { hasFolderAccess } from "@/lib/folders";
 const updateFolderSchema = z.object({
   name: z.string().min(1, "Folder name is required").max(100).optional(),
   description: z.string().max(500).optional(),
+  isPublic: z.boolean().optional(),
 });
 
 // GET /api/folders/[id] - Get folder details
@@ -21,7 +22,7 @@ export async function GET(
     }
 
     const { id } = await params;
-    const { folder, hasAccess } = await hasFolderAccess(id, userId);
+    const { folder, hasAccess, role } = await hasFolderAccess(id, userId);
 
     if (!folder) {
       return NextResponse.json({ error: "Folder not found" }, { status: 404 });
@@ -56,7 +57,7 @@ export async function GET(
       }
     });
 
-    return NextResponse.json({ folder: folderDetails });
+    return NextResponse.json({ folder: folderDetails, role });
   } catch (error) {
     console.error(`GET /api/folders/id error:`, error);
     return NextResponse.json(
@@ -94,13 +95,14 @@ export async function PUT(
       return NextResponse.json({ error: validation.error.format() }, { status: 400 });
     }
 
-    const { name, description } = validation.data;
+    const { name, description, isPublic } = validation.data;
 
     const updatedFolder = await prisma.folder.update({
       where: { id },
       data: {
         ...(name && { name }),
         ...(description !== undefined && { description }),
+        ...(isPublic !== undefined && { isPublic }),
       }
     });
 

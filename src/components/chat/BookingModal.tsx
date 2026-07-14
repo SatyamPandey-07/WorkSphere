@@ -103,20 +103,13 @@ export function BookingModal({
 
   const filteredHistory = getFilteredHistory();
 
-  useEffect(() => {
-    if (!isOpen) {
-      setStep(mode === "history" ? "history" : "details");
-    } else if (mode === "history") {
-      fetchHistory();
-    }
-  }, [isOpen, mode]);
-
   const fetchHistory = async () => {
     setLoadingHistory(true);
     try {
       const res = await fetch("/api/bookings/history");
       const data = await res.json();
       setHistory(data.bookings || []);
+      setSelectedIds(new Set());
       setStep("history");
     } catch (err) {
       console.error("Failed to fetch history:", err);
@@ -124,6 +117,14 @@ export function BookingModal({
       setLoadingHistory(false);
     }
   };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setStep(mode === "history" ? "history" : "details");
+    } else if (mode === "history") {
+      fetchHistory();
+    }
+  }, [isOpen, mode]);
 
   const toggleSelected = (id: string) => {
     setSelectedIds((prev) => {

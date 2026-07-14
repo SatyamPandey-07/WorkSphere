@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
 
 @layer utilities {
   .glass-card {
@@ -26,13 +30,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
-
 body {
   background: var(--background);
   color: var(--foreground);
@@ -136,18 +137,16 @@ html {
   background: var(--color-zinc-400);
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    scrollbar-color: var(--color-zinc-700) transparent;
-  }
+html.dark {
+  scrollbar-color: var(--color-zinc-700) transparent;
+}
 
-  ::-webkit-scrollbar-thumb {
-    background: var(--color-zinc-700);
-  }
+html.dark ::-webkit-scrollbar-thumb {
+  background: var(--color-zinc-700);
+}
 
-  ::-webkit-scrollbar-thumb:hover {
-    background: var(--color-zinc-600);
-  }
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-zinc-600);
 }
 
 /* Focus styles */

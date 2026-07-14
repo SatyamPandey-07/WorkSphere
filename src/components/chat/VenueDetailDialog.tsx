@@ -21,6 +21,10 @@ import {
   VolumeX,
   Calendar,
   Printer,
+  Car,
+  CircleDollarSign,
+  Bike,
+  Shield,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -114,6 +118,41 @@ export function VenueDetailDialog({
       hidden: false,
       userVote: null,
     },
+    freeStreetParking: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
+    paidGarage: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
+    bicycleRack: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
+    secureMotorcycleParking: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
+    petsAllowedIndoors: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
   });
 
   // Tab and dynamic content states
@@ -127,7 +166,17 @@ export function VenueDetailDialog({
   const [wifiPredictions, setWifiPredictions] = useState<any[]>([]);
 
   const _submitAmenityVote = async (
-    amenityKey: "wifi" | "outlets" | "silentRoom" | "studyTable" | "scanner",
+    amenityKey:
+      | "wifi"
+      | "outlets"
+      | "silentRoom"
+      | "studyTable"
+      | "scanner"
+      | "freeStreetParking"
+      | "paidGarage"
+      | "bicycleRack"
+      | "secureMotorcycleParking"
+      | "petsAllowedIndoors",
     isUpvote: boolean,
   ) => {
     if (!venue) return;
@@ -237,6 +286,41 @@ export function VenueDetailDialog({
               userVote: null,
             },
             scanner: {
+              confidenceScore: 100,
+              upvotes: 0,
+              downvotes: 0,
+              hidden: false,
+              userVote: null,
+            },
+            freeStreetParking: {
+              confidenceScore: 100,
+              upvotes: 0,
+              downvotes: 0,
+              hidden: false,
+              userVote: null,
+            },
+            paidGarage: {
+              confidenceScore: 100,
+              upvotes: 0,
+              downvotes: 0,
+              hidden: false,
+              userVote: null,
+            },
+            bicycleRack: {
+              confidenceScore: 100,
+              upvotes: 0,
+              downvotes: 0,
+              hidden: false,
+              userVote: null,
+            },
+            secureMotorcycleParking: {
+              confidenceScore: 100,
+              upvotes: 0,
+              downvotes: 0,
+              hidden: false,
+              userVote: null,
+            },
+            petsAllowedIndoors: {
               confidenceScore: 100,
               upvotes: 0,
               downvotes: 0,
@@ -683,7 +767,11 @@ export function VenueDetailDialog({
                           tickLine={false}
                           tick={{ fontSize: 10, fill: "#888" }}
                         />
-                        <YAxis hide domain={[0, "dataMax + 10"]} />
+                        <YAxis
+                          tickFormatter={(value) => `${value} Mbps`}
+                          tick={{ fontSize: 10, fill: "#888" }}
+                          width={40}
+                        />
                         <Tooltip
                           cursor={{ fill: "rgba(0,0,0,0.05)" }}
                           content={({ active, payload }) => {
@@ -695,7 +783,13 @@ export function VenueDetailDialog({
                                     {data.time}
                                   </p>
                                   <p className="text-sm font-bold text-blue-600">
-                                    {data.speed} Mbps
+                                    {data.download} Mbps (Download)
+                                  </p>
+                                  <p className="text-sm font-bold text-green-600">
+                                    {data.upload} Mbps (Upload)
+                                  </p>
+                                  <p className="text-sm font-bold text-orange-600">
+                                    {data.latency} ms (Latency)
                                   </p>
                                   <p className="text-[10px] uppercase tracking-wider text-zinc-400 mt-1">
                                     Crowd: {data.crowd}
@@ -707,12 +801,159 @@ export function VenueDetailDialog({
                           }}
                         />
                         <Bar
-                          dataKey="speed"
+                          dataKey="download"
                           fill="#3b82f6"
                           radius={[4, 4, 0, 0]}
+                          name="Download"
+                        />
+                        <Bar
+                          dataKey="upload"
+                          fill="#22c55e"
+                          radius={[4, 4, 0, 0]}
+                          name="Upload"
+                        />
+                        <Bar
+                          dataKey="latency"
+                          fill="#f97316"
+                          radius={[4, 4, 0, 0]}
+                          name="Latency"
                         />
                       </BarChart>
                     </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {/* Free Street Parking Tag */}
+              {!voteMetrics.freeStreetParking.hidden && (
+                <div
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                    voteMetrics.freeStreetParking.confidenceScore < 60
+                      ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                  }`}
+                >
+                  <Car className="w-3.5 h-3.5 text-blue-400" />
+                  <span className="font-medium font-mono text-[11px]">
+                    Street Parking (
+                    {voteMetrics.freeStreetParking.confidenceScore}%)
+                  </span>
+
+                  <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                    <button
+                      onClick={() =>
+                        _submitAmenityVote("freeStreetParking", true)
+                      }
+                      className={`transition-colors ${voteMetrics.freeStreetParking.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    >
+                      👍
+                    </button>
+                    <button
+                      onClick={() =>
+                        _submitAmenityVote("freeStreetParking", false)
+                      }
+                      className={`transition-colors ${voteMetrics.freeStreetParking.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    >
+                      👎
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Paid Garage Tag */}
+              {!voteMetrics.paidGarage.hidden && (
+                <div
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                    voteMetrics.paidGarage.confidenceScore < 60
+                      ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                  }`}
+                >
+                  <CircleDollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                  <span className="font-medium font-mono text-[11px]">
+                    Paid Garage ({voteMetrics.paidGarage.confidenceScore}%)
+                  </span>
+
+                  <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                    <button
+                      onClick={() => _submitAmenityVote("paidGarage", true)}
+                      className={`transition-colors ${voteMetrics.paidGarage.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    >
+                      👍
+                    </button>
+                    <button
+                      onClick={() => _submitAmenityVote("paidGarage", false)}
+                      className={`transition-colors ${voteMetrics.paidGarage.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    >
+                      👎
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Bicycle Rack Tag */}
+              {!voteMetrics.bicycleRack.hidden && (
+                <div
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                    voteMetrics.bicycleRack.confidenceScore < 60
+                      ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                  }`}
+                >
+                  <Bike className="w-3.5 h-3.5 text-orange-500" />
+                  <span className="font-medium font-mono text-[11px]">
+                    Bicycle Rack ({voteMetrics.bicycleRack.confidenceScore}%)
+                  </span>
+
+                  <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                    <button
+                      onClick={() => _submitAmenityVote("bicycleRack", true)}
+                      className={`transition-colors ${voteMetrics.bicycleRack.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    >
+                      👍
+                    </button>
+                    <button
+                      onClick={() => _submitAmenityVote("bicycleRack", false)}
+                      className={`transition-colors ${voteMetrics.bicycleRack.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    >
+                      👎
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Secure Motorcycle Parking Tag */}
+              {!voteMetrics.secureMotorcycleParking.hidden && (
+                <div
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
+                    voteMetrics.secureMotorcycleParking.confidenceScore < 60
+                      ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
+                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                  }`}
+                >
+                  <Shield className="w-3.5 h-3.5 text-zinc-500" />
+                  <span className="font-medium font-mono text-[11px]">
+                    Moto Parking (
+                    {voteMetrics.secureMotorcycleParking.confidenceScore}%)
+                  </span>
+
+                  <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                    <button
+                      onClick={() =>
+                        _submitAmenityVote("secureMotorcycleParking", true)
+                      }
+                      className={`transition-colors ${voteMetrics.secureMotorcycleParking.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    >
+                      👍
+                    </button>
+                    <button
+                      onClick={() =>
+                        _submitAmenityVote("secureMotorcycleParking", false)
+                      }
+                      className={`transition-colors ${voteMetrics.secureMotorcycleParking.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    >
+                      👎
+                    </button>
                   </div>
                 </div>
               )}
@@ -736,6 +977,39 @@ export function VenueDetailDialog({
                     {venue.hasErgonomic &&
                       " The workspace features verified ergonomic chairs and height-adjustable/standing desks."}
                   </p>
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {venue.musicStyle === "lofi" && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                        <span>🎵 Lo-Fi/Chill Beats</span>
+                      </div>
+                    )}
+                    {venue.musicStyle === "classical_jazz" && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                        <span>🎷 Classical/Jazz Background</span>
+                      </div>
+                    )}
+                    {(venue.musicStyle === "no_music" || venue.hasNoMusic) && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                        <span>🔇 No Music Played</span>
+                      </div>
+                    )}
+                    {venue.hasPhoneBooths && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                        <span>📞 Soundproof Booths Available</span>
+                      </div>
+                    )}
+                    {venue.outletLocations &&
+                      venue.outletLocations.length > 0 && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                          <span>
+                            🔌 Outlets:{" "}
+                            {venue.outletLocations
+                              .map((l) => l.replace("_", " "))
+                              .join(", ")}
+                          </span>
+                        </div>
+                      )}
+                  </div>
                 </div>
               </div>
 
@@ -981,6 +1255,18 @@ export function VenueDetailDialog({
                           <span>
                             {t("venue.noise")}: {review.noiseLevel}
                           </span>
+                          {review.outletLocations &&
+                            review.outletLocations.length > 0 && (
+                              <>
+                                <span>•</span>
+                                <span>
+                                  Locations:{" "}
+                                  {review.outletLocations
+                                    .map((l: string) => l.replace("_", " "))
+                                    .join(", ")}
+                                </span>
+                              </>
+                            )}
                         </div>
                       </div>
                       {review.wifiSpeed && (

@@ -48,7 +48,6 @@ html {
 
 /* Gradient animation */
 @keyframes gradient {
-
   0%,
   100% {
     background-position: 0% 50%;
@@ -82,7 +81,6 @@ html {
 
 /* Pulse glow effect */
 @keyframes pulseGlow {
-
   0%,
   100% {
     box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
@@ -109,7 +107,12 @@ html {
 }
 
 .animate-shimmer {
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 100%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -173,27 +176,116 @@ html {
    ------------------------------------------------------------------ */
 @supports not (background: color-mix(in oklab, red, red)) {
   /* Neon blur blobs - background/error/marketing pages */
-  .bg-blue-700\/10   { background-color: rgba(29, 78, 216, 0.1); }
-  .bg-blue-700\/20   { background-color: rgba(29, 78, 216, 0.2); }
-  .bg-purple-700\/10 { background-color: rgba(126, 34, 206, 0.1); }
-  .bg-purple-700\/15 { background-color: rgba(126, 34, 206, 0.15); }
-  .bg-red-700\/10    { background-color: rgba(185, 28, 28, 0.1); }
-  .bg-orange-700\/10 { background-color: rgba(194, 65, 12, 0.1); }
-  .bg-cyan-700\/10   { background-color: rgba(14, 116, 144, 0.1); }
-  .bg-violet-700\/15 { background-color: rgba(109, 40, 217, 0.15); }
-  .bg-violet-700\/20 { background-color: rgba(109, 40, 217, 0.2); }
-  .bg-amber-500\/10  { background-color: rgba(245, 158, 11, 0.1); }
-  .bg-amber-500\/20  { background-color: rgba(245, 158, 11, 0.2); }
-  .bg-red-500\/10    { background-color: rgba(239, 68, 68, 0.1); }
-  .bg-red-500\/20    { background-color: rgba(239, 68, 68, 0.2); }
+  .bg-blue-700\/10 {
+    background-color: rgba(29, 78, 216, 0.1);
+  }
+  .bg-blue-700\/20 {
+    background-color: rgba(29, 78, 216, 0.2);
+  }
+  .bg-purple-700\/10 {
+    background-color: rgba(126, 34, 206, 0.1);
+  }
+  .bg-purple-700\/15 {
+    background-color: rgba(126, 34, 206, 0.15);
+  }
+  .bg-red-700\/10 {
+    background-color: rgba(185, 28, 28, 0.1);
+  }
+  .bg-orange-700\/10 {
+    background-color: rgba(194, 65, 12, 0.1);
+  }
+  .bg-cyan-700\/10 {
+    background-color: rgba(14, 116, 144, 0.1);
+  }
+  .bg-violet-700\/15 {
+    background-color: rgba(109, 40, 217, 0.15);
+  }
+  .bg-violet-700\/20 {
+    background-color: rgba(109, 40, 217, 0.2);
+  }
+  .bg-amber-500\/10 {
+    background-color: rgba(245, 158, 11, 0.1);
+  }
+  .bg-amber-500\/20 {
+    background-color: rgba(245, 158, 11, 0.2);
+  }
+  .bg-red-500\/10 {
+    background-color: rgba(239, 68, 68, 0.1);
+  }
+  .bg-red-500\/20 {
+    background-color: rgba(239, 68, 68, 0.2);
+  }
 
   /* Glowing card borders */
-  .border-amber-500\/30  { border-color: rgba(245, 158, 11, 0.3); }
-  .border-red-500\/30    { border-color: rgba(239, 68, 68, 0.3); }
-  .border-blue-500\/30   { border-color: rgba(59, 130, 246, 0.3); }
-  .border-purple-500\/30 { border-color: rgba(168, 85, 247, 0.3); }
-  .border-violet-400\/20 { border-color: rgba(167, 139, 250, 0.2); }
-  .border-emerald-400\/20 { border-color: rgba(52, 211, 153, 0.2); }
+  .border-amber-500\/30 {
+    border-color: rgba(245, 158, 11, 0.3);
+  }
+  .border-red-500\/30 {
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+  .border-blue-500\/30 {
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+  .border-purple-500\/30 {
+    border-color: rgba(168, 85, 247, 0.3);
+  }
+  .border-violet-400\/20 {
+    border-color: rgba(167, 139, 250, 0.2);
+  }
+  .border-emerald-400\/20 {
+    border-color: rgba(52, 211, 153, 0.2);
+  }
+  /* Legacy Firefox fallback for additional Tailwind opacity utilities */
+
+  .bg-zinc-950\/95 {
+    background-color: rgba(9, 9, 11, 0.95);
+  }
+
+  .bg-zinc-900\/50 {
+    background-color: rgba(24, 24, 27, 0.5);
+  }
+
+  .bg-zinc-800\/20 {
+    background-color: rgba(39, 39, 42, 0.2);
+  }
+
+  .bg-zinc-800\/10 {
+    background-color: rgba(39, 39, 42, 0.1);
+  }
+
+  .bg-zinc-50\/50 {
+    background-color: rgba(250, 250, 250, 0.5);
+  }
+
+  .bg-blue-900\/10 {
+    background-color: rgba(30, 58, 138, 0.1);
+  }
+
+  .bg-blue-900\/30 {
+    background-color: rgba(30, 58, 138, 0.3);
+  }
+
+  .bg-black\/90 {
+    background-color: rgba(0, 0, 0, 0.9);
+  }
+
+  .bg-black\/60 {
+    background-color: rgba(0, 0, 0, 0.6);
+  }
+
+  .bg-black\/40 {
+    background-color: rgba(0, 0, 0, 0.4);
+  }
+
+  .border-amber-500\/20 {
+    border-color: rgba(245, 158, 11, 0.2);
+  }
+
+  .border-blue-500\/20 {
+    border-color: rgba(59, 130, 246, 0.2);
+  }
+
+  .border-blue-900\/30 {
+    border-color: rgba(30, 58, 138, 0.3);
+  }
 }
-
-

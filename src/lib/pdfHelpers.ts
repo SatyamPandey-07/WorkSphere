@@ -6,17 +6,23 @@ export const safeText = (text: string) =>
 export function drawSafeText(
   page: PDFPage,
   text: string,
-  options: { x: number; y: number; size: number; font: PDFFont; color?: any }
+  options: { x: number; y: number; size: number; font: PDFFont; color?: any },
 ) {
   try {
     page.drawText(text, options);
   } catch (err) {
-    console.warn("[PDF drawText warning]: Failed to draw text, retrying with strict sanitization", err);
+    console.warn(
+      "[PDF drawText warning]: Failed to draw text, retrying with strict sanitization",
+      err,
+    );
     try {
       const strictText = text.replace(/[^\x20-\x7E]/g, "?");
       page.drawText(strictText, options);
     } catch (fallbackErr) {
-      console.error("[PDF drawText critical error]: Failed to draw text even with strict sanitization", fallbackErr);
+      console.error(
+        "[PDF drawText critical error]: Failed to draw text even with strict sanitization",
+        fallbackErr,
+      );
     }
   }
 }
@@ -27,6 +33,7 @@ export interface ExportableBooking {
   date: string;
   time: string;
   duration?: number | null;
+  projectBillingCode?: string | null;
   venue: {
     name: string;
     category: string;
@@ -35,7 +42,18 @@ export interface ExportableBooking {
 }
 
 export function bookingsToCSV(bookings: ExportableBooking[]): string {
-  const header = ["Confirmation ID", "Venue", "Category", "Address", "Date", "Time", "Price ($)", "Tax ($)", "Total ($)"];
+  const header = [
+    "Confirmation ID",
+    "Venue",
+    "Category",
+    "Address",
+    "Date",
+    "Time",
+    "Billing Code",
+    "Price ($)",
+    "Tax ($)",
+    "Total ($)",
+  ];
 
   const escapeCsv = (value: string) => {
     const v = value ?? "";
@@ -58,12 +76,13 @@ export function bookingsToCSV(bookings: ExportableBooking[]): string {
       b.venue.address || "",
       b.date,
       b.time,
+      b.projectBillingCode || "N/A",
       price.toFixed(2),
       tax.toFixed(2),
       total.toFixed(2),
     ]
       .map((cell) => escapeCsv(String(cell)))
-      .join(",")
+      .join(",");
   });
 
   return [header.join(","), ...rows].join("\n");

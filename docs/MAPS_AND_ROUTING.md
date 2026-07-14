@@ -248,7 +248,7 @@ Navigation routes are implemented in:
 src/lib/routing.ts
 ```
 
-The application uses the public **OSRM** server.
+The application defaults to the public **OSRM** server. For high-volume testing or offline development, you can set up a local OSRM instance. Refer to the [OSRM Local Routing Guide](file:///c:/Users/ADMIN/OneDrive/Desktop/ECSoC/WorkSphere/docs/LOCAL_ROUTING.md) for setup details.
 
 Supported routing profiles:
 

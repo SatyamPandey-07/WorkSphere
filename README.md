@@ -20,15 +20,16 @@
 ---
 
 ### 👑 Project Leadership & Authorship
-* **Founder & CTO**: [Satyam Pandey](https://github.com/SatyamPandey-07)
+
+- **Founder & CTO**: [Satyam Pandey](https://github.com/SatyamPandey-07)
 
 ### 🚀 Contributors (Live API Tracker)
+
 Automated contributor tracking synced directly via the GitHub API:
 
 [![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 
 ---
-
 
 ## 📋 Table of Contents
 
@@ -47,8 +48,6 @@ Automated contributor tracking synced directly via the GitHub API:
 - [License](#-license)
 
 ---
-
-
 
 ## ✨ Features
 
@@ -162,23 +161,23 @@ Automated contributor tracking synced directly via the GitHub API:
 
 ## 🛠️ Tech Stack
 
-| Category | Technology |
-| -------- | ---------- |
-| **Framework** | Next.js 15.5 (App Router) |
-| **Language** | TypeScript 5.0 |
-| **Styling** | Tailwind CSS 4.0, Custom UI Components |
-| **AI/LLM** | Groq SDK (Llama 3.3 70B) |
-| **Database** | Neon PostgreSQL + Prisma 7.2 ORM (with @prisma/adapter-pg) |
-| **Authentication** | Clerk |
-| **Maps** | React Leaflet + OpenStreetMap |
-| **Venue Data** | OpenStreetMap (Overpass API) - FREE |
-| **Venue Photos** | Pexels API - FREE (20k req/mo) |
-| **Real-time** | Server-Sent Events (SSE) |
-| **Routing** | OSRM (Open Source Routing Machine) - FREE |
-| **PDF Generation** | pdf-lib 2.x (serverless-compatible) |
-| **Testing** | Jest 29, React Testing Library, Playwright |
-| **PWA** | Service Workers + IndexedDB |
-| **Deployment** | Vercel |
+| Category           | Technology                                                 |
+| ------------------ | ---------------------------------------------------------- |
+| **Framework**      | Next.js 15.5 (App Router)                                  |
+| **Language**       | TypeScript 5.0                                             |
+| **Styling**        | Tailwind CSS 4.0, Custom UI Components                     |
+| **AI/LLM**         | Groq SDK (Llama 3.3 70B)                                   |
+| **Database**       | Neon PostgreSQL + Prisma 7.2 ORM (with @prisma/adapter-pg) |
+| **Authentication** | Clerk                                                      |
+| **Maps**           | React Leaflet + OpenStreetMap                              |
+| **Venue Data**     | OpenStreetMap (Overpass API) - FREE                        |
+| **Venue Photos**   | Pexels API - FREE (20k req/mo)                             |
+| **Real-time**      | Server-Sent Events (SSE)                                   |
+| **Routing**        | OSRM (Open Source Routing Machine) - FREE                  |
+| **PDF Generation** | pdf-lib 2.x (serverless-compatible)                        |
+| **Testing**        | Jest 29, React Testing Library, Playwright                 |
+| **PWA**            | Service Workers + IndexedDB                                |
+| **Deployment**     | Vercel                                                     |
 
 ---
 
@@ -248,30 +247,34 @@ Automated contributor tracking synced directly via the GitHub API:
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - npm or yarn
 - Git
 
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/SatyamPandey-07/WorkSphere.git
    cd WorkSphere
    ```
 
 2. **Install dependencies**
+
    ```bash
    npm install
    ```
 
 3. **Set up environment variables**
+
    ```bash
    cp .env.example .env.local
    # Edit .env.local with your credentials
    ```
 
 4. **Set up the database**
+
    ```bash
    # Prisma 7 uses driver adapters - ensure DATABASE_URL is set
    npx prisma generate
@@ -279,6 +282,7 @@ Automated contributor tracking synced directly via the GitHub API:
    ```
 
 5. **Run the development server**
+
    ```bash
    npm run dev
    ```
@@ -293,25 +297,29 @@ Automated contributor tracking synced directly via the GitHub API:
 ## 🧪 Testing
 
 ### Run All Tests
+
 ```bash
 npm test
 ```
 
 ### Watch Mode
+
 ```bash
 npm run test:watch
 ```
 
 ### End-to-End Tests
+
 ```bash
 npm run test:e2e
 npm run test:e2e:ui  # With UI
 ```
 
 ### Test Coverage
+
 - **57 Unit Tests** covering:
   - API Route Handlers
-  - React Components  
+  - React Components
   - Utility Functions
   - Rate Limiting
   - Analytics
@@ -341,50 +349,48 @@ PEXELS_API_KEY=your_pexels_key_here
 
 ### Getting API Keys
 
-| Service | URL | Free Tier | Required |
-|---------|-----|-----------|----------|
-| **Neon** | [neon.tech](https://neon.tech) | 0.5GB storage | ✅ Yes |
-| **Clerk** | [clerk.com](https://clerk.com) | 10,000 MAU | ✅ Yes |
-| **Groq** | [console.groq.com](https://console.groq.com) | Free API access | ✅ Yes |
-| **Pexels** | [pexels.com/api](https://www.pexels.com/api/) | 20,000 req/month | ❌ No (has fallback) |
-| **OSM/OSRM** | N/A | Unlimited | ❌ No (public API) |
+| Service      | URL                                           | Free Tier        | Required             |
+| ------------ | --------------------------------------------- | ---------------- | -------------------- |
+| **Neon**     | [neon.tech](https://neon.tech)                | 0.5GB storage    | ✅ Yes               |
+| **Clerk**    | [clerk.com](https://clerk.com)                | 10,000 MAU       | ✅ Yes               |
+| **Groq**     | [console.groq.com](https://console.groq.com)  | Free API access  | ✅ Yes               |
+| **Pexels**   | [pexels.com/api](https://www.pexels.com/api/) | 20,000 req/month | ❌ No (has fallback) |
+| **OSM/OSRM** | N/A                                           | Unlimited        | ❌ No (public API)   |
 
 ---
 
-
-
 ## � Pages
 
-| Route | Page | Description |
-|-------|------|-------------|
-| `/` | Landing Page | Hero section with product mockup, features showcase, CTAs |
-| `/ai` | AI Workspace Finder | Main app with 70/30 map/chat split, dark theme |
-| `/dashboard` | User Dashboard | Personal dashboard for authenticated users |
-| `/offline` | Offline Page | PWA fallback when network unavailable |
-| `/sign-in` | Sign In | Clerk authentication sign-in page |
-| `/sign-up` | Sign Up | Clerk authentication sign-up page |
+| Route        | Page                | Description                                               |
+| ------------ | ------------------- | --------------------------------------------------------- |
+| `/`          | Landing Page        | Hero section with product mockup, features showcase, CTAs |
+| `/ai`        | AI Workspace Finder | Main app with 70/30 map/chat split, dark theme            |
+| `/dashboard` | User Dashboard      | Personal dashboard for authenticated users                |
+| `/offline`   | Offline Page        | PWA fallback when network unavailable                     |
+| `/sign-in`   | Sign In             | Clerk authentication sign-in page                         |
+| `/sign-up`   | Sign Up             | Clerk authentication sign-up page                         |
 
 ---
 
 ## �🔌 API Routes
 
-| Method | Route | Description |
-|--------|-------|-------------|
-| `POST` | `/api/chat` | Main chat endpoint with agent pipeline |
-| `GET` | `/api/venues` | Search venues |
-| `POST` | `/api/venues` | Add crowdsourced venue |
-| `GET` | `/api/venues/enrich` | Enrich venue with OSM + Pexels data |
-| `POST` | `/api/venues/[id]/rate` | Rate a venue |
-| `POST` | `/api/venues/updates` | Bulk update venue photos |
-| `GET` | `/api/favorites` | Get user's favorites |
-| `POST` | `/api/favorites` | Add favorite |
-| `DELETE` | `/api/favorites` | Remove favorite |
-| `GET` | `/api/conversations` | List conversations |
-| `POST` | `/api/conversations` | Create conversation |
-| `GET` | `/api/conversations/[id]` | Get conversation |
-| `DELETE` | `/api/conversations/[id]` | Delete conversation |
-| `GET` | `/api/location` | IP-based location fallback |
-| `POST` | `/api/webhook` | Clerk webhook for user sync |
+| Method   | Route                     | Description                            |
+| -------- | ------------------------- | -------------------------------------- |
+| `POST`   | `/api/chat`               | Main chat endpoint with agent pipeline |
+| `GET`    | `/api/venues`             | Search venues                          |
+| `POST`   | `/api/venues`             | Add crowdsourced venue                 |
+| `GET`    | `/api/venues/enrich`      | Enrich venue with OSM + Pexels data    |
+| `POST`   | `/api/venues/[id]/rate`   | Rate a venue                           |
+| `POST`   | `/api/venues/updates`     | Bulk update venue photos               |
+| `GET`    | `/api/favorites`          | Get user's favorites                   |
+| `POST`   | `/api/favorites`          | Add favorite                           |
+| `DELETE` | `/api/favorites`          | Remove favorite                        |
+| `GET`    | `/api/conversations`      | List conversations                     |
+| `POST`   | `/api/conversations`      | Create conversation                    |
+| `GET`    | `/api/conversations/[id]` | Get conversation                       |
+| `DELETE` | `/api/conversations/[id]` | Delete conversation                    |
+| `GET`    | `/api/location`           | IP-based location fallback             |
+| `POST`   | `/api/webhook`            | Clerk webhook for user sync            |
 
 ---
 
@@ -527,17 +533,21 @@ worksphere/
 ### Feature Testing Checklist
 
 #### 🔍 AI Search
+
 Try these natural language queries:
+
 - "Find a quiet cafe with good WiFi near me"
 - "Show me coworking spaces within 2km"
 - "I need a library to study"
 
 #### ⭐ Favorites & Ratings (Requires Sign-in)
+
 1. Sign in with Clerk
 2. Click heart icon on venue cards to favorite
 3. Click "Rate" to submit ratings
 
 #### 📱 PWA Installation
+
 - **Desktop**: Click install icon in browser
 - **Mobile**: "Add to Home Screen"
 
@@ -556,25 +566,27 @@ Try these natural language queries:
 
 ## 🔮 Future Improvements
 
-| Priority | Feature | Description |
-|----------|---------|-------------|
-| 🔴 High | **Analytics Dashboard** | Admin page to view search patterns, popular venues, user metrics |
-| � Medium | **Mobile App** | React Native version sharing the same API backend |
-| 🟡 Medium | **AI Memory** | Cross-conversation learning for personalized recommendations |
-| 🟡 Medium | **Social Features** | Share favorite workspaces, follow other remote workers |
-| 🟢 Low | **Booking Integration** | Reserve desks at coworking spaces via API |
-| 🟢 Low | **Noise Level API** | Real-time noise monitoring hardware integration |
+| Priority  | Feature                 | Description                                                      |
+| --------- | ----------------------- | ---------------------------------------------------------------- |
+| 🔴 High   | **Analytics Dashboard** | Admin page to view search patterns, popular venues, user metrics |
+| � Medium  | **Mobile App**          | React Native version sharing the same API backend                |
+| 🟡 Medium | **AI Memory**           | Cross-conversation learning for personalized recommendations     |
+| 🟡 Medium | **Social Features**     | Share favorite workspaces, follow other remote workers           |
+| 🟢 Low    | **Booking Integration** | Reserve desks at coworking spaces via API                        |
+| 🟢 Low    | **Noise Level API**     | Real-time noise monitoring hardware integration                  |
 
 ---
 
 ## 🤝 Contributing
 
 Contributions are welcome! Please refer to our comprehensive [Contributing Guide](CONTRIBUTING.md) for details on:
+
 - Coding standards and styling.
 - Testing guidelines (Jest unit tests and Playwright E2E integration).
 - Required pre-commit quality checks to ensure Vercel build compatibility.
 
 To get started quickly:
+
 1. Fork the repository and create your feature branch (`git checkout -b feature/amazing-feature`).
 2. Implement your changes.
 3. Make sure all pre-commit checks pass (`npm run lint`, `npx tsc --noEmit`, and `npm test`).
@@ -592,6 +604,7 @@ This project is licensed under the MIT License.
 ## 👨‍💻 Author
 
 **Satyam Pandey**
+
 - GitHub: [@SatyamPandey-07](https://github.com/SatyamPandey-07)
 
 ---

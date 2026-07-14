@@ -14,35 +14,67 @@ interface BeforeInstallPromptEvent extends Event {
 export function useServiceWorker() {
   const [isInstalled, setIsInstalled] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
-  const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null);
+  const [registration, setRegistration] =
+    useState<ServiceWorkerRegistration | null>(null);
 
   useEffect(() => {
-    setIsInstalled(window.matchMedia('(display-mode: standalone)').matches);
+    setIsInstalled(window.matchMedia("(display-mode: standalone)").matches);
     setIsOnline(navigator.onLine);
 
     // Register service worker
-    if ('serviceWorker' in navigator) {
+    if ("serviceWorker" in navigator) {
       navigator.serviceWorker
-        .register('/sw.js')
+        .register("/sw.js")
         .then((reg) => {
-          console.log('[PWA] Service worker registered');
+          console.log("[PWA] Service worker registered");
           setRegistration(reg);
+
+          // Check for updates on every page load
+          reg.update();
+
+          // Handle update found
+          reg.onupdatefound = () => {
+            const installingWorker = reg.installing;
+            if (installingWorker) {
+              installingWorker.onstatechange = () => {
+                if (installingWorker.state === "installed") {
+                  if (navigator.serviceWorker.controller) {
+                    // New content is available; please refresh.
+                    console.log("[PWA] New content available, please refresh.");
+                    // Optional: Show a toast or notification to the user
+                  } else {
+                    // Content is cached for offline use.
+                    console.log("[PWA] Content is cached for offline use.");
+                  }
+                }
+              };
+            }
+          };
         })
         .catch((err) => {
-          console.error('[PWA] Service worker registration failed:', err);
+          console.error("[PWA] Service worker registration failed:", err);
         });
+
+      // Handle controller change (e.g. after skipWaiting)
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
     }
 
     // Online/offline detection
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 
@@ -53,7 +85,8 @@ export function useServiceWorker() {
  * Hook for PWA install prompt
  */
 export function useInstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [deferredPrompt, setDeferredPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
   const [canInstall, setCanInstall] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
 
@@ -61,20 +94,29 @@ export function useInstallPrompt() {
     // Detect iOS Safari environment
     const detectIOS = () => {
       const userAgent = window.navigator.userAgent.toLowerCase();
-      const isIPad = userAgent.includes('ipad') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      const isIPhone = userAgent.includes('iphone') || userAgent.includes('ipod');
+      const isIPad =
+        userAgent.includes("ipad") ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const isIPhone =
+        userAgent.includes("iphone") || userAgent.includes("ipod");
       const isIOSDevice = isIPad || isIPhone;
-      
+
       // Safari detection (other iOS browsers have "crios", "fxios" etc.)
-      const isSafari = userAgent.includes('safari') && !userAgent.includes('crios') && !userAgent.includes('fxios') && !userAgent.includes('opios');
-      
+      const isSafari =
+        userAgent.includes("safari") &&
+        !userAgent.includes("crios") &&
+        !userAgent.includes("fxios") &&
+        !userAgent.includes("opios");
+
       // Check if already in standalone mode
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
-      
+      const isStandalone =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        (window.navigator as any).standalone;
+
       return isIOSDevice && isSafari && !isStandalone;
     };
 
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       const ios = detectIOS();
       setIsIOS(ios);
       if (ios) {
@@ -88,27 +130,27 @@ export function useInstallPrompt() {
       setCanInstall(true);
     };
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
     };
   }, []);
 
   const install = async () => {
     if (isIOS) {
-      return 'ios';
+      return "ios";
     }
 
     if (!deferredPrompt) return false;
 
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    
+
     setDeferredPrompt(null);
     setCanInstall(false);
-    
-    return outcome === 'accepted';
+
+    return outcome === "accepted";
   };
 
   return { canInstall, isIOS, install };
@@ -155,7 +197,7 @@ export function InstallAppButton() {
 
   const handleInstallClick = async () => {
     const res = await install();
-    if (res === 'ios') {
+    if (res === "ios") {
       setShowIOSOverlay(true);
     }
   };
@@ -182,7 +224,9 @@ export function InstallAppButton() {
         <span>Install App</span>
       </button>
 
-      {showIOSOverlay && <IOSInstallOverlay onClose={() => setShowIOSOverlay(false)} />}
+      {showIOSOverlay && (
+        <IOSInstallOverlay onClose={() => setShowIOSOverlay(false)} />
+      )}
     </>
   );
 }
@@ -192,8 +236,11 @@ export function InstallAppButton() {
  */
 export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[11000] flex items-end sm:items-center justify-center p-4" onClick={onClose}>
-      <div 
+    <div
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[11000] flex items-end sm:items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
         className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 shadow-2xl max-w-sm w-full animate-in slide-in-from-bottom duration-200"
         onClick={(e) => e.stopPropagation()}
       >
@@ -202,15 +249,21 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
             <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500 animate-pulse">
               <Download className="w-5 h-5" />
             </div>
-            <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-white">Install WorkSphere</h3>
+            <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-white">
+              Install WorkSphere
+            </h3>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300">
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed mb-6 font-medium">
-          Add WorkSphere to your home screen for quick, fullscreen app access and offline-enabled workspace discovery.
+          Add WorkSphere to your home screen for quick, fullscreen app access
+          and offline-enabled workspace discovery.
         </p>
 
         <div className="space-y-4">
@@ -223,9 +276,15 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
                 Tap the Share button
               </p>
               <p className="text-[10px] text-zinc-505 mt-0.5 flex items-center gap-1.5">
-                Look for 
+                Look for
                 <span className="inline-flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
-                  <svg className="w-3.5 h-3.5 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <svg
+                    className="w-3.5 h-3.5 text-blue-500"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                  >
                     <path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8" />
                     <polyline points="16 6 12 2 8 6" />
                     <line x1="12" y1="2" x2="12" y2="15" />
@@ -247,7 +306,13 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
               <p className="text-[10px] text-zinc-505 mt-0.5 flex items-center gap-1.5">
                 Scroll down and select
                 <span className="inline-flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
-                  <svg className="w-3.5 h-3.5 text-zinc-600 dark:text-zinc-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <svg
+                    className="w-3.5 h-3.5 text-zinc-600 dark:text-zinc-400"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                  >
                     <rect x="3" y="3" width="18" height="18" rx="4" />
                     <line x1="12" y1="8" x2="12" y2="16" />
                     <line x1="8" y1="12" x2="16" y2="12" />
@@ -259,8 +324,8 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <button 
-          onClick={onClose} 
+        <button
+          onClick={onClose}
           className="w-full mt-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/25"
         >
           Got it
@@ -280,7 +345,7 @@ export function PWABanner() {
   const [isDismissed, setIsDismissed] = useState(true); // Default to true until checked in client side
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       const dismissed = localStorage.getItem("pwa-banner-dismissed") === "true";
       setIsDismissed(dismissed);
     }
@@ -290,7 +355,7 @@ export function PWABanner() {
 
   const handleInstallClick = async () => {
     const res = await install();
-    if (res === 'ios') {
+    if (res === "ios") {
       setShowIOSOverlay(true);
     }
   };
@@ -306,8 +371,8 @@ export function PWABanner() {
         <div className="relative overflow-hidden bg-zinc-900/90 dark:bg-black/90 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl text-white">
           {/* Subtle colored background glow */}
           <div className="absolute -top-10 -right-10 w-24 h-24 bg-blue-500/10 rounded-full blur-xl pointer-events-none" />
-          
-          <button 
+
+          <button
             onClick={handleDismiss}
             className="absolute top-3 right-3 p-1 hover:bg-white/10 rounded-lg text-zinc-400 hover:text-white transition-colors"
           >
@@ -324,9 +389,10 @@ export function PWABanner() {
                 <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
               </h4>
               <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed font-medium">
-                Install as a lightweight app for faster load times, seamless offline searches, and native feel.
+                Install as a lightweight app for faster load times, seamless
+                offline searches, and native feel.
               </p>
-              
+
               <div className="mt-4 flex gap-2">
                 <button
                   onClick={handleInstallClick}
@@ -346,7 +412,9 @@ export function PWABanner() {
         </div>
       </div>
 
-      {showIOSOverlay && <IOSInstallOverlay onClose={() => setShowIOSOverlay(false)} />}
+      {showIOSOverlay && (
+        <IOSInstallOverlay onClose={() => setShowIOSOverlay(false)} />
+      )}
     </>
   );
 }

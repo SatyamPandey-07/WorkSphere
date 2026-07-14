@@ -3,24 +3,23 @@
  * Provides persistent storage for venues, favorites, and search history
  * Integrated with Yjs for CRDT-based offline state mutation and background sync.
  */
-import * as Y from 'yjs';
+import * as Y from "yjs";
 
 // Initialize global Y.Doc for user state
 export const userDoc = new Y.Doc();
-export const yFavorites = userDoc.getMap<OfflineVenue>('favorites');
-export const yRatings = userDoc.getMap<Record<string, unknown>>('ratings');
+export const yFavorites = userDoc.getMap<OfflineVenue>("favorites");
+export const yRatings = userDoc.getMap<Record<string, unknown>>("ratings");
 
 // Automatically queue Yjs incremental updates for Background Sync
-userDoc.on('update', async (update: Uint8Array) => {
+userDoc.on("update", async (update: Uint8Array) => {
   try {
     await queueCrdtUpdate(update);
   } catch (err) {
-    console.error('Failed to queue CRDT update:', err);
+    console.error("Failed to queue CRDT update:", err);
   }
 });
 
-
-const DB_NAME = 'worksphere-offline';
+const DB_NAME = "worksphere-offline";
 const DB_VERSION = 2;
 
 export interface OfflineVenue {
@@ -55,13 +54,13 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onerror = () => {
-      console.error('[OfflineDB] Failed to open database');
+      console.error("[OfflineDB] Failed to open database");
       reject(request.error);
     };
 
     request.onsuccess = () => {
       db = request.result;
-      console.log('[OfflineDB] Database opened successfully');
+      console.log("[OfflineDB] Database opened successfully");
       resolve(db);
     };
 
@@ -69,30 +68,39 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
       const database = (event.target as IDBOpenDBRequest).result;
 
       // Venues store
-      if (!database.objectStoreNames.contains('venues')) {
-        const venuesStore = database.createObjectStore('venues', { keyPath: 'id' });
-        venuesStore.createIndex('type', 'type', { unique: false });
-        venuesStore.createIndex('savedAt', 'savedAt', { unique: false });
+      if (!database.objectStoreNames.contains("venues")) {
+        const venuesStore = database.createObjectStore("venues", {
+          keyPath: "id",
+        });
+        venuesStore.createIndex("type", "type", { unique: false });
+        venuesStore.createIndex("savedAt", "savedAt", { unique: false });
       }
 
       // Favorites store
-      if (!database.objectStoreNames.contains('favorites')) {
-        const favoritesStore = database.createObjectStore('favorites', { keyPath: 'id' });
-        favoritesStore.createIndex('savedAt', 'savedAt', { unique: false });
+      if (!database.objectStoreNames.contains("favorites")) {
+        const favoritesStore = database.createObjectStore("favorites", {
+          keyPath: "id",
+        });
+        favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
       }
 
       // Search history store
-      if (!database.objectStoreNames.contains('searches')) {
-        const searchesStore = database.createObjectStore('searches', { keyPath: 'query' });
-        searchesStore.createIndex('timestamp', 'timestamp', { unique: false });
+      if (!database.objectStoreNames.contains("searches")) {
+        const searchesStore = database.createObjectStore("searches", {
+          keyPath: "query",
+        });
+        searchesStore.createIndex("timestamp", "timestamp", { unique: false });
       }
 
       // Pending actions store (for sync when back online)
-      if (!database.objectStoreNames.contains('pendingActions')) {
-        database.createObjectStore('pendingActions', { keyPath: 'id', autoIncrement: true });
+      if (!database.objectStoreNames.contains("pendingActions")) {
+        database.createObjectStore("pendingActions", {
+          keyPath: "id",
+          autoIncrement: true,
+        });
       }
 
-      console.log('[OfflineDB] Database schema created');
+      console.log("[OfflineDB] Database schema created");
     };
   });
 }
@@ -102,11 +110,11 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
  */
 export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
   const database = await initOfflineDB();
-  
+
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['venues'], 'readwrite');
-    const store = transaction.objectStore('venues');
-    
+    const transaction = database.transaction(["venues"], "readwrite");
+    const store = transaction.objectStore("venues");
+
     const request = store.put({
       ...venue,
       savedAt: Date.now(),
@@ -120,13 +128,15 @@ export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
 /**
  * Get venue from offline storage
  */
-export async function getVenueOffline(id: string): Promise<OfflineVenue | null> {
+export async function getVenueOffline(
+  id: string,
+): Promise<OfflineVenue | null> {
   const database = await initOfflineDB();
-  
+
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['venues'], 'readonly');
-    const store = transaction.objectStore('venues');
-    
+    const transaction = database.transaction(["venues"], "readonly");
+    const store = transaction.objectStore("venues");
+
     const request = store.get(id);
 
     request.onsuccess = () => resolve(request.result || null);
@@ -139,11 +149,11 @@ export async function getVenueOffline(id: string): Promise<OfflineVenue | null> 
  */
 export async function getAllVenuesOffline(): Promise<OfflineVenue[]> {
   const database = await initOfflineDB();
-  
+
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['venues'], 'readonly');
-    const store = transaction.objectStore('venues');
-    
+    const transaction = database.transaction(["venues"], "readonly");
+    const store = transaction.objectStore("venues");
+
     const request = store.getAll();
 
     request.onsuccess = () => resolve(request.result || []);
@@ -160,11 +170,11 @@ export async function saveFavoriteOffline(venue: OfflineVenue): Promise<void> {
 
   // 2. Update local IndexedDB for immediate UI reads
   const database = await initOfflineDB();
-  
+
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['favorites'], 'readwrite');
-    const store = transaction.objectStore('favorites');
-    
+    const transaction = database.transaction(["favorites"], "readwrite");
+    const store = transaction.objectStore("favorites");
+
     const request = store.put({
       ...venue,
       savedAt: Date.now(),
@@ -184,11 +194,11 @@ export async function removeFavoriteOffline(id: string): Promise<void> {
 
   // 2. Update local IndexedDB
   const database = await initOfflineDB();
-  
+
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['favorites'], 'readwrite');
-    const store = transaction.objectStore('favorites');
-    
+    const transaction = database.transaction(["favorites"], "readwrite");
+    const store = transaction.objectStore("favorites");
+
     const request = store.delete(id);
 
     request.onsuccess = () => resolve();
@@ -201,11 +211,11 @@ export async function removeFavoriteOffline(id: string): Promise<void> {
  */
 export async function getFavoritesOffline(): Promise<OfflineVenue[]> {
   const database = await initOfflineDB();
-  
+
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['favorites'], 'readonly');
-    const store = transaction.objectStore('favorites');
-    
+    const transaction = database.transaction(["favorites"], "readonly");
+    const store = transaction.objectStore("favorites");
+
     const request = store.getAll();
 
     request.onsuccess = () => resolve(request.result || []);
@@ -218,12 +228,15 @@ export async function getFavoritesOffline(): Promise<OfflineVenue[]> {
  */
 const MAX_SEARCH_HISTORY = 15;
 
-export async function saveSearchOffline(query: string, results: OfflineVenue[]): Promise<void> {
+export async function saveSearchOffline(
+  query: string,
+  results: OfflineVenue[],
+): Promise<void> {
   const database = await initOfflineDB();
 
   await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(['searches'], 'readwrite');
-    const store = transaction.objectStore('searches');
+    const transaction = database.transaction(["searches"], "readwrite");
+    const store = transaction.objectStore("searches");
 
     const request = store.put({
       query: query.toLowerCase().trim(),
@@ -245,9 +258,9 @@ async function trimSearchHistory(): Promise<void> {
   const database = await initOfflineDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['searches'], 'readwrite');
-    const store = transaction.objectStore('searches');
-    const index = store.index('timestamp');
+    const transaction = database.transaction(["searches"], "readwrite");
+    const store = transaction.objectStore("searches");
+    const index = store.index("timestamp");
 
     // Keys ordered oldest -> newest by the timestamp index
     const request = index.getAllKeys();
@@ -271,9 +284,9 @@ export async function getAllSearchesOffline(): Promise<OfflineSearch[]> {
   const database = await initOfflineDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['searches'], 'readonly');
-    const store = transaction.objectStore('searches');
-    const index = store.index('timestamp');
+    const transaction = database.transaction(["searches"], "readonly");
+    const store = transaction.objectStore("searches");
+    const index = store.index("timestamp");
 
     const request = index.getAll();
 
@@ -288,13 +301,15 @@ export async function getAllSearchesOffline(): Promise<OfflineSearch[]> {
 /**
  * Get cached search results
  */
-export async function getSearchOffline(query: string): Promise<OfflineSearch | null> {
+export async function getSearchOffline(
+  query: string,
+): Promise<OfflineSearch | null> {
   const database = await initOfflineDB();
-  
+
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['searches'], 'readonly');
-    const store = transaction.objectStore('searches');
-    
+    const transaction = database.transaction(["searches"], "readonly");
+    const store = transaction.objectStore("searches");
+
     const request = store.get(query.toLowerCase().trim());
 
     request.onsuccess = () => {
@@ -314,16 +329,16 @@ export async function getSearchOffline(query: string): Promise<OfflineSearch | n
  * Queue action for when back online
  */
 export async function queuePendingAction(action: {
-  type: 'favorite' | 'unfavorite' | 'rate';
+  type: "favorite" | "unfavorite" | "rate";
   venueId: string;
   data?: Record<string, unknown>;
 }): Promise<void> {
   const database = await initOfflineDB();
-  
+
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['pendingActions'], 'readwrite');
-    const store = transaction.objectStore('pendingActions');
-    
+    const transaction = database.transaction(["pendingActions"], "readwrite");
+    const store = transaction.objectStore("pendingActions");
+
     const request = store.add({
       ...action,
       timestamp: Date.now(),
@@ -339,25 +354,27 @@ export async function queuePendingAction(action: {
  */
 export async function queueCrdtUpdate(update: Uint8Array): Promise<void> {
   const database = await initOfflineDB();
-  
+
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['pendingActions'], 'readwrite');
-    const store = transaction.objectStore('pendingActions');
-    
+    const transaction = database.transaction(["pendingActions"], "readwrite");
+    const store = transaction.objectStore("pendingActions");
+
     const request = store.add({
-      type: 'crdt-sync',
+      type: "crdt-sync",
       data: update,
       timestamp: Date.now(),
     });
 
     request.onsuccess = () => {
       // Attempt to register background sync if Service Worker is available
-      if ('serviceWorker' in navigator && 'SyncManager' in window) {
+      if ("serviceWorker" in navigator && "SyncManager" in window) {
         navigator.serviceWorker.ready.then((swRegistration) => {
           // Type casting since TS doesn't fully support sync interface yet
-          (swRegistration as any).sync.register('sync-crdt').catch((err: any) => {
-            console.error('Background Sync registration failed:', err);
-          });
+          (swRegistration as any).sync
+            .register("sync-crdt")
+            .catch((err: any) => {
+              console.error("Background Sync registration failed:", err);
+            });
         });
       }
       resolve();
@@ -369,19 +386,21 @@ export async function queueCrdtUpdate(update: Uint8Array): Promise<void> {
 /**
  * Get and clear pending actions
  */
-export async function processPendingActions(): Promise<Array<{
-  type: string;
-  venueId: string;
-  data?: Record<string, unknown>;
-}>> {
+export async function processPendingActions(): Promise<
+  Array<{
+    type: string;
+    venueId: string;
+    data?: Record<string, unknown>;
+  }>
+> {
   const database = await initOfflineDB();
-  
+
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(['pendingActions'], 'readonly');
-    const store = transaction.objectStore('pendingActions');
-    
+    const transaction = database.transaction(["pendingActions"], "readonly");
+    const store = transaction.objectStore("pendingActions");
+
     const getRequest = store.getAll();
-    
+
     getRequest.onsuccess = () => {
       resolve(getRequest.result);
     };
@@ -413,7 +432,10 @@ export interface ConversationEditAction {
  * synced yet, it's replaced (only the latest title matters) rather than piling
  * up redundant sync work.
  */
-export async function queueConversationRename(conversationId: string, title: string): Promise<void> {
+export async function queueConversationRename(
+  conversationId: string,
+  title: string,
+): Promise<void> {
   const database = await initOfflineDB();
 
   await new Promise<void>((resolve, reject) => {
@@ -423,7 +445,9 @@ export async function queueConversationRename(conversationId: string, title: str
 
     request.onsuccess = () => {
       const existing = (request.result as ConversationEditAction[]).filter(
-        (a) => a.type === "conversation-rename" && a.conversationId === conversationId
+        (a) =>
+          a.type === "conversation-rename" &&
+          a.conversationId === conversationId,
       );
       existing.forEach((a) => store.delete(a.id));
 
@@ -448,7 +472,9 @@ export async function queueConversationRename(conversationId: string, title: str
  * there's no point syncing a title change for a thread that's about to be
  * deleted anyway.
  */
-export async function queueConversationDelete(conversationId: string): Promise<void> {
+export async function queueConversationDelete(
+  conversationId: string,
+): Promise<void> {
   const database = await initOfflineDB();
 
   await new Promise<void>((resolve, reject) => {
@@ -458,7 +484,9 @@ export async function queueConversationDelete(conversationId: string): Promise<v
 
     request.onsuccess = () => {
       const staleRenames = (request.result as ConversationEditAction[]).filter(
-        (a) => a.type === "conversation-rename" && a.conversationId === conversationId
+        (a) =>
+          a.type === "conversation-rename" &&
+          a.conversationId === conversationId,
       );
       staleRenames.forEach((a) => store.delete(a.id));
 
@@ -491,7 +519,9 @@ async function registerConversationSync(): Promise<void> {
 /**
  * All queued (not-yet-synced) conversation rename/delete actions, oldest first.
  */
-export async function getPendingConversationEdits(): Promise<ConversationEditAction[]> {
+export async function getPendingConversationEdits(): Promise<
+  ConversationEditAction[]
+> {
   const database = await initOfflineDB();
 
   return new Promise((resolve, reject) => {
@@ -501,7 +531,11 @@ export async function getPendingConversationEdits(): Promise<ConversationEditAct
 
     request.onsuccess = () => {
       const actions = (request.result as ConversationEditAction[])
-        .filter((a) => a.type === "conversation-rename" || a.type === "conversation-delete")
+        .filter(
+          (a) =>
+            a.type === "conversation-rename" ||
+            a.type === "conversation-delete",
+        )
         .sort((a, b) => a.timestamp - b.timestamp);
       resolve(actions);
     };
@@ -515,12 +549,13 @@ export async function getPendingConversationEdits(): Promise<ConversationEditAct
  * background sync has fired — still reflects the user's local edits instead
  * of reverting them.
  */
-export function applyPendingConversationEdits<T extends { id: string; title: string }>(
-  conversations: T[],
-  pendingEdits: ConversationEditAction[]
-): T[] {
+export function applyPendingConversationEdits<
+  T extends { id: string; title: string },
+>(conversations: T[], pendingEdits: ConversationEditAction[]): T[] {
   const deletedIds = new Set(
-    pendingEdits.filter((a) => a.type === "conversation-delete").map((a) => a.conversationId)
+    pendingEdits
+      .filter((a) => a.type === "conversation-delete")
+      .map((a) => a.conversationId),
   );
   const latestTitleById = new Map<string, string>();
   for (const edit of pendingEdits) {
@@ -531,7 +566,11 @@ export function applyPendingConversationEdits<T extends { id: string; title: str
 
   return conversations
     .filter((c) => !deletedIds.has(c.id))
-    .map((c) => (latestTitleById.has(c.id) ? { ...c, title: latestTitleById.get(c.id)! } : c));
+    .map((c) =>
+      latestTitleById.has(c.id)
+        ? { ...c, title: latestTitleById.get(c.id)! }
+        : c,
+    );
 }
 
 async function removePendingActionById(id: number): Promise<void> {
@@ -560,7 +599,9 @@ export async function flushConversationEditQueue(): Promise<void> {
     try {
       let response: Response;
       if (action.type === "conversation-delete") {
-        response = await fetch(`/api/conversations/${action.conversationId}`, { method: "DELETE" });
+        response = await fetch(`/api/conversations/${action.conversationId}`, {
+          method: "DELETE",
+        });
       } else {
         response = await fetch(`/api/conversations/${action.conversationId}`, {
           method: "PATCH",
@@ -582,15 +623,17 @@ export async function flushConversationEditQueue(): Promise<void> {
 /**
  * Clear old cached data
  */
-export async function cleanupOldData(maxAge: number = 7 * 24 * 60 * 60 * 1000): Promise<void> {
+export async function cleanupOldData(
+  maxAge: number = 7 * 24 * 60 * 60 * 1000,
+): Promise<void> {
   const database = await initOfflineDB();
   const cutoff = Date.now() - maxAge;
-  
+
   // Clean old venues
-  const venuesTx = database.transaction(['venues'], 'readwrite');
-  const venuesStore = venuesTx.objectStore('venues');
-  const venuesIndex = venuesStore.index('savedAt');
-  
+  const venuesTx = database.transaction(["venues"], "readwrite");
+  const venuesStore = venuesTx.objectStore("venues");
+  const venuesIndex = venuesStore.index("savedAt");
+
   const venuesCursor = venuesIndex.openCursor(IDBKeyRange.upperBound(cutoff));
   venuesCursor.onsuccess = (event) => {
     const cursor = (event.target as IDBRequest).result;
@@ -601,11 +644,13 @@ export async function cleanupOldData(maxAge: number = 7 * 24 * 60 * 60 * 1000): 
   };
 
   // Clean old searches
-  const searchesTx = database.transaction(['searches'], 'readwrite');
-  const searchesStore = searchesTx.objectStore('searches');
-  const searchesIndex = searchesStore.index('timestamp');
-  
-  const searchesCursor = searchesIndex.openCursor(IDBKeyRange.upperBound(cutoff));
+  const searchesTx = database.transaction(["searches"], "readwrite");
+  const searchesStore = searchesTx.objectStore("searches");
+  const searchesIndex = searchesStore.index("timestamp");
+
+  const searchesCursor = searchesIndex.openCursor(
+    IDBKeyRange.upperBound(cutoff),
+  );
   searchesCursor.onsuccess = (event) => {
     const cursor = (event.target as IDBRequest).result;
     if (cursor) {

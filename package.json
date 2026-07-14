@@ -17,6 +17,7 @@
   "dependencies": {
     "22": "^0.0.0",
     "@clerk/nextjs": "^6.36.5",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@upstash/ratelimit": "^2.0.8",
@@ -45,12 +46,14 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-i18next": "^17.0.9",
+    "react-is": "^19.2.7",
     "react-leaflet": "^5.0.0",
     "recharts": "^3.9.2",
     "svix": "^1.96.1",
     "tailwind-merge": "^3.6.0",
     "twilio": "^5.12.2",
     "y-partykit": "^0.0.33",
+    "y-protocols": "^1.0.7",
     "yjs": "^13.6.31",
     "zod": "^4.3.6"
   },

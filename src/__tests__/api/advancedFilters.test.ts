@@ -56,6 +56,22 @@ describe("Advanced Workspace Filters validations", () => {
         }
       });
     });
+
+    it("should accept valid music style filters", () => {
+      const styles = ["lofi", "classical_jazz", "no_music", "all"];
+      styles.forEach((style) => {
+        const result = venueSearchSchema.safeParse({
+          lat: "35.6762",
+          lng: "139.6503",
+          radius: "1000",
+          musicStyle: style,
+        });
+        expect(result.success).toBe(true);
+        if (result.success) {
+          expect(result.data.musicStyle).toBe(style);
+        }
+      });
+    });
   });
 
   describe("venueRatingSchema (Submission validation rules)", () => {
@@ -87,6 +103,19 @@ describe("Advanced Workspace Filters validations", () => {
         expect(result.data.hasErgonomic).toBe(false);
         expect(result.data.outletDensity).toBe("none");
         expect(result.data.wifiSpeed).toBeUndefined();
+      }
+    });
+
+    it("should validate and save music style parameter if provided", () => {
+      const result = venueRatingSchema.safeParse({
+        wifiQuality: 4,
+        hasOutlets: true,
+        noiseLevel: "quiet",
+        musicStyle: "lofi",
+      });
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.musicStyle).toBe("lofi");
       }
     });
   });
@@ -129,6 +158,24 @@ describe("Advanced Workspace Filters validations", () => {
       const ergonomicPct = (allRatings.filter((r) => r.hasErgonomic).length / allRatings.length) * 100;
       expect(ergonomicPct).toBe(75); // 3 of 4 is 75%
       expect(ergonomicPct > 50).toBe(true);
+
+      // Mock ratings with musicStyle
+      const mockRatings = [
+        { musicStyle: "lofi" },
+        { musicStyle: "lofi" },
+        { musicStyle: "classical_jazz" },
+        { musicStyle: "" },
+      ];
+      const musicCounts: Record<string, number> = {};
+      mockRatings.forEach((r) => {
+        if (r.musicStyle) {
+          musicCounts[r.musicStyle] = (musicCounts[r.musicStyle] || 0) + 1;
+        }
+      });
+      const dominantMusic = Object.keys(musicCounts).length > 0
+        ? Object.entries(musicCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0]
+        : null;
+      expect(dominantMusic).toBe("lofi");
     });
   });
 
@@ -157,6 +204,23 @@ describe("Advanced Workspace Filters validations", () => {
       const filtered = sampleEnrichedVenues.filter((v) => v.wifiSpeed !== null && v.wifiSpeed >= 50);
       expect(filtered.length).toBe(1);
       expect(filtered[0].name).toBe("Cafe A");
+    });
+
+    it("should filter venues correctly by music style", () => {
+      const venues = [
+        { name: "Cafe A", musicStyle: "lofi" },
+        { name: "Cafe B", musicStyle: "classical_jazz", hasNoMusic: false },
+        { name: "Cafe C", musicStyle: "no_music", hasNoMusic: true },
+      ];
+      // Filter for classical_jazz
+      const filteredJazz = venues.filter((v) => v.musicStyle === "classical_jazz");
+      expect(filteredJazz.length).toBe(1);
+      expect(filteredJazz[0].name).toBe("Cafe B");
+
+      // Filter for no_music
+      const filteredNoMusic = venues.filter((v) => v.musicStyle === "no_music" || v.hasNoMusic);
+      expect(filteredNoMusic.length).toBe(1);
+      expect(filteredNoMusic[0].name).toBe("Cafe C");
     });
   });
 });

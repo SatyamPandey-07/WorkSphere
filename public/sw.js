@@ -7,26 +7,43 @@ const PRECACHE_ASSETS = ["/", "/offline", "/icons/icon.svg", "/manifest.json"];
 
 // Install event - precache essential assets
 self.addEventListener("install", (event) => {
+  // Use a temporary cache for installation to prevent locking the main cache
+  const tempCacheName = `${CACHE_NAME}-installing`;
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(tempCacheName).then((cache) => {
       return cache.addAll(PRECACHE_ASSETS);
-    }),
+    }).then(() => {
+      // Once assets are added, we can skip waiting immediately
+      return self.skipWaiting();
+    }).catch(err => {
+      console.error("[SW] Install failed:", err);
+      // Even if install fails, we skip waiting to avoid getting stuck in 'installing' state
+      return self.skipWaiting();
+    })
   );
-  self.skipWaiting();
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches and move temp assets
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME)
+          .filter((name) => name !== CACHE_NAME && !name.endsWith("-installing"))
           .map((name) => caches.delete(name)),
       );
-    }),
+    }).then(() => {
+      // Claim clients immediately to take control of the page
+      return self.clients.claim();
+    }).then(() => {
+      // Clean up any stray installation caches
+      return caches.keys().then(names => {
+        return Promise.all(
+          names.filter(n => n.endsWith("-installing")).map(n => caches.delete(n))
+        );
+      });
+    })
   );
-  self.clients.claim();
 });
 
 // Handle Cache-First for maps and images, Network-First for everything else
@@ -56,7 +73,7 @@ self.addEventListener("fetch", (event) => {
             event.waitUntil(
               caches.open(CACHE_NAME).then((cache) => {
                 return cache.put(event.request, responseClone);
-              })
+              }),
             );
           }
           return response;
@@ -135,7 +152,7 @@ self.addEventListener("sync", (event) => {
 
 // Helper to convert Uint8Array to base64 for fetch
 function arrayBufferToBase64(buffer) {
-  let binary = '';
+  let binary = "";
   const bytes = new Uint8Array(buffer);
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
@@ -154,7 +171,9 @@ async function syncCrdt() {
 
     if (pendingActions.length === 0) return;
 
-    const updates = pendingActions.map(action => arrayBufferToBase64(action.data));
+    const updates = pendingActions.map((action) =>
+      arrayBufferToBase64(action.data),
+    );
 
     const response = await fetch("/api/sync", {
       method: "POST",
@@ -181,14 +200,27 @@ async function syncFavorites() {
   isSyncingFavorites = true;
   try {
     const db = await openIndexedDB();
-    const pendingFavorites = await getPendingActions(db, ["favorite", "unfavorite", "favorites"]);
+    const pendingFavorites = await getPendingActions(db, [
+      "favorite",
+      "unfavorite",
+      "favorites",
+    ]);
 
     for (const action of pendingFavorites) {
       try {
-        const url = action.type === 'unfavorite' ? `/api/favorites?venueId=${action.venueId}` : "/api/favorites";
-        const method = action.type === 'unfavorite' ? 'DELETE' : (action.method || 'POST');
-        const body = action.type === 'favorite' ? JSON.stringify(action.data) : (action.data ? JSON.stringify(action.data) : undefined);
-        
+        const url =
+          action.type === "unfavorite"
+            ? `/api/favorites?venueId=${action.venueId}`
+            : "/api/favorites";
+        const method =
+          action.type === "unfavorite" ? "DELETE" : action.method || "POST";
+        const body =
+          action.type === "favorite"
+            ? JSON.stringify(action.data)
+            : action.data
+              ? JSON.stringify(action.data)
+              : undefined;
+
         const response = await fetch(url, {
           method,
           headers: { "Content-Type": "application/json" },
@@ -253,18 +285,26 @@ async function syncConversations() {
     });
 
     const pending = allActions
-      .filter((a) => a.type === "conversation-rename" || a.type === "conversation-delete")
+      .filter(
+        (a) =>
+          a.type === "conversation-rename" || a.type === "conversation-delete",
+      )
       .sort((a, b) => a.timestamp - b.timestamp);
 
     // Defensive de-dupe in case a rename and a later delete for the same
     // conversation both slipped into the queue (client-side queuing already
     // guards against this, but the service worker reads independently).
     const deletedIds = new Set(
-      pending.filter((a) => a.type === "conversation-delete").map((a) => a.conversationId)
+      pending
+        .filter((a) => a.type === "conversation-delete")
+        .map((a) => a.conversationId),
     );
 
     for (const action of pending) {
-      if (action.type === "conversation-rename" && deletedIds.has(action.conversationId)) {
+      if (
+        action.type === "conversation-rename" &&
+        deletedIds.has(action.conversationId)
+      ) {
         await removePendingAction(db, action.id);
         continue;
       }
@@ -272,7 +312,9 @@ async function syncConversations() {
       try {
         const response =
           action.type === "conversation-delete"
-            ? await fetch(`/api/conversations/${action.conversationId}`, { method: "DELETE" })
+            ? await fetch(`/api/conversations/${action.conversationId}`, {
+                method: "DELETE",
+              })
             : await fetch(`/api/conversations/${action.conversationId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -301,29 +343,33 @@ function openIndexedDB() {
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      
+
       // Venues store
-      if (!db.objectStoreNames.contains('venues')) {
-        const venuesStore = db.createObjectStore('venues', { keyPath: 'id' });
-        venuesStore.createIndex('type', 'type', { unique: false });
-        venuesStore.createIndex('savedAt', 'savedAt', { unique: false });
+      if (!db.objectStoreNames.contains("venues")) {
+        const venuesStore = db.createObjectStore("venues", { keyPath: "id" });
+        venuesStore.createIndex("type", "type", { unique: false });
+        venuesStore.createIndex("savedAt", "savedAt", { unique: false });
       }
 
       // Favorites store
-      if (!db.objectStoreNames.contains('favorites')) {
-        const favoritesStore = db.createObjectStore('favorites', { keyPath: 'id' });
-        favoritesStore.createIndex('savedAt', 'savedAt', { unique: false });
+      if (!db.objectStoreNames.contains("favorites")) {
+        const favoritesStore = db.createObjectStore("favorites", {
+          keyPath: "id",
+        });
+        favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
       }
 
       // Search history store
-      if (!db.objectStoreNames.contains('searches')) {
-        const searchesStore = db.createObjectStore('searches', { keyPath: 'query' });
-        searchesStore.createIndex('timestamp', 'timestamp', { unique: false });
+      if (!db.objectStoreNames.contains("searches")) {
+        const searchesStore = db.createObjectStore("searches", {
+          keyPath: "query",
+        });
+        searchesStore.createIndex("timestamp", "timestamp", { unique: false });
       }
 
       // Migration
-      if (db.objectStoreNames.contains('pending-actions')) {
-        db.deleteObjectStore('pending-actions');
+      if (db.objectStoreNames.contains("pending-actions")) {
+        db.deleteObjectStore("pending-actions");
       }
 
       // Pending actions store (unified name)
@@ -416,10 +462,13 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-import { getQueuedFavorites, dequeueOfflineAction } from '../src/lib/offlineStore';
+import {
+  getQueuedFavorites,
+  dequeueOfflineAction,
+} from "../src/lib/offlineStore";
 
-self.addEventListener('sync', (event) => {
-  if (event.tag === 'sync-favorites') {
+self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-favorites") {
     event.waitUntil(syncFavoritesOutbox());
   }
 });
@@ -427,12 +476,15 @@ self.addEventListener('sync', (event) => {
 async function syncFavoritesOutbox() {
   try {
     const actions = await getQueuedFavorites();
-    
+
     for (const action of actions) {
-      const response = await fetch('/api/favorites', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ venueId: action.venueId, action: action.action }),
+      const response = await fetch("/api/favorites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          venueId: action.venueId,
+          action: action.action,
+        }),
       });
 
       if (response.ok && action.id) {
@@ -441,9 +493,9 @@ async function syncFavoritesOutbox() {
       }
     }
   } catch (error) {
-    console.error('Background synchronization pipeline failed to complete:', error);
+    console.error(
+      "Background synchronization pipeline failed to complete:",
+      error,
+    );
   }
 }
-
-
-

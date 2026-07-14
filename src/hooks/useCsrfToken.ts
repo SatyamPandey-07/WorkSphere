@@ -36,16 +36,36 @@ function installCsrfFetchInterceptor() {
 
   const originalFetch = window.fetch.bind(window);
 
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
-    const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+    const isInputRequest = typeof Request !== "undefined" && input instanceof Request;
+    const method = (init?.method || (isInputRequest ? input.method : "GET")).toUpperCase();
     const isMutating = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
     const isSameOriginApi = url.startsWith("/api") || url.startsWith(`${window.location.origin}/api`);
 
-    if (isMutating && isSameOriginApi && currentCsrfToken) {
-      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-      headers.set(CSRF_HEADER_NAME, currentCsrfToken);
-      return originalFetch(input, { ...init, headers });
+    if (isMutating && isSameOriginApi) {
+      const headers = new Headers(init?.headers ?? (isInputRequest ? input.headers : undefined));
+      if (currentCsrfToken) {
+        headers.set(CSRF_HEADER_NAME, currentCsrfToken);
+      }
+      const response = await originalFetch(input, { ...init, headers });
+      if (response.status === 403) {
+        const clone = response.clone();
+        try {
+          const body = await clone.json();
+          if (body && body.error && body.error.toLowerCase().includes("csrf")) {
+            const freshToken = await fetchFreshToken();
+            if (freshToken) {
+              const retryHeaders = new Headers(init?.headers ?? (isInputRequest ? input.headers : undefined));
+              retryHeaders.set(CSRF_HEADER_NAME, freshToken);
+              return originalFetch(input, { ...init, headers: retryHeaders });
+            }
+          }
+        } catch {
+          // Response was not JSON or did not have CSRF error
+        }
+      }
+      return response;
     }
 
     return originalFetch(input, init);

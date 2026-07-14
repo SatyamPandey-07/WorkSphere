@@ -5,6 +5,7 @@ import { auth } from '@clerk/nextjs/server';
 import { revalidatePath } from 'next/cache';
 import crypto from 'crypto';
 import { isValidDiscordWebhookUrl } from '@/lib/discord';
+import { isValidTelegramWebhookUrl } from '@/lib/telegram';
 import { ensureUserExists } from '@/lib/auth';
 
 export async function createWebhookEndpoint(data: { url: string, eventTypes: any[] }) {
@@ -98,4 +99,35 @@ export async function getDiscordWebhookUrl() {
   });
 
   return user?.discordWebhookUrl ?? null;
+}
+
+export async function saveTelegramWebhookUrl(url: string) {
+  const { userId } = await auth();
+  if (!userId) throw new Error('Unauthorized');
+
+  await ensureUserExists(userId);
+
+  const trimmed = url.trim();
+  if (trimmed && !isValidTelegramWebhookUrl(trimmed)) {
+    throw new Error('That doesn\'t look like a valid Telegram webhook URL');
+  }
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { telegramWebhookUrl: trimmed || null },
+  });
+
+  revalidatePath('/dashboard/webhooks');
+}
+
+export async function getTelegramWebhookUrl() {
+  const { userId } = await auth();
+  if (!userId) return null;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { telegramWebhookUrl: true },
+  });
+
+  return user?.telegramWebhookUrl ?? null;
 }

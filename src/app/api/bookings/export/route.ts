@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { drawSafeText, safeText, bookingsToCSV } from "@/lib/pdfHelpers";
+import { resolveDateRange, filterBookingsByRange } from "@/lib/taxExport";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,36 +14,65 @@ export async function POST(req: NextRequest) {
     }
     await ensureUserExists(userId);
 
-    const { bookingIds, format } = await req.json();
+    const body = await req.json();
+    const { bookingIds, format, taxYear, startDate, endDate } = body;
 
-    if (!Array.isArray(bookingIds) || bookingIds.length === 0) {
-      return NextResponse.json({ error: "No bookings selected" }, { status: 400 });
-    }
     if (format !== "pdf" && format !== "csv") {
       return NextResponse.json({ error: "Invalid format" }, { status: 400 });
     }
 
-    // Only fetch bookings that belong to this user - never trust client-supplied ownership
-    const bookings = await (prisma as any).booking.findMany({
-      where: {
-        id: { in: bookingIds },
-        userId,
-      },
-      include: { venue: true, user: true },
-      orderBy: { createdAt: "desc" },
-    });
+    const usingDateRange = !bookingIds && (taxYear || (startDate && endDate));
+
+    if (!Array.isArray(bookingIds) && !usingDateRange) {
+      return NextResponse.json(
+        { error: "Provide either bookingIds or a taxYear/date range" },
+        { status: 400 },
+      );
+    }
+
+    let bookings;
+
+    if (Array.isArray(bookingIds) && bookingIds.length > 0) {
+      // Only fetch bookings that belong to this user - never trust client-supplied ownership
+      bookings = await (prisma as any).booking.findMany({
+        where: { id: { in: bookingIds }, userId },
+        include: { venue: true, user: true },
+        orderBy: { createdAt: "desc" },
+      });
+    } else {
+      // Date-range / tax-year path (issue #198)
+      let range;
+      try {
+        range = resolveDateRange({ taxYear, startDate, endDate });
+      } catch (err: any) {
+        return NextResponse.json({ error: err.message }, { status: 400 });
+      }
+
+      const allUserBookings = await (prisma as any).booking.findMany({
+        where: { userId },
+        include: { venue: true, user: true },
+        orderBy: { createdAt: "desc" },
+      });
+
+      bookings = filterBookingsByRange(allUserBookings, range);
+    }
 
     if (bookings.length === 0) {
-      return NextResponse.json({ error: "No matching bookings found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "No matching bookings found" },
+        { status: 404 },
+      );
     }
 
     if (format === "csv") {
-      const csv = bookingsToCSV(bookings);
+      const csv =
+        "Estimate only - $15/hr flat rate, 8% flat tax - verify against your invoices\n" +
+        bookingsToCSV(bookings);
       return new NextResponse(csv, {
         status: 200,
         headers: {
           "Content-Type": "text/csv",
-          "Content-Disposition": `attachment; filename="WorkSphere_Expenses_${Date.now()}.csv"`,
+          "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${Date.now()}.csv"`,
           "Cache-Control": "no-cache",
         },
       });
@@ -58,14 +88,43 @@ export async function POST(req: NextRequest) {
     const { width, height } = summaryPage.getSize();
     let y = height - 50;
 
-    summaryPage.drawRectangle({ x: 0, y: height - 10, width, height: 10, color: rgb(0.23, 0.51, 0.96) });
+    summaryPage.drawRectangle({
+      x: 0,
+      y: height - 10,
+      width,
+      height: 10,
+      color: rgb(0.23, 0.51, 0.96),
+    });
     y -= 60;
-    drawSafeText(summaryPage, "WORKSPHERE EXPENSE SUMMARY", { x: 130, y, size: 22, font: boldFont, color: rgb(0, 0, 0) });
+    drawSafeText(summaryPage, "WORKSPHERE EXPENSE SUMMARY", {
+      x: 130,
+      y,
+      size: 22,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
     y -= 15;
-    drawSafeText(summaryPage, "CONSOLIDATED NEURAL LEDGER EXPORT", { x: 165, y, size: 8, font, color: rgb(0.5, 0.5, 0.5) });
+    drawSafeText(summaryPage, "CONSOLIDATED NEURAL LEDGER EXPORT", {
+      x: 165,
+      y,
+      size: 8,
+      font,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+    y -= 12;
+    drawSafeText(
+      summaryPage,
+      "ESTIMATE ONLY - $15/HR FLAT RATE, 8% FLAT TAX - VERIFY AGAINST YOUR INVOICES",
+      { x: 50, y, size: 7, font, color: rgb(0.6, 0.2, 0.2) },
+    );
     y -= 50;
 
-    drawSafeText(summaryPage, `TOTAL BOOKINGS: ${bookings.length}`, { x: 50, y, size: 12, font: boldFont });
+    drawSafeText(summaryPage, `TOTAL BOOKINGS: ${bookings.length}`, {
+      x: 50,
+      y,
+      size: 12,
+      font: boldFont,
+    });
     y -= 20;
 
     let overallSubtotal = 0;
@@ -81,7 +140,11 @@ export async function POST(req: NextRequest) {
       overallTotal += total;
     }
 
-    drawSafeText(summaryPage, `SUBTOTAL: $${overallSubtotal.toFixed(2)}  |  TAX (8%): $${overallTax.toFixed(2)}  |  TOTAL: $${overallTotal.toFixed(2)}`, { x: 50, y, size: 10, font: boldFont });
+    drawSafeText(
+      summaryPage,
+      `SUBTOTAL: $${overallSubtotal.toFixed(2)}  |  TAX (8%): $${overallTax.toFixed(2)}  |  TOTAL: $${overallTotal.toFixed(2)}`,
+      { x: 50, y, size: 10, font: boldFont },
+    );
     y -= 30;
     drawSafeText(summaryPage, "-".repeat(60), { x: 50, y, size: 10, font });
     y -= 25;
@@ -97,8 +160,8 @@ export async function POST(req: NextRequest) {
 
       drawSafeText(
         summaryPage,
-        `${safeText(booking.confirmationId || `WS-#${booking.id}`)}  |  ${safeText(booking.venue.name)}  |  $${total.toFixed(2)}`,
-        { x: 50, y, size: 9, font }
+        `${safeText(booking.confirmationId || `WS-#${booking.id}`)}  |  ${safeText(booking.venue.name)}  |  CODE: ${safeText(booking.projectBillingCode || "N/A")}  |  $${total.toFixed(2)}`,
+        { x: 50, y, size: 9, font },
       );
       y -= 18;
     }
@@ -113,29 +176,83 @@ export async function POST(req: NextRequest) {
         ? `${booking.user.firstName || ""} ${booking.user.lastName || ""}`.trim()
         : "";
 
-      page.drawRectangle({ x: 0, y: h - 10, width: w, height: 10, color: rgb(0.23, 0.51, 0.96) });
+      page.drawRectangle({
+        x: 0,
+        y: h - 10,
+        width: w,
+        height: 10,
+        color: rgb(0.23, 0.51, 0.96),
+      });
       py -= 60;
 
-      drawSafeText(page, "WORKSPHERE CONFIRMATION", { x: 150, y: py, size: 24, font: boldFont, color: rgb(0, 0, 0) });
+      drawSafeText(page, "WORKSPHERE CONFIRMATION", {
+        x: 150,
+        y: py,
+        size: 24,
+        font: boldFont,
+        color: rgb(0, 0, 0),
+      });
       py -= 15;
-      drawSafeText(page, "SECURE TRANSACTION RECEIPT", { x: 190, y: py, size: 8, font, color: rgb(0.5, 0.5, 0.5) });
+      drawSafeText(page, "SECURE TRANSACTION RECEIPT", {
+        x: 190,
+        y: py,
+        size: 8,
+        font,
+        color: rgb(0.5, 0.5, 0.5),
+      });
       py -= 50;
 
-      drawSafeText(page, "BOOKING DETAILS:", { x: 50, y: py, size: 12, font: boldFont });
+      drawSafeText(page, "BOOKING DETAILS:", {
+        x: 50,
+        y: py,
+        size: 12,
+        font: boldFont,
+      });
       py -= 15;
       drawSafeText(page, "-".repeat(50), { x: 50, y: py, size: 10, font });
       py -= 20;
-      drawSafeText(page, `REFERENCE ID: ${safeText(booking.confirmationId || `WS-#${booking.id}`)}`, { x: 50, y: py, size: 10, font });
+      drawSafeText(
+        page,
+        `REFERENCE ID: ${safeText(booking.confirmationId || `WS-#${booking.id}`)}`,
+        { x: 50, y: py, size: 10, font },
+      );
       py -= 18;
-      drawSafeText(page, `VENUE: ${safeText(booking.venue.name)}`, { x: 50, y: py, size: 10, font });
+      drawSafeText(page, `VENUE: ${safeText(booking.venue.name)}`, {
+        x: 50,
+        y: py,
+        size: 10,
+        font,
+      });
       py -= 18;
-      drawSafeText(page, `CATEGORY: ${safeText(booking.venue.category?.toUpperCase() || "WORKSPACE")}`, { x: 50, y: py, size: 10, font });
+      drawSafeText(
+        page,
+        `CATEGORY: ${safeText(booking.venue.category?.toUpperCase() || "WORKSPACE")}`,
+        { x: 50, y: py, size: 10, font },
+      );
       py -= 18;
-      drawSafeText(page, `ADDRESS: ${safeText(booking.venue.address || "Verified Workspace")}`, { x: 50, y: py, size: 10, font });
+      drawSafeText(
+        page,
+        `ADDRESS: ${safeText(booking.venue.address || "Verified Workspace")}`,
+        { x: 50, y: py, size: 10, font },
+      );
       py -= 18;
-      drawSafeText(page, `SCHEDULE: ${safeText(booking.date)} @ ${safeText(booking.time)}`, { x: 50, y: py, size: 10, font });
+      drawSafeText(
+        page,
+        `SCHEDULE: ${safeText(booking.date)} @ ${safeText(booking.time)}`,
+        { x: 50, y: py, size: 10, font },
+      );
       py -= 18;
-      drawSafeText(page, `CUSTOMER: ${safeText(customerName || booking.customerEmail || "N/A")}`, { x: 50, y: py, size: 10, font });
+      drawSafeText(
+        page,
+        `BILLING CODE: ${safeText(booking.projectBillingCode || "N/A")}`,
+        { x: 50, y: py, size: 10, font },
+      );
+      py -= 18;
+      drawSafeText(
+        page,
+        `CUSTOMER: ${safeText(customerName || booking.customerEmail || "N/A")}`,
+        { x: 50, y: py, size: 10, font },
+      );
       py -= 30;
 
       const hours = booking.duration || 1;
@@ -143,24 +260,64 @@ export async function POST(req: NextRequest) {
       const tax = Number((price * 0.08).toFixed(2));
       const total = Number((price + tax).toFixed(2));
 
-      drawSafeText(page, "PRICING & MEMBERSHIP CHARGES:", { x: 50, y: py, size: 12, font: boldFont });
+      drawSafeText(page, "PRICING & MEMBERSHIP CHARGES:", {
+        x: 50,
+        y: py,
+        size: 12,
+        font: boldFont,
+      });
       py -= 15;
       drawSafeText(page, "-".repeat(50), { x: 50, y: py, size: 10, font });
       py -= 20;
-      drawSafeText(page, `HOURLY RATE: $15.00/hr (DURATION: ${hours} hrs)`, { x: 50, y: py, size: 10, font });
+      drawSafeText(page, `HOURLY RATE: $15.00/hr (DURATION: ${hours} hrs)`, {
+        x: 50,
+        y: py,
+        size: 10,
+        font,
+      });
       py -= 18;
-      drawSafeText(page, `SUBTOTAL: $${price.toFixed(2)}`, { x: 50, y: py, size: 10, font });
+      drawSafeText(page, `SUBTOTAL: $${price.toFixed(2)}`, {
+        x: 50,
+        y: py,
+        size: 10,
+        font,
+      });
       py -= 18;
-      drawSafeText(page, `TAX (8%): $${tax.toFixed(2)}`, { x: 50, y: py, size: 10, font });
+      drawSafeText(page, `TAX (8%): $${tax.toFixed(2)}`, {
+        x: 50,
+        y: py,
+        size: 10,
+        font,
+      });
       py -= 18;
-      drawSafeText(page, `TOTAL EXPENSED: $${total.toFixed(2)}`, { x: 50, y: py, size: 10, font: boldFont });
+      drawSafeText(page, `TOTAL EXPENSED: $${total.toFixed(2)}`, {
+        x: 50,
+        y: py,
+        size: 10,
+        font: boldFont,
+      });
       py -= 40;
 
-      drawSafeText(page, "SECURITY PROTOCOL:", { x: 50, y: py, size: 12, font: boldFont });
+      drawSafeText(page, "SECURITY PROTOCOL:", {
+        x: 50,
+        y: py,
+        size: 12,
+        font: boldFont,
+      });
       py -= 18;
-      drawSafeText(page, "MEMBERSHIP EXPENSE VALIDATION ACTIVE", { x: 50, y: py, size: 10, font });
+      drawSafeText(page, "MEMBERSHIP EXPENSE VALIDATION ACTIVE", {
+        x: 50,
+        y: py,
+        size: 10,
+        font,
+      });
       py -= 18;
-      drawSafeText(page, "ENCRYPTED VIA WORKSPHERE SECURE PROT", { x: 50, y: py, size: 10, font });
+      drawSafeText(page, "ENCRYPTED VIA WORKSPHERE SECURE PROT", {
+        x: 50,
+        y: py,
+        size: 10,
+        font,
+      });
     }
 
     const pdfBytes = await pdfDoc.save();
@@ -169,12 +326,15 @@ export async function POST(req: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="WorkSphere_Expenses_${Date.now()}.pdf"`,
+        "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${Date.now()}.pdf"`,
         "Cache-Control": "no-cache",
       },
     });
   } catch (error: any) {
     console.error("[Bookings Export Error]:", error);
-    return NextResponse.json({ error: "Failed to generate export" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to generate export" },
+      { status: 500 },
+    );
   }
 }

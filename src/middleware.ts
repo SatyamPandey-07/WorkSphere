@@ -14,6 +14,10 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
   "/api/webhook(.*)",
   "/api/auth/csrf-token",
+  "/api/auth/resend-otp",
+  "/api/auth/verify-otp",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
   "/privacy(.*)",
   "/terms(.*)",
 ]);

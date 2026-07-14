@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { JobStatusTracker } from "@/components/JobStatusTracker";
 
 interface TaxExportModalProps {
   open: boolean;
@@ -18,12 +19,14 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
   const [format, setFormat] = useState<"pdf" | "csv">("pdf");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
 
   if (!open) return null;
 
   async function handleExport() {
     setLoading(true);
     setError(null);
+    setJobId(null);
     try {
       const body: Record<string, unknown> = { format };
       if (mode === "year") {
@@ -49,19 +52,26 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
         throw new Error(data.error || "Export failed");
       }
 
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `WorkSphere_Tax_Export.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-      onClose();
+      if (format === "csv") {
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `WorkSphere_Tax_Export.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        onClose();
+        setLoading(false);
+      } else {
+        // PDF now returns a jobId
+        const data = await res.json();
+        setJobId(data.jobId);
+        setLoading(false);
+      }
     } catch (err: any) {
       setError(err.message || "Something went wrong");
-    } finally {
       setLoading(false);
     }
   }
@@ -132,25 +142,42 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
 
         {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
 
-        <p className="mb-4 text-xs text-gray-500">
-          Estimate only — $15/hr flat rate, 8% flat tax. Verify against your actual invoices before filing.
-        </p>
+        {jobId ? (
+          <div className="my-6">
+            <JobStatusTracker jobId={jobId} />
+          </div>
+        ) : (
+          <p className="mb-4 text-xs text-gray-500">
+            Estimate only — $15/hr flat rate, 8% flat tax. Verify against your actual invoices before filing.
+          </p>
+        )}
 
         <div className="flex justify-end gap-2">
-          <button
-            className="rounded px-4 py-2 text-sm text-gray-600"
-            onClick={onClose}
-            disabled={loading}
-          >
-            Cancel
-          </button>
-          <button
-            className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50"
-            onClick={handleExport}
-            disabled={loading}
-          >
-            {loading ? "Exporting..." : "Export"}
-          </button>
+          {jobId ? (
+            <button
+              className="rounded px-4 py-2 text-sm bg-gray-200 text-gray-800"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          ) : (
+            <>
+              <button
+                className="rounded px-4 py-2 text-sm text-gray-600"
+                onClick={onClose}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+                onClick={handleExport}
+                disabled={loading}
+              >
+                {loading ? "Exporting..." : "Export"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

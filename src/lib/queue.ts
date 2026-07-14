@@ -25,7 +25,10 @@ export async function pushJob(jobId: string, payload: JobPayload) {
     status: "QUEUED",
     createdAt: Date.now(),
   };
-  await redis.hset(`pdf:job:${jobId}`, state);
+  await redis.hset(
+    `pdf:job:${jobId}`,
+    state as unknown as Record<string, unknown>,
+  );
 
   // Push to queue
   await redis.lpush(
@@ -33,7 +36,7 @@ export async function pushJob(jobId: string, payload: JobPayload) {
     JSON.stringify({
       id: jobId,
       ...payload,
-    })
+    }),
   );
 }
 
@@ -43,6 +46,9 @@ export async function getJobStatus(jobId: string): Promise<JobState | null> {
   return state as unknown as JobState;
 }
 
-export async function updateJobStatus(jobId: string, updates: Partial<JobState>) {
+export async function updateJobStatus(
+  jobId: string,
+  updates: Partial<JobState>,
+) {
   await redis.hset(`pdf:job:${jobId}`, updates);
 }

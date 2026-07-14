@@ -1,8 +1,15 @@
-import { PDFDocument, rgb, StandardFonts, PDFPageDrawTextOptions } from "pdf-lib";
+import {
+  PDFDocument,
+  rgb,
+  StandardFonts,
+  PDFPageDrawTextOptions,
+} from "pdf-lib";
 import { safeText } from "./pdfHelpers";
 
 // Using the same drawSafeText as the export route, but we will duplicate the helper signature for local use here
-export async function generateTaxExportPdf(bookings: any[]): Promise<Uint8Array> {
+export async function generateTaxExportPdf(
+  bookings: any[],
+): Promise<Uint8Array> {
   const pdfDoc = await PDFDocument.create();
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -20,14 +27,16 @@ export async function generateTaxExportPdf(bookings: any[]): Promise<Uint8Array>
     color: rgb(0.23, 0.51, 0.96),
   });
   y -= 60;
-  
+
   // Local helper just for StandardFonts (as pdfHelpers uses custom interface)
   const drawText = (page: any, text: string, options: any) => {
     try {
       page.drawText(text, options);
-    } catch (err) {
+    } catch {
       const strictText = text.replace(/[^\x20-\x7E]/g, "?");
-      try { page.drawText(strictText, options); } catch (e) {}
+      try {
+        page.drawText(strictText, options);
+      } catch {}
     }
   };
 
@@ -103,8 +112,7 @@ export async function generateTaxExportPdf(bookings: any[]): Promise<Uint8Array>
 
   // One detailed page per booking
   for (const booking of bookings) {
-      // @ts-expect-error
-      const page = pages[Math.floor(yOffset / PAGE_HEIGHT)];
+    const page = pdfDoc.addPage([595, 842]);
     const { width: w, height: h } = page.getSize();
     let py = h - 50;
 
@@ -262,7 +270,6 @@ export async function generateTaxExportPdf(bookings: any[]): Promise<Uint8Array>
 
 import fs from "fs";
 import path from "path";
-// @ts-ignore
 import fontkit from "@pdf-lib/fontkit";
 
 export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
@@ -270,8 +277,18 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
   pdfDoc.registerFontkit(fontkit);
   const page = pdfDoc.addPage([595, 842]);
 
-  const regularFontPath = path.join(process.cwd(), "public", "fonts", "NotoSans-Regular.ttf");
-  const boldFontPath = path.join(process.cwd(), "public", "fonts", "NotoSans-Bold.ttf");
+  const regularFontPath = path.join(
+    process.cwd(),
+    "public",
+    "fonts",
+    "NotoSans-Regular.ttf",
+  );
+  const boldFontPath = path.join(
+    process.cwd(),
+    "public",
+    "fonts",
+    "NotoSans-Bold.ttf",
+  );
 
   let font: any;
   let boldFont: any;
@@ -281,7 +298,7 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
     const boldFontBytes = fs.readFileSync(boldFontPath);
     font = await pdfDoc.embedFont(regularFontBytes);
     boldFont = await pdfDoc.embedFont(boldFontBytes);
-  } catch (err) {
+  } catch {
     font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   }
@@ -296,9 +313,11 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
   const drawText = (text: string, options: PDFPageDrawTextOptions) => {
     try {
       page.drawText(text, options);
-    } catch (err) {
+    } catch {
       const strictText = text.replace(/[^\x20-\x7E]/g, "?");
-      try { page.drawText(strictText, options); } catch (e) {}
+      try {
+        page.drawText(strictText, options);
+      } catch {}
     }
   };
 
@@ -311,38 +330,106 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
   });
   yPosition -= 60;
 
-  drawText("WORKSPHERE CONFIRMATION", { x: 150, y: yPosition, size: 24, font: boldFont, color: rgb(0, 0, 0) });
+  drawText("WORKSPHERE CONFIRMATION", {
+    x: 150,
+    y: yPosition,
+    size: 24,
+    font: boldFont,
+    color: rgb(0, 0, 0),
+  });
   yPosition -= 15;
-  drawText("SECURE NEURAL TRANSACTION RECEIPT", { x: 180, y: yPosition, size: 8, font, color: rgb(0.5, 0.5, 0.5) });
+  drawText("SECURE NEURAL TRANSACTION RECEIPT", {
+    x: 180,
+    y: yPosition,
+    size: 8,
+    font,
+    color: rgb(0.5, 0.5, 0.5),
+  });
   yPosition -= 50;
 
-  drawText("BOOKING DETAILS:", { x: 50, y: yPosition, size: 12, font: boldFont });
+  drawText("BOOKING DETAILS:", {
+    x: 50,
+    y: yPosition,
+    size: 12,
+    font: boldFont,
+  });
   yPosition -= 15;
   drawText("-".repeat(50), { x: 50, y: yPosition, size: 10, font });
   yPosition -= 20;
-  drawText(`REFERENCE ID: ${booking.confirmationId || `WS-#${booking.id}`}`, { x: 50, y: yPosition, size: 10, font });
+  drawText(`REFERENCE ID: ${booking.confirmationId || `WS-#${booking.id}`}`, {
+    x: 50,
+    y: yPosition,
+    size: 10,
+    font,
+  });
   yPosition -= 18;
-  drawText(`VENUE: ${booking.venue.name}`, { x: 50, y: yPosition, size: 10, font });
+  drawText(`VENUE: ${booking.venue.name}`, {
+    x: 50,
+    y: yPosition,
+    size: 10,
+    font,
+  });
   yPosition -= 18;
-  drawText(`CATEGORY: ${booking.venue.category?.toUpperCase() || "WORKSPACE"}`, { x: 50, y: yPosition, size: 10, font });
+  drawText(
+    `CATEGORY: ${booking.venue.category?.toUpperCase() || "WORKSPACE"}`,
+    { x: 50, y: yPosition, size: 10, font },
+  );
   yPosition -= 18;
-  drawText(`ADDRESS: ${booking.venue.address || "Verified Workspace"}`, { x: 50, y: yPosition, size: 10, font });
+  drawText(`ADDRESS: ${booking.venue.address || "Verified Workspace"}`, {
+    x: 50,
+    y: yPosition,
+    size: 10,
+    font,
+  });
   yPosition -= 18;
-  drawText(`SCHEDULE: ${booking.date} @ ${booking.time}`, { x: 50, y: yPosition, size: 10, font });
+  drawText(`SCHEDULE: ${booking.date} @ ${booking.time}`, {
+    x: 50,
+    y: yPosition,
+    size: 10,
+    font,
+  });
   yPosition -= 18;
-  drawText(`BILLING CODE: ${booking.projectBillingCode || "N/A"}`, { x: 50, y: yPosition, size: 10, font });
+  drawText(`BILLING CODE: ${booking.projectBillingCode || "N/A"}`, {
+    x: 50,
+    y: yPosition,
+    size: 10,
+    font,
+  });
   yPosition -= 18;
-  drawText(`CUSTOMER: ${customerName || booking.customerEmail || "N/A"}`, { x: 50, y: yPosition, size: 10, font });
+  drawText(`CUSTOMER: ${customerName || booking.customerEmail || "N/A"}`, {
+    x: 50,
+    y: yPosition,
+    size: 10,
+    font,
+  });
   yPosition -= 40;
 
-  drawText("SECURITY PROTOCOL:", { x: 50, y: yPosition, size: 12, font: boldFont });
+  drawText("SECURITY PROTOCOL:", {
+    x: 50,
+    y: yPosition,
+    size: 12,
+    font: boldFont,
+  });
   yPosition -= 18;
-  drawText("ZERO-FEE ACCESS PROTOCOL ACTIVE", { x: 50, y: yPosition, size: 10, font });
+  drawText("ZERO-FEE ACCESS PROTOCOL ACTIVE", {
+    x: 50,
+    y: yPosition,
+    size: 10,
+    font,
+  });
   yPosition -= 18;
-  drawText("ENCRYPTED VIA WORKSPHERE L3", { x: 50, y: yPosition, size: 10, font });
+  drawText("ENCRYPTED VIA WORKSPHERE L3", {
+    x: 50,
+    y: yPosition,
+    size: 10,
+    font,
+  });
   yPosition -= 80;
 
-  drawText("Thank you for choosing WorkSphere. Your workspace is ready for you.", { x: 100, y: yPosition, size: 8, font, color: rgb(0.4, 0.4, 0.4) });
+  drawText(
+    "Thank you for choosing WorkSphere. Your workspace is ready for you.",
+    { x: 100, y: yPosition, size: 8, font, color: rgb(0.4, 0.4, 0.4) },
+  );
 
   return await pdfDoc.save();
 }

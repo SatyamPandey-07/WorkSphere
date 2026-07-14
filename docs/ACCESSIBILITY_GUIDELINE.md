@@ -10,43 +10,41 @@ Adhering to these guidelines ensures our application is fully usable for individ
 
 Custom modals must clearly communicate their purpose and state to assistive technologies.
 
-- **`role="dialog"` or `role="alertdialog"`:** The container element of the modal must have this role. Use `alertdialog` only when the modal requires immediate user attention (e.g., a destructive action warning).
-- **`aria-modal="true"`:** This attribute must be added to the modal container. It tells assistive technologies that the content outside the modal is currently unavailable and should be ignored.
-- **`aria-labelledby`:** The modal container should use this attribute to point to the `id` of the modal's visible title element.
-- **`aria-describedby` (Optional):** If the modal has a descriptive text block, use this to point to the `id` of that text element.
+- **Accessible Naming:** A dialog must have an accessible name using either `aria-labelledby` (pointing to a visible title's ID) or an `aria-label` attribute.
+- **Roles:** The container element must have `role="dialog"` or `role="alertdialog"`. Use `alertdialog` only when the modal requires immediate user attention. If using `alertdialog`, you **must** also use `aria-describedby` to point to the alert message text.
+- **`aria-modal="true"`:** This attribute must be added to genuinely modal dialogs (where background interaction is prevented). It tells assistive technologies to ignore content outside the modal.
 
-## 2. Trigger Elements and `aria-expanded`
+## 2. Trigger Elements and Custom Selectors
 
-The element (usually a button) that opens the modal or custom selector must manage its state so screen readers know if the component is open or closed.
+The elements that trigger these interfaces have specific requirements depending on their type.
 
-- Add `aria-expanded="false"` to the trigger button by default.
-- Toggle it to `aria-expanded="true"` when the modal or selector is opened.
-- Ensure the trigger element also has `aria-haspopup="dialog"` (or `listbox` for custom selectors).
+- **Dialog Triggers:** The button that opens a standard dialog should generally have `aria-haspopup="dialog"`.
+- **Custom Selectors (Comboboxes/Listboxes):** These require a defined widget pattern. The trigger must use `aria-expanded` (toggling between `true` and `false`), `aria-controls`, and the appropriate `combobox` or `listbox` roles. Do not apply `aria-expanded` to standard dialog buttons.
 
 ## 3. Keyboard Focus Management (The "Focus Trap")
 
-Modals must strictly manage user focus to prevent them from interacting with the background page while the modal is open.
+Modals must strictly manage user focus.
 
-- **Initial Focus:** When the modal opens, focus must automatically move to the first focusable element inside the modal (or the close button, depending on context).
+- **Initial Focus:** Focus should move into the modal. While this is often the first focusable element, complex or long dialogs may require focus to land on a static title or paragraph (using `tabindex="-1"`) so screen readers announce the context first.
 - **Focus Trapping:** While open, pressing `Tab` must cycle focus forward through the modal's interactive elements, and `Shift + Tab` must cycle backward. Focus **must never** escape the modal container.
 - **Closing via Keyboard:** Pressing the `Escape` key must close the modal.
-- **Restoring Focus:** When the modal closes, focus must immediately return to the exact element that originally triggered the modal.
+- **Restoring Focus:** When the modal closes, focus must return to the exact element that triggered it. Exception: If the triggering element was removed from the DOM, move focus to the next logical step in the workflow.
 
-## 4. Overlays (Backdrops) and Custom Selectors
+## 4. Overlays (Backdrops) and Background Inertness
 
-The visual overlay that sits behind the modal and covers the rest of the application must also be handled correctly.
+The visual overlay and the background application must be handled safely.
 
-- **Click-to-Close:** Clicking on the overlay backdrop should close the modal or custom selector.
-- **Hidden from Screen Readers:** The overlay itself should not be focusable and should ideally be hidden from screen readers using `aria-hidden="true"` (if it is a separate element from the modal container).
-- **Scroll Locking:** When the overlay is active, the main `<body>` of the document should have its scroll locked (e.g., `overflow: hidden`) to prevent background scrolling.
+- **Click-to-Close (Optional):** Clicking the overlay backdrop can close the modal, but this should **not** be used for destructive `alertdialog` patterns where explicit user confirmation is required.
+- **Background Inertness:** When a modal is open, the underlying application layer must be entirely inert. Applying `aria-hidden="true"` to just the visual overlay is insufficient. Ensure the dialog is not nested inside a hidden ancestor.
 
 ---
 
 ### Quick Implementation Checklist
 
-- [ ] Modal container has `role="dialog"` and `aria-modal="true"`.
-- [ ] Trigger button toggles `aria-expanded` between `true` and `false`.
+- [ ] Dialog has `role="dialog"` (or `alertdialog`) and an accessible name (`aria-labelledby` or `aria-label`).
+- [ ] `alertdialog` includes `aria-describedby` pointing to the message.
+- [ ] `aria-modal="true"` is applied, and the background application is inert.
+- [ ] Custom selectors properly utilize `aria-expanded` and `aria-controls`.
 - [ ] `Escape` key closes the modal.
 - [ ] `Tab` cycles focus only within the modal (focus trap).
-- [ ] Focus returns to the trigger button upon closing.
-- [ ] Clicking the background overlay closes the modal.
+- [ ] Focus returns to the trigger button (or next logical element) upon closing.

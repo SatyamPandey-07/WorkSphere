@@ -93,10 +93,6 @@ export async function POST(
         hasErgonomic,
         outletDensity,
         wifiSpeed,
-        downloadSpeed: downloadSpeed || null,
-        uploadSpeed: uploadSpeed || null,
-        latency: latency || null,
-        crowdLevel: crowdLevel || null,
         comment,
         speedtestPhoto,
         hasPhoneBooths,
@@ -118,10 +114,6 @@ export async function POST(
         hasErgonomic: hasErgonomic || false,
         outletDensity: outletDensity || "none",
         wifiSpeed: wifiSpeed || null,
-        downloadSpeed: downloadSpeed || null,
-        uploadSpeed: uploadSpeed || null,
-        latency: latency || null,
-        crowdLevel: crowdLevel || null,
         comment,
         speedtestPhoto,
         hasPhoneBooths: hasPhoneBooths || false,
@@ -243,9 +235,10 @@ export async function POST(
         musicCounts[r.musicStyle] = (musicCounts[r.musicStyle] || 0) + 1;
       }
     });
-    const dominantMusic = Object.keys(musicCounts).length > 0
-      ? Object.entries(musicCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0]
-      : null;
+    const dominantMusic =
+      Object.keys(musicCounts).length > 0
+        ? Object.entries(musicCounts).reduce((a, b) => (b[1] > a[1] ? b : a))[0]
+        : null;
 
     await prisma.venue.update({
       where: { id: finalVenueId },

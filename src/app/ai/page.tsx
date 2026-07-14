@@ -5,12 +5,25 @@ import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { EnhancedChatbot } from "@/components/EnhancedChatbot";
 import { VenueRatingDialog } from "@/components/VenueRatingDialog";
-import { ChatErrorBoundary, MapErrorBoundary } from "@/components/ErrorBoundary";
+import {
+  ChatErrorBoundary,
+  MapErrorBoundary,
+} from "@/components/ErrorBoundary";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
-import { Loader2, Map as MapIcon, MessageCircle, WifiOff, X } from "lucide-react";
+import {
+  Loader2,
+  Map as MapIcon,
+  MessageCircle,
+  WifiOff,
+  X,
+} from "lucide-react";
 import { OfflineIndicator, PWABanner } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
-import { saveVenueOffline, getAllVenuesOffline, OfflineVenue } from "@/lib/offlineStorage";
+import {
+  saveVenueOffline,
+  getAllVenuesOffline,
+  OfflineVenue,
+} from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { Venue } from "@/components/chat/ChatMessages";
 
@@ -34,7 +47,10 @@ const Map = dynamic(() => import("@/components/Map"), {
 });
 
 function AppPage() {
-  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [location, setLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
   const [routes, setRoutes] = useState<MapRoute[]>([]);
   const [mapView, setMapView] = useState<MapView | null>(null);
@@ -63,11 +79,13 @@ function AppPage() {
 
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
-  const [routeProfile, setRouteProfile] = useState<"walking" | "cycling" | "driving">("walking");
+  const [routeProfile, setRouteProfile] = useState<
+    "walking" | "cycling" | "driving"
+  >("walking");
 
   // Stable venueIds reference — must be memoised or a new array every render
   // causes the SSE connection to be torn down and recreated on every render.
-  const venueIds = useMemo(() => markers.map(m => m.id), [markers]);
+  const venueIds = useMemo(() => markers.map((m) => m.id), [markers]);
   const { updates: realTimeUpdates, isConnected } = useRealTimeUpdates({
     venueIds,
     enabled: venueIds.length > 0 && isOnline,
@@ -77,7 +95,11 @@ function AppPage() {
   useEffect(() => {
     if (realTimeUpdates.length > 0) {
       const latestUpdate = realTimeUpdates[realTimeUpdates.length - 1];
-      if (latestUpdate.type === "rating" || latestUpdate.type === "availability" || latestUpdate.type === "new_review") {
+      if (
+        latestUpdate.type === "rating" ||
+        latestUpdate.type === "availability" ||
+        latestUpdate.type === "new_review"
+      ) {
         console.log("[RealTime] Venue update received:", latestUpdate);
       }
     }
@@ -124,14 +146,16 @@ function AppPage() {
       try {
         const offlineVenues = await getAllVenuesOffline();
         if (offlineVenues.length > 0) {
-          const offlineMarkers: MapMarker[] = offlineVenues.map((v: OfflineVenue) => ({
-            id: v.id,
-            name: v.name,
-            position: { lat: v.latitude, lng: v.longitude },
-            category: v.category || v.type || "cafe",
-            address: v.address || v.location,
-            amenities: { wifi: false, outlets: false, quiet: false },
-          }));
+          const offlineMarkers: MapMarker[] = offlineVenues.map(
+            (v: OfflineVenue) => ({
+              id: v.id,
+              name: v.name,
+              position: { lat: v.latitude, lng: v.longitude },
+              category: v.category || v.type || "cafe",
+              address: v.address || v.location,
+              amenities: { wifi: false, outlets: false, quiet: false },
+            }),
+          );
           setMarkers(offlineMarkers);
         }
       } catch (err) {
@@ -168,7 +192,9 @@ function AppPage() {
                 if (response.ok) {
                   const data = await response.json();
                   setLocation({ latitude: data.lat, longitude: data.lng });
-                  console.log(`[Location] Using ${data.source}: ${data.city}, ${data.region}`);
+                  console.log(
+                    `[Location] Using ${data.source}: ${data.city}, ${data.region}`,
+                  );
                 } else {
                   throw new Error("Location API failed");
                 }
@@ -179,7 +205,7 @@ function AppPage() {
               }
               setIsLoadingLocation(false);
             },
-            { timeout: 5000, enableHighAccuracy: false }
+            { timeout: 5000, enableHighAccuracy: false },
           );
         } catch (err) {
           console.warn("Geolocation synchronous error on mount:", err);
@@ -249,18 +275,28 @@ function AppPage() {
     switch (update.type) {
       case "markers":
         if (update.markers) {
-          const newMarkers: MapMarker[] = update.markers.map((m: { id: string; name: string; lat: number; lng: number; category: string; address?: string; wifi?: boolean }) => ({
-            id: m.id,
-            name: m.name,
-            position: { lat: m.lat, lng: m.lng },
-            category: m.category,
-            address: m.address,
-            amenities: {
-              wifi: m.wifi || false,
-              outlets: false,
-              quiet: false,
-            },
-          }));
+          const newMarkers: MapMarker[] = update.markers.map(
+            (m: {
+              id: string;
+              name: string;
+              lat: number;
+              lng: number;
+              category: string;
+              address?: string;
+              wifi?: boolean;
+            }) => ({
+              id: m.id,
+              name: m.name,
+              position: { lat: m.lat, lng: m.lng },
+              category: m.category,
+              address: m.address,
+              amenities: {
+                wifi: m.wifi || false,
+                outlets: false,
+                quiet: false,
+              },
+            }),
+          );
           setMarkers(newMarkers);
 
           // Auto-center map on new markers
@@ -304,20 +340,36 @@ function AppPage() {
         if (update.route) {
           const toLoc = update.route.to;
 
-          const executeRoute = async (fromLoc: { lat: number; lng: number }) => {
-            if (!fromLoc || typeof fromLoc.lat !== 'number' || typeof fromLoc.lng !== 'number' || 
-                !toLoc || typeof toLoc.lat !== 'number' || typeof toLoc.lng !== 'number' ||
-                isNaN(fromLoc.lat) || isNaN(fromLoc.lng) || isNaN(toLoc.lat) || isNaN(toLoc.lng)) {
-              console.error("OSRM routing execution error: Invalid coordinates provided", { fromLoc, toLoc });
+          const executeRoute = async (fromLoc: {
+            lat: number;
+            lng: number;
+          }) => {
+            if (
+              !fromLoc ||
+              typeof fromLoc.lat !== "number" ||
+              typeof fromLoc.lng !== "number" ||
+              !toLoc ||
+              typeof toLoc.lat !== "number" ||
+              typeof toLoc.lng !== "number" ||
+              isNaN(fromLoc.lat) ||
+              isNaN(fromLoc.lng) ||
+              isNaN(toLoc.lat) ||
+              isNaN(toLoc.lng)
+            ) {
+              console.error(
+                "OSRM routing execution error: Invalid coordinates provided",
+                { fromLoc, toLoc },
+              );
               setToast({
-                message: "Could not calculate route due to invalid location coordinates.",
-                type: "error"
+                message:
+                  "Could not calculate route due to invalid location coordinates.",
+                type: "error",
               });
               return;
             }
 
             try {
-              const { getRoute } = await import('@/lib/routing');
+              const { getRoute } = await import("@/lib/routing");
               const routeData = await getRoute(fromLoc, toLoc, routeProfile);
 
               const newRoute: MapRoute = {
@@ -351,65 +403,112 @@ function AppPage() {
             try {
               navigator.geolocation.getCurrentPosition(
                 (position) => {
-                  const preciseLoc = { lat: position.coords.latitude, lng: position.coords.longitude };
-                  setLocation({ latitude: preciseLoc.lat, longitude: preciseLoc.lng });
+                  const preciseLoc = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude,
+                  };
+                  setLocation({
+                    latitude: preciseLoc.lat,
+                    longitude: preciseLoc.lng,
+                  });
                   executeRoute(preciseLoc);
                 },
                 (error) => {
-                  console.warn("Geolocation failed or blocked during directions request:", error);
-                  
+                  console.warn(
+                    "Geolocation failed or blocked during directions request:",
+                    error,
+                  );
+
                   // Catch geolocation permission errors and display the toast
                   setToast({
-                    message: "Location access denied. Fallback: using map viewport center.",
-                    type: "warning"
+                    message:
+                      "Location access denied. Fallback: using map viewport center.",
+                    type: "warning",
                   });
 
                   // Fallback to center of current map viewport, or location state, or default SF
                   let fallbackLoc = { lat: 37.7749, lng: -122.4194 }; // Default SF
-                  
-                  if (mapView?.center && typeof mapView.center.lat === 'number') {
+
+                  if (
+                    mapView?.center &&
+                    typeof mapView.center.lat === "number"
+                  ) {
                     fallbackLoc = mapView.center;
-                  } else if (mapView?.center && 'latitude' in mapView.center && typeof (mapView.center as any).latitude === 'number') {
+                  } else if (
+                    mapView?.center &&
+                    "latitude" in mapView.center &&
+                    typeof (mapView.center as any).latitude === "number"
+                  ) {
                     // Catch AI sending latitude instead of lat
-                    fallbackLoc = { lat: (mapView.center as any).latitude, lng: (mapView.center as any).longitude };
-                  } else if (location && typeof location.latitude === 'number') {
-                    fallbackLoc = { lat: location.latitude, lng: location.longitude };
+                    fallbackLoc = {
+                      lat: (mapView.center as any).latitude,
+                      lng: (mapView.center as any).longitude,
+                    };
+                  } else if (
+                    location &&
+                    typeof location.latitude === "number"
+                  ) {
+                    fallbackLoc = {
+                      lat: location.latitude,
+                      lng: location.longitude,
+                    };
                   }
-                  
+
                   executeRoute(fallbackLoc);
                 },
-                { timeout: 5000, enableHighAccuracy: false }
+                { timeout: 5000, enableHighAccuracy: false },
               );
             } catch (err) {
-              console.warn("Geolocation synchronous error during directions request:", err);
+              console.warn(
+                "Geolocation synchronous error during directions request:",
+                err,
+              );
               setToast({
-                message: "Location access blocked. Fallback: using map viewport center.",
-                type: "warning"
+                message:
+                  "Location access blocked. Fallback: using map viewport center.",
+                type: "warning",
               });
               let fallbackLoc = { lat: 37.7749, lng: -122.4194 }; // Default SF
-              
-              if (mapView?.center && typeof mapView.center.lat === 'number') {
+
+              if (mapView?.center && typeof mapView.center.lat === "number") {
                 fallbackLoc = mapView.center;
-              } else if (mapView?.center && 'latitude' in mapView.center && typeof (mapView.center as any).latitude === 'number') {
-                fallbackLoc = { lat: (mapView.center as any).latitude, lng: (mapView.center as any).longitude };
-              } else if (location && typeof location.latitude === 'number') {
-                fallbackLoc = { lat: location.latitude, lng: location.longitude };
+              } else if (
+                mapView?.center &&
+                "latitude" in mapView.center &&
+                typeof (mapView.center as any).latitude === "number"
+              ) {
+                fallbackLoc = {
+                  lat: (mapView.center as any).latitude,
+                  lng: (mapView.center as any).longitude,
+                };
+              } else if (location && typeof location.latitude === "number") {
+                fallbackLoc = {
+                  lat: location.latitude,
+                  lng: location.longitude,
+                };
               }
-              
+
               executeRoute(fallbackLoc);
             }
           } else {
             // Fallback for browsers without geolocation support
             let fallbackLoc = { lat: 37.7749, lng: -122.4194 }; // Default SF
-            
-            if (mapView?.center && typeof mapView.center.lat === 'number') {
+
+            if (mapView?.center && typeof mapView.center.lat === "number") {
               fallbackLoc = mapView.center;
-            } else if (mapView?.center && 'latitude' in mapView.center && typeof (mapView.center as any).latitude === 'number') {
-              fallbackLoc = { lat: (mapView.center as any).latitude, lng: (mapView.center as any).longitude };
-            } else if (location && typeof location.latitude === 'number') {
+            } else if (
+              mapView?.center &&
+              "latitude" in mapView.center &&
+              typeof (mapView.center as any).latitude === "number"
+            ) {
+              fallbackLoc = {
+                lat: (mapView.center as any).latitude,
+                lng: (mapView.center as any).longitude,
+              };
+            } else if (location && typeof location.latitude === "number") {
               fallbackLoc = { lat: location.latitude, lng: location.longitude };
             }
-            
+
             executeRoute(fallbackLoc);
           }
         }
@@ -430,33 +529,32 @@ function AppPage() {
     uploadSpeed?: number;
     latency?: number;
     crowdLevel?: string;
-    downloadSpeed?: number;
-    uploadSpeed?: number;
-    latency?: number;
-    crowdLevel?: string;
   }) => {
     if (!ratingDialog.venue) return;
 
     try {
-      const response = await fetch(`/api/venues/${ratingDialog.venue.id}/rate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...rating,
-          downloadSpeed: rating.downloadSpeed,
-          uploadSpeed: rating.uploadSpeed,
-          latency: rating.latency,
-          crowdLevel: rating.crowdLevel,
-          venue: {
-            placeId: ratingDialog.venue.id,
-            name: ratingDialog.venue.name,
-            lat: ratingDialog.venue.position.lat,
-            lng: ratingDialog.venue.position.lng,
-            category: ratingDialog.venue.category,
-            address: ratingDialog.venue.address,
-          }
-        }),
-      });
+      const response = await fetch(
+        `/api/venues/${ratingDialog.venue.id}/rate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...rating,
+            downloadSpeed: rating.downloadSpeed,
+            uploadSpeed: rating.uploadSpeed,
+            latency: rating.latency,
+            crowdLevel: rating.crowdLevel,
+            venue: {
+              placeId: ratingDialog.venue.id,
+              name: ratingDialog.venue.name,
+              lat: ratingDialog.venue.position.lat,
+              lng: ratingDialog.venue.position.lng,
+              category: ratingDialog.venue.category,
+              address: ratingDialog.venue.address,
+            },
+          }),
+        },
+      );
 
       if (!response.ok) {
         throw new Error("Failed to submit rating");
@@ -472,9 +570,12 @@ function AppPage() {
 
   if (!location || isLoadingLocation) {
     return (
-      <div 
+      <div
         className="flex items-center justify-center h-screen bg-gradient-to-br from-zinc-50 via-blue-50/30 to-zinc-50 dark:from-black dark:via-blue-950/10 dark:to-black"
-        style={{ backgroundImage: "linear-gradient(135deg, #fafafa 0%, rgba(219, 234, 254, 0.3) 50%, #fafafa 100%)" }}
+        style={{
+          backgroundImage:
+            "linear-gradient(135deg, #fafafa 0%, rgba(219, 234, 254, 0.3) 50%, #fafafa 100%)",
+        }}
       >
         <div className="text-center p-8 max-w-md">
           <div className="relative mx-auto mb-6 w-20 h-20">
@@ -487,7 +588,8 @@ function AppPage() {
             Finding Your Location
           </h2>
           <p className="text-zinc-600 dark:text-zinc-400">
-            We're pinpointing your location to find the best workspaces nearby...
+            We're pinpointing your location to find the best workspaces
+            nearby...
           </p>
           {!isOnline && (
             <div className="mt-4 px-4 py-3 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-sm flex items-center justify-center gap-2">
@@ -520,20 +622,22 @@ function AppPage() {
       <div className="md:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <button
           onClick={() => setMobileView("chat")}
-          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${mobileView === "chat"
-            ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
-            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-            }`}
+          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
+            mobileView === "chat"
+              ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
+              : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+          }`}
         >
           <MessageCircle className="w-5 h-5" />
           Chat
         </button>
         <button
           onClick={() => setMobileView("map")}
-          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${mobileView === "map"
-            ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
-            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
-            }`}
+          className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
+            mobileView === "map"
+              ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
+              : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+          }`}
         >
           <MapIcon className="w-5 h-5" />
           Map
@@ -548,10 +652,12 @@ function AppPage() {
       {/* Main Content */}
       <div className="flex flex-1 md:flex-row overflow-hidden">
         {/* Map Section - Hidden on mobile when chat is active */}
-        <div className={`
+        <div
+          className={`
           ${mobileView === "map" ? "flex" : "hidden"} 
           md:flex flex-1 md:flex-[7] relative
-        `}>
+        `}
+        >
           <MapErrorBoundary>
             <Map
               location={location}
@@ -566,10 +672,12 @@ function AppPage() {
         <div className="hidden md:block w-px bg-gradient-to-b from-zinc-200 via-zinc-300 to-zinc-200 dark:from-zinc-800 dark:via-zinc-700 dark:to-zinc-800" />
 
         {/* Chat Section - Hidden on mobile when map is active */}
-        <div className={`
+        <div
+          className={`
           ${mobileView === "chat" ? "flex" : "hidden"} 
           md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
-        `}>
+        `}
+        >
           {/* Route Profile Toggle Widget */}
           {routes.length > 0 && (
             <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
@@ -579,7 +687,8 @@ function AppPage() {
                 </span>
                 {routes[0].duration && (
                   <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                    {Math.round(routes[0].duration / 60)} mins • {(routes[0].distance! / 1000).toFixed(1)} km
+                    {Math.round(routes[0].duration / 60)} mins •{" "}
+                    {(routes[0].distance! / 1000).toFixed(1)} km
                   </span>
                 )}
               </div>
@@ -591,18 +700,25 @@ function AppPage() {
                       setRouteProfile(profile);
                       // Re-calculate route with new profile
                       if (routes.length > 0 && location) {
-                        const { getRoute } = await import('@/lib/routing');
+                        const { getRoute } = await import("@/lib/routing");
                         const lastRoute = routes[0];
                         // We need the original destination. For now, we take the last point of the path.
-                        const destination = lastRoute.path[lastRoute.path.length - 1];
-                        const routeData = await getRoute(location, destination, profile);
+                        const destination =
+                          lastRoute.path[lastRoute.path.length - 1];
+                        const routeData = await getRoute(
+                          { lat: location.latitude, lng: location.longitude },
+                          destination,
+                          profile,
+                        );
                         if (routeData) {
-                          setRoutes([{
-                            ...lastRoute,
-                            path: routeData.path,
-                            distance: routeData.distance,
-                            duration: routeData.duration,
-                          }]);
+                          setRoutes([
+                            {
+                              ...lastRoute,
+                              path: routeData.path,
+                              distance: routeData.distance,
+                              duration: routeData.duration,
+                            },
+                          ]);
                         }
                       }
                     }}
@@ -612,7 +728,11 @@ function AppPage() {
                         : "bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-750"
                     }`}
                   >
-                    {profile === "walking" ? "🚶‍♂️" : profile === "cycling" ? "🚴‍♂️" : "🚗"}
+                    {profile === "walking"
+                      ? "🚶‍♂️"
+                      : profile === "cycling"
+                        ? "🚴‍♂️"
+                        : "🚗"}
                     <span className="capitalize">{profile}</span>
                   </button>
                 ))}
@@ -623,13 +743,16 @@ function AppPage() {
             <EnhancedChatbot
               roomId={sessionId}
 
-
               onShowToast={(msg) => setToast({ message: msg, type: "warning" })}
 
               onMapUpdate={(update) => {
                 handleMapUpdate(update as MapUpdateData);
                 // Auto-switch to map on mobile when markers are added
-                if (update.type === "markers" && update.markers && update.markers.length > 0) {
+                if (
+                  update.type === "markers" &&
+                  update.markers &&
+                  update.markers.length > 0
+                ) {
                   // Small delay so user sees the results loading
                   setTimeout(() => setMobileView("map"), 500);
                 }
@@ -648,9 +771,9 @@ function AppPage() {
                     quiet: v.noiseLevel === "quiet",
                     hasErgonomic: v.hasErgonomic,
                     outletDensity: v.outletDensity,
-                    wifiSpeed: v.wifiSpeed
+                    wifiSpeed: v.wifiSpeed,
                   },
-                  score: v.score
+                  score: v.score,
                 });
               }}
 
@@ -659,7 +782,9 @@ function AppPage() {
                 // Handled internally by EnhancedChatbot now
               }}
               userLocation={
-                location ? { lat: location.latitude, lng: location.longitude } : undefined
+                location
+                  ? { lat: location.latitude, lng: location.longitude }
+                  : undefined
               }
             />
           </ChatErrorBoundary>
@@ -668,26 +793,35 @@ function AppPage() {
 
       {/* Venue Detail Dialog - Root level to avoid clipping */}
       <VenueDetailDialog
-        venue={selectedVenue ? {
-          id: selectedVenue.id,
-          name: selectedVenue.name,
-          lat: selectedVenue.position.lat,
-          lng: selectedVenue.position.lng,
-          category: selectedVenue.category,
-          address: selectedVenue.address,
-          ...selectedVenue.amenities,
-          score: selectedVenue.score
-        } as Venue : null}
+        venue={
+          selectedVenue
+            ? ({
+                id: selectedVenue.id,
+                name: selectedVenue.name,
+                lat: selectedVenue.position.lat,
+                lng: selectedVenue.position.lng,
+                category: selectedVenue.category,
+                address: selectedVenue.address,
+                ...selectedVenue.amenities,
+                score: selectedVenue.score,
+              } as Venue)
+            : null
+        }
         isOpen={!!selectedVenue}
         onClose={() => setSelectedVenue(null)}
         isFavorited={false} // Will be handled by state if needed later
         onGetDirections={(v: Venue) => {
           handleMapUpdate({
             type: "route",
-            route: { from: location ? { lat: location.latitude, lng: location.longitude } : { lat: 0, lng: 0 }, to: { lat: v.lat, lng: v.lng } }
+            route: {
+              from: location
+                ? { lat: location.latitude, lng: location.longitude }
+                : { lat: 0, lng: 0 },
+              to: { lat: v.lat, lng: v.lng },
+            },
           });
         }}
-        onToggleFavorite={() => { }} // Hook into favorite state if needed
+        onToggleFavorite={() => {}} // Hook into favorite state if needed
         onRate={(v: Venue) => {
           // Convert Venue to MapMarker format and open rating dialog
           setRatingDialog({
@@ -698,9 +832,13 @@ function AppPage() {
               position: { lat: v.lat, lng: v.lng },
               category: v.category,
               address: v.address,
-              amenities: { wifi: v.wifi, outlets: v.hasOutlets, quiet: v.noiseLevel === "quiet" },
-              wifiSpeed: v.wifiSpeed,
-            }
+              amenities: {
+                wifi: v.wifi,
+                outlets: v.hasOutlets,
+                quiet: v.noiseLevel === "quiet",
+                wifiSpeed: v.wifiSpeed,
+              },
+            },
           });
           // Close the venue detail dialog
           setSelectedVenue(null);
@@ -726,7 +864,9 @@ function AppPage() {
       {toast && (
         <div className="fixed bottom-6 right-6 z-[9999] flex items-center gap-3 px-4 py-3 rounded-2xl bg-zinc-950/80 dark:bg-black/80 backdrop-blur-xl border border-white/10 shadow-2xl text-white animate-in slide-in-from-bottom duration-300">
           <div className="h-2 w-2 rounded-full bg-orange-500 animate-pulse shrink-0" />
-          <p className="text-xs font-bold uppercase tracking-wide">{toast.message}</p>
+          <p className="text-xs font-bold uppercase tracking-wide">
+            {toast.message}
+          </p>
           <button
             onClick={() => setToast(null)}
             className="p-1 rounded-lg hover:bg-white/10 transition-colors ml-2"
@@ -741,7 +881,13 @@ function AppPage() {
 
 export default function AppPageWrapper() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-screen bg-zinc-50"><Loader2 className="w-8 h-8 animate-spin text-blue-600" /></div>}>
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-screen bg-zinc-50">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      }
+    >
       <AppPage />
     </Suspense>
   );

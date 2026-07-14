@@ -4,22 +4,25 @@ import { auth } from "@clerk/nextjs/server";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { venueId: string } }
+  { params }: { params: Promise<{ venueId: string }> },
 ) {
   try {
-    const { userId } = auth();
+    const { userId } = await auth();
 
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { venueId } = params;
+    const { venueId } = await params;
     const body = await req.json();
 
     const { download, upload, latency, crowdLevel } = body;
 
     if (!download || !upload || !latency || !crowdLevel) {
-      return NextResponse.json({ error: "Missing required telemetry fields" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Missing required telemetry fields" },
+        { status: 400 },
+      );
     }
 
     // Ensure the venue exists
@@ -47,7 +50,7 @@ export async function POST(
     console.error("POST /api/venues/[venueId]/telemetry error:", error);
     return NextResponse.json(
       { error: "Failed to submit wifi telemetry" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

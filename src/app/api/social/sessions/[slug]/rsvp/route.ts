@@ -13,12 +13,16 @@ export async function POST(
   const { userId } = await auth();
 
   if (!userId) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Authentication required" },
+      { status: 401 },
+    );
   }
 
   const { slug } = await params;
   const body = await request.json();
-  const status = typeof body.status === "string" ? body.status.toUpperCase() : "";
+  const status =
+    typeof body.status === "string" ? body.status.toUpperCase() : "";
 
   if (!allowed.has(status)) {
     return NextResponse.json({ error: "Invalid RSVP status" }, { status: 400 });

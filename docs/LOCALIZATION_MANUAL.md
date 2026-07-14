@@ -139,22 +139,17 @@ groups related strings. Today there is a single namespace, `venue`:
 
 Conventions to follow when adding keys:
 
-- **Group keys by feature area**, not by page — e.g. `venue.*` for
+- **Namespace by feature area**, not by page — e.g. `venue.*` for
   venue/review UI. If you add strings for a new feature (say, the
   dashboard), introduce a new top-level object, e.g. `dashboard.*`, rather
-  than dumping unrelated keys into `venue`. (If the app later needs true
-  i18next namespace-splitting — e.g. to lazy-load translations per route —
-  that would be a separate change to the `resources` config in
-  `I18nProvider.tsx`, not just a JSON key restructure.)
+  than dumping unrelated keys into `venue`.
 - **Key names are camelCase** and describe the string's purpose, not its
   content (`noReviewsYet`, not `noReviewsYetText`).
 - **Every locale file must declare the same set of keys** as `en.json`.
   `en` is the fallback language (`fallbackLng: "en"`), so a missing key in
   another locale silently falls back to the English string — it won't
-  break the build, but it will produce inconsistent UI language. Keep
-  *every* locale file in sync whenever you add, rename, or remove a key —
-  don't rely on the current file count, since that will change as more
-  locales are added (see [Section 4](#4-adding-a-new-locale)).
+  break the build, but it will produce inconsistent UI language. Keep all
+  five files in sync when you add, rename, or remove a key.
 - Reference keys in code with dot notation matching the JSON nesting:
   `t("venue.wifi")`, `t("venue.translate")`, etc.
 
@@ -263,21 +258,14 @@ forward is:
 2. Bind messages at the point of use with `t()` rather than through Zod's
    global `z.setErrorMap`, since Zod schemas in `src/lib/validations.ts` are
    shared by both client components and server-only API routes (which don't
-   have access to the React i18next context). Map each failing issue to its
-   own key instead of showing one hardcoded message for every failure — for
-   example, in a client component:
+   have access to the React i18next context). For example, in a client
+   component:
 
    ```tsx
    const { t } = useTranslation();
    const result = venueCreateSchema.safeParse(formValues);
    if (!result.success) {
-     // Map the specific Zod issue path to a validation key, falling back
-     // to a generic message for anything not explicitly mapped.
-     const issue = result.error.issues[0];
-     const key = issue.path.includes("latitude") || issue.path.includes("longitude")
-       ? "validation.invalidCoordinates"
-       : "validation.required";
-     showError(t(key));
+     showError(t("validation.required"));
    }
    ```
 

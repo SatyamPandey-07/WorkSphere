@@ -29,6 +29,7 @@ import {
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
 import Link from "next/link";
+import { ThemeToggle } from "../ThemeToggle";
 
 interface Conversation {
   id: string;
@@ -269,7 +270,7 @@ export function ChatHeader({
           </button>
 
           {/* Analytics Link */}
-          <Link
+         <Link
             href="/analytics"
             className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden lg:flex"
             title="Intelligence Dashboard"
@@ -277,7 +278,12 @@ export function ChatHeader({
             <BarChart3 className="w-4 h-4" />
           </Link>
 
+          {/* Theme Toggle */}
+          <ThemeToggle />
+
           <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
+
+      
 
           {/* Add Venue Suggestion Button - High Contrast */}
           <button

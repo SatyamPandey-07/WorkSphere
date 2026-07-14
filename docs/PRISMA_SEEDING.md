@@ -2,8 +2,6 @@
 
 This document explains how to run, customize, and extend `prisma/seed.js` — the script that populates your local database with mock venues, a test user, and sample ratings so you have real data to develop against.
 
----
-
 ## 1. What the Seed Script Does
 
 Running the seed script performs three things, in order:
@@ -14,16 +12,12 @@ Running the seed script performs three things, in order:
 
 The default dataset is centered on **Brooklyn, NY** (roughly 40.67–40.73°N, -73.95 to -73.99°W).
 
----
-
 ## 2. Prerequisites
 
 | Requirement                              | Why                                                                                                                                               |
 | :--------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------ |
 | A working `DATABASE_URL` in `.env.local` | The seed script connects via Prisma's configured adapter — see `docs/ENVIRONMENT_VARIABLES.md` §2.A for how to get a free Neon connection string. |
 | Migrations applied                       | Run `npx prisma migrate dev` first if you haven't already — the seed script will fail if the tables it writes to don't exist yet.                 |
-
----
 
 ## 3. Running the Seed Script
 
@@ -43,8 +37,6 @@ Database seeding completed successfully!
 ```
 
 The script uses `upsert` throughout, so it's safe to re-run — it won't create duplicate rows, it'll just update the existing ones.
-
----
 
 ## 4. Customizing Coordinates for Your Location
 
@@ -83,8 +75,6 @@ const mockVenues = [
 | `noiseLevel`             | `string` | `"quiet"` \| `"moderate"` \| `"loud"` — categorical label.        |
 | `outletDensity`          | `string` | `"every_table"` \| `"some_tables"` \| `"wall_seats"` \| `"none"`. |
 
----
-
 ## 5. Adding New Fields to Seeded Ratings — a Gotcha to Know About
 
 If you add a new property to an object in `mockVenues` (for example, `avgDecibels` for a numeric noise rating), **adding it to the object alone is not enough.** The `prisma.venueRating.upsert()` call further down the file has two separate blocks — `update:` and `create:` — and Prisma only writes fields that are explicitly listed in whichever block actually runs:
@@ -112,8 +102,6 @@ SELECT id, "venueId", "avgDecibels" FROM "VenueRating";
 ```
 
 If you added a field to only one block, re-running `npx prisma db seed` after fixing both blocks will backfill existing rows correctly (since `upsert` runs the `update` path once the rows already exist).
-
----
 
 ## 6. Quick Reference
 

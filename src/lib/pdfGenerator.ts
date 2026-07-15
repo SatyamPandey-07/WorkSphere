@@ -294,8 +294,10 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
   let boldFont: any;
 
   try {
-    const regularFontBytes = fs.readFileSync(regularFontPath);
-    const boldFontBytes = fs.readFileSync(boldFontPath);
+    const [regularFontBytes, boldFontBytes] = await Promise.all([
+      fs.promises.readFile(regularFontPath),
+      fs.promises.readFile(boldFontPath),
+    ]);
     font = await pdfDoc.embedFont(regularFontBytes);
     boldFont = await pdfDoc.embedFont(boldFontBytes);
   } catch {

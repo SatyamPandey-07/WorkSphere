@@ -14,8 +14,28 @@ jobs:
       contents: read
     env:
       DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_dummy
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ
       CLERK_SECRET_KEY: sk_test_dummy
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+      NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: /ai
+      NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: /ai
+      NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL: /ai
+      NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL: /ai
+      GROQ_API_KEY: gsk_dummy
+      PEXELS_API_KEY: dummy
+      WHATSAPP_WEBHOOK_URL: https://example.com/webhook
+      WHATSAPP_API_TOKEN: dummy
+      WHATSAPP_PHONE_NUMBER_ID: dummy
+      TWILIO_ACCOUNT_SID: ACdummy
+      TWILIO_AUTH_TOKEN: dummy
+      TWILIO_WHATSAPP_FROM: whatsapp:+14155238886
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: "465"
+      SMTP_USER: dummy@example.com
+      SMTP_PASS: dummy
+      UPSTASH_REDIS_REST_URL: https://dummy.upstash.io
+      UPSTASH_REDIS_REST_TOKEN: dummy
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

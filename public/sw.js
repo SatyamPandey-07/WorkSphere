@@ -7,26 +7,43 @@ const PRECACHE_ASSETS = ["/", "/offline", "/icons/icon.svg", "/manifest.json"];
 
 // Install event - precache essential assets
 self.addEventListener("install", (event) => {
+  // Use a temporary cache for installation to prevent locking the main cache
+  const tempCacheName = `${CACHE_NAME}-installing`;
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(tempCacheName).then((cache) => {
       return cache.addAll(PRECACHE_ASSETS);
-    }),
+    }).then(() => {
+      // Once assets are added, we can skip waiting immediately
+      return self.skipWaiting();
+    }).catch(err => {
+      console.error("[SW] Install failed:", err);
+      // Even if install fails, we skip waiting to avoid getting stuck in 'installing' state
+      return self.skipWaiting();
+    })
   );
-  self.skipWaiting();
 });
 
-// Activate event - clean up old caches
+// Activate event - clean up old caches and move temp assets
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames
-          .filter((name) => name !== CACHE_NAME)
+          .filter((name) => name !== CACHE_NAME && !name.endsWith("-installing"))
           .map((name) => caches.delete(name)),
       );
-    }),
+    }).then(() => {
+      // Claim clients immediately to take control of the page
+      return self.clients.claim();
+    }).then(() => {
+      // Clean up any stray installation caches
+      return caches.keys().then(names => {
+        return Promise.all(
+          names.filter(n => n.endsWith("-installing")).map(n => caches.delete(n))
+        );
+      });
+    })
   );
-  self.clients.claim();
 });
 
 // Handle Cache-First for maps and images, Network-First for everything else

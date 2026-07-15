@@ -29,6 +29,7 @@ import {
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
 import Link from "next/link";
+import { ThemeToggle } from "../ThemeToggle";
 
 interface Conversation {
   id: string;
@@ -54,6 +55,7 @@ interface ChatHeaderProps {
     specialtyEspresso?: boolean;
     oatAlmondMilk?: boolean;
     pourOverAvailable?: boolean;
+    musicStyle?: "all" | "lofi" | "classical_jazz" | "no_music";
   };
   showFilters: boolean;
   setShowFilters: (show: boolean) => void;
@@ -98,6 +100,7 @@ export function ChatHeader({
   onShowBookings,
 
   roomId: _roomId,
+
   onShareSession,
 }: ChatHeaderProps) {
   const [isHubOpen, setIsHubOpen] = useState(false);
@@ -266,16 +269,21 @@ export function ChatHeader({
             <Filter className="w-4 h-4" />
           </button>
 
-          {/* Dashboard Link */}
-          <Link
-            href="/dashboard"
+          {/* Analytics Link */}
+         <Link
+            href="/analytics"
             className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden lg:flex"
-            title="Dashboard"
+            title="Intelligence Dashboard"
           >
             <BarChart3 className="w-4 h-4" />
           </Link>
 
+          {/* Theme Toggle */}
+          <ThemeToggle />
+
           <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
+
+      
 
           {/* Add Venue Suggestion Button - High Contrast */}
           <button
@@ -481,6 +489,35 @@ export function ChatHeader({
                 ))}
               </div>
             </div>
+
+            {/* Section 4: Background Music Style Segment */}
+            <div>
+              <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
+                Background Music Style
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "Any Style", value: "all" },
+                  { label: "Lo-Fi / Chill Beats", value: "lofi" },
+                  { label: "Classical / Jazz", value: "classical_jazz" },
+                  { label: "No Music Played", value: "no_music" },
+                ].map((style) => (
+                  <button
+                    key={style.value}
+                    onClick={() =>
+                      onSetFilter && onSetFilter("musicStyle", style.value)
+                    }
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                      (filters.musicStyle || "all") === style.value
+                        ? "bg-orange-600 text-white shadow-md"
+                        : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                    }`}
+                  >
+                    {style.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -597,12 +634,12 @@ export function ChatHeader({
             </span>
           </div>
           <Link
-            href="/dashboard"
+            href="/analytics"
             className="hidden lg:flex items-center gap-1.5 hover:opacity-70 transition-opacity"
           >
             <Activity className="w-3 h-3 text-zinc-400" />
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-              DASHBOARD
+              ANALYTICS
             </span>
           </Link>
         </div>

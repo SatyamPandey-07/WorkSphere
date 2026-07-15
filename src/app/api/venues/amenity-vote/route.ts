@@ -9,9 +9,17 @@ function buildResponse(amenity: string, upvotes: number, downvotes: number) {
   const totalVotes = upvotes + downvotes;
   const confidenceScore =
     totalVotes > 0 ? Math.round((upvotes / totalVotes) * 100) : 100;
-  const hidden = totalVotes >= MIN_VOTES_TO_HIDE && confidenceScore < HIDE_THRESHOLD;
+  const hidden =
+    totalVotes >= MIN_VOTES_TO_HIDE && confidenceScore < HIDE_THRESHOLD;
 
-  return { success: true, amenity, upvotes, downvotes, confidenceScore, hidden };
+  return {
+    success: true,
+    amenity,
+    upvotes,
+    downvotes,
+    confidenceScore,
+    hidden,
+  };
 }
 
 export async function POST(request: Request) {
@@ -20,7 +28,7 @@ export async function POST(request: Request) {
     if (!userId) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -29,7 +37,7 @@ export async function POST(request: Request) {
     if (!venueId || !amenity || typeof isUpvote !== "boolean") {
       return NextResponse.json(
         { success: false, error: "Missing required parameters" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -46,7 +54,7 @@ export async function POST(request: Request) {
     if (existingVote) {
       if (existingVote.isUpvote === isUpvote) {
         return NextResponse.json(
-          buildResponse(amenity, validation.upvotes, validation.downvotes)
+          buildResponse(amenity, validation.upvotes, validation.downvotes),
         );
       }
 
@@ -62,8 +70,16 @@ export async function POST(request: Request) {
           : { upvotes: { decrement: 1 }, downvotes: { increment: 1 } },
       });
 
+      const venueFields = ["dogFriendly", "catsAllowed", "petsAllowedIndoors"];
+      if (venueFields.includes(amenity)) {
+        await prisma.venue.update({
+          where: { id: venueId },
+          data: { [amenity]: updated.upvotes >= 5 },
+        });
+      }
+
       return NextResponse.json(
-        buildResponse(amenity, updated.upvotes, updated.downvotes)
+        buildResponse(amenity, updated.upvotes, updated.downvotes),
       );
     }
 
@@ -78,14 +94,22 @@ export async function POST(request: Request) {
         : { downvotes: { increment: 1 } },
     });
 
+    const venueFields = ["dogFriendly", "catsAllowed", "petsAllowedIndoors"];
+    if (venueFields.includes(amenity)) {
+      await prisma.venue.update({
+        where: { id: venueId },
+        data: { [amenity]: updated.upvotes >= 5 },
+      });
+    }
+
     return NextResponse.json(
-      buildResponse(amenity, updated.upvotes, updated.downvotes)
+      buildResponse(amenity, updated.upvotes, updated.downvotes),
     );
   } catch (error: any) {
     console.error("POST /api/venues/amenity-vote error:", error);
     return NextResponse.json(
       { success: false, error: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

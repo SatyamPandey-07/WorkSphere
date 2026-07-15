@@ -166,6 +166,29 @@ async function main() {
       },
     });
     console.log(`Rating seeded for venue: ${venue.name}`);
+
+    // 4. Seed mock telemetry data for each venue
+    const crowdLevels = ["empty", "moderate", "busy", "very busy"];
+    const now = new Date();
+    for (let i = 0; i < 20; i++) {
+      const timestamp = new Date(now.getTime() - i * 3600000); // 1 hour intervals
+      const crowdLevel = crowdLevels[Math.floor(Math.random() * crowdLevels.length)];
+      let multiplier = 1.0;
+      if (crowdLevel === "busy") multiplier = 0.7;
+      if (crowdLevel === "very busy") multiplier = 0.5;
+
+      await prisma.wifiTelemetry.create({
+        data: {
+          venueId: venue.id,
+          download: Math.round(vData.wifiSpeed * multiplier * (0.9 + Math.random() * 0.2)),
+          upload: Math.round(vData.wifiSpeed * 0.5 * multiplier * (0.9 + Math.random() * 0.2)),
+          latency: Math.round(20 + Math.random() * 30),
+          crowdLevel,
+          timestamp,
+        },
+      });
+    }
+    console.log(`Telemetry seeded for venue: ${venue.name}`);
   }
 
   console.log("Database seeding completed successfully!");

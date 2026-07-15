@@ -28,10 +28,41 @@ export function useServiceWorker() {
         .then((reg) => {
           console.log("[PWA] Service worker registered");
           setRegistration(reg);
+
+          // Check for updates on every page load
+          reg.update();
+
+          // Handle update found
+          reg.onupdatefound = () => {
+            const installingWorker = reg.installing;
+            if (installingWorker) {
+              installingWorker.onstatechange = () => {
+                if (installingWorker.state === "installed") {
+                  if (navigator.serviceWorker.controller) {
+                    // New content is available; please refresh.
+                    console.log("[PWA] New content available, please refresh.");
+                    // Optional: Show a toast or notification to the user
+                  } else {
+                    // Content is cached for offline use.
+                    console.log("[PWA] Content is cached for offline use.");
+                  }
+                }
+              };
+            }
+          };
         })
         .catch((err) => {
           console.error("[PWA] Service worker registration failed:", err);
         });
+
+      // Handle controller change (e.g. after skipWaiting)
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
     }
 
     // Online/offline detection

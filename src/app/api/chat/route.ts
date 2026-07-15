@@ -225,6 +225,7 @@ async function dataAgent(
     specialtyEspresso?: boolean;
     oatAlmondMilk?: boolean;
     pourOverAvailable?: boolean;
+    musicStyle?: string;
   }
 ): Promise<{
   venues: any[];
@@ -373,6 +374,13 @@ async function dataAgent(
           venues = venues.filter((v: any) => v.pourOverAvailable);
         if (filters.hasNoMusic) venues = venues.filter((v: any) => v.hasNoMusic);
         if (filters.hasQuietZone) venues = venues.filter((v: any) => v.hasQuietZone);
+        if (filters.musicStyle && filters.musicStyle !== "all") {
+          if (filters.musicStyle === "no_music") {
+            venues = venues.filter((v: any) => v.musicStyle === "no_music" || v.hasNoMusic);
+          } else {
+            venues = venues.filter((v: any) => v.musicStyle === filters.musicStyle);
+          }
+        }
       }
 
       return {
@@ -491,6 +499,13 @@ async function dataAgent(
     if (filters.hasPhoneBooths) filteredMock = filteredMock.filter((v: any) => v.hasPhoneBooths);
     if (filters.hasNoMusic) filteredMock = filteredMock.filter((v: any) => v.hasNoMusic);
     if (filters.hasQuietZone) filteredMock = filteredMock.filter((v: any) => v.hasQuietZone);
+    if (filters.musicStyle && filters.musicStyle !== "all") {
+      if (filters.musicStyle === "no_music") {
+        filteredMock = filteredMock.filter((v: any) => v.musicStyle === "no_music" || v.hasNoMusic);
+      } else {
+        filteredMock = filteredMock.filter((v: any) => v.musicStyle === filters.musicStyle);
+      }
+    }
   }
 
   return {
@@ -1010,6 +1025,22 @@ export async function POST(req: Request) {
             finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50);
           } else if (filters.wifiSpeedBand === "ultra") {
             finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100);
+          }
+        }
+        if (filters.hasPhoneBooths) {
+          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasPhoneBooths);
+        }
+        if (filters.hasNoMusic) {
+          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasNoMusic);
+        }
+        if (filters.hasQuietZone) {
+          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.hasQuietZone);
+        }
+        if (filters.musicStyle && filters.musicStyle !== "all") {
+          if (filters.musicStyle === "no_music") {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.musicStyle === "no_music" || v.hasNoMusic);
+          } else {
+            finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.musicStyle === filters.musicStyle);
           }
         }
       }

@@ -39,12 +39,23 @@ export async function POST(
       hasErgonomic,
       outletDensity,
       wifiSpeed,
+      downloadSpeed,
+      uploadSpeed,
+      latency,
+      crowdLevel,
       speedtestPhoto,
       hasPhoneBooths,
       hasNoMusic,
       hasQuietZone,
       lighting,
+      musicStyle,
       powerTypes,
+      outletLocations,
+      petsAllowedIndoors,
+      patioOnly,
+      waterBowlsProvided,
+      dogFriendly,
+      catsAllowed,
     } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
@@ -93,7 +104,14 @@ export async function POST(
         hasNoMusic,
         hasQuietZone,
         lighting,
+        musicStyle,
         powerTypes: powerTypes || [],
+        outletLocations: outletLocations || [],
+        petsAllowedIndoors,
+        patioOnly,
+        waterBowlsProvided,
+        dogFriendly,
+        catsAllowed,
       },
       create: {
         userId,
@@ -112,9 +130,29 @@ export async function POST(
         hasNoMusic: hasNoMusic || false,
         hasQuietZone: hasQuietZone || false,
         lighting: lighting || null,
+        musicStyle,
         powerTypes: powerTypes || [],
+        outletLocations: outletLocations || [],
+        petsAllowedIndoors: petsAllowedIndoors || false,
+        patioOnly: patioOnly || false,
+        waterBowlsProvided: waterBowlsProvided || false,
+        dogFriendly: dogFriendly || false,
+        catsAllowed: catsAllowed || false,
       },
     });
+
+    // Create WifiTelemetry entry if all speed/latency/crowd data is provided
+    if (downloadSpeed && uploadSpeed && latency && crowdLevel) {
+      await prisma.wifiTelemetry.create({
+        data: {
+          venueId: finalVenueId,
+          download: downloadSpeed,
+          upload: uploadSpeed,
+          latency: latency,
+          crowdLevel: crowdLevel,
+        },
+      });
+    }
 
     // Update venue with new averages
     const allRatings = await prisma.venueRating.findMany({
@@ -189,6 +227,11 @@ export async function POST(
       new Set(allRatings.flatMap((r: any) => r.powerTypes || [])),
     );
 
+    // Aggregate outlet locations (unique union of all outletLocations in all ratings)
+    const aggregatedOutletLocations = Array.from(
+      new Set(allRatings.flatMap((r: any) => r.outletLocations || [])),
+    );
+
     // Average wifi speed
     const validSpeeds = allRatings
       .filter((r: any) => r.wifiSpeed !== null && r.wifiSpeed > 0)
@@ -199,6 +242,37 @@ export async function POST(
             validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length,
           )
         : null;
+
+    // Most common music style
+    const musicCounts: Record<string, number> = {};
+    allRatings.forEach((r: any) => {
+      if (r.musicStyle) {
+        musicCounts[r.musicStyle] = (musicCounts[r.musicStyle] || 0) + 1;
+      }
+    });
+    const dominantMusic =
+      Object.keys(musicCounts).length > 0
+        ? Object.entries(musicCounts).reduce((a, b) => (b[1] > a[1] ? b : a))[0]
+        : null;
+    const petsAllowedIndoorsPercent =
+      (allRatings.filter((r: any) => r.petsAllowedIndoors).length /
+        allRatings.length) *
+      100;
+    const patioOnlyPercent =
+      (allRatings.filter((r: any) => r.patioOnly).length / allRatings.length) *
+      100;
+    const waterBowlsPercent =
+      (allRatings.filter((r: any) => r.waterBowlsProvided).length /
+        allRatings.length) *
+      100;
+    const dogFriendlyPercent =
+      (allRatings.filter((r: any) => r.dogFriendly).length /
+        allRatings.length) *
+      100;
+    const catsAllowedPercent =
+      (allRatings.filter((r: any) => r.catsAllowed).length /
+        allRatings.length) *
+      100;
 
     await prisma.venue.update({
       where: { id: finalVenueId },
@@ -213,7 +287,14 @@ export async function POST(
         hasNoMusic: noMusicPercent > 50,
         hasQuietZone: quietZonePercent > 50,
         lighting: dominantLighting,
+        musicStyle: dominantMusic,
         powerTypes: aggregatedPowerTypes,
+        outletLocations: aggregatedOutletLocations,
+        petsAllowedIndoors: petsAllowedIndoorsPercent > 50,
+        patioOnly: patioOnlyPercent > 50,
+        waterBowlsProvided: waterBowlsPercent > 50,
+        dogFriendly: dogFriendlyPercent > 50,
+        catsAllowed: catsAllowedPercent > 50,
         crowdsourced: true,
       },
     });

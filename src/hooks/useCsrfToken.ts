@@ -36,33 +36,47 @@ function installCsrfFetchInterceptor() {
 
   const originalFetch = window.fetch.bind(window);
 
-  window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+  window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url =
       typeof input === "string" || input instanceof URL
         ? input.toString()
         : input.url;
+    const isInputRequest =
+      typeof Request !== "undefined" && input instanceof Request;
     const method = (
-      init?.method || (input instanceof Request ? input.method : "GET")
+      init?.method || (isInputRequest ? input.method : "GET")
     ).toUpperCase();
     const isMutating = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
     const isSameOriginApi =
       url.startsWith("/api") || url.startsWith(`${window.location.origin}/api`);
 
     if (isMutating && isSameOriginApi) {
-      // If the token is already cached, attach it synchronously.
-      // If not (e.g. mobile browser taps Resend before the mount-time fetch
-      // resolves), fetch a fresh token first — this closes the race condition
-      // that caused 403s on the OTP resend flow.
-      const attachAndFetch = async () => {
-        const token = currentCsrfToken ?? (await fetchFreshToken());
-        const headers = new Headers(
-          init?.headers ??
-            (input instanceof Request ? input.headers : undefined),
-        );
-        if (token) headers.set(CSRF_HEADER_NAME, token);
-        return originalFetch(input, { ...init, headers });
-      };
-      return attachAndFetch();
+      const headers = new Headers(
+        init?.headers ?? (isInputRequest ? input.headers : undefined),
+      );
+      if (currentCsrfToken) {
+        headers.set(CSRF_HEADER_NAME, currentCsrfToken);
+      }
+      const response = await originalFetch(input, { ...init, headers });
+      if (response.status === 403) {
+        const clone = response.clone();
+        try {
+          const body = await clone.json();
+          if (body && body.error && body.error.toLowerCase().includes("csrf")) {
+            const freshToken = await fetchFreshToken();
+            if (freshToken) {
+              const retryHeaders = new Headers(
+                init?.headers ?? (isInputRequest ? input.headers : undefined),
+              );
+              retryHeaders.set(CSRF_HEADER_NAME, freshToken);
+              return originalFetch(input, { ...init, headers: retryHeaders });
+            }
+          }
+        } catch {
+          // Response was not JSON or did not have CSRF error
+        }
+      }
+      return response;
     }
 
     return originalFetch(input, init);

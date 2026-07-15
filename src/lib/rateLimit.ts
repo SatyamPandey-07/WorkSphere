@@ -7,7 +7,9 @@
 
 // ─── Upstash (production) ────────────────────────────────────────────────────
 type UpstashRatelimit = {
-  limit: (identifier: string) => Promise<{ success: boolean; remaining: number; reset: number }>;
+  limit: (
+    identifier: string,
+  ) => Promise<{ success: boolean; remaining: number; reset: number }>;
 };
 const upstashLimiters = new Map<number, UpstashRatelimit>();
 
@@ -38,7 +40,7 @@ function getUpstashRatelimit(limitPerMinute: number) {
       prefix: "worksphere:ratelimit",
     }) as {
       limit: (
-        identifier: string
+        identifier: string,
       ) => Promise<{ success: boolean; remaining: number; reset: number }>;
     };
   } catch {
@@ -54,15 +56,19 @@ interface MemEntry {
 const memStore = new Map<string, MemEntry>();
 const WINDOW_MS = 60_000;
 
+const cleanupInterval = setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of memStore) {
+    if (now > v.resetTime) memStore.delete(k);
+  }
+}, WINDOW_MS);
+
+if (cleanupInterval.unref) {
+  cleanupInterval.unref();
+}
+
 function memRateLimit(identifier: string, limit: number): boolean {
   const now = Date.now();
-
-  // Periodic cleanup — keep memory from growing unbounded
-  if (memStore.size > 10_000) {
-    for (const [k, v] of memStore) {
-      if (now > v.resetTime) memStore.delete(k);
-    }
-  }
 
   const entry = memStore.get(identifier);
 
@@ -79,11 +85,16 @@ function memRateLimit(identifier: string, limit: number): boolean {
 
 function memGetInfo(
   identifier: string,
-  limit: number
+  limit: number,
 ): { count: number; remaining: number; resetTime: number; isLimited: boolean } {
   const entry = memStore.get(identifier);
   if (!entry || Date.now() > entry.resetTime) {
-    return { count: 0, remaining: limit, resetTime: Date.now() + WINDOW_MS, isLimited: false };
+    return {
+      count: 0,
+      remaining: limit,
+      resetTime: Date.now() + WINDOW_MS,
+      isLimited: false,
+    };
   }
   return {
     count: entry.count,
@@ -101,7 +112,7 @@ function memGetInfo(
  */
 export async function rateLimit(
   identifier: string,
-  limit = 10
+  limit = 10,
 ): Promise<boolean> {
   let rl = upstashLimiters.get(limit);
 
@@ -127,8 +138,13 @@ export async function rateLimit(
  */
 export function getRateLimitInfo(
   identifier: string,
-  limit = 10
-): { count: number; remaining: number; resetTime: number; isLimited: boolean } | null {
+  limit = 10,
+): {
+  count: number;
+  remaining: number;
+  resetTime: number;
+  isLimited: boolean;
+} | null {
   return memGetInfo(identifier, limit);
 }
 

@@ -61,5 +61,23 @@ describe("PDF Generator", () => {
       expect(pdfBytes).toBeInstanceOf(Uint8Array);
       expect(pdfBytes.length).toBeGreaterThan(0);
     });
+
+    it("should handle large bookings list and paginate across multiple pages successfully", async () => {
+      const mockBookings = Array.from({ length: 50 }).map((_, i) => ({
+        ...mockBooking,
+        id: i + 1,
+        confirmationId: `WS-CONF-${i + 1}`,
+      }));
+      const pdfBytes = await generateTaxExportPdf(mockBookings);
+      expect(pdfBytes).toBeInstanceOf(Uint8Array);
+      expect(pdfBytes.length).toBeGreaterThan(0);
+
+      // Load PDF and verify page count
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { PDFDocument: LibPDFDocument } = require("pdf-lib");
+      const doc = await LibPDFDocument.load(pdfBytes);
+      // 2 summary pages (since 50 bookings exceed 42 vertical lines) + 50 details pages = 52 pages
+      expect(doc.getPageCount()).toBe(52);
+    });
   });
 });

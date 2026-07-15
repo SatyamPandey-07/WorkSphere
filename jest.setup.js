@@ -9,7 +9,7 @@ if (typeof global.TextEncoder === "undefined") {
   global.TextDecoder = TextDecoder;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+/* eslint-disable @typescript-eslint/no-require-imports */
 const {
   Request: UndiciRequest,
   Response: UndiciResponse,
@@ -17,6 +17,7 @@ const {
   FormData: UndiciFormData,
   File: UndiciFile,
 } = require("undici");
+/* eslint-enable @typescript-eslint/no-require-imports */
 
 if (typeof global.Request === "undefined") {
   global.Request = UndiciRequest;

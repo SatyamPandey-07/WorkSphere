@@ -13,6 +13,8 @@ Themes usually rely on `window.localStorage` or the user's system preferences, w
 **The Fix:** Use a `mounted` state with a `useEffect` hook to ensure theme-dependent UI only renders after the component has mounted on the client.
 
 ```tsx
+"use client";
+
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 
@@ -39,11 +41,13 @@ export default function ThemeToggle() {
 
 ## 2. Local Clock Components & Window State
 
-Components that display the current local time or rely on `window` dimensions (like `window.innerWidth`) will always mismatch because the server's time/environment is different from the user's browser.
+Components that display the current local time or rely on `window` dimensions (like `window.innerWidth`) often mismatch because the server's environment is different from the user's browser.
 
-**The Fix:** Use Next.js dynamic imports and disable SSR for these specific components.
+**The Fix:** Use Next.js dynamic imports and disable SSR for these specific components. _Note: Disabling SSR trades away server-rendered HTML for that specific component._
 
 ```tsx
+"use client";
+
 import dynamic from "next/dynamic";
 
 // The server will skip rendering this component entirely
@@ -61,20 +65,24 @@ export default function Dashboard() {
 }
 ```
 
-## 3. Layout Wrapper Template (`SafeHydrate`)
+## 3. Client-Only Gate (`ClientOnly`)
 
-If you have a larger section of your app that relies heavily on client-side state (like browser APIs), you can use a layout wrapper template to suppress hydration errors safely.
+If you have a larger section of your app that relies heavily on client-side state (like browser APIs), you can use a client-only gate wrapper. Since this pattern renders `null` (or a stable fallback) during SSR, it safely bypasses hydration issues without needing the `suppressHydrationWarning` attribute.
 
-Create a generic `<SafeHydrate>` wrapper component:
+Create a generic `<ClientOnly>` wrapper component:
 
 ```tsx
-// components/SafeHydrate.tsx
+"use client";
+
+// components/ClientOnly.tsx
 import { useEffect, useState } from "react";
 
-export default function SafeHydrate({
+export default function ClientOnly({
   children,
+  fallback = null,
 }: {
   children: React.ReactNode;
+  fallback?: React.ReactNode;
 }) {
   const [isClient, setIsClient] = useState(false);
 
@@ -82,20 +90,22 @@ export default function SafeHydrate({
     setIsClient(true);
   }, []);
 
-  return <div suppressHydrationWarning>{isClient ? children : null}</div>;
+  return <>{isClient ? children : fallback}</>;
 }
 ```
 
 **Usage in a Layout or Page:**
 
 ```tsx
-import SafeHydrate from "@/components/SafeHydrate";
+"use client";
+
+import ClientOnly from '@/components/ClientOnly';
 
 export default function ClientHeavyPage() {
   return (
-    <SafeHydrate>
-      <ClientOnlyDashboard />
-    </SafeHydrate>
+    <ClientOnly fallback="{<div">Loading...</div>}>
+      <ClientOnlyDashboard/>
+    </ClientOnly>
   );
 }
 ```

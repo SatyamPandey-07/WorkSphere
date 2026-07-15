@@ -2,9 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import Groq from "groq-sdk";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+import { triggerBackgroundMemorySync } from "@/lib/backgroundSync";
 import { chatRequestSchema, validateRequest } from "@/lib/validations";
 import { checkSemanticCache, setSemanticCache } from "@/lib/cache/semanticCache";
-import { extractAndStoreMemories, updateUserPreferencesSummary } from "@/lib/agents/MemoryAgent";
 
 export const maxDuration = 60;
 
@@ -840,9 +840,7 @@ export async function POST(req: Request) {
               });
 
               // Trigger background preference learning & summary updates
-              extractAndStoreMemories(conversationId)
-                .then(() => updateUserPreferencesSummary(userId))
-                .catch((err) => console.error("[GeneralChat] Background preference sync failed:", err));
+              triggerBackgroundMemorySync(conversationId, userId);
             } catch (dbError) {
               console.error("Database save error:", dbError);
             }
@@ -1088,9 +1086,7 @@ Address the user's query and include UI components if helpful.`;
             });
 
             // Trigger background preference learning & summary updates
-            extractAndStoreMemories(conversationId)
-              .then(() => updateUserPreferencesSummary(userId))
-              .catch((err) => console.error("[ActionAgent] Background preference sync failed:", err));
+            triggerBackgroundMemorySync(conversationId, userId);
           } catch (dbError) {
             console.error("Database save error:", dbError);
           }

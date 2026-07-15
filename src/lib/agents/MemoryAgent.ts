@@ -166,3 +166,70 @@ Summary:`;
   }
   return null;
 }
+
+export async function getRelevantMemory(
+  userId: string,
+  userMessage: string
+): Promise<string> {
+  let memoryContext = "";
+
+  try {
+    // Get user profile summary
+    const dbUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        preferencesSummary: true,
+      },
+    });
+
+    if (dbUser?.preferencesSummary) {
+      memoryContext +=
+        `\n\nUSER PROFILE PREFERENCES SUMMARY (Must be considered): ${dbUser.preferencesSummary}`;
+    }
+
+    // Generate embedding for current query
+    const embedRes = await fetch("https://api.cohere.ai/v1/embed", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.COHERE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        texts: [userMessage],
+        model: "embed-english-v3.0",
+        input_type: "search_query",
+      }),
+    });
+
+    if (!embedRes.ok) {
+      return memoryContext;
+    }
+
+    const embedData = await embedRes.json();
+    const embedding = embedData.embeddings[0];
+    const embeddingString = `[${embedding.join(",")}]`;
+
+    const memories: any[] = await prisma.$queryRawUnsafe(
+      `
+      SELECT content,
+             1 - (embedding <=> $1::vector) AS similarity
+      FROM "UserMemory"
+      WHERE "userId" = $2
+      ORDER BY embedding <=> $1::vector
+      LIMIT 3
+      `,
+      embeddingString,
+      userId
+    );
+
+    if (memories.length > 0) {
+      memoryContext +=
+        "\n\nRECENT SEMANTIC USER MEMORIES:\n" +
+        memories.map((m) => `- ${m.content}`).join("\n");
+    }
+  } catch (error) {
+    console.error("Error fetching relevant memory:", error);
+  }
+
+  return memoryContext;
+}

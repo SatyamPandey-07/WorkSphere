@@ -12,7 +12,7 @@ import {
  */
 export async function triggerBackgroundMemorySync(
   conversationId: string,
-  userId: string
+  userId: string,
 ) {
   const redis = getRedis();
 
@@ -21,7 +21,7 @@ export async function triggerBackgroundMemorySync(
     extractAndStoreMemories(conversationId)
       .then(() => updateUserPreferencesSummary(userId))
       .catch((err) =>
-        console.error("[BackgroundSync] Memory sync failed:", err)
+        console.error("[BackgroundSync] Memory sync failed:", err),
       );
 
     return;
@@ -43,7 +43,7 @@ export async function triggerBackgroundMemorySync(
     extractAndStoreMemories(conversationId)
       .then(() => updateUserPreferencesSummary(userId))
       .catch((err) =>
-        console.error("[BackgroundSync] Memory sync failed:", err)
+        console.error("[BackgroundSync] Memory sync failed:", err),
       );
   } catch (err) {
     console.error("[BackgroundSync] Redis error:", err);
@@ -52,7 +52,7 @@ export async function triggerBackgroundMemorySync(
     extractAndStoreMemories(conversationId)
       .then(() => updateUserPreferencesSummary(userId))
       .catch((err) =>
-        console.error("[BackgroundSync] Memory sync failed:", err)
+        console.error("[BackgroundSync] Memory sync failed:", err),
       );
   }
 }

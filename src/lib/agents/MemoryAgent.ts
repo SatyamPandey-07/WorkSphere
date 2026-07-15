@@ -1,25 +1,27 @@
-import { prisma } from '@/lib/prisma';
-import { Groq } from 'groq-sdk';
+import { prisma } from "@/lib/prisma";
+import { Groq } from "groq-sdk";
 
 const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY || 'dummy-key-for-build',
+  apiKey: process.env.GROQ_API_KEY || "dummy-key-for-build",
 });
 
 export async function extractAndStoreMemories(conversationId: string) {
   const conversation = await prisma.conversation.findUnique({
     where: { id: conversationId },
-    include: { messages: { orderBy: { createdAt: 'asc' } } },
+    include: { messages: { orderBy: { createdAt: "asc" } } },
   });
 
   if (!conversation) {
-    throw new Error('Conversation not found');
+    throw new Error("Conversation not found");
   }
 
   if (conversation.messages.length === 0) {
-    return { status: 'no_messages' };
+    return { status: "no_messages" };
   }
 
-  const transcript = conversation.messages.map((m) => `${m.role}: ${m.content}`).join('\n');
+  const transcript = conversation.messages
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
 
   const extractionPrompt = `
 You are an AI Memory Extraction Agent. Analyze the following conversation transcript between a user and an assistant.
@@ -38,48 +40,51 @@ ${transcript}
 `;
 
   const completion = await groq.chat.completions.create({
-    messages: [{ role: 'user', content: extractionPrompt }],
-    model: 'llama-3.3-70b-versatile',
+    messages: [{ role: "user", content: extractionPrompt }],
+    model: "llama-3.3-70b-versatile",
     temperature: 0,
   });
 
-  const responseText = completion.choices[0]?.message?.content?.trim() || '';
+  const responseText = completion.choices[0]?.message?.content?.trim() || "";
 
-  if (responseText === 'NO_PREFERENCES' || responseText === '') {
-    return { status: 'no_preferences' };
+  if (responseText === "NO_PREFERENCES" || responseText === "") {
+    return { status: "no_preferences" };
   }
 
-  const preferences = responseText.split('\n').filter((p) => p.trim().length > 0 && p.trim() !== 'NO_PREFERENCES');
+  const preferences = responseText
+    .split("\n")
+    .filter((p) => p.trim().length > 0 && p.trim() !== "NO_PREFERENCES");
 
   const storedMemories = [];
 
   for (const pref of preferences) {
-    const prefClean = pref.replace(/^[-*•\d.]\s*/, '').trim();
-    
+    const prefClean = pref.replace(/^[-*•\d.]\s*/, "").trim();
+
     // Generate embedding using Cohere
-    const embedRes = await fetch('https://api.cohere.ai/v1/embed', {
-      method: 'POST',
+    const embedRes = await fetch("https://api.cohere.ai/v1/embed", {
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${process.env.COHERE_API_KEY}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.COHERE_API_KEY}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         texts: [prefClean],
-        model: 'embed-english-v3.0',
-        input_type: 'search_document',
+        model: "embed-english-v3.0",
+        input_type: "search_document",
       }),
     });
-    
+
     if (!embedRes.ok) {
       throw new Error(`Cohere API error: ${embedRes.statusText}`);
     }
-    
+
     const embedData = await embedRes.json();
     const embedding = embedData.embeddings[0];
-    const embeddingString = `[${embedding.join(',')}]`;
-    
+    const embeddingString = `[${embedding.join(",")}]`;
+
     // Store in Postgres using Prisma executeRaw
-    await prisma.$executeRawUnsafe(`
+    await prisma.$executeRawUnsafe(
+      `
       INSERT INTO "UserMemory" ("id", "userId", "content", "embedding", "createdAt")
       VALUES (
         gen_random_uuid()::text,
@@ -88,51 +93,69 @@ ${transcript}
         $3::vector,
         NOW()
       )
-    `, conversation.userId, prefClean, embeddingString);
-    
+    `,
+      conversation.userId,
+      prefClean,
+      embeddingString,
+    );
+
     storedMemories.push(prefClean);
   }
 
-  return { status: 'extracted', count: storedMemories.length, memories: storedMemories };
+  return {
+    status: "extracted",
+    count: storedMemories.length,
+    memories: storedMemories,
+  };
 }
 
 /**
  * Consolidate user stated memories, favorites, and recent reviews/ratings
  * into a single unified profile summary and write it to User.preferencesSummary.
  */
-export async function updateUserPreferencesSummary(userId: string): Promise<string | null> {
+export async function updateUserPreferencesSummary(
+  userId: string,
+): Promise<string | null> {
   try {
     // 1. Fetch user memories
     const memories = await prisma.userMemory.findMany({
       where: { userId },
       select: { content: true },
-      orderBy: { createdAt: 'desc' },
-      take: 15
+      orderBy: { createdAt: "desc" },
+      take: 15,
     });
 
     // 2. Fetch favorites
     const favorites = await prisma.favorite.findMany({
       where: { userId },
       include: { venue: true },
-      take: 10
+      take: 10,
     });
 
     // 3. Fetch ratings
     const ratings = await prisma.venueRating.findMany({
       where: { userId },
       include: { venue: true },
-      take: 10
+      take: 10,
     });
 
-    if (memories.length === 0 && favorites.length === 0 && ratings.length === 0) {
+    if (
+      memories.length === 0 &&
+      favorites.length === 0 &&
+      ratings.length === 0
+    ) {
       return null;
     }
 
-    const memoryText = memories.map(m => m.content).join(", ");
-    const favoritesText = favorites.map(f => `${f.venue.name} (${f.venue.category})`).join(", ");
-    const ratingsText = ratings.map(r => {
-      return `${r.venue.name}: rated WiFi ${r.wifiQuality}/5, Noise: ${r.noiseLevel}, Outlets: ${r.hasOutlets ? 'yes' : 'no'}`;
-    }).join("\n");
+    const memoryText = memories.map((m) => m.content).join(", ");
+    const favoritesText = favorites
+      .map((f) => `${f.venue.name} (${f.venue.category})`)
+      .join(", ");
+    const ratingsText = ratings
+      .map((r) => {
+        return `${r.venue.name}: rated WiFi ${r.wifiQuality}/5, Noise: ${r.noiseLevel}, Outlets: ${r.hasOutlets ? "yes" : "no"}`;
+      })
+      .join("\n");
 
     const summaryPrompt = `
 You are a User Profile Analyst. Summarize the user's workspace preferences into a single, concise natural language sentence (under 50 words) from the first-person perspective (e.g., "I prefer quiet libraries and cafes with standing desks and fast WiFi for focus work, and I dislike noisy spaces.").
@@ -147,8 +170,8 @@ Provide ONLY the summary sentence. Do not add intro or outro text.
 Summary:`;
 
     const completion = await groq.chat.completions.create({
-      messages: [{ role: 'user', content: summaryPrompt }],
-      model: 'llama-3.3-70b-versatile',
+      messages: [{ role: "user", content: summaryPrompt }],
+      model: "llama-3.3-70b-versatile",
       temperature: 0.3,
     });
 
@@ -157,7 +180,7 @@ Summary:`;
     if (summary) {
       await prisma.user.update({
         where: { id: userId },
-        data: { preferencesSummary: summary }
+        data: { preferencesSummary: summary },
       });
       return summary;
     }
@@ -169,7 +192,7 @@ Summary:`;
 
 export async function getRelevantMemory(
   userId: string,
-  userMessage: string
+  userMessage: string,
 ): Promise<string> {
   let memoryContext = "";
 
@@ -183,8 +206,7 @@ export async function getRelevantMemory(
     });
 
     if (dbUser?.preferencesSummary) {
-      memoryContext +=
-        `\n\nUSER PROFILE PREFERENCES SUMMARY (Must be considered): ${dbUser.preferencesSummary}`;
+      memoryContext += `\n\nUSER PROFILE PREFERENCES SUMMARY (Must be considered): ${dbUser.preferencesSummary}`;
     }
 
     // Generate embedding for current query
@@ -219,7 +241,7 @@ export async function getRelevantMemory(
       LIMIT 3
       `,
       embeddingString,
-      userId
+      userId,
     );
 
     if (memories.length > 0) {

@@ -120,7 +120,11 @@ export default function CollectionsPage() {
         setPublicFolders((prev) =>
           prev.map((f) => {
             if (f.id === folderId) {
-              return { ...f, hasUpvoted: data.hasUpvoted, upvotes: data.upvotes };
+              return {
+                ...f,
+                hasUpvoted: data.hasUpvoted,
+                upvotes: data.upvotes,
+              };
             }
             return f;
           }),

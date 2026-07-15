@@ -1,24 +1,48 @@
-import '@testing-library/jest-dom';
-import { TextEncoder, TextDecoder } from 'util';
-import { webcrypto } from 'crypto';
-
+import "@testing-library/jest-dom";
+import { TextEncoder, TextDecoder } from "util";
+import { webcrypto } from "crypto";
 // jsdom doesn't provide these globals; Node's implementations are drop-in
 // replacements and let us test Edge-runtime-style code (e.g. src/lib/csrf.ts)
 // under the standard jsdom test environment.
-if (typeof global.TextEncoder === 'undefined') {
+if (typeof global.TextEncoder === "undefined") {
   global.TextEncoder = TextEncoder;
   global.TextDecoder = TextDecoder;
 }
-if (typeof global.crypto === 'undefined' || !global.crypto.subtle) {
-  Object.defineProperty(global, 'crypto', {
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const {
+  Request: UndiciRequest,
+  Response: UndiciResponse,
+  Headers: UndiciHeaders,
+  FormData: UndiciFormData,
+  File: UndiciFile,
+} = require("undici");
+
+if (typeof global.Request === "undefined") {
+  global.Request = UndiciRequest;
+}
+if (typeof global.Response === "undefined") {
+  global.Response = UndiciResponse;
+}
+if (typeof global.Headers === "undefined") {
+  global.Headers = UndiciHeaders;
+}
+if (typeof global.FormData === "undefined") {
+  global.FormData = UndiciFormData;
+}
+if (typeof global.File === "undefined") {
+  global.File = UndiciFile;
+}
+if (typeof global.crypto === "undefined" || !global.crypto.subtle) {
+  Object.defineProperty(global, "crypto", {
     value: webcrypto,
     configurable: true,
   });
 }
-if (typeof global.structuredClone === 'undefined') {
+if (typeof global.structuredClone === "undefined") {
   global.structuredClone = (val) => JSON.parse(JSON.stringify(val));
 }
-import 'fake-indexeddb/auto';
+import "fake-indexeddb/auto";
 
 // Mock Leaflet global variable L
 global.L = {
@@ -48,7 +72,7 @@ global.L = {
 };
 
 // Mock next/navigation
-jest.mock('next/navigation', () => ({
+jest.mock("next/navigation", () => ({
   useRouter: () => ({
     push: jest.fn(),
     replace: jest.fn(),
@@ -57,18 +81,18 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({
     get: jest.fn(),
   }),
-  usePathname: () => '',
+  usePathname: () => "",
 }));
 
 // Mock Clerk
-jest.mock('@clerk/nextjs', () => ({
+jest.mock("@clerk/nextjs", () => ({
   useUser: () => ({
-    user: { id: 'test-user', imageUrl: 'https://example.com/avatar.png' },
+    user: { id: "test-user", imageUrl: "https://example.com/avatar.png" },
     isSignedIn: true,
     isLoaded: true,
   }),
   useAuth: () => ({
-    userId: 'test-user',
+    userId: "test-user",
     isSignedIn: true,
   }),
   SignInButton: ({ children }) => children,
@@ -83,5 +107,5 @@ global.fetch = jest.fn(() =>
   Promise.resolve({
     ok: true,
     json: () => Promise.resolve({}),
-  })
+  }),
 );

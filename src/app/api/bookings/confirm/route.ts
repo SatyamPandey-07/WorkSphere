@@ -7,6 +7,7 @@ import "@/core/subscribers/booking";
 import "@/core/subscribers/discord";
 import "@/core/subscribers/whatsapp";
 import "@/core/subscribers/guests";
+import "@/core/subscribers/telegram";
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();

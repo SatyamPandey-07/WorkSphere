@@ -43,6 +43,11 @@ export interface Venue {
     outletDensity?: string;
     lighting?: string;
     wifiSpeed?: number | null;
+    musicStyle?: string;
+    hasPhoneBooths?: boolean;
+    hasNoMusic?: boolean;
+    hasQuietZone?: boolean;
+    outletLocations?: string[];
 }
 
 export interface Message {

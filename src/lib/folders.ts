@@ -13,5 +13,14 @@ export async function hasFolderAccess(folderId: string, userId: string) {
   }
 
   const member = folder.members.find(m => m.userId === userId);
-  return { folder, hasAccess: !!member, role: member?.role || null };
+  if (member) {
+    return { folder, hasAccess: true, role: member.role };
+  }
+
+  // Public collections are accessible to any user as dynamic read-only views
+  if ((folder as any).isPublic) {
+    return { folder, hasAccess: true, role: "VIEWER" };
+  }
+
+  return { folder, hasAccess: false, role: null };
 }

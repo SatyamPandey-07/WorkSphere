@@ -21,12 +21,23 @@ interface VenueRatingDialogProps {
     hasErgonomic: boolean;
     outletDensity: "every_table" | "some_tables" | "wall_seats" | "none";
     wifiSpeed?: number;
+    downloadSpeed?: number;
+    uploadSpeed?: number;
+    latency?: number;
+    crowdLevel?: string;
     lighting?:
       "natural_daylight" | "warm_ambient" | "fluorescent" | "bright_white";
     speedtestPhoto?: string;
     hasPhoneBooths?: boolean;
     hasNoMusic?: boolean;
     hasQuietZone?: boolean;
+    musicStyle?: string;
+    outletLocations?: string[];
+    petsAllowedIndoors?: boolean;
+    patioOnly?: boolean;
+    waterBowlsProvided?: boolean;
+    dogFriendly?: boolean;
+    catsAllowed?: boolean;
   }) => void;
 }
 
@@ -40,9 +51,11 @@ export function VenueRatingDialog({
   const [wifiQuality, setWifiQuality] = useState(3);
   const [hasOutlets, setHasOutlets] = useState<boolean | null>(null);
   const [powerTypes, setPowerTypes] = useState<string[]>([]);
+  const [outletLocations, setOutletLocations] = useState<string[]>([]);
   const [noiseLevel, setNoiseLevel] = useState<"quiet" | "moderate" | "loud">(
     "moderate",
   );
+  const [musicStyle, setMusicStyle] = useState("");
   const [measurement, setMeasurement] = useState<NoiseMeasurement | null>(null);
   const [comment, setComment] = useState("");
   const [hasErgonomic, setHasErgonomic] = useState(false);
@@ -50,6 +63,10 @@ export function VenueRatingDialog({
     "every_table" | "some_tables" | "wall_seats" | "none"
   >("none");
   const [wifiSpeed, setWifiSpeed] = useState("");
+  const [downloadSpeed, setDownloadSpeed] = useState("");
+  const [uploadSpeed, setUploadSpeed] = useState("");
+  const [latency, setLatency] = useState("");
+  const [crowdLevel, setCrowdLevel] = useState<string>("unknown");
   const [speedtestPhoto, setSpeedtestPhoto] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -60,6 +77,11 @@ export function VenueRatingDialog({
   const [lighting, setLighting] = useState<
     "natural_daylight" | "warm_ambient" | "fluorescent" | "bright_white" | ""
   >("");
+  const [petsAllowedIndoors, setPetsAllowedIndoors] = useState(false);
+  const [patioOnly, setPatioOnly] = useState(false);
+  const [waterBowlsProvided, setWaterBowlsProvided] = useState(false);
+  const [dogFriendly, setDogFriendly] = useState(false);
+  const [catsAllowed, setCatsAllowed] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -154,27 +176,49 @@ export function VenueRatingDialog({
         hasErgonomic,
         outletDensity,
         wifiSpeed: wifiSpeed ? parseInt(wifiSpeed, 10) : undefined,
+        downloadSpeed: downloadSpeed ? parseInt(downloadSpeed, 10) : undefined,
+        uploadSpeed: uploadSpeed ? parseInt(uploadSpeed, 10) : undefined,
+        latency: latency ? parseInt(latency, 10) : undefined,
+        crowdLevel: crowdLevel === "unknown" ? undefined : crowdLevel,
         lighting: lighting || undefined,
         speedtestPhoto: speedtestPhoto || undefined,
         hasPhoneBooths,
         hasNoMusic,
         hasQuietZone,
+        musicStyle: musicStyle || undefined,
+        outletLocations: hasOutlets ? outletLocations : [],
+        petsAllowedIndoors,
+        patioOnly,
+        waterBowlsProvided,
+        dogFriendly,
+        catsAllowed,
       });
 
       setWifiQuality(3);
       setHasOutlets(null);
       setPowerTypes([]);
+      setOutletLocations([]);
       setNoiseLevel("moderate");
       setMeasurement(null);
       setComment("");
       setHasErgonomic(false);
       setOutletDensity("none");
       setWifiSpeed("");
+      setDownloadSpeed("");
+      setUploadSpeed("");
+      setLatency("");
+      setCrowdLevel("unknown");
       setSpeedtestPhoto(null);
       setHasPhoneBooths(false);
       setHasNoMusic(false);
       setHasQuietZone(false);
       setLighting("");
+      setMusicStyle("");
+      setPetsAllowedIndoors(false);
+      setPatioOnly(false);
+      setWaterBowlsProvided(false);
+      setDogFriendly(false);
+      setCatsAllowed(false);
       onClose();
     } catch (error) {
       console.error("Error submitting rating:", error);
@@ -268,44 +312,86 @@ export function VenueRatingDialog({
           </section>
 
           {hasOutlets === true && (
-            <section className="animate-in fade-in slide-in-from-top-2 duration-300">
-              <label className="mb-2 block text-sm font-medium">
-                Outlet Types Available
-              </label>
+            <>
+              <section className="animate-in fade-in slide-in-from-top-2 duration-300">
+                <label className="mb-2 block text-sm font-medium">
+                  Outlet Types Available
+                </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                {[
-                  { id: "usb_c", label: "USB-C PD ports" },
-                  { id: "ac_wall", label: "Standard AC wall plug" },
-                  { id: "wireless", label: "Wireless charging pads" },
-                ].map((type) => (
-                  <label
-                    key={type.id}
-                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition ${
-                      powerTypes.includes(type.id)
-                        ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"
-                        : "bg-white border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={powerTypes.includes(type.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setPowerTypes([...powerTypes, type.id]);
-                        } else {
-                          setPowerTypes(
-                            powerTypes.filter((t) => t !== type.id),
-                          );
-                        }
-                      }}
-                      className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-sm">{type.label}</span>
-                  </label>
-                ))}
-              </div>
-            </section>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {[
+                    { id: "usb_c", label: "USB-C PD ports" },
+                    { id: "ac_wall", label: "Standard AC wall plug" },
+                    { id: "wireless", label: "Wireless charging pads" },
+                  ].map((type) => (
+                    <label
+                      key={type.id}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition ${
+                        powerTypes.includes(type.id)
+                          ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"
+                          : "bg-white border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={powerTypes.includes(type.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setPowerTypes([...powerTypes, type.id]);
+                          } else {
+                            setPowerTypes(
+                              powerTypes.filter((t) => t !== type.id),
+                            );
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">{type.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              <section className="animate-in fade-in slide-in-from-top-2 duration-300">
+                <label className="mb-2 block text-sm font-medium">
+                  Outlet Locations
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    { id: "under_tables", label: "Under tables" },
+                    { id: "wall_mounted", label: "Wall-mounted" },
+                    { id: "center_island", label: "Center-island tables only" },
+                    { id: "bar_counter", label: "At bar counter" },
+                  ].map((loc) => (
+                    <label
+                      key={loc.id}
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition ${
+                        outletLocations.includes(loc.id)
+                          ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"
+                          : "bg-white border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={outletLocations.includes(loc.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setOutletLocations([...outletLocations, loc.id]);
+                          } else {
+                            setOutletLocations(
+                              outletLocations.filter((l) => l !== loc.id),
+                            );
+                          }
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm">{loc.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            </>
           )}
 
           <section>
@@ -349,6 +435,62 @@ export function VenueRatingDialog({
               placeholder="e.g. 80"
               className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
             />
+          </section>
+
+          <section>
+            <label className="mb-2 block text-sm font-medium">
+              Download Speed (Mbps - Optional)
+            </label>
+            <input
+              type="number"
+              value={downloadSpeed}
+              onChange={(event) => setDownloadSpeed(event.target.value)}
+              placeholder="e.g. 100"
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+            />
+          </section>
+
+          <section>
+            <label className="mb-2 block text-sm font-medium">
+              Upload Speed (Mbps - Optional)
+            </label>
+            <input
+              type="number"
+              value={uploadSpeed}
+              onChange={(event) => setUploadSpeed(event.target.value)}
+              placeholder="e.g. 50"
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+            />
+          </section>
+
+          <section>
+            <label className="mb-2 block text-sm font-medium">
+              Latency (ms - Optional)
+            </label>
+            <input
+              type="number"
+              value={latency}
+              onChange={(event) => setLatency(event.target.value)}
+              placeholder="e.g. 20"
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+            />
+          </section>
+
+          <section>
+            <label className="mb-2 block text-sm font-medium">
+              Crowd Level (Optional)
+            </label>
+            <select
+              value={crowdLevel}
+              onChange={(event) => setCrowdLevel(event.target.value)}
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+            >
+              <option value="unknown">Select Crowd Level</option>
+              <option value="empty">Empty</option>
+              <option value="moderate">Moderate</option>
+              <option value="busy">Busy</option>
+              <option value="very busy">Very Busy</option>
+            </select>
           </section>
 
           {/* Speedtest Photo Upload */}
@@ -461,6 +603,37 @@ export function VenueRatingDialog({
             </select>
           </section>
 
+          {/* Background Music Style */}
+          <section>
+            <label className="mb-2 block text-sm font-medium">
+              Background Music Style
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: "Lo-Fi / Chill Beats", value: "lofi" },
+                {
+                  label: "Classical / Jazz Background",
+                  value: "classical_jazz",
+                },
+                { label: "No Music Played", value: "no_music" },
+                { label: "Not Specified / Other", value: "" },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setMusicStyle(option.value)}
+                  className={`rounded-lg px-4 py-2 text-xs font-semibold text-center border transition-all ${
+                    musicStyle === option.value
+                      ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                      : "bg-zinc-50 border-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 hover:bg-zinc-100"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </section>
+
           <label className="flex items-center gap-3 text-sm">
             <input
               type="checkbox"
@@ -499,6 +672,56 @@ export function VenueRatingDialog({
               className="h-4 w-4 rounded"
             />
             Strict Silence / Quiet Zones?
+          </label>
+
+          <label className="flex items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={petsAllowedIndoors}
+              onChange={(event) => setPetsAllowedIndoors(event.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            🐶 Pets Allowed Indoors?
+          </label>
+
+          <label className="flex items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={patioOnly}
+              onChange={(event) => setPatioOnly(event.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            🌿 Patio Only (Pets allowed outdoors only)?
+          </label>
+
+          <label className="flex items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={waterBowlsProvided}
+              onChange={(event) => setWaterBowlsProvided(event.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            💧 Water Bowls Provided for Pets?
+          </label>
+
+          <label className="flex items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={dogFriendly}
+              onChange={(event) => setDogFriendly(event.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            🦮 Dog-Friendly?
+          </label>
+
+          <label className="flex items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              checked={catsAllowed}
+              onChange={(event) => setCatsAllowed(event.target.checked)}
+              className="h-4 w-4 rounded"
+            />
+            🐈 Cats Allowed?
           </label>
 
           <section>

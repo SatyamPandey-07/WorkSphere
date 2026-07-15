@@ -114,6 +114,7 @@ export function BookingModal({
       const res = await fetch("/api/bookings/history");
       const data = await res.json();
       setHistory(data.bookings || []);
+      setSelectedIds(new Set());
       setStep("history");
     } catch (err) {
       console.error("Failed to fetch history:", err);

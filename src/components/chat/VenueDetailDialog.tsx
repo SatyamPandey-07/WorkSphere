@@ -146,6 +146,13 @@ export function VenueDetailDialog({
       hidden: false,
       userVote: null,
     },
+    petsAllowedIndoors: {
+      confidenceScore: 100,
+      upvotes: 0,
+      downvotes: 0,
+      hidden: false,
+      userVote: null,
+    },
   });
 
   // Tab and dynamic content states
@@ -168,7 +175,8 @@ export function VenueDetailDialog({
       | "freeStreetParking"
       | "paidGarage"
       | "bicycleRack"
-      | "secureMotorcycleParking",
+      | "secureMotorcycleParking"
+      | "petsAllowedIndoors",
     isUpvote: boolean,
   ) => {
     if (!venue) return;
@@ -306,6 +314,13 @@ export function VenueDetailDialog({
               userVote: null,
             },
             secureMotorcycleParking: {
+              confidenceScore: 100,
+              upvotes: 0,
+              downvotes: 0,
+              hidden: false,
+              userVote: null,
+            },
+            petsAllowedIndoors: {
               confidenceScore: 100,
               upvotes: 0,
               downvotes: 0,
@@ -752,7 +767,11 @@ export function VenueDetailDialog({
                           tickLine={false}
                           tick={{ fontSize: 10, fill: "#888" }}
                         />
-                        <YAxis hide domain={[0, "dataMax + 10"]} />
+                        <YAxis
+                          tickFormatter={(value) => `${value} Mbps`}
+                          tick={{ fontSize: 10, fill: "#888" }}
+                          width={40}
+                        />
                         <Tooltip
                           cursor={{ fill: "rgba(0,0,0,0.05)" }}
                           content={({ active, payload }) => {
@@ -764,7 +783,13 @@ export function VenueDetailDialog({
                                     {data.time}
                                   </p>
                                   <p className="text-sm font-bold text-blue-600">
-                                    {data.speed} Mbps
+                                    {data.download} Mbps (Download)
+                                  </p>
+                                  <p className="text-sm font-bold text-green-600">
+                                    {data.upload} Mbps (Upload)
+                                  </p>
+                                  <p className="text-sm font-bold text-orange-600">
+                                    {data.latency} ms (Latency)
                                   </p>
                                   <p className="text-[10px] uppercase tracking-wider text-zinc-400 mt-1">
                                     Crowd: {data.crowd}
@@ -776,9 +801,22 @@ export function VenueDetailDialog({
                           }}
                         />
                         <Bar
-                          dataKey="speed"
+                          dataKey="download"
                           fill="#3b82f6"
                           radius={[4, 4, 0, 0]}
+                          name="Download"
+                        />
+                        <Bar
+                          dataKey="upload"
+                          fill="#22c55e"
+                          radius={[4, 4, 0, 0]}
+                          name="Upload"
+                        />
+                        <Bar
+                          dataKey="latency"
+                          fill="#f97316"
+                          radius={[4, 4, 0, 0]}
+                          name="Latency"
                         />
                       </BarChart>
                     </ResponsiveContainer>
@@ -939,6 +977,39 @@ export function VenueDetailDialog({
                     {venue.hasErgonomic &&
                       " The workspace features verified ergonomic chairs and height-adjustable/standing desks."}
                   </p>
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {venue.musicStyle === "lofi" && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                        <span>🎵 Lo-Fi/Chill Beats</span>
+                      </div>
+                    )}
+                    {venue.musicStyle === "classical_jazz" && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                        <span>🎷 Classical/Jazz Background</span>
+                      </div>
+                    )}
+                    {(venue.musicStyle === "no_music" || venue.hasNoMusic) && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                        <span>🔇 No Music Played</span>
+                      </div>
+                    )}
+                    {venue.hasPhoneBooths && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                        <span>📞 Soundproof Booths Available</span>
+                      </div>
+                    )}
+                    {venue.outletLocations &&
+                      venue.outletLocations.length > 0 && (
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                          <span>
+                            🔌 Outlets:{" "}
+                            {venue.outletLocations
+                              .map((l) => l.replace("_", " "))
+                              .join(", ")}
+                          </span>
+                        </div>
+                      )}
+                  </div>
                 </div>
               </div>
 
@@ -1184,6 +1255,18 @@ export function VenueDetailDialog({
                           <span>
                             {t("venue.noise")}: {review.noiseLevel}
                           </span>
+                          {review.outletLocations &&
+                            review.outletLocations.length > 0 && (
+                              <>
+                                <span>•</span>
+                                <span>
+                                  Locations:{" "}
+                                  {review.outletLocations
+                                    .map((l: string) => l.replace("_", " "))
+                                    .join(", ")}
+                                </span>
+                              </>
+                            )}
                         </div>
                       </div>
                       {review.wifiSpeed && (

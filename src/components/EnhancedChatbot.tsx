@@ -79,6 +79,7 @@ interface Filters {
   specialtyEspresso?: boolean;
   oatAlmondMilk?: boolean;
   pourOverAvailable?: boolean;
+  musicStyle?: "all" | "lofi" | "classical_jazz" | "no_music";
 }
 
 interface Conversation {
@@ -117,12 +118,28 @@ export function EnhancedChatbot({
   const { socket } = useMultiplayerSession(roomId || null);
   const { getToken } = useAuth();
 
-  // All state — must be declared before any useEffect that references them
+  // Presence state
+  const [cursors, setCursors] = useState<
+    Record<
+      string,
+      {
+        x: number;
+        y: number;
+        name: string;
+        avatar: string;
+      }
+    >
+  >({});
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+
+  // Core state
   const [location, setLocation] = useState(userLocation);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // UI state
   const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>(
     {},
   );
@@ -135,19 +152,19 @@ export function EnhancedChatbot({
     "booking",
   );
   const [showVenueSubmission, setShowVenueSubmission] = useState(false);
+
+  // Conversations & favorites
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<
     string | null
   >(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
-  const [cursors, setCursors] = useState<
-    Record<string, { x: number; y: number; name: string }>
-  >({});
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
-
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // Track local cursor
+  const guestAvatar =
+    typeof window !== "undefined"
+      ? localStorage.getItem("guest-avatar") || "😀"
+      : "😀";
   useEffect(() => {
     if (!socket || !roomId) return;
 
@@ -179,7 +196,12 @@ export function EnhancedChatbot({
         if (data.type === "cursor") {
           setCursors((prev) => ({
             ...prev,
-            [data.name]: { x: data.x, y: data.y, name: data.name },
+            [data.name]: {
+              x: data.x,
+              y: data.y,
+              name: data.name,
+              avatar: data.avatar || "🟢",
+            },
           }));
         } else if (data.type === "typing") {
           setTypingUsers((prev) => {
@@ -209,6 +231,8 @@ export function EnhancedChatbot({
     return () => socket.removeEventListener("message", onMessage);
   }, [socket, onMapUpdate]);
 
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
   // Auto-scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -220,6 +244,13 @@ export function EnhancedChatbot({
       try {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
+            if (pos.coords.accuracy !== undefined && pos.coords.accuracy > 50) {
+              console.warn(
+                `GPS accuracy too low in chatbot (${pos.coords.accuracy}m). Falling back.`,
+              );
+              setLocation({ lat: 37.7749, lng: -122.4194 });
+              return;
+            }
             const newLoc = {
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
@@ -517,6 +548,12 @@ export function EnhancedChatbot({
     hasPhoneBooths?: boolean;
     hasNoMusic?: boolean;
     hasQuietZone?: boolean;
+    musicStyle?: string;
+    petsAllowedIndoors?: boolean;
+    patioOnly?: boolean;
+    waterBowlsProvided?: boolean;
+    dogFriendly?: boolean;
+    catsAllowed?: boolean;
   }) => {
     if (!ratingVenue || !isSignedIn) return;
     try {
@@ -953,7 +990,7 @@ export function EnhancedChatbot({
 
   // Render
   return (
-    <div className="flex h-full flex-col bg-white dark:bg-zinc-950 relative overflow-hidden">
+    <div className="flex h-full flex-col min-h-0 bg-white dark:bg-zinc-950 relative overflow-hidden">
       {/* Remote Cursors */}
       <AnimatePresence>
         {Object.values(cursors).map((cursor) => (
@@ -982,8 +1019,9 @@ export function EnhancedChatbot({
                 fill="currentColor"
               />
             </svg>
-            <div className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-4 shadow-md whitespace-nowrap">
-              {cursor.name}
+            <div className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-4 shadow-md whitespace-nowrap flex items-center gap-1">
+              <span>{cursor.avatar}</span>
+              <span>{cursor.name}</span>
             </div>
           </motion.div>
         ))}

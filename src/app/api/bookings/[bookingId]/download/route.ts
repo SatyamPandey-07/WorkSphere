@@ -1,6 +1,8 @@
 import { ensureUserExists } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
 import fontkit from "@pdf-lib/fontkit";
 import fs from "fs";
 import { NextRequest, NextResponse } from "next/server";

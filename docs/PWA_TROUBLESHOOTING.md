@@ -53,13 +53,13 @@ The offline workflow used by WorkSphere is illustrated below.
 
 The following files are responsible for the application's PWA functionality.
 
-| Component | Purpose |
-|----------|---------|
-| `public/sw.js` | Registers the Service Worker, manages cache strategies, and handles Background Sync events. |
-| `public/manifest.json` | Defines installable PWA metadata, including application name, icons, theme color, and display mode. |
-| `src/hooks/usePWA.tsx` | Registers the Service Worker and tracks installation status and network connectivity. |
-| `src/app/offline/page.tsx` | Displays the offline experience when navigation requests cannot reach the network. |
-| `src/lib/offlineStorage.ts` | Stores offline data in IndexedDB and queues actions for Background Sync. |
+| Component                   | Purpose                                                                                             |
+| --------------------------- | --------------------------------------------------------------------------------------------------- |
+| `public/sw.js`              | Registers the Service Worker, manages cache strategies, and handles Background Sync events.         |
+| `public/manifest.json`      | Defines installable PWA metadata, including application name, icons, theme color, and display mode. |
+| `src/hooks/usePWA.tsx`      | Registers the Service Worker and tracks installation status and network connectivity.               |
+| `src/app/offline/page.tsx`  | Displays the offline experience when navigation requests cannot reach the network.                  |
+| `src/lib/offlineStorage.ts` | Stores offline data in IndexedDB and queues actions for Background Sync.                            |
 
 ---
 
@@ -67,15 +67,15 @@ The following files are responsible for the application's PWA functionality.
 
 The current WorkSphere PWA implementation includes the following components.
 
-| Feature | Status |
-|---------|--------|
-| Service Worker | ✅ Implemented |
-| Offline Page | ✅ Implemented |
-| Cache Storage | ✅ Implemented |
-| IndexedDB Storage | ✅ Implemented |
-| Background Sync | ✅ Implemented |
-| Web App Manifest | ✅ Implemented |
-| Offline Retry Page | ✅ Implemented |
+| Feature              | Status         |
+| -------------------- | -------------- |
+| Service Worker       | ✅ Implemented |
+| Offline Page         | ✅ Implemented |
+| Cache Storage        | ✅ Implemented |
+| IndexedDB Storage    | ✅ Implemented |
+| Background Sync      | ✅ Implemented |
+| Web App Manifest     | ✅ Implemented |
+| Offline Retry Page   | ✅ Implemented |
 | Playwright PWA Tests | ✅ Implemented |
 
 ---
@@ -129,12 +129,12 @@ Every network request made by the application passes through the Service Worker.
 
 WorkSphere applies different caching strategies depending on the type of resource being requested.
 
-| Resource Type | Strategy |
-|--------------|----------|
-| Application pages and local assets | Network First |
-| OpenStreetMap tiles | Cache First |
-| Unsplash images | Cache First |
-| Non-GET requests | Bypass Service Worker |
+| Resource Type                      | Strategy              |
+| ---------------------------------- | --------------------- |
+| Application pages and local assets | Network First         |
+| OpenStreetMap tiles                | Cache First           |
+| Unsplash images                    | Cache First           |
+| Non-GET requests                   | Bypass Service Worker |
 
 For navigation requests, WorkSphere attempts to fetch fresh content from the network first.
 
@@ -230,11 +230,11 @@ worksphere-offline
 
 The database contains the following object stores.
 
-| Object Store | Purpose |
-|--------------|---------|
-| `venues` | Stores cached workspace information for offline access. |
-| `favorites` | Stores bookmarked workspaces locally. |
-| `searches` | Saves recent search results for faster access. |
+| Object Store     | Purpose                                                                        |
+| ---------------- | ------------------------------------------------------------------------------ |
+| `venues`         | Stores cached workspace information for offline access.                        |
+| `favorites`      | Stores bookmarked workspaces locally.                                          |
+| `searches`       | Saves recent search results for faster access.                                 |
 | `pendingActions` | Queues actions that should be synchronized after reconnecting to the internet. |
 
 ---
@@ -267,11 +267,11 @@ Instead of immediately discarding failed requests, they are stored locally and a
 
 The current implementation supports the following sync events:
 
-| Sync Tag | Purpose |
-|----------|---------|
-| `sync-crdt` | Synchronizes queued collaborative editing updates. |
+| Sync Tag         | Purpose                                              |
+| ---------------- | ---------------------------------------------------- |
+| `sync-crdt`      | Synchronizes queued collaborative editing updates.   |
 | `sync-favorites` | Synchronizes pending favorite or unfavorite actions. |
-| `sync-ratings` | Synchronizes pending venue ratings. |
+| `sync-ratings`   | Synchronizes pending venue ratings.                  |
 
 This process happens automatically without requiring additional user interaction.
 
@@ -331,12 +331,12 @@ If queued actions remain in the database after reconnecting, verify that:
 
 # Common IndexedDB Issues
 
-| Problem | Possible Cause | Recommended Action |
-|----------|----------------|--------------------|
-| Database does not appear | Service Worker has not initialized correctly | Refresh the application and verify Service Worker registration. |
-| `pendingActions` remains populated | Synchronization failed | Check browser console and API responses. |
-| Cached data is missing | IndexedDB was cleared | Repeat the operation while online to recreate local data. |
-| Offline actions are not retried | Background Sync unavailable | Verify browser support and Service Worker status. |
+| Problem                            | Possible Cause                               | Recommended Action                                              |
+| ---------------------------------- | -------------------------------------------- | --------------------------------------------------------------- |
+| Database does not appear           | Service Worker has not initialized correctly | Refresh the application and verify Service Worker registration. |
+| `pendingActions` remains populated | Synchronization failed                       | Check browser console and API responses.                        |
+| Cached data is missing             | IndexedDB was cleared                        | Repeat the operation while online to recreate local data.       |
+| Offline actions are not retried    | Background Sync unavailable                  | Verify browser support and Service Worker status.               |
 
 ---
 
@@ -457,6 +457,71 @@ Recommended solution:
 - Repeat the operation while online.
 - Confirm that the expected object stores exist.
 - Verify that new entries are being created.
+
+---
+
+# PWA Push Notifications & Local Sync
+
+Troubleshooting push notifications and service worker notification event routing during local development.
+
+## 1. Local Testing & Mocking Push Notifications
+
+Since push messages rely on browser vendor push servers (e.g. Google Cloud Messaging / Firebase Cloud Messaging for Chrome), testing outbound pushes locally without complete server infrastructure is done using **Chrome DevTools Mocking**:
+
+1. Open **Chrome DevTools** (`F12`) and navigate to the **Application** tab.
+2. Under the **Application** sidebar section, click **Service Workers**.
+3. In the right panel, find the **Push** trigger control input field.
+4. Input a mock payload (JSON string or raw text) and click the **Push** button.
+5. Verify that the service worker intercepts the mock event and presents a visual notification.
+
+### Payload Verification & VAPID Key Mismatch
+
+- **VAPID Keys**: Ensure that `NEXT_PUBLIC_VAPID_PUBLIC_KEY` (client) and `VAPID_PRIVATE_KEY` (server) match.
+- **Payload Parsing**: The service worker expects push payloads to be JSON. If a push event payload is unparseable or empty, the notification will fail silently or show a generic fallback message. Check the service worker console logs by clicking **Inspect** under the registered service worker entry in DevTools.
+
+---
+
+## 2. Chrome Notification Flags & Browser Configuration
+
+Local development domains (like `http://localhost:3000`) bypass some secure-context requirements, but system integrations or browser-level settings can still block push notifications.
+
+### Chromium Flag Overrides
+
+Access these experimental configurations directly in your address bar:
+
+- **System Notifications (`chrome://flags/#enable-system-notifications`)**:
+  If notifications are not appearing even though permissions are granted, try disabling system-level notification center delegation. This forces Chrome to render notifications internally instead of forwarding them to the OS notification center.
+- **Notifications Authorization (`chrome://flags/#notifications-authorization-rules`)**:
+  Manages how origins request permission. Toggle this to default or reset if the browser refuses to trigger permission prompts.
+- **Insecure Context Bypass (`chrome://flags/#unsafely-treat-insecure-origin-as-secure`)**:
+  If testing the PWA on your local network using an IP address (e.g. `http://192.168.1.5:3000`) instead of `localhost`, add the IP origin to this flag to allow Service Workers and Push API subscriptions.
+
+---
+
+## 3. Permission Requests & Status Flows
+
+Verify that the notification permission flows are handled correctly in your components.
+
+### Status Troubleshooting
+
+To check the current permission status:
+
+```javascript
+Notification.permission;
+```
+
+- **`default`**: The user has not been prompted yet. Ensure that `Notification.requestPermission()` is triggered by a direct user action (like clicking a button) to prevent browsers from blocking silent prompts.
+- **`granted`**: Push notifications and subscription requests are allowed.
+- **`denied`**: The user has explicitly blocked notifications for this origin. **Crucial**: The browser will never prompt the user again if the status is denied. To reset, click the lock icon in the address bar next to the URL and toggle the Notification permission back to "Ask" or "Allow".
+
+---
+
+## 4. Cache & Service Worker Update Loops
+
+When push notifications trigger background data syncs, service worker cache management must follow clean structures to avoid cache pollution.
+
+- **Dynamic Cache Pollution**: Do not cache dynamic API responses (like `/api/venues` or `/api/chat`) inside the static asset cache (`worksphere-v2`). This causes stale responses to be served even when online.
+- **Stale Lifecycle Updates**: If you update the service worker code (`public/sw.js`), browsers will not activate the new worker immediately if there are active tabs open. Enable **Update on reload** in the DevTools **Service Workers** tab to force the new service worker to install and activate instantly on every page refresh.
 
 ---
 

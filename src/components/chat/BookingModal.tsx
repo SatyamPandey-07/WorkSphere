@@ -25,6 +25,7 @@ import { Venue } from "./ChatMessages";
 import { trackEvent } from "@/lib/analytics";
 
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
+import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
 
 interface Booking {
   id: string;
@@ -65,6 +66,10 @@ export function BookingModal({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
   const [dateFilter, setDateFilter] = useState("all");
+  const [guests, setGuests] = useState<GuestEntry[]>([]);
+  const [guestInviteStatus, setGuestInviteStatus] = useState<
+    "idle" | "sending" | "done"
+  >("idle");
 
   const getFilteredHistory = () => {
     if (dateFilter === "all") return history;
@@ -121,6 +126,8 @@ export function BookingModal({
   useEffect(() => {
     if (!isOpen) {
       setStep(mode === "history" ? "history" : "details");
+      setGuests([]);
+      setGuestInviteStatus("idle");
     } else if (mode === "history") {
       fetchHistory();
     }
@@ -199,10 +206,13 @@ export function BookingModal({
         }),
       });
 
+      const responseData = await response.json();
+
       if (!response.ok) {
-        const errorData = await response.json();
         throw new Error(
-          errorData.details || errorData.error || "Signal transmission failed",
+          responseData.details ||
+            responseData.error ||
+            "Signal transmission failed",
         );
       }
 
@@ -212,6 +222,27 @@ export function BookingModal({
         venueName: venue?.name || "unknown",
         action: "booking_confirmed",
       });
+
+      // Send guest invitations if any were added
+      if (guests.length > 0 && responseData.bookingId) {
+        setGuestInviteStatus("sending");
+        try {
+          await fetch(`/api/bookings/${responseData.bookingId}/guests`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              guests: guests.map((g) => ({
+                email: g.email,
+                name: g.name || undefined,
+              })),
+            }),
+          });
+        } catch (guestErr) {
+          console.error("[BookingModal] Guest invite failed:", guestErr);
+        } finally {
+          setGuestInviteStatus("done");
+        }
+      }
     } catch (err: any) {
       console.error("Booking failure details:", err);
       setStep("details");
@@ -526,6 +557,16 @@ export function BookingModal({
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                    Invite Guests (Optional)
+                  </label>
+                  <GuestsInput
+                    guests={guests}
+                    onChange={setGuests}
+                    maxGuests={10}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
                     Neural Link ID (Email)
                   </label>
                   <div className="relative">
@@ -669,6 +710,14 @@ export function BookingModal({
                   is now yours. A professional PDF receipt has been dispatched
                   to your neural ID.
                 </p>
+                {guests.length > 0 && (
+                  <p className="text-xs text-zinc-500 font-bold">
+                    {guestInviteStatus === "sending" &&
+                      `Sending invites to ${guests.length} guest${guests.length !== 1 ? "s" : ""}...`}
+                    {guestInviteStatus === "done" &&
+                      `✓ Invites sent to ${guests.length} guest${guests.length !== 1 ? "s" : ""}`}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col gap-3 w-full max-w-sm mt-6">

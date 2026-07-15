@@ -6,13 +6,13 @@ This reference manual outlines prompt engineering best practices, configuration 
 
 ## 🏗️ Core Architecture Overview
 
-| Agent Role | Model Routing Rule | Target Temperature | Output Format |
-| :--- | :--- | :--- | :--- |
-| **Orchestrator** | Frontier Reasoning Model | `0.1` | Structured JSON (Task Graph) |
-| **Context** | High-Context / Long-Context Model | `0.2` | Cleaned Context Payload |
-| **Data** | Code/JSON Optimized Model | `0.0` | Validated Schema / Code |
-| **Reasoning** | Deep-Thinking Inference Model | `0.5` | Chain-of-Thought Text |
-| **Action** | Fast, Tool-Calling Optimized Model | `0.2` | API Payload / Final Text |
+| Agent Role       | Model Routing Rule                 | Target Temperature | Output Format                |
+| :--------------- | :--------------------------------- | :----------------- | :--------------------------- |
+| **Orchestrator** | Frontier Reasoning Model           | `0.1`              | Structured JSON (Task Graph) |
+| **Context**      | High-Context / Long-Context Model  | `0.2`              | Cleaned Context Payload      |
+| **Data**         | Code/JSON Optimized Model          | `0.0`              | Validated Schema / Code      |
+| **Reasoning**    | Deep-Thinking Inference Model      | `0.5`              | Chain-of-Thought Text        |
+| **Action**       | Fast, Tool-Calling Optimized Model | `0.2`              | API Payload / Final Text     |
 
 ---
 
@@ -20,12 +20,13 @@ This reference manual outlines prompt engineering best practices, configuration 
 
 ### 1. Orchestrator Agent
 
-* **Objective:** Act as the central routing system. Parse incoming high-level user requests, break them down into parallel or sequential execution steps, and delegate them to the appropriate sub-agents.
-* **Model Routing Rule:** Frontier Reasoning Models (e.g., GPT-4o, Claude 3.5 Sonnet).
-* **Target Temperature:** `0.1` (Forces deterministic task breakdown and schema adherence).
+- **Objective:** Act as the central routing system. Parse incoming high-level user requests, break them down into parallel or sequential execution steps, and delegate them to the appropriate sub-agents.
+- **Model Routing Rule:** Frontier Reasoning Models (e.g., GPT-4o, Claude 3.5 Sonnet).
+- **Target Temperature:** `0.1` (Forces deterministic task breakdown and schema adherence).
 
 #### System Prompt Template
-```yaml
+
+````yaml
 Role: WorkSphere Central Orchestrator
 Context: You are the primary routing and scheduling engine of a multi-agent productivity ecosystem. Your job is to dissect complex user prompts into discrete, executable steps.
 
@@ -89,7 +90,7 @@ Output Schema:
 
 ### 3. Data Agent
 
-* **Objective:** Execute deterministic data manipulation, structure raw system inputs, build schema-compliant payloads, and generate precise code or query syntax. 
+* **Objective:** Execute deterministic data manipulation, structure raw system inputs, build schema-compliant payloads, and generate precise code or query syntax.
 * **Model Routing Rule:** Code-generation and structured-output optimized models (e.g., GPT-4o, DeepSeek-V3).
 * **Target Temperature:** `0.0` (Absolute determinism; guarantees rigid syntax adherence and eliminates random variations).
 
@@ -176,3 +177,4 @@ Output Schema:
   },
   "user_facing_response": "Polished, markdown-formatted final communication string (null if system-only execution)"
 }
+````

@@ -100,6 +100,25 @@ async function fetchFreshToken(): Promise<string | null> {
 }
 
 /**
+ * Always fetches a fresh CSRF token from the server, updating the cache.
+ * Use this before any resend/retry flow where a stale token is likely.
+ */
+export async function refreshCsrfToken(): Promise<string | null> {
+  return fetchFreshToken();
+}
+
+/**
+ * Ensures a valid CSRF token is in hand before a mutating request.
+ * Only fetches a fresh token when one isn't already cached — avoids an
+ * unnecessary round-trip on every resend click while still closing the gap
+ * where mobile browsers arrive at the OTP screen without a token.
+ */
+export async function ensureCsrfToken(): Promise<string | null> {
+  if (currentCsrfToken) return currentCsrfToken;
+  return fetchFreshToken();
+}
+
+/**
  * Fetches a CSRF token on mount and automatically re-requests a fresh one
  * whenever the app's locale changes. This directly closes the gap described
  * in issue #201: previously nothing re-bound the token after a locale switch,

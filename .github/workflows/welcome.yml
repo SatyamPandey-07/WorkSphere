@@ -4,7 +4,7 @@ on:
   issues:
     types: [opened]
   pull_request_target:
-    types: [opened]
+    types: [opened, synchronize]
 
 permissions:
   issues: write
@@ -117,7 +117,7 @@ jobs:
             });
 
       - name: Welcome PR Contributor & Triage PR
-        if: github.event_name == 'pull_request_target' || github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request_target'
         uses: actions/github-script@v9
         with:
           script: |
@@ -125,61 +125,113 @@ jobs:
             const prAuthor = context.payload.pull_request.user.login;
             const association = context.payload.pull_request.author_association;
             const isFirstTime = association === 'FIRST_TIME_CONTRIBUTOR' || association === 'FIRST_TIMER';
-            let welcomePrefix = '';
             
-            if (isFirstTime) {
-              welcomePrefix = `🎉 Welcome to WorkSphere!\nThanks for making your first contribution. Need help? Feel free to ask.\n\n`;
+            // 1. Post PR Welcome comment (only when first opened)
+            if (context.payload.action === 'opened') {
+              let welcomePrefix = '';
+              if (isFirstTime) {
+                welcomePrefix = `🎉 Welcome to WorkSphere!\nThanks for making your first contribution. Need help? Feel free to ask.\n\n`;
+              }
+              const prComment = welcomePrefix + `🎉 Thank you for contributing to WorkSphere!
+
+              Please ensure:
+
+              ✅ Tests pass
+              ✅ No secrets committed
+              ✅ Documentation updated
+
+              ---
+              💡 **Connect & Support:**
+              - ⭐ Star the [WorkSphere repository](https://github.com/SatyamPandey-07/WorkSphere) to show your support!
+              - 👤 Follow the maintainer on GitHub: [@SatyamPandey-07](https://github.com/SatyamPandey-07)
+              - 💼 Connect on LinkedIn: [Satyam Pandey](https://www.linkedin.com/in/satyam-pandey-0b246432a/)
+              - 💬 Have questions or queries? Join our [WhatsApp Group](https://chat.whatsapp.com/D3pfq0vSmwd0iR0dFNjj43) or contact via phone at \`+91 9820866720\`.`;
+              
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body: prComment
+              });
+
+              // Assign PR author as assignee
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                assignees: [prAuthor]
+              });
+
+              // Request review from maintainer
+              if (prAuthor !== 'SatyamPandey-07') {
+                try {
+                  await github.rest.pulls.requestReviewers({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    pull_number: prNumber,
+                    reviewers: ['SatyamPandey-07']
+                  });
+                } catch (error) {
+                  console.log(`Failed to request review: ${error.message}`);
+                }
+              }
             }
-            
-            // 1. Post PR Welcome comment
-            const prComment = welcomePrefix + `🎉 Thank you for contributing to WorkSphere!
 
-            Please ensure:
-
-            ✅ Tests pass
-            ✅ No secrets committed
-            ✅ Documentation updated
-
-            ---
-            💡 **Connect & Support:**
-            - ⭐ Star the [WorkSphere repository](https://github.com/SatyamPandey-07/WorkSphere) to show your support!
-            - 👤 Follow the maintainer on GitHub: [@SatyamPandey-07](https://github.com/SatyamPandey-07)
-            - 💼 Connect on LinkedIn: [Satyam Pandey](https://www.linkedin.com/in/satyam-pandey-0b246432a/)
-            - 💬 Have questions or queries? Join our [WhatsApp Group](https://chat.whatsapp.com/D3pfq0vSmwd0iR0dFNjj43) or contact via phone at \`+91 9820866720\`.`;
-            
-            await github.rest.issues.createComment({
+            // 2. Fetch list of modified files in the PR to assign labels dynamically
+            const { data: files } = await github.rest.pulls.listFiles({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: prNumber,
-              body: prComment
+              pull_number: prNumber,
             });
 
-            // 2. Add labels (ECSoC26, needs-review)
+            let hasUI = false;
+            let hasBackend = false;
+            let hasTests = false;
+            let hasDocs = false;
+
+            for (const file of files) {
+              const filename = file.filename;
+              if (filename.includes('__tests__/') || filename.endsWith('.test.ts') || filename.endsWith('.test.tsx')) {
+                hasTests = true;
+              } else if (
+                filename.startsWith('src/components/') || 
+                (filename.startsWith('src/app/') && !filename.includes('/api/') && (filename.endsWith('.tsx') || filename.endsWith('.css')))
+              ) {
+                hasUI = true;
+              } else if (
+                filename.startsWith('src/app/api/') || 
+                filename.startsWith('prisma/') || 
+                filename.startsWith('src/lib/') || 
+                filename === 'src/middleware.ts'
+              ) {
+                hasBackend = true;
+              } else if (
+                filename === 'README.md' ||
+                filename.startsWith('docs/') ||
+                filename.endsWith('.md')
+              ) {
+                hasDocs = true;
+              }
+            }
+
+            // Always ensure the core scoring label is attached
+            const labelsToAdd = ['ECSoC26', 'needs-review'];
+
+            // Assign customized and quality-based bonus labels dynamically
+            if (hasBackend) {
+              labelsToAdd.push('good-backend'); // prioritizes higher-complexity backend tasks (+50 XP)
+            } else if (hasUI) {
+              labelsToAdd.push('good-ui'); // assigns frontend/UI task bonus (+25 XP)
+            } else if (hasTests || hasDocs) {
+              labelsToAdd.push('good-pr'); // assigns test/doc bonus (+15 XP)
+            } else {
+              labelsToAdd.push('good-pr'); // fallback bonus to ensure EVERY pull request receives a bonus label
+            }
+
+            console.log(`Auto-triage labels for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: prNumber,
-              labels: ['ECSoC26', 'needs-review']
+              labels: labelsToAdd
             });
-
-            // 3. Assign PR author as assignee
-            await github.rest.issues.addAssignees({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              assignees: [prAuthor]
-            });
-
-            // 4. Request review from maintainer (SatyamPandey-07)
-            if (prAuthor !== 'SatyamPandey-07') {
-              try {
-                await github.rest.pulls.requestReviewers({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: prNumber,
-                  reviewers: ['SatyamPandey-07']
-                });
-              } catch (error) {
-                console.log(`Failed to request review: ${error.message}`);
-              }
-            }

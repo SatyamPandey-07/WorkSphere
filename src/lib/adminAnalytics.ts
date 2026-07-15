@@ -16,12 +16,33 @@ export const RANGE_DAYS: Record<RangeKey, number> = {
 };
 
 const STOP_WORDS = new Set([
-  "a", "an", "and", "at", "for", "from", "in", "is", "me", "my",
-  "near", "of", "on", "or", "the", "to", "with", "workspace", "place",
-  "find", "show", "looking", "want", "need",
+  "a",
+  "an",
+  "and",
+  "at",
+  "for",
+  "from",
+  "in",
+  "is",
+  "me",
+  "my",
+  "near",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "with",
+  "workspace",
+  "place",
+  "find",
+  "show",
+  "looking",
+  "want",
+  "need",
 ]);
 
- export function startDateForRange(range: RangeKey) {
+export function startDateForRange(range: RangeKey) {
   const start = new Date();
   start.setUTCHours(0, 0, 0, 0);
   start.setUTCDate(start.getUTCDate() - (RANGE_DAYS[range] - 1));
@@ -110,51 +131,17 @@ function extractAmenities(events: AnalyticsEvent[]) {
 
 function average(values: number[]) {
   if (values.length === 0) return 0;
-  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+  return Math.round(
+    values.reduce((sum, value) => sum + value, 0) / values.length,
+  );
 }
 
 export async function getAdminAnalytics(range: RangeKey) {
   const startDate = startDateForRange(range);
 
-  const [
-    telemetry,
-    bookings,
-    ratings,
-    venues,
-    activeConversations,
-    totalUsers,
-  ] = await Promise.all([
+  // 1. Fetch initial statistics and telemetry
+  const [telemetry, totalUsers] = await Promise.all([
     getAnalyticsSummaryAsync(),
-    prisma.booking.findMany({
-      where: { createdAt: { gte: startDate } },
-      select: {
-        venueId: true,
-        createdAt: true,
-        status: true,
-        date: true,
-        time: true,
-      },
-    }),
-    prisma.venueRating.findMany({
-      where: { createdAt: { gte: startDate } },
-      select: {
-        venueId: true,
-        wifiQuality: true,
-        createdAt: true,
-      },
-    }),
-    prisma.venue.findMany({
-      select: {
-        id: true,
-        name: true,
-        category: true,
-        rating: true,
-      },
-    }),
-    prisma.conversation.findMany({
-      where: { updatedAt: { gte: startDate } },
-      select: { userId: true },
-    }),
     prisma.user.count(),
   ]);
 
@@ -162,68 +149,137 @@ export async function getAdminAnalytics(range: RangeKey) {
     (event) => event.timestamp >= startDate.getTime(),
   );
 
-  const bookingByDay = createDaySeries(startDate);
-  for (const booking of bookings) {
-    const day = isoDay(booking.createdAt);
-    if (day in bookingByDay) bookingByDay[day] += 1;
-  }
-
-  const ratingByDay = new Map<string, { total: number; count: number }>();
-  for (const rating of ratings) {
-    const day = isoDay(rating.createdAt);
-    const current = ratingByDay.get(day) ?? { total: 0, count: 0 };
-    current.total += rating.wifiQuality;
-    current.count += 1;
-    ratingByDay.set(day, current);
-  }
-
-  const venueStats = new Map<
-    string,
-    { views: number; bookings: number; ratingTotal: number; ratingCount: number }
-  >();
-
-  for (const venue of venues) {
-    venueStats.set(venue.id, {
-      views: 0,
-      bookings: 0,
-      ratingTotal: 0,
-      ratingCount: 0,
-    });
-  }
-
+  // 2. Perform DB-level counts/groups for telemetry views, bookings, and ratings
+  const venueViews = new Map<string, number>();
   for (const event of recentEvents) {
     if (event.name !== "venue_viewed") continue;
     const venueId = event.properties?.venueId;
-    if (typeof venueId !== "string") continue;
-    const stat = venueStats.get(venueId);
-    if (stat) stat.views += 1;
-  }
-
-  for (const booking of bookings) {
-    const stat = venueStats.get(booking.venueId);
-    if (stat && booking.status !== "CANCELLED") stat.bookings += 1;
-  }
-
-  for (const rating of ratings) {
-    const stat = venueStats.get(rating.venueId);
-    if (stat) {
-      stat.ratingTotal += rating.wifiQuality;
-      stat.ratingCount += 1;
+    if (typeof venueId === "string") {
+      venueViews.set(venueId, (venueViews.get(venueId) ?? 0) + 1);
     }
   }
 
-  const venueLeaderboard = venues
+  const [
+    bookingCounts,
+    ratingStats,
+    bookingTrendData,
+    ratingTrendData,
+    activeConversationsCount,
+    totalBookingsCount,
+  ] = await Promise.all([
+    prisma.booking.groupBy({
+      by: ["venueId"],
+      where: {
+        createdAt: { gte: startDate },
+        status: { not: "CANCELLED" },
+      },
+      _count: {
+        _all: true,
+      },
+    }),
+    prisma.venueRating.groupBy({
+      by: ["venueId"],
+      where: { createdAt: { gte: startDate } },
+      _avg: {
+        wifiQuality: true,
+      },
+    }),
+    prisma.booking.findMany({
+      where: { createdAt: { gte: startDate } },
+      select: { createdAt: true },
+    }),
+    prisma.venueRating.findMany({
+      where: { createdAt: { gte: startDate } },
+      select: {
+        createdAt: true,
+        wifiQuality: true,
+      },
+    }),
+    prisma.conversation.findMany({
+      where: { updatedAt: { gte: startDate } },
+      distinct: ["userId"],
+      select: { userId: true },
+    }),
+    prisma.booking.count({
+      where: {
+        createdAt: { gte: startDate },
+        status: { not: "CANCELLED" },
+      },
+    }),
+  ]);
+
+  // 3. Find the set of all active venue IDs in this range
+  const activeVenueIds = new Set<string>([
+    ...venueViews.keys(),
+    ...bookingCounts.map((b) => b.venueId),
+    ...ratingStats.map((r) => r.venueId),
+  ]);
+
+  // 4. Fetch only the active venues (plus top-rated inactive venues if active count is < 10)
+  let leaderboardVenues = await prisma.venue.findMany({
+    where: { id: { in: Array.from(activeVenueIds) } },
+    select: {
+      id: true,
+      name: true,
+      category: true,
+      rating: true,
+    },
+  });
+
+  if (leaderboardVenues.length < 10) {
+    const remainingCount = 10 - leaderboardVenues.length;
+    const additionalVenues = await prisma.venue.findMany({
+      where: { id: { notIn: Array.from(activeVenueIds) } },
+      orderBy: { rating: "desc" },
+      take: remainingCount,
+      select: {
+        id: true,
+        name: true,
+        category: true,
+        rating: true,
+      },
+    });
+    leaderboardVenues = [...leaderboardVenues, ...additionalVenues];
+  }
+
+  // 5. Populate venue stats
+  const venueStats = new Map<
+    string,
+    { views: number; bookings: number; ratingAvg: number | null }
+  >();
+
+  for (const venue of leaderboardVenues) {
+    venueStats.set(venue.id, {
+      views: 0,
+      bookings: 0,
+      ratingAvg: null,
+    });
+  }
+
+  for (const [venueId, views] of venueViews.entries()) {
+    const stat = venueStats.get(venueId);
+    if (stat) stat.views = views;
+  }
+
+  for (const booking of bookingCounts) {
+    const stat = venueStats.get(booking.venueId);
+    if (stat) stat.bookings = booking._count._all;
+  }
+
+  for (const rating of ratingStats) {
+    const stat = venueStats.get(rating.venueId);
+    if (stat) stat.ratingAvg = rating._avg.wifiQuality;
+  }
+
+  const venueLeaderboard = leaderboardVenues
     .map((venue) => {
       const stat = venueStats.get(venue.id)!;
       const averageRating =
-        stat.ratingCount > 0
-          ? Number((stat.ratingTotal / stat.ratingCount).toFixed(1))
-          : venue.rating ?? 0;
+        stat.ratingAvg !== null
+          ? Number(stat.ratingAvg.toFixed(1))
+          : (venue.rating ?? 0);
 
-      const score =
-        stat.views * 1 +
-        stat.bookings * 4 +
-        averageRating * 2;
+      const score = stat.views * 1 + stat.bookings * 4 + averageRating * 2;
 
       return {
         id: venue.id,
@@ -238,6 +294,22 @@ export async function getAdminAnalytics(range: RangeKey) {
     .sort((a, b) => b.score - a.score)
     .slice(0, 10);
 
+  // 6. Build booking and rating daily trend series
+  const bookingByDay = createDaySeries(startDate);
+  for (const booking of bookingTrendData) {
+    const day = isoDay(booking.createdAt);
+    if (day in bookingByDay) bookingByDay[day] += 1;
+  }
+
+  const ratingByDay = new Map<string, { total: number; count: number }>();
+  for (const rating of ratingTrendData) {
+    const day = isoDay(rating.createdAt);
+    const current = ratingByDay.get(day) ?? { total: 0, count: 0 };
+    current.total += rating.wifiQuality;
+    current.count += 1;
+    ratingByDay.set(day, current);
+  }
+
   const agentDurations = recentEvents
     .filter((event) => event.name === "agent_completed")
     .map((event) => Number(event.properties?.durationMs))
@@ -245,8 +317,7 @@ export async function getAdminAnalytics(range: RangeKey) {
 
   const successfulAgentRuns = recentEvents.filter(
     (event) =>
-      event.name === "agent_completed" &&
-      event.properties?.success === true,
+      event.name === "agent_completed" && event.properties?.success === true,
   ).length;
 
   const agentRuns = recentEvents.filter(
@@ -261,10 +332,10 @@ export async function getAdminAnalytics(range: RangeKey) {
     range,
     generatedAt: new Date().toISOString(),
     overview: {
-      activeUsers: new Set(activeConversations.map((item) => item.userId)).size,
+      activeUsers: activeConversationsCount.length,
       totalUsers,
       searches: searchCount,
-      bookings: bookings.filter((booking) => booking.status !== "CANCELLED").length,
+      bookings: totalBookingsCount,
       averageResolutionMs: average(agentDurations),
       agentSuccessRate:
         agentRuns > 0

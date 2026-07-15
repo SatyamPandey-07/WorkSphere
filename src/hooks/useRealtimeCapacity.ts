@@ -74,7 +74,6 @@ export function useRealtimeCapacity(venueId: string) {
   useEffect(() => {
     connectRealtime();
 
-    // Reconnect instantly when the app comes back into focus (e.g., screen unlocked)
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         connectRealtime();

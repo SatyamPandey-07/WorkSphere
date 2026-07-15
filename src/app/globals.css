@@ -302,3 +302,10 @@ html.dark ::-webkit-scrollbar-thumb:hover {
     border-color: rgba(30, 58, 138, 0.3);
   }
 }
+
+/* Legacy browser fallback to hide placeholder text when input is focused or active */
+input:focus::placeholder,
+textarea:focus::placeholder {
+  color: transparent !important;
+  opacity: 0 !important;
+}

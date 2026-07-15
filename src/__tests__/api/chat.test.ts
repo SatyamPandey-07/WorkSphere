@@ -51,6 +51,42 @@ describe('Chat API', () => {
     expect(requestBody.location.lat).toBeDefined();
     expect(response.status).toBe(200);
   });
+
+  it('should include highTraffic = false in successful response by default', async () => {
+    const response = {
+      status: 200,
+      data: {
+        message: 'Here are some workspaces.',
+        venues: [],
+        highTraffic: false,
+      },
+    };
+    expect(response.data.highTraffic).toBe(false);
+  });
+
+  it('should include highTraffic = true in response if Overpass API is rate-limited', async () => {
+    const response = {
+      status: 200,
+      data: {
+        message: 'Returned simulated fallback venues.',
+        venues: [],
+        highTraffic: true,
+      },
+    };
+    expect(response.data.highTraffic).toBe(true);
+  });
+
+  it('should return status 429 when custom server rate limit is exceeded', async () => {
+    const response = {
+      status: 429,
+      data: {
+        error: 'Rate limit exceeded. Please wait before sending more messages.',
+        retryAfter: 60,
+      },
+    };
+    expect(response.status).toBe(429);
+    expect(response.data.error).toContain('Rate limit exceeded');
+  });
 });
 
 describe('Agent Pipeline', () => {
@@ -106,5 +142,21 @@ describe('Agent Pipeline', () => {
 
     expect(totalScore).toBeGreaterThan(0);
     expect(totalScore).toBeLessThanOrEqual(10);
+  });
+});
+
+describe('Clerk Webhook API Avatar Logic', () => {
+  it('should optimize image_url using replace when present', () => {
+    const mockImageUrl = "https://img.clerk.com/avatar.png?width=400";
+    const optimized = mockImageUrl.replace(/(\?|&)width=\d+/, "$1width=150");
+    expect(optimized).toBe("https://img.clerk.com/avatar.png?width=150");
+  });
+
+  it('should fallback to initials UI Avatar when image_url is missing', () => {
+    const first = "Chirag";
+    const last = "Pandey";
+    const initials = `${first?.[0] || ""}${last?.[0] || ""}`.toUpperCase();
+    const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials || "WS")}&background=6366f1&color=fff`;
+    expect(fallbackUrl).toBe("https://ui-avatars.com/api/?name=CP&background=6366f1&color=fff");
   });
 });

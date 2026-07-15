@@ -7,7 +7,9 @@ import {
     ChevronDown,
     ChevronUp,
     Coffee,
+    FolderPlus,
     Heart,
+    Info,
     Loader2,
     MapPin,
     Navigation,
@@ -16,11 +18,12 @@ import {
     Volume2,
     Wifi,
     Zap,
-    Info,
 } from "lucide-react";
 import { RefObject, useState, useEffect } from "react";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
+import { MessageRenderer } from "./GenerativeUI";
+import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
@@ -38,7 +41,13 @@ export interface Venue {
     description?: string;
     hasErgonomic?: boolean;
     outletDensity?: string;
+    lighting?: string;
     wifiSpeed?: number | null;
+    musicStyle?: string;
+    hasPhoneBooths?: boolean;
+    hasNoMusic?: boolean;
+    hasQuietZone?: boolean;
+    outletLocations?: string[];
 }
 
 export interface Message {
@@ -97,7 +106,8 @@ export function VenueChatCard({
     onBook,
 }: VenueChatCardProps) {
     const [photoUrl, setPhotoUrl] = useState<string | null>(null);
-    const [photoLoading, setPhotoLoading] = useState(true);
+    const [photoLoading, setPhotoLoading] = useState(false);
+    const [showFolderModal, setShowFolderModal] = useState(false);
 
     useEffect(() => {
         const params = new URLSearchParams({
@@ -108,12 +118,19 @@ export function VenueChatCard({
 
         setPhotoLoading(true);
         fetch(`/api/venues/${encodeURIComponent(venue.id)}/photo?${params}`)
-            .then(r => r.json())
-            .then(data => {
-                if (data.photoUrl) setPhotoUrl(data.photoUrl);
-                setPhotoLoading(false);
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error("Failed to load venue photo");
+                }
+
+                setPhotoUrl(response.url);
             })
-            .catch(() => setPhotoLoading(false));
+            .catch(() => {
+                setPhotoUrl(null);
+            })
+            .finally(() => {
+                setPhotoLoading(false);
+            });
     }, [venue.id, venue.name, venue.lat, venue.lng]);
 
     const CategoryIcon =
@@ -144,6 +161,7 @@ export function VenueChatCard({
     const displayPhoto = photoUrl || venueFallbacks[venue.category] || venueFallbacks.default;
 
     return (
+        <>
         <div
             onClick={() => onOpenDetails(venue)}
             className="border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-2xl hover:scale-[1.02] transition-all cursor-pointer shadow-lg my-2 active:scale-95"
@@ -217,7 +235,7 @@ export function VenueChatCard({
 
                         {/* Action buttons */}
                         <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -241,7 +259,7 @@ export function VenueChatCard({
                                 </button>
                             </div>
 
-                            <div className="flex items-center gap-1.5">
+                            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5">
                                 <button
                                     onClick={(e) => {
                                         e.stopPropagation();
@@ -274,12 +292,27 @@ export function VenueChatCard({
                                     <Star className="w-3 h-3" />
                                     Rate
                                 </button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setShowFolderModal(true); }}
+                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all"
+                                    title="Add to Collection"
+                                >
+                                    <FolderPlus className="w-3 h-3" />
+                                    Add
+                                </button>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+        {showFolderModal && venue && (
+            <AddToFolderModal
+                venue={venue}
+                onClose={() => setShowFolderModal(false)}
+            />
+        )}
+        </>
     );
 }
 
@@ -350,7 +383,13 @@ export function MessageList({
                                 : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
                                 }`}
                         >
-                            <div className="text-sm font-medium leading-relaxed whitespace-pre-wrap">{message.content}</div>
+                            <div className="text-sm font-medium leading-relaxed">
+                                {message.role === "assistant" ? (
+                                    <MessageRenderer content={message.content} />
+                                ) : (
+                                    <span className="whitespace-pre-wrap">{message.content}</span>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -383,7 +422,7 @@ export function MessageList({
                                         const Icon = AGENT_ICONS[step.agent] || Brain;
                                         const color = AGENT_COLORS[step.agent] || "text-zinc-500";
                                         const skipped = (step.result as any)?.skipped;
-                                        
+
                                         return (
                                             <div key={idx} className={`rounded-xl p-3 text-xs border ${skipped ? 'bg-zinc-900/50 border-zinc-800/50 opacity-50' : 'bg-zinc-950 border-zinc-800'}`}>
                                                 <div className="flex items-center justify-between mb-1">

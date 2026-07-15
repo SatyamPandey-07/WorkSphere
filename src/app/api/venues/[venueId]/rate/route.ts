@@ -3,11 +3,12 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { venueRatingSchema, validateRequest } from "@/lib/validations";
+import { updateUserPreferencesSummary } from "@/lib/agents/MemoryAgent";
 
 // POST /api/venues/[venueId]/rate - Add rating
 export async function POST(
   req: NextRequest,
-  context: { params: Promise<{ venueId: string }> }
+  context: { params: Promise<{ venueId: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -28,7 +29,34 @@ export async function POST(
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    const { wifiQuality, hasOutlets, noiseLevel, comment, hasErgonomic, outletDensity, wifiSpeed } = validation.data;
+    const {
+      wifiQuality,
+      hasOutlets,
+      noiseLevel,
+      avgDecibels,
+      peakDecibels,
+      comment,
+      hasErgonomic,
+      outletDensity,
+      wifiSpeed,
+      downloadSpeed,
+      uploadSpeed,
+      latency,
+      crowdLevel,
+      speedtestPhoto,
+      hasPhoneBooths,
+      hasNoMusic,
+      hasQuietZone,
+      lighting,
+      musicStyle,
+      powerTypes,
+      outletLocations,
+      petsAllowedIndoors,
+      patioOnly,
+      waterBowlsProvided,
+      dogFriendly,
+      catsAllowed,
+    } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
     const targetPlaceId = venueData?.placeId || venueId;
@@ -65,10 +93,25 @@ export async function POST(
         wifiQuality,
         hasOutlets,
         noiseLevel,
+        avgDecibels: avgDecibels || null,
+        peakDecibels: peakDecibels || null,
         hasErgonomic,
         outletDensity,
         wifiSpeed,
         comment,
+        speedtestPhoto,
+        hasPhoneBooths,
+        hasNoMusic,
+        hasQuietZone,
+        lighting,
+        musicStyle,
+        powerTypes: powerTypes || [],
+        outletLocations: outletLocations || [],
+        petsAllowedIndoors,
+        patioOnly,
+        waterBowlsProvided,
+        dogFriendly,
+        catsAllowed,
       },
       create: {
         userId,
@@ -76,45 +119,160 @@ export async function POST(
         wifiQuality,
         hasOutlets,
         noiseLevel,
+        avgDecibels: avgDecibels || null,
+        peakDecibels: peakDecibels || null,
         hasErgonomic: hasErgonomic || false,
         outletDensity: outletDensity || "none",
         wifiSpeed: wifiSpeed || null,
         comment,
+        speedtestPhoto,
+        hasPhoneBooths: hasPhoneBooths || false,
+        hasNoMusic: hasNoMusic || false,
+        hasQuietZone: hasQuietZone || false,
+        lighting: lighting || null,
+        musicStyle,
+        powerTypes: powerTypes || [],
+        outletLocations: outletLocations || [],
+        petsAllowedIndoors: petsAllowedIndoors || false,
+        patioOnly: patioOnly || false,
+        waterBowlsProvided: waterBowlsProvided || false,
+        dogFriendly: dogFriendly || false,
+        catsAllowed: catsAllowed || false,
       },
     });
+
+    // Create WifiTelemetry entry if all speed/latency/crowd data is provided
+    if (downloadSpeed && uploadSpeed && latency && crowdLevel) {
+      await prisma.wifiTelemetry.create({
+        data: {
+          venueId: finalVenueId,
+          download: downloadSpeed,
+          upload: uploadSpeed,
+          latency: latency,
+          crowdLevel: crowdLevel,
+        },
+      });
+    }
 
     // Update venue with new averages
     const allRatings = await prisma.venueRating.findMany({
       where: { venueId: finalVenueId },
     });
 
-    const avgWifi = allRatings.reduce((sum: number, r: { wifiQuality: number }) => sum + r.wifiQuality, 0) / allRatings.length;
-    const outletPercent = (allRatings.filter((r: { hasOutlets: boolean }) => r.hasOutlets).length / allRatings.length) * 100;
-    const ergonomicPercent = (allRatings.filter((r: any) => r.hasErgonomic).length / allRatings.length) * 100;
+    const avgWifi =
+      allRatings.reduce(
+        (sum: number, r: { wifiQuality: number }) => sum + r.wifiQuality,
+        0,
+      ) / allRatings.length;
+    const outletPercent =
+      (allRatings.filter((r: { hasOutlets: boolean }) => r.hasOutlets).length /
+        allRatings.length) *
+      100;
+    const ergonomicPercent =
+      (allRatings.filter((r: any) => r.hasErgonomic).length /
+        allRatings.length) *
+      100;
+    const phoneBoothsPercent =
+      (allRatings.filter((r: any) => r.hasPhoneBooths).length /
+        allRatings.length) *
+      100;
+    const noMusicPercent =
+      (allRatings.filter((r: any) => r.hasNoMusic).length / allRatings.length) *
+      100;
+    const quietZonePercent =
+      (allRatings.filter((r: any) => r.hasQuietZone).length /
+        allRatings.length) *
+      100;
 
     // Most common noise level
     const noiseCounts: Record<string, number> = {};
     allRatings.forEach((r: { noiseLevel: string }) => {
       noiseCounts[r.noiseLevel] = (noiseCounts[r.noiseLevel] || 0) + 1;
     });
-    const dominantNoise = Object.entries(noiseCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0];
+    const dominantNoise = Object.entries(noiseCounts).reduce((a, b) =>
+      b[1] > a[1] ? b : a,
+    )[0];
+
+    // Most common lighting
+    const lightingCounts: Record<string, number> = {};
+    allRatings.forEach((r: any) => {
+      if (r.lighting) {
+        lightingCounts[r.lighting] = (lightingCounts[r.lighting] || 0) + 1;
+      }
+    });
+    const dominantLighting =
+      Object.keys(lightingCounts).length > 0
+        ? Object.entries(lightingCounts).reduce((a, b) =>
+            b[1] > a[1] ? b : a,
+          )[0]
+        : null;
 
     // Most common outlet density
     const densityCounts: Record<string, number> = {};
     allRatings.forEach((r: any) => {
       if (r.outletDensity) {
-        densityCounts[r.outletDensity] = (densityCounts[r.outletDensity] || 0) + 1;
+        densityCounts[r.outletDensity] =
+          (densityCounts[r.outletDensity] || 0) + 1;
       }
     });
-    const dominantDensity = Object.keys(densityCounts).length > 0
-      ? Object.entries(densityCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0]
-      : "none";
+    const dominantDensity =
+      Object.keys(densityCounts).length > 0
+        ? Object.entries(densityCounts).reduce((a, b) =>
+            b[1] > a[1] ? b : a,
+          )[0]
+        : "none";
+
+    // Aggregate power types (unique union of all powerTypes in all ratings)
+    const aggregatedPowerTypes = Array.from(
+      new Set(allRatings.flatMap((r: any) => r.powerTypes || [])),
+    );
+
+    // Aggregate outlet locations (unique union of all outletLocations in all ratings)
+    const aggregatedOutletLocations = Array.from(
+      new Set(allRatings.flatMap((r: any) => r.outletLocations || [])),
+    );
 
     // Average wifi speed
-    const validSpeeds = allRatings.filter((r: any) => r.wifiSpeed !== null && r.wifiSpeed > 0).map((r: any) => r.wifiSpeed as number);
-    const avgSpeed = validSpeeds.length > 0
-      ? Math.round(validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length)
-      : null;
+    const validSpeeds = allRatings
+      .filter((r: any) => r.wifiSpeed !== null && r.wifiSpeed > 0)
+      .map((r: any) => r.wifiSpeed as number);
+    const avgSpeed =
+      validSpeeds.length > 0
+        ? Math.round(
+            validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length,
+          )
+        : null;
+
+    // Most common music style
+    const musicCounts: Record<string, number> = {};
+    allRatings.forEach((r: any) => {
+      if (r.musicStyle) {
+        musicCounts[r.musicStyle] = (musicCounts[r.musicStyle] || 0) + 1;
+      }
+    });
+    const dominantMusic =
+      Object.keys(musicCounts).length > 0
+        ? Object.entries(musicCounts).reduce((a, b) => (b[1] > a[1] ? b : a))[0]
+        : null;
+    const petsAllowedIndoorsPercent =
+      (allRatings.filter((r: any) => r.petsAllowedIndoors).length /
+        allRatings.length) *
+      100;
+    const patioOnlyPercent =
+      (allRatings.filter((r: any) => r.patioOnly).length / allRatings.length) *
+      100;
+    const waterBowlsPercent =
+      (allRatings.filter((r: any) => r.waterBowlsProvided).length /
+        allRatings.length) *
+      100;
+    const dogFriendlyPercent =
+      (allRatings.filter((r: any) => r.dogFriendly).length /
+        allRatings.length) *
+      100;
+    const catsAllowedPercent =
+      (allRatings.filter((r: any) => r.catsAllowed).length /
+        allRatings.length) *
+      100;
 
     await prisma.venue.update({
       where: { id: finalVenueId },
@@ -125,16 +283,33 @@ export async function POST(
         hasErgonomic: ergonomicPercent > 50,
         outletDensity: dominantDensity,
         wifiSpeed: avgSpeed,
+        hasPhoneBooths: phoneBoothsPercent > 50,
+        hasNoMusic: noMusicPercent > 50,
+        hasQuietZone: quietZonePercent > 50,
+        lighting: dominantLighting,
+        musicStyle: dominantMusic,
+        powerTypes: aggregatedPowerTypes,
+        outletLocations: aggregatedOutletLocations,
+        petsAllowedIndoors: petsAllowedIndoorsPercent > 50,
+        patioOnly: patioOnlyPercent > 50,
+        waterBowlsProvided: waterBowlsPercent > 50,
+        dogFriendly: dogFriendlyPercent > 50,
+        catsAllowed: catsAllowedPercent > 50,
         crowdsourced: true,
       },
     });
+
+    // Trigger background preference summary consolidation
+    updateUserPreferencesSummary(userId).catch((err) =>
+      console.error("[RateAPI] Background preference sync failed:", err),
+    );
 
     return NextResponse.json({ rating }, { status: 201 });
   } catch (error) {
     console.error("POST /api/venues/[venueId]/rate error:", error);
     return NextResponse.json(
       { error: "Failed to submit rating" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -142,7 +317,7 @@ export async function POST(
 // GET /api/venues/[venueId]/rate - Get user's rating
 export async function GET(
   req: NextRequest,
-  context: { params: Promise<{ venueId: string }> }
+  context: { params: Promise<{ venueId: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -156,12 +331,9 @@ export async function GET(
     // Find the venue first to get our internal ID (venueId from URL might be a placeId)
     const venue = await prisma.venue.findFirst({
       where: {
-        OR: [
-          { id: venueId },
-          { placeId: venueId }
-        ]
+        OR: [{ id: venueId }, { placeId: venueId }],
       },
-      select: { id: true }
+      select: { id: true },
     });
 
     if (!venue) {
@@ -182,7 +354,7 @@ export async function GET(
     console.error("GET /api/venues/[venueId]/rate error:", error);
     return NextResponse.json(
       { error: "Failed to fetch rating" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

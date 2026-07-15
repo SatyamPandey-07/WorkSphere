@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import { venueSearchSchema, venueCreateSchema, validateRequest } from "@/lib/validations";
+import {
+  venueSearchSchema,
+  venueCreateSchema,
+  validateRequest,
+} from "@/lib/validations";
 import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
 
 // GET /api/venues - Search venues
 export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
+
+    // Fallback: If no coordinates are provided, return all venues
+    if (!searchParams.get("lat") || !searchParams.get("lng")) {
+      const venues = await prisma.venue.findMany();
+      return NextResponse.json(venues);
+    }
 
     // Validate search params with Zod
     const validation = validateRequest(venueSearchSchema, {
@@ -21,18 +31,57 @@ export async function GET(req: NextRequest) {
       ergonomic: searchParams.get("ergonomic"),
       outletDensity: searchParams.get("outletDensity"),
       wifiSpeedBand: searchParams.get("wifiSpeedBand"),
+      hasPhoneBooths: searchParams.get("hasPhoneBooths"),
+      hasNoMusic: searchParams.get("hasNoMusic"),
+      hasQuietZone: searchParams.get("hasQuietZone"),
+      lighting: searchParams.get("lighting"),
+      petsAllowedIndoors: searchParams.get("petsAllowedIndoors"),
+      patioOnly: searchParams.get("patioOnly"),
+      waterBowlsProvided: searchParams.get("waterBowlsProvided"),
+      dogFriendly: searchParams.get("dogFriendly"),
+      catsAllowed: searchParams.get("catsAllowed"),
+      singleOriginBeans: searchParams.get("singleOriginBeans"),
+      specialtyEspresso: searchParams.get("specialtyEspresso"),
+      oatAlmondMilk: searchParams.get("oatAlmondMilk"),
+      pourOverAvailable: searchParams.get("pourOverAvailable"),
+      musicStyle: searchParams.get("musicStyle"),
     });
 
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    const { lat, lng, radius, category, wifi, outlets, quiet, ergonomic, outletDensity, wifiSpeedBand } = validation.data;
+    const {
+      lat,
+      lng,
+      radius,
+      category,
+      wifi,
+      outlets,
+      quiet,
+      ergonomic,
+      outletDensity,
+      wifiSpeedBand,
+      hasPhoneBooths,
+      hasNoMusic,
+      hasQuietZone,
+      lighting,
+      petsAllowedIndoors,
+      patioOnly,
+      waterBowlsProvided,
+      dogFriendly,
+      catsAllowed,
+      singleOriginBeans,
+      specialtyEspresso,
+      oatAlmondMilk,
+      pourOverAvailable,
+      musicStyle,
+    } = validation.data;
 
     // Simple bounding box search (for PostgreSQL without PostGIS)
     // Approximate: 1 degree ≈ 111km
-    const latDelta = (radius / 1000) / 111;
-    const lngDelta = (radius / 1000) / (111 * Math.cos(lat * Math.PI / 180));
+    const latDelta = radius / 1000 / 111;
+    const lngDelta = radius / 1000 / (111 * Math.cos((lat * Math.PI) / 180));
 
     const where: any = {
       latitude: {
@@ -71,7 +120,9 @@ export async function GET(req: NextRequest) {
       } else if (outletDensity === "some_tables") {
         where.outletDensity = { in: ["every_table", "some_tables"] };
       } else if (outletDensity === "wall_seats") {
-        where.outletDensity = { in: ["every_table", "some_tables", "wall_seats"] };
+        where.outletDensity = {
+          in: ["every_table", "some_tables", "wall_seats"],
+        };
       }
     }
 
@@ -83,6 +134,63 @@ export async function GET(req: NextRequest) {
       } else if (wifiSpeedBand === "ultra") {
         where.wifiSpeed = { gte: 100 };
       }
+    }
+
+    if (hasPhoneBooths) {
+      where.hasPhoneBooths = true;
+    }
+
+    if (hasNoMusic) {
+      where.hasNoMusic = true;
+    }
+
+    if (hasQuietZone) {
+      where.hasQuietZone = true;
+    }
+    if (musicStyle && musicStyle !== "all") {
+      if (musicStyle === "no_music") {
+        where.OR = [{ musicStyle: "no_music" }, { hasNoMusic: true }];
+      } else {
+        where.musicStyle = musicStyle;
+      }
+    }
+    if (singleOriginBeans) {
+      where.singleOriginBeans = true;
+    }
+
+    if (specialtyEspresso) {
+      where.specialtyEspresso = true;
+    }
+
+    if (oatAlmondMilk) {
+      where.oatAlmondMilk = true;
+    }
+
+    if (pourOverAvailable) {
+      where.pourOverAvailable = true;
+    }
+    if (petsAllowedIndoors) {
+      where.petsAllowedIndoors = true;
+    }
+
+    if (patioOnly) {
+      where.patioOnly = true;
+    }
+
+    if (waterBowlsProvided) {
+      where.waterBowlsProvided = true;
+    }
+
+    if (dogFriendly) {
+      where.dogFriendly = true;
+    }
+
+    if (catsAllowed) {
+      where.catsAllowed = true;
+    }
+
+    if (lighting) {
+      where.lighting = lighting;
     }
 
     const venues = await prisma.venue.findMany({
@@ -100,7 +208,7 @@ export async function GET(req: NextRequest) {
     console.error("GET /api/venues error:", error);
     return NextResponse.json(
       { error: "Failed to fetch venues" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -121,14 +229,40 @@ export async function POST(req: NextRequest) {
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
-    const { name, latitude, longitude, category, address, wifiQuality, hasOutlets, noiseLevel, hasErgonomic, outletDensity, wifiSpeed } = validation.data;
+    const {
+      name,
+      latitude,
+      longitude,
+      category,
+      address,
+      wifiQuality,
+      hasOutlets,
+      noiseLevel,
+      hasErgonomic,
+      outletDensity,
+      wifiSpeed,
+      hasPhoneBooths,
+      hasNoMusic,
+      hasQuietZone,
+      lighting,
+      petsAllowedIndoors,
+      patioOnly,
+      waterBowlsProvided,
+      dogFriendly,
+      catsAllowed,
+      singleOriginBeans,
+      specialtyEspresso,
+      oatAlmondMilk,
+      pourOverAvailable,
+      musicStyle,
+    } = validation.data;
     const { placeId, rating, imageUrl } = body; // placeId, rating, imageUrl are additional fields
 
     // Validate placeId (required for upsert)
     if (!placeId) {
       return NextResponse.json(
         { error: "placeId is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -144,7 +278,9 @@ export async function POST(req: NextRequest) {
       // Flag for review if it's not a workspace or if outlets are claimed but not visible (and model is fairly confident)
       if (
         !visionResult.isWorkspace ||
-        (hasOutlets && !visionResult.visibleOutlets && visionResult.confidenceScore > 60)
+        (hasOutlets &&
+          !visionResult.visibleOutlets &&
+          visionResult.confidenceScore > 60)
       ) {
         requiresReview = true;
       }
@@ -160,6 +296,20 @@ export async function POST(req: NextRequest) {
         hasErgonomic,
         outletDensity,
         wifiSpeed,
+        hasPhoneBooths,
+        hasNoMusic,
+        hasQuietZone,
+        lighting,
+        petsAllowedIndoors,
+        patioOnly,
+        waterBowlsProvided,
+        dogFriendly,
+        catsAllowed,
+        singleOriginBeans,
+        specialtyEspresso,
+        oatAlmondMilk,
+        pourOverAvailable,
+        musicStyle,
         crowdsourced: true,
         requiresReview,
         ...(imageUrl && { imageUrl }),
@@ -178,9 +328,24 @@ export async function POST(req: NextRequest) {
         hasErgonomic: hasErgonomic || false,
         outletDensity: outletDensity || "none",
         wifiSpeed: wifiSpeed || null,
+        hasPhoneBooths: hasPhoneBooths || false,
+        hasNoMusic: hasNoMusic || false,
+        hasQuietZone: hasQuietZone || false,
+        lighting,
+        petsAllowedIndoors: petsAllowedIndoors || false,
+        patioOnly: patioOnly || false,
+        waterBowlsProvided: waterBowlsProvided || false,
+        dogFriendly: dogFriendly || false,
+        catsAllowed: catsAllowed || false,
+        singleOriginBeans: singleOriginBeans || false,
+        specialtyEspresso: specialtyEspresso || false,
+        oatAlmondMilk: oatAlmondMilk || false,
+        pourOverAvailable: pourOverAvailable || false,
+        musicStyle,
         crowdsourced: true,
         requiresReview,
         imageUrl,
+        creatorId: userId,
       },
     });
 
@@ -189,7 +354,7 @@ export async function POST(req: NextRequest) {
     console.error("POST /api/venues error:", error);
     return NextResponse.json(
       { error: "Failed to create venue" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

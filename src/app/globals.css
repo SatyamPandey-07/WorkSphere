@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
 
 @layer utilities {
   .glass-card {
@@ -26,13 +30,10 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
-
 body {
   background: var(--background);
   color: var(--foreground);
@@ -42,11 +43,12 @@ body {
 /* Smooth scrolling */
 html {
   scroll-behavior: smooth;
+  scrollbar-color: var(--color-zinc-300) transparent;
+  scrollbar-width: thin;
 }
 
 /* Gradient animation */
 @keyframes gradient {
-
   0%,
   100% {
     background-position: 0% 50%;
@@ -80,7 +82,6 @@ html {
 
 /* Pulse glow effect */
 @keyframes pulseGlow {
-
   0%,
   100% {
     box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
@@ -107,7 +108,12 @@ html {
 }
 
 .animate-shimmer {
-  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 100%
+  );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
@@ -123,22 +129,24 @@ html {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #d1d5db;
+  background: var(--color-zinc-300);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+  background: var(--color-zinc-400);
 }
 
-@media (prefers-color-scheme: dark) {
-  ::-webkit-scrollbar-thumb {
-    background: #374151;
-  }
+html.dark {
+  scrollbar-color: var(--color-zinc-700) transparent;
+}
 
-  ::-webkit-scrollbar-thumb:hover {
-    background: #4b5563;
-  }
+html.dark ::-webkit-scrollbar-thumb {
+  background: var(--color-zinc-700);
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: var(--color-zinc-600);
 }
 
 /* Focus styles */
@@ -150,4 +158,133 @@ html {
 /* Selection color */
 ::selection {
   background: rgba(59, 130, 246, 0.3);
+}
+
+/* ------------------------------------------------------------------
+   Fallback for older Android WebView engines that do not support the
+   CSS color-mix() function, which Tailwind v4 uses internally to
+   generate opacity-modifier utilities (e.g. bg-blue-700/10). Without
+   this fallback, unsupported color-mix() values fail and the affected
+   elements render as flat black instead of the intended translucent
+   neon gradient/border colors.
+
+   Scope: the "neon blur blob" backgrounds and glowing card borders
+   described in issue #153. Modern browsers are unaffected and keep
+   using Tailwind's normal color-mix()-based output, since this block
+   only applies inside @supports not (...).
+   ------------------------------------------------------------------ */
+@supports not (background: color-mix(in oklab, red, red)) {
+  /* Neon blur blobs - background/error/marketing pages */
+  .bg-blue-700\/10 {
+    background-color: rgba(29, 78, 216, 0.1);
+  }
+  .bg-blue-700\/20 {
+    background-color: rgba(29, 78, 216, 0.2);
+  }
+  .bg-purple-700\/10 {
+    background-color: rgba(126, 34, 206, 0.1);
+  }
+  .bg-purple-700\/15 {
+    background-color: rgba(126, 34, 206, 0.15);
+  }
+  .bg-red-700\/10 {
+    background-color: rgba(185, 28, 28, 0.1);
+  }
+  .bg-orange-700\/10 {
+    background-color: rgba(194, 65, 12, 0.1);
+  }
+  .bg-cyan-700\/10 {
+    background-color: rgba(14, 116, 144, 0.1);
+  }
+  .bg-violet-700\/15 {
+    background-color: rgba(109, 40, 217, 0.15);
+  }
+  .bg-violet-700\/20 {
+    background-color: rgba(109, 40, 217, 0.2);
+  }
+  .bg-amber-500\/10 {
+    background-color: rgba(245, 158, 11, 0.1);
+  }
+  .bg-amber-500\/20 {
+    background-color: rgba(245, 158, 11, 0.2);
+  }
+  .bg-red-500\/10 {
+    background-color: rgba(239, 68, 68, 0.1);
+  }
+  .bg-red-500\/20 {
+    background-color: rgba(239, 68, 68, 0.2);
+  }
+
+  /* Glowing card borders */
+  .border-amber-500\/30 {
+    border-color: rgba(245, 158, 11, 0.3);
+  }
+  .border-red-500\/30 {
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+  .border-blue-500\/30 {
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+  .border-purple-500\/30 {
+    border-color: rgba(168, 85, 247, 0.3);
+  }
+  .border-violet-400\/20 {
+    border-color: rgba(167, 139, 250, 0.2);
+  }
+  .border-emerald-400\/20 {
+    border-color: rgba(52, 211, 153, 0.2);
+  }
+  /* Legacy Firefox fallback for additional Tailwind opacity utilities */
+
+  .bg-zinc-950\/95 {
+    background-color: rgba(9, 9, 11, 0.95);
+  }
+
+  .bg-zinc-900\/50 {
+    background-color: rgba(24, 24, 27, 0.5);
+  }
+
+  .bg-zinc-800\/20 {
+    background-color: rgba(39, 39, 42, 0.2);
+  }
+
+  .bg-zinc-800\/10 {
+    background-color: rgba(39, 39, 42, 0.1);
+  }
+
+  .bg-zinc-50\/50 {
+    background-color: rgba(250, 250, 250, 0.5);
+  }
+
+  .bg-blue-900\/10 {
+    background-color: rgba(30, 58, 138, 0.1);
+  }
+
+  .bg-blue-900\/30 {
+    background-color: rgba(30, 58, 138, 0.3);
+  }
+
+  .bg-black\/90 {
+    background-color: rgba(0, 0, 0, 0.9);
+  }
+
+  .bg-black\/60 {
+    background-color: rgba(0, 0, 0, 0.6);
+  }
+
+  .bg-black\/40 {
+    background-color: rgba(0, 0, 0, 0.4);
+  }
+
+  .border-amber-500\/20 {
+    border-color: rgba(245, 158, 11, 0.2);
+  }
+
+  .border-blue-500\/20 {
+    border-color: rgba(59, 130, 246, 0.2);
+  }
+
+  .border-blue-900\/30 {
+    border-color: rgba(30, 58, 138, 0.3);
+  }
 }

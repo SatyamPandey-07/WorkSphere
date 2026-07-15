@@ -9,10 +9,13 @@ export const chatMessageSchema = z.object({
 export const chatRequestSchema = z.object({
   messages: z.array(chatMessageSchema).min(1),
   conversationId: z.string().optional().nullable(),
-  location: z.object({
-    lat: z.number().min(-90).max(90),
-    lng: z.number().min(-180).max(180),
-  }).optional().nullable(),
+  location: z
+    .object({
+      lat: z.number().min(-90).max(90),
+      lng: z.number().min(-180).max(180),
+    })
+    .optional()
+    .nullable(),
 });
 
 // Venue schemas
@@ -25,8 +28,26 @@ export const venueSearchSchema = z.object({
   outlets: z.coerce.boolean().optional(),
   quiet: z.coerce.boolean().optional(),
   ergonomic: z.coerce.boolean().optional(),
-  outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional(),
+  outletDensity: z
+    .enum(["every_table", "some_tables", "wall_seats", "none"])
+    .optional(),
   wifiSpeedBand: z.enum(["basic", "fast", "ultra", "all"]).optional(),
+  hasPhoneBooths: z.coerce.boolean().optional(),
+  hasNoMusic: z.coerce.boolean().optional(),
+  hasQuietZone: z.coerce.boolean().optional(),
+  singleOriginBeans: z.coerce.boolean().optional(),
+  specialtyEspresso: z.coerce.boolean().optional(),
+  oatAlmondMilk: z.coerce.boolean().optional(),
+  pourOverAvailable: z.coerce.boolean().optional(),
+  lighting: z
+    .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
+    .optional(),
+  petsAllowedIndoors: z.coerce.boolean().optional(),
+  patioOnly: z.coerce.boolean().optional(),
+  waterBowlsProvided: z.coerce.boolean().optional(),
+  dogFriendly: z.coerce.boolean().optional(),
+  catsAllowed: z.coerce.boolean().optional(),
+  musicStyle: z.enum(["lofi", "classical_jazz", "no_music", "all"]).optional(),
 });
 
 export const venueCreateSchema = z.object({
@@ -39,18 +60,67 @@ export const venueCreateSchema = z.object({
   hasOutlets: z.boolean().optional(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]).optional(),
   hasErgonomic: z.boolean().optional(),
-  outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional(),
+  singleOriginBeans: z.boolean().optional(),
+  specialtyEspresso: z.boolean().optional(),
+  oatAlmondMilk: z.boolean().optional(),
+  pourOverAvailable: z.boolean().optional(),
+  outletDensity: z
+    .enum(["every_table", "some_tables", "wall_seats", "none"])
+    .optional(),
   wifiSpeed: z.number().min(0).max(10000).optional(),
+  hasPhoneBooths: z.boolean().optional(),
+  hasNoMusic: z.boolean().optional(),
+  hasQuietZone: z.boolean().optional(),
+  lighting: z
+    .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
+    .optional(),
+  petsAllowedIndoors: z.boolean().optional(),
+  patioOnly: z.boolean().optional(),
+  waterBowlsProvided: z.boolean().optional(),
+  dogFriendly: z.boolean().optional(),
+  catsAllowed: z.boolean().optional(),
+  musicStyle: z.string().optional(),
 });
 
 export const venueRatingSchema = z.object({
   wifiQuality: z.number().min(1).max(5),
   hasOutlets: z.boolean(),
+  powerTypes: z.array(z.string()).optional(),
+  outletLocations: z.array(z.string()).optional(),
   noiseLevel: z.enum(["quiet", "moderate", "loud"]),
   comment: z.string().max(1000).optional(),
   hasErgonomic: z.boolean().optional().default(false),
-  outletDensity: z.enum(["every_table", "some_tables", "wall_seats", "none"]).optional().default("none"),
+  outletDensity: z
+    .enum(["every_table", "some_tables", "wall_seats", "none"])
+    .optional()
+    .default("none"),
   wifiSpeed: z.number().min(0).max(10000).optional().nullable(),
+  downloadSpeed: z.number().min(0).max(10000).optional().nullable(),
+  uploadSpeed: z.number().min(0).max(10000).optional().nullable(),
+  latency: z.number().min(0).max(1000).optional().nullable(),
+  crowdLevel: z
+    .enum(["empty", "moderate", "busy", "very busy"])
+    .optional()
+    .nullable(),
+  speedtestPhoto: z.string().optional().nullable(),
+  avgDecibels: z.number().min(20).max(130).optional().nullable(),
+  peakDecibels: z.number().min(20).max(140).optional().nullable(),
+  hasPhoneBooths: z.boolean().optional().default(false),
+  hasNoMusic: z.boolean().optional().default(false),
+  hasQuietZone: z.boolean().optional().default(false),
+  singleOriginBeans: z.boolean().optional().default(false),
+  specialtyEspresso: z.boolean().optional().default(false),
+  oatAlmondMilk: z.boolean().optional().default(false),
+  pourOverAvailable: z.boolean().optional().default(false),
+  lighting: z
+    .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
+    .optional(),
+  petsAllowedIndoors: z.boolean().optional().default(false),
+  patioOnly: z.boolean().optional().default(false),
+  waterBowlsProvided: z.boolean().optional().default(false),
+  dogFriendly: z.boolean().optional().default(false),
+  catsAllowed: z.boolean().optional().default(false),
+  musicStyle: z.string().optional().nullable(),
 });
 
 // Conversation schemas
@@ -86,19 +156,26 @@ export type Favorite = z.infer<typeof favoriteSchema>;
 export type Location = z.infer<typeof locationSchema>;
 
 // Validation helper
-export function validateRequest<T>(schema: z.ZodSchema<T>, data: unknown): { 
-  success: true; 
-  data: T; 
-} | { 
-  success: false; 
-  error: string; 
-} {
+export function validateRequest<T>(
+  schema: z.ZodSchema<T>,
+  data: unknown,
+):
+  | {
+      success: true;
+      data: T;
+    }
+  | {
+      success: false;
+      error: string;
+    } {
   const result = schema.safeParse(data);
   if (result.success) {
     return { success: true, data: result.data };
   }
-  return { 
-    success: false, 
-    error: result.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+  return {
+    success: false,
+    error: result.error.issues
+      .map((e) => `${e.path.join(".")}: ${e.message}`)
+      .join(", "),
   };
 }

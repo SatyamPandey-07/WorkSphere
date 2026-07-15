@@ -9,63 +9,125 @@ datasource db {
 }
 
 model User {
-  id            String         @id
-  email         String?        @unique
-  firstName     String?
-  lastName      String?
-  createdAt     DateTime       @default(now())
-  favorites     Favorite[]
-  ratings       VenueRating[]
-  conversations Conversation[]
-  bookings      Booking[]
-  memories      UserMemory[]
-  crdtState     Bytes?
+  id                 String             @id
+  email              String?            @unique
+  firstName          String?
+  lastName           String?
+  imageUrl           String?
+  createdAt          DateTime           @default(now())
+  discordWebhookUrl  String?
+  telegramWebhookUrl String?
+  favorites          Favorite[]
+  ratings            VenueRating[]
+  conversations      Conversation[]
+  bookings           Booking[]
+  memories           UserMemory[]
+  crdtState          Bytes?
+  preferencesSummary String?
+createdVenues     Venue[]            @relation("VenueCreator")
+  workStatus        WorkBuddyStatus?
+  hostedSessions    CoworkingSession[] @relation("SessionHost")
+  sessionRsvps      SessionRsvp[]
+  isAdmin           Boolean            @default(false)
+  flagsReported     FlaggedItem[]
+  adminAuditLogs    AdminAuditLog[]
+  ownedFolders      Folder[]           @relation("FolderOwner")
+  folderMemberships FolderMember[]     @relation("FolderMembership")
+  addedFolderVenues FolderVenue[]      @relation("FolderVenueAdder")
+  webhookEndpoints  WebhookEndpoint[]
+  phoneNumber       String?
+  smsAlertsEnabled  Boolean            @default(false)
+  folderUpvotes     FolderUpvote[]
 }
 
 model Venue {
-  id             String        @id @default(cuid())
-  placeId        String        @unique
-  name           String
-  latitude       Float
-  longitude      Float
-  category       String        // cafe, coworking, library
-  address        String?
-  rating         Float?
-  wifiQuality    Int?          // 1-5 scale
-  hasOutlets     Boolean       @default(false)
-  noiseLevel     String?       // quiet, moderate, loud
-  hasErgonomic   Boolean       @default(false)
-  outletDensity  String?       // every_table, some_tables, wall_seats, none
-  wifiSpeed      Int?          // in Mbps
-  crowdsourced   Boolean       @default(false)
-  requiresReview Boolean       @default(false)
-  imageUrl       String?
-  googlePlaceId  String?       // Cached Google place_id (for photo lookup)
-  photoReference String?       // Cached Google Places photo_reference
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  ratings        VenueRating[]
-  favorites      Favorite[]
-  bookings       Booking[]
+  id                 String              @id @default(cuid())
+  placeId            String              @unique
+  name               String
+  latitude           Float
+  longitude          Float
+  category           String // cafe, coworking, library
+  address            String?
+  rating             Float?
+  wifiQuality        Int? // 1-5 scale
+  hasOutlets         Boolean             @default(false)
+  singleOriginBeans  Boolean             @default(false)
+  specialtyEspresso  Boolean             @default(false)
+  oatAlmondMilk      Boolean             @default(false)
+  pourOverAvailable  Boolean             @default(false)
+  noiseLevel         String? // quiet, moderate, loud
+  hasErgonomic       Boolean             @default(false)
+  hasPhoneBooths     Boolean             @default(false)
+  hasNoMusic         Boolean             @default(false)
+  hasQuietZone       Boolean             @default(false)
+  petsAllowedIndoors Boolean             @default(false)
+  patioOnly          Boolean             @default(false)
+  waterBowlsProvided Boolean             @default(false)
+  dogFriendly        Boolean             @default(false)
+  catsAllowed        Boolean             @default(false)
+  outletDensity      String? // every_table, some_tables, wall_seats, none
+  powerTypes         String[]            @default([])
+  outletLocations    String[]            @default([])
+  wifiSpeed          Int? // in Mbps
+  crowdsourced       Boolean             @default(false)
+  requiresReview     Boolean             @default(false)
+  imageUrl           String?
+  googlePlaceId      String? // Cached Google place_id (for photo lookup)
+  photoReference     String? // Cached Google Places photo_reference
+  menuPhotos         String[]            @default([])
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  lighting           String?
+  musicStyle         String?
+  ratings            VenueRating[]
+  favorites          Favorite[]
+  bookings           Booking[]
+  creatorId          String?
+  creator            User?               @relation("VenueCreator", fields: [creatorId], references: [id])
+  workStatuses       WorkBuddyStatus[]
+  sessions           CoworkingSession[]
+  seats              VenueSeat[]
+  wifiTelemetry      WifiTelemetry[]
+  validations        AmenityValidation[]
+  folderVenues       FolderVenue[]
 
   @@index([latitude, longitude])
   @@index([category])
 }
 
 model VenueRating {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  venueId       String
-  venue         Venue    @relation(fields: [venueId], references: [id])
-  wifiQuality   Int      // 1-5
-  hasOutlets    Boolean
-  noiseLevel    String   // quiet, moderate, loud
-  hasErgonomic  Boolean  @default(false)
-  outletDensity String?  // every_table, some_tables, wall_seats, none
-  wifiSpeed     Int?     // in Mbps
-  comment       String?
-  createdAt     DateTime @default(now())
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  venueId           String
+  venue             Venue    @relation(fields: [venueId], references: [id])
+  wifiQuality       Int // 1-5
+  hasOutlets        Boolean
+  singleOriginBeans Boolean  @default(false)
+  specialtyEspresso Boolean  @default(false)
+  oatAlmondMilk     Boolean  @default(false)
+  pourOverAvailable Boolean  @default(false)
+  noiseLevel        String // quiet, moderate, loud
+  hasErgonomic      Boolean  @default(false)
+  hasPhoneBooths    Boolean  @default(false)
+  hasNoMusic        Boolean  @default(false)
+  hasQuietZone      Boolean  @default(false)
+  outletDensity     String? // every_table, some_tables, wall_seats, none
+  powerTypes        String[] // usb_c, ac_wall, wireless
+  outletLocations   String[] // under_tables, wall_mounted, center_island, bar_counter
+  wifiSpeed         Int? // in Mbps
+  comment           String?
+  speedtestPhoto    String?
+  createdAt         DateTime @default(now())
+  avgDecibels       Float?
+  peakDecibels      Float?
+  lighting          String?
+  musicStyle        String?
+  petsAllowedIndoors Boolean  @default(false)
+  patioOnly          Boolean  @default(false)
+  waterBowlsProvided Boolean  @default(false)
+  dogFriendly        Boolean  @default(false)
+  catsAllowed        Boolean  @default(false)
 
   @@unique([userId, venueId])
   @@index([venueId])
@@ -99,7 +161,7 @@ model Message {
   id             String       @id @default(cuid())
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id])
-  role           String       // user, assistant
+  role           String // user, assistant
   content        String
   agentName      String?
   createdAt      DateTime     @default(now())
@@ -108,21 +170,28 @@ model Message {
 }
 
 model Booking {
-  id             String        @id @default(cuid())
-  userId         String
-  user           User          @relation(fields: [userId], references: [id])
-  venueId        String
-  venue          Venue         @relation(fields: [venueId], references: [id])
-  date           String
-  time           String
-  customerEmail  String
-  customerPhone  String?
-  status         BookingStatus @default(CONFIRMED)
-  confirmationId String        @unique
-  createdAt      DateTime      @default(now())
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  venueId         String
+  venue           Venue         @relation(fields: [venueId], references: [id])
+  date            String
+  time            String
+  customerEmail   String
+  customerPhone   String?
+  status          BookingStatus @default(CONFIRMED)
+  confirmationId  String        @unique
+  createdAt       DateTime      @default(now())
+  projectBillingCode String?
+  seatId          String?
+  seatNumber      String?
+  duration        Int?
+  amenitiesNeeded String[]      @default([])
+  seat            VenueSeat?    @relation(fields: [seatId], references: [id])
 
   @@index([userId])
   @@index([venueId])
+  @@index([seatId])
 }
 
 enum BookingStatus {
@@ -132,23 +201,289 @@ enum BookingStatus {
 }
 
 model UserMemory {
-  id        String   @id @default(cuid())
+  id        String                       @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User                         @relation(fields: [userId], references: [id])
   content   String
   embedding Unsupported("vector(1024)")?
-  createdAt DateTime @default(now())
+  createdAt DateTime                     @default(now())
 
   @@index([userId])
 }
 
 model SemanticCache {
-  id        String   @id @default(cuid())
+  id        String                       @id @default(cuid())
   query     String
   location  String?
   response  String
   embedding Unsupported("vector(1024)")?
-  createdAt DateTime @default(now())
+  createdAt DateTime                     @default(now())
 
   @@index([query])
+}
+
+model AmenityValidation {
+  id        String        @id @default(cuid())
+  venueId   String
+  venue     Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  amenity   String // e.g., "wifi", "outlets", "ergonomic"
+  upvotes   Int           @default(0)
+  downvotes Int           @default(0)
+  votes     AmenityVote[]
+
+  @@unique([venueId, amenity])
+  @@index([venueId])
+}
+
+model AmenityVote {
+  id           String            @id @default(cuid())
+  validationId String
+  validation   AmenityValidation @relation(fields: [validationId], references: [id], onDelete: Cascade)
+  userId       String
+  isUpvote     Boolean // true = upvote, false = downvote
+  createdAt    DateTime          @default(now())
+
+  @@unique([userId, validationId])
+}
+
+model WorkBuddyStatus {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  note      String?
+  until     DateTime
+  isPublic  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venueId])
+  @@index([until])
+}
+
+model CoworkingSession {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  hostId      String
+  host        User          @relation("SessionHost", fields: [hostId], references: [id], onDelete: Cascade)
+  venueId     String
+  venue       Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  startsAt    DateTime
+  endsAt      DateTime
+  maxGuests   Int?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  rsvps       SessionRsvp[]
+
+  @@index([hostId])
+  @@index([venueId])
+  @@index([startsAt])
+}
+
+model SessionRsvp {
+  id        String           @id @default(cuid())
+  sessionId String
+  session   CoworkingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    RsvpStatus       @default(GOING)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@unique([sessionId, userId])
+  @@index([userId])
+}
+
+enum RsvpStatus {
+  GOING
+  MAYBE
+  DECLINED
+}
+
+enum SeatType {
+  HOT_DESK
+  FIXED_DESK
+  MEETING_ROOM
+  PHONE_BOOTH
+}
+
+model VenueSeat {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  seatNumber String
+  type       SeatType @default(HOT_DESK)
+
+  x      Int
+  y      Int
+  width  Int @default(72)
+  height Int @default(48)
+
+  amenities String[] @default([])
+  isEnabled Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bookings Booking[]
+
+  @@unique([venueId, seatNumber])
+  @@index([venueId])
+}
+
+model WifiTelemetry {
+  id         String   @id @default(cuid())
+  venueId    String
+  venue      Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  download   Float
+  upload     Float
+  latency    Float
+  crowdLevel String
+  timestamp  DateTime @default(now())
+
+  @@index([venueId])
+}
+
+enum FlagType {
+  VENUE
+  REVIEW
+}
+
+enum FlagStatus {
+  PENDING
+  DISMISSED
+  RESOLVED
+}
+
+model FlaggedItem {
+  id           String     @id @default(cuid())
+  type         FlagType
+  itemId       String
+  reason       String
+  status       FlagStatus @default(PENDING)
+  reportedById String
+  reportedBy   User       @relation(fields: [reportedById], references: [id])
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([status])
+  @@index([itemId])
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  admin      User     @relation(fields: [adminId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  details    String?
+  createdAt  DateTime @default(now())
+}
+
+model Folder {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  ownerId     String
+  owner       User     @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  inviteToken String?  @unique
+  isPublic    Boolean  @default(false)
+  upvotes     Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  venues  FolderVenue[]
+  members FolderMember[]
+  upvoteRefs FolderUpvote[]
+
+  @@index([ownerId])
+}
+
+model FolderVenue {
+  id        String   @id @default(cuid())
+  folderId  String
+  folder    Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  addedById String
+  addedBy   User     @relation("FolderVenueAdder", fields: [addedById], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([folderId, venueId])
+  @@index([folderId])
+}
+
+model FolderMember {
+  id       String     @id @default(cuid())
+  folderId String
+  folder   Folder     @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User       @relation("FolderMembership", fields: [userId], references: [id], onDelete: Cascade)
+  role     FolderRole @default(MEMBER)
+  joinedAt DateTime   @default(now())
+
+  @@unique([folderId, userId])
+  @@index([folderId])
+  @@index([userId])
+}
+
+enum FolderRole {
+  OWNER
+  EDITOR
+  MEMBER
+}
+
+enum WebhookEventType {
+  DOCUMENT_SIGNED
+  AI_WORKFLOW_COMPLETED
+  MAP_GEOFENCE_BREACHED
+  VENUE_CREATED
+  REVIEW_SUBMITTED
+}
+
+model WebhookEndpoint {
+  id         String             @id @default(cuid())
+  userId     String
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url        String
+  secret     String // For Svix HMAC signing
+  eventTypes WebhookEventType[] // Array of subscribed events
+  isActive   Boolean            @default(true)
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  logs WebhookDeliveryLog[]
+
+  @@index([userId])
+}
+
+model WebhookDeliveryLog {
+  id         String          @id @default(cuid())
+  endpointId String
+  endpoint   WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  eventType  String
+  payload    Json
+  status     String // e.g. "SUCCESS", "FAILED"
+  statusCode Int?
+  createdAt  DateTime        @default(now())
+
+  @@index([endpointId])
+}
+
+model FolderUpvote {
+  id        String   @id @default(cuid())
+  folderId  String
+  folder    Folder   @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([folderId, userId])
+  @@index([folderId])
+  @@index([userId])
 }

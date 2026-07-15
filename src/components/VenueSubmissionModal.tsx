@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/nextjs";
 import { X, MapPin, Loader2 } from "lucide-react";
 
 interface VenueSubmissionModalProps {
@@ -21,6 +21,16 @@ interface VenueFormData {
   hasOutlets: boolean;
   noiseLevel: "quiet" | "moderate" | "loud";
   description: string;
+  hasPhoneBooths: boolean;
+  hasNoMusic: boolean;
+  hasQuietZone: boolean;
+  singleOriginBeans: boolean;
+  specialtyEspresso: boolean;
+  oatAlmondMilk: boolean;
+  pourOverAvailable: boolean;
+  petsAllowedIndoors: boolean;
+  patioOnly: boolean;
+  waterBowlsProvided: boolean;
 }
 
 export function VenueSubmissionModal({
@@ -30,6 +40,7 @@ export function VenueSubmissionModal({
   onSubmitSuccess,
 }: VenueSubmissionModalProps) {
   const { isSignedIn } = useUser();
+  const { getToken } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -47,6 +58,16 @@ export function VenueSubmissionModal({
     hasOutlets: false,
     noiseLevel: "moderate",
     description: "",
+    hasPhoneBooths: false,
+    hasNoMusic: false,
+    hasQuietZone: false,
+    singleOriginBeans: false,
+    specialtyEspresso: false,
+    oatAlmondMilk: false,
+    pourOverAvailable: false,
+    petsAllowedIndoors: false,
+    patioOnly: false,
+    waterBowlsProvided: false,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -63,7 +84,9 @@ export function VenueSubmissionModal({
     }
 
     if (!formData.latitude || !formData.longitude) {
-      setError("Location coordinates are required. Click 'Use My Location' or enter manually.");
+      setError(
+        "Location coordinates are required. Click 'Use My Location' or enter manually.",
+      );
       return;
     }
 
@@ -72,6 +95,7 @@ export function VenueSubmissionModal({
     setUploadStatus("Uploading image...");
 
     try {
+      const token = await getToken();
       let imageUrl = null;
       if (file) {
         const uploadData = new FormData();
@@ -79,6 +103,9 @@ export function VenueSubmissionModal({
 
         const uploadRes = await fetch("/api/upload", {
           method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
           body: uploadData,
         });
 
@@ -95,7 +122,10 @@ export function VenueSubmissionModal({
 
       const response = await fetch("/api/venues", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           placeId,
           name: formData.name,
@@ -106,6 +136,16 @@ export function VenueSubmissionModal({
           wifiQuality: formData.wifiQuality,
           hasOutlets: formData.hasOutlets,
           noiseLevel: formData.noiseLevel,
+          hasPhoneBooths: formData.hasPhoneBooths,
+          hasNoMusic: formData.hasNoMusic,
+          hasQuietZone: formData.hasQuietZone,
+          singleOriginBeans: formData.singleOriginBeans,
+          specialtyEspresso: formData.specialtyEspresso,
+          oatAlmondMilk: formData.oatAlmondMilk,
+          pourOverAvailable: formData.pourOverAvailable,
+          petsAllowedIndoors: formData.petsAllowedIndoors,
+          patioOnly: formData.patioOnly,
+          waterBowlsProvided: formData.waterBowlsProvided,
           crowdsourced: true,
           imageUrl,
         }),
@@ -132,12 +172,21 @@ export function VenueSubmissionModal({
           hasOutlets: false,
           noiseLevel: "moderate",
           description: "",
+          hasPhoneBooths: false,
+          hasNoMusic: false,
+          hasQuietZone: false,
+          singleOriginBeans: false,
+          specialtyEspresso: false,
+          oatAlmondMilk: false,
+          pourOverAvailable: false,
+          petsAllowedIndoors: false,
+          patioOnly: false,
+          waterBowlsProvided: false,
         });
         setFile(null);
         setImagePreview(null);
         setUploadStatus("");
       }, 2000);
-
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit venue");
     } finally {
@@ -160,22 +209,27 @@ export function VenueSubmissionModal({
 
   const handleUseMyLocation = () => {
     if (userLocation) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         latitude: userLocation.lat,
         longitude: userLocation.lng,
       }));
     } else if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setFormData(prev => ({
-            ...prev,
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-          }));
-        },
-        () => setError("Could not get your location")
-      );
+      try {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            setFormData((prev) => ({
+              ...prev,
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+            }));
+          },
+          () => setError("Could not get your location"),
+        );
+      } catch (err) {
+        console.warn("Geolocation sync error in submission modal:", err);
+        setError("Could not get your location");
+      }
     }
   };
 
@@ -184,10 +238,7 @@ export function VenueSubmissionModal({
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
       {/* Backdrop - High Contrast Solid for Visibility */}
-      <div
-        className="absolute inset-0 bg-black/95"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/95" onClick={onClose} />
 
       {/* Modal */}
       <div className="relative w-full max-w-lg bg-white dark:bg-zinc-950 rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden border border-zinc-200 dark:border-zinc-800">
@@ -205,7 +256,10 @@ export function VenueSubmissionModal({
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+        <form
+          onSubmit={handleSubmit}
+          className="p-4 space-y-4 max-h-[70vh] overflow-y-auto"
+        >
           {success && (
             <div className="p-3 bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded-lg text-sm font-bold">
               ✅ Venue submitted successfully!
@@ -225,7 +279,9 @@ export function VenueSubmissionModal({
             <input
               type="text"
               value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              onChange={(e) =>
+                setFormData((prev) => ({ ...prev, name: e.target.value }))
+              }
               placeholder="e.g., Blue Bottle Coffee"
               className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 outline-none"
               required
@@ -238,7 +294,12 @@ export function VenueSubmissionModal({
             </label>
             <select
               value={formData.category}
-              onChange={(e) => setFormData(prev => ({ ...prev, category: e.target.value as VenueFormData["category"] }))}
+              onChange={(e) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  category: e.target.value as VenueFormData["category"],
+                }))
+              }
               className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 outline-none"
             >
               <option value="cafe">☕ Cafe</option>
@@ -256,7 +317,12 @@ export function VenueSubmissionModal({
                 type="number"
                 step="any"
                 value={formData.latitude || ""}
-                onChange={(e) => setFormData(prev => ({ ...prev, latitude: parseFloat(e.target.value) || null }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    latitude: parseFloat(e.target.value) || null,
+                  }))
+                }
                 placeholder="Lat"
                 className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 text-sm"
               />
@@ -264,7 +330,12 @@ export function VenueSubmissionModal({
                 type="number"
                 step="any"
                 value={formData.longitude || ""}
-                onChange={(e) => setFormData(prev => ({ ...prev, longitude: parseFloat(e.target.value) || null }))}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    longitude: parseFloat(e.target.value) || null,
+                  }))
+                }
                 placeholder="Lng"
                 className="flex-1 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 text-sm"
               />
@@ -292,11 +363,173 @@ export function VenueSubmissionModal({
               {imagePreview && (
                 <div className="relative w-full h-32 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={imagePreview} alt="Preview" className="object-cover w-full h-full" />
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="object-cover w-full h-full"
+                  />
                 </div>
               )}
             </div>
-            <p className="text-[10px] text-zinc-400 mt-1">Photos are scanned by AI to verify amenities.</p>
+            <p className="text-[10px] text-zinc-400 mt-1">
+              Photos are scanned by AI to verify amenities.
+            </p>
+          </div>
+
+          <div className="space-y-2 border-t border-zinc-100 dark:border-zinc-800 pt-3">
+            <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">
+              Acoustic Amenities
+            </label>
+            <div className="grid grid-cols-1 gap-2">
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.hasPhoneBooths}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      hasPhoneBooths: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                Phone Booths Available
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.hasNoMusic}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      hasNoMusic: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                No Background Music
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.hasQuietZone}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      hasQuietZone: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                Strict Silence Zones
+              </label>
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.singleOriginBeans}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      singleOriginBeans: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                ☕ Single-Origin Beans
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.specialtyEspresso}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      specialtyEspresso: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                ⚙️ Specialty Espresso Machine
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.oatAlmondMilk}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      oatAlmondMilk: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                🥛 Oat / Almond Milk Available
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.pourOverAvailable}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      pourOverAvailable: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                🫖 Pour-Over Available
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.petsAllowedIndoors}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      petsAllowedIndoors: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                🐶 Pets Allowed Indoors
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.patioOnly}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      patioOnly: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                🌿 Patio Only (Pets allowed outdoors only)
+              </label>
+
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.waterBowlsProvided}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      waterBowlsProvided: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                💧 Water Bowls Provided for Pets
+              </label>
+            </div>
           </div>
 
           <button

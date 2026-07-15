@@ -50,15 +50,25 @@ export async function POST(req: Request) {
   const eventType = evt.type;
 
   if (eventType === "user.created") {
-    const { id, email_addresses, first_name, last_name } = evt.data;
+    const { id, email_addresses, first_name, last_name, image_url } = evt.data;
+
+    const email = email_addresses[0]?.email_address;
+    const initials = `${first_name?.[0] || ""}${last_name?.[0] || ""}`.toUpperCase();
+    const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials || "WS")}&background=6366f1&color=fff`;
+    
+    // Safely optimize URL size to 150px if it exists, fallback to placeholder initials avatar if null/empty
+    const imageUrl = image_url
+      ? image_url.replace(/(\?|&)sz=\d+/, "$1sz=150").replace(/(\?|&)width=\d+/, "$1width=150")
+      : fallbackUrl;
 
     try {
       await prisma.user.create({
         data: {
           id,
-          email: email_addresses[0]?.email_address,
+          email,
           firstName: first_name,
           lastName: last_name,
+          imageUrl,
         },
       });
 
@@ -70,15 +80,24 @@ export async function POST(req: Request) {
   }
 
   if (eventType === "user.updated") {
-    const { id, email_addresses, first_name, last_name } = evt.data;
+    const { id, email_addresses, first_name, last_name, image_url } = evt.data;
+
+    const email = email_addresses[0]?.email_address;
+    const initials = `${first_name?.[0] || ""}${last_name?.[0] || ""}`.toUpperCase();
+    const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials || "WS")}&background=6366f1&color=fff`;
+
+    const imageUrl = image_url
+      ? image_url.replace(/(\?|&)sz=\d+/, "$1sz=150").replace(/(\?|&)width=\d+/, "$1width=150")
+      : fallbackUrl;
 
     try {
       await prisma.user.update({
         where: { id },
         data: {
-          email: email_addresses[0]?.email_address,
+          email,
           firstName: first_name,
           lastName: last_name,
+          imageUrl,
         },
       });
 

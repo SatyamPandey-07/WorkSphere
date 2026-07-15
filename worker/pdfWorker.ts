@@ -1,6 +1,6 @@
 import { Redis } from "@upstash/redis";
 import { generateTaxExportPdf, generateReceiptPdf } from "@/lib/pdfGenerator";
-import { updateJobStatus } from "@/lib/queue";
+import { updateJobStatus, getJobStatus } from "@/lib/queue";
 import { prisma } from "@/lib/prisma";
 import { resolveDateRange, filterBookingsByRange } from "@/lib/taxExport";
 import { v2 as cloudinary } from "cloudinary";
@@ -23,14 +23,17 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-async function uploadToCloudinary(buffer: Uint8Array, filename: string): Promise<string> {
+async function uploadToCloudinary(
+  buffer: Uint8Array,
+  filename: string,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       { resource_type: "raw", public_id: filename, format: "pdf" },
       (error, result) => {
         if (error) reject(error);
         else resolve(result?.secure_url as string);
-      }
+      },
     );
     stream.end(Buffer.from(buffer));
   });
@@ -48,7 +51,9 @@ async function processJob(jobStr: string) {
     let filename: string;
     let userEmail: string = "user@example.com"; // Default/Fallback
 
-    const user = await (prisma as any).user.findUnique({ where: { id: userId } });
+    const user = await (prisma as any).user.findUnique({
+      where: { id: userId },
+    });
     if (user && user.email) {
       userEmail = user.email;
     }
@@ -62,7 +67,11 @@ async function processJob(jobStr: string) {
           orderBy: { createdAt: "desc" },
         });
       } else {
-        const range = resolveDateRange({ taxYear: data.taxYear, startDate: data.startDate, endDate: data.endDate });
+        const range = resolveDateRange({
+          taxYear: data.taxYear,
+          startDate: data.startDate,
+          endDate: data.endDate,
+        });
         const allUserBookings = await (prisma as any).booking.findMany({
           where: { userId },
           include: { venue: true, user: true },
@@ -111,11 +120,49 @@ async function processJob(jobStr: string) {
 
 async function startWorker() {
   console.log("Starting PDF Worker...");
+
+  // Watchdog: Recover stuck jobs
+  setInterval(async () => {
+    try {
+      const processingJobs = await redis.lrange("pdf:jobs:processing", 0, -1);
+      const now = Date.now();
+      for (const jobStr of processingJobs) {
+        if (!jobStr) continue;
+        const job = JSON.parse(jobStr as string);
+        const state = await getJobStatus(job.id);
+
+        if (state && state.status === "PROCESSING") {
+          const updatedAt = state.updatedAt || state.createdAt;
+          if (now - updatedAt > 5 * 60 * 1000) {
+            console.log(`Recovering stuck job ${job.id}`);
+            await redis.lrem("pdf:jobs:processing", 1, jobStr);
+            await redis.lpush("pdf:jobs", jobStr);
+            await updateJobStatus(job.id, { status: "QUEUED", updatedAt: now });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Watchdog error:", err);
+    }
+  }, 60 * 1000);
+
   while (true) {
     try {
-      const jobStr = await redis.rpop("pdf:jobs");
+      const jobStr = await redis.lmove(
+        "pdf:jobs",
+        "pdf:jobs:processing",
+        "right",
+        "left",
+      );
       if (jobStr) {
-        await processJob(jobStr as string);
+        const job = JSON.parse(jobStr as string);
+        await updateJobStatus(job.id, { updatedAt: Date.now() });
+
+        try {
+          await processJob(jobStr as string);
+        } finally {
+          await redis.lrem("pdf:jobs:processing", 1, jobStr);
+        }
       } else {
         // Sleep if no jobs
         await new Promise((resolve) => setTimeout(resolve, 2000));

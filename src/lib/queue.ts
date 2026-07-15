@@ -16,6 +16,7 @@ export interface JobState {
   resultUrl?: string;
   error?: string;
   createdAt: number;
+  updatedAt?: number;
 }
 
 export async function pushJob(jobId: string, payload: JobPayload) {
@@ -24,6 +25,7 @@ export async function pushJob(jobId: string, payload: JobPayload) {
     id: jobId,
     status: "QUEUED",
     createdAt: Date.now(),
+    updatedAt: Date.now(),
   };
   await redis.hset(
     `pdf:job:${jobId}`,
@@ -50,5 +52,8 @@ export async function updateJobStatus(
   jobId: string,
   updates: Partial<JobState>,
 ) {
-  await redis.hset(`pdf:job:${jobId}`, updates);
+  await redis.hset(`pdf:job:${jobId}`, {
+    ...updates,
+    updatedAt: updates.updatedAt ?? Date.now(),
+  });
 }

@@ -16,8 +16,9 @@ export async function POST(req: NextRequest) {
     // We can pop multiple events in a loop or just one
     let eventsProcessed = 0;
     while (true) {
-      const event = await EventBus.popEvent();
-      if (!event) break; // Queue empty
+      const popped = await EventBus.popEvent();
+      if (!popped) break; // Queue empty
+      const { event, raw } = popped;
 
       // Find endpoints for this user that subscribe to this event
       const endpoints = await prisma.webhookEndpoint.findMany({
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      await EventBus.ackEvent(raw);
       eventsProcessed++;
       // Limit to 100 per invocation to avoid function timeout
       if (eventsProcessed >= 100) break;

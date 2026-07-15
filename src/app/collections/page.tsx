@@ -96,7 +96,6 @@ export default function CollectionsPage() {
     e.preventDefault();
     e.stopPropagation();
     try {
-      // Optimistic state toggle
       setPublicFolders((prev) =>
         prev.map((f) => {
           if (f.id === folderId) {

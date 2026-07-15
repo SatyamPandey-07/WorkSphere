@@ -14,16 +14,21 @@ export async function GET() {
       select: {
         phoneNumber: true,
         smsAlertsEnabled: true,
+        whatsappWebhookUrl: true,
       },
     });
 
     return NextResponse.json({
       phoneNumber: user?.phoneNumber || "",
       smsAlertsEnabled: user?.smsAlertsEnabled || false,
+      whatsappWebhookUrl: user?.whatsappWebhookUrl || "",
     });
   } catch (error: any) {
     console.error("GET /api/user/settings error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }
 
@@ -34,10 +39,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { phoneNumber, smsAlertsEnabled } = await req.json();
+    const { phoneNumber, smsAlertsEnabled, whatsappWebhookUrl } =
+      await req.json();
 
     if (typeof smsAlertsEnabled !== "boolean") {
-      return NextResponse.json({ error: "Invalid parameters" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid parameters" },
+        { status: 400 },
+      );
     }
 
     const updatedUser = await prisma.user.upsert({
@@ -46,10 +55,12 @@ export async function POST(req: Request) {
         id: userId,
         phoneNumber: phoneNumber || null,
         smsAlertsEnabled,
+        whatsappWebhookUrl: whatsappWebhookUrl || null,
       },
       update: {
         phoneNumber: phoneNumber || null,
         smsAlertsEnabled,
+        whatsappWebhookUrl: whatsappWebhookUrl || null,
       },
     });
 
@@ -57,9 +68,13 @@ export async function POST(req: Request) {
       success: true,
       phoneNumber: updatedUser.phoneNumber || "",
       smsAlertsEnabled: updatedUser.smsAlertsEnabled,
+      whatsappWebhookUrl: updatedUser.whatsappWebhookUrl || "",
     });
   } catch (error: any) {
     console.error("POST /api/user/settings error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }

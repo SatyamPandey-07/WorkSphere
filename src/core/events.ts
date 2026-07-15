@@ -12,6 +12,17 @@ export interface AppEvents {
     date: string;
     time: string;
   };
+  "booking:guest-invited": {
+    bookingId: string;
+    guestEmail: string;
+    guestName?: string;
+    inviteResult: "sent" | "failed";
+    error?: string;
+  };
+  "booking:guest-cancelled": {
+    bookingId: string;
+    guestEmail: string;
+  };
   // Add more events as needed
   "user:created": { userId: string; email: string };
   "checkin:confirmed": {

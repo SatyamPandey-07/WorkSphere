@@ -96,6 +96,7 @@ export async function GET(
       : "";
 
     // Helper to draw text with absolute safety against encoding crashes
+
     const drawSafeText = (text: string, options: PDFPageDrawTextOptions) => {
       try {
         page.drawText(text, options);
@@ -113,6 +114,33 @@ export async function GET(
             fallbackErr,
           );
         }
+      }
+    };
+
+    const formatBookingDate = (rawDate: unknown): string => {
+      try {
+        if (rawDate === null || rawDate === undefined || rawDate === "") {
+          return "N/A";
+        }
+
+        const dateObj =
+          rawDate instanceof Date ? rawDate : new Date(rawDate as string);
+
+        if (isNaN(dateObj.getTime())) {
+          return String(rawDate);
+        }
+
+        return new Intl.DateTimeFormat("en-GB", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        }).format(dateObj);
+      } catch (err) {
+        console.warn(
+          "[PDF date format warning]: Failed to format booking date, using raw fallback",
+          err,
+        );
+        return String(rawDate ?? "N/A");
       }
     };
 
@@ -178,12 +206,15 @@ export async function GET(
       font,
     });
     yPosition -= 18;
-    drawSafeText(`SCHEDULE: ${booking.date} @ ${booking.time}`, {
-      x: 50,
-      y: yPosition,
-      size: 10,
-      font,
-    });
+    drawSafeText(
+      `SCHEDULE: ${formatBookingDate(booking.date)} @ ${booking.time}`,
+      {
+        x: 50,
+        y: yPosition,
+        size: 10,
+        font,
+      },
+    );
     yPosition -= 18;
     drawSafeText(`BILLING CODE: ${booking.projectBillingCode || "N/A"}`, {
       x: 50,

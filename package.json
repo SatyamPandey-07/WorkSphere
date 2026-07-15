@@ -83,6 +83,12 @@
     "ts-jest": "^29.2.5",
     "typescript": "5.9.3"
   },
+  "optionalDependencies": {
+    "@next/swc-linux-x64-gnu": "16.2.10",
+    "@next/swc-linux-x64-musl": "16.2.10",
+    "lightningcss-linux-x64-gnu": "1.32.0",
+    "lightningcss-linux-x64-musl": "1.32.0"
+  },
   "prisma": {
     "seed": "node prisma/seed.js"
   },

@@ -13,8 +13,10 @@ import {
   CalendarPlus,
   Mail,
   Download,
+  UserPlus,
 } from "lucide-react";
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
+import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
 
 type Seat = {
   id: string;
@@ -57,6 +59,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   const [booking, setBooking] = useState(false);
   const [message, setMessage] = useState("");
   const [confirmationId, setConfirmationId] = useState<string | null>(null);
+  const [guests, setGuests] = useState<GuestEntry[]>([]);
 
   const loadAvailability = useCallback(async () => {
     setLoading(true);
@@ -167,6 +170,10 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
         time,
         duration,
         amenitiesNeeded: amenities,
+        guests: guests.map((g) => ({
+          email: g.email,
+          name: g.name || undefined,
+        })),
       }),
     });
 
@@ -179,12 +186,18 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       return;
     }
 
+    const guestMsg =
+      guests.length > 0
+        ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
+        : "";
+
     setMessage(
-      `${selected.seatNumber} confirmed. Reference: ${payload.confirmationId}`,
+      `${selected.seatNumber} confirmed. Reference: ${payload.confirmationId}${guestMsg}`,
     );
     setConfirmationId(payload.confirmationId);
     setSelectedSeat(null);
     setBooking(false);
+    setGuests([]);
     await loadAvailability();
   }
 
@@ -212,7 +225,10 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
             {confirmationId && (
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <a
-                  href={getCalendarUrls(venue.name, venue.address || "", date, time).googleUrl}
+                  href={
+                    getCalendarUrls(venue.name, venue.address || "", date, time)
+                      .googleUrl
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-2 rounded-xl bg-violet-600/20 border border-violet-500/30 px-4 py-2 hover:bg-violet-600/40 transition-colors"
@@ -220,7 +236,10 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   <CalendarPlus className="h-4 w-4" /> Add to Google
                 </a>
                 <a
-                  href={getCalendarUrls(venue.name, venue.address || "", date, time).outlookUrl}
+                  href={
+                    getCalendarUrls(venue.name, venue.address || "", date, time)
+                      .outlookUrl
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-2 rounded-xl bg-violet-600/20 border border-violet-500/30 px-4 py-2 hover:bg-violet-600/40 transition-colors"
@@ -228,7 +247,9 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   <Mail className="h-4 w-4" /> Add to Outlook
                 </a>
                 <button
-                  onClick={() => downloadICS(venue.name, venue.address || "", date, time)}
+                  onClick={() =>
+                    downloadICS(venue.name, venue.address || "", date, time)
+                  }
                   className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10 transition-colors text-zinc-300"
                 >
                   <Download className="h-4 w-4" /> Download .ics
@@ -244,7 +265,8 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
               <div>
                 <h2 className="text-xl font-semibold">Interactive layout</h2>
                 <p className="mt-1 text-sm text-zinc-500">
-                  Select a green desk. Changes made by other viewers appear live.
+                  Select a green desk. Changes made by other viewers appear
+                  live.
                 </p>
               </div>
 
@@ -252,14 +274,24 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                 onClick={loadAvailability}
                 className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5"
               >
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                <RefreshCw
+                  className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+                />
                 Refresh
               </button>
             </div>
 
             <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#0b0b0f] p-4">
               <svg viewBox="0 0 620 470" className="min-w-[620px]">
-                <rect x="10" y="10" width="600" height="450" rx="24" fill="#111116" stroke="#27272a" />
+                <rect
+                  x="10"
+                  y="10"
+                  width="600"
+                  height="450"
+                  rx="24"
+                  fill="#111116"
+                  stroke="#27272a"
+                />
                 <text x="35" y="45" fill="#71717a" fontSize="13">
                   WORK FLOOR
                 </text>
@@ -283,7 +315,9 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                     <g
                       key={seat.id}
                       onClick={() => seat.available && setSelectedSeat(seat.id)}
-                      className={seat.available ? "cursor-pointer" : "cursor-not-allowed"}
+                      className={
+                        seat.available ? "cursor-pointer" : "cursor-not-allowed"
+                      }
                     >
                       <rect
                         x={seat.x}
@@ -391,6 +425,20 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   );
                 })}
               </div>
+            </div>
+
+            {/* Guest Invitations */}
+            <div className="mt-6">
+              <div className="flex items-center gap-2 mb-3">
+                <UserPlus className="h-4 w-4 text-zinc-400" />
+                <p className="text-sm text-zinc-400">Invite guests</p>
+              </div>
+              <GuestsInput
+                guests={guests}
+                onChange={setGuests}
+                maxGuests={10}
+                disabled={booking}
+              />
             </div>
 
             <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">

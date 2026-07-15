@@ -106,6 +106,7 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
     };
 
     // Handle online/offline events automatically
+    // Handle online/offline events automatically
     const handleOnline = () => {
       console.log("[RealTime] Browser online, reconnecting...");
       currentBackoff = 1000;
@@ -122,6 +123,12 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
+        console.log("[RealTime] Tab focused, checking stream health...");
+        if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+          currentBackoff = 1000;
+          connect();
+        }
+
         console.log("[RealTime] Tab became visible, resetting connection");
         currentBackoff = 1000;
         if (eventSource) {
@@ -133,6 +140,9 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
+
+    window.addEventListener("visibilitychange", handleVisibilityChange); // 🌟 ADD THIS LINE
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     connect();
@@ -142,6 +152,9 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       clearTimeout(reconnectTimeout);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+
+      window.removeEventListener("visibilitychange", handleVisibilityChange); // 🌟 ADD THIS LINE
+
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [venueIdsKey, enabled]);

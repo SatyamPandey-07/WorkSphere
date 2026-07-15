@@ -120,7 +120,15 @@ export function EnhancedChatbot({
 
   // Presence state
   const [cursors, setCursors] = useState<
-    Record<string, { x: number; y: number; name: string }>
+    Record<
+      string,
+      {
+        x: number;
+        y: number;
+        name: string;
+        avatar: string;
+      }
+    >
   >({});
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
 
@@ -152,7 +160,6 @@ export function EnhancedChatbot({
   >(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
-  // Track local cursor
   useEffect(() => {
     if (!socket || !roomId) return;
 
@@ -184,7 +191,12 @@ export function EnhancedChatbot({
         if (data.type === "cursor") {
           setCursors((prev) => ({
             ...prev,
-            [data.name]: { x: data.x, y: data.y, name: data.name },
+            [data.name]: {
+              x: data.x,
+              y: data.y,
+              name: data.name,
+              avatar: data.avatar || "🟢",
+            },
           }));
         } else if (data.type === "typing") {
           setTypingUsers((prev) => {
@@ -227,6 +239,13 @@ export function EnhancedChatbot({
       try {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
+            if (pos.coords.accuracy !== undefined && pos.coords.accuracy > 50) {
+              console.warn(
+                `GPS accuracy too low in chatbot (${pos.coords.accuracy}m). Falling back.`,
+              );
+              setLocation({ lat: 37.7749, lng: -122.4194 });
+              return;
+            }
             const newLoc = {
               lat: pos.coords.latitude,
               lng: pos.coords.longitude,
@@ -287,7 +306,7 @@ export function EnhancedChatbot({
   };
 
   // Conversations
-  async function loadConversations() {
+  const loadConversations = useCallback(async () => {
     try {
       const res = await fetch("/api/conversations");
       if (res.ok) {
@@ -306,7 +325,7 @@ export function EnhancedChatbot({
     } catch (e) {
       console.error("Failed to load conversations:", e);
     }
-  }
+  }, []);
 
   const createConversation = async (): Promise<string | null> => {
     if (!isSignedIn) return null;
@@ -415,7 +434,7 @@ export function EnhancedChatbot({
     };
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
-  }, [isSignedIn]);
+  }, [isSignedIn, loadConversations]);
 
   const startNewChat = () => {
     setCurrentConversationId(null);
@@ -424,7 +443,7 @@ export function EnhancedChatbot({
   };
 
   // Favorites
-  async function loadFavorites() {
+  const loadFavorites = useCallback(async () => {
     try {
       const res = await fetch("/api/favorites");
       if (res.ok) {
@@ -438,7 +457,7 @@ export function EnhancedChatbot({
     } catch (e) {
       console.error("Failed to load favorites:", e);
     }
-  }
+  }, []);
 
   // Load conversations & favorites on sign-in
   useEffect(() => {
@@ -446,7 +465,7 @@ export function EnhancedChatbot({
       loadConversations();
       loadFavorites();
     }
-  }, [isSignedIn]);
+  }, [isSignedIn, loadConversations, loadFavorites]);
 
   const handleToggleFavorite = async (venue: Venue) => {
     if (!isSignedIn) {
@@ -966,7 +985,7 @@ export function EnhancedChatbot({
 
   // Render
   return (
-    <div className="flex h-full flex-col bg-white dark:bg-zinc-950 relative overflow-hidden">
+    <div className="flex h-full flex-col min-h-0 bg-white dark:bg-zinc-950 relative overflow-hidden">
       {/* Remote Cursors */}
       <AnimatePresence>
         {Object.values(cursors).map((cursor) => (
@@ -995,8 +1014,9 @@ export function EnhancedChatbot({
                 fill="currentColor"
               />
             </svg>
-            <div className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-4 shadow-md whitespace-nowrap">
-              {cursor.name}
+            <div className="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full ml-4 shadow-md whitespace-nowrap flex items-center gap-1">
+              <span>{cursor.avatar}</span>
+              <span>{cursor.name}</span>
             </div>
           </motion.div>
         ))}

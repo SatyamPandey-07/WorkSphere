@@ -176,8 +176,38 @@ function AppPage() {
       // Try browser geolocation first
       if ("geolocation" in navigator) {
         try {
+          const fallbackToIp = async () => {
+            try {
+              const response = await fetch("/api/location");
+              if (response.ok) {
+                const data = await response.json();
+                setLocation({ latitude: data.lat, longitude: data.lng });
+                console.log(
+                  `[Location] Using ${data.source}: ${data.city}, ${data.region}`,
+                );
+              } else {
+                throw new Error("Location API failed");
+              }
+            } catch (apiError) {
+              console.error("Location API error:", apiError);
+              // Ultimate fallback to San Francisco
+              setLocation({ latitude: 37.7749, longitude: -122.4194 });
+            }
+            setIsLoadingLocation(false);
+          };
+
           navigator.geolocation.getCurrentPosition(
-            (position) => {
+            async (position) => {
+              if (
+                position.coords.accuracy !== undefined &&
+                position.coords.accuracy > 50
+              ) {
+                console.warn(
+                  `GPS accuracy too low on mount (${position.coords.accuracy}m). Falling back to IP location.`,
+                );
+                await fallbackToIp();
+                return;
+              }
               setLocation({
                 latitude: position.coords.latitude,
                 longitude: position.coords.longitude,
@@ -186,24 +216,7 @@ function AppPage() {
             },
             async (error) => {
               console.warn("Geolocation error:", error);
-              // Fallback to IP-based location API
-              try {
-                const response = await fetch("/api/location");
-                if (response.ok) {
-                  const data = await response.json();
-                  setLocation({ latitude: data.lat, longitude: data.lng });
-                  console.log(
-                    `[Location] Using ${data.source}: ${data.city}, ${data.region}`,
-                  );
-                } else {
-                  throw new Error("Location API failed");
-                }
-              } catch (apiError) {
-                console.error("Location API error:", apiError);
-                // Ultimate fallback to San Francisco
-                setLocation({ latitude: 37.7749, longitude: -122.4194 });
-              }
-              setIsLoadingLocation(false);
+              await fallbackToIp();
             },
             { timeout: 5000, enableHighAccuracy: false },
           );
@@ -403,6 +416,47 @@ function AppPage() {
             try {
               navigator.geolocation.getCurrentPosition(
                 (position) => {
+                  if (
+                    position.coords.accuracy !== undefined &&
+                    position.coords.accuracy > 50
+                  ) {
+                    console.warn(
+                      `GPS accuracy too low during directions request (${position.coords.accuracy}m). Falling back.`,
+                    );
+                    setToast({
+                      message: `GPS accuracy too low (${Math.round(position.coords.accuracy)}m). Fallback: using map viewport center.`,
+                      type: "warning",
+                    });
+
+                    // Fallback to center of current map viewport, or location state, or default SF
+                    let fallbackLoc = { lat: 37.7749, lng: -122.4194 }; // Default SF
+                    if (
+                      mapView?.center &&
+                      typeof mapView.center.lat === "number"
+                    ) {
+                      fallbackLoc = mapView.center;
+                    } else if (
+                      mapView?.center &&
+                      "latitude" in mapView.center &&
+                      typeof (mapView.center as any).latitude === "number"
+                    ) {
+                      fallbackLoc = {
+                        lat: (mapView.center as any).latitude,
+                        lng: (mapView.center as any).longitude,
+                      };
+                    } else if (
+                      location &&
+                      typeof location.latitude === "number"
+                    ) {
+                      fallbackLoc = {
+                        lat: location.latitude,
+                        lng: location.longitude,
+                      };
+                    }
+                    executeRoute(fallbackLoc);
+                    return;
+                  }
+
                   const preciseLoc = {
                     lat: position.coords.latitude,
                     lng: position.coords.longitude,

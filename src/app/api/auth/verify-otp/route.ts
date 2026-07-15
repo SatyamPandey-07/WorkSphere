@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+import {
+  verifyCsrfToken,
+  CSRF_COOKIE_NAME,
+  CSRF_HEADER_NAME,
+} from "@/lib/csrf";
 
-// Validation schema 
+// Validation schema
 const verifyOtpSchema = z.object({
   email: z.string().email("A valid email address is required."),
   otp: z
@@ -22,7 +27,18 @@ const verifyOtpSchema = z.object({
  * (e.g., a time-based token, a Redis key, or Clerk's verification API).
  */
 export async function POST(req: NextRequest) {
-  // 1. Identify the caller
+  // 1. CSRF validation
+  const cookieValue = req.cookies.get(CSRF_COOKIE_NAME)?.value;
+  const headerValue = req.headers.get(CSRF_HEADER_NAME);
+  const csrfValid = await verifyCsrfToken(cookieValue, headerValue);
+  if (!csrfValid) {
+    return NextResponse.json(
+      { error: "CSRF validation failed. Please refresh and try again." },
+      { status: 403 },
+    );
+  }
+
+  // 2. Identify the caller
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     req.headers.get("x-real-ip") ??
@@ -30,7 +46,7 @@ export async function POST(req: NextRequest) {
 
   const identifier = `verify-otp:${ip}`;
 
-  // 2. Rate limit — 5 requests per 1-minute sliding window 
+  // 2. Rate limit — 5 requests per 1-minute sliding window
   const allowed = await rateLimit(identifier, 5);
 
   if (!allowed) {
@@ -52,7 +68,7 @@ export async function POST(req: NextRequest) {
           "X-RateLimit-Limit": "5",
           "X-RateLimit-Remaining": "0",
         },
-      }
+      },
     );
   }
 
@@ -61,10 +77,7 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
   const validation = verifyOtpSchema.safeParse(body);
@@ -81,10 +94,12 @@ export async function POST(req: NextRequest) {
   // In a real implementation:
   //   const isValid = await verifyUserOtp({ email, otp });
   //   if (!isValid) return NextResponse.json({ error: "Invalid or expired code." }, { status: 400 });
-  console.log(`[verify-otp] OTP verification attempted for: ${email}, otp: ${otp}`);
+  console.log(
+    `[verify-otp] OTP verification attempted for: ${email}, otp: ${otp}`,
+  );
 
   return NextResponse.json(
     { message: "Verification successful." },
-    { status: 200 }
+    { status: 200 },
   );
 }

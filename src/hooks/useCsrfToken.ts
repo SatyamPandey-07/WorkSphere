@@ -37,15 +37,32 @@ function installCsrfFetchInterceptor() {
   const originalFetch = window.fetch.bind(window);
 
   window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === "string" || input instanceof URL ? input.toString() : input.url;
-    const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+    const url =
+      typeof input === "string" || input instanceof URL
+        ? input.toString()
+        : input.url;
+    const method = (
+      init?.method || (input instanceof Request ? input.method : "GET")
+    ).toUpperCase();
     const isMutating = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
-    const isSameOriginApi = url.startsWith("/api") || url.startsWith(`${window.location.origin}/api`);
+    const isSameOriginApi =
+      url.startsWith("/api") || url.startsWith(`${window.location.origin}/api`);
 
-    if (isMutating && isSameOriginApi && currentCsrfToken) {
-      const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-      headers.set(CSRF_HEADER_NAME, currentCsrfToken);
-      return originalFetch(input, { ...init, headers });
+    if (isMutating && isSameOriginApi) {
+      // If the token is already cached, attach it synchronously.
+      // If not (e.g. mobile browser taps Resend before the mount-time fetch
+      // resolves), fetch a fresh token first — this closes the race condition
+      // that caused 403s on the OTP resend flow.
+      const attachAndFetch = async () => {
+        const token = currentCsrfToken ?? (await fetchFreshToken());
+        const headers = new Headers(
+          init?.headers ??
+            (input instanceof Request ? input.headers : undefined),
+        );
+        if (token) headers.set(CSRF_HEADER_NAME, token);
+        return originalFetch(input, { ...init, headers });
+      };
+      return attachAndFetch();
     }
 
     return originalFetch(input, init);
@@ -54,7 +71,9 @@ function installCsrfFetchInterceptor() {
 
 async function fetchFreshToken(): Promise<string | null> {
   try {
-    const res = await fetch("/api/auth/csrf-token", { credentials: "same-origin" });
+    const res = await fetch("/api/auth/csrf-token", {
+      credentials: "same-origin",
+    });
     if (!res.ok) return null;
     const data = await res.json();
     currentCsrfToken = data.csrfToken ?? null;
@@ -64,6 +83,25 @@ async function fetchFreshToken(): Promise<string | null> {
     // request will surface a 403 if it's genuinely stale, which triggers a retry.
     return currentCsrfToken;
   }
+}
+
+/**
+ * Always fetches a fresh CSRF token from the server, updating the cache.
+ * Use this before any resend/retry flow where a stale token is likely.
+ */
+export async function refreshCsrfToken(): Promise<string | null> {
+  return fetchFreshToken();
+}
+
+/**
+ * Ensures a valid CSRF token is in hand before a mutating request.
+ * Only fetches a fresh token when one isn't already cached — avoids an
+ * unnecessary round-trip on every resend click while still closing the gap
+ * where mobile browsers arrive at the OTP screen without a token.
+ */
+export async function ensureCsrfToken(): Promise<string | null> {
+  if (currentCsrfToken) return currentCsrfToken;
+  return fetchFreshToken();
 }
 
 /**

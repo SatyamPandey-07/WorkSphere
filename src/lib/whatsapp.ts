@@ -15,6 +15,9 @@
  *   - Twilio         → TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN + TWILIO_WHATSAPP_FROM
  */
 
+import dns from "dns";
+import { isIP } from "net";
+
 // ---------------------------------------------------------------------------
 // Shared payload
 // ---------------------------------------------------------------------------
@@ -169,12 +172,53 @@ const BLOCKED_HOSTNAMES = /^(localhost|.*\.local)$/i;
 const BLOCKED_IP =
   /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|169\.254\.|::1|fc00:|fe80:)/;
 
-export function isValidWebhookUrl(url: string): boolean {
+export function isPrivateIp(ip: string): boolean {
+  if (isIP(ip) === 4) {
+    const parts = ip.split(".").map(Number);
+    const first = parts[0];
+    const second = parts[1];
+
+    if (first === 127) return true;
+    if (first === 10) return true;
+    if (first === 169 && second === 254) return true;
+    if (first === 192 && second === 168) return true;
+    if (first === 172 && second >= 16 && second <= 31) return true;
+    if (first === 100 && second >= 64 && second <= 127) return true;
+    if (first === 0) return true;
+
+    return false;
+  }
+
+  if (isIP(ip) === 6) {
+    const normalized = ip.toLowerCase();
+    if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") return true;
+    if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+    if (
+      normalized.startsWith("fe8") ||
+      normalized.startsWith("fe9") ||
+      normalized.startsWith("fea") ||
+      normalized.startsWith("feb")
+    ) {
+      return true;
+    }
+    if (normalized === "::" || normalized === "0:0:0:0:0:0:0:0") return true;
+
+    return false;
+  }
+
+  return true;
+}
+
+export async function isValidWebhookUrl(url: string): Promise<boolean> {
   try {
     const parsed = new URL(url.trim());
     if (parsed.protocol !== "https:") return false;
     if (BLOCKED_HOSTNAMES.test(parsed.hostname)) return false;
     if (BLOCKED_IP.test(parsed.hostname)) return false;
+
+    const { address } = await dns.promises.lookup(parsed.hostname);
+    if (isPrivateIp(address)) return false;
+
     return true;
   } catch {
     return false;
@@ -249,7 +293,7 @@ export class WhatsAppNotificationService {
     webhookUrl: string | null | undefined,
     payload: WhatsAppNotificationPayload,
   ): Promise<void> {
-    if (!webhookUrl || !isValidWebhookUrl(webhookUrl)) return;
+    if (!webhookUrl || !(await isValidWebhookUrl(webhookUrl))) return;
 
     try {
       const res = await fetch(webhookUrl, {

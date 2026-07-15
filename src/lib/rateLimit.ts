@@ -6,9 +6,10 @@
  */
 
 // ─── Upstash (production) ────────────────────────────────────────────────────
-let upstashRatelimit: {
+type UpstashRatelimit = {
   limit: (identifier: string) => Promise<{ success: boolean; remaining: number; reset: number }>;
-} | null = null;
+};
+const upstashLimiters = new Map<number, UpstashRatelimit>();
 
 function getUpstashRatelimit(limitPerMinute: number) {
   if (
@@ -102,10 +103,17 @@ export async function rateLimit(
   identifier: string,
   limit = 10
 ): Promise<boolean> {
-  const rl = upstashRatelimit ?? getUpstashRatelimit(limit);
+  let rl = upstashLimiters.get(limit);
+
+  if (!rl) {
+    const newRl = getUpstashRatelimit(limit);
+    if (newRl) {
+      rl = newRl;
+      upstashLimiters.set(limit, rl);
+    }
+  }
 
   if (rl) {
-    upstashRatelimit = rl; // cache for subsequent calls
     const { success } = await rl.limit(identifier);
     return success;
   }

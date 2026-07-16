@@ -1,9 +1,10 @@
-import { NextResponse } from 'next/server';
-import { processUpcomingReservationAlerts } from '@/lib/reminderCron';
+import { NextResponse } from "next/server";
+import { processUpcomingReservationAlerts } from "@/lib/reminderCron";
 import { prisma } from "@/lib/prisma";
 import nodemailer from "nodemailer";
 import twilio from "twilio";
 import { Redis } from "@upstash/redis";
+import { isWithinNotificationWindow } from "@/lib/notificationWindow";
 
 // Setup Redis to track sent reminders
 let redis: any = null;
@@ -15,15 +16,18 @@ try {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const cronKey = searchParams.get('key');
+  const cronKey = searchParams.get("key");
 
   // Basic guard validation layer checking secret keys inside production server environments
   if (cronKey !== process.env.CRON_SECRET_TOKEN) {
-    return new NextResponse('Unauthorized Endpoint Action', { status: 401 });
+    return new NextResponse("Unauthorized Endpoint Action", { status: 401 });
   }
 
   await processUpcomingReservationAlerts();
-  return NextResponse.json({ success: true, timestamp: new Date().toISOString() });
+  return NextResponse.json({
+    success: true,
+    timestamp: new Date().toISOString(),
+  });
 }
 
 export async function POST(req: Request) {
@@ -80,12 +84,18 @@ export async function POST(req: Request) {
           phoneNumber: session.host.phoneNumber,
           smsAlertsEnabled: session.host.smsAlertsEnabled,
           name: `${session.host.firstName || "Nomad"} ${session.host.lastName || "Scout"}`,
+          notificationStart: session.host.notificationStart,
+          notificationEnd: session.host.notificationEnd,
+          timezone: session.host.timezone,
         },
         ...session.rsvps.map((rsvp) => ({
           email: rsvp.user.email,
           phoneNumber: rsvp.user.phoneNumber,
           smsAlertsEnabled: rsvp.user.smsAlertsEnabled,
           name: `${rsvp.user.firstName || "Nomad"} ${rsvp.user.lastName || "Scout"}`,
+          notificationStart: rsvp.user.notificationStart,
+          notificationEnd: rsvp.user.notificationEnd,
+          timezone: rsvp.user.timezone,
         })),
       ].filter((r) => r.email); // Must have email to send email notice
 
@@ -119,6 +129,21 @@ export async function POST(req: Request) {
       const workSphereLink = `https://work-sphere-one.vercel.app/ai?venue=${session.venue.id}`;
 
       for (const recipient of recipients) {
+        // Check daily notification time window constraints
+        if (
+          !isWithinNotificationWindow(
+            new Date(),
+            recipient.notificationStart,
+            recipient.notificationEnd,
+            recipient.timezone,
+          )
+        ) {
+          console.log(
+            `[Reminders Cron] Skipping notification for recipient ${recipient.email} (outside notification window)`,
+          );
+          continue;
+        }
+
         // 1. Dispatch Email Reminder
         if (transporter && recipient.email) {
           try {
@@ -134,7 +159,7 @@ export async function POST(req: Request) {
                   <h3>Session details:</h3>
                   <ul>
                     <li><strong>Venue:</strong> ${session.venue.name}</li>
-                    <li><strong>Time:</strong> ${session.startsAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</li>
+                    <li><strong>Time:</strong> ${session.startsAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</li>
                     <li><strong>Address:</strong> ${session.venue.address || "No address provided"}</li>
                   </ul>
                   <p>
@@ -145,24 +170,38 @@ export async function POST(req: Request) {
               `,
             });
             emailsSent++;
-            console.log(`[Reminders Cron] Email dispatched to ${recipient.email}`);
+            console.log(
+              `[Reminders Cron] Email dispatched to ${recipient.email}`,
+            );
           } catch (emailErr) {
-            console.error(`[Reminders Cron] Nodemailer error for ${recipient.email}:`, emailErr);
+            console.error(
+              `[Reminders Cron] Nodemailer error for ${recipient.email}:`,
+              emailErr,
+            );
           }
         }
 
         // 2. Dispatch SMS Reminder
-        if (twilioClient && recipient.phoneNumber && recipient.smsAlertsEnabled) {
+        if (
+          twilioClient &&
+          recipient.phoneNumber &&
+          recipient.smsAlertsEnabled
+        ) {
           try {
             await twilioClient.messages.create({
-              body: `Reminder: The session "${session.title}" starts at ${session.startsAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} at ${session.venue.name}. Get directions: ${googleMapsLink}`,
+              body: `Reminder: The session "${session.title}" starts at ${session.startsAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} at ${session.venue.name}. Get directions: ${googleMapsLink}`,
               to: recipient.phoneNumber,
               from: TWILIO_PHONE_NUMBER,
             });
             smsSent++;
-            console.log(`[Reminders Cron] SMS dispatched to ${recipient.phoneNumber}`);
+            console.log(
+              `[Reminders Cron] SMS dispatched to ${recipient.phoneNumber}`,
+            );
           } catch (smsErr) {
-            console.error(`[Reminders Cron] Twilio error for ${recipient.phoneNumber}:`, smsErr);
+            console.error(
+              `[Reminders Cron] Twilio error for ${recipient.phoneNumber}:`,
+              smsErr,
+            );
           }
         }
       }
@@ -176,6 +215,9 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error("POST /api/cron/reminders error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }

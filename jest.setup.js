@@ -1,24 +1,49 @@
-import '@testing-library/jest-dom';
-import { TextEncoder, TextDecoder } from 'util';
-import { webcrypto } from 'crypto';
-
+import "@testing-library/jest-dom";
+import { TextEncoder, TextDecoder } from "util";
+import { webcrypto } from "crypto";
 // jsdom doesn't provide these globals; Node's implementations are drop-in
 // replacements and let us test Edge-runtime-style code (e.g. src/lib/csrf.ts)
 // under the standard jsdom test environment.
-if (typeof global.TextEncoder === 'undefined') {
+if (typeof global.TextEncoder === "undefined") {
   global.TextEncoder = TextEncoder;
   global.TextDecoder = TextDecoder;
 }
-if (typeof global.crypto === 'undefined' || !global.crypto.subtle) {
-  Object.defineProperty(global, 'crypto', {
+
+/* eslint-disable @typescript-eslint/no-require-imports */
+const {
+  Request: UndiciRequest,
+  Response: UndiciResponse,
+  Headers: UndiciHeaders,
+  FormData: UndiciFormData,
+  File: UndiciFile,
+} = require("undici");
+/* eslint-enable @typescript-eslint/no-require-imports */
+
+if (typeof global.Request === "undefined") {
+  global.Request = UndiciRequest;
+}
+if (typeof global.Response === "undefined") {
+  global.Response = UndiciResponse;
+}
+if (typeof global.Headers === "undefined") {
+  global.Headers = UndiciHeaders;
+}
+if (typeof global.FormData === "undefined") {
+  global.FormData = UndiciFormData;
+}
+if (typeof global.File === "undefined") {
+  global.File = UndiciFile;
+}
+if (typeof global.crypto === "undefined" || !global.crypto.subtle) {
+  Object.defineProperty(global, "crypto", {
     value: webcrypto,
     configurable: true,
   });
 }
-if (typeof global.structuredClone === 'undefined') {
+if (typeof global.structuredClone === "undefined") {
   global.structuredClone = (val) => JSON.parse(JSON.stringify(val));
 }
-import 'fake-indexeddb/auto';
+import "fake-indexeddb/auto";
 
 // Mock Leaflet global variable L
 global.L = {
@@ -47,8 +72,46 @@ global.L = {
   },
 };
 
+/* eslint-disable @typescript-eslint/no-require-imports, react/display-name */
+// Mock @react-leaflet/core and react-leaflet
+jest.mock("@react-leaflet/core", () => {
+  const React = require("react");
+  return {
+    createLayerComponent: () => () =>
+      React.createElement("div", { "data-testid": "heatmap-overlay" }),
+  };
+});
+jest.mock("react-leaflet", () => {
+  const React = require("react");
+  const LayersControlMock = ({ children }) =>
+    React.createElement("div", { "data-testid": "layers-control" }, children);
+  LayersControlMock.BaseLayer = ({ children }) =>
+    React.createElement("div", { "data-testid": "base-layer" }, children);
+  LayersControlMock.Overlay = ({ children }) =>
+    React.createElement("div", { "data-testid": "overlay" }, children);
+
+  return {
+    __esModule: true,
+    MapContainer: ({ children }) =>
+      React.createElement("div", { "data-testid": "map-container" }, children),
+    TileLayer: () =>
+      React.createElement("div", { "data-testid": "tile-layer" }),
+    Marker: ({ children }) =>
+      React.createElement("div", { "data-testid": "marker" }, children),
+    Popup: ({ children }) =>
+      React.createElement("div", { "data-testid": "popup" }, children),
+    Polyline: () => React.createElement("div", { "data-testid": "polyline" }),
+    useMap: () => ({
+      setView: jest.fn(),
+      on: jest.fn(),
+    }),
+    LayersControl: LayersControlMock,
+  };
+});
+/* eslint-enable @typescript-eslint/no-require-imports, react/display-name */
+
 // Mock next/navigation
-jest.mock('next/navigation', () => ({
+jest.mock("next/navigation", () => ({
   useRouter: () => ({
     push: jest.fn(),
     replace: jest.fn(),
@@ -57,18 +120,18 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => ({
     get: jest.fn(),
   }),
-  usePathname: () => '',
+  usePathname: () => "",
 }));
 
 // Mock Clerk
-jest.mock('@clerk/nextjs', () => ({
+jest.mock("@clerk/nextjs", () => ({
   useUser: () => ({
-    user: { id: 'test-user', imageUrl: 'https://example.com/avatar.png' },
+    user: { id: "test-user", imageUrl: "https://example.com/avatar.png" },
     isSignedIn: true,
     isLoaded: true,
   }),
   useAuth: () => ({
-    userId: 'test-user',
+    userId: "test-user",
     isSignedIn: true,
   }),
   SignInButton: ({ children }) => children,
@@ -83,5 +146,5 @@ global.fetch = jest.fn(() =>
   Promise.resolve({
     ok: true,
     json: () => Promise.resolve({}),
-  })
+  }),
 );

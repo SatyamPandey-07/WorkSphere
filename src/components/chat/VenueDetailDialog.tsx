@@ -38,6 +38,7 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { Venue } from "./ChatMessages";
+import { RatingDistribution } from "./RatingDistribution";
 
 interface VenueDetailDialogProps {
   venue: Venue | null;
@@ -76,6 +77,9 @@ export function VenueDetailDialog({
   const [translatedReviews, setTranslatedReviews] = useState<
     Record<string, string>
   >({});
+  const [activeDistribution, setActiveDistribution] = useState<
+    "wifi" | "outlets" | "noise" | null
+  >(null);
 
   // =========================================================================
   // COMMUNITY AMENITY VALIDATION STATE DICTIONARY
@@ -342,6 +346,7 @@ export function VenueDetailDialog({
     setLiveScore(venue.score ?? null);
     setPhotoLoading(true);
     setActiveTab("overview");
+    setActiveDistribution(null);
     const params = new URLSearchParams({
       name: venue.name,
       lat: String(venue.lat),
@@ -376,7 +381,7 @@ export function VenueDetailDialog({
       }
       console.log(`[SSE] Connecting to live stream for venue: ${venue.id}`);
       eventSource = new EventSource(
-        `/api/venues/stream?id=${encodeURIComponent(venue.id)}`,
+        `/api/venues/${encodeURIComponent(venue.id)}/live-stream`,
       );
 
       eventSource.onmessage = (event) => {
@@ -416,7 +421,18 @@ export function VenueDetailDialog({
     };
   }, [venue, isOpen]);
 
-  // Effect 3: Fetch reviews and menu photos based on active tab
+  // Fetch reviews on dialog open / venue change to have stats ready
+  useEffect(() => {
+    if (!venue || !isOpen) return;
+    fetch(`/api/venues/${encodeURIComponent(venue.id)}/reviews`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.reviews) setReviews(data.reviews);
+      })
+      .catch((err) => console.error(err));
+  }, [venue, isOpen]);
+
+  // Effect 3: Fetch predictions and menu photos based on active tab
   useEffect(() => {
     if (!venue || !isOpen) return;
 
@@ -428,7 +444,6 @@ export function VenueDetailDialog({
         })
         .catch((err) => console.error(err));
     } else if (activeTab === "reviews") {
-      setReviews([]);
       fetch(`/api/venues/${encodeURIComponent(venue.id)}/reviews`)
         .then((r) => r.json())
         .then((data) => {
@@ -691,7 +706,19 @@ export function VenueDetailDialog({
           {activeTab === "overview" && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveDistribution(
+                      activeDistribution === "wifi" ? null : "wifi",
+                    )
+                  }
+                  className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
+                    activeDistribution === "wifi"
+                      ? "bg-blue-500/10 border-blue-500 shadow-md ring-2 ring-blue-500/20 scale-95"
+                      : "bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-[1.02] cursor-pointer"
+                  }`}
+                >
                   <div className="p-3 rounded-xl bg-blue-500/10 mb-3">
                     <Wifi className="w-6 h-6 text-blue-500" />
                   </div>
@@ -705,8 +732,21 @@ export function VenueDetailDialog({
                         ? "Fast"
                         : "TBD"}
                   </span>
-                </div>
-                <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveDistribution(
+                      activeDistribution === "outlets" ? null : "outlets",
+                    )
+                  }
+                  className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
+                    activeDistribution === "outlets"
+                      ? "bg-orange-500/10 border-orange-500 shadow-md ring-2 ring-orange-500/20 scale-95"
+                      : "bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-[1.02] cursor-pointer"
+                  }`}
+                >
                   <div className="p-3 rounded-xl bg-orange-500/10 mb-3">
                     <Zap className="w-6 h-6 text-orange-500" />
                   </div>
@@ -722,8 +762,21 @@ export function VenueDetailDialog({
                         ? "Yes"
                         : "No"}
                   </span>
-                </div>
-                <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setActiveDistribution(
+                      activeDistribution === "noise" ? null : "noise",
+                    )
+                  }
+                  className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
+                    activeDistribution === "noise"
+                      ? "bg-pink-500/10 border-pink-500 shadow-md ring-2 ring-pink-500/20 scale-95"
+                      : "bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-[1.02] cursor-pointer"
+                  }`}
+                >
                   <div className="p-3 rounded-xl bg-pink-500/10 mb-3">
                     <Volume2 className="w-6 h-6 text-pink-500" />
                   </div>
@@ -733,7 +786,8 @@ export function VenueDetailDialog({
                   <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none capitalize">
                     {venue.noiseLevel || "Normal"}
                   </span>
-                </div>
+                </button>
+
                 <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
                   <div className="p-3 rounded-xl bg-amber-500/10 mb-3">
                     <Sun className="w-6 h-6 text-amber-500" />
@@ -748,6 +802,16 @@ export function VenueDetailDialog({
                   </span>
                 </div>
               </div>
+
+              {activeDistribution && (
+                <div className="mb-6">
+                  <RatingDistribution
+                    reviews={reviews}
+                    activeMetric={activeDistribution}
+                    onClose={() => setActiveDistribution(null)}
+                  />
+                </div>
+              )}
 
               {wifiPredictions.length > 0 && (
                 <div className="mb-6 bg-white dark:bg-zinc-800 p-5 rounded-2xl border border-zinc-100 dark:border-zinc-700 shadow-sm">

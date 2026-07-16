@@ -38,7 +38,7 @@ function getUpstashRatelimit(limitPerMinute: number) {
       prefix: "worksphere:ratelimit",
     }) as {
       limit: (
-        identifier: string
+        identifier: string,
       ) => Promise<{ success: boolean; remaining: number; reset: number }>;
     };
   } catch {
@@ -79,11 +79,16 @@ function memRateLimit(identifier: string, limit: number): boolean {
 
 function memGetInfo(
   identifier: string,
-  limit: number
+  limit: number,
 ): { count: number; remaining: number; resetTime: number; isLimited: boolean } {
   const entry = memStore.get(identifier);
   if (!entry || Date.now() > entry.resetTime) {
-    return { count: 0, remaining: limit, resetTime: Date.now() + WINDOW_MS, isLimited: false };
+    return {
+      count: 0,
+      remaining: limit,
+      resetTime: Date.now() + WINDOW_MS,
+      isLimited: false,
+    };
   }
   return {
     count: entry.count,
@@ -101,7 +106,7 @@ function memGetInfo(
  */
 export async function rateLimit(
   identifier: string,
-  limit = 10
+  limit = 10,
 ): Promise<boolean> {
   let rl = upstashLimiters.get(limit);
 
@@ -118,6 +123,14 @@ export async function rateLimit(
     return success;
   }
 
+  // Periodic cleanup of the Upstash info store to avoid unbound memory growth
+  if (rateLimitInfoStore.size > 10_000) {
+    const now = Date.now();
+    for (const [k, v] of rateLimitInfoStore) {
+      if (now > v.resetTime) rateLimitInfoStore.delete(k);
+    }
+  }
+
   return memRateLimit(identifier, limit);
 }
 
@@ -127,8 +140,17 @@ export async function rateLimit(
  */
 export function getRateLimitInfo(
   identifier: string,
-  limit = 10
-): { count: number; remaining: number; resetTime: number; isLimited: boolean } | null {
+  limit = 10,
+): {
+  count: number;
+  remaining: number;
+  resetTime: number;
+  isLimited: boolean;
+} | null {
+  const cached = rateLimitInfoStore.get(identifier);
+  if (cached) {
+    return cached;
+  }
   return memGetInfo(identifier, limit);
 }
 
@@ -136,7 +158,9 @@ export function getRateLimitInfo(
 export function resetRateLimit(identifier?: string): void {
   if (identifier) {
     memStore.delete(identifier);
+    rateLimitInfoStore.delete(identifier);
   } else {
     memStore.clear();
+    rateLimitInfoStore.clear();
   }
 }

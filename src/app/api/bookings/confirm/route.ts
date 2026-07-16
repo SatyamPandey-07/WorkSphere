@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
@@ -8,6 +8,7 @@ import "@/core/subscribers/discord";
 import "@/core/subscribers/whatsapp";
 import "@/core/subscribers/guests";
 import "@/core/subscribers/telegram";
+
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();
@@ -92,19 +93,27 @@ export async function POST(req: Request) {
     // --- END OF FIX ---
 
     // 2. Emit Booking Confirmed Event to handle Side-Effects (PDF, Email, Analytics)
-    await eventBus.emit("booking:confirmed", {
-      bookingId: booking.id,
-      confirmationId,
-      venue: {
-        id: dbVenue.id,
-        name: venue.name || "Unknown Venue",
-        category: venue.category || "other",
-        address: venue.address || undefined,
-      },
-      customerEmail: customerEmail || "pandeysatyam1802@gmail.com",
-      date,
-      time,
+    // --- ASYNC PDF FIX IMPLEMENTATION (#518) ---
+    after(async () => {
+      try {
+        await eventBus.emit("booking:confirmed", {
+          bookingId: booking.id,
+          confirmationId,
+          venue: {
+            id: dbVenue.id,
+            name: venue.name || "Unknown Venue",
+            category: venue.category || "other",
+            address: venue.address || undefined,
+          },
+          customerEmail: customerEmail || "pandeysatyam1802@gmail.com",
+          date,
+          time,
+        });
+      } catch (backgroundError) {
+        console.error("[Background Event Bus Error]:", backgroundError);
+      }
     });
+    // --- END OF ASYNC PDF FIX ---
 
     return NextResponse.json({
       success: true,

@@ -1,6 +1,7 @@
 import { SignUp } from "@clerk/nextjs";
 import Link from "next/link";
 import { MapPin, Wifi, Zap, Volume2 } from "lucide-react";
+import { ResendOtpButton } from "@/components/ResendOtpButton";
 
 export default function SignUpPage() {
   return (
@@ -18,34 +19,42 @@ export default function SignUpPage() {
 
         <div className="space-y-6">
           <h1 className="text-4xl font-bold text-white leading-tight">
-            Join thousands of<br />
+            Join thousands of
+            <br />
             <span className="bg-gradient-to-r from-purple-400 via-blue-400 to-cyan-400 bg-clip-text text-transparent">
               remote workers
             </span>
           </h1>
           <p className="text-lg text-zinc-400 max-w-md">
-            Create an account to save your favorite workspaces and get personalized recommendations.
+            Create an account to save your favorite workspaces and get
+            personalized recommendations.
           </p>
-          
+
           {/* Feature List */}
           <div className="space-y-3 max-w-md">
             <div className="flex items-center gap-3 p-3 rounded-xl bg-zinc-900/50 border border-zinc-800">
               <div className="w-9 h-9 rounded-lg bg-blue-600/20 flex items-center justify-center">
                 <Wifi className="w-4 h-4 text-blue-400" />
               </div>
-              <span className="text-sm text-zinc-300">Find places with reliable WiFi</span>
+              <span className="text-sm text-zinc-300">
+                Find places with reliable WiFi
+              </span>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-xl bg-zinc-900/50 border border-zinc-800">
               <div className="w-9 h-9 rounded-lg bg-yellow-600/20 flex items-center justify-center">
                 <Zap className="w-4 h-4 text-yellow-400" />
               </div>
-              <span className="text-sm text-zinc-300">Discover spots with power outlets</span>
+              <span className="text-sm text-zinc-300">
+                Discover spots with power outlets
+              </span>
             </div>
             <div className="flex items-center gap-3 p-3 rounded-xl bg-zinc-900/50 border border-zinc-800">
               <div className="w-9 h-9 rounded-lg bg-green-600/20 flex items-center justify-center">
                 <Volume2 className="w-4 h-4 text-green-400" />
               </div>
-              <span className="text-sm text-zinc-300">Filter by noise levels</span>
+              <span className="text-sm text-zinc-300">
+                Filter by noise levels
+              </span>
             </div>
           </div>
         </div>
@@ -86,7 +95,8 @@ export default function SignUpPage() {
                   formFieldLabel: "text-zinc-300 font-medium",
                   formFieldInput:
                     "bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-500 rounded-xl focus:border-purple-500 focus:ring-purple-500/20",
-                  footerActionLink: "text-purple-400 hover:text-purple-300 font-medium",
+                  footerActionLink:
+                    "text-purple-400 hover:text-purple-300 font-medium",
                   formButtonPrimary:
                     "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded-xl shadow-lg shadow-purple-500/20 transition-all",
                   footer: "hidden",
@@ -96,11 +106,23 @@ export default function SignUpPage() {
               path="/sign-up"
               signInUrl="/sign-in"
             />
+            {/* Resend button shown on the OTP verification step.
+                Always fetches a fresh CSRF token before POSTing so the
+                resend flow works reliably on all platforms. */}
+            <div className="mt-4 flex justify-center">
+              <ResendOtpButton
+                email=""
+                className="text-sm text-purple-400 hover:text-purple-300 underline underline-offset-2 bg-transparent border-0 cursor-pointer"
+              />
+            </div>
           </div>
 
           <p className="mt-6 text-center text-sm text-zinc-500">
             Already have an account?{" "}
-            <Link href="/sign-in" className="text-purple-400 hover:text-purple-300 font-medium">
+            <Link
+              href="/sign-in"
+              className="text-purple-400 hover:text-purple-300 font-medium"
+            >
               Sign in
             </Link>
           </p>

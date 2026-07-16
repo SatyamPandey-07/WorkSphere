@@ -82,16 +82,10 @@ async function applyCsrfProtection(
 }
 
 export default function middleware(request: any, event: any) {
-  const isApiOrNonGet =
-    request.nextUrl.pathname.startsWith("/api") || request.method !== "GET";
-
   if (
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ===
     "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk"
   ) {
-    if (isApiOrNonGet) {
-      return NextResponse.next();
-    }
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set("x-pathname", request.nextUrl.pathname);
     const res = NextResponse.next({
@@ -105,11 +99,6 @@ export default function middleware(request: any, event: any) {
   const clerkMw = clerkMiddleware(async (auth, req) => {
     if (!isPublicRoute(req)) {
       await auth.protect();
-    }
-    const isReqApiOrNonGet =
-      req.nextUrl.pathname.startsWith("/api") || req.method !== "GET";
-    if (isReqApiOrNonGet) {
-      return NextResponse.next();
     }
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set("x-pathname", req.nextUrl.pathname);

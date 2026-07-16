@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+import {
+  verifyCsrfToken,
+  CSRF_COOKIE_NAME,
+  CSRF_HEADER_NAME,
+} from "@/lib/csrf";
 
 // Validation schema
 const resendOtpSchema = z.object({
@@ -18,7 +23,18 @@ const resendOtpSchema = z.object({
  * by Clerk, this route provides the rate-limited security layer.
  */
 export async function POST(req: NextRequest) {
-  // 1. Identify the caller (prefer IP, fall back to forwarded header) 
+  // 1. CSRF validation
+  const cookieValue = req.cookies.get(CSRF_COOKIE_NAME)?.value;
+  const headerValue = req.headers.get(CSRF_HEADER_NAME);
+  const csrfValid = await verifyCsrfToken(cookieValue, headerValue);
+  if (!csrfValid) {
+    return NextResponse.json(
+      { error: "CSRF validation failed. Please refresh and try again." },
+      { status: 403 },
+    );
+  }
+
+  // 2. Identify the caller (prefer IP, fall back to forwarded header)
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     req.headers.get("x-real-ip") ??
@@ -26,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   const identifier = `resend-otp:${ip}`;
 
-  // 2. Rate limit — 3 requests per 1-minute sliding window 
+  // 3. Rate limit — 3 requests per 1-minute sliding window
   const allowed = await rateLimit(identifier, 3);
 
   if (!allowed) {
@@ -48,38 +64,38 @@ export async function POST(req: NextRequest) {
           "X-RateLimit-Limit": "3",
           "X-RateLimit-Remaining": "0",
         },
-      }
+      },
     );
   }
 
-  // 3. Validate request body
+  // 4. Validate request body
   let body: unknown;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
   const validation = resendOtpSchema.safeParse(body);
   if (!validation.success) {
     return NextResponse.json(
-      { error: validation.error.format().email?._errors[0] ?? "Validation failed." },
-      { status: 400 }
+      {
+        error:
+          validation.error.format().email?._errors[0] ?? "Validation failed.",
+      },
+      { status: 400 },
     );
   }
 
   const { email } = validation.data;
 
-  // 4. Delegate to OTP service (stub — integrate with Clerk / Twilio / etc.)
+  // 5. Delegate to OTP service (stub — integrate with Clerk / Twilio / etc.)
   // In a real implementation:
   //   await sendOtp({ email });
   console.log(`[resend-otp] OTP resend requested for: ${email}`);
 
   return NextResponse.json(
     { message: "A new verification code has been sent to your email." },
-    { status: 200 }
+    { status: 200 },
   );
 }

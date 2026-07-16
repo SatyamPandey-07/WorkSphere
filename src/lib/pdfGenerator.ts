@@ -93,8 +93,10 @@ export async function generateTaxExportPdf(
   drawText(summaryPage, "-".repeat(60), { x: 50, y, size: 10, font });
   y -= 25;
 
+  let currentPage = summaryPage;
   for (const booking of bookings) {
     if (y < 80) {
+      currentPage = pdfDoc.addPage([595, 842]);
       y = height - 50;
     }
     const hours = booking.duration || 1;
@@ -103,7 +105,7 @@ export async function generateTaxExportPdf(
     const total = Number((price + tax).toFixed(2));
 
     drawText(
-      summaryPage,
+      currentPage,
       `${safeText(booking.confirmationId || `WS-#${booking.id}`)}  |  ${safeText(booking.venue.name)}  |  CODE: ${safeText(booking.projectBillingCode || "N/A")}  |  $${total.toFixed(2)}`,
       { x: 50, y, size: 9, font },
     );
@@ -294,8 +296,10 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
   let boldFont: any;
 
   try {
-    const regularFontBytes = fs.readFileSync(regularFontPath);
-    const boldFontBytes = fs.readFileSync(boldFontPath);
+    const [regularFontBytes, boldFontBytes] = await Promise.all([
+      fs.promises.readFile(regularFontPath),
+      fs.promises.readFile(boldFontPath),
+    ]);
     font = await pdfDoc.embedFont(regularFontBytes);
     boldFont = await pdfDoc.embedFont(boldFontBytes);
   } catch {

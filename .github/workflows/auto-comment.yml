@@ -2,34 +2,36 @@ name: Auto Thank on Merge
 
 on:
   pull_request_target:
-    types: [closed]
-
-permissions:
-  issues: write
-  pull-requests: write
+    types: [opened, synchronize, closed]
 
 jobs:
-  thank-contributor:
+  # Job 1: Label the PR when it is opened or updated (before merge)
+  label-pr:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.merged == true
+    if: github.event.action != 'closed'
+    permissions:
+      issues: write
+      pull-requests: read
     steps:
-      - name: Thank Contributor
+      - name: Auto-label PR
         uses: actions/github-script@v9
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
             const pr = context.payload.pull_request;
             
-            // 1. Fetch files changed in this PR
-            const { data: files } = await github.rest.pulls.listFiles({
+            // Fetch files changed in this PR using pagination
+            const files = await github.paginate(github.rest.pulls.listFiles, {
               owner: context.repo.owner,
               repo: context.repo.repo,
-              pull_number: prNumber
+              pull_number: prNumber,
+              per_page: 100
             });
             
             let hasUI = false;
             let hasBackend = false;
             let hasTests = false;
+            let hasDocs = false;
             let fileCount = files.length;
             
             for (const file of files) {
@@ -48,39 +50,113 @@ jobs:
                 filename === 'src/middleware.ts'
               ) {
                 hasBackend = true;
+              } else if (
+                filename === 'README.md' ||
+                filename.startsWith('docs/') ||
+                filename.endsWith('.md')
+              ) {
+                hasDocs = true;
               }
             }
 
-            const labelsToAdd = [];
+            // Always ensure the core scoring label (ECSoC26) is attached
+            const labelsToAdd = ['ECSoC26'];
+            
+            // Add customized and quality-based bonus labels dynamically before merge
+            if (hasBackend) {
+              labelsToAdd.push('good-backend');
+            }
+            if (hasUI) {
+              labelsToAdd.push('good-ui');
+            }
+            if (hasTests || hasDocs) {
+              labelsToAdd.push('good-pr');
+            }
+            
+            // Fallback: If no bonus labels were added, add 'good-pr' to ensure ALL PRs get a bonus
+            if (!labelsToAdd.includes('good-ui') && !labelsToAdd.includes('good-backend') && !labelsToAdd.includes('good-pr')) {
+              labelsToAdd.push('good-pr');
+            }
+            
+            console.log(`Auto-assigning labels pre-merge for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              labels: labelsToAdd
+            });
+
+  # Job 2: Thank contributor and summarize XP when merged
+  thank-contributor:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true
+    permissions:
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Thank Contributor
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const pr = context.payload.pull_request;
+            
+            // Fetch files changed in this PR using pagination
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber,
+              per_page: 100
+            });
+            
+            let hasUI = false;
+            let hasBackend = false;
+            let hasTests = false;
+            let hasDocs = false;
+            
+            for (const file of files) {
+              const filename = file.filename;
+              if (filename.includes('__tests__/') || filename.endsWith('.test.ts') || filename.endsWith('.test.tsx')) {
+                hasTests = true;
+              } else if (
+                filename.startsWith('src/components/') || 
+                (filename.startsWith('src/app/') && !filename.includes('/api/') && (filename.endsWith('.tsx') || filename.endsWith('.css')))
+              ) {
+                hasUI = true;
+              } else if (
+                filename.startsWith('src/app/api/') || 
+                filename.startsWith('prisma/') || 
+                filename.startsWith('src/lib/') || 
+                filename === 'src/middleware.ts'
+              ) {
+                hasBackend = true;
+              } else if (
+                filename === 'README.md' ||
+                filename.startsWith('docs/') ||
+                filename.endsWith('.md')
+              ) {
+                hasDocs = true;
+              }
+            }
+
             const bonusDetails = [];
             
-            if (hasUI && (pr.additions > 15 || fileCount > 2)) {
-              labelsToAdd.push('good-ui');
-              bonusDetails.push('🎨 **good-ui** (+25 XP) - for frontend/UI improvements');
-            }
-            if (hasBackend && (pr.additions > 20 || fileCount > 2)) {
-              labelsToAdd.push('good-backend');
+            if (hasBackend) {
               bonusDetails.push('⚙️ **good-backend** (+50 XP) - for backend/API or DB improvements');
             }
-            if (hasTests || (pr.body && pr.body.length > 100 && pr.additions > 10)) {
-              labelsToAdd.push('good-pr');
+            if (hasUI) {
+              bonusDetails.push('🎨 **good-ui** (+25 XP) - for frontend/UI improvements');
+            }
+            if (hasTests || hasDocs) {
               bonusDetails.push('📝 **good-pr** (+15 XP) - for high-quality contributions with testing or details');
             }
             
-            if (labelsToAdd.length > 0) {
-              console.log(`Auto-assigning bonus labels on merge for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                labels: labelsToAdd
-              });
+            // Fallback detail
+            if (bonusDetails.length === 0) {
+              bonusDetails.push('📝 **good-pr** (+15 XP) - baseline contribution bonus');
             }
 
-            let bonusSection = '';
-            if (bonusDetails.length > 0) {
-              bonusSection = `\n\n### 🏆 Bonus XP Awarded!\nBased on our automated review, we have applied the following bonus labels to your PR:\n${bonusDetails.map(d => `- ${d}`).join('\n')}\n\nThese will be picked up by the ECSOC Sentinel scoring system shortly!`;
-            }
+            let bonusSection = `\n\n### 🏆 Bonus XP Awarded!\nBased on our automated review, we have applied the following bonus labels to your PR:\n${bonusDetails.map(d => `- ${d}`).join('\n')}\n\nThese will be picked up by the ECSOC Sentinel scoring system shortly!`;
 
             const thankComment = `🎉 Congratulations!
 

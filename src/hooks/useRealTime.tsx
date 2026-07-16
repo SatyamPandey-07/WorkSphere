@@ -123,7 +123,6 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-
         console.log("[RealTime] Tab focused, checking stream health...");
         if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
           currentBackoff = 1000;
@@ -136,7 +135,6 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
           eventSource.close();
         }
         connect();
-
       }
     };
 
@@ -146,7 +144,6 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
     window.addEventListener("visibilitychange", handleVisibilityChange); // 🌟 ADD THIS LINE
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
-
 
     connect();
 
@@ -159,9 +156,8 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       window.removeEventListener("visibilitychange", handleVisibilityChange); // 🌟 ADD THIS LINE
 
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-
     };
-  }, [venueIdsKey, enabled]); 
+  }, [venueIdsKey, enabled]);
 
   return { updates, isConnected, error, clearUpdates };
 }

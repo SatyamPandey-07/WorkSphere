@@ -38,6 +38,9 @@ createdVenues     Venue[]            @relation("VenueCreator")
   webhookEndpoints  WebhookEndpoint[]
   phoneNumber       String?
   smsAlertsEnabled  Boolean            @default(false)
+  notificationStart String?
+  notificationEnd   String?
+  timezone          String?            @default("UTC")
   folderUpvotes     FolderUpvote[]
 }
 
@@ -132,6 +135,7 @@ model VenueRating {
 
   @@unique([userId, venueId])
   @@index([venueId])
+  @@index([createdAt])
 }
 
 model Favorite {
@@ -161,7 +165,7 @@ model Conversation {
 model Message {
   id             String       @id @default(cuid())
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   role           String // user, assistant
   content        String
   agentName      String?
@@ -194,6 +198,7 @@ model Booking {
   @@index([userId])
   @@index([venueId])
   @@index([seatId])
+  @@index([createdAt])
 }
 
 model BookingGuest {
@@ -372,6 +377,8 @@ model WifiTelemetry {
   timestamp  DateTime @default(now())
 
   @@index([venueId])
+  @@index([timestamp])
+  @@index([venueId, timestamp])
 }
 
 enum FlagType {
@@ -409,6 +416,8 @@ model AdminAuditLog {
   entityId   String
   details    String?
   createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model Folder {
@@ -499,6 +508,8 @@ model WebhookDeliveryLog {
   createdAt  DateTime        @default(now())
 
   @@index([endpointId])
+  @@index([createdAt])
+  @@index([endpointId, createdAt])
 }
 
 model FolderUpvote {

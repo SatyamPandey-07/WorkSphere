@@ -72,6 +72,44 @@ global.L = {
   },
 };
 
+/* eslint-disable @typescript-eslint/no-require-imports, react/display-name */
+// Mock @react-leaflet/core and react-leaflet
+jest.mock("@react-leaflet/core", () => {
+  const React = require("react");
+  return {
+    createLayerComponent: () => () =>
+      React.createElement("div", { "data-testid": "heatmap-overlay" }),
+  };
+});
+jest.mock("react-leaflet", () => {
+  const React = require("react");
+  const LayersControlMock = ({ children }) =>
+    React.createElement("div", { "data-testid": "layers-control" }, children);
+  LayersControlMock.BaseLayer = ({ children }) =>
+    React.createElement("div", { "data-testid": "base-layer" }, children);
+  LayersControlMock.Overlay = ({ children }) =>
+    React.createElement("div", { "data-testid": "overlay" }, children);
+
+  return {
+    __esModule: true,
+    MapContainer: ({ children }) =>
+      React.createElement("div", { "data-testid": "map-container" }, children),
+    TileLayer: () =>
+      React.createElement("div", { "data-testid": "tile-layer" }),
+    Marker: ({ children }) =>
+      React.createElement("div", { "data-testid": "marker" }, children),
+    Popup: ({ children }) =>
+      React.createElement("div", { "data-testid": "popup" }, children),
+    Polyline: () => React.createElement("div", { "data-testid": "polyline" }),
+    useMap: () => ({
+      setView: jest.fn(),
+      on: jest.fn(),
+    }),
+    LayersControl: LayersControlMock,
+  };
+});
+/* eslint-enable @typescript-eslint/no-require-imports, react/display-name */
+
 // Mock next/navigation
 jest.mock("next/navigation", () => ({
   useRouter: () => ({

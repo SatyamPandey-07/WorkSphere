@@ -47,6 +47,14 @@ Example:
 - Maintain consistent padding and margins.
 - Optimize images and icons.
 
+## Booking Date & Time Guidelines
+
+- Display booking dates and times using the user's local timezone.
+- Ensure live timezone clocks update consistently across all devices.
+- Align date and time information consistently within booking cards for better readability.
+- Prevent text wrapping or overlapping of date/time fields on smaller screens.
+- Use responsive formatting to keep booking information clear and accessible on mobile viewports.
+
 ## Accessibility
 
 - Ensure sufficient color contrast.

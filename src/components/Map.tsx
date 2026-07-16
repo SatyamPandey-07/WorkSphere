@@ -443,6 +443,7 @@ const Map = ({
           background-position: center;
           border: 3px solid #3b82f6; /* Blue border for dark theme */
           box-shadow: 0 0 10px rgba(59, 130, 246, 0.5), 0 2px 8px rgba(0, 0, 0, 0.5);
+          will-change: transform;
         }
         .default-dot-marker {
           width: 20px;
@@ -453,6 +454,7 @@ const Map = ({
           box-shadow: 0 0 10px rgba(59, 130, 246, 0.5), 0 2px 8px rgba(0, 0, 0, 0.5);
           /* Offset for iconAnchor */
           transform: translate(10px, 10px);
+          will-change: transform;
         }
 
         /* Fix for Next.js/Leaflet width/height bug */
@@ -474,8 +476,21 @@ const Map = ({
           filter: none !important; /* Forces the browser to keep full color saturation */
         }
         
+        /* GPU-accelerated pulsing keyframes */
+        @keyframes markerPulse {
+          0% {
+            transform: scale(0.8);
+            opacity: 0.5;
+          }
+          100% {
+            transform: scale(1.6);
+            opacity: 0;
+          }
+        }
+
         /* Venue marker - circular dot */
         .venue-dot {
+          position: relative;
           width: 20px;
           height: 20px;
           border-radius: 50%;
@@ -483,10 +498,24 @@ const Map = ({
           border: 3px solid white;
           box-shadow: 0 0 12px rgba(139, 92, 246, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
           transform: translate(2px, 2px);
+          will-change: transform;
         }
         
+        /* Pulse ring around venue markers */
+        .venue-dot::after {
+          content: '';
+          position: absolute;
+          inset: -3px;
+          border-radius: 50%;
+          background: rgba(139, 92, 246, 0.4);
+          animation: markerPulse 2.5s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+          will-change: transform, opacity;
+          z-index: -1;
+        }
+
         /* Destination pin marker */
         .destination-pin {
+          position: relative;
           width: 32px;
           height: 32px;
           border-radius: 50% 50% 50% 0;
@@ -497,6 +526,15 @@ const Map = ({
           display: flex;
           align-items: center;
           justify-content: center;
+          will-change: transform;
+        }
+
+        /* Disable animation on reduced motion/low performance mode */
+        @media (prefers-reduced-motion: reduce) {
+          .venue-dot::after {
+            animation: none !important;
+            display: none !important;
+          }
         }
         .destination-pin span {
           transform: rotate(45deg);

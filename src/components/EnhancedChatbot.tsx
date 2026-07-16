@@ -160,11 +160,6 @@ export function EnhancedChatbot({
   >(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
-  // Track local cursor
-  const guestAvatar =
-    typeof window !== "undefined"
-      ? localStorage.getItem("guest-avatar") || "😀"
-      : "😀";
   useEffect(() => {
     if (!socket || !roomId) return;
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Folder,
   Plus,
@@ -13,10 +14,12 @@ import {
   MapPin,
   Globe,
   ThumbsUp,
+  GripVertical,
 } from "lucide-react";
 import Image from "next/image";
 
 export default function CollectionsPage() {
+  const router = useRouter();
   const [folders, setFolders] = useState<any[]>([]);
   const [publicFolders, setPublicFolders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,12 +30,70 @@ export default function CollectionsPage() {
   const [newFolderPublic, setNewFolderPublic] = useState(false);
   const [activeTab, setActiveTab] = useState<"my" | "public">("my");
 
+  // Drag and drop state
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", index.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex === index) return;
+    setDragOverIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+    const reorderedFolders = [...folders];
+    const [draggedFolder] = reorderedFolders.splice(draggedIndex, 1);
+    reorderedFolders.splice(targetIndex, 0, draggedFolder);
+
+    setFolders(reorderedFolders);
+
+    const orderIds = reorderedFolders.map((f) => f.id);
+    localStorage.setItem("worksphere_folder_order", JSON.stringify(orderIds));
+
+    handleDragEnd();
+  };
+
   const fetchFolders = async () => {
     try {
       setLoading(true);
       const res = await fetch("/api/folders");
       const data = await res.json();
-      if (data.folders) setFolders(data.folders);
+      if (data.folders) {
+        const savedOrder = localStorage.getItem("worksphere_folder_order");
+        if (savedOrder) {
+          try {
+            const orderIds = JSON.parse(savedOrder);
+            const orderedFolders = [...data.folders].sort((a, b) => {
+              const indexA = orderIds.indexOf(a.id);
+              const indexB = orderIds.indexOf(b.id);
+              if (indexA === -1 && indexB === -1) return 0;
+              if (indexA === -1) return 1;
+              if (indexB === -1) return -1;
+              return indexA - indexB;
+            });
+            setFolders(orderedFolders);
+          } catch (e) {
+            console.error("Failed to parse saved folder order", e);
+            setFolders(data.folders);
+          }
+        } else {
+          setFolders(data.folders);
+        }
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -262,39 +323,63 @@ export default function CollectionsPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {folders.map((folder) => (
-                    <Link href={`/collections/${folder.id}`} key={folder.id}>
-                      <div className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/5 transition-all cursor-pointer h-full flex flex-col justify-between">
-                        <div>
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                              <Folder className="w-5 h-5" />
+                  {folders.map((folder, index) => (
+                    <div
+                      key={folder.id}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest(".drag-handle"))
+                          return;
+                        router.push(`/collections/${folder.id}`);
+                      }}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDrop={(e) => handleDrop(e, index)}
+                      className={`group bg-white dark:bg-zinc-900 border rounded-2xl p-5 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/5 transition-all cursor-pointer h-full flex flex-col justify-between ${
+                        draggedIndex === index
+                          ? "opacity-30 border-dashed border-zinc-300 dark:border-zinc-700 scale-95"
+                          : dragOverIndex === index
+                            ? "border-blue-500 bg-blue-50/10 dark:bg-blue-950/10 scale-102"
+                            : "border-zinc-200 dark:border-zinc-800"
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                            <Folder className="w-5 h-5" />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <div
+                              className="drag-handle p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 cursor-grab active:cursor-grabbing transition-colors"
+                              draggable
+                              onDragStart={(e) => handleDragStart(e, index)}
+                              onDragEnd={handleDragEnd}
+                            >
+                              <GripVertical className="w-4 h-4" />
                             </div>
                             <ChevronRight className="w-5 h-5 text-zinc-300 dark:text-zinc-700 group-hover:text-blue-500 transition-colors" />
                           </div>
-
-                          <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:text-blue-500 transition-colors line-clamp-1">
-                            {folder.name}
-                          </h3>
-                          {folder.description && (
-                            <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
-                              {folder.description}
-                            </p>
-                          )}
                         </div>
 
-                        <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center gap-4 text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                          <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
-                            <MapPin className="w-3.5 h-3.5 text-blue-500" />
-                            {folder._count?.venues || 0} Places
-                          </span>
-                          <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
-                            <Users className="w-3.5 h-3.5 text-purple-500" />
-                            {folder._count?.members || 1} Members
-                          </span>
-                        </div>
+                        <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:text-blue-500 transition-colors line-clamp-1">
+                          {folder.name}
+                        </h3>
+                        {folder.description && (
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
+                            {folder.description}
+                          </p>
+                        )}
                       </div>
-                    </Link>
+
+                      <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center gap-4 text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                        <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
+                          <MapPin className="w-3.5 h-3.5 text-blue-500" />
+                          {folder._count?.venues || 0} Places
+                        </span>
+                        <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
+                          <Users className="w-3.5 h-3.5 text-purple-500" />
+                          {folder._count?.members || 1} Members
+                        </span>
+                      </div>
+                    </div>
                   ))}
                 </div>
               )

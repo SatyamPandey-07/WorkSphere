@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 // GET /api/conversations/[id] - Get a conversation with messages
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -28,7 +28,10 @@ export async function GET(
     });
 
     if (!conversation) {
-      return Response.json({ error: "Conversation not found" }, { status: 404 });
+      return Response.json(
+        { error: "Conversation not found" },
+        { status: 404 },
+      );
     }
 
     return Response.json({
@@ -36,19 +39,27 @@ export async function GET(
       title: conversation.title,
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
-      messages: conversation.messages.map((m: { id: string; role: string; content: string; agentName: string | null; createdAt: Date }) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        agentName: m.agentName,
-        createdAt: m.createdAt,
-      })),
+      messages: conversation.messages.map(
+        (m: {
+          id: string;
+          role: string;
+          content: string;
+          agentName: string | null;
+          createdAt: Date;
+        }) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          agentName: m.agentName,
+          createdAt: m.createdAt,
+        }),
+      ),
     });
   } catch (error) {
     console.error("Get conversation error:", error);
     return Response.json(
       { error: "Failed to fetch conversation" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -56,7 +67,7 @@ export async function GET(
 // DELETE /api/conversations/[id] - Delete a conversation
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -72,15 +83,13 @@ export async function DELETE(
     });
 
     if (!conversation) {
-      return Response.json({ error: "Conversation not found" }, { status: 404 });
+      return Response.json(
+        { error: "Conversation not found" },
+        { status: 404 },
+      );
     }
 
-    // Delete messages first (cascade)
-    await prisma.message.deleteMany({
-      where: { conversationId: id },
-    });
-
-    // Delete conversation
+    // Delete conversation (messages will cascade delete automatically)
     await prisma.conversation.delete({
       where: { id },
     });
@@ -90,7 +99,7 @@ export async function DELETE(
     console.error("Delete conversation error:", error);
     return Response.json(
       { error: "Failed to delete conversation" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -98,7 +107,7 @@ export async function DELETE(
 // PATCH /api/conversations/[id] - Update conversation title
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -116,7 +125,10 @@ export async function PATCH(
     });
 
     if (conversation.count === 0) {
-      return Response.json({ error: "Conversation not found" }, { status: 404 });
+      return Response.json(
+        { error: "Conversation not found" },
+        { status: 404 },
+      );
     }
 
     return Response.json({ success: true, title });
@@ -124,7 +136,7 @@ export async function PATCH(
     console.error("Update conversation error:", error);
     return Response.json(
       { error: "Failed to update conversation" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -1,18 +1,21 @@
-import { prisma } from './prisma';
-import { Redis } from '@upstash/redis';
-import nodemailer from 'nodemailer';
+import { prisma } from "./prisma";
+import { Redis } from "@upstash/redis";
+import nodemailer from "nodemailer";
+import { isWithinNotificationWindow } from "./notificationWindow";
 
 const redis = Redis.fromEnv();
 
 async function sendEmailAlert(booking: any) {
   const SMTP_USER = process.env.SMTP_USER;
   const SMTP_PASS = process.env.SMTP_PASS;
-  
+
   if (!SMTP_USER || !SMTP_PASS || !booking.customerEmail) {
-    console.log(`[Reminder Notification Skip] SMTP credentials or recipient email missing for booking ${booking.id}`);
+    console.log(
+      `[Reminder Notification Skip] SMTP credentials or recipient email missing for booking ${booking.id}`,
+    );
     return;
   }
-  
+
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || "smtp.gmail.com",
     port: parseInt(process.env.SMTP_PORT || "587"),
@@ -22,7 +25,7 @@ async function sendEmailAlert(booking: any) {
       pass: SMTP_PASS,
     },
   });
-  
+
   const googleMapsLink = `https://www.google.com/maps/dir/?api=1&destination=${booking.venue.latitude},${booking.venue.longitude}`;
   const workSphereLink = `https://work-sphere-one.vercel.app/ai?venue=${booking.venue.id}`;
 
@@ -32,7 +35,7 @@ async function sendEmailAlert(booking: any) {
     subject: `Reminder: Your hot-desk at ${booking.venue.name} starts in 30 minutes!`,
     html: `
       <div style="font-family: sans-serif; padding: 20px; color: #333;">
-        <h2>Hi ${booking.user?.firstName || 'Nomad'},</h2>
+        <h2>Hi ${booking.user?.firstName || "Nomad"},</h2>
         <p>This is a quick reminder that your reserved workspace at <strong>${booking.venue.name}</strong> starts in 30 minutes (at ${booking.time})!</p>
         <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
         <h3>Reservation Details:</h3>
@@ -48,7 +51,9 @@ async function sendEmailAlert(booking: any) {
       </div>
     `,
   });
-  console.log(`[Reminder Notification Success] Email sent to ${booking.customerEmail} for booking ${booking.id}`);
+  console.log(
+    `[Reminder Notification Success] Email sent to ${booking.customerEmail} for booking ${booking.id}`,
+  );
 }
 
 /**
@@ -56,12 +61,12 @@ async function sendEmailAlert(booking: any) {
  */
 export async function processUpcomingReservationAlerts() {
   try {
-    const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-    
+    const todayStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+
     const bookings = await prisma.booking.findMany({
       where: {
         date: todayStr,
-        status: 'CONFIRMED',
+        status: "CONFIRMED",
       },
       include: {
         user: true,
@@ -77,22 +82,45 @@ export async function processUpcomingReservationAlerts() {
       try {
         const bookingTimeStr = booking.time; // e.g. "10:00 AM"
         const bookingDateTime = new Date(`${booking.date} ${bookingTimeStr}`);
-        
+
         if (isNaN(bookingDateTime.getTime())) continue;
-        
+
         if (bookingDateTime >= targetMin && bookingDateTime <= targetMax) {
+          const user = booking.user;
+          // Check daily notification time window constraints
+          if (
+            user &&
+            !isWithinNotificationWindow(
+              new Date(),
+              user.notificationStart,
+              user.notificationEnd,
+              user.timezone,
+            )
+          ) {
+            console.log(
+              `[Reminder Notification Skip] User ${booking.user?.email || booking.customerId} is outside notification window.`,
+            );
+            continue;
+          }
+
           const redisKey = `booking-reminder:${booking.id}`;
           const alreadySent = await redis.get(redisKey);
           if (alreadySent) continue;
-          
+
           await sendEmailAlert(booking);
           await redis.set(redisKey, "sent", { ex: 7200 }); // 2 hours expiry
         }
       } catch (err) {
-        console.error(`Error processing booking reminder for ${booking.id}:`, err);
+        console.error(
+          `Error processing booking reminder for ${booking.id}:`,
+          err,
+        );
       }
     }
   } catch (error) {
-    console.error('Failed running reservation notification worker sequence:', error);
+    console.error(
+      "Failed running reservation notification worker sequence:",
+      error,
+    );
   }
 }

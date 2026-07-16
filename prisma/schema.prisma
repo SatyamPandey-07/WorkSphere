@@ -38,6 +38,9 @@ createdVenues     Venue[]            @relation("VenueCreator")
   webhookEndpoints  WebhookEndpoint[]
   phoneNumber       String?
   smsAlertsEnabled  Boolean            @default(false)
+  notificationStart String?
+  notificationEnd   String?
+  timezone          String?            @default("UTC")
   folderUpvotes     FolderUpvote[]
 }
 

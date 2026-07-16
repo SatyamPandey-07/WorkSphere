@@ -7,11 +7,34 @@ export function NotificationSettings() {
   const [phoneNumber, setPhoneNumber] = useState("");
   const [smsAlertsEnabled, setSmsAlertsEnabled] = useState(false);
   const [whatsappWebhookUrl, setWhatsappWebhookUrl] = useState("");
+  const [notificationStart, setNotificationStart] = useState("");
+  const [notificationEnd, setNotificationEnd] = useState("");
+  const [timezone, setTimezone] = useState("UTC");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">(
     "idle",
   );
+
+  const timezones =
+    typeof Intl !== "undefined" && typeof Intl.supportedValuesOf === "function"
+      ? Intl.supportedValuesOf("timeZone")
+      : [
+          "UTC",
+          "America/New_York",
+          "America/Chicago",
+          "America/Denver",
+          "America/Los_Angeles",
+          "America/Anchorage",
+          "Pacific/Honolulu",
+          "Europe/London",
+          "Europe/Paris",
+          "Europe/Berlin",
+          "Asia/Tokyo",
+          "Asia/Shanghai",
+          "Asia/Kolkata",
+          "Australia/Sydney",
+        ];
 
   useEffect(() => {
     async function fetchSettings() {
@@ -22,6 +45,14 @@ export function NotificationSettings() {
           setPhoneNumber(data.phoneNumber || "");
           setSmsAlertsEnabled(data.smsAlertsEnabled || false);
           setWhatsappWebhookUrl(data.whatsappWebhookUrl || "");
+          setNotificationStart(data.notificationStart || "");
+          setNotificationEnd(data.notificationEnd || "");
+          setTimezone(
+            data.timezone ||
+              (typeof Intl !== "undefined"
+                ? Intl.DateTimeFormat().resolvedOptions().timeZone
+                : "UTC"),
+          );
         }
       } catch (err) {
         console.error("Failed to load notification settings:", err);
@@ -45,6 +76,9 @@ export function NotificationSettings() {
           phoneNumber,
           smsAlertsEnabled,
           whatsappWebhookUrl,
+          notificationStart: notificationStart || null,
+          notificationEnd: notificationEnd || null,
+          timezone,
         }),
       });
 
@@ -116,6 +150,59 @@ export function NotificationSettings() {
             booking check-ins to a WhatsApp group. WorkSphere will POST venue
             details and a location pin automatically when a booking is
             confirmed.
+          </p>
+        </div>
+
+        {/* Daily Time Window */}
+        <div className="p-4 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-200 dark:border-zinc-800 space-y-4">
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            Daily Notification Window
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5">
+                Allowed Start Time
+              </label>
+              <input
+                type="time"
+                value={notificationStart}
+                onChange={(e) => setNotificationStart(e.target.value)}
+                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5">
+                Allowed End Time
+              </label>
+              <input
+                type="time"
+                value={notificationEnd}
+                onChange={(e) => setNotificationEnd(e.target.value)}
+                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5">
+                Your Timezone
+              </label>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+              >
+                {timezones.map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Specify the start and end of the daily window during which reminders
+            and webhooks can be sent. Leave blank to receive alerts at any time.
           </p>
         </div>
 

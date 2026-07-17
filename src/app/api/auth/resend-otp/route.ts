@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   const allowed = await rateLimit(identifier, 3);
 
   if (!allowed) {
-    const info = getRateLimitInfo(identifier, 3);
+    const info = await getRateLimitInfo(identifier, 3);
     const retryAfter = info?.resetTime
       ? Math.ceil((info.resetTime - Date.now()) / 1000)
       : 60;

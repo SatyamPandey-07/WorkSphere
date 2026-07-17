@@ -52,14 +52,14 @@ describe("Rate Limiting", () => {
   it("should return correct rate limit info", async () => {
     const ip = "192.168.1.6";
 
-    let info = getRateLimitInfo(ip, 5);
+    let info = await getRateLimitInfo(ip, 5);
     expect(info).not.toBeNull();
     expect(info?.count).toBe(0);
     expect(info?.remaining).toBe(5);
     expect(info?.isLimited).toBe(false);
 
     await rateLimit(ip, 5);
-    info = getRateLimitInfo(ip, 5);
+    info = await getRateLimitInfo(ip, 5);
     expect(info?.count).toBe(1);
     expect(info?.remaining).toBe(4);
     expect(info?.isLimited).toBe(false);
@@ -67,7 +67,7 @@ describe("Rate Limiting", () => {
     for (let i = 0; i < 4; i++) {
       await rateLimit(ip, 5);
     }
-    info = getRateLimitInfo(ip, 5);
+    info = await getRateLimitInfo(ip, 5);
     expect(info?.count).toBe(5);
     expect(info?.remaining).toBe(0);
     expect(info?.isLimited).toBe(true);

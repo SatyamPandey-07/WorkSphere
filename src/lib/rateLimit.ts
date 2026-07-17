@@ -7,7 +7,9 @@
 
 // ─── Upstash (production) ────────────────────────────────────────────────────
 type UpstashRatelimit = {
-  limit: (identifier: string) => Promise<{ success: boolean; remaining: number; reset: number }>;
+  limit: (
+    identifier: string,
+  ) => Promise<{ success: boolean; remaining: number; reset: number }>;
 };
 const upstashLimiters = new Map<number, UpstashRatelimit>();
 
@@ -132,7 +134,7 @@ export async function rateLimit(
       count: limit - remaining,
       remaining,
       resetTime: reset,
-      isLimited: !success
+      isLimited: !success,
     });
     return success;
   }
@@ -148,23 +150,49 @@ export async function rateLimit(
   return memRateLimit(identifier, limit);
 }
 
-/**
- * Returns rate-limit metadata for the given identifier.
- * Falls back to in-memory data when Upstash is not configured.
- */
-export function getRateLimitInfo(
+export async function getRateLimitInfo(
   identifier: string,
   limit = 10,
-): {
+): Promise<{
   count: number;
   remaining: number;
   resetTime: number;
   isLimited: boolean;
-} | null {
+} | null> {
   const cached = rateLimitInfoStore.get(identifier);
   if (cached) {
     return cached;
   }
+
+  let rl = upstashLimiters.get(limit);
+  if (!rl) {
+    const newRl = getUpstashRatelimit(limit);
+    if (newRl) {
+      rl = newRl;
+      upstashLimiters.set(limit, rl);
+    }
+  }
+
+  if (rl) {
+    try {
+      const rlAny = rl as any;
+      if (typeof rlAny.get === "function") {
+        const result = await rlAny.get(identifier);
+        if (result) {
+          const { remaining, reset } = result;
+          return {
+            count: limit - remaining,
+            remaining,
+            resetTime: reset,
+            isLimited: remaining <= 0,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("Error querying Upstash ratelimit info:", e);
+    }
+  }
+
   return memGetInfo(identifier, limit);
 }
 

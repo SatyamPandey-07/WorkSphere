@@ -927,7 +927,7 @@ export async function POST(req: Request) {
 
     // Rate limiting (now async)
     if (!(await rateLimit(identifier, 20))) {
-      const info = getRateLimitInfo(identifier);
+      const info = await getRateLimitInfo(identifier);
       return Response.json(
         {
           error:

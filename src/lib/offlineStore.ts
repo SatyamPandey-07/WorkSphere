@@ -44,7 +44,10 @@ if (typeof window !== "undefined") {
 
 function getDB(): Promise<IDBDatabase> {
   // Guard: IndexedDB is not available in SSR / Node environments.
-  if (typeof window === "undefined") {
+  // Checking `indexedDB` directly (rather than `window`) ensures that
+  // contexts such as Service Workers — which expose indexedDB without a
+  // window object — are not incorrectly rejected.
+  if (typeof indexedDB === "undefined") {
     return Promise.reject(
       new Error("IndexedDB is not available on server-side"),
     );

@@ -160,3 +160,142 @@ Tailwind v4 uses `color-mix()` internally for opacity modifiers (e.g., `bg-blue-
 ## Summary
 
 The transition to Tailwind CSS v4 in WorkSphere emphasizes a **CSS-native** approach. By centralizing our design tokens in the `@theme` block and utilizing custom utility layers, we ensure a high-performance, maintainable, and visually cohesive design system.
+
+---
+
+## 7. Layout Container Configuration
+
+WorkSphere follows a consistent responsive layout pattern using Tailwind CSS utility classes. Most pages use the `container` utility combined with `mx-auto` to center content and responsive padding utilities to maintain spacing across different screen sizes.
+
+### Common Container Pattern
+
+```tsx
+<div className="container mx-auto px-4 sm:px-6">
+  {/* Page Content */}
+</div>
+```
+
+### Frequently Used Layout Utilities
+
+| Utility | Purpose |
+| :--- | :--- |
+| `container` | Provides a responsive content wrapper |
+| `mx-auto` | Horizontally centers the container |
+| `max-w-*` | Limits content width for improved readability |
+| `px-4`, `px-6` | Horizontal page padding |
+| `py-*` | Vertical spacing for sections |
+
+### Recommendations
+
+- Use `container mx-auto` for page-level layouts.
+- Apply `max-w-*` utilities when restricting content width.
+- Maintain consistent spacing using responsive padding utilities.
+
+---
+
+## 8. Grid Token Reference
+
+WorkSphere primarily relies on Tailwind CSS Grid utilities for responsive layouts.
+
+### Grid Utilities
+
+| Utility | Purpose |
+| :--- | :--- |
+| `grid` | Enables CSS Grid |
+| `grid-cols-*` | Defines number of columns |
+| `col-span-*` | Controls column span |
+| `gap-*` | Defines spacing between grid items |
+
+### Common Grid Patterns
+
+```tsx
+<div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+```
+
+```tsx
+<div className="grid grid-cols-2 gap-4">
+```
+
+Responsive layouts typically use breakpoint modifiers such as:
+
+- `sm:`
+- `md:`
+- `lg:`
+- `xl:`
+
+to progressively increase the number of columns across screen sizes.
+
+---
+
+## 9. Border Configuration
+
+Borders are consistently used throughout the application to separate content while maintaining the project's clean visual style.
+
+### Common Border Utilities
+
+| Utility | Purpose |
+| :--- | :--- |
+| `border` | Standard component border |
+| `rounded-lg` | Medium rounded corners |
+| `rounded-xl` | Large rounded corners |
+| `rounded-2xl` | Extra large rounded corners |
+| `rounded-3xl` | Large card containers |
+| `rounded-full` | Circular elements |
+
+Borders are frequently combined with:
+
+- Glassmorphism utilities
+- Shadow utilities
+- Background opacity utilities
+
+to create reusable UI components.
+
+---
+
+## 10. Transition Styles
+
+Interactive elements use Tailwind transition utilities to provide smooth animations and hover effects.
+
+### Transition Utilities
+
+| Utility | Purpose |
+| :--- | :--- |
+| `transition-all` | Animate all supported properties |
+| `transition-colors` | Animate color changes |
+| `transition-shadow` | Animate shadow effects |
+| `transition-transform` | Animate transform properties |
+
+### Transition Durations
+
+The project commonly uses:
+
+| Utility | Duration |
+| :--- | :--- |
+| `duration-200` | Fast interactions |
+| `duration-300` | Standard transitions |
+| `duration-500` | Smooth animations |
+| `duration-700` | Longer UI animations |
+
+### Easing Utilities
+
+Frequently used easing functions include:
+
+- `ease-in-out`
+- `ease-out`
+
+### Example
+
+```tsx
+<button
+  className="transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg"
+>
+  Submit
+</button>
+```
+
+### Best Practices
+
+- Use `transition-colors` for buttons and links.
+- Use `transition-shadow` when animating elevation.
+- Use `transition-transform` for movement and scaling effects.
+- Keep transition durations consistent across similar components.

@@ -64,15 +64,41 @@ interface RateLimitInfo {
 }
 const rateLimitInfoStore = new Map<string, RateLimitInfo>();
 
-function memRateLimit(identifier: string, limit: number): boolean {
+// Run cleanup in the background instead of on the request path.
+const CLEANUP_INTERVAL_MS = 60_000;
+
+function cleanupExpiredEntries() {
   const now = Date.now();
 
-  // Periodic cleanup — keep memory from growing unbounded
-  if (memStore.size > 10_000) {
-    for (const [k, v] of memStore) {
-      if (now > v.resetTime) memStore.delete(k);
+  for (const [key, value] of memStore) {
+    if (now > value.resetTime) {
+      memStore.delete(key);
     }
   }
+
+  for (const [key, value] of rateLimitInfoStore) {
+    if (now > value.resetTime) {
+      rateLimitInfoStore.delete(key);
+    }
+  }
+}
+
+// Start a single background cleanup task.
+const globalCleanup = globalThis as typeof globalThis & {
+  __rateLimitCleanupTimer?: NodeJS.Timeout;
+};
+
+if (!globalCleanup.__rateLimitCleanupTimer) {
+  globalCleanup.__rateLimitCleanupTimer = setInterval(
+    cleanupExpiredEntries,
+    CLEANUP_INTERVAL_MS,
+  );
+
+  globalCleanup.__rateLimitCleanupTimer.unref?.();
+}
+
+function memRateLimit(identifier: string, limit: number): boolean {
+  const now = Date.now();
 
   const entry = memStore.get(identifier);
 
@@ -137,14 +163,6 @@ export async function rateLimit(
       isLimited: !success,
     });
     return success;
-  }
-
-  // Periodic cleanup of the Upstash info store to avoid unbound memory growth
-  if (rateLimitInfoStore.size > 10_000) {
-    const now = Date.now();
-    for (const [k, v] of rateLimitInfoStore) {
-      if (now > v.resetTime) rateLimitInfoStore.delete(k);
-    }
   }
 
   return memRateLimit(identifier, limit);

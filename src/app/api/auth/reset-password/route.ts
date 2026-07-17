@@ -14,7 +14,7 @@ const resetPasswordSchema = z.object({
     .max(128, "Password must be at most 128 characters long.")
     .regex(
       /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      "Password must contain at least one uppercase letter, one lowercase letter, and one number."
+      "Password must contain at least one uppercase letter, one lowercase letter, and one number.",
     ),
 });
 
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
   const allowed = await rateLimit(identifier, 5);
 
   if (!allowed) {
-    const info = getRateLimitInfo(identifier, 5);
+    const info = await getRateLimitInfo(identifier, 5);
     const retryAfter = info?.resetTime
       ? Math.ceil((info.resetTime - Date.now()) / 1000)
       : 60;
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
           "X-RateLimit-Limit": "5",
           "X-RateLimit-Remaining": "0",
         },
-      }
+      },
     );
   }
 
@@ -69,19 +69,14 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
   const validation = resetPasswordSchema.safeParse(body);
   if (!validation.success) {
     const errors = validation.error.flatten().fieldErrors;
     const message =
-      errors.token?.[0] ??
-      errors.newPassword?.[0] ??
-      "Validation failed.";
+      errors.token?.[0] ?? errors.newPassword?.[0] ?? "Validation failed.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
@@ -93,10 +88,12 @@ export async function POST(req: NextRequest) {
   //   if (!userId) return NextResponse.json({ error: "Invalid or expired reset token." }, { status: 400 });
   //   await prisma.user.update({ where: { id: userId }, data: { password: await hashPassword(newPassword) } });
   //   await invalidateResetToken(token);
-  console.log(`[reset-password] Password reset attempted with token: ${token.slice(0, 8)}..., new password length: ${newPassword.length}`);
+  console.log(
+    `[reset-password] Password reset attempted with token: ${token.slice(0, 8)}..., new password length: ${newPassword.length}`,
+  );
 
   return NextResponse.json(
     { message: "Your password has been reset successfully." },
-    { status: 200 }
+    { status: 200 },
   );
 }

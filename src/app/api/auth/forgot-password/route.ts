@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   const allowed = await rateLimit(identifier, 3);
 
   if (!allowed) {
-    const info = getRateLimitInfo(identifier, 3);
+    const info = await getRateLimitInfo(identifier, 3);
     const retryAfter = info?.resetTime
       ? Math.ceil((info.resetTime - Date.now()) / 1000)
       : 60;
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
           "X-RateLimit-Limit": "3",
           "X-RateLimit-Remaining": "0",
         },
-      }
+      },
     );
   }
 
@@ -58,10 +58,7 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { error: "Invalid JSON body." },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
   const validation = forgotPasswordSchema.safeParse(body);
@@ -71,7 +68,7 @@ export async function POST(req: NextRequest) {
         error:
           validation.error.format().email?._errors[0] ?? "Validation failed.",
       },
-      { status: 400 }
+      { status: 400 },
     );
   }
 
@@ -89,6 +86,6 @@ export async function POST(req: NextRequest) {
       message:
         "If an account with that email exists, a password reset link has been sent.",
     },
-    { status: 200 }
+    { status: 200 },
   );
 }

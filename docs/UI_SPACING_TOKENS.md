@@ -24,6 +24,8 @@ Theme mappings:
 | `--font-sans`        | `var(--font-geist-sans)` |
 | `--font-mono`        | `var(--font-geist-mono)` |
 
+⚠️ **Missing token:** `--color-ring` (and a backing `--ring`) is **not** defined here, but `Button` and `Input` both use `focus-visible:ring-ring`. See [Focus, Selection & Scrollbars](#focus-selection--scrollbars) for the resulting bug and the fix.
+
 `color-scheme: light dark` is set on `:root` so native form controls (scrollbars, checkboxes, etc.) render correctly in both themes.
 
 Beyond the two custom tokens above, components lean directly on **Tailwind's zinc, blue, and red scales** rather than semantic tokens — e.g. `zinc-900`/`zinc-50` for primary buttons, `zinc-200`/`zinc-800` for borders, `blue-600` for accents, `red-500`/`red-900` for destructive actions. Keep new components on this same palette rather than introducing new color families.
@@ -44,7 +46,7 @@ Common utilities in use: `text-sm`, `font-medium`, `leading-none`.
 
 ### Button (`components/ui/button.tsx`)
 
-Six variants × four sizes, all via `class-variance-authority`.
+Six variants × four sizes. Currently implemented as chained `variant === "x" && "..."` / `size === "y" && "..."` conditionals inside `cn(...)`, not `class-variance-authority` — works correctly, but has no compile-time exhaustiveness check and gets harder to scan as variants grow. Consider migrating to `cva` if more variants get added.
 
 | Variant       | Light                                            | Dark                                               |
 | ------------- | ------------------------------------------------ | -------------------------------------------------- |
@@ -62,7 +64,12 @@ Six variants × four sizes, all via `class-variance-authority`.
 | `lg`      | `h-11`      | `px-8`      |                   |
 | `icon`    | `h-10 w-10` | —           | square, icon-only |
 
-Base classes on every button: `inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors ring-offset-background`, plus the shared focus/disabled states below. Buttons default to `type="button"` so icon/ghost buttons inside forms don't accidentally submit.
+Base classes on every button: `inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors ring-offset-background`, plus the shared focus/disabled states below.
+
+⚠️ **Two known issues in the current implementation:**
+
+- No default `type` is set, so native `<button>` defaults to `type="submit"` — any button used inside a `<form>` for a non-submit action will silently submit it unless the consumer remembers to pass `type="button"` explicitly. Fix: default `type = "button"` in the component and let callers override it.
+- `focus-visible:outline-none` is paired with `focus-visible:ring-ring`, but `--color-ring` doesn't exist (see Color Tokens above) — combined with the missing token, keyboard focus currently has **no visible indicator at all** on `Button`/`Input`. Don't copy this pattern into new components until `--ring` is added.
 
 ### Input (`components/ui/input.tsx`)
 
@@ -106,6 +113,8 @@ box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
 
 Static version of the `pulseGlow` animation below — use this for a constant glow, `animate-pulseGlow` for a breathing one.
 
+⚠️ `globals.css` also defines a `.text-glow` utility (`text-shadow: none;`) — this is a no-op as written and doesn't apply any glow. Either dead code to remove, or a bug where the intended shadow value was lost; check for usages before touching it.
+
 ---
 
 ## Shadows & Borders
@@ -121,10 +130,13 @@ Border radius scale: `rounded`, `rounded-md`, `rounded-lg`, `rounded-xl`, `round
 
 ## Focus, Selection & Scrollbars
 
-Interactive components use two layered focus treatments:
+`Button` and `Input` declare a themed focus ring:
+`focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`
 
-- Component-level: `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`
-- Global fallback on `*:focus-visible`: `outline: 2px solid #3b82f6; outline-offset: 2px;` — this is the actual blue (`#3b82f6` / `blue-500`) that shows if an element isn't using the ring utilities.
+⚠️ **Known bug:** `--color-ring` isn't defined anywhere in `globals.css` — `@theme inline` only maps `background`, `foreground`, and the two fonts (see Color Tokens). Because these components also set `focus-visible:outline-none`, they suppress the global outline below _and_ have no working ring color, leaving keyboard focus with **no visible indicator** on these components. Needs a `--ring` value in `:root`/`.dark` plus `--color-ring` in `@theme inline` — until fixed, don't reuse `ring-ring` in new components.
+
+Global fallback, used by anything that does _not_ set `outline-none`:
+`*:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }` — the actual blue (`#3b82f6` / `blue-500`) shown when an element isn't overriding it.
 
 Text selection: `::selection { background: rgba(59, 130, 246, 0.3); }` — same blue family, kept consistent with focus and glow.
 
@@ -192,12 +204,24 @@ Covers the neon-blur-blob backgrounds and glowing card borders (see issue #153):
 
 ---
 
+## Housekeeping Notes
+
+`globals.css` has accumulated a few harmless-but-pointless duplications worth cleaning up next time it's touched (none affect rendering, they just add noise):
+
+- `@import "tailwindcss";` is declared twice.
+- The `body { background / color / font-family }` rule is declared twice, identically.
+- `html { ... }` is declared as two separate blocks (once for background/color, once for `scroll-behavior`/scrollbar) — harmless since CSS merges them, but should be one block.
+
+---
+
 ## Best Practices
 
 - Reuse existing CSS variables and the zinc/blue/red palette instead of hardcoding new colors.
 - Follow the established spacing scale (`gap-1`–`gap-2`, `p-2`–`p-3`) for consistent layouts.
-- Prefer `cva`-based variant props (see `Button`) over ad-hoc conditional class strings for any component with more than 2–3 style states.
+- Prefer `cva`-based variant props over ad-hoc conditional class strings for any component with more than 2–3 style states — `Button` doesn't do this yet (see note above) and would benefit from migrating.
 - Use theme-aware (`dark:`) variants for all new UI — never assume light-only.
 - Reuse existing border radius, shadow, and animation utilities before adding new ones.
 - New skeletons should match their real component's spacing/flex structure exactly, not approximate it.
 - If a new component uses a Tailwind opacity-modifier class (`/10`, `/20`, etc.), add the corresponding fallback under the `@supports not (color-mix(...))` block.
+- Don't use `focus-visible:ring-ring` in new components until `--ring`/`--color-ring` is actually defined — it currently resolves to nothing.
+- Give interactive `<button>` components an explicit default `type="button"` so they can't accidentally submit a parent `<form>`.

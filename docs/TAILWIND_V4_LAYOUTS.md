@@ -9,12 +9,13 @@ This guide details the transition to **Tailwind CSS v4** within the WorkSphere p
 Tailwind CSS v4 introduces a revolutionary approach to styling by moving configuration from JavaScript (`tailwind.config.js`) directly into CSS. This change streamlines the development process, improves performance, and leverages modern CSS features like native variables.
 
 ### Key Differences in v4
-| Feature | Tailwind CSS v3 | Tailwind CSS v4 |
-| :--- | :--- | :--- |
-| **Configuration** | `tailwind.config.js` (JavaScript) | `@theme` block in CSS |
-| **Variables** | Manually synced with CSS | Automatic CSS variable generation |
-| **Engine** | PostCSS-based | Lightning CSS (Rust-based) |
-| **Directives** | `@tailwind base`, `@tailwind components` | `@import "tailwindcss"` |
+
+| Feature           | Tailwind CSS v3                          | Tailwind CSS v4                   |
+| :---------------- | :--------------------------------------- | :-------------------------------- |
+| **Configuration** | `tailwind.config.js` (JavaScript)        | `@theme` block in CSS             |
+| **Variables**     | Manually synced with CSS                 | Automatic CSS variable generation |
+| **Engine**        | PostCSS-based                            | Lightning CSS (Rust-based)        |
+| **Directives**    | `@tailwind base`, `@tailwind components` | `@import "tailwindcss"`           |
 
 ---
 
@@ -23,6 +24,7 @@ Tailwind CSS v4 introduces a revolutionary approach to styling by moving configu
 In WorkSphere, we use the `@theme` directive to define our design tokens. These tokens are automatically exposed as CSS variables, allowing for a more predictable and maintainable layout system.
 
 ### Core Layout Variables
+
 The following variables are defined in `src/app/globals.css` and represent the foundational layout tokens for the application:
 
 ```css
@@ -35,14 +37,15 @@ The following variables are defined in `src/app/globals.css` and represent the f
 ```
 
 ### Transitioning Utility Styles to CSS Variables
+
 Instead of hardcoding colors or spacing in every component, we map them to semantic variables. This allows us to update the entire application's look by changing a single value in `globals.css`.
 
-| Old Utility Style | New CSS Variable Pattern | Purpose |
-| :--- | :--- | :--- |
-| `bg-white` | `var(--background)` | Global page background |
-| `text-zinc-950` | `var(--foreground)` | Primary text color |
-| `border-zinc-200` | `var(--border)` | Component borders |
-| `shadow-xl` | `var(--shadow-card)` | Elevated card surfaces |
+| Old Utility Style | New CSS Variable Pattern | Purpose                |
+| :---------------- | :----------------------- | :--------------------- |
+| `bg-white`        | `var(--background)`      | Global page background |
+| `text-zinc-950`   | `var(--foreground)`      | Primary text color     |
+| `border-zinc-200` | `var(--border)`          | Component borders      |
+| `shadow-xl`       | `var(--shadow-card)`     | Elevated card surfaces |
 
 ---
 
@@ -51,6 +54,7 @@ Instead of hardcoding colors or spacing in every component, we map them to seman
 WorkSphere leverages the `@layer utilities` directive to create custom, reusable utility classes that combine multiple Tailwind utilities into semantic hooks.
 
 ### Glassmorphism & Glow Effects
+
 We have defined several custom utilities to maintain a consistent "modern" aesthetic:
 
 ```css
@@ -70,6 +74,7 @@ We have defined several custom utilities to maintain a consistent "modern" aesth
 ```
 
 ### Usage in Components
+
 When building new components, prioritize using these custom utilities to ensure visual consistency:
 
 ```tsx
@@ -86,14 +91,17 @@ When building new components, prioritize using these custom utilities to ensure 
 To maintain a consistent layout, use the following token mappings for spacing, borders, and effects.
 
 ### Spacing & Grid Tokens
-| Token | Value | Context |
-| :--- | :--- | :--- |
-| `--spacing-page` | `2rem` | Main container padding |
-| `--grid-gap` | `1.5rem` | Standard gap between grid items |
-| `--radius-card` | `1rem` | Border radius for main UI cards |
+
+| Token            | Value    | Context                         |
+| :--------------- | :------- | :------------------------------ |
+| `--spacing-page` | `2rem`   | Main container padding          |
+| `--grid-gap`     | `1.5rem` | Standard gap between grid items |
+| `--radius-card`  | `1rem`   | Border radius for main UI cards |
 
 ### Responsive Breakpoints
+
 WorkSphere uses the standard Tailwind v4 breakpoints for layout transitions:
+
 - `sm`: 640px (Mobile)
 - `md`: 768px (Tablet)
 - `lg`: 1024px (Laptop)
@@ -122,6 +130,30 @@ Tailwind v4 uses `color-mix()` internally for opacity modifiers (e.g., `bg-blue-
 2. **CSS-First**: If you need a new theme value, add it to the `@theme` block in `globals.css` rather than a JavaScript config.
 3. **Mobile-First**: Always write your default classes for mobile and use `md:`, `lg:`, etc., for larger screens.
 4. **Prefer Custom Utilities**: Use `.glass-card` instead of repeating the background, border, and shadow classes manually.
+
+---
+
+## 7. v4 Specific Layout Configurations
+
+### Border Spacing Tokens
+
+- Utilize the new `--spacing-` variables to manage consistent margins and padding across layouts.
+- For border-spacing in tables or grid layouts, rely strictly on the native v4 spacing scale (e.g., `border-spacing-4`) rather than arbitrary values.
+
+### Transition Classes
+
+- Apply standard v4 transition classes (`transition-all ease-in-out duration-300`) for smooth UI interactions.
+- Rely on the default CSS variable transitions provided by the Lightning CSS engine rather than hardcoding cubic-bezier curves in JS.
+
+### Flex Configurations
+
+- Standard flexbox layouts should avoid arbitrary gap values.
+- Stick to predefined variables (like `--grid-gap`) and native utility classes (`gap-4`, `gap-6`) to ensure flex children scale proportionally across viewports.
+
+### Theme Selector State Overrides
+
+- Ensure dark mode and custom theme selectors properly override default styling using the new v4 CSS syntax.
+- Use the `dark:` variant mapped to the specific `--color-` overrides defined in your `@theme` block, avoiding manual `#hex` toggles in the markup.
 
 ---
 

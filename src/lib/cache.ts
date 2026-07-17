@@ -3,6 +3,7 @@ export interface Cache<T> {
   set(key: string, value: T): void;
   invalidate(key: string): void;
   clear(): void;
+  dispose?(): void;
 }
 
 interface CacheItem<T> {
@@ -14,6 +15,7 @@ export class LRUCache<T> implements Cache<T> {
   private capacity: number;
   private ttlMs: number;
   private cache: Map<string, CacheItem<T>>;
+  private cleanupInterval: ReturnType<typeof setInterval>;
 
   /**
    * @param capacity Maximum number of items the cache can hold
@@ -26,6 +28,28 @@ export class LRUCache<T> implements Cache<T> {
     this.capacity = capacity;
     this.ttlMs = ttlMs;
     this.cache = new Map();
+
+    const intervalTime = Math.min(ttlMs, 60000); // Check at most every 60 seconds
+    this.cleanupInterval = setInterval(
+      () => this.cleanup(),
+      Math.max(1000, intervalTime),
+    );
+
+    if (
+      this.cleanupInterval &&
+      typeof (this.cleanupInterval as any).unref === "function"
+    ) {
+      (this.cleanupInterval as any).unref();
+    }
+  }
+
+  private cleanup(): void {
+    const now = Date.now();
+    for (const [key, item] of this.cache.entries()) {
+      if (now > item.expiresAt) {
+        this.cache.delete(key);
+      }
+    }
   }
 
   get(key: string): T | undefined {
@@ -69,6 +93,11 @@ export class LRUCache<T> implements Cache<T> {
   }
 
   clear(): void {
+    this.cache.clear();
+  }
+
+  dispose(): void {
+    clearInterval(this.cleanupInterval);
     this.cache.clear();
   }
 }

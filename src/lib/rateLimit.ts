@@ -5,10 +5,7 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-// ─── Upstash (production) ────────────────────────────────────────────────────
-let upstashRatelimit: {
-  limit: (identifier: string) => Promise<{ success: boolean; remaining: number; reset: number }>;
-} | null = null;
+const upstashLimiters = new Map<number, any>();
 
 function getUpstashRatelimit(limitPerMinute: number) {
   if (
@@ -37,7 +34,7 @@ function getUpstashRatelimit(limitPerMinute: number) {
       prefix: "worksphere:ratelimit",
     }) as {
       limit: (
-        identifier: string
+        identifier: string,
       ) => Promise<{ success: boolean; remaining: number; reset: number }>;
     };
   } catch {
@@ -78,11 +75,16 @@ function memRateLimit(identifier: string, limit: number): boolean {
 
 function memGetInfo(
   identifier: string,
-  limit: number
+  limit: number,
 ): { count: number; remaining: number; resetTime: number; isLimited: boolean } {
   const entry = memStore.get(identifier);
   if (!entry || Date.now() > entry.resetTime) {
-    return { count: 0, remaining: limit, resetTime: Date.now() + WINDOW_MS, isLimited: false };
+    return {
+      count: 0,
+      remaining: limit,
+      resetTime: Date.now() + WINDOW_MS,
+      isLimited: false,
+    };
   }
   return {
     count: entry.count,
@@ -100,12 +102,17 @@ function memGetInfo(
  */
 export async function rateLimit(
   identifier: string,
-  limit = 10
+  limit = 10,
 ): Promise<boolean> {
-  const rl = upstashRatelimit ?? getUpstashRatelimit(limit);
+  let rl = upstashLimiters.get(limit);
+  if (!rl) {
+    rl = getUpstashRatelimit(limit);
+    if (rl) {
+      upstashLimiters.set(limit, rl);
+    }
+  }
 
   if (rl) {
-    upstashRatelimit = rl; // cache for subsequent calls
     const { success } = await rl.limit(identifier);
     return success;
   }
@@ -119,8 +126,13 @@ export async function rateLimit(
  */
 export function getRateLimitInfo(
   identifier: string,
-  limit = 10
-): { count: number; remaining: number; resetTime: number; isLimited: boolean } | null {
+  limit = 10,
+): {
+  count: number;
+  remaining: number;
+  resetTime: number;
+  isLimited: boolean;
+} | null {
   return memGetInfo(identifier, limit);
 }
 

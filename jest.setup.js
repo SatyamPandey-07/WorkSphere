@@ -141,6 +141,11 @@ jest.mock("@clerk/nextjs", () => ({
   UserButton: () => null,
 }));
 
+jest.mock("@clerk/nextjs/server", () => ({
+  auth: jest.fn().mockResolvedValue({ userId: "test-user" }),
+  currentUser: jest.fn().mockResolvedValue({ id: "test-user" }),
+}));
+
 // Mock fetch
 global.fetch = jest.fn(() =>
   Promise.resolve({
@@ -148,3 +153,21 @@ global.fetch = jest.fn(() =>
     json: () => Promise.resolve({}),
   }),
 );
+
+// Mock groq-sdk
+jest.mock("groq-sdk", () => {
+  const GroqMock = jest.fn().mockImplementation(() => ({
+    chat: {
+      completions: {
+        create: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: "" } }],
+        }),
+      },
+    },
+  }));
+  return {
+    __esModule: true,
+    default: GroqMock,
+    Groq: GroqMock,
+  };
+});

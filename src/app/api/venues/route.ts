@@ -13,39 +13,74 @@ export async function GET(req: NextRequest) {
   try {
     const searchParams = req.nextUrl.searchParams;
 
+    const pageParam = searchParams.get("page");
+    const limitParam = searchParams.get("limit");
+
+    const page = pageParam ? Math.max(1, parseInt(pageParam, 10)) : 1;
+    const limit = limitParam
+      ? Math.min(100, Math.max(1, parseInt(limitParam, 10)))
+      : 50;
+    const skip = (page - 1) * limit;
+
     // Fallback: If no coordinates are provided, return all venues
     if (!searchParams.get("lat") || !searchParams.get("lng")) {
-      const venues = await prisma.venue.findMany();
-      return NextResponse.json(venues);
+      const total = await prisma.venue.count();
+      const venues = await prisma.venue.findMany({
+        skip,
+        take: limit,
+        include: {
+          _count: {
+            select: { favorites: true, ratings: true },
+          },
+        },
+      });
+      return NextResponse.json({
+        venues,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+          hasNextPage: skip + venues.length < total,
+        },
+      });
     }
 
     // Validate search params with Zod
-    const validation = validateRequest(venueSearchSchema, {
-      lat: searchParams.get("lat"),
-      lng: searchParams.get("lng"),
-      radius: searchParams.get("radius"),
-      category: searchParams.get("category"),
-      wifi: searchParams.get("wifi"),
-      outlets: searchParams.get("outlets"),
-      quiet: searchParams.get("quiet"),
-      ergonomic: searchParams.get("ergonomic"),
-      outletDensity: searchParams.get("outletDensity"),
-      wifiSpeedBand: searchParams.get("wifiSpeedBand"),
-      hasPhoneBooths: searchParams.get("hasPhoneBooths"),
-      hasNoMusic: searchParams.get("hasNoMusic"),
-      hasQuietZone: searchParams.get("hasQuietZone"),
-      lighting: searchParams.get("lighting"),
-      petsAllowedIndoors: searchParams.get("petsAllowedIndoors"),
-      patioOnly: searchParams.get("patioOnly"),
-      waterBowlsProvided: searchParams.get("waterBowlsProvided"),
-      dogFriendly: searchParams.get("dogFriendly"),
-      catsAllowed: searchParams.get("catsAllowed"),
-      singleOriginBeans: searchParams.get("singleOriginBeans"),
-      specialtyEspresso: searchParams.get("specialtyEspresso"),
-      oatAlmondMilk: searchParams.get("oatAlmondMilk"),
-      pourOverAvailable: searchParams.get("pourOverAvailable"),
-      musicStyle: searchParams.get("musicStyle"),
-    });
+    const rawData: any = {};
+    const keys = [
+      "lat",
+      "lng",
+      "radius",
+      "category",
+      "wifi",
+      "outlets",
+      "quiet",
+      "ergonomic",
+      "outletDensity",
+      "wifiSpeedBand",
+      "hasPhoneBooths",
+      "hasNoMusic",
+      "hasQuietZone",
+      "lighting",
+      "petsAllowedIndoors",
+      "patioOnly",
+      "waterBowlsProvided",
+      "dogFriendly",
+      "catsAllowed",
+      "singleOriginBeans",
+      "specialtyEspresso",
+      "oatAlmondMilk",
+      "pourOverAvailable",
+      "musicStyle",
+    ];
+    for (const key of keys) {
+      const val = searchParams.get(key);
+      if (val !== null) {
+        rawData[key] = val;
+      }
+    }
+    const validation = validateRequest(venueSearchSchema, rawData);
 
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
@@ -193,6 +228,7 @@ export async function GET(req: NextRequest) {
       where.lighting = lighting;
     }
 
+    const total = await prisma.venue.count({ where });
     const venues = await prisma.venue.findMany({
       where,
       include: {
@@ -200,10 +236,20 @@ export async function GET(req: NextRequest) {
           select: { favorites: true, ratings: true },
         },
       },
-      take: 50,
+      skip,
+      take: limit,
     });
 
-    return NextResponse.json({ venues });
+    return NextResponse.json({
+      venues,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: skip + venues.length < total,
+      },
+    });
   } catch (error) {
     console.error("GET /api/venues error:", error);
     return NextResponse.json(

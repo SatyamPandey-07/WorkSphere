@@ -1,7 +1,7 @@
 "use client";
 
 import { useUser } from "@clerk/nextjs";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -201,6 +201,45 @@ const Map = ({
 }) => {
   const clerkUser = useUser();
   const { latitude, longitude } = location;
+  const routingPanelRef = useRef<HTMLDivElement>(null);
+
+  // Prevent touch/mouse/scroll event propagation on overlays from bubbling to Leaflet Map
+  useEffect(() => {
+    const el = routingPanelRef.current;
+    if (!el) return;
+
+    if (L && L.DomEvent) {
+      L.DomEvent.disableClickPropagation(el);
+      L.DomEvent.disableScrollPropagation(el);
+    }
+
+    // Stop touch and pointer events from propagating to prevent map dragging/panning
+    const stopPropagation = (e: Event) => {
+      e.stopPropagation();
+    };
+
+    const events = [
+      "touchstart",
+      "touchmove",
+      "touchend",
+      "pointerdown",
+      "pointermove",
+      "pointerup",
+      "mousedown",
+      "mousemove",
+      "mouseup",
+    ];
+
+    events.forEach((event) => {
+      el.addEventListener(event, stopPropagation, { passive: true });
+    });
+
+    return () => {
+      events.forEach((event) => {
+        el.removeEventListener(event, stopPropagation);
+      });
+    };
+  }, []);
 
   // Settled zoom level (debounced via ZoomWatcher), used to keep spiderfied
   // marker offsets at a consistent on-screen pixel separation regardless of
@@ -707,7 +746,10 @@ const Map = ({
           );
         })}
         {/* MULTI-STOP ROUTING OPTIMIZER CONTROL INTERFACE OVERLAY */}
-        <div className="absolute bottom-6 left-6 z-[1000] w-80 rounded-xl border border-zinc-800 bg-zinc-950/90 p-4 text-white shadow-2xl backdrop-blur-md">
+        <div
+          ref={routingPanelRef}
+          className="absolute bottom-6 left-6 z-[1000] w-80 rounded-xl border border-zinc-800 bg-zinc-950/90 p-4 text-white shadow-2xl backdrop-blur-md"
+        >
           <div className="mb-3 flex items-center justify-between border-b border-zinc-800 pb-2">
             <h3 className="font-semibold text-sm tracking-wide text-zinc-200">
               📍 ROUTING OPTIMIZER

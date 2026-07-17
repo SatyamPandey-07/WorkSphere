@@ -50,15 +50,49 @@ interface MemEntry {
 const memStore = new Map<string, MemEntry>();
 const WINDOW_MS = 60_000;
 
-function memRateLimit(identifier: string, limit: number): boolean {
+interface RateLimitInfo {
+  count: number;
+  remaining: number;
+  resetTime: number;
+  isLimited: boolean;
+}
+const rateLimitInfoStore = new Map<string, RateLimitInfo>();
+
+// Run cleanup in the background instead of on the request path.
+const CLEANUP_INTERVAL_MS = 60_000;
+
+function cleanupExpiredEntries() {
   const now = Date.now();
 
-  // Periodic cleanup — keep memory from growing unbounded
-  if (memStore.size > 10_000) {
-    for (const [k, v] of memStore) {
-      if (now > v.resetTime) memStore.delete(k);
+  for (const [key, value] of memStore) {
+    if (now > value.resetTime) {
+      memStore.delete(key);
     }
   }
+
+  for (const [key, value] of rateLimitInfoStore) {
+    if (now > value.resetTime) {
+      rateLimitInfoStore.delete(key);
+    }
+  }
+}
+
+// Start a single background cleanup task.
+const globalCleanup = globalThis as typeof globalThis & {
+  __rateLimitCleanupTimer?: NodeJS.Timeout;
+};
+
+if (!globalCleanup.__rateLimitCleanupTimer) {
+  globalCleanup.__rateLimitCleanupTimer = setInterval(
+    cleanupExpiredEntries,
+    CLEANUP_INTERVAL_MS,
+  );
+
+  globalCleanup.__rateLimitCleanupTimer.unref?.();
+}
+
+function memRateLimit(identifier: string, limit: number): boolean {
+  const now = Date.now();
 
   const entry = memStore.get(identifier);
 
@@ -120,11 +154,7 @@ export async function rateLimit(
   return memRateLimit(identifier, limit);
 }
 
-/**
- * Returns rate-limit metadata for the given identifier.
- * Falls back to in-memory data when Upstash is not configured.
- */
-export function getRateLimitInfo(
+export async function getRateLimitInfo(
   identifier: string,
   limit = 10,
 ): {
@@ -140,7 +170,9 @@ export function getRateLimitInfo(
 export function resetRateLimit(identifier?: string): void {
   if (identifier) {
     memStore.delete(identifier);
+    rateLimitInfoStore.delete(identifier);
   } else {
     memStore.clear();
+    rateLimitInfoStore.clear();
   }
 }

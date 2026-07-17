@@ -38,6 +38,9 @@ createdVenues     Venue[]            @relation("VenueCreator")
   webhookEndpoints  WebhookEndpoint[]
   phoneNumber       String?
   smsAlertsEnabled  Boolean            @default(false)
+  notificationStart String?
+  notificationEnd   String?
+  timezone          String?            @default("UTC")
   folderUpvotes     FolderUpvote[]
 }
 
@@ -99,7 +102,7 @@ model Venue {
 model VenueRating {
   id                String   @id @default(cuid())
   userId            String
-  user              User     @relation(fields: [userId], references: [id])
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId           String
   venue             Venue    @relation(fields: [venueId], references: [id])
   wifiQuality       Int // 1-5
@@ -132,12 +135,13 @@ model VenueRating {
 
   @@unique([userId, venueId])
   @@index([venueId])
+  @@index([createdAt])
 }
 
 model Favorite {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String
   venue     Venue    @relation(fields: [venueId], references: [id])
   createdAt DateTime @default(now())
@@ -149,7 +153,7 @@ model Favorite {
 model Conversation {
   id        String    @id @default(cuid())
   userId    String
-  user      User      @relation(fields: [userId], references: [id])
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String?   @default("Work Space Search")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -161,7 +165,7 @@ model Conversation {
 model Message {
   id             String       @id @default(cuid())
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   role           String // user, assistant
   content        String
   agentName      String?
@@ -173,7 +177,7 @@ model Message {
 model Booking {
   id              String        @id @default(cuid())
   userId          String
-  user            User          @relation(fields: [userId], references: [id])
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId         String
   venue           Venue         @relation(fields: [venueId], references: [id])
   date            String
@@ -194,6 +198,7 @@ model Booking {
   @@index([userId])
   @@index([venueId])
   @@index([seatId])
+  @@index([createdAt])
 }
 
 model BookingGuest {
@@ -229,7 +234,7 @@ enum BookingStatus {
 model UserMemory {
   id        String                       @id @default(cuid())
   userId    String
-  user      User                         @relation(fields: [userId], references: [id])
+  user      User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
   content   String
   embedding Unsupported("vector(1024)")?
   createdAt DateTime                     @default(now())
@@ -372,6 +377,8 @@ model WifiTelemetry {
   timestamp  DateTime @default(now())
 
   @@index([venueId])
+  @@index([timestamp])
+  @@index([venueId, timestamp])
 }
 
 enum FlagType {
@@ -409,6 +416,8 @@ model AdminAuditLog {
   entityId   String
   details    String?
   createdAt  DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model Folder {
@@ -499,6 +508,8 @@ model WebhookDeliveryLog {
   createdAt  DateTime        @default(now())
 
   @@index([endpointId])
+  @@index([createdAt])
+  @@index([endpointId, createdAt])
 }
 
 model FolderUpvote {

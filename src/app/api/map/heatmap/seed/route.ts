@@ -7,7 +7,7 @@ export async function GET() {
 
     // 1. Create a mock venue near your current Silvassa coordinates if none exist
     let venue = await prisma.venue.findFirst({
-      where: { name: "Neural Workspace Hub" }
+      where: { name: "Neural Workspace Hub" },
     });
 
     if (!venue) {
@@ -15,12 +15,35 @@ export async function GET() {
         data: {
           name: "Neural Workspace Hub",
           placeId: "mock-silvassa-1",
-          latitude: 20.266,   // Match your current map center coordinate grid
+          latitude: 20.266, // Match your current map center coordinate grid
           longitude: 73.016,
           category: "coworking",
           address: "Silvassa Center, DNH",
           rating: 4.8,
-        }
+        },
+      });
+    }
+
+    // Ensure mock users exist
+    let user1 = await prisma.user.findUnique({ where: { id: "user_mock_1" } });
+    if (!user1) {
+      user1 = await prisma.user.create({
+        data: {
+          id: "user_mock_1",
+          email: "tester@worksphere.com",
+          firstName: "Tester",
+        },
+      });
+    }
+
+    let user2 = await prisma.user.findUnique({ where: { id: "user_mock_2" } });
+    if (!user2) {
+      user2 = await prisma.user.create({
+        data: {
+          id: "user_mock_2",
+          email: "dev@worksphere.com",
+          firstName: "Dev",
+        },
       });
     }
 
@@ -34,7 +57,7 @@ export async function GET() {
           time: "10:00 AM",
           customerEmail: "tester@worksphere.com",
           confirmationId: `CONF-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-          status: "CONFIRMED"
+          status: "CONFIRMED",
         },
         {
           userId: "user_mock_2",
@@ -43,10 +66,10 @@ export async function GET() {
           time: "11:30 AM",
           customerEmail: "dev@worksphere.com",
           confirmationId: `CONF-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
-          status: "CONFIRMED"
-        }
+          status: "CONFIRMED",
+        },
       ],
-      skipDuplicates: true
+      skipDuplicates: true,
     });
 
     // 3. Inject a crowdsourced noise review to spike the heatmap color metric to purple
@@ -57,12 +80,18 @@ export async function GET() {
         wifiQuality: 5,
         hasOutlets: true,
         noiseLevel: "loud",
-        comment: "Very packed today!"
-      }
+        comment: "Very packed today!",
+      },
     });
 
-    return NextResponse.json({ success: true, message: "Database seeded for today successfully!" });
+    return NextResponse.json({
+      success: true,
+      message: "Database seeded for today successfully!",
+    });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: err.message },
+      { status: 500 },
+    );
   }
 }

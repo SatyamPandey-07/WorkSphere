@@ -7,6 +7,7 @@ import crypto from 'crypto';
 import { isValidDiscordWebhookUrl } from '@/lib/discord';
 import { isValidTelegramWebhookUrl } from '@/lib/telegram';
 import { ensureUserExists } from '@/lib/auth';
+import { isSafeWebhookUrl } from '@/lib/ssrfValidation';
 
 export async function createWebhookEndpoint(data: { url: string, eventTypes: any[] }) {
   const { userId } = await auth();
@@ -21,6 +22,12 @@ export async function createWebhookEndpoint(data: { url: string, eventTypes: any
 
   // Generate a random secret for HMAC
   const secret = 'whsec_' + crypto.randomBytes(24).toString('base64');
+
+  // SSRF Protection
+  const safetyCheck = await isSafeWebhookUrl(data.url);
+  if (!safetyCheck.isSafe) {
+    throw new Error(`Invalid webhook URL: ${safetyCheck.reason}`);
+  }
 
   await prisma.webhookEndpoint.create({
     data: {

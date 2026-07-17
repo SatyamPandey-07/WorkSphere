@@ -102,7 +102,7 @@ model Venue {
 model VenueRating {
   id                String   @id @default(cuid())
   userId            String
-  user              User     @relation(fields: [userId], references: [id])
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId           String
   venue             Venue    @relation(fields: [venueId], references: [id])
   wifiQuality       Int // 1-5
@@ -141,7 +141,7 @@ model VenueRating {
 model Favorite {
   id        String   @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String
   venue     Venue    @relation(fields: [venueId], references: [id])
   createdAt DateTime @default(now())
@@ -153,7 +153,7 @@ model Favorite {
 model Conversation {
   id        String    @id @default(cuid())
   userId    String
-  user      User      @relation(fields: [userId], references: [id])
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String?   @default("Work Space Search")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -177,7 +177,7 @@ model Message {
 model Booking {
   id              String        @id @default(cuid())
   userId          String
-  user            User          @relation(fields: [userId], references: [id])
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId         String
   venue           Venue         @relation(fields: [venueId], references: [id])
   date            String
@@ -234,7 +234,7 @@ enum BookingStatus {
 model UserMemory {
   id        String                       @id @default(cuid())
   userId    String
-  user      User                         @relation(fields: [userId], references: [id])
+  user      User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
   content   String
   embedding Unsupported("vector(1024)")?
   createdAt DateTime                     @default(now())

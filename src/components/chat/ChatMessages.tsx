@@ -817,13 +817,14 @@ interface ChatInputProps {
 }
 
 export function ChatInput({
-  input,
+  input = "",
   isLoading,
   onInputChange,
   onSubmit,
 }: ChatInputProps) {
+  const safeInput = input || "";
   const MAX_CHARS = 2000;
-  const charCount = input.length;
+  const charCount = safeInput.length;
   const isOverLimit = charCount > MAX_CHARS;
 
   let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
@@ -842,8 +843,8 @@ export function ChatInput({
       >
         <input
           type="text"
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
+          value={safeInput}
+          onChange={(e) => onInputChange(e.target.value ?? "")}
           placeholder="Where's the focus mode hotspot?"
           disabled={isLoading}
           className="flex-1 px-4 py-3 bg-transparent text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 text-sm font-bold"

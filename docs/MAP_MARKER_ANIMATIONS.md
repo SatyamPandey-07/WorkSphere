@@ -45,7 +45,7 @@ The implementation specifies custom `iconSize` values to control marker dimensio
 Example:
 
 ```ts
-iconSize: [32, 32];
+iconSize: [32, 32],
 ```
 
 Different marker types may use different dimensions depending on their visual appearance.
@@ -59,7 +59,7 @@ Different marker types may use different dimensions depending on their visual ap
 Example:
 
 ```ts
-iconAnchor: [16, 32];
+iconAnchor: [16, 32],
 ```
 
 Using anchors keeps markers accurately positioned regardless of icon size.
@@ -115,7 +115,11 @@ Because the marker is rendered as HTML, standard CSS styling and animations can 
 The map includes a dedicated keyframe animation for animated markers.
 
 ```css
-@keyframes markerPulse;
+@keyframes markerPulse {
+  0%   { transform: scale(1); opacity: 1; }
+  70%  { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
 ```
 
 The animation is applied using:

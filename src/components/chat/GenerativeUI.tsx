@@ -11,7 +11,9 @@ import {
 } from "recharts";
 import { AlertCircle, BarChart2 } from "lucide-react";
 
-const InteractiveMap = dynamic(() => import("./InteractiveMap"), { ssr: false });
+const InteractiveMap = dynamic(() => import("./InteractiveMap"), {
+  ssr: false,
+});
 
 // --- Error Boundary ---
 interface ErrorBoundaryProps {
@@ -24,7 +26,10 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-export class ComponentErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ComponentErrorBoundary extends Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -35,7 +40,11 @@ export class ComponentErrorBoundary extends Component<ErrorBoundaryProps, ErrorB
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error(`Error rendering generative component ${this.props.componentName}:`, error, errorInfo);
+    console.error(
+      `Error rendering generative component ${this.props.componentName}:`,
+      error,
+      errorInfo,
+    );
   }
 
   render() {
@@ -44,8 +53,12 @@ export class ComponentErrorBoundary extends Component<ErrorBoundaryProps, ErrorB
         <div className="flex items-center gap-2 p-3 my-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
           <AlertCircle className="w-5 h-5 flex-shrink-0" />
           <div className="flex flex-col">
-            <span className="font-bold">Failed to render {this.props.componentName}</span>
-            <span className="text-xs opacity-80">{this.state.error?.message}</span>
+            <span className="font-bold">
+              Failed to render {this.props.componentName}
+            </span>
+            <span className="text-xs opacity-80">
+              {this.state.error?.message}
+            </span>
           </div>
         </div>
       );
@@ -56,7 +69,13 @@ export class ComponentErrorBoundary extends Component<ErrorBoundaryProps, ErrorB
 
 // --- Dynamic Components ---
 
-export function DataChart({ data, columns }: { data: any[]; columns: string[] }) {
+export function DataChart({
+  data,
+  columns,
+}: {
+  data: any[];
+  columns: string[];
+}) {
   if (!data || data.length === 0) return <div>No data available</div>;
 
   const xAxisKey = columns[0];
@@ -68,21 +87,41 @@ export function DataChart({ data, columns }: { data: any[]; columns: string[] })
         <BarChart2 className="w-4 h-4 text-blue-500" />
         Data Visualization
       </div>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
-          <XAxis dataKey={xAxisKey} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6b7280" }} />
-          <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: "#6b7280" }} />
-          <Tooltip 
-            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-            cursor={{ fill: 'rgba(0,0,0,0.05)' }}
+      <ResponsiveContainer width="99%" height="100%" debounce={50}>
+        <BarChart
+          data={data}
+          margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            vertical={false}
+            stroke="#e5e7eb"
+          />
+          <XAxis
+            dataKey={xAxisKey}
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 10, fill: "#6b7280" }}
+          />
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            tick={{ fontSize: 10, fill: "#6b7280" }}
+          />
+          <Tooltip
+            contentStyle={{
+              borderRadius: "12px",
+              border: "none",
+              boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1)",
+            }}
+            cursor={{ fill: "rgba(0,0,0,0.05)" }}
           />
           {dataKeys.map((key, i) => (
-            <Bar 
-              key={key} 
-              dataKey={key} 
-              fill={i === 0 ? "#3b82f6" : i === 1 ? "#10b981" : "#f59e0b"} 
-              radius={[4, 4, 0, 0]} 
+            <Bar
+              key={key}
+              dataKey={key}
+              fill={i === 0 ? "#3b82f6" : i === 1 ? "#10b981" : "#f59e0b"}
+              radius={[4, 4, 0, 0]}
               maxBarSize={40}
             />
           ))}
@@ -92,11 +131,15 @@ export function DataChart({ data, columns }: { data: any[]; columns: string[] })
   );
 }
 
-
-
-export function DataTable({ data, columns }: { data: any[]; columns: string[] }) {
+export function DataTable({
+  data,
+  columns,
+}: {
+  data: any[];
+  columns: string[];
+}) {
   if (!data || data.length === 0) return <div>No data to display</div>;
-  
+
   return (
     <div className="w-full mt-4 overflow-hidden border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm">
       <div className="overflow-x-auto">
@@ -104,15 +147,23 @@ export function DataTable({ data, columns }: { data: any[]; columns: string[] })
           <thead className="text-xs uppercase bg-zinc-50 dark:bg-zinc-900/50 text-zinc-500 font-black tracking-wider">
             <tr>
               {columns.map((col) => (
-                <th key={col} className="px-4 py-3">{col}</th>
+                <th key={col} className="px-4 py-3">
+                  {col}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {data.map((row, i) => (
-              <tr key={i} className="border-t border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors">
+              <tr
+                key={i}
+                className="border-t border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
+              >
                 {columns.map((col) => (
-                  <td key={col} className="px-4 py-3 text-zinc-700 dark:text-zinc-300 font-medium">
+                  <td
+                    key={col}
+                    className="px-4 py-3 text-zinc-700 dark:text-zinc-300 font-medium"
+                  >
                     {row[col]}
                   </td>
                 ))}
@@ -130,7 +181,7 @@ export function DataTable({ data, columns }: { data: any[]; columns: string[] })
 export function MessageRenderer({ content }: { content: string }) {
   // We use a regex to find <ui-component name="..." props='{...}' />
   const regex = /<ui-component\s+name="([^"]+)"\s+props='([^']+)'\s*\/>/g;
-  
+
   const parts: ReactNode[] = [];
   let lastIndex = 0;
   let match;
@@ -140,7 +191,7 @@ export function MessageRenderer({ content }: { content: string }) {
       parts.push(
         <span key={`text-${lastIndex}`} className="whitespace-pre-wrap">
           {content.slice(lastIndex, match.index)}
-        </span>
+        </span>,
       );
     }
 
@@ -161,15 +212,21 @@ export function MessageRenderer({ content }: { content: string }) {
 
     if (ComponentToRender) {
       parts.push(
-        <ComponentErrorBoundary key={`component-${match.index}`} componentName={componentName}>
+        <ComponentErrorBoundary
+          key={`component-${match.index}`}
+          componentName={componentName}
+        >
           <ComponentToRender {...(props as any)} />
-        </ComponentErrorBoundary>
+        </ComponentErrorBoundary>,
       );
     } else {
       parts.push(
-        <div key={`unknown-${match.index}`} className="text-red-500 text-xs mt-2">
+        <div
+          key={`unknown-${match.index}`}
+          className="text-red-500 text-xs mt-2"
+        >
           Unknown component: {componentName}
-        </div>
+        </div>,
       );
     }
 
@@ -180,7 +237,7 @@ export function MessageRenderer({ content }: { content: string }) {
     parts.push(
       <span key={`text-${lastIndex}`} className="whitespace-pre-wrap">
         {content.slice(lastIndex)}
-      </span>
+      </span>,
     );
   }
 

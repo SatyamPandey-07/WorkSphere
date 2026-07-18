@@ -19,6 +19,14 @@ const THEME_INIT_SCRIPT = `
     root.classList.toggle("dark", theme === "dark");
     root.style.colorScheme = theme;
   } catch (e) {}
+
+  try {
+    window.addEventListener("error", function (e) {
+      if (e.message && (e.message.indexOf("ResizeObserver") >= 0 || e.message.indexOf("Resize observer") >= 0)) {
+        e.stopImmediatePropagation();
+      }
+    });
+  } catch (e) {}
 })();
 `;
 

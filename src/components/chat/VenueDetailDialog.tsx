@@ -823,7 +823,11 @@ export function VenueDetailDialog({
                     Expected speeds based on crowd telemetry
                   </p>
                   <div className="h-40 w-full mt-2">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer
+                      width="99%"
+                      height="100%"
+                      debounce={50}
+                    >
                       <BarChart data={wifiPredictions}>
                         <XAxis
                           dataKey="time"

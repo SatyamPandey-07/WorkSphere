@@ -1,21 +1,26 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+// Add types for Prisma responses
+type VenueData = {
+  id: string;
+  latitude: number;
+  longitude: number;
+};
+
+type ActiveBookingGroup = {
+  venueId: string;
+  _count: {
+    id: number;
+  };
+};
+
+type RatingData = {
+  venueId: string;
+  noiseLevel: string;
+};
 
 export async function GET() {
-  /* =========================================================================
-     TEMPORARY MOCK DATA FOR ISSUE #85 VISUAL TESTING
-     ========================================================================= */
-  const mockHeatmapPoints = [
-    [20.268, 73.018, 0.95], // High Activity (Neon Purple/Pink)
-    [20.265, 73.015, 0.75], // Medium-High (Velvet Purple)
-    [20.262, 73.020, 0.50], // Moderate (Bright Blue)
-    [20.270, 73.012, 0.35], // Low Activity (Deep Blue)
-  ];
-
-  return NextResponse.json({ success: true, data: mockHeatmapPoints });
-
-  /* =========================================================================
-     ORIGINAL DATABASE LOGIC (COMMENTED OUT FOR NOW)
-     =========================================================================
   try {
     const todayStr = new Date().toISOString().split("T")[0];
 
@@ -50,23 +55,28 @@ export async function GET() {
     });
 
     const heatmapPoints = (venues as VenueData[]).map((venue: VenueData) => {
-      const bookingCount = (activeBookings as ActiveBookingGroup[]).find(
-        (b: ActiveBookingGroup) => b.venueId === venue.id
-      )?._count.id || 0;
-      
+      const bookingCount =
+        (activeBookings as ActiveBookingGroup[]).find(
+          (b: ActiveBookingGroup) => b.venueId === venue.id,
+        )?._count.id || 0;
+
       const venueNoiseRatings = (recentRatings as RatingData[]).filter(
-        (r: RatingData) => r.venueId === venue.id
+        (r: RatingData) => r.venueId === venue.id,
       );
-      
-      let noiseScore = 0.2; 
-      
+
+      let noiseScore = 0.2;
+
       if (venueNoiseRatings.length > 0) {
-        const loudCount = venueNoiseRatings.filter((r: RatingData) => r.noiseLevel === "loud").length;
-        const moderateCount = venueNoiseRatings.filter((r: RatingData) => r.noiseLevel === "moderate").length;
-        noiseScore += (loudCount * 0.4) + (moderateCount * 0.2);
+        const loudCount = venueNoiseRatings.filter(
+          (r: RatingData) => r.noiseLevel === "loud",
+        ).length;
+        const moderateCount = venueNoiseRatings.filter(
+          (r: RatingData) => r.noiseLevel === "moderate",
+        ).length;
+        noiseScore += loudCount * 0.4 + moderateCount * 0.2;
       }
 
-      const weight = Math.min(0.1 + (bookingCount * 0.2) + noiseScore, 1.0);
+      const weight = Math.min(0.1 + bookingCount * 0.2 + noiseScore, 1.0);
 
       return [venue.latitude, venue.longitude, weight];
     });
@@ -74,7 +84,9 @@ export async function GET() {
     return NextResponse.json({ success: true, data: heatmapPoints });
   } catch (error) {
     console.error("Heatmap calculation metrics failed:", error);
-    return NextResponse.json({ success: false, error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
-  ========================================================================= */
 }

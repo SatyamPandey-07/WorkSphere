@@ -70,6 +70,12 @@ export function BookingModal({
   const [guestInviteStatus, setGuestInviteStatus] = useState<
     "idle" | "sending" | "done"
   >("idle");
+  const [receiptDialogBookingId, setReceiptDialogBookingId] = useState<
+    string | null
+  >(null);
+  const [showTaxId, setShowTaxId] = useState(false);
+  const [includeNotes, setIncludeNotes] = useState(false);
+  const [showLogo, setShowLogo] = useState(true);
 
   const getFilteredHistory = () => {
     if (dateFilter === "all") return history;
@@ -151,7 +157,22 @@ export function BookingModal({
   };
 
   const handleDownloadSingle = (bookingId: string) => {
-    window.open(`/api/bookings/${bookingId}/download`, "_blank");
+    setReceiptDialogBookingId(bookingId);
+    setShowTaxId(false);
+    setIncludeNotes(false);
+    setShowLogo(true);
+  };
+
+  const confirmDownloadSingle = () => {
+    if (!receiptDialogBookingId) return;
+    const params = new URLSearchParams();
+    if (showTaxId) params.append("showTaxId", "true");
+    if (includeNotes) params.append("includeNotes", "true");
+    if (showLogo) params.append("showLogo", "true");
+
+    const url = `/api/bookings/${receiptDialogBookingId}/download${params.toString() ? `?${params.toString()}` : ""}`;
+    window.open(url, "_blank");
+    setReceiptDialogBookingId(null);
   };
 
   const handleBulkExport = async (format: "pdf" | "csv") => {
@@ -796,6 +817,66 @@ export function BookingModal({
             </span>
           </div>
         </div>
+
+        {/* Receipt Customization Dialog */}
+        {receiptDialogBookingId && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 rounded-[2.5rem] backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800">
+              <h3 className="text-lg font-black uppercase tracking-tight mb-4">
+                Customize Receipt
+              </h3>
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showTaxId}
+                    onChange={(e) => setShowTaxId(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                    Show Tax Identifiers
+                  </span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeNotes}
+                    onChange={(e) => setIncludeNotes(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                    Include Custom Notes
+                  </span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showLogo}
+                    onChange={(e) => setShowLogo(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                    Show Logo
+                  </span>
+                </label>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setReceiptDialogBookingId(null)}
+                  className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDownloadSingle}
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
+                >
+                  Download
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

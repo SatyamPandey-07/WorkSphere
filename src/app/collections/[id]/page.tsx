@@ -16,6 +16,7 @@ import {
 import usePartySocket from "partysocket/react";
 import Image from "next/image";
 import { ComparisonTool } from "@/components/collections/ComparisonTool";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function FolderDetailsPage({
   params,
@@ -32,6 +33,11 @@ export default function FolderDetailsPage({
   const [generatingInvite, setGeneratingInvite] = useState(false);
   const [updatingPublic, setUpdatingPublic] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [filters, setFilters] = useState({
+    hasOutlets: false,
+    wifiQualityMin: false,
+    quietOnly: false,
+  });
 
   const handleExportBilling = async () => {
     try {
@@ -179,9 +185,16 @@ export default function FolderDetailsPage({
       </div>
     );
 
+  const filteredVenues = folder.venues.filter((fv: any) => {
+    if (filters.hasOutlets && !fv.venue.hasOutlets) return false;
+    if (filters.wifiQualityMin && fv.venue.wifiQuality < 4) return false;
+    if (filters.quietOnly && fv.venue.noiseLevel !== "quiet") return false;
+    return true;
+  });
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8 pt-8">
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-[1600px] mx-auto">
         <div className="flex items-center gap-4 mb-8">
           <Link
             href="/collections"
@@ -203,26 +216,28 @@ export default function FolderDetailsPage({
 
         <ComparisonTool currentFolder={folder} />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          <div className="md:col-span-2 lg:col-span-3 space-y-4">
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-white flex items-center gap-2">
               <MapPin className="w-5 h-5 text-blue-500" /> Saved Venues (
-              {folder.venues.length})
+              {filteredVenues.length})
             </h2>
 
             {folder.venues.length === 0 ? (
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-12 text-center shadow-sm">
-                <MapPin className="w-12 h-12 text-zinc-300 dark:text-zinc-700 mx-auto mb-3" />
-                <h3 className="text-lg font-medium text-zinc-900 dark:text-white mb-1">
-                  No venues saved
-                </h3>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Add venues to this collection from the map.
-                </p>
-              </div>
+              <EmptyState
+                illustration="collection"
+                message="No venues saved"
+                description="Add venues to this collection from the map."
+              />
+            ) : filteredVenues.length === 0 ? (
+              <EmptyState
+                illustration="search"
+                message="No venues match your filters"
+                description="Try unchecking a filter to see more results."
+              />
             ) : (
-              <div className="grid gap-4">
-                {folder.venues.map((fv: any) => (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {filteredVenues.map((fv: any) => (
                   <div
                     key={fv.id}
                     className="flex gap-4 p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm relative group"
@@ -268,6 +283,54 @@ export default function FolderDetailsPage({
           </div>
 
           <div className="md:col-span-1 space-y-6">
+            {/* Filter Venues Section */}
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-white flex items-center gap-2 mb-4">
+                Filter Venues
+              </h2>
+              <div className="space-y-3 text-sm">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={filters.hasOutlets}
+                    onChange={(e) =>
+                      setFilters((f) => ({
+                        ...f,
+                        hasOutlets: e.target.checked,
+                      }))
+                    }
+                    className="rounded"
+                  />
+                  Has Outlets
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={filters.wifiQualityMin}
+                    onChange={(e) =>
+                      setFilters((f) => ({
+                        ...f,
+                        wifiQualityMin: e.target.checked,
+                      }))
+                    }
+                    className="rounded"
+                  />
+                  Good WiFi (4+)
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={filters.quietOnly}
+                    onChange={(e) =>
+                      setFilters((f) => ({ ...f, quietOnly: e.target.checked }))
+                    }
+                    className="rounded"
+                  />
+                  Quiet Only
+                </label>
+              </div>
+            </div>
+
             {/* Billing Export Section */}
             {userRole !== "VIEWER" && (
               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm">

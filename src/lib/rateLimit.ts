@@ -5,10 +5,7 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-// ─── Upstash (production) ────────────────────────────────────────────────────
-let upstashRatelimit: {
-  limit: (identifier: string) => Promise<{ success: boolean; remaining: number; reset: number }>;
-} | null = null;
+const upstashLimiters = new Map<number, any>();
 
 function getUpstashRatelimit(limitPerMinute: number) {
   if (
@@ -37,7 +34,7 @@ function getUpstashRatelimit(limitPerMinute: number) {
       prefix: "worksphere:ratelimit",
     }) as {
       limit: (
-        identifier: string
+        identifier: string,
       ) => Promise<{ success: boolean; remaining: number; reset: number }>;
     };
   } catch {
@@ -53,15 +50,49 @@ interface MemEntry {
 const memStore = new Map<string, MemEntry>();
 const WINDOW_MS = 60_000;
 
-function memRateLimit(identifier: string, limit: number): boolean {
+interface RateLimitInfo {
+  count: number;
+  remaining: number;
+  resetTime: number;
+  isLimited: boolean;
+}
+const rateLimitInfoStore = new Map<string, RateLimitInfo>();
+
+// Run cleanup in the background instead of on the request path.
+const CLEANUP_INTERVAL_MS = 60_000;
+
+function cleanupExpiredEntries() {
   const now = Date.now();
 
-  // Periodic cleanup — keep memory from growing unbounded
-  if (memStore.size > 10_000) {
-    for (const [k, v] of memStore) {
-      if (now > v.resetTime) memStore.delete(k);
+  for (const [key, value] of memStore) {
+    if (now > value.resetTime) {
+      memStore.delete(key);
     }
   }
+
+  for (const [key, value] of rateLimitInfoStore) {
+    if (now > value.resetTime) {
+      rateLimitInfoStore.delete(key);
+    }
+  }
+}
+
+// Start a single background cleanup task.
+const globalCleanup = globalThis as typeof globalThis & {
+  __rateLimitCleanupTimer?: NodeJS.Timeout;
+};
+
+if (!globalCleanup.__rateLimitCleanupTimer) {
+  globalCleanup.__rateLimitCleanupTimer = setInterval(
+    cleanupExpiredEntries,
+    CLEANUP_INTERVAL_MS,
+  );
+
+  globalCleanup.__rateLimitCleanupTimer.unref?.();
+}
+
+function memRateLimit(identifier: string, limit: number): boolean {
+  const now = Date.now();
 
   const entry = memStore.get(identifier);
 
@@ -78,11 +109,16 @@ function memRateLimit(identifier: string, limit: number): boolean {
 
 function memGetInfo(
   identifier: string,
-  limit: number
+  limit: number,
 ): { count: number; remaining: number; resetTime: number; isLimited: boolean } {
   const entry = memStore.get(identifier);
   if (!entry || Date.now() > entry.resetTime) {
-    return { count: 0, remaining: limit, resetTime: Date.now() + WINDOW_MS, isLimited: false };
+    return {
+      count: 0,
+      remaining: limit,
+      resetTime: Date.now() + WINDOW_MS,
+      isLimited: false,
+    };
   }
   return {
     count: entry.count,
@@ -100,12 +136,17 @@ function memGetInfo(
  */
 export async function rateLimit(
   identifier: string,
-  limit = 10
+  limit = 10,
 ): Promise<boolean> {
-  const rl = upstashRatelimit ?? getUpstashRatelimit(limit);
+  let rl = upstashLimiters.get(limit);
+  if (!rl) {
+    rl = getUpstashRatelimit(limit);
+    if (rl) {
+      upstashLimiters.set(limit, rl);
+    }
+  }
 
   if (rl) {
-    upstashRatelimit = rl; // cache for subsequent calls
     const { success } = await rl.limit(identifier);
     return success;
   }
@@ -113,14 +154,15 @@ export async function rateLimit(
   return memRateLimit(identifier, limit);
 }
 
-/**
- * Returns rate-limit metadata for the given identifier.
- * Falls back to in-memory data when Upstash is not configured.
- */
-export function getRateLimitInfo(
+export async function getRateLimitInfo(
   identifier: string,
-  limit = 10
-): { count: number; remaining: number; resetTime: number; isLimited: boolean } | null {
+  limit = 10,
+): Promise<{
+  count: number;
+  remaining: number;
+  resetTime: number;
+  isLimited: boolean;
+} | null> {
   return memGetInfo(identifier, limit);
 }
 
@@ -128,7 +170,9 @@ export function getRateLimitInfo(
 export function resetRateLimit(identifier?: string): void {
   if (identifier) {
     memStore.delete(identifier);
+    rateLimitInfoStore.delete(identifier);
   } else {
     memStore.clear();
+    rateLimitInfoStore.clear();
   }
 }

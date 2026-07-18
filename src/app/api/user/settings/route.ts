@@ -15,6 +15,9 @@ export async function GET() {
         phoneNumber: true,
         smsAlertsEnabled: true,
         whatsappWebhookUrl: true,
+        notificationStart: true,
+        notificationEnd: true,
+        timezone: true,
       },
     });
 
@@ -22,6 +25,9 @@ export async function GET() {
       phoneNumber: user?.phoneNumber || "",
       smsAlertsEnabled: user?.smsAlertsEnabled || false,
       whatsappWebhookUrl: user?.whatsappWebhookUrl || "",
+      notificationStart: user?.notificationStart || "",
+      notificationEnd: user?.notificationEnd || "",
+      timezone: user?.timezone || "UTC",
     });
   } catch (error: any) {
     console.error("GET /api/user/settings error:", error);
@@ -39,8 +45,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { phoneNumber, smsAlertsEnabled, whatsappWebhookUrl } =
-      await req.json();
+    const {
+      phoneNumber,
+      smsAlertsEnabled,
+      whatsappWebhookUrl,
+      notificationStart,
+      notificationEnd,
+      timezone,
+    } = await req.json();
 
     if (typeof smsAlertsEnabled !== "boolean") {
       return NextResponse.json(
@@ -56,11 +68,17 @@ export async function POST(req: Request) {
         phoneNumber: phoneNumber || null,
         smsAlertsEnabled,
         whatsappWebhookUrl: whatsappWebhookUrl || null,
+        notificationStart: notificationStart || null,
+        notificationEnd: notificationEnd || null,
+        timezone: timezone || "UTC",
       },
       update: {
         phoneNumber: phoneNumber || null,
         smsAlertsEnabled,
         whatsappWebhookUrl: whatsappWebhookUrl || null,
+        notificationStart: notificationStart || null,
+        notificationEnd: notificationEnd || null,
+        timezone: timezone || "UTC",
       },
     });
 
@@ -69,6 +87,9 @@ export async function POST(req: Request) {
       phoneNumber: updatedUser.phoneNumber || "",
       smsAlertsEnabled: updatedUser.smsAlertsEnabled,
       whatsappWebhookUrl: updatedUser.whatsappWebhookUrl || "",
+      notificationStart: updatedUser.notificationStart || "",
+      notificationEnd: updatedUser.notificationEnd || "",
+      timezone: updatedUser.timezone || "UTC",
     });
   } catch (error: any) {
     console.error("POST /api/user/settings error:", error);

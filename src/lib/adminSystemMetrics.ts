@@ -16,7 +16,9 @@ type AnalyticsEvent = {
 
 function average(values: number[]) {
   if (values.length === 0) return 0;
-  return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+  return Math.round(
+    values.reduce((sum, value) => sum + value, 0) / values.length,
+  );
 }
 
 function percentile(sortedValues: number[], p: number) {
@@ -37,7 +39,7 @@ export async function getAdminSystemMetrics(range: RangeKey) {
       where: { createdAt: { gte: startDate } },
       select: { createdAt: true },
     }),
-    Promise.resolve(getDbLatencyStats()),
+    getDbLatencyStats(),
   ]);
 
   const recentEvents = (telemetry.recentEvents as AnalyticsEvent[]).filter(

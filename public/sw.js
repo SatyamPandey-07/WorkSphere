@@ -10,39 +10,51 @@ self.addEventListener("install", (event) => {
   // Use a temporary cache for installation to prevent locking the main cache
   const tempCacheName = `${CACHE_NAME}-installing`;
   event.waitUntil(
-    caches.open(tempCacheName).then((cache) => {
-      return cache.addAll(PRECACHE_ASSETS);
-    }).then(() => {
-      // Once assets are added, we can skip waiting immediately
-      return self.skipWaiting();
-    }).catch(err => {
-      console.error("[SW] Install failed:", err);
-      // Even if install fails, we skip waiting to avoid getting stuck in 'installing' state
-      return self.skipWaiting();
-    })
+    caches
+      .open(tempCacheName)
+      .then((cache) => {
+        return cache.addAll(PRECACHE_ASSETS);
+      })
+      .then(() => {
+        // Once assets are added, we can skip waiting immediately
+        return self.skipWaiting();
+      })
+      .catch((err) => {
+        console.error("[SW] Install failed:", err);
+        // Even if install fails, we skip waiting to avoid getting stuck in 'installing' state
+        return self.skipWaiting();
+      }),
   );
 });
 
 // Activate event - clean up old caches and move temp assets
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME && !name.endsWith("-installing"))
-          .map((name) => caches.delete(name)),
-      );
-    }).then(() => {
-      // Claim clients immediately to take control of the page
-      return self.clients.claim();
-    }).then(() => {
-      // Clean up any stray installation caches
-      return caches.keys().then(names => {
+    caches
+      .keys()
+      .then((cacheNames) => {
         return Promise.all(
-          names.filter(n => n.endsWith("-installing")).map(n => caches.delete(n))
+          cacheNames
+            .filter(
+              (name) => name !== CACHE_NAME && !name.endsWith("-installing"),
+            )
+            .map((name) => caches.delete(name)),
         );
-      });
-    })
+      })
+      .then(() => {
+        // Claim clients immediately to take control of the page
+        return self.clients.claim();
+      })
+      .then(() => {
+        // Clean up any stray installation caches
+        return caches.keys().then((names) => {
+          return Promise.all(
+            names
+              .filter((n) => n.endsWith("-installing"))
+              .map((n) => caches.delete(n)),
+          );
+        });
+      }),
   );
 });
 
@@ -336,50 +348,56 @@ async function syncConversations() {
 // IndexedDB helpers
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("worksphere-offline", 3);
+    try {
+      const request = indexedDB.open("worksphere-offline", 3);
 
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
 
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
 
-      // Venues store
-      if (!db.objectStoreNames.contains("venues")) {
-        const venuesStore = db.createObjectStore("venues", { keyPath: "id" });
-        venuesStore.createIndex("type", "type", { unique: false });
-        venuesStore.createIndex("savedAt", "savedAt", { unique: false });
-      }
+        // Venues store
+        if (!db.objectStoreNames.contains("venues")) {
+          const venuesStore = db.createObjectStore("venues", { keyPath: "id" });
+          venuesStore.createIndex("type", "type", { unique: false });
+          venuesStore.createIndex("savedAt", "savedAt", { unique: false });
+        }
 
-      // Favorites store
-      if (!db.objectStoreNames.contains("favorites")) {
-        const favoritesStore = db.createObjectStore("favorites", {
-          keyPath: "id",
-        });
-        favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
-      }
+        // Favorites store
+        if (!db.objectStoreNames.contains("favorites")) {
+          const favoritesStore = db.createObjectStore("favorites", {
+            keyPath: "id",
+          });
+          favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
+        }
 
-      // Search history store
-      if (!db.objectStoreNames.contains("searches")) {
-        const searchesStore = db.createObjectStore("searches", {
-          keyPath: "query",
-        });
-        searchesStore.createIndex("timestamp", "timestamp", { unique: false });
-      }
+        // Search history store
+        if (!db.objectStoreNames.contains("searches")) {
+          const searchesStore = db.createObjectStore("searches", {
+            keyPath: "query",
+          });
+          searchesStore.createIndex("timestamp", "timestamp", {
+            unique: false,
+          });
+        }
 
-      // Migration
-      if (db.objectStoreNames.contains("pending-actions")) {
-        db.deleteObjectStore("pending-actions");
-      }
+        // Migration
+        if (db.objectStoreNames.contains("pending-actions")) {
+          db.deleteObjectStore("pending-actions");
+        }
 
-      // Pending actions store (unified name)
-      if (!db.objectStoreNames.contains("pendingActions")) {
-        db.createObjectStore("pendingActions", {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-      }
-    };
+        // Pending actions store (unified name)
+        if (!db.objectStoreNames.contains("pendingActions")) {
+          db.createObjectStore("pendingActions", {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
+      };
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 

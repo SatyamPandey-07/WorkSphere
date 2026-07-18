@@ -72,6 +72,44 @@ global.L = {
   },
 };
 
+/* eslint-disable @typescript-eslint/no-require-imports, react/display-name */
+// Mock @react-leaflet/core and react-leaflet
+jest.mock("@react-leaflet/core", () => {
+  const React = require("react");
+  return {
+    createLayerComponent: () => () =>
+      React.createElement("div", { "data-testid": "heatmap-overlay" }),
+  };
+});
+jest.mock("react-leaflet", () => {
+  const React = require("react");
+  const LayersControlMock = ({ children }) =>
+    React.createElement("div", { "data-testid": "layers-control" }, children);
+  LayersControlMock.BaseLayer = ({ children }) =>
+    React.createElement("div", { "data-testid": "base-layer" }, children);
+  LayersControlMock.Overlay = ({ children }) =>
+    React.createElement("div", { "data-testid": "overlay" }, children);
+
+  return {
+    __esModule: true,
+    MapContainer: ({ children }) =>
+      React.createElement("div", { "data-testid": "map-container" }, children),
+    TileLayer: () =>
+      React.createElement("div", { "data-testid": "tile-layer" }),
+    Marker: ({ children }) =>
+      React.createElement("div", { "data-testid": "marker" }, children),
+    Popup: ({ children }) =>
+      React.createElement("div", { "data-testid": "popup" }, children),
+    Polyline: () => React.createElement("div", { "data-testid": "polyline" }),
+    useMap: () => ({
+      setView: jest.fn(),
+      on: jest.fn(),
+    }),
+    LayersControl: LayersControlMock,
+  };
+});
+/* eslint-enable @typescript-eslint/no-require-imports, react/display-name */
+
 // Mock next/navigation
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -103,6 +141,11 @@ jest.mock("@clerk/nextjs", () => ({
   UserButton: () => null,
 }));
 
+jest.mock("@clerk/nextjs/server", () => ({
+  auth: jest.fn().mockResolvedValue({ userId: "test-user" }),
+  currentUser: jest.fn().mockResolvedValue({ id: "test-user" }),
+}));
+
 // Mock fetch
 global.fetch = jest.fn(() =>
   Promise.resolve({
@@ -110,3 +153,21 @@ global.fetch = jest.fn(() =>
     json: () => Promise.resolve({}),
   }),
 );
+
+// Mock groq-sdk
+jest.mock("groq-sdk", () => {
+  const GroqMock = jest.fn().mockImplementation(() => ({
+    chat: {
+      completions: {
+        create: jest.fn().mockResolvedValue({
+          choices: [{ message: { content: "" } }],
+        }),
+      },
+    },
+  }));
+  return {
+    __esModule: true,
+    default: GroqMock,
+    Groq: GroqMock,
+  };
+});

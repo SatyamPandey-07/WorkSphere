@@ -116,6 +116,18 @@ export function EnhancedChatbot({
   const { isSignedIn, user } = useUser();
 
   const { socket } = useMultiplayerSession(roomId || null);
+  const sendSocketMessage = useCallback(
+    (data: string) => {
+      if (socket && socket.readyState === 1) {
+        try {
+          socket.send(data);
+        } catch (err) {
+          console.error("[Socket] Failed to send message:", err);
+        }
+      }
+    },
+    [socket],
+  );
   const { getToken } = useAuth();
 
   // Presence state
@@ -166,7 +178,7 @@ export function EnhancedChatbot({
     const handleMouseMove = (e: MouseEvent) => {
       // Throttle mouse moves to avoid flooding
       if (Math.random() > 0.8) {
-        socket.send(
+        sendSocketMessage(
           JSON.stringify({
             type: "cursor",
             x: e.clientX,
@@ -179,7 +191,7 @@ export function EnhancedChatbot({
 
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [socket, roomId, user]);
+  }, [socket, roomId, user, sendSocketMessage]);
 
   // Handle incoming presence
   useEffect(() => {
@@ -227,11 +239,6 @@ export function EnhancedChatbot({
   }, [socket, onMapUpdate]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-
-  // Auto-scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   // Geolocation fallback
   const getPreciseLocation = useCallback(() => {
@@ -300,7 +307,7 @@ export function EnhancedChatbot({
       onMapUpdate?.(update);
 
       if (socket && roomId) {
-        socket.send(JSON.stringify({ type: "map-update", update }));
+        sendSocketMessage(JSON.stringify({ type: "map-update", update }));
       }
     }
   };
@@ -653,12 +660,13 @@ export function EnhancedChatbot({
 
   // Main submit
   const handleInputChange = (val: string) => {
-    setInput(val);
+    const safeVal = typeof val === "string" ? val : "";
+    setInput(safeVal);
     if (socket && roomId) {
-      socket.send(
+      sendSocketMessage(
         JSON.stringify({
           type: "typing",
-          isTyping: val.length > 0,
+          isTyping: safeVal.length > 0,
           name: user?.firstName || "Anonymous",
         }),
       );
@@ -670,7 +678,7 @@ export function EnhancedChatbot({
     if (!input.trim() || isLoading) return;
 
     if (socket && roomId) {
-      socket.send(
+      sendSocketMessage(
         JSON.stringify({
           type: "typing",
           isTyping: false,
@@ -699,7 +707,7 @@ export function EnhancedChatbot({
     setMessages((prev) => [...prev, newUserMessage]);
 
     if (socket && roomId) {
-      socket.send(
+      sendSocketMessage(
         JSON.stringify({ type: "new-message", message: newUserMessage }),
       );
     }
@@ -737,6 +745,7 @@ export function EnhancedChatbot({
           id: assistantMessageId,
           role: "assistant",
           content: "",
+          isStreaming: true,
         },
       ]);
 
@@ -825,7 +834,9 @@ export function EnhancedChatbot({
                   };
                   onMapUpdate(update);
                   if (socket && roomId) {
-                    socket.send(JSON.stringify({ type: "map-update", update }));
+                    sendSocketMessage(
+                      JSON.stringify({ type: "map-update", update }),
+                    );
                   }
                 }
               } catch (e) {
@@ -894,15 +905,16 @@ export function EnhancedChatbot({
         }
       }
 
-      // Final message sync for socket
       setMessages((prev) => {
         const finalMsg = prev.find((m) => m.id === assistantMessageId);
         if (finalMsg && socket && roomId) {
-          socket.send(
+          sendSocketMessage(
             JSON.stringify({ type: "new-message", message: finalMsg }),
           );
         }
-        return prev;
+        return prev.map((m) =>
+          m.id === assistantMessageId ? { ...m, isStreaming: false } : m,
+        );
       });
     } catch (err) {
       console.error("Chat error:", err);
@@ -980,6 +992,9 @@ export function EnhancedChatbot({
       );
     } finally {
       setIsLoading(false);
+      setMessages((prev) =>
+        prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)),
+      );
     }
   };
 

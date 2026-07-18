@@ -31,6 +31,7 @@ jobs:
             let hasUI = false;
             let hasBackend = false;
             let hasTests = false;
+            let hasDocs = false;
             let fileCount = files.length;
             
             for (const file of files) {
@@ -49,30 +50,41 @@ jobs:
                 filename === 'src/middleware.ts'
               ) {
                 hasBackend = true;
+              } else if (
+                filename === 'README.md' ||
+                filename.startsWith('docs/') ||
+                filename.endsWith('.md')
+              ) {
+                hasDocs = true;
               }
             }
 
-            const labelsToAdd = [];
+            // Always ensure the core scoring label (ECSoC26) is attached
+            const labelsToAdd = ['ECSoC26'];
             
-            if (hasUI && (pr.additions > 15 || fileCount > 2)) {
-              labelsToAdd.push('good-ui');
-            }
-            if (hasBackend && (pr.additions > 20 || fileCount > 2)) {
+            // Add customized and quality-based bonus labels dynamically before merge
+            if (hasBackend) {
               labelsToAdd.push('good-backend');
             }
-            if (hasTests || (pr.body && pr.body.length > 100 && pr.additions > 10)) {
+            if (hasUI) {
+              labelsToAdd.push('good-ui');
+            }
+            if (hasTests || hasDocs) {
               labelsToAdd.push('good-pr');
             }
             
-            if (labelsToAdd.length > 0) {
-              console.log(`Auto-assigning bonus labels on PR open for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                labels: labelsToAdd
-              });
+            // Fallback: If no bonus labels were added, add 'good-pr' to ensure ALL PRs get a bonus
+            if (!labelsToAdd.includes('good-ui') && !labelsToAdd.includes('good-backend') && !labelsToAdd.includes('good-pr')) {
+              labelsToAdd.push('good-pr');
             }
+            
+            console.log(`Auto-assigning labels pre-merge for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              labels: labelsToAdd
+            });
 
   # Job 2: Thank contributor and summarize XP when merged
   thank-contributor:
@@ -100,7 +112,7 @@ jobs:
             let hasUI = false;
             let hasBackend = false;
             let hasTests = false;
-            let fileCount = files.length;
+            let hasDocs = false;
             
             for (const file of files) {
               const filename = file.filename;
@@ -118,25 +130,33 @@ jobs:
                 filename === 'src/middleware.ts'
               ) {
                 hasBackend = true;
+              } else if (
+                filename === 'README.md' ||
+                filename.startsWith('docs/') ||
+                filename.endsWith('.md')
+              ) {
+                hasDocs = true;
               }
             }
 
             const bonusDetails = [];
             
-            if (hasUI && (pr.additions > 15 || fileCount > 2)) {
-              bonusDetails.push('🎨 **good-ui** (+25 XP) - for frontend/UI improvements');
-            }
-            if (hasBackend && (pr.additions > 20 || fileCount > 2)) {
+            if (hasBackend) {
               bonusDetails.push('⚙️ **good-backend** (+50 XP) - for backend/API or DB improvements');
             }
-            if (hasTests || (pr.body && pr.body.length > 100 && pr.additions > 10)) {
+            if (hasUI) {
+              bonusDetails.push('🎨 **good-ui** (+25 XP) - for frontend/UI improvements');
+            }
+            if (hasTests || hasDocs) {
               bonusDetails.push('📝 **good-pr** (+15 XP) - for high-quality contributions with testing or details');
             }
-
-            let bonusSection = '';
-            if (bonusDetails.length > 0) {
-              bonusSection = `\n\n### 🏆 Bonus XP Awarded!\nBased on our automated review, we have applied the following bonus labels to your PR:\n${bonusDetails.map(d => `- ${d}`).join('\n')}\n\nThese will be picked up by the ECSOC Sentinel scoring system shortly!`;
+            
+            // Fallback detail
+            if (bonusDetails.length === 0) {
+              bonusDetails.push('📝 **good-pr** (+15 XP) - baseline contribution bonus');
             }
+
+            let bonusSection = `\n\n### 🏆 Bonus XP Awarded!\nBased on our automated review, we have applied the following bonus labels to your PR:\n${bonusDetails.map(d => `- ${d}`).join('\n')}\n\nThese will be picked up by the ECSOC Sentinel scoring system shortly!`;
 
             const thankComment = `🎉 Congratulations!
 

@@ -20,8 +20,11 @@ import {
   Zap,
   LayoutGrid,
   List,
+  Clock,
+  Trash2,
 } from "lucide-react";
 import { RefObject, useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
 import { MessageRenderer } from "./GenerativeUI";
@@ -866,6 +869,42 @@ export function ChatInput({
   const charCount = safeInput.length;
   const isOverLimit = charCount > MAX_CHARS;
 
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    const history = localStorage.getItem("ws-recent-searches");
+    if (history) {
+      try {
+        setRecentSearches(JSON.parse(history));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
+  const saveToHistory = (term: string) => {
+    const updated = [
+      term,
+      ...recentSearches.filter((item) => item !== term),
+    ].slice(0, 5);
+    setRecentSearches(updated);
+    localStorage.setItem("ws-recent-searches", JSON.stringify(updated));
+  };
+
+  const clearHistory = () => {
+    setRecentSearches([]);
+    localStorage.removeItem("ws-recent-searches");
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (safeInput.trim() && !isOverLimit) {
+      saveToHistory(safeInput.trim());
+    }
+    onSubmit(e);
+  };
+
   let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
   if (isOverLimit) {
     counterColor = "text-red-500";
@@ -874,16 +913,63 @@ export function ChatInput({
   }
 
   return (
-    <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+    <div className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+      <AnimatePresence>
+        {isFocused && recentSearches.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="absolute bottom-full left-4 right-4 mb-2 z-50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl flex flex-col gap-3"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                Recent Searches
+              </span>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  clearHistory();
+                }}
+                className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" />
+                Clear
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {recentSearches.map((term) => (
+                <button
+                  key={term}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onInputChange(term);
+                  }}
+                  className="px-3 py-1.5 bg-zinc-100 hover:bg-blue-50 dark:bg-zinc-900 dark:hover:bg-blue-950/30 border border-zinc-200/50 dark:border-zinc-800 hover:border-blue-200 dark:hover:border-blue-900/50 text-[11px] font-black uppercase tracking-tight rounded-xl text-zinc-600 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 transition-all flex items-center gap-1"
+                >
+                  {term}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <form
         id="ws-chat-form"
-        onSubmit={onSubmit}
+        onSubmit={handleFormSubmit}
         className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:border-blue-600 transition-all shadow-inner"
       >
         <input
           type="text"
           value={safeInput}
           onChange={(e) => onInputChange(e.target.value ?? "")}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           placeholder="Where's the focus mode hotspot?"
           disabled={isLoading}
           className="flex-1 px-4 py-3 bg-transparent text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 text-sm font-bold"

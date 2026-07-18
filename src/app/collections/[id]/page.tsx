@@ -193,7 +193,7 @@ export default function FolderDetailsPage({
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8 pt-8">
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-[1600px] mx-auto">
         <div className="flex items-center gap-4 mb-8">
           <Link
             href="/collections"
@@ -215,8 +215,8 @@ export default function FolderDetailsPage({
 
         <ComparisonTool currentFolder={folder} />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+          <div className="md:col-span-2 lg:col-span-3 space-y-4">
             <h2 className="text-lg font-semibold text-zinc-900 dark:text-white flex items-center gap-2">
               <MapPin className="w-5 h-5 text-blue-500" /> Saved Venues (
               {filteredVenues.length})
@@ -243,7 +243,7 @@ export default function FolderDetailsPage({
                 </p>
               </div>
             ) : (
-              <div className="grid gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {filteredVenues.map((fv: any) => (
                   <div
                     key={fv.id}

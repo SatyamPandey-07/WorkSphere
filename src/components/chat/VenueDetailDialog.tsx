@@ -1007,6 +1007,7 @@ export function VenueDetailDialog({
                           width={40}
                         />
                         <Tooltip
+                          isAnimationActive={false}
                           cursor={{ fill: "rgba(0,0,0,0.05)" }}
                           content={({ active, payload }) => {
                             if (active && payload && payload.length) {
@@ -1087,6 +1088,7 @@ export function VenueDetailDialog({
                           domain={[0, 100]}
                         />
                         <Tooltip
+                          isAnimationActive={false}
                           cursor={{
                             stroke: "rgba(0,0,0,0.05)",
                             strokeWidth: 2,

@@ -57,6 +57,13 @@ export function BookingModal({
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
   >("details");
+  const getTodayString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
   const [bookingDate, setBookingDate] = useState("");
   const [bookingTime, setBookingTime] = useState("");
   const [email, setEmail] = useState("");
@@ -206,6 +213,11 @@ export function BookingModal({
   if (!isOpen) return null;
 
   const handleBooking = async () => {
+    const todayStr = getTodayString();
+    if (bookingDate && bookingDate < todayStr) {
+      alert("Cannot book a date in the past.");
+      return;
+    }
     setStep("processing");
     trackEvent("venue_rated", {
       venueId: venue?.id || "unknown",
@@ -553,6 +565,7 @@ export function BookingModal({
                     <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="date"
+                      min={getTodayString()}
                       className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                       value={bookingDate}
                       onChange={(e) => setBookingDate(e.target.value)}

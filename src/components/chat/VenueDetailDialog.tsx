@@ -487,6 +487,11 @@ export function VenueDetailDialog({
   }, [venue, isOpen]);
 
   useEffect(() => {
+    const timer = setTimeout(() => setEnableTransition(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (!venue) return;
     setLiveScore(venue.score ?? null);
     setPhotoLoading(true);
@@ -805,7 +810,10 @@ export function VenueDetailDialog({
   const scannerLowConfidence = isLibrary && voteMetrics.scanner.hidden;
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-zinc-950/95 animate-in fade-in duration-300">
+    <div
+      className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-zinc-950/95 animate-in fade-in duration-300"
+      style={{ touchAction: "pan-y" }}
+    >
       <div
         className="bg-white dark:bg-zinc-900 w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] border border-zinc-200 dark:border-zinc-800 animate-in slide-in-from-bottom-12 zoom-in-95 duration-500"
         onClick={(e) => e.stopPropagation()}
@@ -860,7 +868,7 @@ export function VenueDetailDialog({
           {photoLoading ? (
             <div className="w-full h-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
           ) : (
-            /* eslint-disable-next-line @next/next/no-img-element */
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={displayPhoto}
               alt={venue.name}
@@ -1593,14 +1601,18 @@ export function VenueDetailDialog({
                 <div className="flex gap-3">
                   <button
                     onClick={() => onToggleFavorite(venue)}
-                    className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${
+                    className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl border-2 ${
+                      enableTransition ? "transition-all duration-300" : ""
+                    } ${
                       isFavorited
                         ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
                         : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
                     }`}
                   >
                     <Heart
-                      className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`}
+                      className={`w-4 h-4 ${
+                        enableTransition ? "transition-all duration-300" : ""
+                      } ${isFavorited ? "fill-current" : ""}`}
                     />
                     {isFavorited ? "Saved" : "Save"}
                   </button>

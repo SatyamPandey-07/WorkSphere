@@ -170,20 +170,18 @@ WorkSphere follows a consistent responsive layout pattern using Tailwind CSS uti
 ### Common Container Pattern
 
 ```tsx
-<div className="container mx-auto px-4 sm:px-6">
-  {/* Page Content */}
-</div>
+<div className="container mx-auto px-4 sm:px-6">{/* Page Content */}</div>
 ```
 
 ### Frequently Used Layout Utilities
 
-| Utility | Purpose |
-| :--- | :--- |
-| `container` | Provides a responsive content wrapper |
-| `mx-auto` | Horizontally centers the container |
-| `max-w-*` | Limits content width for improved readability |
-| `px-4`, `px-6` | Horizontal page padding |
-| `py-*` | Vertical spacing for sections |
+| Utility        | Purpose                                       |
+| :------------- | :-------------------------------------------- |
+| `container`    | Provides a responsive content wrapper         |
+| `mx-auto`      | Horizontally centers the container            |
+| `max-w-*`      | Limits content width for improved readability |
+| `px-4`, `px-6` | Horizontal page padding                       |
+| `py-*`         | Vertical spacing for sections                 |
 
 ### Recommendations
 
@@ -199,12 +197,12 @@ WorkSphere primarily relies on Tailwind CSS Grid utilities for responsive layout
 
 ### Grid Utilities
 
-| Utility | Purpose |
-| :--- | :--- |
-| `grid` | Enables CSS Grid |
-| `grid-cols-*` | Defines number of columns |
-| `col-span-*` | Controls column span |
-| `gap-*` | Defines spacing between grid items |
+| Utility       | Purpose                            |
+| :------------ | :--------------------------------- |
+| `grid`        | Enables CSS Grid                   |
+| `grid-cols-*` | Defines number of columns          |
+| `col-span-*`  | Controls column span               |
+| `gap-*`       | Defines spacing between grid items |
 
 ### Common Grid Patterns
 
@@ -233,14 +231,14 @@ Borders are consistently used throughout the application to separate content whi
 
 ### Common Border Utilities
 
-| Utility | Purpose |
-| :--- | :--- |
-| `border` | Standard component border |
-| `rounded-lg` | Medium rounded corners |
-| `rounded-xl` | Large rounded corners |
-| `rounded-2xl` | Extra large rounded corners |
-| `rounded-3xl` | Large card containers |
-| `rounded-full` | Circular elements |
+| Utility        | Purpose                     |
+| :------------- | :-------------------------- |
+| `border`       | Standard component border   |
+| `rounded-lg`   | Medium rounded corners      |
+| `rounded-xl`   | Large rounded corners       |
+| `rounded-2xl`  | Extra large rounded corners |
+| `rounded-3xl`  | Large card containers       |
+| `rounded-full` | Circular elements           |
 
 Borders are frequently combined with:
 
@@ -258,22 +256,22 @@ Interactive elements use Tailwind transition utilities to provide smooth animati
 
 ### Transition Utilities
 
-| Utility | Purpose |
-| :--- | :--- |
-| `transition-all` | Animate all supported properties |
-| `transition-colors` | Animate color changes |
-| `transition-shadow` | Animate shadow effects |
-| `transition-transform` | Animate transform properties |
+| Utility                | Purpose                          |
+| :--------------------- | :------------------------------- |
+| `transition-all`       | Animate all supported properties |
+| `transition-colors`    | Animate color changes            |
+| `transition-shadow`    | Animate shadow effects           |
+| `transition-transform` | Animate transform properties     |
 
 ### Transition Durations
 
 The project commonly uses:
 
-| Utility | Duration |
-| :--- | :--- |
-| `duration-200` | Fast interactions |
+| Utility        | Duration             |
+| :------------- | :------------------- |
+| `duration-200` | Fast interactions    |
 | `duration-300` | Standard transitions |
-| `duration-500` | Smooth animations |
+| `duration-500` | Smooth animations    |
 | `duration-700` | Longer UI animations |
 
 ### Easing Utilities
@@ -286,9 +284,7 @@ Frequently used easing functions include:
 ### Example
 
 ```tsx
-<button
-  className="transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg"
->
+<button className="transition-all duration-300 ease-in-out hover:scale-105 hover:shadow-lg">
   Submit
 </button>
 ```

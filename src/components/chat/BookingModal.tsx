@@ -20,7 +20,7 @@ import {
   CalendarPlus,
   Mail,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Venue } from "./ChatMessages";
 import { trackEvent } from "@/lib/analytics";
 
@@ -57,6 +57,13 @@ export function BookingModal({
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
   >("details");
+  const getTodayString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
   const [bookingDate, setBookingDate] = useState("");
   const [bookingTime, setBookingTime] = useState("");
   const [email, setEmail] = useState("");
@@ -76,6 +83,8 @@ export function BookingModal({
   const [showTaxId, setShowTaxId] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
   const [showLogo, setShowLogo] = useState(true);
+
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const getFilteredHistory = () => {
     if (dateFilter === "all") return history;
@@ -138,6 +147,43 @@ export function BookingModal({
       fetchHistory();
     }
   }, [isOpen, mode]);
+  useEffect(() => {
+    if (!isOpen || !modalRef.current) return;
+
+    const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+
+    if (focusableElements.length === 0) return;
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    // Focus the first interactive element when modal opens
+    firstElement.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+
+      if (event.shiftKey) {
+        if (document.activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          event.preventDefault();
+          firstElement.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
 
   const toggleSelected = (id: string) => {
     setSelectedIds((prev) => {
@@ -206,6 +252,11 @@ export function BookingModal({
   if (!isOpen) return null;
 
   const handleBooking = async () => {
+    const todayStr = getTodayString();
+    if (bookingDate && bookingDate < todayStr) {
+      alert("Cannot book a date in the past.");
+      return;
+    }
     setStep("processing");
     trackEvent("venue_rated", {
       venueId: venue?.id || "unknown",
@@ -274,6 +325,9 @@ export function BookingModal({
   return (
     <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/90 animate-in fade-in duration-300 backdrop-blur-sm">
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
         className="bg-white dark:bg-zinc-900 w-full max-w-2xl overflow-hidden rounded-[2.5rem] shadow-[0_20px_100px_rgba(0,0,0,0.9)] border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-300"
         onClick={(e) => e.stopPropagation()}
       >
@@ -553,6 +607,7 @@ export function BookingModal({
                     <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="date"
+                      min={getTodayString()}
                       className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                       value={bookingDate}
                       onChange={(e) => setBookingDate(e.target.value)}

@@ -7,10 +7,45 @@ import {
   validateRequest,
 } from "@/lib/validations";
 import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
+import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+
+// Search/autocomplete is expected to fire on every keystroke (debounced client-side
+// to ~250-300ms), which can mean several requests per second while someone types a
+// long query. A tight per-minute cap (like the 3-5/min used on auth routes) blocks
+// that legitimate traffic almost immediately, so this endpoint uses a much higher,
+// burst-tolerant ceiling — generous enough for fast typing, still low enough to stop
+// scripted abuse. See #717.
+const VENUE_SEARCH_RATE_LIMIT = 120;
 
 // GET /api/venues - Search venues
 export async function GET(req: NextRequest) {
   try {
+    // Identify the caller (signed-in user, else IP) and rate limit before touching
+    // the DB. Keyed separately from other routes so it doesn't share a budget with
+    // auth/chat rate limits.
+    const { userId } = await auth();
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+      req.headers.get("x-real-ip") ??
+      "anonymous";
+    const identifier = `venues-search:${userId || ip}`;
+
+    const allowed = await rateLimit(identifier, VENUE_SEARCH_RATE_LIMIT);
+    if (!allowed) {
+      const info = await getRateLimitInfo(identifier, VENUE_SEARCH_RATE_LIMIT);
+      const retryAfter = info?.resetTime
+        ? Math.ceil((info.resetTime - Date.now()) / 1000)
+        : 60;
+
+      return NextResponse.json(
+        {
+          error: "Too many search requests. Please slow down and try again.",
+          retryAfter,
+        },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } },
+      );
+    }
+
     const searchParams = req.nextUrl.searchParams;
 
     const pageParam = searchParams.get("page");

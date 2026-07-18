@@ -20,16 +20,14 @@ import {
   Zap,
   LayoutGrid,
   List,
-  Clock,
-  Trash2,
 } from "lucide-react";
 import { RefObject, useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
 import { MessageRenderer } from "./GenerativeUI";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ComparisonDrawer } from "@/components/ComparisonDrawer"; // Added this import
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
@@ -109,6 +107,10 @@ interface VenueChatCardProps {
   tabIndex?: number;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   "data-index"?: number;
+  // --- New Props for Issue #614 ---
+  isSelected?: boolean;
+  compareDisabled?: boolean;
+  onToggleCompare?: (venue: Venue) => void;
 }
 
 export function VenueChatCard({
@@ -123,10 +125,14 @@ export function VenueChatCard({
   tabIndex,
   onKeyDown,
   "data-index": dataIndex,
+  isSelected,
+  compareDisabled,
+  onToggleCompare,
 }: VenueChatCardProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [showFolderModal, setShowFolderModal] = useState(false);
+  const [enableTransition, setEnableTransition] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams({
@@ -141,7 +147,6 @@ export function VenueChatCard({
         if (!response.ok) {
           throw new Error("Failed to load venue photo");
         }
-
         setPhotoUrl(response.url);
       })
       .catch(() => {
@@ -151,6 +156,11 @@ export function VenueChatCard({
         setPhotoLoading(false);
       });
   }, [venue.id, venue.name, venue.lat, venue.lng]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setEnableTransition(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   const CategoryIcon =
     venue.category === "cafe"
@@ -260,11 +270,37 @@ export function VenueChatCard({
             </div>
           </div>
 
-          {/* Mini Actions to keep functionality */}
+          {/* Mini Actions */}
           <div
             className="flex items-center gap-1.5 shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Compare Checkbox (List View) */}
+            {onToggleCompare && (
+              <label
+                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-all ${
+                  !isSelected && compareDisabled
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer"
+                } ${
+                  isSelected
+                    ? "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
+                    : "bg-zinc-100 border-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => onToggleCompare(venue)}
+                  disabled={!isSelected && compareDisabled}
+                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                <span className="text-[10px] font-black uppercase tracking-tighter hidden sm:inline">
+                  Compare
+                </span>
+              </label>
+            )}
+
             <button
               onClick={() => onBook(venue)}
               className="joyride-booking p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all active:scale-[0.95]"
@@ -274,7 +310,9 @@ export function VenueChatCard({
             </button>
             <button
               onClick={() => onToggleFavorite(venue)}
-              className={`p-1.5 rounded-lg border transition-all active:scale-[0.95] ${
+              className={`p-1.5 rounded-lg border active:scale-[0.95] ${
+                enableTransition ? "transition-all duration-300" : ""
+              } ${
                 isFavorited
                   ? "bg-red-500 text-white border-red-500"
                   : "bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-200"
@@ -282,7 +320,9 @@ export function VenueChatCard({
               title="Save favorite"
             >
               <Heart
-                className={`w-3.5 h-3.5 ${isFavorited ? "fill-current" : ""}`}
+                className={`w-3.5 h-3.5 ${
+                  enableTransition ? "transition-all duration-300" : ""
+                } ${isFavorited ? "fill-current" : ""}`}
               />
             </button>
           </div>
@@ -304,7 +344,7 @@ export function VenueChatCard({
         tabIndex={tabIndex}
         onKeyDown={onKeyDown}
         data-index={dataIndex}
-        className="border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-2xl hover:scale-[1.02] transition-all cursor-pointer shadow-lg my-2 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+        className="relative border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-2xl hover:scale-[1.02] transition-all cursor-pointer shadow-lg my-2 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
       >
         {/* Venue photo */}
         {photoLoading ? (
@@ -321,13 +361,38 @@ export function VenueChatCard({
               }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+
+            {/* Category Tag */}
             <span className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-black px-2 py-1 rounded-md bg-zinc-950 border border-zinc-700 text-white">
               <CategoryIcon className="w-3 h-3" />
               {venue.category?.replace("_", " ")}
             </span>
 
+            {/* Compare Checkbox (Card View Overlay) */}
+            {onToggleCompare && (
+              <div
+                className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2.5 py-1.5 rounded-lg shadow-md backdrop-blur-md"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  id={`compare-card-${venue.id}`}
+                  checked={isSelected}
+                  onChange={() => onToggleCompare(venue)}
+                  disabled={!isSelected && compareDisabled}
+                  className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                />
+                <label
+                  htmlFor={`compare-card-${venue.id}`}
+                  className="text-xs font-bold text-zinc-800 dark:text-zinc-200 cursor-pointer select-none uppercase tracking-tight"
+                >
+                  Compare
+                </label>
+              </div>
+            )}
+
             {venue.score != null && (
-              <div className="absolute top-3 right-3 flex flex-col items-center justify-center h-12 w-12 rounded-full bg-blue-600 text-white border-2 border-blue-400 shadow-2xl">
+              <div className="absolute top-3 right-3 flex flex-col items-center justify-center h-12 w-12 rounded-full bg-blue-600 text-white border-2 border-blue-400 shadow-2xl z-10">
                 <span className="text-[10px] font-black leading-none uppercase">
                   Vibe
                 </span>
@@ -444,14 +509,18 @@ export function VenueChatCard({
                       );
                       onToggleFavorite(venue);
                     }}
-                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg transition-all ${
+                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg ${
+                      enableTransition ? "transition-all duration-300" : ""
+                    } ${
                       isFavorited
                         ? "bg-red-500 text-white shadow-md shadow-red-500/20"
                         : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                     }`}
                   >
                     <Heart
-                      className={`w-3 h-3 ${isFavorited ? "fill-current" : ""}`}
+                      className={`w-3 h-3 ${
+                        enableTransition ? "transition-all duration-300" : ""
+                      } ${isFavorited ? "fill-current" : ""}`}
                     />
                     {isFavorited ? "Saved" : "Save"}
                   </button>
@@ -515,6 +584,21 @@ export function VenueListings({
 }: VenueListingsProps) {
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // State to track venues selected for comparison
+  const [selectedVenues, setSelectedVenues] = useState<Venue[]>([]);
+
+  const handleToggleCompare = (venue: Venue) => {
+    setSelectedVenues((prev) => {
+      const isSelected = prev.some((v) => v.id === venue.id);
+      if (isSelected) {
+        return prev.filter((v) => v.id !== venue.id);
+      } else if (prev.length < 3) {
+        return [...prev, venue];
+      }
+      return prev;
+    });
+  };
 
   const handleKeyDown = (
     e: React.KeyboardEvent,
@@ -597,10 +681,21 @@ export function VenueListings({
               tabIndex={0}
               data-index={index}
               onKeyDown={(e) => handleKeyDown(e, index, venue)}
+              isSelected={selectedVenues.some((v) => v.id === venue.id)}
+              compareDisabled={selectedVenues.length >= 3}
+              onToggleCompare={handleToggleCompare}
             />
           ))}
         </div>
       )}
+
+      {/* Comparison Drawer Integration */}
+      <ComparisonDrawer
+        selectedVenues={selectedVenues as any}
+        onRemoveVenue={(id) =>
+          setSelectedVenues((prev) => prev.filter((v) => v.id !== id))
+        }
+      />
     </div>
   );
 }
@@ -869,42 +964,6 @@ export function ChatInput({
   const charCount = safeInput.length;
   const isOverLimit = charCount > MAX_CHARS;
 
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [isFocused, setIsFocused] = useState(false);
-
-  useEffect(() => {
-    const history = localStorage.getItem("ws-recent-searches");
-    if (history) {
-      try {
-        setRecentSearches(JSON.parse(history));
-      } catch (e) {
-        console.error(e);
-      }
-    }
-  }, []);
-
-  const saveToHistory = (term: string) => {
-    const updated = [
-      term,
-      ...recentSearches.filter((item) => item !== term),
-    ].slice(0, 5);
-    setRecentSearches(updated);
-    localStorage.setItem("ws-recent-searches", JSON.stringify(updated));
-  };
-
-  const clearHistory = () => {
-    setRecentSearches([]);
-    localStorage.removeItem("ws-recent-searches");
-  };
-
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (safeInput.trim() && !isOverLimit) {
-      saveToHistory(safeInput.trim());
-    }
-    onSubmit(e);
-  };
-
   let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
   if (isOverLimit) {
     counterColor = "text-red-500";
@@ -913,63 +972,16 @@ export function ChatInput({
   }
 
   return (
-    <div className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
-      <AnimatePresence>
-        {isFocused && recentSearches.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            className="absolute bottom-full left-4 right-4 mb-2 z-50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl flex flex-col gap-3"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-zinc-400" />
-                Recent Searches
-              </span>
-              <button
-                type="button"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  clearHistory();
-                }}
-                className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors flex items-center gap-1"
-              >
-                <Trash2 className="w-3 h-3" />
-                Clear
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {recentSearches.map((term) => (
-                <button
-                  key={term}
-                  type="button"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    onInputChange(term);
-                  }}
-                  className="px-3 py-1.5 bg-zinc-100 hover:bg-blue-50 dark:bg-zinc-900 dark:hover:bg-blue-950/30 border border-zinc-200/50 dark:border-zinc-800 hover:border-blue-200 dark:hover:border-blue-900/50 text-[11px] font-black uppercase tracking-tight rounded-xl text-zinc-600 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 transition-all flex items-center gap-1"
-                >
-                  {term}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+    <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
       <form
         id="ws-chat-form"
-        onSubmit={handleFormSubmit}
+        onSubmit={onSubmit}
         className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:border-blue-600 transition-all shadow-inner"
       >
         <input
           type="text"
           value={safeInput}
           onChange={(e) => onInputChange(e.target.value ?? "")}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
           placeholder="Where's the focus mode hotspot?"
           disabled={isLoading}
           className="flex-1 px-4 py-3 bg-transparent text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 text-sm font-bold"

@@ -8,6 +8,7 @@ import { VenueRatingDialog } from "./VenueRatingDialog";
 import { VenueSubmissionModal } from "./VenueSubmissionModal";
 import { BookingModal } from "./chat/BookingModal";
 import { ChatHeader } from "./chat/ChatHeader";
+import { ShortcutsModal } from "./ui/ShortcutsModal";
 import { ChatInput, MessageList, Venue, Message } from "./chat/ChatMessages";
 import {
   trackSearch,
@@ -164,6 +165,7 @@ export function EnhancedChatbot({
     "booking",
   );
   const [showVenueSubmission, setShowVenueSubmission] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
 
   // Conversations & favorites
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -442,6 +444,41 @@ export function EnhancedChatbot({
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
   }, [isSignedIn, loadConversations]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isTyping =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.getAttribute("contenteditable") === "true");
+
+      if (e.key === "?" && !isTyping) {
+        e.preventDefault();
+        setShowShortcutsModal((prev) => !prev);
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const chatInput = document.querySelector(
+          "#ws-chat-form input",
+        ) as HTMLInputElement;
+        chatInput?.focus();
+      }
+
+      if (e.key === "Escape") {
+        setRatingVenue(null);
+        setBookingVenue(null);
+        setBookingMode("booking");
+        setShowVenueSubmission(false);
+        setShowShortcutsModal(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
 
   const startNewChat = () => {
     setCurrentConversationId(null);
@@ -1161,6 +1198,11 @@ export function EnhancedChatbot({
             },
           ]);
         }}
+      />
+
+      <ShortcutsModal
+        isOpen={showShortcutsModal}
+        onClose={() => setShowShortcutsModal(false)}
       />
     </div>
   );

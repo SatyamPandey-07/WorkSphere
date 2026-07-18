@@ -25,10 +25,10 @@ Custom markers are created using Leaflet's `L.divIcon()` API.
 
 Current marker types include:
 
-| Marker Type | Purpose |
-|-------------|---------|
-| `venueIcon` | Displays standard venue locations |
-| `destinationIcon` | Displays destination markers |
+| Marker Type       | Purpose                           |
+| ----------------- | --------------------------------- |
+| `venueIcon`       | Displays standard venue locations |
+| `destinationIcon` | Displays destination markers      |
 
 Both marker types are generated dynamically inside the map component.
 
@@ -45,7 +45,7 @@ The implementation specifies custom `iconSize` values to control marker dimensio
 Example:
 
 ```ts
-iconSize: [32, 32]
+iconSize: [32, 32],
 ```
 
 Different marker types may use different dimensions depending on their visual appearance.
@@ -59,7 +59,7 @@ Different marker types may use different dimensions depending on their visual ap
 Example:
 
 ```ts
-iconAnchor: [16, 32]
+iconAnchor: [16, 32],
 ```
 
 Using anchors keeps markers accurately positioned regardless of icon size.
@@ -73,7 +73,7 @@ Using anchors keeps markers accurately positioned regardless of icon size.
 Example:
 
 ```ts
-popupAnchor: [0, -32]
+popupAnchor: [0, -32];
 ```
 
 This prevents popup windows from overlapping the marker icon.
@@ -87,7 +87,7 @@ Leaflet shadow assets are still referenced through the standard configuration.
 Example:
 
 ```ts
-shadowUrl: "/leaflet/marker-shadow.png"
+shadowUrl: "/leaflet/marker-shadow.png";
 ```
 
 This preserves depth while using custom icons.
@@ -115,7 +115,11 @@ Because the marker is rendered as HTML, standard CSS styling and animations can 
 The map includes a dedicated keyframe animation for animated markers.
 
 ```css
-@keyframes markerPulse
+@keyframes markerPulse {
+  0%   { transform: scale(1); opacity: 1; }
+  70%  { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
 ```
 
 The animation is applied using:

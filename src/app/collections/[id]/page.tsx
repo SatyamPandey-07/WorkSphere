@@ -257,8 +257,11 @@ export default function FolderDetailsPage({
                         </div>
                       )}
                     </div>
-                    <div className="flex-1">
-                      <h3 className="text-lg font-bold text-zinc-900 dark:text-white mb-1">
+                    <div className="flex-1 min-w-0">
+                      <h3
+                        className="text-lg font-bold text-zinc-900 dark:text-white mb-1 truncate"
+                        title={fv.venue.name}
+                      >
                         {fv.venue.name}
                       </h3>
                       <p className="text-sm text-zinc-500 line-clamp-1">

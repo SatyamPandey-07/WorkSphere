@@ -391,7 +391,6 @@ export function VenueDetailDialog({
     }
   };
 
-  // Effect 1: Venue badalne par state reset karna aur photo fetch karna
   useEffect(() => {
     if (!venue || !isOpen) return;
 
@@ -501,7 +500,6 @@ export function VenueDetailDialog({
         if (!response.ok) {
           throw new Error("Failed to load venue photo");
         }
-
         setPhotoUrl(response.url);
       })
       .catch(() => {
@@ -736,8 +734,26 @@ export function VenueDetailDialog({
 
   return (
     <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-zinc-950/95 animate-in fade-in duration-300">
+      {/* CSS Block for Glassmorphism Gradient Border Animation */}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        @keyframes glassBorderCycle {
+          0% { border-color: rgba(59, 130, 246, 0.5); }
+          33% { border-color: rgba(168, 85, 247, 0.5); }
+          66% { border-color: rgba(6, 182, 212, 0.5); }
+          100% { border-color: rgba(59, 130, 246, 0.5); }
+        }
+        .glass-animated-border {
+          border-width: 1px;
+          border-style: solid;
+          animation: glassBorderCycle 4s linear infinite;
+        }
+      `,
+        }}
+      />
       <div
-        className="bg-white dark:bg-zinc-900 w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] border border-zinc-200 dark:border-zinc-800 animate-in slide-in-from-bottom-12 zoom-in-95 duration-500"
+        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom-12 zoom-in-95 duration-500 bg-zinc-900 supports-[backdrop-filter]:bg-white/[0.08] supports-[backdrop-filter]:backdrop-blur-[20px] glass-animated-border"
         onClick={(e) => e.stopPropagation()}
       >
         {wifiLowConfidence && (
@@ -788,7 +804,7 @@ export function VenueDetailDialog({
 
         <div className="relative h-64 sm:h-80 w-full overflow-hidden">
           {photoLoading ? (
-            <div className="w-full h-full bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
+            <div className="w-full h-full bg-black/40 animate-pulse" />
           ) : (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
@@ -798,25 +814,25 @@ export function VenueDetailDialog({
               onError={() => setImageError(true)}
             />
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
 
           <div className="absolute top-4 right-4 flex gap-2">
             <button
               onClick={handleQuickSave}
               disabled={quickSaveLoading}
-              className="p-3 bg-white hover:bg-zinc-100 text-black rounded-full shadow-2xl border border-zinc-200 transition-all font-bold active:scale-90 flex items-center justify-center disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90 flex items-center justify-center disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
               title="Quick Save"
               aria-label="Quick Save"
             >
               {quickSaveLoading ? (
-                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+                <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
               ) : (
-                <Bookmark className="w-6 h-6 text-blue-600" />
+                <Bookmark className="w-6 h-6 text-blue-400" />
               )}
             </button>
             <button
               onClick={onClose}
-              className="p-3 bg-white hover:bg-zinc-100 text-black rounded-full shadow-2xl border border-zinc-200 transition-all font-bold active:scale-90"
+              className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90"
             >
               <X className="w-6 h-6" />
             </button>
@@ -824,12 +840,12 @@ export function VenueDetailDialog({
 
           <div className="absolute bottom-6 left-6 right-6">
             <div className="flex items-center gap-2 mb-2">
-              <span className="flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-black bg-blue-600 text-white px-2.5 py-1 rounded shadow-lg">
+              <span className="flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-black bg-blue-500/80 backdrop-blur-md border border-blue-400/50 text-white px-2.5 py-1 rounded shadow-lg">
                 <CategoryIcon className="w-3.5 h-3.5" />
                 {venue.category?.replace("_", " ")}
               </span>
               {currentScore != null && (
-                <span className="text-[10px] tracking-widest uppercase font-black bg-white text-zinc-900 border border-zinc-200 px-2.5 py-1 rounded shadow-lg">
+                <span className="text-[10px] tracking-widest uppercase font-black bg-white/20 backdrop-blur-md text-white border border-white/30 px-2.5 py-1 rounded shadow-lg">
                   VIBE SCORE: {Math.round(currentScore * 10)}%
                 </span>
               )}
@@ -846,7 +862,7 @@ export function VenueDetailDialog({
           </div>
         </div>
 
-        <div className="flex border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 px-8 py-3 gap-6">
+        <div className="flex border-b border-white/10 bg-transparent px-8 py-3 gap-6">
           {[
             { id: "overview", label: "Overview" },
             { id: "reviews", label: t("venue.reviews") },
@@ -857,8 +873,8 @@ export function VenueDetailDialog({
               onClick={() => setActiveTab(tab.id as any)}
               className={`pb-1 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
                 activeTab === tab.id
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+                  ? "border-blue-500 text-blue-400"
+                  : "border-transparent text-zinc-400 hover:text-zinc-200"
               }`}
             >
               {tab.label}
@@ -868,7 +884,7 @@ export function VenueDetailDialog({
 
         {/* Content Section */}
 
-        <div className="p-8 bg-white dark:bg-zinc-900 overflow-y-auto max-h-[calc(90vh-320px)]">
+        <div className="p-8 bg-transparent overflow-y-auto max-h-[calc(90vh-320px)] text-zinc-100">
           {activeTab === "overview" && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
@@ -881,17 +897,17 @@ export function VenueDetailDialog({
                   }
                   className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
                     activeDistribution === "wifi"
-                      ? "bg-blue-500/10 border-blue-500 shadow-md ring-2 ring-blue-500/20 scale-95"
-                      : "bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-[1.02] cursor-pointer"
+                      ? "bg-blue-500/20 border-blue-500 shadow-md ring-2 ring-blue-500/20 scale-95"
+                      : "bg-black/20 border-white/5 hover:bg-black/40 hover:border-white/10 hover:scale-[1.02] cursor-pointer"
                   }`}
                 >
-                  <div className="p-3 rounded-xl bg-blue-500/10 mb-3">
-                    <Wifi className="w-6 h-6 text-blue-500" />
+                  <div className="p-3 rounded-xl bg-blue-500/20 mb-3">
+                    <Wifi className="w-6 h-6 text-blue-400" />
                   </div>
                   <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">
                     WiFi
                   </span>
-                  <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none">
+                  <span className="text-xl font-black text-white leading-none">
                     {venue.wifiSpeed
                       ? `${venue.wifiSpeed} Mbps`
                       : venue.wifi
@@ -909,17 +925,17 @@ export function VenueDetailDialog({
                   }
                   className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
                     activeDistribution === "outlets"
-                      ? "bg-orange-500/10 border-orange-500 shadow-md ring-2 ring-orange-500/20 scale-95"
-                      : "bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-[1.02] cursor-pointer"
+                      ? "bg-orange-500/20 border-orange-500 shadow-md ring-2 ring-orange-500/20 scale-95"
+                      : "bg-black/20 border-white/5 hover:bg-black/40 hover:border-white/10 hover:scale-[1.02] cursor-pointer"
                   }`}
                 >
-                  <div className="p-3 rounded-xl bg-orange-500/10 mb-3">
-                    <Zap className="w-6 h-6 text-orange-500" />
+                  <div className="p-3 rounded-xl bg-orange-500/20 mb-3">
+                    <Zap className="w-6 h-6 text-orange-400" />
                   </div>
                   <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">
                     Power
                   </span>
-                  <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none uppercase tracking-wide">
+                  <span className="text-xl font-black text-white leading-none uppercase tracking-wide">
                     {venue.outletDensity && venue.outletDensity !== "none"
                       ? venue.outletDensity
                           .replace("_", " ")
@@ -939,29 +955,29 @@ export function VenueDetailDialog({
                   }
                   className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
                     activeDistribution === "noise"
-                      ? "bg-pink-500/10 border-pink-500 shadow-md ring-2 ring-pink-500/20 scale-95"
-                      : "bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:scale-[1.02] cursor-pointer"
+                      ? "bg-pink-500/20 border-pink-500 shadow-md ring-2 ring-pink-500/20 scale-95"
+                      : "bg-black/20 border-white/5 hover:bg-black/40 hover:border-white/10 hover:scale-[1.02] cursor-pointer"
                   }`}
                 >
-                  <div className="p-3 rounded-xl bg-pink-500/10 mb-3">
-                    <Volume2 className="w-6 h-6 text-pink-500" />
+                  <div className="p-3 rounded-xl bg-pink-500/20 mb-3">
+                    <Volume2 className="w-6 h-6 text-pink-400" />
                   </div>
                   <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">
                     Noise
                   </span>
-                  <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none capitalize">
+                  <span className="text-xl font-black text-white leading-none capitalize">
                     {venue.noiseLevel || "Normal"}
                   </span>
                 </button>
 
-                <div className="bg-zinc-50 dark:bg-zinc-800 p-5 rounded-2xl flex flex-col items-center text-center border border-zinc-100 dark:border-zinc-700">
-                  <div className="p-3 rounded-xl bg-amber-500/10 mb-3">
-                    <Sun className="w-6 h-6 text-amber-500" />
+                <div className="bg-black/20 p-5 rounded-2xl flex flex-col items-center text-center border border-white/5">
+                  <div className="p-3 rounded-xl bg-amber-500/20 mb-3">
+                    <Sun className="w-6 h-6 text-amber-400" />
                   </div>
                   <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">
                     Lighting
                   </span>
-                  <span className="text-xl font-black text-zinc-900 dark:text-zinc-50 leading-none capitalize text-center leading-tight">
+                  <span className="text-xl font-black text-white leading-none capitalize text-center leading-tight">
                     {venue.lighting
                       ? venue.lighting.replace("_", " ")
                       : "Normal"}
@@ -980,12 +996,12 @@ export function VenueDetailDialog({
               )}
 
               {wifiPredictions.length > 0 && (
-                <div className="mb-6 bg-white dark:bg-zinc-800 p-5 rounded-2xl border border-zinc-100 dark:border-zinc-700 shadow-sm">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200 mb-1 flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-blue-500" />
+                <div className="mb-6 bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-200 mb-1 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-blue-400" />
                     AI Wifi Prediction
                   </h3>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-4">
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-widest mb-4">
                     Expected speeds based on crowd telemetry
                   </p>
                   <div className="h-40 w-full mt-2">
@@ -1008,25 +1024,25 @@ export function VenueDetailDialog({
                         />
                         <Tooltip
                           isAnimationActive={false}
-                          cursor={{ fill: "rgba(0,0,0,0.05)" }}
+                          cursor={{ fill: "rgba(255,255,255,0.05)" }}
                           content={({ active, payload }) => {
                             if (active && payload && payload.length) {
                               const data = payload[0].payload;
                               return (
-                                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-2.5 rounded shadow-xl">
-                                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                                <div className="bg-zinc-900 border border-zinc-700 p-2.5 rounded shadow-xl">
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
                                     {data.time}
                                   </p>
-                                  <p className="text-sm font-bold text-blue-600">
+                                  <p className="text-sm font-bold text-blue-400">
                                     {data.download} Mbps (Download)
                                   </p>
-                                  <p className="text-sm font-bold text-green-600">
+                                  <p className="text-sm font-bold text-green-400">
                                     {data.upload} Mbps (Upload)
                                   </p>
-                                  <p className="text-sm font-bold text-orange-600">
+                                  <p className="text-sm font-bold text-orange-400">
                                     {data.latency} ms (Latency)
                                   </p>
-                                  <p className="text-[10px] uppercase tracking-wider text-zinc-400 mt-1">
+                                  <p className="text-[10px] uppercase tracking-wider text-zinc-500 mt-1">
                                     Crowd: {data.crowd}
                                   </p>
                                 </div>
@@ -1037,19 +1053,19 @@ export function VenueDetailDialog({
                         />
                         <Bar
                           dataKey="download"
-                          fill="#3b82f6"
+                          fill="#60a5fa"
                           radius={[4, 4, 0, 0]}
                           name="Download"
                         />
                         <Bar
                           dataKey="upload"
-                          fill="#22c55e"
+                          fill="#4ade80"
                           radius={[4, 4, 0, 0]}
                           name="Upload"
                         />
                         <Bar
                           dataKey="latency"
-                          fill="#f97316"
+                          fill="#fb923c"
                           radius={[4, 4, 0, 0]}
                           name="Latency"
                         />
@@ -1060,12 +1076,12 @@ export function VenueDetailDialog({
               )}
 
               {occupancyData.length > 0 && (
-                <div className="mb-6 bg-white dark:bg-zinc-800 p-5 rounded-2xl border border-zinc-100 dark:border-zinc-700 shadow-sm">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200 mb-1 flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-orange-500" />
+                <div className="mb-6 bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-200 mb-1 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-orange-400" />
                     Live Crowd Occupancy
                   </h3>
-                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-4">
+                  <p className="text-[10px] text-zinc-400 uppercase tracking-widest mb-4">
                     Historical crowd levels by hour
                   </p>
                   <div className="h-40 w-full mt-2">
@@ -1090,18 +1106,18 @@ export function VenueDetailDialog({
                         <Tooltip
                           isAnimationActive={false}
                           cursor={{
-                            stroke: "rgba(0,0,0,0.05)",
+                            stroke: "rgba(255,255,255,0.1)",
                             strokeWidth: 2,
                           }}
                           content={({ active, payload }) => {
                             if (active && payload && payload.length) {
                               const data = payload[0].payload;
                               return (
-                                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-2.5 rounded shadow-xl">
-                                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                                <div className="bg-zinc-900 border border-zinc-700 p-2.5 rounded shadow-xl">
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
                                     {data.time}
                                   </p>
-                                  <p className="text-sm font-bold text-orange-600">
+                                  <p className="text-sm font-bold text-orange-400">
                                     {data.occupancy}% Occupied
                                   </p>
                                 </div>
@@ -1113,9 +1129,9 @@ export function VenueDetailDialog({
                         <Line
                           type="monotone"
                           dataKey="occupancy"
-                          stroke="#f97316"
+                          stroke="#fb923c"
                           strokeWidth={3}
-                          dot={{ fill: "#f97316", r: 4 }}
+                          dot={{ fill: "#fb923c", r: 4 }}
                           activeDot={{ r: 6 }}
                         />
                       </LineChart>
@@ -1129,8 +1145,8 @@ export function VenueDetailDialog({
                 <div
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                     voteMetrics.freeStreetParking.confidenceScore < 60
-                      ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                      ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                      : "border-white/10 bg-black/20 text-zinc-300"
                   }`}
                 >
                   <Car className="w-3.5 h-3.5 text-blue-400" />
@@ -1139,12 +1155,12 @@ export function VenueDetailDialog({
                     {voteMetrics.freeStreetParking.confidenceScore}%)
                   </span>
 
-                  <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <div className="ml-1 flex items-center border-l border-white/20 pl-1.5 gap-1 text-[10px]">
                     <button
                       onClick={() =>
                         _submitAmenityVote("freeStreetParking", true)
                       }
-                      className={`transition-colors ${voteMetrics.freeStreetParking.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                      className={`transition-colors ${voteMetrics.freeStreetParking.userVote === true ? "text-green-400" : "hover:text-green-400"}`}
                     >
                       👍
                     </button>
@@ -1152,7 +1168,7 @@ export function VenueDetailDialog({
                       onClick={() =>
                         _submitAmenityVote("freeStreetParking", false)
                       }
-                      className={`transition-colors ${voteMetrics.freeStreetParking.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                      className={`transition-colors ${voteMetrics.freeStreetParking.userVote === false ? "text-red-400" : "hover:text-red-400"}`}
                     >
                       👎
                     </button>
@@ -1165,25 +1181,25 @@ export function VenueDetailDialog({
                 <div
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                     voteMetrics.paidGarage.confidenceScore < 60
-                      ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                      ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                      : "border-white/10 bg-black/20 text-zinc-300"
                   }`}
                 >
-                  <CircleDollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                  <CircleDollarSign className="w-3.5 h-3.5 text-emerald-500" />
                   <span className="font-medium font-mono text-[11px]">
                     Paid Garage ({voteMetrics.paidGarage.confidenceScore}%)
                   </span>
 
-                  <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <div className="ml-1 flex items-center border-l border-white/20 pl-1.5 gap-1 text-[10px]">
                     <button
                       onClick={() => _submitAmenityVote("paidGarage", true)}
-                      className={`transition-colors ${voteMetrics.paidGarage.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                      className={`transition-colors ${voteMetrics.paidGarage.userVote === true ? "text-green-400" : "hover:text-green-400"}`}
                     >
                       👍
                     </button>
                     <button
                       onClick={() => _submitAmenityVote("paidGarage", false)}
-                      className={`transition-colors ${voteMetrics.paidGarage.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                      className={`transition-colors ${voteMetrics.paidGarage.userVote === false ? "text-red-400" : "hover:text-red-400"}`}
                     >
                       👎
                     </button>
@@ -1196,25 +1212,25 @@ export function VenueDetailDialog({
                 <div
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                     voteMetrics.bicycleRack.confidenceScore < 60
-                      ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                      ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                      : "border-white/10 bg-black/20 text-zinc-300"
                   }`}
                 >
-                  <Bike className="w-3.5 h-3.5 text-orange-500" />
+                  <Bike className="w-3.5 h-3.5 text-orange-400" />
                   <span className="font-medium font-mono text-[11px]">
                     Bicycle Rack ({voteMetrics.bicycleRack.confidenceScore}%)
                   </span>
 
-                  <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <div className="ml-1 flex items-center border-l border-white/20 pl-1.5 gap-1 text-[10px]">
                     <button
                       onClick={() => _submitAmenityVote("bicycleRack", true)}
-                      className={`transition-colors ${voteMetrics.bicycleRack.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                      className={`transition-colors ${voteMetrics.bicycleRack.userVote === true ? "text-green-400" : "hover:text-green-400"}`}
                     >
                       👍
                     </button>
                     <button
                       onClick={() => _submitAmenityVote("bicycleRack", false)}
-                      className={`transition-colors ${voteMetrics.bicycleRack.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                      className={`transition-colors ${voteMetrics.bicycleRack.userVote === false ? "text-red-400" : "hover:text-red-400"}`}
                     >
                       👎
                     </button>
@@ -1227,22 +1243,22 @@ export function VenueDetailDialog({
                 <div
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                     voteMetrics.secureMotorcycleParking.confidenceScore < 60
-                      ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                      : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                      ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                      : "border-white/10 bg-black/20 text-zinc-300"
                   }`}
                 >
-                  <Shield className="w-3.5 h-3.5 text-zinc-500" />
+                  <Shield className="w-3.5 h-3.5 text-zinc-400" />
                   <span className="font-medium font-mono text-[11px]">
                     Moto Parking (
                     {voteMetrics.secureMotorcycleParking.confidenceScore}%)
                   </span>
 
-                  <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                  <div className="ml-1 flex items-center border-l border-white/20 pl-1.5 gap-1 text-[10px]">
                     <button
                       onClick={() =>
                         _submitAmenityVote("secureMotorcycleParking", true)
                       }
-                      className={`transition-colors ${voteMetrics.secureMotorcycleParking.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                      className={`transition-colors ${voteMetrics.secureMotorcycleParking.userVote === true ? "text-green-400" : "hover:text-green-400"}`}
                     >
                       👍
                     </button>
@@ -1250,7 +1266,7 @@ export function VenueDetailDialog({
                       onClick={() =>
                         _submitAmenityVote("secureMotorcycleParking", false)
                       }
-                      className={`transition-colors ${voteMetrics.secureMotorcycleParking.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                      className={`transition-colors ${voteMetrics.secureMotorcycleParking.userVote === false ? "text-red-400" : "hover:text-red-400"}`}
                     >
                       👎
                     </button>
@@ -1258,13 +1274,13 @@ export function VenueDetailDialog({
                 </div>
               )}
 
-              <div className="space-y-6">
-                <div className="bg-blue-50 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-blue-600 dark:text-blue-400 mb-2 flex items-center gap-2">
+              <div className="space-y-6 mt-6">
+                <div className="bg-blue-500/10 p-5 rounded-2xl border border-blue-500/30">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-blue-400 mb-2 flex items-center gap-2">
                     <Info className="w-4 h-4" />
                     Intelligence Brief
                   </h3>
-                  <p className="text-zinc-700 dark:text-zinc-300 text-sm leading-relaxed font-medium">
+                  <p className="text-zinc-200 text-sm leading-relaxed font-medium">
                     Analysis based on Multi-Agent telemetry suggests this{" "}
                     {venue.category || "workspace"}
                     is optimal for{" "}
@@ -1279,28 +1295,28 @@ export function VenueDetailDialog({
                   </p>
                   <div className="flex flex-wrap gap-2 mt-4">
                     {venue.musicStyle === "lofi" && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
                         <span>🎵 Lo-Fi/Chill Beats</span>
                       </div>
                     )}
                     {venue.musicStyle === "classical_jazz" && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
                         <span>🎷 Classical/Jazz Background</span>
                       </div>
                     )}
                     {(venue.musicStyle === "no_music" || venue.hasNoMusic) && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
                         <span>🔇 No Music Played</span>
                       </div>
                     )}
                     {venue.hasPhoneBooths && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
                         <span>📞 Soundproof Booths Available</span>
                       </div>
                     )}
                     {venue.outletLocations &&
                       venue.outletLocations.length > 0 && (
-                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 text-xs font-semibold">
+                        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
                           <span>
                             🔌 Outlets:{" "}
                             {venue.outletLocations
@@ -1314,7 +1330,7 @@ export function VenueDetailDialog({
               </div>
 
               {/* INTERACTIVE AMENITY VERIFICATION TAG TRACKING ROW */}
-              <div className="flex flex-col gap-2 mt-6 border-t border-zinc-100 dark:border-zinc-800 pt-4">
+              <div className="flex flex-col gap-2 mt-6 border-t border-white/10 pt-4">
                 <span className="text-[10px] font-bold text-zinc-400 tracking-wider uppercase">
                   Verify Amenities:
                 </span>
@@ -1325,25 +1341,25 @@ export function VenueDetailDialog({
                     <div
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                         voteMetrics.wifi.confidenceScore < 60
-                          ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                          : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                          : "border-white/10 bg-black/20 text-zinc-300"
                       }`}
                     >
-                      <Wifi className="w-3.5 h-3.5 text-blue-500" />
+                      <Wifi className="w-3.5 h-3.5 text-blue-400" />
                       <span className="font-medium font-mono text-[11px]">
                         WiFi ({voteMetrics.wifi.confidenceScore}%)
                       </span>
 
-                      <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                      <div className="ml-1 flex items-center border-l border-white/20 pl-1.5 gap-1 text-[10px]">
                         <button
                           onClick={() => _submitAmenityVote("wifi", true)}
-                          className={`transition-colors ${voteMetrics.wifi.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                          className={`transition-colors ${voteMetrics.wifi.userVote === true ? "text-green-400" : "hover:text-green-400"}`}
                         >
                           👍
                         </button>
                         <button
                           onClick={() => _submitAmenityVote("wifi", false)}
-                          className={`transition-colors ${voteMetrics.wifi.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                          className={`transition-colors ${voteMetrics.wifi.userVote === false ? "text-red-400" : "hover:text-red-400"}`}
                         >
                           👎
                         </button>
@@ -1356,25 +1372,25 @@ export function VenueDetailDialog({
                     <div
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                         voteMetrics.outlets.confidenceScore < 60
-                          ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                          : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                          : "border-white/10 bg-black/20 text-zinc-300"
                       }`}
                     >
-                      <Zap className="w-3.5 h-3.5 text-yellow-500" />
+                      <Zap className="w-3.5 h-3.5 text-yellow-400" />
                       <span className="font-medium font-mono text-[11px]">
                         Outlets ({voteMetrics.outlets.confidenceScore}%)
                       </span>
 
-                      <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                      <div className="ml-1 flex items-center border-l border-white/20 pl-1.5 gap-1 text-[10px]">
                         <button
                           onClick={() => _submitAmenityVote("outlets", true)}
-                          className={`transition-colors ${voteMetrics.outlets.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                          className={`transition-colors ${voteMetrics.outlets.userVote === true ? "text-green-400" : "hover:text-green-400"}`}
                         >
                           👍
                         </button>
                         <button
                           onClick={() => _submitAmenityVote("outlets", false)}
-                          className={`transition-colors ${voteMetrics.outlets.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                          className={`transition-colors ${voteMetrics.outlets.userVote === false ? "text-red-400" : "hover:text-red-400"}`}
                         >
                           👎
                         </button>
@@ -1387,19 +1403,19 @@ export function VenueDetailDialog({
                     <div
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                         voteMetrics.silentRoom.confidenceScore < 60
-                          ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                          : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                          : "border-white/10 bg-black/20 text-zinc-300"
                       }`}
                     >
-                      <VolumeX className="w-3.5 h-3.5 text-emerald-500" />
+                      <VolumeX className="w-3.5 h-3.5 text-emerald-400" />
                       <span className="font-medium font-mono text-[11px]">
                         Silent Room ({voteMetrics.silentRoom.confidenceScore}%)
                       </span>
 
-                      <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                      <div className="ml-1 flex items-center border-l border-white/20 pl-1.5 gap-1 text-[10px]">
                         <button
                           onClick={() => _submitAmenityVote("silentRoom", true)}
-                          className={`transition-colors ${voteMetrics.silentRoom.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                          className={`transition-colors ${voteMetrics.silentRoom.userVote === true ? "text-green-400" : "hover:text-green-400"}`}
                         >
                           👍
                         </button>
@@ -1407,7 +1423,7 @@ export function VenueDetailDialog({
                           onClick={() =>
                             _submitAmenityVote("silentRoom", false)
                           }
-                          className={`transition-colors ${voteMetrics.silentRoom.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                          className={`transition-colors ${voteMetrics.silentRoom.userVote === false ? "text-red-400" : "hover:text-red-400"}`}
                         >
                           👎
                         </button>
@@ -1420,19 +1436,19 @@ export function VenueDetailDialog({
                     <div
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                         voteMetrics.studyTable.confidenceScore < 60
-                          ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                          : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                          : "border-white/10 bg-black/20 text-zinc-300"
                       }`}
                     >
-                      <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                      <Calendar className="w-3.5 h-3.5 text-indigo-400" />
                       <span className="font-medium font-mono text-[11px]">
                         Study Tables ({voteMetrics.studyTable.confidenceScore}%)
                       </span>
 
-                      <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                      <div className="ml-1 flex items-center border-l border-white/20 pl-1.5 gap-1 text-[10px]">
                         <button
                           onClick={() => _submitAmenityVote("studyTable", true)}
-                          className={`transition-colors ${voteMetrics.studyTable.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                          className={`transition-colors ${voteMetrics.studyTable.userVote === true ? "text-green-400" : "hover:text-green-400"}`}
                         >
                           👍
                         </button>
@@ -1440,7 +1456,7 @@ export function VenueDetailDialog({
                           onClick={() =>
                             _submitAmenityVote("studyTable", false)
                           }
-                          className={`transition-colors ${voteMetrics.studyTable.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                          className={`transition-colors ${voteMetrics.studyTable.userVote === false ? "text-red-400" : "hover:text-red-400"}`}
                         >
                           👎
                         </button>
@@ -1453,26 +1469,26 @@ export function VenueDetailDialog({
                     <div
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all ${
                         voteMetrics.scanner.confidenceScore < 60
-                          ? "border-amber-500/30 bg-amber-500/5 text-amber-500"
-                          : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 text-zinc-700 dark:text-zinc-300"
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                          : "border-white/10 bg-black/20 text-zinc-300"
                       }`}
                     >
-                      <Printer className="w-3.5 h-3.5 text-cyan-500" />
+                      <Printer className="w-3.5 h-3.5 text-cyan-400" />
                       <span className="font-medium font-mono text-[11px]">
                         Scanners/Printers ({voteMetrics.scanner.confidenceScore}
                         %)
                       </span>
 
-                      <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
+                      <div className="ml-1 flex items-center border-l border-white/20 pl-1.5 gap-1 text-[10px]">
                         <button
                           onClick={() => _submitAmenityVote("scanner", true)}
-                          className={`transition-colors ${voteMetrics.scanner.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                          className={`transition-colors ${voteMetrics.scanner.userVote === true ? "text-green-400" : "hover:text-green-400"}`}
                         >
                           👍
                         </button>
                         <button
                           onClick={() => _submitAmenityVote("scanner", false)}
-                          className={`transition-colors ${voteMetrics.scanner.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                          className={`transition-colors ${voteMetrics.scanner.userVote === false ? "text-red-400" : "hover:text-red-400"}`}
                         >
                           👎
                         </button>
@@ -1482,7 +1498,7 @@ export function VenueDetailDialog({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 pt-4">
+              <div className="flex flex-col gap-3 pt-6 border-t border-white/10 mt-6">
                 <button
                   onClick={() => onGetDirections(venue)}
                   className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98]"
@@ -1496,7 +1512,7 @@ export function VenueDetailDialog({
                     className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${
                       isFavorited
                         ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
-                        : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
+                        : "bg-black/40 border-white/10 text-zinc-200 hover:bg-black/60 shadow-md"
                     }`}
                   >
                     <Heart
@@ -1507,7 +1523,7 @@ export function VenueDetailDialog({
                   {onRate && (
                     <button
                       onClick={() => onRate(venue)}
-                      className="flex-1 flex items-center justify-center gap-2 bg-white dark:bg-zinc-800 border-2 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all shadow-md active:scale-[0.98]"
+                      className="flex-1 flex items-center justify-center gap-2 bg-black/40 border-2 border-white/10 text-zinc-200 hover:bg-black/60 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all shadow-md active:scale-[0.98]"
                     >
                       <Star className="w-4 h-4" />
                       Rate
@@ -1521,12 +1537,12 @@ export function VenueDetailDialog({
           {activeTab === "reviews" && (
             <div className="space-y-4">
               {reviews.length === 0 ? (
-                <div className="py-12 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl text-center px-4">
+                <div className="py-12 border-2 border-dashed border-white/10 rounded-2xl text-center px-4">
                   <Info className="w-8 h-8 text-zinc-400 mx-auto mb-2" />
-                  <p className="text-xs font-black uppercase tracking-wider text-zinc-500">
+                  <p className="text-xs font-black uppercase tracking-wider text-zinc-400">
                     {t("venue.noReviewsYet")}
                   </p>
-                  <p className="text-[10px] text-zinc-400 mt-1">
+                  <p className="text-[10px] text-zinc-500 mt-1">
                     {t("venue.beTheFirst")}
                   </p>
                 </div>
@@ -1534,15 +1550,15 @@ export function VenueDetailDialog({
                 reviews.map((review: any, idx: number) => (
                   <div
                     key={idx}
-                    className="p-4 border border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/20 rounded-2xl space-y-3"
+                    className="p-4 border border-white/10 bg-black/20 rounded-2xl space-y-3"
                   >
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 uppercase">
+                        <span className="text-xs font-bold text-zinc-200 uppercase">
                           {review.user?.firstName || "Nomad"}{" "}
                           {review.user?.lastName || "Scout"}
                         </span>
-                        <div className="flex items-center gap-1.5 mt-1 text-[9px] font-mono text-zinc-500">
+                        <div className="flex items-center gap-1.5 mt-1 text-[9px] font-mono text-zinc-400">
                           <span>
                             {t("venue.wifi")}: {review.wifiQuality}/5
                           </span>
@@ -1570,21 +1586,21 @@ export function VenueDetailDialog({
                         </div>
                       </div>
                       {review.wifiSpeed && (
-                        <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded text-[9px] font-black tracking-wider">
+                        <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-[9px] font-black tracking-wider border border-blue-500/30">
                           {review.wifiSpeed} MBPS
                         </span>
                       )}
                     </div>
                     {review.comment && (
                       <div className="space-y-2">
-                        <p className="text-xs font-medium text-zinc-700 dark:text-zinc-300 leading-relaxed bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                        <p className="text-xs font-medium text-zinc-200 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5">
                           {translatedReviews[review.id] || review.comment}
                         </p>
                         {!translatedReviews[review.id] && (
                           <button
                             onClick={() => handleTranslate(review)}
                             disabled={translatingReviewId === review.id}
-                            className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-500 hover:text-blue-600 transition-colors disabled:opacity-50"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
                           >
                             <Globe2 className="w-3 h-3" />
                             {translatingReviewId === review.id
@@ -1597,7 +1613,7 @@ export function VenueDetailDialog({
                     {review.speedtestPhoto && (
                       <button
                         onClick={() => setPreviewPhoto(review.speedtestPhoto)}
-                        className="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-blue-600 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg border border-blue-500/20 transition-all active:scale-95"
+                        className="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg border border-blue-500/20 transition-all active:scale-95"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         {t("venue.viewSpeedtest")}
@@ -1611,21 +1627,21 @@ export function VenueDetailDialog({
 
           {activeTab === "menu" && (
             <div className="space-y-6">
-              <label className="flex flex-col items-center justify-center border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 bg-zinc-50 dark:bg-zinc-800/10 hover:border-zinc-300 dark:hover:border-zinc-700 cursor-pointer transition-all">
+              <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 bg-black/20 hover:border-white/20 cursor-pointer transition-all">
                 {uploadingMenu ? (
                   <div className="flex flex-col items-center gap-2 py-2">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-                    <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-black">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+                    <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-black">
                       Uploading...
                     </span>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-1 text-center">
                     <Camera className="w-8 h-8 text-zinc-400 mb-1" />
-                    <span className="text-xs font-black uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                    <span className="text-xs font-black uppercase tracking-wider text-zinc-200">
                       Upload Menu / Drink Options
                     </span>
-                    <span className="text-[10px] text-zinc-500">
+                    <span className="text-[10px] text-zinc-400">
                       Share workspace pricing & menu options
                     </span>
                   </div>
@@ -1640,7 +1656,7 @@ export function VenueDetailDialog({
               </label>
 
               {menuPhotos.length === 0 ? (
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest py-8 rounded-2xl border-2 border-dashed border-zinc-100 dark:border-zinc-800 text-center animate-pulse">
+                <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest py-8 rounded-2xl border-2 border-dashed border-white/5 text-center animate-pulse">
                   No menu photos added yet
                 </p>
               ) : (
@@ -1648,7 +1664,7 @@ export function VenueDetailDialog({
                   {menuPhotos.map((photo: string, i: number) => (
                     <div
                       key={i}
-                      className="relative h-32 rounded-xl overflow-hidden border border-zinc-100 dark:border-zinc-800 group/item cursor-pointer"
+                      className="relative h-32 rounded-xl overflow-hidden border border-white/10 group/item cursor-pointer"
                       onClick={() => setPreviewPhoto(photo)}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}

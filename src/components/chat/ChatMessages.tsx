@@ -21,7 +21,7 @@ import {
   LayoutGrid,
   List,
 } from "lucide-react";
-import { RefObject, useState, useEffect } from "react";
+import { RefObject, useState, useEffect, useRef } from "react";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
 import { MessageRenderer } from "./GenerativeUI";
@@ -586,8 +586,25 @@ export function MessageList({
   onSuggestionClick,
   initialSuggestions,
 }: MessageListProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll logic to handle rapid streaming chunks and code block heights
+  useEffect(() => {
+    const container = containerRef.current;
+    if (container) {
+      const isAtBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight <
+        200;
+      if (isAtBottom || isLoading) {
+        requestAnimationFrame(() => {
+          container.scrollTop = container.scrollHeight;
+        });
+      }
+    }
+  }, [messages, isLoading]);
+
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
       {messages.length === 0 && (
         <div className="text-center py-8">
           <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />

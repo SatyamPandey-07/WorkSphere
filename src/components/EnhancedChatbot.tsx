@@ -228,11 +228,6 @@ export function EnhancedChatbot({
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
   // Geolocation fallback
   const getPreciseLocation = useCallback(() => {
     if ("geolocation" in navigator) {

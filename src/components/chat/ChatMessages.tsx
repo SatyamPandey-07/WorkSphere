@@ -108,7 +108,6 @@ interface VenueChatCardProps {
   tabIndex?: number;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   "data-index"?: number;
-  // --- New Props for Issue #614 ---
   isSelected?: boolean;
   compareDisabled?: boolean;
   onToggleCompare?: (venue: Venue) => void;
@@ -589,6 +588,37 @@ export function VenueListings({
   // State to track venues selected for comparison
   const [selectedVenues, setSelectedVenues] = useState<Venue[]>([]);
 
+  // INFINITE SCROLL STATES
+  const [visibleCount, setVisibleCount] = useState(5);
+  const [isFetchingNextPage, setIsFetchingNextPage] = useState(false);
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (
+          entries[0].isIntersecting &&
+          visibleCount < venues.length &&
+          !isFetchingNextPage
+        ) {
+          setIsFetchingNextPage(true);
+          // Simulate fetch delay for smooth UI transition
+          setTimeout(() => {
+            setVisibleCount((prev) => prev + 5);
+            setIsFetchingNextPage(false);
+          }, 800);
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => observer.disconnect();
+  }, [visibleCount, venues.length, isFetchingNextPage]);
+
   const handleToggleCompare = (venue: Venue) => {
     setSelectedVenues((prev) => {
       const isSelected = prev.some((v) => v.id === venue.id);
@@ -668,7 +698,7 @@ export function VenueListings({
         />
       ) : (
         <div className={viewMode === "card" ? "space-y-3" : "space-y-2"}>
-          {venues.slice(0, 5).map((venue, index) => (
+          {venues.slice(0, visibleCount).map((venue, index) => (
             <VenueChatCard
               key={venue.id}
               venue={venue}
@@ -687,6 +717,15 @@ export function VenueListings({
               onToggleCompare={handleToggleCompare}
             />
           ))}
+
+          {/* Infinite Scroll Sentinel */}
+          {visibleCount < venues.length && (
+            <div ref={observerTarget} className="py-4 flex justify-center">
+              {isFetchingNextPage && (
+                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+              )}
+            </div>
+          )}
         </div>
       )}
 

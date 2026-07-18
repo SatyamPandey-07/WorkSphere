@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { X, MapPin, Loader2 } from "lucide-react";
 
@@ -41,12 +41,18 @@ export function VenueSubmissionModal({
 }: VenueSubmissionModalProps) {
   const { isSignedIn } = useUser();
   const { getToken } = useAuth();
+
+  // Existing State
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState("");
+
+  // New Drag & Drop State and Ref
+  const [dragActive, setDragActive] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState<VenueFormData>({
     name: "",
@@ -195,15 +201,50 @@ export function VenueSubmissionModal({
     }
   };
 
+  // Centralized File Validation and Processing
+  const processFile = (selected: File) => {
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    if (!allowedTypes.includes(selected.type)) {
+      setError("Invalid file type. Please upload a JPEG, PNG, or WEBP.");
+      return;
+    }
+
+    if (selected.size > 5 * 1024 * 1024) {
+      setError("Image must be smaller than 5MB");
+      return;
+    }
+
+    setError(null);
+    setFile(selected);
+    setImagePreview(URL.createObjectURL(selected));
+  };
+
+  // Dropzone Event Handlers
+  const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
     if (selected) {
-      if (selected.size > 5 * 1024 * 1024) {
-        setError("Image must be smaller than 5MB");
-        return;
-      }
-      setFile(selected);
-      setImagePreview(URL.createObjectURL(selected));
+      processFile(selected);
     }
   };
 
@@ -248,6 +289,7 @@ export function VenueSubmissionModal({
             Suggest a Workspace
           </h2>
           <button
+            type="button"
             onClick={onClose}
             className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
           >
@@ -353,25 +395,63 @@ export function VenueSubmissionModal({
             <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">
               Venue Photo (Optional)
             </label>
+
+            {/* Drag & Drop File Zone */}
             <div className="flex flex-col gap-2">
-              <input
-                type="file"
-                accept="image/jpeg, image/png, image/webp"
-                onChange={handleFileChange}
-                className="block w-full text-sm text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-900/30 dark:file:text-blue-400 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/50"
-              />
+              <div
+                className={`relative flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
+                  dragActive
+                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                    : "border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                }`}
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
+                onClick={() => inputRef.current?.click()}
+              >
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept="image/jpeg, image/png, image/webp"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+
+                <div className="text-center pointer-events-none">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-300 font-bold">
+                    Drag & drop a venue photo here
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                    or click to browse (JPEG, PNG, WEBP max 5MB)
+                  </p>
+                </div>
+              </div>
+
               {imagePreview && (
-                <div className="relative w-full h-32 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800">
+                <div className="relative w-full h-32 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 mt-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={imagePreview}
                     alt="Preview"
                     className="object-cover w-full h-full"
                   />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFile(null);
+                      setImagePreview(null);
+                      if (inputRef.current) inputRef.current.value = "";
+                    }}
+                    className="absolute top-2 right-2 p-1 bg-black/60 text-white rounded-full hover:bg-black/80 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               )}
             </div>
-            <p className="text-[10px] text-zinc-400 mt-1">
+            <p className="text-[10px] text-zinc-400 mt-2">
               Photos are scanned by AI to verify amenities.
             </p>
           </div>

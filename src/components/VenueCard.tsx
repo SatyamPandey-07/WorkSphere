@@ -53,6 +53,7 @@ export function VenueCard({
   const [isLoading, setIsLoading] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showFolderModal, setShowFolderModal] = useState(false);
+  const [isFlipped, setIsFlipped] = useState(false);
 
   // =========================================================================
   // COMMUNITY VERIFICATION VOTE STATE TRACKING SYSTEM
@@ -210,27 +211,78 @@ export function VenueCard({
         </div>
       )}
 
-      {/* Photo Section */}
+      {/* Photo Section — animated flip on hover to reveal key stats */}
       {photos.length > 0 && (
-        <div className="relative h-32 bg-zinc-100 dark:bg-zinc-800 cursor-pointer" onClick={nextPhoto}>
-          <Image
-            src={photos[photoIndex]}
-            alt={venue.name}
-            fill
-            className="object-cover"
-            unoptimized // External URLs from Foursquare
-          />
-          {photos.length > 1 && (
-            <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 rounded-full text-xs text-white">
-              {photoIndex + 1}/{photos.length}
+        <div
+          className="relative h-32 [perspective:1000px]"
+          onMouseEnter={() => setIsFlipped(true)}
+          onMouseLeave={() => setIsFlipped(false)}
+        >
+          <div
+            className={`relative w-full h-full transition-transform duration-500 [transform-style:preserve-3d] ${
+              isFlipped ? "[transform:rotateY(180deg)]" : ""
+            }`}
+          >
+            {/* FRONT: venue image + name */}
+            <div
+              className="absolute inset-0 [backface-visibility:hidden] bg-zinc-100 dark:bg-zinc-800 cursor-pointer"
+              onClick={nextPhoto}
+            >
+              <Image
+                src={photos[photoIndex]}
+                alt={venue.name}
+                fill
+                className="object-cover"
+                unoptimized // External URLs from Foursquare
+              />
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5">
+                <span className="text-white text-sm font-semibold drop-shadow">
+                  {venue.name}
+                </span>
+              </div>
+              {photos.length > 1 && (
+                <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 rounded-full text-xs text-white">
+                  {photoIndex + 1}/{photos.length}
+                </div>
+              )}
+              {/* Category Badge */}
+              {enrichData?.categories?.[0] && (
+                <div className="absolute top-2 left-2 px-2 py-1 rounded-full text-xs font-medium bg-blue-500 text-white">
+                  {enrichData.categories[0]}
+                </div>
+              )}
             </div>
-          )}
-          {/* Category Badge */}
-          {enrichData?.categories?.[0] && (
-            <div className="absolute top-2 left-2 px-2 py-1 rounded-full text-xs font-medium bg-blue-500 text-white">
-              {enrichData.categories[0]}
+
+            {/* BACK: key stats — WiFi, outlets, noise */}
+            <div className="absolute inset-0 [backface-visibility:hidden] [transform:rotateY(180deg)] bg-zinc-900 text-white p-3 flex flex-col justify-center">
+              <div className="grid grid-cols-1 gap-1.5 text-xs">
+                <div className="flex items-center justify-between border-b border-zinc-700 pb-1">
+                  <span className="flex items-center gap-1.5 text-zinc-400">
+                    <Wifi className="w-3.5 h-3.5" /> WiFi Quality
+                  </span>
+                  <span className="font-medium">
+                    {venue.wifiQuality ? `${venue.wifiQuality}/5` : "N/A"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-b border-zinc-700 pb-1">
+                  <span className="flex items-center gap-1.5 text-zinc-400">
+                    <Zap className="w-3.5 h-3.5" /> Outlets
+                  </span>
+                  <span className="font-medium">
+                    {venue.hasOutlets ? "Available" : "N/A"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-1.5 text-zinc-400">
+                    <Volume2 className="w-3.5 h-3.5" /> Noise Level
+                  </span>
+                  <span className="font-medium capitalize">
+                    {venue.noiseLevel || "N/A"}
+                  </span>
+                </div>
+              </div>
             </div>
-          )}
+          </div>
         </div>
       )}
 

@@ -73,6 +73,11 @@ export default function Home() {
             </span>
           </Link>
           <div className="flex items-center gap-3 sm:gap-4">
+            <div className="flex items-center justify-center shrink-0">
+              <ThemeToggle />
+            </div>
+            <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-700 hidden sm:block" />
+
             <SignedOut>
               <Link href="/sign-in">
                 <button className="px-3 sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap">
@@ -84,8 +89,6 @@ export default function Home() {
                   Get Started
                 </button>
               </Link>
-              <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-800 hidden sm:block" />
-              <ThemeToggle />
             </SignedOut>
             <SignedIn>
               <Link
@@ -102,8 +105,6 @@ export default function Home() {
                 <LayoutGrid className="w-4 h-4" />
                 Collections
               </Link>
-              <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-800 hidden sm:block" />
-              <ThemeToggle />
               <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
                 <UserButton afterSignOutUrl="/" />
               </div>

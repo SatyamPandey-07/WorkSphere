@@ -55,9 +55,10 @@ Add a `validation` namespace to each locale file, keyed by schema name → field
 
 **Naming convention:**
 
-- Top-level key = the exported schema name from `validations.ts` / `schemas.ts` (e.g. `venueRatingSchema` → `validation.venueRating`).
-- Second level = the field name, matching the Zod object key exactly.
-- Third level = a short rule identifier (`required`, `tooLong`, `tooShort`, `range`, `invalid`) rather than reusing Zod's internal issue codes verbatim — this keeps keys stable if the underlying Zod validator changes.
+- Top-level key is always the literal `validation`.
+- Second level = the schema-name segment, derived from the exported schema name (e.g. `venueRatingSchema` → `venueRating`).
+- Third level = the field name, matching the Zod object key exactly.
+- Fourth level = a short rule identifier (`required`, `tooLong`, `tooShort`, `range`, `invalid`)...
 
 ---
 

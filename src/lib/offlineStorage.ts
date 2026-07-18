@@ -47,61 +47,84 @@ let db: IDBDatabase | null = null;
 /**
  * Initialize IndexedDB
  */
+function showPrivateBrowsingAlert() {
+  if (typeof window === "undefined") return;
+  if ((window as any).__worksphere_offline_alert_shown) return;
+  (window as any).__worksphere_offline_alert_shown = true;
+  alert(
+    "Offline storage is disabled because Safari Private Browsing blocks database access. Please disable Private Browsing to use offline features.",
+  );
+}
+
 export async function initOfflineDB(): Promise<IDBDatabase> {
   if (db) return db;
 
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    try {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onerror = () => {
-      console.error("[OfflineDB] Failed to open database");
-      reject(request.error);
-    };
+      request.onerror = () => {
+        console.error("[OfflineDB] Failed to open database");
+        const err = request.error || new Error("Unknown IndexedDB error");
+        if (err.name === "SecurityError") {
+          showPrivateBrowsingAlert();
+        }
+        reject(err);
+      };
 
-    request.onsuccess = () => {
-      db = request.result;
-      console.log("[OfflineDB] Database opened successfully");
-      resolve(db);
-    };
+      request.onsuccess = () => {
+        db = request.result;
+        console.log("[OfflineDB] Database opened successfully");
+        resolve(db);
+      };
 
-    request.onupgradeneeded = (event) => {
-      const database = (event.target as IDBOpenDBRequest).result;
+      request.onupgradeneeded = (event) => {
+        const database = (event.target as IDBOpenDBRequest).result;
 
-      // Venues store
-      if (!database.objectStoreNames.contains("venues")) {
-        const venuesStore = database.createObjectStore("venues", {
-          keyPath: "id",
-        });
-        venuesStore.createIndex("type", "type", { unique: false });
-        venuesStore.createIndex("savedAt", "savedAt", { unique: false });
+        // Venues store
+        if (!database.objectStoreNames.contains("venues")) {
+          const venuesStore = database.createObjectStore("venues", {
+            keyPath: "id",
+          });
+          venuesStore.createIndex("type", "type", { unique: false });
+          venuesStore.createIndex("savedAt", "savedAt", { unique: false });
+        }
+
+        // Favorites store
+        if (!database.objectStoreNames.contains("favorites")) {
+          const favoritesStore = database.createObjectStore("favorites", {
+            keyPath: "id",
+          });
+          favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
+        }
+
+        // Search history store
+        if (!database.objectStoreNames.contains("searches")) {
+          const searchesStore = database.createObjectStore("searches", {
+            keyPath: "query",
+          });
+          searchesStore.createIndex("timestamp", "timestamp", {
+            unique: false,
+          });
+        }
+
+        // Pending actions store (for sync when back online)
+        if (!database.objectStoreNames.contains("pendingActions")) {
+          database.createObjectStore("pendingActions", {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
+
+        console.log("[OfflineDB] Database schema created");
+      };
+    } catch (err: any) {
+      console.error("[OfflineDB] Synchronous error on open:", err);
+      if (err.name === "SecurityError") {
+        showPrivateBrowsingAlert();
       }
-
-      // Favorites store
-      if (!database.objectStoreNames.contains("favorites")) {
-        const favoritesStore = database.createObjectStore("favorites", {
-          keyPath: "id",
-        });
-        favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
-      }
-
-      // Search history store
-      if (!database.objectStoreNames.contains("searches")) {
-        const searchesStore = database.createObjectStore("searches", {
-          keyPath: "query",
-        });
-        searchesStore.createIndex("timestamp", "timestamp", { unique: false });
-      }
-
-      // Pending actions store (for sync when back online)
-      if (!database.objectStoreNames.contains("pendingActions")) {
-        database.createObjectStore("pendingActions", {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-      }
-
-      console.log("[OfflineDB] Database schema created");
-    };
+      reject(err);
+    }
   });
 }
 

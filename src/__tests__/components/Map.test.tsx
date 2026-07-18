@@ -76,6 +76,15 @@ jest.mock("react-leaflet", () => ({
       ),
     },
   ),
+
+  ScaleControl: ({ position, metric, imperial }: any) => (
+    <div
+      data-testid="scale-control"
+      data-position={position}
+      data-metric={metric}
+      data-imperial={imperial}
+    />
+  ),
 }));
 
 // Mock leaflet

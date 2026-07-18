@@ -17,6 +17,7 @@ import {
   GripVertical,
 } from "lucide-react";
 import Image from "next/image";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function CollectionsPage() {
   const router = useRouter();
@@ -199,7 +200,7 @@ export default function CollectionsPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <div className="max-w-5xl mx-auto p-4 sm:p-6 lg:p-8 pt-8">
+      <div className="max-w-[1600px] mx-auto p-4 sm:p-6 lg:p-8 pt-8">
         {/* Header and Tabs Switcher */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-4">
@@ -246,7 +247,7 @@ export default function CollectionsPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {/* Creation Form */}
           <div className="md:col-span-1">
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm sticky top-24">
@@ -304,7 +305,7 @@ export default function CollectionsPage() {
           </div>
 
           {/* List Views */}
-          <div className="md:col-span-2 space-y-4">
+          <div className="md:col-span-2 lg:col-span-3 space-y-4">
             {activeTab === "my" ? (
               // My Collections tab
               loading ? (
@@ -312,17 +313,13 @@ export default function CollectionsPage() {
                   <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
                 </div>
               ) : folders.length === 0 ? (
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-12 text-center shadow-sm">
-                  <Folder className="w-12 h-12 text-zinc-300 dark:text-zinc-700 mx-auto mb-3" />
-                  <h3 className="text-lg font-medium text-zinc-900 dark:text-white mb-1">
-                    No collections yet
-                  </h3>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    Create a collection to start saving venues.
-                  </p>
-                </div>
+                <EmptyState
+                  illustration="collection"
+                  message="No collections yet"
+                  description="Create a collection to start saving your favorite venues."
+                />
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {folders.map((folder, index) => (
                     <div
                       key={folder.id}
@@ -389,17 +386,13 @@ export default function CollectionsPage() {
                 <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
               </div>
             ) : publicFolders.length === 0 ? (
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-12 text-center shadow-sm">
-                <Globe className="w-12 h-12 text-zinc-300 dark:text-zinc-700 mx-auto mb-3" />
-                <h3 className="text-lg font-medium text-zinc-900 dark:text-white mb-1">
-                  No public lists yet
-                </h3>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Share your curated workspace list with the community!
-                </p>
-              </div>
+              <EmptyState
+                illustration="collection"
+                message="No public lists yet"
+                description="Share your curated workspace list with the community!"
+              />
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {publicFolders.map((pubFolder) => (
                   <Link
                     href={`/collections/${pubFolder.id}`}

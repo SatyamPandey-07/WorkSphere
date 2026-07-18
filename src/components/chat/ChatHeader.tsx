@@ -14,7 +14,6 @@ import {
   Filter,
   Globe,
   Trash2,
-  Search,
   ChevronRight,
   Wifi,
   Zap as Outlets,
@@ -30,6 +29,7 @@ import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "../ThemeToggle";
+import { EmptyState } from "../ui/EmptyState";
 
 interface Conversation {
   id: string;
@@ -270,7 +270,7 @@ export function ChatHeader({
           </button>
 
           {/* Analytics Link */}
-         <Link
+          <Link
             href="/analytics"
             className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden lg:flex"
             title="Intelligence Dashboard"
@@ -282,8 +282,6 @@ export function ChatHeader({
           <ThemeToggle />
 
           <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
-
-      
 
           {/* Add Venue Suggestion Button - High Contrast */}
           <button
@@ -530,11 +528,12 @@ export function ChatHeader({
               </h3>
             </div>
             {conversations.length === 0 ? (
-              <div className="p-8 text-center">
-                <Search className="w-8 h-8 text-zinc-300 dark:text-zinc-700 mx-auto mb-2" />
-                <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
-                  No history found
-                </p>
+              <div className="p-4">
+                <EmptyState
+                  illustration="chat"
+                  message="No history found"
+                  description="Your recent AI chat sessions will appear here once you start searching."
+                />
               </div>
             ) : (
               <div className="divide-y divide-zinc-200 dark:divide-zinc-800">

@@ -157,12 +157,12 @@ export async function rateLimit(
 export async function getRateLimitInfo(
   identifier: string,
   limit = 10,
-): {
+): Promise<{
   count: number;
   remaining: number;
   resetTime: number;
   isLimited: boolean;
-} | null {
+} | null> {
   return memGetInfo(identifier, limit);
 }
 

@@ -10,6 +10,7 @@ import {
   Polyline,
   useMap,
   LayersControl,
+  ScaleControl,
 } from "react-leaflet";
 
 import L from "leaflet";
@@ -585,6 +586,15 @@ const Map = ({
   right: 20px;
   z-index: 1000;
 }
+  .leaflet-control-scale {
+  background: transparent;
+}
+
+.leaflet-control-scale-line {
+  border: 1px solid #3f3f46;
+  background: rgba(24, 24, 27, 0.9);
+  color: #f4f4f5;
+}
       `,
         }}
       />
@@ -599,6 +609,7 @@ const Map = ({
           position: "relative",
         }}
       >
+        <ScaleControl position="bottomleft" metric={true} imperial={false} />
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer

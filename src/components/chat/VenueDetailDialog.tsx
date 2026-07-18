@@ -1,10 +1,14 @@
 "use client";
 
+import Tesseract from "tesseract.js";
+
 import {
   X,
   MapPin,
   Wifi,
+  Loader2,
   Zap,
+  Bookmark,
   Volume2,
   Navigation,
   Heart,
@@ -34,6 +38,8 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
+  LineChart,
+  Line,
 } from "recharts";
 import { useTranslation } from "react-i18next";
 
@@ -70,6 +76,11 @@ export function VenueDetailDialog({
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(true);
   const [liveScore, setLiveScore] = useState<number | null>(null);
+  const [imageError, setImageError] = useState(false);
+  const [previewImageError, setPreviewImageError] = useState(false);
+  const [brokenMenuPhotos, setBrokenMenuPhotos] = useState<
+    Record<number, boolean>
+  >({});
   const { t } = useTranslation();
   const [translatingReviewId, setTranslatingReviewId] = useState<string | null>(
     null,
@@ -167,7 +178,137 @@ export function VenueDetailDialog({
   const [menuPhotos, setMenuPhotos] = useState<string[]>([]);
   const [uploadingMenu, setUploadingMenu] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
+  useEffect(() => {
+    setPreviewImageError(false);
+  }, [previewPhoto]);
   const [wifiPredictions, setWifiPredictions] = useState<any[]>([]);
+  const [occupancyData, setOccupancyData] = useState<any[]>([]);
+
+  // Quick Save state
+  const [quickSaveLoading, setQuickSaveLoading] = useState(false);
+
+  const handleQuickSave = async () => {
+    if (quickSaveLoading || !venue) return;
+    setQuickSaveLoading(true);
+    try {
+      const res = await fetch("/api/folders");
+      if (!res.ok) {
+        alert("Failed to save venue. Unable to load collections.");
+        setQuickSaveLoading(false);
+        return;
+      }
+      const data = await res.json();
+      if (!data.folders || data.folders.length === 0) {
+        alert(
+          "You don't have any collections yet. Please create one to save venues.",
+        );
+        setQuickSaveLoading(false);
+        return;
+      }
+
+      const primaryFolder = data.folders[0];
+      const saveRes = await fetch(`/api/folders/${primaryFolder.id}/venues`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ venue }),
+      });
+
+      if (saveRes.ok) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        await fetch(`/api/folders/${primaryFolder.id}/refresh`, {
+          method: "POST",
+          signal: controller.signal,
+        })
+          .catch(() => {})
+          .finally(() => clearTimeout(timeoutId));
+        alert(`Saved to ${primaryFolder.name}!`);
+      } else {
+        const errorData = await saveRes.json().catch(() => ({}));
+        if (errorData.error === "Venue already in folder") {
+          alert("Already saved to this collection");
+        } else {
+          alert(
+            "Failed to save venue. It might already be in your collection.",
+          );
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      alert("An error occurred while saving the venue.");
+    } finally {
+      setQuickSaveLoading(false);
+    }
+  };
+
+  // Menu translation states
+  const [ocrCache, setOcrCache] = useState<Record<string, string>>({});
+  const [translationCache, setTranslationCache] = useState<
+    Record<string, string>
+  >({});
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translatedMenuText, setTranslatedMenuText] = useState<string | null>(
+    null,
+  );
+  const [translationError, setTranslationError] = useState<string | null>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState<string | null>(null);
+
+  const handleTranslateMenu = async (lang: string) => {
+    if (!previewPhoto) return;
+    setSelectedLanguage(lang);
+    setTranslationError(null);
+    setTranslatedMenuText(null);
+
+    const cacheKey = `${previewPhoto}-${lang}`;
+    if (translationCache[cacheKey]) {
+      setTranslatedMenuText(translationCache[cacheKey]);
+      return;
+    }
+
+    let extractedText = ocrCache[previewPhoto];
+    if (!extractedText) {
+      setIsExtracting(true);
+      try {
+        const {
+          data: { text },
+        } = await Tesseract.recognize(previewPhoto, "eng");
+        extractedText = text.trim();
+        setOcrCache((prev) => ({ ...prev, [previewPhoto]: extractedText }));
+      } catch (error) {
+        console.error("OCR Error:", error);
+        setTranslationError("Unable to extract readable text.");
+        setIsExtracting(false);
+        return;
+      }
+      setIsExtracting(false);
+    }
+
+    if (!extractedText) {
+      setTranslationError("No readable menu text found.");
+      return;
+    }
+
+    setIsTranslating(true);
+    try {
+      const response = await fetch("/api/menu-translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: extractedText, targetLanguage: lang }),
+      });
+      if (!response.ok) throw new Error("Translation failed");
+      const data = await response.json();
+      setTranslatedMenuText(data.translatedText);
+      setTranslationCache((prev) => ({
+        ...prev,
+        [cacheKey]: data.translatedText,
+      }));
+    } catch (error) {
+      console.error("Translation API error:", error);
+      setTranslationError("Translation failed. Please try again.");
+    }
+    setIsTranslating(false);
+  };
 
   const _submitAmenityVote = async (
     amenityKey:
@@ -345,6 +486,8 @@ export function VenueDetailDialog({
     if (!venue) return;
     setLiveScore(venue.score ?? null);
     setPhotoLoading(true);
+    setImageError(false);
+    setBrokenMenuPhotos({});
     setActiveTab("overview");
     setActiveDistribution(null);
     const params = new URLSearchParams({
@@ -441,6 +584,13 @@ export function VenueDetailDialog({
         .then((r) => r.json())
         .then((data) => {
           if (data.predictions) setWifiPredictions(data.predictions);
+        })
+        .catch((err) => console.error(err));
+
+      fetch(`/api/venues/${encodeURIComponent(venue.id)}/telemetry`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.occupancy) setOccupancyData(data.occupancy);
         })
         .catch((err) => console.error(err));
     } else if (activeTab === "reviews") {
@@ -571,7 +721,7 @@ export function VenueDetailDialog({
   };
 
   const displayPhoto =
-    photoUrl ||
+    (!imageError && photoUrl) ||
     venueFallbacks[venue.category || "default"] ||
     venueFallbacks.default;
   const currentScore = liveScore !== null ? liveScore : venue.score;
@@ -645,16 +795,32 @@ export function VenueDetailDialog({
               src={displayPhoto}
               alt={venue.name}
               className="w-full h-full object-cover"
+              onError={() => setImageError(true)}
             />
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent" />
 
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-3 bg-white hover:bg-zinc-100 text-black rounded-full shadow-2xl border border-zinc-200 transition-all font-bold active:scale-90"
-          >
-            <X className="w-6 h-6" />
-          </button>
+          <div className="absolute top-4 right-4 flex gap-2">
+            <button
+              onClick={handleQuickSave}
+              disabled={quickSaveLoading}
+              className="p-3 bg-white hover:bg-zinc-100 text-black rounded-full shadow-2xl border border-zinc-200 transition-all font-bold active:scale-90 flex items-center justify-center disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              title="Quick Save"
+              aria-label="Quick Save"
+            >
+              {quickSaveLoading ? (
+                <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+              ) : (
+                <Bookmark className="w-6 h-6 text-blue-600" />
+              )}
+            </button>
+            <button
+              onClick={onClose}
+              className="p-3 bg-white hover:bg-zinc-100 text-black rounded-full shadow-2xl border border-zinc-200 transition-all font-bold active:scale-90"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
 
           <div className="absolute bottom-6 left-6 right-6">
             <div className="flex items-center gap-2 mb-2">
@@ -823,7 +989,11 @@ export function VenueDetailDialog({
                     Expected speeds based on crowd telemetry
                   </p>
                   <div className="h-40 w-full mt-2">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer
+                      width="99%"
+                      height="100%"
+                      debounce={50}
+                    >
                       <BarChart data={wifiPredictions}>
                         <XAxis
                           dataKey="time"
@@ -837,6 +1007,7 @@ export function VenueDetailDialog({
                           width={40}
                         />
                         <Tooltip
+                          isAnimationActive={false}
                           cursor={{ fill: "rgba(0,0,0,0.05)" }}
                           content={({ active, payload }) => {
                             if (active && payload && payload.length) {
@@ -883,6 +1054,71 @@ export function VenueDetailDialog({
                           name="Latency"
                         />
                       </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              {occupancyData.length > 0 && (
+                <div className="mb-6 bg-white dark:bg-zinc-800 p-5 rounded-2xl border border-zinc-100 dark:border-zinc-700 shadow-sm">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200 mb-1 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-orange-500" />
+                    Live Crowd Occupancy
+                  </h3>
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-4">
+                    Historical crowd levels by hour
+                  </p>
+                  <div className="h-40 w-full mt-2">
+                    <ResponsiveContainer
+                      width="99%"
+                      height="100%"
+                      debounce={50}
+                    >
+                      <LineChart data={occupancyData}>
+                        <XAxis
+                          dataKey="time"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 10, fill: "#888" }}
+                        />
+                        <YAxis
+                          tickFormatter={(value) => `${value}%`}
+                          tick={{ fontSize: 10, fill: "#888" }}
+                          width={40}
+                          domain={[0, 100]}
+                        />
+                        <Tooltip
+                          isAnimationActive={false}
+                          cursor={{
+                            stroke: "rgba(0,0,0,0.05)",
+                            strokeWidth: 2,
+                          }}
+                          content={({ active, payload }) => {
+                            if (active && payload && payload.length) {
+                              const data = payload[0].payload;
+                              return (
+                                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-2.5 rounded shadow-xl">
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                                    {data.time}
+                                  </p>
+                                  <p className="text-sm font-bold text-orange-600">
+                                    {data.occupancy}% Occupied
+                                  </p>
+                                </div>
+                              );
+                            }
+                            return null;
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="occupancy"
+                          stroke="#f97316"
+                          strokeWidth={3}
+                          dot={{ fill: "#f97316", r: 4 }}
+                          activeDot={{ r: 6 }}
+                        />
+                      </LineChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
@@ -1417,9 +1653,17 @@ export function VenueDetailDialog({
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={photo}
+                        src={
+                          brokenMenuPhotos[i] ? venueFallbacks.default : photo
+                        }
                         alt={`Menu ${i + 1}`}
                         className="w-full h-full object-cover transition-transform group-hover/item:scale-105 duration-300"
+                        onError={() =>
+                          setBrokenMenuPhotos((prev) => ({
+                            ...prev,
+                            [i]: true,
+                          }))
+                        }
                       />
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center justify-center">
                         <Eye className="w-6 h-6 text-white" />
@@ -1436,24 +1680,123 @@ export function VenueDetailDialog({
       {previewPhoto && (
         <div
           className="fixed inset-0 z-[11000] flex items-center justify-center p-4 bg-black/90 animate-in fade-in duration-200"
-          onClick={() => setPreviewPhoto(null)}
+          onClick={() => {
+            setPreviewPhoto(null);
+            setTranslationError(null);
+            setTranslatedMenuText(null);
+          }}
         >
           <div
-            className="relative max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl shadow-2xl border border-zinc-800"
+            className="relative max-w-4xl max-h-[90vh] overflow-hidden rounded-2xl shadow-2xl border border-zinc-800 flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              onClick={() => setPreviewPhoto(null)}
-              className="absolute top-4 right-4 p-2 bg-black/60 hover:bg-black text-white rounded-full transition-all"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={previewPhoto}
-              alt="Speedtest/Menu Preview"
-              className="max-w-full max-h-[90vh] object-contain"
-            />
+            {/* Header controls for Menu Preview */}
+            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-10 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+              <div className="pointer-events-auto">
+                {activeTab === "menu" && (
+                  <div className="relative inline-block text-left group/dropdown">
+                    <button className="flex items-center gap-2 px-3 py-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg transition-all text-sm font-medium backdrop-blur-md border border-white/10">
+                      <Globe2 className="w-4 h-4" />
+                      Translate Menu ▼
+                    </button>
+                    <div className="absolute left-0 mt-2 w-40 rounded-xl bg-zinc-900 border border-zinc-800 shadow-xl opacity-0 invisible group-hover/dropdown:opacity-100 group-hover/dropdown:visible transition-all duration-200 overflow-hidden">
+                      {["English", "Hindi", "French", "German", "Spanish"].map(
+                        (lang) => (
+                          <button
+                            key={lang}
+                            className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
+                            onClick={() => handleTranslateMenu(lang)}
+                          >
+                            {lang}
+                          </button>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  setPreviewPhoto(null);
+                  setTranslationError(null);
+                  setTranslatedMenuText(null);
+                }}
+                className="p-2 bg-black/60 hover:bg-black text-white rounded-full transition-all backdrop-blur-md border border-white/10 pointer-events-auto"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Status messages and translation result */}
+            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-lg pointer-events-none">
+              {(isExtracting || isTranslating) && (
+                <div className="bg-zinc-900/95 backdrop-blur-md border border-blue-500/30 rounded-xl p-4 shadow-2xl animate-in slide-in-from-top-4 flex items-center justify-center gap-3">
+                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                  <p className="text-sm font-medium text-zinc-200">
+                    {isExtracting
+                      ? "Extracting menu text..."
+                      : "Translating..."}
+                  </p>
+                </div>
+              )}
+
+              {translationError && (
+                <div className="bg-zinc-900/95 backdrop-blur-md border border-amber-500/30 rounded-xl p-4 shadow-2xl animate-in slide-in-from-top-4 flex items-start gap-3 pointer-events-auto">
+                  <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-zinc-200">
+                      {translationError}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setTranslationError(null)}
+                    className="p-1 hover:bg-white/10 rounded-lg transition-colors text-zinc-400 hover:text-zinc-200"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {translatedMenuText && !isExtracting && !isTranslating && (
+                <div className="bg-zinc-900/95 backdrop-blur-md border border-zinc-700 rounded-xl p-4 shadow-2xl animate-in slide-in-from-top-4 pointer-events-auto max-h-[60vh] overflow-y-auto">
+                  <div className="flex items-center justify-between mb-3 pb-2 border-b border-zinc-800">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Globe2 className="w-4 h-4 text-blue-400" />
+                      Translated to {selectedLanguage}
+                    </h3>
+                    <button
+                      onClick={() => setTranslatedMenuText(null)}
+                      className="p-1 hover:bg-white/10 rounded-lg transition-colors text-zinc-400 hover:text-zinc-200"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="text-sm text-zinc-300 whitespace-pre-wrap">
+                    {translatedMenuText}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {previewImageError ? (
+              <div className="flex flex-col items-center justify-center p-12 bg-zinc-900 text-center min-h-[300px] min-w-[300px] rounded-xl text-zinc-400">
+                <AlertTriangle className="w-12 h-12 text-amber-500 mb-3 animate-pulse" />
+                <p className="text-sm font-bold uppercase tracking-wider">
+                  Preview Image Not Found
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  This image may have expired or is unavailable.
+                </p>
+              </div>
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={previewPhoto}
+                alt="Speedtest/Menu Preview"
+                className="max-w-full max-h-[90vh] object-contain"
+                onError={() => setPreviewImageError(true)}
+              />
+            )}
           </div>
         </div>
       )}

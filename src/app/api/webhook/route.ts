@@ -51,7 +51,13 @@ export async function POST(req: Request) {
   if (eventType === "user.created") {
     const { id, email_addresses, first_name, last_name, image_url } = evt.data;
 
-    const email = email_addresses[0]?.email_address;
+    const email =
+      email_addresses?.find(
+        (email: any) => email.id === (evt.data as any).primary_email_address_id,
+      )?.email_address ||
+      email_addresses?.[0]?.email_address ||
+      null;
+
     const initials =
       `${first_name?.[0] || ""}${last_name?.[0] || ""}`.toUpperCase();
     const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials || "WS")}&background=6366f1&color=fff`;
@@ -64,12 +70,19 @@ export async function POST(req: Request) {
       : fallbackUrl;
 
     try {
-      await prisma.user.create({
-        data: {
+      await prisma.user.upsert({
+        where: { id },
+        update: {
+          email,
+          firstName: first_name || null,
+          lastName: last_name || null,
+          imageUrl,
+        },
+        create: {
           id,
           email,
-          firstName: first_name,
-          lastName: last_name,
+          firstName: first_name || null,
+          lastName: last_name || null,
           imageUrl,
         },
       });
@@ -84,7 +97,13 @@ export async function POST(req: Request) {
   if (eventType === "user.updated") {
     const { id, email_addresses, first_name, last_name, image_url } = evt.data;
 
-    const email = email_addresses[0]?.email_address;
+    const email =
+      email_addresses?.find(
+        (email: any) => email.id === (evt.data as any).primary_email_address_id,
+      )?.email_address ||
+      email_addresses?.[0]?.email_address ||
+      null;
+
     const initials =
       `${first_name?.[0] || ""}${last_name?.[0] || ""}`.toUpperCase();
     const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials || "WS")}&background=6366f1&color=fff`;
@@ -96,12 +115,19 @@ export async function POST(req: Request) {
       : fallbackUrl;
 
     try {
-      await prisma.user.update({
+      await prisma.user.upsert({
         where: { id },
-        data: {
+        update: {
           email,
-          firstName: first_name,
-          lastName: last_name,
+          firstName: first_name || null,
+          lastName: last_name || null,
+          imageUrl,
+        },
+        create: {
+          id,
+          email,
+          firstName: first_name || null,
+          lastName: last_name || null,
           imageUrl,
         },
       });
@@ -116,7 +142,7 @@ export async function POST(req: Request) {
     const { id } = evt.data;
 
     try {
-      await prisma.user.delete({
+      await prisma.user.deleteMany({
         where: { id: id! },
       });
 

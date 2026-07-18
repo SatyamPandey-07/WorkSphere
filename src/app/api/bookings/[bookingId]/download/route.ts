@@ -91,6 +91,11 @@ export async function GET(
     const { width, height } = page.getSize();
     let yPosition = height - 50;
 
+    const showTaxId = req.nextUrl.searchParams.get("showTaxId") === "true";
+    const includeNotes =
+      req.nextUrl.searchParams.get("includeNotes") === "true";
+    const showLogo = req.nextUrl.searchParams.get("showLogo") === "true";
+
     const customerName = booking.user
       ? `${booking.user.firstName || ""} ${booking.user.lastName || ""}`.trim()
       : "";
@@ -153,6 +158,16 @@ export async function GET(
       color: rgb(0.23, 0.51, 0.96),
     });
     yPosition -= 60;
+
+    if (showLogo) {
+      drawSafeText("[ WORKSPHERE LOGO ]", {
+        x: 50,
+        y: yPosition + 35,
+        size: 16,
+        font: boldFont,
+        color: rgb(0.23, 0.51, 0.96),
+      });
+    }
 
     // Title
     drawSafeText("WORKSPHERE CONFIRMATION", {
@@ -227,6 +242,34 @@ export async function GET(
       `CUSTOMER: ${customerName || booking.customerEmail || "N/A"}`,
       { x: 50, y: yPosition, size: 10, font },
     );
+
+    if (showTaxId) {
+      yPosition -= 18;
+      drawSafeText("TAX ID: 99-9999999", {
+        x: 50,
+        y: yPosition,
+        size: 10,
+        font,
+      });
+      yPosition -= 18;
+      drawSafeText("VAT NO: WS-123456", {
+        x: 50,
+        y: yPosition,
+        size: 10,
+        font,
+      });
+    }
+
+    if (includeNotes) {
+      yPosition -= 18;
+      drawSafeText("NOTES: Thank you for your continued business.", {
+        x: 50,
+        y: yPosition,
+        size: 10,
+        font,
+      });
+    }
+
     yPosition -= 40;
 
     // Security Protocol

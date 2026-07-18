@@ -4,6 +4,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import I18nProvider from "../components/I18nProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
+import { ScrollProgress } from "../components/ui/ScrollProgress";
 
 import { headers } from "next/headers";
 
@@ -17,6 +18,14 @@ const THEME_INIT_SCRIPT = `
     var root = document.documentElement;
     root.classList.toggle("dark", theme === "dark");
     root.style.colorScheme = theme;
+  } catch (e) {}
+
+  try {
+    window.addEventListener("error", function (e) {
+      if (e.message && (e.message.indexOf("ResizeObserver") >= 0 || e.message.indexOf("Resize observer") >= 0)) {
+        e.stopImmediatePropagation();
+      }
+    });
   } catch (e) {}
 })();
 `;
@@ -118,6 +127,7 @@ export default async function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
+        <ScrollProgress />
         {bodyContent}
       </body>
     </html>

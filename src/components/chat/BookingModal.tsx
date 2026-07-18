@@ -21,6 +21,7 @@ import {
   Mail,
 } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
+import confetti from "canvas-confetti";
 import { Venue } from "./ChatMessages";
 import { trackEvent } from "@/lib/analytics";
 
@@ -86,6 +87,44 @@ export function BookingModal({
 
   const modalRef = useRef<HTMLDivElement>(null);
 
+  // =========================================================================
+  // CELEBRATORY CONFETTI SUCCESS TRIGGER OVERLAY
+  // =========================================================================
+  useEffect(() => {
+    if (step === "success") {
+      const respectsReducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      if (respectsReducedMotion) return;
+
+      const duration = 3 * 1000;
+      const end = Date.now() + duration;
+
+      const frame = () => {
+        confetti({
+          particleCount: 2,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0, y: 0.8 },
+          zIndex: 25000,
+        });
+        confetti({
+          particleCount: 2,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1, y: 0.8 },
+          zIndex: 25000,
+        });
+
+        if (Date.now() < end) {
+          requestAnimationFrame(frame);
+        }
+      };
+
+      frame();
+    }
+  }, [step]);
+
   const getFilteredHistory = () => {
     if (dateFilter === "all") return history;
     const now = new Date();
@@ -147,6 +186,7 @@ export function BookingModal({
       fetchHistory();
     }
   }, [isOpen, mode]);
+
   useEffect(() => {
     if (!isOpen || !modalRef.current) return;
 
@@ -159,7 +199,6 @@ export function BookingModal({
     const firstElement = focusableElements[0];
     const lastElement = focusableElements[focusableElements.length - 1];
 
-    // Focus the first interactive element when modal opens
     firstElement.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -295,7 +334,6 @@ export function BookingModal({
         action: "booking_confirmed",
       });
 
-      // Send guest invitations if any were added
       if (guests.length > 0 && responseData.bookingId) {
         setGuestInviteStatus("sending");
         try {
@@ -346,6 +384,7 @@ export function BookingModal({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close venue details"
             className="p-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-2xl transition-all active:scale-90"
           >
             <X className="w-6 h-6" />
@@ -676,7 +715,7 @@ export function BookingModal({
               <button
                 onClick={() => setStep("payment")}
                 disabled={!bookingDate || !bookingTime || !email}
-                className="w-full bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-950 font-black uppercase tracking-widest py-5 rounded-[1.5rem] flex items-center justify-center gap-3 hover:scale-[1.02] transition-all active:scale-95 disabled:opacity-50 disabled:hover:scale-100 shadow-2xl shadow-zinc-900/10"
+                className="w-full bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-955 font-black uppercase tracking-widest py-5 rounded-[1.5rem] flex items-center justify-center gap-3 hover:scale-[1.02] transition-all active:scale-95 disabled:opacity-50 disabled:hover:scale-100 shadow-2xl shadow-zinc-900/10"
               >
                 Continue to Security Check
                 <ArrowRight className="w-5 h-5" />
@@ -686,7 +725,6 @@ export function BookingModal({
 
           {step === "payment" && (
             <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
-              {/* Visual Card Representation */}
               <div className="p-8 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
                 <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-150 transition-transform duration-1000">
                   <Lock className="w-48 h-48" />

@@ -12,6 +12,9 @@ jest.mock("react-joyride", () => ({
     FINISHED: "finished",
     SKIPPED: "skipped",
   },
+  EVENTS: {
+    TOUR_END: "tour:end",
+  },
 }));
 
 import { OnboardingTour } from "@/components/OnboardingTour";
@@ -74,22 +77,23 @@ describe("OnboardingTour", () => {
     expect(steps[2].target).toBe(".joyride-booking");
   });
 
-  it("passes showSkipButton to Joyride", () => {
+  it("includes a skip button in the options", () => {
     render(<OnboardingTour />);
 
     const lastCall =
       mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
-    expect(lastCall.showSkipButton).toBe(true);
+    expect(lastCall.options.buttons).toContain("skip");
+    expect(lastCall.locale.skip).toBe("Skip Tour");
   });
 
-  it("saves completion to localStorage when tour is finished", () => {
+  it("saves completion to localStorage when tour finishes", () => {
     render(<OnboardingTour />);
 
-    // Simulate Joyride calling back with FINISHED status
+    // Simulate Joyride calling onEvent with tour:end + finished status
     const lastCall =
       mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
     act(() => {
-      lastCall.callback({ status: "finished" });
+      lastCall.onEvent({ status: "finished", type: "tour:end" });
     });
 
     expect(localStorage.getItem("worksphere-onboarding-completed")).toBe(
@@ -103,7 +107,7 @@ describe("OnboardingTour", () => {
     const lastCall =
       mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
     act(() => {
-      lastCall.callback({ status: "skipped" });
+      lastCall.onEvent({ status: "skipped", type: "tour:end" });
     });
 
     expect(localStorage.getItem("worksphere-onboarding-completed")).toBe(
@@ -111,13 +115,13 @@ describe("OnboardingTour", () => {
     );
   });
 
-  it("does NOT save to localStorage for other callback statuses", () => {
+  it("does NOT save to localStorage for non-end events", () => {
     render(<OnboardingTour />);
 
     const lastCall =
       mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
     act(() => {
-      lastCall.callback({ status: "running" });
+      lastCall.onEvent({ status: "running", type: "step:after" });
     });
 
     expect(localStorage.getItem("worksphere-onboarding-completed")).toBeNull();

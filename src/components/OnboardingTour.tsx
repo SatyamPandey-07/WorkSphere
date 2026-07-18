@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Joyride, CallBackProps, STATUS, Step } from "react-joyride";
+import { Joyride, STATUS, EVENTS } from "react-joyride";
+import type { Step, EventData } from "react-joyride";
 
 export function OnboardingTour() {
   const [run, setRun] = useState(false);
@@ -25,7 +26,6 @@ export function OnboardingTour() {
       target: ".joyride-map",
       content:
         "Explore venues on the interactive map. You can see real-time availability and click on markers to view details.",
-      disableBeacon: true,
       title: "Interactive Map",
     },
     {
@@ -42,11 +42,11 @@ export function OnboardingTour() {
     },
   ];
 
-  const handleJoyrideCallback = (data: CallBackProps) => {
-    const { status } = data;
+  const handleEvent = (data: EventData) => {
+    const { status, type } = data;
     const finishedStatuses: string[] = [STATUS.FINISHED, STATUS.SKIPPED];
 
-    if (finishedStatuses.includes(status)) {
+    if (type === EVENTS.TOUR_END && finishedStatuses.includes(status)) {
       setRun(false);
       localStorage.setItem("worksphere-onboarding-completed", "true");
     }
@@ -54,19 +54,20 @@ export function OnboardingTour() {
 
   return (
     <Joyride
-      callback={handleJoyrideCallback}
+      onEvent={handleEvent}
       continuous
-      hideCloseButton
       run={run}
       scrollToFirstStep
-      showProgress
-      showSkipButton
       steps={steps}
-      styles={{
-        options: {
-          zIndex: 10000,
-          primaryColor: "#2563eb", // blue-600
-        },
+      locale={{
+        skip: "Skip Tour",
+      }}
+      options={{
+        showProgress: true,
+        buttons: ["back", "skip", "primary"],
+        primaryColor: "#2563eb",
+        zIndex: 10000,
+        skipBeacon: true,
       }}
     />
   );

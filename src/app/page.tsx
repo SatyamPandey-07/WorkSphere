@@ -3,13 +3,30 @@
 import Link from "next/link";
 import Image from "next/image";
 import {
-  MapPin, Wifi, Zap, Volume2, Clock, Sparkles, Download,
-  ArrowRight, Coffee, Camera, Radio, Star, Users, Building2,
-  ChevronRight, FileText, BarChart3, ArrowUp, LayoutGrid
+  MapPin,
+  Wifi,
+  Zap,
+  Volume2,
+  Clock,
+  Sparkles,
+  Download,
+  ArrowRight,
+  Coffee,
+  Camera,
+  Radio,
+  Star,
+  Users,
+  Building2,
+  ChevronRight,
+  FileText,
+  BarChart3,
+  ArrowUp,
+  LayoutGrid,
 } from "lucide-react";
 import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/site-footer";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function Home() {
   const [isVisible, setIsVisible] = useState(false);
@@ -23,12 +40,14 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#050510] text-white overflow-x-hidden">
+    <div className="min-h-screen bg-zinc-50 dark:bg-[#050510] text-zinc-900 dark:text-white overflow-x-hidden transition-colors">
       {/* Ambient background */}
       <div className="fixed inset-0 -z-10 pointer-events-none">
         <div
           className="absolute top-0 left-1/2 -translate-x-1/2 w-[900px] h-[600px] rounded-full bg-blue-700/20 blur-[120px]"
-          style={{ transform: `translateX(-50%) translateY(${scrollY * 0.05}px)` }}
+          style={{
+            transform: `translateX(-50%) translateY(${scrollY * 0.05}px)`,
+          }}
         />
         <div
           className="absolute top-1/3 -left-40 w-[500px] h-[500px] rounded-full bg-purple-700/15 blur-[100px]"
@@ -43,7 +62,7 @@ export default function Home() {
       </div>
 
       {/* Navigation */}
-      <nav className="sticky top-0 z-50 border-b border-white/5 backdrop-blur-xl bg-black/40">
+      <nav className="sticky top-0 z-50 border-b border-zinc-200/80 dark:border-white/5 backdrop-blur-xl bg-white/70 dark:bg-black/40 transition-colors">
         <div className="container mx-auto px-6 sm:px-10 h-[72px] flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/30 group-hover:shadow-blue-500/50 transition-shadow">
@@ -56,7 +75,7 @@ export default function Home() {
           <div className="flex items-center gap-3 sm:gap-4">
             <SignedOut>
               <Link href="/sign-in">
-                <button className="px-3 sm:px-4 py-2 text-sm text-white/70 hover:text-white font-medium transition-colors whitespace-nowrap">
+                <button className="px-3 sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap">
                   Sign In
                 </button>
               </Link>
@@ -65,23 +84,27 @@ export default function Home() {
                   Get Started
                 </button>
               </Link>
+              <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-800 hidden sm:block" />
+              <ThemeToggle />
             </SignedOut>
             <SignedIn>
               <Link
                 href="/ai"
-                className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-white/70 hover:text-white font-medium transition-colors whitespace-nowrap"
+                className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
               >
                 <Coffee className="w-4 h-4" />
                 Dashboard
               </Link>
               <Link
                 href="/collections"
-                className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-white/70 hover:text-white font-medium transition-colors whitespace-nowrap"
+                className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
               >
                 <LayoutGrid className="w-4 h-4" />
                 Collections
               </Link>
-              <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0">
+              <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-800 hidden sm:block" />
+              <ThemeToggle />
+              <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
                 <UserButton afterSignOutUrl="/" />
               </div>
             </SignedIn>
@@ -91,14 +114,17 @@ export default function Home() {
 
       {/* Hero */}
       <main className="container mx-auto px-4">
-        <div className={`text-center max-w-5xl mx-auto pt-20 pb-16 transition-all duration-1000 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}>
+        <div
+          className={`text-center max-w-5xl mx-auto pt-20 pb-16 transition-all duration-1000 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
+        >
           {/* Live badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 bg-white/5 text-sm text-white/70 mb-8 backdrop-blur-sm">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm text-zinc-700 dark:text-white/70 mb-8 backdrop-blur-sm shadow-sm dark:shadow-none">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-green-400"></span>
             </span>
-            Real-time venue updates &nbsp;&bull;&nbsp; AI-Powered &nbsp;&bull;&nbsp; Free to use
+            Real-time venue updates &nbsp;&bull;&nbsp; AI-Powered
+            &nbsp;&bull;&nbsp; Free to use
           </div>
 
           <h1 className="text-5xl sm:text-6xl md:text-8xl font-bold mb-6 tracking-tight leading-[1.05]">
@@ -108,22 +134,32 @@ export default function Home() {
               <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
                 Perfect Spot
               </span>
-              <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 300 12" fill="none">
-                <path d="M2 8 Q75 2 150 8 Q225 14 298 8" stroke="url(#u)" strokeWidth="2.5" strokeLinecap="round"/>
+              <svg
+                className="absolute -bottom-2 left-0 w-full"
+                viewBox="0 0 300 12"
+                fill="none"
+              >
+                <path
+                  d="M2 8 Q75 2 150 8 Q225 14 298 8"
+                  stroke="url(#u)"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                />
                 <defs>
                   <linearGradient id="u" x1="0" y1="0" x2="1" y2="0">
-                    <stop stopColor="#60A5FA"/>
-                    <stop offset="0.5" stopColor="#A78BFA"/>
-                    <stop offset="1" stopColor="#22D3EE"/>
+                    <stop stopColor="#60A5FA" />
+                    <stop offset="0.5" stopColor="#A78BFA" />
+                    <stop offset="1" stopColor="#22D3EE" />
                   </linearGradient>
                 </defs>
               </svg>
             </span>
           </h1>
 
-          <p className="text-lg md:text-xl text-white/50 mb-10 max-w-2xl mx-auto leading-relaxed">
-            AI-powered workspace discovery with real-time updates, venue ratings, booking history,
-            and PDF receipts. Find cafes, coworking spaces, and libraries with great WiFi, outlets, and vibes.
+          <p className="text-lg md:text-xl text-zinc-600 dark:text-white/50 mb-10 max-w-2xl mx-auto leading-relaxed">
+            AI-powered workspace discovery with real-time updates, venue
+            ratings, booking history, and PDF receipts. Find cafes, coworking
+            spaces, and libraries with great WiFi, outlets, and vibes.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -132,7 +168,8 @@ export default function Home() {
                 href="/sign-up"
                 className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
                 style={{
-                  backgroundImage: "linear-gradient(to right, #2563eb, #7c3aed)",
+                  backgroundImage:
+                    "linear-gradient(to right, #2563eb, #7c3aed)",
                 }}
               >
                 Start for Free
@@ -140,7 +177,7 @@ export default function Home() {
               </Link>
               <a
                 href="#features"
-                className="px-8 py-4 rounded-2xl border border-white/10 bg-white/5 text-white/80 font-semibold text-base hover:bg-white/10 hover:border-white/20 transition-all backdrop-blur-sm"
+                className="px-8 py-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-zinc-800 dark:text-white/80 font-semibold text-base hover:bg-zinc-50 hover:border-zinc-300 dark:hover:bg-white/10 dark:hover:border-white/20 transition-all backdrop-blur-sm shadow-sm dark:shadow-none"
               >
                 See Features
               </a>
@@ -150,7 +187,8 @@ export default function Home() {
                 href="/ai"
                 className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
                 style={{
-                  backgroundImage: "linear-gradient(to right, #2563eb, #7c3aed)",
+                  backgroundImage:
+                    "linear-gradient(to right, #2563eb, #7c3aed)",
                 }}
               >
                 Open Dashboard
@@ -159,34 +197,59 @@ export default function Home() {
             </SignedIn>
           </div>
 
-          <p className="mt-6 text-xs text-white/30 md:hidden flex items-center justify-center gap-1.5">
+          <p className="mt-6 text-xs text-zinc-500 dark:text-white/30 md:hidden flex items-center justify-center gap-1.5">
             <Download className="w-3 h-3" />
             Install as an app for the best experience
           </p>
         </div>
 
         {/* Stats strip */}
-        <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto mb-20 transition-all duration-1000 delay-100 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}>
+        <div
+          className={`grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto mb-20 transition-all duration-1000 delay-100 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
+        >
           {[
-            { value: "500+", label: "Venues indexed", icon: <Building2 className="w-4 h-4" /> },
-            { value: "5-step", label: "AI agent pipeline", icon: <Sparkles className="w-4 h-4" /> },
-            { value: "24hrs", label: "Feature sprint", icon: <Radio className="w-4 h-4" /> },
-            { value: "100%", label: "Free APIs used", icon: <Star className="w-4 h-4" /> },
+            {
+              value: "500+",
+              label: "Venues indexed",
+              icon: <Building2 className="w-4 h-4" />,
+            },
+            {
+              value: "5-step",
+              label: "AI agent pipeline",
+              icon: <Sparkles className="w-4 h-4" />,
+            },
+            {
+              value: "24hrs",
+              label: "Feature sprint",
+              icon: <Radio className="w-4 h-4" />,
+            },
+            {
+              value: "100%",
+              label: "Free APIs used",
+              icon: <Star className="w-4 h-4" />,
+            },
           ].map((stat, i) => (
-            <div key={i} className="p-5 rounded-2xl border border-white/8 bg-white/4 backdrop-blur-sm text-center hover:border-white/15 hover:bg-white/6 transition-all">
-              <div className="flex items-center justify-center gap-1.5 text-white/40 text-xs mb-2">
+            <div
+              key={i}
+              className="p-5 rounded-2xl border border-zinc-200 dark:border-white/8 bg-white/80 dark:bg-white/4 backdrop-blur-sm text-center hover:border-zinc-300 hover:bg-white dark:hover:border-white/15 dark:hover:bg-white/6 transition-all shadow-sm dark:shadow-none"
+            >
+              <div className="flex items-center justify-center gap-1.5 text-zinc-500 dark:text-white/40 text-xs mb-2">
                 {stat.icon}
                 {stat.label}
               </div>
-              <div className="text-2xl font-bold text-white">{stat.value}</div>
+              <div className="text-2xl font-bold text-zinc-900 dark:text-white">
+                {stat.value}
+              </div>
             </div>
           ))}
         </div>
 
         {/* Hero Mockup */}
-        <div className={`relative max-w-5xl mx-auto mb-24 transition-all duration-1000 delay-200 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}>
-          <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-blue-600/30 via-purple-600/30 to-cyan-600/30 blur-xl" />
-          <div className="relative rounded-2xl overflow-hidden border border-white/10 shadow-2xl shadow-black/50">
+        <div
+          className={`relative max-w-5xl mx-auto mb-24 transition-all duration-1000 delay-200 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
+        >
+          <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-cyan-600/20 dark:from-blue-600/30 dark:via-purple-600/30 dark:to-cyan-600/30 blur-xl" />
+          <div className="relative rounded-2xl overflow-hidden border border-zinc-200 dark:border-white/10 shadow-2xl shadow-zinc-300/50 dark:shadow-black/50">
             <Image
               src="/images/hero-mockup.png"
               alt="WorkSphere App"
@@ -195,88 +258,198 @@ export default function Home() {
               className="w-full h-auto"
               priority
             />
-            <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-[#050510] to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-zinc-50 dark:from-[#050510] to-transparent" />
           </div>
           {/* Floating chips */}
-          <div className="absolute -left-6 top-1/4 hidden lg:flex items-center gap-3 px-4 py-3 rounded-2xl bg-black/80 border border-white/10 shadow-xl backdrop-blur-md">
+          <div className="absolute -left-6 top-1/4 hidden lg:flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/95 dark:bg-black/80 border border-zinc-200 dark:border-white/10 shadow-xl backdrop-blur-md">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             <div>
-              <p className="text-white text-sm font-semibold">AI Pipeline</p>
-              <p className="text-white/40 text-xs">5-step reasoning</p>
+              <p className="text-zinc-900 dark:text-white text-sm font-semibold">
+                AI Pipeline
+              </p>
+              <p className="text-zinc-500 dark:text-white/40 text-xs">
+                5-step reasoning
+              </p>
             </div>
           </div>
-          <div className="absolute -right-6 top-1/3 hidden lg:flex items-center gap-3 px-4 py-3 rounded-2xl bg-black/80 border border-white/10 shadow-xl backdrop-blur-md">
+          <div className="absolute -right-6 top-1/3 hidden lg:flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/95 dark:bg-black/80 border border-zinc-200 dark:border-white/10 shadow-xl backdrop-blur-md">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center">
               <Radio className="w-4 h-4 text-white" />
             </div>
             <div>
-              <p className="text-white text-sm font-semibold">Live Updates</p>
-              <p className="text-white/40 text-xs">Real-time SSE stream</p>
+              <p className="text-zinc-900 dark:text-white text-sm font-semibold">
+                Live Updates
+              </p>
+              <p className="text-zinc-500 dark:text-white/40 text-xs">
+                Real-time SSE stream
+              </p>
             </div>
           </div>
-          <div className="absolute -right-6 bottom-1/4 hidden lg:flex items-center gap-3 px-4 py-3 rounded-2xl bg-black/80 border border-white/10 shadow-xl backdrop-blur-md">
+          <div className="absolute -right-6 bottom-1/4 hidden lg:flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/95 dark:bg-black/80 border border-zinc-200 dark:border-white/10 shadow-xl backdrop-blur-md">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-pink-600 flex items-center justify-center">
               <Camera className="w-4 h-4 text-white" />
             </div>
             <div>
-              <p className="text-white text-sm font-semibold">Venue Photos</p>
-              <p className="text-white/40 text-xs">Powered by Pexels</p>
+              <p className="text-zinc-900 dark:text-white text-sm font-semibold">
+                Venue Photos
+              </p>
+              <p className="text-zinc-500 dark:text-white/40 text-xs">
+                Powered by Pexels
+              </p>
             </div>
           </div>
-          <div className="absolute -left-6 bottom-1/4 hidden lg:flex items-center gap-3 px-4 py-3 rounded-2xl bg-black/80 border border-white/10 shadow-xl backdrop-blur-md">
+          <div className="absolute -left-6 bottom-1/4 hidden lg:flex items-center gap-3 px-4 py-3 rounded-2xl bg-white/95 dark:bg-black/80 border border-zinc-200 dark:border-white/10 shadow-xl backdrop-blur-md">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-yellow-500 to-orange-600 flex items-center justify-center">
               <Star className="w-4 h-4 text-white" />
             </div>
             <div>
-              <p className="text-white text-sm font-semibold">Rating System</p>
-              <p className="text-white/40 text-xs">Community-driven</p>
+              <p className="text-zinc-900 dark:text-white text-sm font-semibold">
+                Rating System
+              </p>
+              <p className="text-zinc-500 dark:text-white/40 text-xs">
+                Community-driven
+              </p>
             </div>
           </div>
         </div>
 
         {/* Features */}
-        <div id="features" className={`mb-24 transition-all duration-1000 delay-300 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}>
+        <div
+          id="features"
+          className={`mb-24 transition-all duration-1000 delay-300 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
+        >
           <div className="text-center mb-12">
-            <span className="text-xs font-semibold tracking-widest text-blue-400 uppercase">Everything you need</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-white mt-3 mb-4">Built for remote workers</h2>
-            <p className="text-white/40 max-w-xl mx-auto">Every feature designed to help you find and enjoy the best workspace for your day.</p>
+            <span className="text-xs font-semibold tracking-widest text-blue-600 dark:text-blue-400 uppercase">
+              Everything you need
+            </span>
+            <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 dark:text-white mt-3 mb-4">
+              Built for remote workers
+            </h2>
+            <p className="text-zinc-600 dark:text-white/40 max-w-xl mx-auto">
+              Every feature designed to help you find and enjoy the best
+              workspace for your day.
+            </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 max-w-5xl mx-auto">
-            <FeatureCard icon={<Wifi className="w-5 h-5" />} title="WiFi Quality" description="Find spaces with reliable, fast internet perfect for video calls and heavy uploads." accent="blue" />
-            <FeatureCard icon={<Volume2 className="w-5 h-5" />} title="Noise Levels" description="Filter by quiet zones for deep focus or moderate noise for casual sessions." accent="green" />
-            <FeatureCard icon={<Zap className="w-5 h-5" />} title="Power Outlets" description="Never run out of battery. Find venues with accessible power outlets nearby." accent="yellow" />
-            <FeatureCard icon={<Clock className="w-5 h-5" />} title="Busy Times" description="Avoid crowds with insights on peak hours and the best times to visit." accent="purple" />
-            <FeatureCard icon={<Camera className="w-5 h-5" />} title="Venue Photos" description="Browse beautiful real photos of every workspace before you visit, powered by Pexels." accent="pink" isNew />
-            <FeatureCard icon={<Radio className="w-5 h-5" />} title="Real-time Updates" description="Live venue availability, new ratings, and crowd info stream directly to your screen." accent="cyan" isNew />
-            <FeatureCard icon={<Star className="w-5 h-5" />} title="Venue Ratings" description="Rate workspaces on WiFi quality, outlets, noise, and quietness. Help the community decide." accent="orange" isNew />
-            <FeatureCard icon={<BarChart3 className="w-5 h-5" />} title="Profile Dashboard" description="Track your booking history in the sleek NEURAL LEDGER with status badges and timeline." accent="teal" isNew />
-            <FeatureCard icon={<FileText className="w-5 h-5" />} title="PDF Receipts" description="Download professional booking receipts instantly. Built serverless with pdf-lib." accent="violet" isNew />
-            <FeatureCard icon={<Sparkles className="w-5 h-5" />} title="AI-Powered" description="5-agent pipeline understands plain English queries and finds the perfect match." accent="indigo" />
+            <FeatureCard
+              icon={<Wifi className="w-5 h-5" />}
+              title="WiFi Quality"
+              description="Find spaces with reliable, fast internet perfect for video calls and heavy uploads."
+              accent="blue"
+            />
+            <FeatureCard
+              icon={<Volume2 className="w-5 h-5" />}
+              title="Noise Levels"
+              description="Filter by quiet zones for deep focus or moderate noise for casual sessions."
+              accent="green"
+            />
+            <FeatureCard
+              icon={<Zap className="w-5 h-5" />}
+              title="Power Outlets"
+              description="Never run out of battery. Find venues with accessible power outlets nearby."
+              accent="yellow"
+            />
+            <FeatureCard
+              icon={<Clock className="w-5 h-5" />}
+              title="Busy Times"
+              description="Avoid crowds with insights on peak hours and the best times to visit."
+              accent="purple"
+            />
+            <FeatureCard
+              icon={<Camera className="w-5 h-5" />}
+              title="Venue Photos"
+              description="Browse beautiful real photos of every workspace before you visit, powered by Pexels."
+              accent="pink"
+              isNew
+            />
+            <FeatureCard
+              icon={<Radio className="w-5 h-5" />}
+              title="Real-time Updates"
+              description="Live venue availability, new ratings, and crowd info stream directly to your screen."
+              accent="cyan"
+              isNew
+            />
+            <FeatureCard
+              icon={<Star className="w-5 h-5" />}
+              title="Venue Ratings"
+              description="Rate workspaces on WiFi quality, outlets, noise, and quietness. Help the community decide."
+              accent="orange"
+              isNew
+            />
+            <FeatureCard
+              icon={<BarChart3 className="w-5 h-5" />}
+              title="Profile Dashboard"
+              description="Track your booking history in the sleek NEURAL LEDGER with status badges and timeline."
+              accent="teal"
+              isNew
+            />
+            <FeatureCard
+              icon={<FileText className="w-5 h-5" />}
+              title="PDF Receipts"
+              description="Download professional booking receipts instantly. Built serverless with pdf-lib."
+              accent="violet"
+              isNew
+            />
+            <FeatureCard
+              icon={<Sparkles className="w-5 h-5" />}
+              title="AI-Powered"
+              description="5-agent pipeline understands plain English queries and finds the perfect match."
+              accent="indigo"
+            />
           </div>
         </div>
 
         {/* How it works */}
-        <div className={`max-w-3xl mx-auto mb-24 transition-all duration-1000 delay-500 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}>
+        <div
+          className={`max-w-3xl mx-auto mb-24 transition-all duration-1000 delay-500 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
+        >
           <div className="text-center mb-12">
-            <span className="text-xs font-semibold tracking-widest text-purple-400 uppercase">Simple as it gets</span>
-            <h2 className="text-3xl md:text-4xl font-bold text-white mt-3">How it works</h2>
+            <span className="text-xs font-semibold tracking-widest text-purple-600 dark:text-purple-400 uppercase">
+              Simple as it gets
+            </span>
+            <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 dark:text-white mt-3">
+              How it works
+            </h2>
           </div>
           <div className="space-y-4">
             {[
-              { n: 1, title: "Tell the AI what you need", desc: "Just type naturally: \"Find a quiet cafe with good WiFi and outlets near me\"" },
-              { n: 2, title: "5 agents work in parallel", desc: "Orchestrator, Context, Data, Reasoning, and Action agents collaborate to find and rank the best matches." },
-              { n: 3, title: "Explore with photos on the map", desc: "See all options on a dark interactive map with real photos, ratings, live updates, and routing." },
-              { n: 4, title: "Rate, book & download receipts", desc: "Share your experience, track bookings in your dashboard, and download PDF receipts instantly." },
+              {
+                n: 1,
+                title: "Tell the AI what you need",
+                desc: 'Just type naturally: "Find a quiet cafe with good WiFi and outlets near me"',
+              },
+              {
+                n: 2,
+                title: "5 agents work in parallel",
+                desc: "Orchestrator, Context, Data, Reasoning, and Action agents collaborate to find and rank the best matches.",
+              },
+              {
+                n: 3,
+                title: "Explore with photos on the map",
+                desc: "See all options on a dark interactive map with real photos, ratings, live updates, and routing.",
+              },
+              {
+                n: 4,
+                title: "Rate, book & download receipts",
+                desc: "Share your experience, track bookings in your dashboard, and download PDF receipts instantly.",
+              },
             ].map((step) => (
-              <Step key={step.n} number={step.n} title={step.title} description={step.desc} />
+              <Step
+                key={step.n}
+                number={step.n}
+                title={step.title}
+                description={step.desc}
+              />
             ))}
           </div>
         </div>
 
         {/* CTA */}
-        <div className={`relative rounded-3xl overflow-hidden mb-24 mx-2 transition-all duration-1000 delay-700 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}>
+        <div
+          className={`relative rounded-3xl overflow-hidden mb-24 mx-2 transition-all duration-1000 delay-700 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
+        >
           <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-purple-700 to-cyan-700" />
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:40px_40px]" />
           <div className="relative p-12 md:p-20 text-center">
@@ -285,10 +458,13 @@ export default function Home() {
               Join remote workers worldwide
             </div>
             <h2 className="text-3xl md:text-5xl font-bold text-white mb-4">
-              Ready to find your<br />perfect workspace?
+              Ready to find your
+              <br />
+              perfect workspace?
             </h2>
             <p className="text-blue-100/70 text-lg mb-10 max-w-lg mx-auto">
-              10 powerful features. AI-powered search. Real-time updates. All free, forever.
+              10 powerful features. AI-powered search. Real-time updates. All
+              free, forever.
             </p>
             <Link
               href="/ai"
@@ -332,46 +508,110 @@ function FeatureCard({
   isNew?: boolean;
 }) {
   const accents: Record<string, { glow: string; text: string; bg: string }> = {
-    blue:   { glow: "hover:shadow-blue-500/20",   text: "text-blue-400",   bg: "bg-blue-500/10" },
-    green:  { glow: "hover:shadow-green-500/20",  text: "text-green-400",  bg: "bg-green-500/10" },
-    yellow: { glow: "hover:shadow-yellow-500/20", text: "text-yellow-400", bg: "bg-yellow-500/10" },
-    purple: { glow: "hover:shadow-purple-500/20", text: "text-purple-400", bg: "bg-purple-500/10" },
-    pink:   { glow: "hover:shadow-pink-500/20",   text: "text-pink-400",   bg: "bg-pink-500/10" },
-    cyan:   { glow: "hover:shadow-cyan-500/20",   text: "text-cyan-400",   bg: "bg-cyan-500/10" },
-    red:    { glow: "hover:shadow-red-500/20",     text: "text-red-400",    bg: "bg-red-500/10" },
-    indigo: { glow: "hover:shadow-indigo-500/20", text: "text-indigo-400", bg: "bg-indigo-500/10" },
-    orange: { glow: "hover:shadow-orange-500/20", text: "text-orange-400", bg: "bg-orange-500/10" },
-    teal:   { glow: "hover:shadow-teal-500/20",   text: "text-teal-400",   bg: "bg-teal-500/10" },
-    violet: { glow: "hover:shadow-violet-500/20", text: "text-violet-400", bg: "bg-violet-500/10" },
+    blue: {
+      glow: "hover:shadow-blue-500/20",
+      text: "text-blue-400",
+      bg: "bg-blue-500/10",
+    },
+    green: {
+      glow: "hover:shadow-green-500/20",
+      text: "text-green-400",
+      bg: "bg-green-500/10",
+    },
+    yellow: {
+      glow: "hover:shadow-yellow-500/20",
+      text: "text-yellow-400",
+      bg: "bg-yellow-500/10",
+    },
+    purple: {
+      glow: "hover:shadow-purple-500/20",
+      text: "text-purple-400",
+      bg: "bg-purple-500/10",
+    },
+    pink: {
+      glow: "hover:shadow-pink-500/20",
+      text: "text-pink-400",
+      bg: "bg-pink-500/10",
+    },
+    cyan: {
+      glow: "hover:shadow-cyan-500/20",
+      text: "text-cyan-400",
+      bg: "bg-cyan-500/10",
+    },
+    red: {
+      glow: "hover:shadow-red-500/20",
+      text: "text-red-400",
+      bg: "bg-red-500/10",
+    },
+    indigo: {
+      glow: "hover:shadow-indigo-500/20",
+      text: "text-indigo-400",
+      bg: "bg-indigo-500/10",
+    },
+    orange: {
+      glow: "hover:shadow-orange-500/20",
+      text: "text-orange-400",
+      bg: "bg-orange-500/10",
+    },
+    teal: {
+      glow: "hover:shadow-teal-500/20",
+      text: "text-teal-400",
+      bg: "bg-teal-500/10",
+    },
+    violet: {
+      glow: "hover:shadow-violet-500/20",
+      text: "text-violet-400",
+      bg: "bg-violet-500/10",
+    },
   };
   const a = accents[accent];
   return (
-    <div className={`relative group p-6 rounded-2xl border border-white/8 bg-white/4 hover:bg-white/6 hover:border-white/15 hover:shadow-xl ${a.glow} hover:-translate-y-1 transition-all duration-300 backdrop-blur-sm`}>
+    <div
+      className={`relative group p-6 rounded-2xl border border-zinc-200 dark:border-white/8 bg-white/80 dark:bg-white/4 hover:bg-white dark:hover:bg-white/6 hover:border-zinc-300 dark:hover:border-white/15 hover:shadow-xl ${a.glow} hover:-translate-y-1 transition-all duration-300 backdrop-blur-sm shadow-sm dark:shadow-none`}
+    >
       {isNew && (
         <span className="absolute top-4 right-4 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gradient-to-r from-blue-500 to-purple-500 text-white">
           NEW
         </span>
       )}
-      <div className={`inline-flex p-3 rounded-xl mb-5 ${a.bg} ${a.text} group-hover:scale-110 transition-transform`}>
+      <div
+        className={`inline-flex p-3 rounded-xl mb-5 ${a.bg} ${a.text} group-hover:scale-110 transition-transform`}
+      >
         {icon}
       </div>
-      <h3 className="text-base font-bold text-white mb-2">{title}</h3>
-      <p className="text-sm text-white/40 leading-relaxed">{description}</p>
+      <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-2">
+        {title}
+      </h3>
+      <p className="text-sm text-zinc-600 dark:text-white/40 leading-relaxed">
+        {description}
+      </p>
     </div>
   );
 }
 
-function Step({ number, title, description }: { number: number; title: string; description: string }) {
+function Step({
+  number,
+  title,
+  description,
+}: {
+  number: number;
+  title: string;
+  description: string;
+}) {
   return (
-    <div className="group flex gap-5 p-5 rounded-2xl border border-white/5 bg-white/3 hover:bg-white/5 hover:border-white/10 transition-all backdrop-blur-sm">
+    <div className="group flex gap-5 p-5 rounded-2xl border border-zinc-200 dark:border-white/5 bg-white/80 dark:bg-white/3 hover:bg-white dark:hover:bg-white/5 hover:border-zinc-300 dark:hover:border-white/10 transition-all backdrop-blur-sm shadow-sm dark:shadow-none">
       <div className="flex-shrink-0">
         <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 text-white flex items-center justify-center text-sm font-bold shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
           {number}
         </div>
       </div>
       <div>
-        <h3 className="text-base font-bold text-white mb-1.5">{title}</h3>
-        <p className="text-sm text-white/40 leading-relaxed">{description}</p>
+        <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1.5">
+          {title}
+        </h3>
+        <p className="text-sm text-zinc-600 dark:text-white/40 leading-relaxed">
+          {description}
+        </p>
       </div>
     </div>
   );

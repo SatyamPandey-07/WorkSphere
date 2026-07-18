@@ -262,7 +262,7 @@ export function VenueChatCard({
           >
             <button
               onClick={() => onBook(venue)}
-              className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all active:scale-[0.95]"
+              className="joyride-booking p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all active:scale-[0.95]"
               title="Book Now"
             >
               <Zap className="w-3.5 h-3.5 fill-current" />
@@ -403,7 +403,7 @@ export function VenueChatCard({
                       e.stopPropagation();
                       onBook(venue);
                     }}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs shadow-lg uppercase tracking-tight active:scale-[0.98]"
+                    className="joyride-booking flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs shadow-lg uppercase tracking-tight active:scale-[0.98]"
                   >
                     <Zap className="w-3.5 h-3.5 fill-current" />
                     Book Now

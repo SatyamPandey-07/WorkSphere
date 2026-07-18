@@ -67,6 +67,7 @@ export interface Message {
   suggestions?: string[];
   cached?: boolean;
   complexity?: string;
+  isStreaming?: boolean;
 }
 
 const AGENT_ICONS: Record<string, React.ElementType> = {
@@ -684,7 +685,36 @@ export function MessageList({
             >
               <div className="text-sm font-medium leading-relaxed">
                 {message.role === "assistant" ? (
-                  <MessageRenderer content={message.content} />
+                  message.content === "" ? (
+                    <div
+                      className="flex gap-1 items-center py-1"
+                      aria-label="WorkSphere AI is typing"
+                    >
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 animate-bounce"
+                        style={{ animationDelay: "0ms" }}
+                      />
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 animate-bounce"
+                        style={{ animationDelay: "150ms" }}
+                      />
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 animate-bounce"
+                        style={{ animationDelay: "300ms" }}
+                      />
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <MessageRenderer content={message.content} />
+                      {message.isStreaming && (
+                        <span className="inline-flex gap-0.5 items-center ml-1 text-blue-600 dark:text-blue-400 font-black animate-pulse">
+                          <span>.</span>
+                          <span>.</span>
+                          <span>.</span>
+                        </span>
+                      )}
+                    </div>
+                  )
                 ) : (
                   <span className="whitespace-pre-wrap">{message.content}</span>
                 )}

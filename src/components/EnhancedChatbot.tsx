@@ -745,6 +745,7 @@ export function EnhancedChatbot({
           id: assistantMessageId,
           role: "assistant",
           content: "",
+          isStreaming: true,
         },
       ]);
 
@@ -911,7 +912,9 @@ export function EnhancedChatbot({
             JSON.stringify({ type: "new-message", message: finalMsg }),
           );
         }
-        return prev;
+        return prev.map((m) =>
+          m.id === assistantMessageId ? { ...m, isStreaming: false } : m,
+        );
       });
     } catch (err) {
       console.error("Chat error:", err);
@@ -989,6 +992,9 @@ export function EnhancedChatbot({
       );
     } finally {
       setIsLoading(false);
+      setMessages((prev) =>
+        prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)),
+      );
     }
   };
 

@@ -27,18 +27,24 @@ export function OnboardingTour() {
       content:
         "Explore venues on the interactive map. You can see real-time availability and click on markers to view details.",
       title: "Interactive Map",
+      placement: "center",
+      disableBeacon: true,
     },
     {
       target: ".joyride-chat",
       content:
         "Talk to our AI assistant to find the perfect workspace for you. Ask for 'a quiet cafe with good WiFi'.",
       title: "AI Chat Assistant",
+      placement: "center",
+      disableBeacon: true,
     },
     {
       target: ".joyride-booking",
       content:
         "Once you find a spot you like, you can book it or reserve your seat directly from the chat or venue details.",
       title: "Book Your Spot",
+      placement: "center",
+      disableBeacon: true,
     },
   ];
 

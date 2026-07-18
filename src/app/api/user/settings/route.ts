@@ -18,6 +18,7 @@ export async function GET() {
         notificationStart: true,
         notificationEnd: true,
         timezone: true,
+        imageUrl: true,
       },
     });
 
@@ -28,6 +29,7 @@ export async function GET() {
       notificationStart: user?.notificationStart || "",
       notificationEnd: user?.notificationEnd || "",
       timezone: user?.timezone || "UTC",
+      imageUrl: user?.imageUrl || "",
     });
   } catch (error: any) {
     console.error("GET /api/user/settings error:", error);
@@ -52,34 +54,44 @@ export async function POST(req: Request) {
       notificationStart,
       notificationEnd,
       timezone,
+      imageUrl,
     } = await req.json();
 
-    if (typeof smsAlertsEnabled !== "boolean") {
+    if (
+      typeof smsAlertsEnabled !== "boolean" &&
+      smsAlertsEnabled !== undefined
+    ) {
       return NextResponse.json(
         { error: "Invalid parameters" },
         { status: 400 },
       );
     }
 
+    // Prepare update data, ignoring fields that aren't provided to allow partial updates
+    const dataToUpdate: any = {
+      ...(phoneNumber !== undefined && { phoneNumber: phoneNumber || null }),
+      ...(smsAlertsEnabled !== undefined && { smsAlertsEnabled }),
+      ...(whatsappWebhookUrl !== undefined && {
+        whatsappWebhookUrl: whatsappWebhookUrl || null,
+      }),
+      ...(notificationStart !== undefined && {
+        notificationStart: notificationStart || null,
+      }),
+      ...(notificationEnd !== undefined && {
+        notificationEnd: notificationEnd || null,
+      }),
+      ...(timezone !== undefined && { timezone: timezone || "UTC" }),
+      ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
+    };
+
     const updatedUser = await prisma.user.upsert({
       where: { id: userId },
       create: {
         id: userId,
-        phoneNumber: phoneNumber || null,
-        smsAlertsEnabled,
-        whatsappWebhookUrl: whatsappWebhookUrl || null,
-        notificationStart: notificationStart || null,
-        notificationEnd: notificationEnd || null,
-        timezone: timezone || "UTC",
+        smsAlertsEnabled: smsAlertsEnabled || false,
+        ...dataToUpdate,
       },
-      update: {
-        phoneNumber: phoneNumber || null,
-        smsAlertsEnabled,
-        whatsappWebhookUrl: whatsappWebhookUrl || null,
-        notificationStart: notificationStart || null,
-        notificationEnd: notificationEnd || null,
-        timezone: timezone || "UTC",
-      },
+      update: dataToUpdate,
     });
 
     return NextResponse.json({
@@ -90,6 +102,7 @@ export async function POST(req: Request) {
       notificationStart: updatedUser.notificationStart || "",
       notificationEnd: updatedUser.notificationEnd || "",
       timezone: updatedUser.timezone || "UTC",
+      imageUrl: updatedUser.imageUrl || "",
     });
   } catch (error: any) {
     console.error("POST /api/user/settings error:", error);

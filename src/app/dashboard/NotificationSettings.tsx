@@ -1,7 +1,61 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Bell, ShieldAlert, Check, Loader2, MessageCircle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import Image from "next/image";
+import {
+  Bell,
+  ShieldAlert,
+  Check,
+  Loader2,
+  MessageCircle,
+  Camera,
+  User,
+  X,
+} from "lucide-react";
+import Cropper from "react-easy-crop";
+
+const getCroppedImg = async (
+  imageSrc: string,
+  pixelCrop: any,
+): Promise<Blob> => {
+  const image = new Image();
+  image.src = imageSrc;
+  await new Promise((resolve) => (image.onload = resolve));
+
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("No 2d context");
+
+  canvas.width = image.width;
+  canvas.height = image.height;
+  ctx.drawImage(image, 0, 0);
+
+  const croppedCanvas = document.createElement("canvas");
+  const croppedCtx = croppedCanvas.getContext("2d");
+  if (!croppedCtx) throw new Error("No 2d context");
+
+  croppedCanvas.width = pixelCrop.width;
+  croppedCanvas.height = pixelCrop.height;
+
+  croppedCtx.drawImage(
+    canvas,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height,
+  );
+
+  return new Promise((resolve, reject) => {
+    croppedCanvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Canvas is empty"));
+    }, "image/jpeg");
+  });
+};
 
 export function NotificationSettings() {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -15,6 +69,14 @@ export function NotificationSettings() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "success" | "error">(
     "idle",
   );
+  const [imageUrl, setImageUrl] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const timezones =
     typeof Intl !== "undefined" && typeof Intl.supportedValuesOf === "function"
@@ -47,6 +109,7 @@ export function NotificationSettings() {
           setWhatsappWebhookUrl(data.whatsappWebhookUrl || "");
           setNotificationStart(data.notificationStart || "");
           setNotificationEnd(data.notificationEnd || "");
+          setImageUrl(data.imageUrl || "");
           setTimezone(
             data.timezone ||
               (typeof Intl !== "undefined"
@@ -96,6 +159,53 @@ export function NotificationSettings() {
     }
   };
 
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.addEventListener("load", () => {
+        setCropImageSrc(reader.result?.toString() || null);
+      });
+      reader.readAsDataURL(file);
+      e.target.value = "";
+    }
+  };
+
+  const handleSaveAvatar = async () => {
+    if (!cropImageSrc || !croppedAreaPixels) return;
+    setUploadingAvatar(true);
+    setSaveStatus("idle");
+    try {
+      const croppedBlob = await getCroppedImg(cropImageSrc, croppedAreaPixels);
+      const formData = new FormData();
+      formData.append("file", croppedBlob, "avatar.jpg");
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!uploadRes.ok) throw new Error("Upload failed");
+      const { url } = await uploadRes.json();
+
+      const saveRes = await fetch("/api/user/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl: url }),
+      });
+      if (!saveRes.ok) throw new Error("Save profile failed");
+
+      setImageUrl(url);
+      setCropImageSrc(null);
+      setSaveStatus("success");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    } catch (err) {
+      console.error("Avatar upload error:", err);
+      setSaveStatus("error");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 flex justify-center items-center h-48">
@@ -112,6 +222,106 @@ export function NotificationSettings() {
           Notification Settings
         </h2>
       </div>
+
+      <div className="mb-8 flex flex-col sm:flex-row items-center gap-6 p-4 bg-zinc-50 dark:bg-zinc-800/40 rounded-xl border border-zinc-200 dark:border-zinc-800">
+        <div className="relative w-20 h-20 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-700 flex-shrink-0">
+          {imageUrl ? (
+            <Image
+              src={imageUrl}
+              alt="Avatar"
+              width={80}
+              height={80}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-zinc-400">
+              <User className="w-8 h-8" />
+            </div>
+          )}
+          {uploadingAvatar && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+              <Loader2 className="w-5 h-5 text-white animate-spin" />
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col items-center sm:items-start gap-2">
+          <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            Profile Avatar
+          </h3>
+          <p className="text-xs text-zinc-500 mb-1 text-center sm:text-left">
+            Upload a square image to display on your profile and bookings.
+          </p>
+          <input
+            type="file"
+            accept="image/*"
+            ref={fileInputRef}
+            onChange={onFileChange}
+            className="hidden"
+          />
+          <button
+            type="button"
+            disabled={uploadingAvatar}
+            onClick={() => fileInputRef.current?.click()}
+            className="px-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-50 text-xs font-semibold rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+          >
+            <Camera className="w-4 h-4" />
+            Change Avatar
+          </button>
+        </div>
+      </div>
+
+      {cropImageSrc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-md overflow-hidden flex flex-col shadow-2xl">
+            <div className="flex justify-between items-center p-4 border-b border-zinc-200 dark:border-zinc-800">
+              <h3 className="font-semibold text-zinc-900 dark:text-zinc-50">
+                Crop Avatar
+              </h3>
+              <button
+                onClick={() => setCropImageSrc(null)}
+                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="relative h-64 w-full bg-black/10 dark:bg-black/40">
+              <Cropper
+                image={cropImageSrc}
+                crop={crop}
+                zoom={zoom}
+                aspect={1}
+                cropShape="round"
+                showGrid={false}
+                onCropChange={setCrop}
+                onZoomChange={setZoom}
+                onCropComplete={(_, croppedAreaPixels) =>
+                  setCroppedAreaPixels(croppedAreaPixels)
+                }
+              />
+            </div>
+            <div className="p-4 flex justify-end gap-2 border-t border-zinc-200 dark:border-zinc-800">
+              <button
+                onClick={() => setCropImageSrc(null)}
+                className="px-4 py-2 text-sm font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveAvatar}
+                disabled={uploadingAvatar}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+              >
+                {uploadingAvatar ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+                Save Avatar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <form onSubmit={handleSave} className="space-y-6">
         {/* Phone number */}

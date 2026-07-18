@@ -696,7 +696,12 @@ export function EnhancedChatbot({
       content: userMessage,
       name: user?.firstName || "Anonymous",
     };
-    setMessages((prev) => [...prev, newUserMessage]);
+    
+    // Prevent user message duplication on hot reload
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === newUserMessage.id)) return prev;
+      return [...prev, newUserMessage];
+    });
 
     if (socket && roomId) {
       socket.send(
@@ -731,14 +736,19 @@ export function EnhancedChatbot({
       }
 
       const assistantMessageId = (Date.now() + 1).toString();
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: assistantMessageId,
-          role: "assistant",
-          content: "",
-        },
-      ]);
+      
+      // Prevent assistant message duplication on hot reload
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === assistantMessageId)) return prev;
+        return [
+          ...prev,
+          {
+            id: assistantMessageId,
+            role: "assistant",
+            content: "",
+          },
+        ];
+      });
 
       setIsLoading(false); // Stream starts, disable loading spinner
 

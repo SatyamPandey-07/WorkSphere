@@ -81,6 +81,7 @@ export function VenueDetailDialog({
   const [brokenMenuPhotos, setBrokenMenuPhotos] = useState<
     Record<number, boolean>
   >({});
+  const [enableTransition, setEnableTransition] = useState(false);
   const { t } = useTranslation();
   const [translatingReviewId, setTranslatingReviewId] = useState<string | null>(
     null,
@@ -481,6 +482,11 @@ export function VenueDetailDialog({
     }
     loadVoteMetrics();
   }, [venue, isOpen]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setEnableTransition(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (!venue) return;
@@ -1493,14 +1499,18 @@ export function VenueDetailDialog({
                 <div className="flex gap-3">
                   <button
                     onClick={() => onToggleFavorite(venue)}
-                    className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${
+                    className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl border-2 ${
+                      enableTransition ? "transition-all duration-300" : ""
+                    } ${
                       isFavorited
                         ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
                         : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 shadow-md"
                     }`}
                   >
                     <Heart
-                      className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`}
+                      className={`w-4 h-4 ${
+                        enableTransition ? "transition-all duration-300" : ""
+                      } ${isFavorited ? "fill-current" : ""}`}
                     />
                     {isFavorited ? "Saved" : "Save"}
                   </button>

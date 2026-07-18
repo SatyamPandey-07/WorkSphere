@@ -127,6 +127,7 @@ export function VenueChatCard({
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [showFolderModal, setShowFolderModal] = useState(false);
+  const [enableTransition, setEnableTransition] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams({
@@ -151,6 +152,11 @@ export function VenueChatCard({
         setPhotoLoading(false);
       });
   }, [venue.id, venue.name, venue.lat, venue.lng]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setEnableTransition(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   const CategoryIcon =
     venue.category === "cafe"
@@ -274,7 +280,9 @@ export function VenueChatCard({
             </button>
             <button
               onClick={() => onToggleFavorite(venue)}
-              className={`p-1.5 rounded-lg border transition-all active:scale-[0.95] ${
+              className={`p-1.5 rounded-lg border active:scale-[0.95] ${
+                enableTransition ? "transition-all duration-300" : ""
+              } ${
                 isFavorited
                   ? "bg-red-500 text-white border-red-500"
                   : "bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-200"
@@ -282,7 +290,9 @@ export function VenueChatCard({
               title="Save favorite"
             >
               <Heart
-                className={`w-3.5 h-3.5 ${isFavorited ? "fill-current" : ""}`}
+                className={`w-3.5 h-3.5 ${
+                  enableTransition ? "transition-all duration-300" : ""
+                } ${isFavorited ? "fill-current" : ""}`}
               />
             </button>
           </div>
@@ -444,14 +454,18 @@ export function VenueChatCard({
                       );
                       onToggleFavorite(venue);
                     }}
-                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg transition-all ${
+                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg ${
+                      enableTransition ? "transition-all duration-300" : ""
+                    } ${
                       isFavorited
                         ? "bg-red-500 text-white shadow-md shadow-red-500/20"
                         : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                     }`}
                   >
                     <Heart
-                      className={`w-3 h-3 ${isFavorited ? "fill-current" : ""}`}
+                      className={`w-3 h-3 ${
+                        enableTransition ? "transition-all duration-300" : ""
+                      } ${isFavorited ? "fill-current" : ""}`}
                     />
                     {isFavorited ? "Saved" : "Save"}
                   </button>

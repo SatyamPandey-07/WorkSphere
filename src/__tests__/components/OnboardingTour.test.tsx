@@ -2,7 +2,7 @@ import { render, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 // Mock react-joyride before importing the component
-const mockJoyride = jest.fn(() => null);
+const mockJoyride = jest.fn((_props: any) => null);
 jest.mock("react-joyride", () => ({
   Joyride: (props: any) => {
     mockJoyride(props);
@@ -44,8 +44,9 @@ describe("OnboardingTour", () => {
     });
 
     // Joyride should be called with run=true
-    const lastCall =
-      mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
+    const lastCall = mockJoyride.mock.calls[
+      mockJoyride.mock.calls.length - 1
+    ][0] as any;
     expect(lastCall.run).toBe(true);
   });
 
@@ -59,16 +60,18 @@ describe("OnboardingTour", () => {
     });
 
     // Joyride should be called with run=false (never set to true)
-    const lastCall =
-      mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
+    const lastCall = mockJoyride.mock.calls[
+      mockJoyride.mock.calls.length - 1
+    ][0] as any;
     expect(lastCall.run).toBe(false);
   });
 
   it("defines exactly 3 tour steps targeting map, chat, and booking", () => {
     render(<OnboardingTour />);
 
-    const lastCall =
-      mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
+    const lastCall = mockJoyride.mock.calls[
+      mockJoyride.mock.calls.length - 1
+    ][0] as any;
     const steps = lastCall.steps;
 
     expect(steps).toHaveLength(3);
@@ -80,8 +83,9 @@ describe("OnboardingTour", () => {
   it("includes a skip button in the options", () => {
     render(<OnboardingTour />);
 
-    const lastCall =
-      mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
+    const lastCall = mockJoyride.mock.calls[
+      mockJoyride.mock.calls.length - 1
+    ][0] as any;
     expect(lastCall.options.buttons).toContain("skip");
     expect(lastCall.locale.skip).toBe("Skip Tour");
   });
@@ -90,8 +94,9 @@ describe("OnboardingTour", () => {
     render(<OnboardingTour />);
 
     // Simulate Joyride calling onEvent with tour:end + finished status
-    const lastCall =
-      mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
+    const lastCall = mockJoyride.mock.calls[
+      mockJoyride.mock.calls.length - 1
+    ][0] as any;
     act(() => {
       lastCall.onEvent({ status: "finished", type: "tour:end" });
     });
@@ -104,8 +109,9 @@ describe("OnboardingTour", () => {
   it("saves completion to localStorage when tour is skipped", () => {
     render(<OnboardingTour />);
 
-    const lastCall =
-      mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
+    const lastCall = mockJoyride.mock.calls[
+      mockJoyride.mock.calls.length - 1
+    ][0] as any;
     act(() => {
       lastCall.onEvent({ status: "skipped", type: "tour:end" });
     });
@@ -118,8 +124,9 @@ describe("OnboardingTour", () => {
   it("does NOT save to localStorage for non-end events", () => {
     render(<OnboardingTour />);
 
-    const lastCall =
-      mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
+    const lastCall = mockJoyride.mock.calls[
+      mockJoyride.mock.calls.length - 1
+    ][0] as any;
     act(() => {
       lastCall.onEvent({ status: "running", type: "step:after" });
     });
@@ -130,8 +137,9 @@ describe("OnboardingTour", () => {
   it("each step has a title and content", () => {
     render(<OnboardingTour />);
 
-    const lastCall =
-      mockJoyride.mock.calls[mockJoyride.mock.calls.length - 1][0];
+    const lastCall = mockJoyride.mock.calls[
+      mockJoyride.mock.calls.length - 1
+    ][0] as any;
     const steps = lastCall.steps;
 
     for (const step of steps) {

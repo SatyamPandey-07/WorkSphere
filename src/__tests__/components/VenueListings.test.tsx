@@ -121,4 +121,20 @@ describe("VenueListings Component", () => {
     fireEvent.keyDown(cards[0], { key: "Enter", code: "Enter" });
     expect(mockOnOpenDetails).toHaveBeenCalledWith(mockVenues[0]);
   });
+
+  it("renders empty state when venues list is empty", async () => {
+    render(
+      <VenueListings
+        venues={[]}
+        favorites={new Set()}
+        onGetDirections={mockOnGetDirections}
+        onToggleFavorite={mockOnToggleFavorite}
+        onRateVenue={mockOnRateVenue}
+        onOpenDetails={mockOnOpenDetails}
+        onBook={mockOnBook}
+      />,
+    );
+
+    expect(screen.getByText("No venues found")).toBeInTheDocument();
+  });
 });

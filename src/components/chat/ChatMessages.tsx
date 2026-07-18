@@ -26,6 +26,7 @@ import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
 import { MessageRenderer } from "./GenerativeUI";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
@@ -570,24 +571,32 @@ export function VenueListings({
         </div>
       </div>
 
-      <div className={viewMode === "card" ? "space-y-3" : "space-y-2"}>
-        {venues.slice(0, 5).map((venue, index) => (
-          <VenueChatCard
-            key={venue.id}
-            venue={venue}
-            isFavorited={favorites.has(venue.id)}
-            onGetDirections={onGetDirections}
-            onToggleFavorite={onToggleFavorite}
-            onRate={onRateVenue}
-            onOpenDetails={onOpenDetails}
-            onBook={onBook}
-            viewMode={viewMode}
-            tabIndex={0}
-            data-index={index}
-            onKeyDown={(e) => handleKeyDown(e, index, venue)}
-          />
-        ))}
-      </div>
+      {venues.length === 0 ? (
+        <EmptyState
+          illustration="search"
+          message="No venues found"
+          description="Try broadening your search criteria or adjusting your chat request."
+        />
+      ) : (
+        <div className={viewMode === "card" ? "space-y-3" : "space-y-2"}>
+          {venues.slice(0, 5).map((venue, index) => (
+            <VenueChatCard
+              key={venue.id}
+              venue={venue}
+              isFavorited={favorites.has(venue.id)}
+              onGetDirections={onGetDirections}
+              onToggleFavorite={onToggleFavorite}
+              onRate={onRateVenue}
+              onOpenDetails={onOpenDetails}
+              onBook={onBook}
+              viewMode={viewMode}
+              tabIndex={0}
+              data-index={index}
+              onKeyDown={(e) => handleKeyDown(e, index, venue)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

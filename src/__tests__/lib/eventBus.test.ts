@@ -25,7 +25,7 @@ describe("EventBus - Reliable Queueing", () => {
 
   it("should push event using lpush when emitting", async () => {
     await EventBus.emit({
-      type: "booking:confirmed",
+      type: "booking:confirmed" as any,
       userId: "user-1",
       data: { hello: "world" },
     });
@@ -39,7 +39,7 @@ describe("EventBus - Reliable Queueing", () => {
   it("should pop event using lmove", async () => {
     const mockEvent = {
       id: "e-1",
-      type: "booking:confirmed",
+      type: "booking:confirmed" as any,
       userId: "user-1",
       timestamp: new Date().toISOString(),
       data: {},
@@ -59,13 +59,13 @@ describe("EventBus - Reliable Queueing", () => {
   it("should acknowledge event using lrem", async () => {
     const mockEvent = {
       id: "e-1",
-      type: "booking:confirmed",
+      type: "booking:confirmed" as any,
       userId: "user-1",
       timestamp: new Date().toISOString(),
       data: {},
     };
 
-    await EventBus.ackEvent(mockEvent);
+    await EventBus.ackEvent(mockEvent as any);
     expect(redisInstance.lrem).toHaveBeenCalledWith(
       "work-sphere:webhook-events-processing",
       1,
@@ -76,14 +76,14 @@ describe("EventBus - Reliable Queueing", () => {
   it("should recover stale events and push them back", async () => {
     const staleEvent = {
       id: "e-stale",
-      type: "booking:confirmed",
+      type: "booking:confirmed" as any,
       userId: "user-1",
       timestamp: new Date(Date.now() - 10 * 60 * 1000).toISOString(), // 10 minutes ago
       data: {},
     };
     const freshEvent = {
       id: "e-fresh",
-      type: "booking:confirmed",
+      type: "booking:confirmed" as any,
       userId: "user-1",
       timestamp: new Date().toISOString(), // fresh
       data: {},

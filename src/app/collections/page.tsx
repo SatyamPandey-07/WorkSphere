@@ -17,6 +17,7 @@ import {
   GripVertical,
 } from "lucide-react";
 import Image from "next/image";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 export default function CollectionsPage() {
   const router = useRouter();
@@ -312,15 +313,11 @@ export default function CollectionsPage() {
                   <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
                 </div>
               ) : folders.length === 0 ? (
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-12 text-center shadow-sm">
-                  <Folder className="w-12 h-12 text-zinc-300 dark:text-zinc-700 mx-auto mb-3" />
-                  <h3 className="text-lg font-medium text-zinc-900 dark:text-white mb-1">
-                    No collections yet
-                  </h3>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    Create a collection to start saving venues.
-                  </p>
-                </div>
+                <EmptyState
+                  illustration="collection"
+                  message="No collections yet"
+                  description="Create a collection to start saving your favorite venues."
+                />
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {folders.map((folder, index) => (
@@ -389,15 +386,11 @@ export default function CollectionsPage() {
                 <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
               </div>
             ) : publicFolders.length === 0 ? (
-              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-12 text-center shadow-sm">
-                <Globe className="w-12 h-12 text-zinc-300 dark:text-zinc-700 mx-auto mb-3" />
-                <h3 className="text-lg font-medium text-zinc-900 dark:text-white mb-1">
-                  No public lists yet
-                </h3>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Share your curated workspace list with the community!
-                </p>
-              </div>
+              <EmptyState
+                illustration="collection"
+                message="No public lists yet"
+                description="Share your curated workspace list with the community!"
+              />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {publicFolders.map((pubFolder) => (

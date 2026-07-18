@@ -73,4 +73,51 @@ describe("offlineStore – queueOfflineFavorite", () => {
     const after = await getQueuedFavorites();
     expect(after.find((a) => a.id === target!.id)).toBeUndefined();
   });
+
+  describe("Safari Private Browsing SecurityError handling", () => {
+    let originalOpen: typeof indexedDB.open;
+    let localQueueOfflineFavorite: typeof queueOfflineFavorite;
+
+    beforeEach(() => {
+      jest.resetModules();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const localStore = require("../../lib/offlineStore");
+      localQueueOfflineFavorite = localStore.queueOfflineFavorite;
+
+      originalOpen = indexedDB.open;
+      global.window = {} as any;
+      global.alert = jest.fn();
+    });
+
+    afterEach(() => {
+      indexedDB.open = originalOpen;
+      if (
+        typeof window !== "undefined" &&
+        (window as any).__worksphere_offline_alert_shown
+      ) {
+        delete (window as any).__worksphere_offline_alert_shown;
+      }
+      delete (global as any).window;
+      delete (global as any).alert;
+    });
+
+    it("gracefully intercepts synchronous SecurityError and alerts user once", async () => {
+      indexedDB.open = jest.fn().mockImplementation(() => {
+        const err = new Error("SecurityError: access blocked");
+        err.name = "SecurityError";
+        throw err;
+      });
+
+      await expect(
+        localQueueOfflineFavorite("venue-fail-sync", "ADD"),
+      ).resolves.toBeUndefined();
+      expect(global.alert).toHaveBeenCalledTimes(1);
+
+      // Verify alert is only shown once (subsequent errors do not spam alerts)
+      await expect(
+        localQueueOfflineFavorite("venue-fail-sync-2", "ADD"),
+      ).resolves.toBeUndefined();
+      expect(global.alert).toHaveBeenCalledTimes(1);
+    });
+  });
 });

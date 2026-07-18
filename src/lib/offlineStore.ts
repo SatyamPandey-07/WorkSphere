@@ -42,6 +42,15 @@ if (typeof window !== "undefined") {
   );
 }
 
+function showPrivateBrowsingAlert() {
+  if (typeof window === "undefined") return;
+  if ((window as any).__worksphere_offline_alert_shown) return;
+  (window as any).__worksphere_offline_alert_shown = true;
+  alert(
+    "Offline storage is disabled because Safari Private Browsing blocks database access. Please disable Private Browsing to use offline features.",
+  );
+}
+
 function getDB(): Promise<IDBDatabase> {
   // Guard: IndexedDB is not available in SSR / Node environments.
   // Checking `indexedDB` directly (rather than `window`) ensures that
@@ -66,41 +75,54 @@ function getDB(): Promise<IDBDatabase> {
 
   // Slow path — first caller: open the database and cache the Promise.
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
+    try {
+      const request = indexedDB.open(DB_NAME, 1);
 
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-      }
-    };
-
-    request.onsuccess = () => {
-      const db = request.result;
-
-      // Handle external schema upgrades (e.g. another tab calling a higher
-      // DB version).  Close the stale connection and clear the singleton so
-      // the next getDB() call re-opens with the new version.
-      db.onversionchange = () => {
-        db.close();
-        dbInstance = null;
-        dbPromise = null;
+      request.onupgradeneeded = (event) => {
+        const db = (event.target as IDBOpenDBRequest).result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME, {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
       };
 
-      dbInstance = db;
-      dbPromise = null; // opening is complete; dbInstance is now the sole authority
-      resolve(db);
-    };
+      request.onsuccess = () => {
+        const db = request.result;
 
-    request.onerror = () => {
-      // Clear both variables so the next getDB() call starts fresh.
+        // Handle external schema upgrades (e.g. another tab calling a higher
+        // DB version).  Close the stale connection and clear the singleton so
+        // the next getDB() call re-opens with the new version.
+        db.onversionchange = () => {
+          db.close();
+          dbInstance = null;
+          dbPromise = null;
+        };
+
+        dbInstance = db;
+        dbPromise = null; // opening is complete; dbInstance is now the sole authority
+        resolve(db);
+      };
+
+      request.onerror = () => {
+        // Clear both variables so the next getDB() call starts fresh.
+        dbInstance = null;
+        dbPromise = null;
+        const err = request.error || new Error("Unknown IndexedDB error");
+        if (err.name === "SecurityError") {
+          showPrivateBrowsingAlert();
+        }
+        reject(err);
+      };
+    } catch (err: any) {
       dbInstance = null;
       dbPromise = null;
-      reject(request.error);
-    };
+      if (err.name === "SecurityError") {
+        showPrivateBrowsingAlert();
+      }
+      reject(err);
+    }
   });
 
   return dbPromise;

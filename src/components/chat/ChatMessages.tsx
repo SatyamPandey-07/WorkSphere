@@ -805,6 +805,17 @@ export function ChatInput({
   onInputChange,
   onSubmit,
 }: ChatInputProps) {
+  const MAX_CHARS = 2000;
+  const charCount = input.length;
+  const isOverLimit = charCount > MAX_CHARS;
+
+  let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
+  if (isOverLimit) {
+    counterColor = "text-red-500";
+  } else if (charCount >= MAX_CHARS - 200) {
+    counterColor = "text-yellow-500";
+  }
+
   return (
     <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
       <form
@@ -822,7 +833,7 @@ export function ChatInput({
         />
         <button
           type="submit"
-          disabled={isLoading || !input.trim()}
+          disabled={isLoading || !input.trim() || isOverLimit}
           className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
         >
           {isLoading ? (
@@ -832,6 +843,13 @@ export function ChatInput({
           )}
         </button>
       </form>
+      <div className="mt-2 text-right">
+        <span
+          className={`text-xs font-semibold transition-colors ${counterColor}`}
+        >
+          {charCount}/{MAX_CHARS}
+        </span>
+      </div>
     </div>
   );
 }

@@ -15,7 +15,7 @@ WorkSphere's Service Worker (`public/sw.js`) listens for two notification-relate
 - **`push`** — fires when a push message is received. The handler parses the payload as JSON and calls `self.registration.showNotification(...)`.
 - **`notificationclick`** — fires when the user clicks (or dismisses) a shown notification. The handler focuses an existing tab or opens a new one at `data.url`.
 
-**Important:** as of this writing, WorkSphere does not yet implement a client-side `PushManager.subscribe()` flow (there's no VAPID key exchange or subscription endpoint registered anywhere in `src/`). This means there is currently no way to trigger a *real* push message end-to-end from a server in local development. All local testing goes through Chrome DevTools' manual push simulator described below, which invokes the `push` event handler directly without a real push subscription. Keep this in mind so you don't spend time hunting for a subscription bug that isn't there yet — if you're implementing the subscribe flow, this doc still applies for verifying the receiving side.
+**Important:** as of this writing, WorkSphere does not yet implement a client-side `PushManager.subscribe()` flow (there's no VAPID key exchange or subscription endpoint registered anywhere in `src/`). This means there is currently no way to trigger a _real_ push message end-to-end from a server in local development. All local testing goes through Chrome DevTools' manual push simulator described below, which invokes the `push` event handler directly without a real push subscription. Keep this in mind so you don't spend time hunting for a subscription bug that isn't there yet — if you're implementing the subscribe flow, this doc still applies for verifying the receiving side.
 
 ---
 
@@ -38,7 +38,11 @@ Before testing push events, make sure:
 4. In the row for the active worker, find the **Push** text field and button.
 5. Type a payload and click **Push**. The payload must be valid JSON, since `sw.js` calls `event.data.json()` — a non-JSON string will throw inside the handler and no notification will appear. Use a shape matching what the handler expects, for example:
    ```json
-   { "title": "New venue nearby", "body": "A cafe matching your search just opened.", "url": "/ai" }
+   {
+     "title": "New venue nearby",
+     "body": "A cafe matching your search just opened.",
+     "url": "/ai"
+   }
    ```
 6. A native OS/browser notification should appear using the `title`/`body`/`url` fields. If it doesn't, see [Common Issues](#common-issues) below.
 7. Click the notification (or its **Open**/**Dismiss** action buttons) to exercise `notificationclick`. **Open** should focus an existing WorkSphere tab if one is open at that URL, or open a new one; **Dismiss** should just close the notification with no navigation.
@@ -63,7 +67,7 @@ Notification.permission; // "default" | "granted" | "denied"
 
 # 2. IndexedDB Inspection
 
-Push notifications themselves don't write anything to IndexedDB — the `push`/`notificationclick` handlers only call the Notifications API. What *does* live in IndexedDB is the offline action queue that Background Sync drains (reviews/ratings, favorites, conversation edits), which is often being debugged alongside push in the same session since both surface as "did the background event actually run."
+Push notifications themselves don't write anything to IndexedDB — the `push`/`notificationclick` handlers only call the Notifications API. What _does_ live in IndexedDB is the offline action queue that Background Sync drains (reviews/ratings, favorites, conversation edits), which is often being debugged alongside push in the same session since both surface as "did the background event actually run."
 
 1. Open **Application → IndexedDB → `worksphere-offline`**.
 2. You'll see these object stores (schema defined in both `src/lib/offlineStorage.ts` and mirrored in `public/sw.js`'s `openIndexedDB()`):
@@ -85,16 +89,16 @@ Push notifications themselves don't write anything to IndexedDB — the `push`/`
 
 The Service Worker and offline-storage code use a few consistent console tags. Filter the console by these to cut noise:
 
-| Tag | Source | What it tells you |
-| --- | --- | --- |
-| `[PWA]` | `src/hooks/usePWA.tsx` | Service Worker registration, update detection |
-| `[SW]` | `public/sw.js` install handler | Precache failures during install |
-| `[OfflineDB]` | `src/lib/offlineStorage.ts` | IndexedDB open/schema creation |
+| Tag           | Source                         | What it tells you                             |
+| ------------- | ------------------------------ | --------------------------------------------- |
+| `[PWA]`       | `src/hooks/usePWA.tsx`         | Service Worker registration, update detection |
+| `[SW]`        | `public/sw.js` install handler | Precache failures during install              |
+| `[OfflineDB]` | `src/lib/offlineStorage.ts`    | IndexedDB open/schema creation                |
 
 **The `push` and `notificationclick` handlers themselves don't currently log anything on success or failure.** When debugging a push that silently fails to show, the most reliable approach is:
 
 1. Go to **Application → Service Workers**, find your worker, and click **Inspect**. This opens a dedicated DevTools window scoped to the Service Worker's own execution context (not the page).
-2. In that window's **Console**, trigger the push again from the main tab's Application panel. Any exception thrown inside the `push` handler (e.g. `event.data.json()` failing on invalid JSON) will surface here — it will *not* appear in the regular page console.
+2. In that window's **Console**, trigger the push again from the main tab's Application panel. Any exception thrown inside the `push` handler (e.g. `event.data.json()` failing on invalid JSON) will surface here — it will _not_ appear in the regular page console.
 3. If you need more visibility while debugging, temporarily add `console.log` statements inside the `push` and `notificationclick` listeners in `public/sw.js` — just remember to remove them before committing, since this file is not currently instrumented like the rest of the offline stack.
 4. The **Application → Service Workers** panel also has a small event log at the bottom of each worker's row (look for "push", "notificationclick" entries with timestamps) that's useful for confirming an event actually reached the worker versus being silently dropped.
 

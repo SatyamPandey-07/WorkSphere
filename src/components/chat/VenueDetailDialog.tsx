@@ -29,6 +29,7 @@ import {
   CircleDollarSign,
   Bike,
   Shield,
+  ChevronRight,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -81,6 +82,10 @@ export function VenueDetailDialog({
   const [brokenMenuPhotos, setBrokenMenuPhotos] = useState<
     Record<number, boolean>
   >({});
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [enableTransition, setEnableTransition] = useState(false);
   const { t } = useTranslation();
   const [translatingReviewId, setTranslatingReviewId] = useState<string | null>(
     null,
@@ -482,6 +487,11 @@ export function VenueDetailDialog({
   }, [venue, isOpen]);
 
   useEffect(() => {
+    const timer = setTimeout(() => setEnableTransition(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     if (!venue) return;
     setLiveScore(venue.score ?? null);
     setPhotoLoading(true);
@@ -489,6 +499,8 @@ export function VenueDetailDialog({
     setBrokenMenuPhotos({});
     setActiveTab("overview");
     setActiveDistribution(null);
+    setPhotos([]);
+    setLightboxIndex(null);
     const params = new URLSearchParams({
       name: venue.name,
       lat: String(venue.lat),
@@ -508,7 +520,69 @@ export function VenueDetailDialog({
       .finally(() => {
         setPhotoLoading(false);
       });
+
+    fetch(`/api/venues/enrich?${params}`)
+      .then((response) => {
+        if (response.ok) return response.json();
+        throw new Error("Failed to enrich");
+      })
+      .then((data) => {
+        if (data && data.photos && data.photos.length > 0) {
+          setPhotos(data.photos);
+        }
+      })
+      .catch(() => {
+        // Fallback to single photoUrl will be used
+      });
   }, [venue]);
+
+  useEffect(() => {
+    const list = photos.length > 0 ? photos : photoUrl ? [photoUrl] : [];
+    if (lightboxIndex === null || list.length === 0) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setLightboxIndex(null);
+      } else if (e.key === "ArrowRight") {
+        setLightboxIndex((prev) =>
+          prev !== null ? (prev + 1) % list.length : 0,
+        );
+      } else if (e.key === "ArrowLeft") {
+        setLightboxIndex((prev) =>
+          prev !== null ? (prev - 1 + list.length) % list.length : 0,
+        );
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [lightboxIndex, photos, photoUrl]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStartX(e.touches[0].clientX);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const list = photos.length > 0 ? photos : photoUrl ? [photoUrl] : [];
+    if (touchStartX === null || list.length === 0) return;
+    const touchEndX = e.changedTouches[0].clientX;
+    const diffX = touchStartX - touchEndX;
+
+    if (Math.abs(diffX) > 50) {
+      if (diffX > 0) {
+        // Swipe left -> Next image
+        setLightboxIndex((prev) =>
+          prev !== null ? (prev + 1) % list.length : 0,
+        );
+      } else {
+        // Swipe right -> Prev image
+        setLightboxIndex((prev) =>
+          prev !== null ? (prev - 1 + list.length) % list.length : 0,
+        );
+      }
+    }
+    setTouchStartX(null);
+  };
 
   // Effect 2: Handle real-time SSE updates
   useEffect(() => {
@@ -722,6 +796,8 @@ export function VenueDetailDialog({
     (!imageError && photoUrl) ||
     venueFallbacks[venue.category || "default"] ||
     venueFallbacks.default;
+  const allPhotos =
+    photos.length > 0 ? photos : photoUrl ? [photoUrl] : [displayPhoto];
   const currentScore = liveScore !== null ? liveScore : venue.score;
 
   const wifiLowConfidence = voteMetrics.wifi.hidden;
@@ -733,7 +809,10 @@ export function VenueDetailDialog({
   const scannerLowConfidence = isLibrary && voteMetrics.scanner.hidden;
 
   return (
-    <div className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-zinc-950/95 animate-in fade-in duration-300">
+    <div
+      className="fixed inset-0 z-[10000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-zinc-950/95 animate-in fade-in duration-300"
+      style={{ touchAction: "pan-y" }}
+    >
       {/* CSS Block for Glassmorphism Gradient Border Animation */}
       <style
         dangerouslySetInnerHTML={{
@@ -806,15 +885,16 @@ export function VenueDetailDialog({
           {photoLoading ? (
             <div className="w-full h-full bg-black/40 animate-pulse" />
           ) : (
-            /* eslint-disable-next-line @next/next/no-img-element */
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={displayPhoto}
               alt={venue.name}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all duration-500"
+              onClick={() => setLightboxIndex(0)}
               onError={() => setImageError(true)}
             />
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none" />
 
           <div className="absolute top-4 right-4 flex gap-2">
             <button
@@ -838,14 +918,14 @@ export function VenueDetailDialog({
             </button>
           </div>
 
-          <div className="absolute bottom-6 left-6 right-6">
+          <div className="absolute bottom-6 left-6 right-6 pointer-events-none">
             <div className="flex items-center gap-2 mb-2">
-              <span className="flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-black bg-blue-500/80 backdrop-blur-md border border-blue-400/50 text-white px-2.5 py-1 rounded shadow-lg">
+              <span className="flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-black bg-blue-500/80 backdrop-blur-md border border-blue-400/50 text-white px-2.5 py-1 rounded shadow-lg pointer-events-auto">
                 <CategoryIcon className="w-3.5 h-3.5" />
                 {venue.category?.replace("_", " ")}
               </span>
               {currentScore != null && (
-                <span className="text-[10px] tracking-widest uppercase font-black bg-white/20 backdrop-blur-md text-white border border-white/30 px-2.5 py-1 rounded shadow-lg">
+                <span className="text-[10px] tracking-widest uppercase font-black bg-white/20 backdrop-blur-md text-white border border-white/30 px-2.5 py-1 rounded shadow-lg pointer-events-auto">
                   VIBE SCORE: {Math.round(currentScore * 10)}%
                 </span>
               )}
@@ -887,6 +967,35 @@ export function VenueDetailDialog({
         <div className="p-8 bg-transparent overflow-y-auto max-h-[calc(90vh-320px)] text-zinc-100">
           {activeTab === "overview" && (
             <>
+              {/* Photo Gallery Thumbnails */}
+              {allPhotos.length > 1 && (
+                <div className="mb-8">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-400 mb-3">
+                    Photo Gallery
+                  </h3>
+                  <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+                    {allPhotos.map((photo, index) => (
+                      <button
+                        key={index}
+                        onClick={() => setLightboxIndex(index)}
+                        className="relative w-20 h-20 rounded-2xl overflow-hidden border border-white/10 hover:border-blue-500 dark:hover:border-blue-500 transition-all shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500 active:scale-95 shadow-sm"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={photo}
+                          alt={`${venue.name} thumbnail ${index + 1}`}
+                          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src =
+                              venueFallbacks.default;
+                          }}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                 <button
                   type="button"
@@ -1509,14 +1618,18 @@ export function VenueDetailDialog({
                 <div className="flex gap-3">
                   <button
                     onClick={() => onToggleFavorite(venue)}
-                    className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all border-2 ${
+                    className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl border-2 ${
+                      enableTransition ? "transition-all duration-300" : ""
+                    } ${
                       isFavorited
                         ? "bg-red-500 border-red-400 text-white shadow-xl shadow-red-500/20"
                         : "bg-black/40 border-white/10 text-zinc-200 hover:bg-black/60 shadow-md"
                     }`}
                   >
                     <Heart
-                      className={`w-4 h-4 ${isFavorited ? "fill-current" : ""}`}
+                      className={`w-4 h-4 ${
+                        enableTransition ? "transition-all duration-300" : ""
+                      } ${isFavorited ? "fill-current" : ""}`}
                     />
                     {isFavorited ? "Saved" : "Save"}
                   </button>
@@ -1813,6 +1926,82 @@ export function VenueDetailDialog({
                 onError={() => setPreviewImageError(true)}
               />
             )}
+          </div>
+        </div>
+      )}
+
+      {lightboxIndex !== null && allPhotos.length > 0 && (
+        <div
+          className="fixed inset-0 z-[12000] flex flex-col justify-between p-4 bg-black/95 animate-in fade-in duration-200"
+          onClick={() => setLightboxIndex(null)}
+        >
+          {/* Header */}
+          <div className="w-full flex justify-between items-center z-10 px-4 pt-2">
+            <span className="text-sm font-semibold text-white/80">
+              {lightboxIndex + 1} / {allPhotos.length}
+            </span>
+            <button
+              onClick={() => setLightboxIndex(null)}
+              className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all backdrop-blur-md border border-white/10"
+              aria-label="Close lightbox"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Main Content: Prev Button, Image, Next Button */}
+          <div className="flex-1 flex items-center justify-between relative max-h-[80vh] px-4 md:px-12">
+            {allPhotos.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((prev) =>
+                    prev !== null
+                      ? (prev - 1 + allPhotos.length) % allPhotos.length
+                      : 0,
+                  );
+                }}
+                className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all backdrop-blur-md border border-white/10 hidden sm:block"
+                aria-label="Previous photo"
+              >
+                <ChevronRight className="w-6 h-6 rotate-180" />
+              </button>
+            )}
+
+            <div
+              className="relative max-w-full max-h-full flex items-center justify-center overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handleTouchEnd}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={allPhotos[lightboxIndex]}
+                alt={`${venue.name} fullscreen view`}
+                className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl select-none transition-transform duration-300"
+              />
+            </div>
+
+            {allPhotos.length > 1 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxIndex((prev) =>
+                    prev !== null ? (prev + 1) % allPhotos.length : 0,
+                  );
+                }}
+                className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-full transition-all backdrop-blur-md border border-white/10 hidden sm:block"
+                aria-label="Next photo"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+          </div>
+
+          {/* Footer Instruction */}
+          <div className="text-center py-2 text-xs text-white/40 select-none">
+            Use arrow keys to navigate &bull; Swipe on mobile &bull; Click
+            outside to close
           </div>
         </div>
       )}

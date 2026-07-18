@@ -1,18 +1,10 @@
 \# Responsive Design Standards
 
-
-
 This document defines the responsive design strategy for WorkSphere, including breakpoints, the mobile-first approach, Tailwind CSS screen modifiers, layout shift strategies, and handling of special device cases like iPad landscape.
-
-
 
 \## 1. Breakpoint Definitions
 
-
-
 WorkSphere follows Tailwind CSS's default breakpoint system. All layouts must be built mobile-first, then progressively enhanced for larger screens.
-
-
 
 | Breakpoint | Prefix | Min Width | Typical Devices |
 
@@ -30,8 +22,6 @@ WorkSphere follows Tailwind CSS's default breakpoint system. All layouts must be
 
 | 2X Large | `2xl:` | 1536px | Large desktops, wide monitors |
 
-
-
 ```css
 
 /\* Reference — Tailwind default breakpoints \*/
@@ -48,15 +38,9 @@ xl  → 1280px
 
 ```
 
-
-
 \## 2. Mobile-First Approach
 
-
-
 WorkSphere follows a strict \*\*mobile-first\*\* methodology:
-
-
 
 \- Write base (unprefixed) styles for the smallest screen first.
 
@@ -64,21 +48,13 @@ WorkSphere follows a strict \*\*mobile-first\*\* methodology:
 
 \- Never design for desktop first and scale down — this causes bloated CSS and inconsistent mobile UX.
 
-
-
 \*\*Example:\*\*
 
 ```jsx
-
 <div className="flex flex-col gap-2 p-4 sm:flex-row sm:gap-4 lg:gap-6 lg:p-8">
-
-&#x20; {/\* Stacked on mobile, row layout from sm: upward \*/}
-
+  &#x20; {/\* Stacked on mobile, row layout from sm: upward \*/}
 </div>
-
 ```
-
-
 
 \### Guidelines
 
@@ -90,47 +66,33 @@ WorkSphere follows a strict \*\*mobile-first\*\* methodology:
 
 \- Font sizes should scale using responsive text utilities (`text-sm md:text-base lg:text-lg`).
 
-
-
 \## 3. Tailwind Screen Modifiers — Usage Rules
-
-
 
 \- Always chain modifiers in ascending order for readability: base → `sm:` → `md:` → `lg:` → `xl:` → `2xl:`.
 
 \- Use `hidden` / `block` combinations to toggle visibility across breakpoints instead of duplicating components.
 
-
-
 ```jsx
+{
+  /\* Sidebar hidden on mobile, visible from md: upward \*/;
+}
 
-{/\* Sidebar hidden on mobile, visible from md: upward \*/}
+<aside className="hidden md:block md:w-64">...</aside>;
 
-<aside className="hidden md:block md:w-64">...</aside>
+{
+  /\* Mobile nav toggle, hidden from md: upward \*/;
+}
 
-
-
-{/\* Mobile nav toggle, hidden from md: upward \*/}
-
-<button className="md:hidden">Menu</button>
-
+<button className="md:hidden">Menu</button>;
 ```
-
-
 
 \- Avoid excessive breakpoint chaining on a single element (max 3–4 responsive variants per property) — if a component needs more, consider splitting it or using container queries.
 
 \- Use `container` or `max-w-screen-\*` utilities to constrain content width on large screens rather than letting text stretch full-width.
 
-
-
 \## 4. Layout Shift Strategies
 
-
-
 To minimize Cumulative Layout Shift (CLS) across breakpoints:
-
-
 
 1\. \*\*Reserve space\*\* for images/media using `aspect-ratio` utilities (`aspect-video`, `aspect-square`) instead of letting images load without dimensions.
 
@@ -143,8 +105,6 @@ To minimize Cumulative Layout Shift (CLS) across breakpoints:
 5\. \*\*Font loading\*\*: use `font-display: swap` and predefine fallback font metrics to avoid text reflow (FOUT/FOIT shift).
 
 6\. \*\*Grid over float/inline-block\*\*: use `grid` with defined `grid-template-columns` per breakpoint so items don't reflow unpredictably.
-
-
 
 ```jsx
 
@@ -160,17 +120,11 @@ To minimize Cumulative Layout Shift (CLS) across breakpoints:
 
 ```
 
-
-
 \## 5. Special Case Handling
-
-
 
 \### 5.1 iPad Landscape (1024px width)
 
 iPad landscape lands exactly on Tailwind's `lg:` breakpoint (1024px), which can cause layout ambiguity since it sits between "tablet" and "small laptop" designs.
-
-
 
 \- Test all `lg:` layouts explicitly at \*\*1024×768\*\* (iPad landscape) in addition to standard laptop widths (1280px+).
 
@@ -178,33 +132,21 @@ iPad landscape lands exactly on Tailwind's `lg:` breakpoint (1024px), which can 
 
 \- If a `lg:` layout looks too tight on iPad landscape, consider adding an intermediate adjustment using arbitrary values: `lg:grid-cols-2 xl:grid-cols-3` rather than jumping straight to 3+ columns at `lg:`.
 
-
-
 \### 5.2 iPad Portrait (768px width)
 
 \- Lands on `md:` breakpoint. Treat this as a true tablet layout, not a "small desktop" — navigation should still favor touch-friendly tap targets (min 44×44px).
-
-
 
 \### 5.3 Foldables \& Unusual Aspect Ratios
 
 \- Use `min-h-screen` cautiously; prefer `min-h-dvh` (dynamic viewport height) where supported, to handle foldable/notched devices correctly.
 
-
-
 \### 5.4 Touch vs Pointer Devices
 
 \- Use the `pointer: coarse` / `hover: hover` media features (via Tailwind's `pointer-coarse:` / `hover:` variants where configured) to avoid hover-dependent UI (tooltips, hover menus) becoming inaccessible on touch devices like iPads.
 
-
-
 \## 6. Testing Checklist
 
-
-
 Before merging any UI change, verify at minimum:
-
-
 
 \- \[ ] 375px (small phone)
 
@@ -218,7 +160,4 @@ Before merging any UI change, verify at minimum:
 
 \- \[ ] 1536px+ (`2xl`)
 
-
-
 Use browser dev tools' responsive mode with the iPad presets specifically, since `md`/`lg` boundary bugs are the most common source of layout shift reports in WorkSphere.
-

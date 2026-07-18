@@ -58,6 +58,10 @@ interface VenueCardProps {
   onGetDirections?: (venue: MapMarker) => void;
   onSaveFavorite?: (venue: MapMarker) => void;
   onRate?: (venue: MapMarker) => void;
+  // --- New Props for Issue #614 ---
+  isSelected?: boolean;
+  onToggleCompare?: (venue: MapMarker) => void;
+  compareDisabled?: boolean;
 }
 
 interface VoteMetricState {
@@ -73,6 +77,9 @@ export function VenueCard({
   onGetDirections,
   onSaveFavorite,
   onRate,
+  isSelected,
+  onToggleCompare,
+  compareDisabled,
 }: VenueCardProps) {
   const [isFavorited, setIsFavorited] = useState(false);
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
@@ -80,6 +87,7 @@ export function VenueCard({
   const [isLoading, setIsLoading] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showFolderModal, setShowFolderModal] = useState(false);
+  const [enableTransition, setEnableTransition] = useState(false);
 
   // =========================================================================
   // COMMUNITY VERIFICATION VOTE STATE TRACKING SYSTEM
@@ -195,6 +203,11 @@ export function VenueCard({
     }
     loadVoteMetrics();
   }, [venue.id]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setEnableTransition(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Async dynamic vote submittal query processor
   const submitAmenityVote = async (
@@ -380,16 +393,59 @@ export function VenueCard({
           )}
           {/* Category Badge */}
           {enrichData?.categories?.[0] && (
-            <div className="absolute top-2 left-2 px-2 py-1 rounded-full text-xs font-medium bg-blue-500 text-white">
+            <div className="absolute top-2 left-2 px-2 py-1 rounded-full text-xs font-medium bg-blue-500 text-white z-10">
               {enrichData.categories[0]}
+            </div>
+          )}
+
+          {/* NEW: Compare Checkbox UI */}
+          {onToggleCompare && (
+            <div
+              className="absolute top-2 right-2 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2 py-1 rounded-md shadow-sm backdrop-blur-sm"
+              onClick={(e) => e.stopPropagation()} // Prevent photo cycle when clicking checkbox
+            >
+              <input
+                type="checkbox"
+                id={`compare-${venue.id}`}
+                checked={isSelected}
+                onChange={() => onToggleCompare(venue)}
+                disabled={!isSelected && compareDisabled}
+                className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+              />
+              <label
+                htmlFor={`compare-${venue.id}`}
+                className="text-xs font-bold text-zinc-800 dark:text-zinc-200 cursor-pointer select-none"
+              >
+                Compare
+              </label>
             </div>
           )}
         </div>
       )}
 
+      {/* Fallback Checkbox (If no photos exist) */}
+      {photos.length === 0 && onToggleCompare && (
+        <div className="absolute top-2 right-2 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2 py-1 rounded-md shadow-sm border border-zinc-200 dark:border-zinc-700">
+          <input
+            type="checkbox"
+            id={`compare-no-photo-${venue.id}`}
+            checked={isSelected}
+            onChange={() => onToggleCompare(venue)}
+            disabled={!isSelected && compareDisabled}
+            className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+          />
+          <label
+            htmlFor={`compare-no-photo-${venue.id}`}
+            className="text-xs font-bold text-zinc-800 dark:text-zinc-200 cursor-pointer select-none"
+          >
+            Compare
+          </label>
+        </div>
+      )}
+
       <div className="p-4">
         {/* Header */}
-        <div className="flex items-start justify-between mb-2">
+        <div className="flex items-start justify-between mb-2 mt-4">
           <div className="flex-1">
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
               {venue.name}
@@ -404,13 +460,19 @@ export function VenueCard({
           <button
             onClick={handleFavorite}
             disabled={isSavingFavorite}
-            className={`p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
+              enableTransition ? "transition-colors duration-300" : ""
+            } ${
               isFavorited
                 ? "bg-red-100 dark:bg-red-900/20 text-red-600"
                 : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
             }`}
           >
-            <Heart className={`w-5 h-5 ${isFavorited ? "fill-current" : ""}`} />
+            <Heart
+              className={`w-5 h-5 ${
+                enableTransition ? "transition-all duration-300" : ""
+              } ${isFavorited ? "fill-current" : ""}`}
+            />
           </button>
         </div>
 

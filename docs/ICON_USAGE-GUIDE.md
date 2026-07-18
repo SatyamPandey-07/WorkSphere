@@ -36,16 +36,16 @@ Avoid renaming imported icons unless absolutely necessary.
 
 ## Preferred Icon Sizes
 
-| Context | Size |
-|---------|------|
-| Small inline icons | 16px |
-| Buttons & navigation | 20px |
+| Context                      | Size |
+| ---------------------------- | ---- |
+| Small inline icons           | 16px |
+| Buttons & navigation         | 20px |
 | Page headers / feature icons | 24px |
 
 When using Tailwind classes:
 
-| Size | Tailwind |
-|------|----------|
+| Size | Tailwind  |
+| ---- | --------- |
 | 16px | `w-4 h-4` |
 | 20px | `w-5 h-5` |
 | 24px | `w-6 h-6` |

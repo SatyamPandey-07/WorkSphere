@@ -30,6 +30,7 @@ import { trackVenueInteraction } from "@/lib/analytics";
 import { MessageRenderer } from "./GenerativeUI";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ComparisonDrawer } from "@/components/ComparisonDrawer"; // Added this import
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
@@ -109,6 +110,10 @@ interface VenueChatCardProps {
   tabIndex?: number;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   "data-index"?: number;
+  // --- New Props for Issue #614 ---
+  isSelected?: boolean;
+  compareDisabled?: boolean;
+  onToggleCompare?: (venue: Venue) => void;
 }
 
 export function VenueChatCard({
@@ -123,6 +128,9 @@ export function VenueChatCard({
   tabIndex,
   onKeyDown,
   "data-index": dataIndex,
+  isSelected,
+  compareDisabled,
+  onToggleCompare,
 }: VenueChatCardProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
@@ -141,7 +149,6 @@ export function VenueChatCard({
         if (!response.ok) {
           throw new Error("Failed to load venue photo");
         }
-
         setPhotoUrl(response.url);
       })
       .catch(() => {
@@ -260,11 +267,37 @@ export function VenueChatCard({
             </div>
           </div>
 
-          {/* Mini Actions to keep functionality */}
+          {/* Mini Actions */}
           <div
             className="flex items-center gap-1.5 shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Compare Checkbox (List View) */}
+            {onToggleCompare && (
+              <label
+                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-all ${
+                  !isSelected && compareDisabled
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer"
+                } ${
+                  isSelected
+                    ? "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
+                    : "bg-zinc-100 border-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => onToggleCompare(venue)}
+                  disabled={!isSelected && compareDisabled}
+                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                <span className="text-[10px] font-black uppercase tracking-tighter hidden sm:inline">
+                  Compare
+                </span>
+              </label>
+            )}
+
             <button
               onClick={() => onBook(venue)}
               className="joyride-booking p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all active:scale-[0.95]"
@@ -304,7 +337,7 @@ export function VenueChatCard({
         tabIndex={tabIndex}
         onKeyDown={onKeyDown}
         data-index={dataIndex}
-        className="border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-2xl hover:scale-[1.02] transition-all cursor-pointer shadow-lg my-2 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+        className="relative border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-2xl hover:scale-[1.02] transition-all cursor-pointer shadow-lg my-2 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
       >
         {/* Venue photo */}
         {photoLoading ? (
@@ -321,13 +354,38 @@ export function VenueChatCard({
               }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+
+            {/* Category Tag */}
             <span className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-black px-2 py-1 rounded-md bg-zinc-950 border border-zinc-700 text-white">
               <CategoryIcon className="w-3 h-3" />
               {venue.category?.replace("_", " ")}
             </span>
 
+            {/* Compare Checkbox (Card View Overlay) */}
+            {onToggleCompare && (
+              <div
+                className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2.5 py-1.5 rounded-lg shadow-md backdrop-blur-md"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  id={`compare-card-${venue.id}`}
+                  checked={isSelected}
+                  onChange={() => onToggleCompare(venue)}
+                  disabled={!isSelected && compareDisabled}
+                  className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                />
+                <label
+                  htmlFor={`compare-card-${venue.id}`}
+                  className="text-xs font-bold text-zinc-800 dark:text-zinc-200 cursor-pointer select-none uppercase tracking-tight"
+                >
+                  Compare
+                </label>
+              </div>
+            )}
+
             {venue.score != null && (
-              <div className="absolute top-3 right-3 flex flex-col items-center justify-center h-12 w-12 rounded-full bg-blue-600 text-white border-2 border-blue-400 shadow-2xl">
+              <div className="absolute top-3 right-3 flex flex-col items-center justify-center h-12 w-12 rounded-full bg-blue-600 text-white border-2 border-blue-400 shadow-2xl z-10">
                 <span className="text-[10px] font-black leading-none uppercase">
                   Vibe
                 </span>
@@ -516,6 +574,21 @@ export function VenueListings({
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // State to track venues selected for comparison
+  const [selectedVenues, setSelectedVenues] = useState<Venue[]>([]);
+
+  const handleToggleCompare = (venue: Venue) => {
+    setSelectedVenues((prev) => {
+      const isSelected = prev.some((v) => v.id === venue.id);
+      if (isSelected) {
+        return prev.filter((v) => v.id !== venue.id);
+      } else if (prev.length < 3) {
+        return [...prev, venue];
+      }
+      return prev;
+    });
+  };
+
   const handleKeyDown = (
     e: React.KeyboardEvent,
     index: number,
@@ -597,10 +670,21 @@ export function VenueListings({
               tabIndex={0}
               data-index={index}
               onKeyDown={(e) => handleKeyDown(e, index, venue)}
+              isSelected={selectedVenues.some((v) => v.id === venue.id)}
+              compareDisabled={selectedVenues.length >= 3}
+              onToggleCompare={handleToggleCompare}
             />
           ))}
         </div>
       )}
+
+      {/* Comparison Drawer Integration */}
+      <ComparisonDrawer
+        selectedVenues={selectedVenues as any}
+        onRemoveVenue={(id) =>
+          setSelectedVenues((prev) => prev.filter((v) => v.id !== id))
+        }
+      />
     </div>
   );
 }

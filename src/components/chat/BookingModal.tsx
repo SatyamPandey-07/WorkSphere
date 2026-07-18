@@ -20,7 +20,7 @@ import {
   CalendarPlus,
   Mail,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Venue } from "./ChatMessages";
 import { trackEvent } from "@/lib/analytics";
 
@@ -76,6 +76,8 @@ export function BookingModal({
   const [showTaxId, setShowTaxId] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
   const [showLogo, setShowLogo] = useState(true);
+
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const getFilteredHistory = () => {
     if (dateFilter === "all") return history;
@@ -138,6 +140,43 @@ export function BookingModal({
       fetchHistory();
     }
   }, [isOpen, mode]);
+  useEffect(() => {
+    if (!isOpen || !modalRef.current) return;
+
+    const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+
+    if (focusableElements.length === 0) return;
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    // Focus the first interactive element when modal opens
+    firstElement.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+
+      if (event.shiftKey) {
+        if (document.activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          event.preventDefault();
+          firstElement.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
 
   const toggleSelected = (id: string) => {
     setSelectedIds((prev) => {
@@ -274,6 +313,9 @@ export function BookingModal({
   return (
     <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/90 animate-in fade-in duration-300 backdrop-blur-sm">
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
         className="bg-white dark:bg-zinc-900 w-full max-w-2xl overflow-hidden rounded-[2.5rem] shadow-[0_20px_100px_rgba(0,0,0,0.9)] border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-300"
         onClick={(e) => e.stopPropagation()}
       >

@@ -109,6 +109,7 @@ export function DataChart({
             tick={{ fontSize: 10, fill: "#6b7280" }}
           />
           <Tooltip
+            isAnimationActive={false}
             contentStyle={{
               borderRadius: "12px",
               border: "none",

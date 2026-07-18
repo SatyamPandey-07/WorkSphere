@@ -28,6 +28,7 @@ import { MessageRenderer } from "./GenerativeUI";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ComparisonDrawer } from "@/components/ComparisonDrawer"; // Added this import
+import { ChatMessageSkeleton } from "@/components/ui/skeleton";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
@@ -780,37 +781,22 @@ export function MessageList({
           key={message.id}
           className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300"
         >
-          <div
-            className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-          >
+          {message.role === "assistant" &&
+          message.content.trim().length === 0 ? (
+            <ChatMessageSkeleton />
+          ) : (
             <div
-              className={`max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${
-                message.role === "user"
-                  ? "bg-zinc-950 border-zinc-800 text-white rounded-tr-none"
-                  : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
-              }`}
+              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <div className="text-sm font-medium leading-relaxed">
-                {message.role === "assistant" ? (
-                  message.content === "" ? (
-                    <div
-                      className="flex gap-1 items-center py-1"
-                      aria-label="WorkSphere AI is typing"
-                    >
-                      <span
-                        className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 animate-bounce"
-                        style={{ animationDelay: "0ms" }}
-                      />
-                      <span
-                        className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 animate-bounce"
-                        style={{ animationDelay: "150ms" }}
-                      />
-                      <span
-                        className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400 animate-bounce"
-                        style={{ animationDelay: "300ms" }}
-                      />
-                    </div>
-                  ) : (
+              <div
+                className={`max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${
+                  message.role === "user"
+                    ? "bg-zinc-950 border-zinc-800 text-white rounded-tr-none"
+                    : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
+                }`}
+              >
+                <div className="text-sm font-medium leading-relaxed">
+                  {message.role === "assistant" ? (
                     <div className="relative">
                       <MessageRenderer content={message.content} />
                       {message.isStreaming && (
@@ -821,13 +807,15 @@ export function MessageList({
                         </span>
                       )}
                     </div>
-                  )
-                ) : (
-                  <span className="whitespace-pre-wrap">{message.content}</span>
-                )}
+                  ) : (
+                    <span className="whitespace-pre-wrap">
+                      {message.content}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {message.agentSteps && message.agentSteps.length > 0 && (
             <div className="ml-2">

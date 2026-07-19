@@ -1,4 +1,5 @@
 const STORE_NAME = "favorites-outbox";
+const CHECKIN_STORE_NAME = "checkins-outbox";
 const DB_NAME = "WorkSphereOfflineDB";
 
 /**
@@ -16,6 +17,13 @@ export interface OfflineAction {
   action: "ADD" | "REMOVE";
   timestamp: number;
   /** Number of failed sync attempts so far. Defaults to 0 for new actions. */
+  retryCount?: number;
+}
+
+export interface OfflineCheckIn {
+  id?: number;
+  venueId: string;
+  timestamp: number;
   retryCount?: number;
 }
 
@@ -87,12 +95,18 @@ function getDB(): Promise<IDBDatabase> {
   // Slow path — first caller: open the database and cache the Promise.
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     try {
-      const request = indexedDB.open(DB_NAME, 1);
+      const request = indexedDB.open(DB_NAME, 2);
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
           db.createObjectStore(STORE_NAME, {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
+        if (!db.objectStoreNames.contains(CHECKIN_STORE_NAME)) {
+          db.createObjectStore(CHECKIN_STORE_NAME, {
             keyPath: "id",
             autoIncrement: true,
           });
@@ -263,5 +277,110 @@ export async function dequeueOfflineAction(id: number): Promise<void> {
     });
   } catch (err) {
     console.error("Failed to dequeue offline action:", err);
+  }
+}
+
+/**
+ * Pushes a check-in action into the client IndexedDB checkin queue.
+ */
+export async function queueOfflineCheckIn(venueId: string): Promise<void> {
+  try {
+    const db = await getDB();
+
+    // Check for existing identical un-synced checkin for same venue
+    const existing = await new Promise<OfflineCheckIn | undefined>(
+      (resolve, reject) => {
+        const tx = db.transaction(CHECKIN_STORE_NAME, "readonly");
+        const store = tx.objectStore(CHECKIN_STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () =>
+          resolve((request.result || []).find((a) => a.venueId === venueId));
+        request.onerror = () => reject(request.error);
+      },
+    );
+    if (existing) return;
+
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CHECKIN_STORE_NAME, "readwrite");
+      const store = tx.objectStore(CHECKIN_STORE_NAME);
+      store.add({
+        venueId,
+        timestamp: Date.now(),
+        retryCount: 0,
+      });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.error("Failed to queue offline check-in:", err);
+  }
+}
+
+/**
+ * Retrieves all queued check-ins
+ */
+export async function getQueuedCheckIns(): Promise<OfflineCheckIn[]> {
+  try {
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CHECKIN_STORE_NAME, "readonly");
+      const store = tx.objectStore(CHECKIN_STORE_NAME);
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (err) {
+    console.error("Failed to get queued check-ins:", err);
+    return [];
+  }
+}
+
+/**
+ * Records a failed sync attempt for a queued check-in
+ */
+export async function incrementCheckInRetryCount(
+  id: number,
+): Promise<number | null> {
+  try {
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CHECKIN_STORE_NAME, "readwrite");
+      const store = tx.objectStore(CHECKIN_STORE_NAME);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const existing = getRequest.result as OfflineCheckIn | undefined;
+        if (!existing) {
+          resolve(null);
+          return;
+        }
+        const nextCount = (existing.retryCount ?? 0) + 1;
+        store.put({ ...existing, retryCount: nextCount });
+        tx.oncomplete = () => resolve(nextCount);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.error("Failed to increment check-in retry count:", err);
+    return null;
+  }
+}
+
+/**
+ * Clears a check-in from the store
+ */
+export async function dequeueOfflineCheckIn(id: number): Promise<void> {
+  try {
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(CHECKIN_STORE_NAME, "readwrite");
+      const store = tx.objectStore(CHECKIN_STORE_NAME);
+      store.delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.error("Failed to dequeue offline check-in:", err);
   }
 }

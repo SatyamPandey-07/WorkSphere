@@ -17,7 +17,14 @@ export function AddToFolderModal({ venue, onClose }: AddToFolderModalProps) {
     try {
       const res = await fetch("/api/folders");
       const data = await res.json();
-      if (data.folders) setFolders(data.folders);
+      if (data.folders) {
+        setFolders(
+          data.folders.filter(
+            (folder: { accessRole?: string }) =>
+              folder.accessRole === "OWNER" || folder.accessRole === "EDITOR",
+          ),
+        );
+      }
     } catch (e) {
       console.error(e);
     } finally {

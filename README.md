@@ -585,6 +585,8 @@ Contributions are welcome! Please refer to our comprehensive [Contributing Guide
 - Testing guidelines (Jest unit tests and Playwright E2E integration).
 - Required pre-commit quality checks to ensure Vercel build compatibility.
 
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md).
+
 To get started quickly:
 
 1. Fork the repository and create your feature branch (`git checkout -b feature/amazing-feature`).

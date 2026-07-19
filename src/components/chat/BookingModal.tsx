@@ -67,6 +67,7 @@ export function BookingModal({
   };
   const [bookingDate, setBookingDate] = useState("");
   const [bookingTime, setBookingTime] = useState("");
+  const [confirmationId, setConfirmationId] = useState("");
   const [email, setEmail] = useState("");
   const [billingCode, setBillingCode] = useState("");
   const [history, setHistory] = useState<Booking[]>([]);
@@ -354,6 +355,7 @@ export function BookingModal({
         );
       }
 
+      setConfirmationId(responseData.confirmationId || "");
       setStep("success");
       trackEvent("venue_rated", {
         venueId: venue?.id || "unknown",
@@ -593,6 +595,8 @@ export function BookingModal({
                                     booking.venue.address,
                                     booking.date,
                                     booking.time,
+                                    booking.duration || 60,
+                                    booking.confirmationId,
                                   )
                                 }
                                 title="Download .ics"
@@ -666,7 +670,10 @@ export function BookingModal({
 
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label htmlFor="allocation-date" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                  <label
+                    htmlFor="allocation-date"
+                    className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2"
+                  >
                     Allocation Date
                   </label>
                   <div className="relative">
@@ -682,7 +689,10 @@ export function BookingModal({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="arrival-time" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                  <label
+                    htmlFor="arrival-time"
+                    className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2"
+                  >
                     Arrival Time
                   </label>
                   <div className="relative">
@@ -905,6 +915,8 @@ export function BookingModal({
                       venue.address || "",
                       bookingDate,
                       bookingTime,
+                      60,
+                      confirmationId,
                     )
                   }
                   className="w-full border-2 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-black uppercase tracking-widest py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px]"

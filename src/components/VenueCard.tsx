@@ -8,6 +8,7 @@ import {
   Volume2,
   Navigation,
   Heart,
+  Headphones,
   MessageSquare,
   Clock,
   ExternalLink,
@@ -956,6 +957,16 @@ export function VenueCard({
                     👎
                   </button>
                 </div>
+              </div>
+            )}
+
+            {venue.hasAncHeadsetRental && (
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-violet-500/30 bg-violet-500/10 text-xs text-violet-700 dark:text-violet-300"
+                title="Active noise-cancelling headsets are available to rent"
+              >
+                <Headphones className="w-3.5 h-3.5" />
+                <span>ANC Headset Rental</span>
               </div>
             )}
 

@@ -76,6 +76,7 @@ interface Filters {
   hasPhoneBooths?: boolean;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
+  hasAncHeadsetRental?: boolean;
   singleOriginBeans?: boolean;
   specialtyEspresso?: boolean;
   oatAlmondMilk?: boolean;

@@ -39,6 +39,7 @@ export const venueSearchSchema = z.object({
   hasPhoneBooths: z.coerce.boolean().optional(),
   hasNoMusic: z.coerce.boolean().optional(),
   hasQuietZone: z.coerce.boolean().optional(),
+  hasAncHeadsetRental: z.coerce.boolean().optional(),
   singleOriginBeans: z.coerce.boolean().optional(),
   specialtyEspresso: z.coerce.boolean().optional(),
   oatAlmondMilk: z.coerce.boolean().optional(),
@@ -75,6 +76,7 @@ export const venueCreateSchema = z.object({
   hasPhoneBooths: z.boolean().optional(),
   hasNoMusic: z.boolean().optional(),
   hasQuietZone: z.boolean().optional(),
+  hasAncHeadsetRental: z.boolean().optional(),
   lighting: z
     .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
     .optional(),

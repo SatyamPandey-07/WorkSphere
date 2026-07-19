@@ -239,6 +239,7 @@ async function dataAgent(
     hasPhoneBooths?: boolean;
     hasNoMusic?: boolean;
     hasQuietZone?: boolean;
+    hasAncHeadsetRental?: boolean;
     singleOriginBeans?: boolean;
     specialtyEspresso?: boolean;
     oatAlmondMilk?: boolean;
@@ -366,6 +367,7 @@ async function dataAgent(
           hasPhoneBooths: false,
           hasNoMusic: false,
           hasQuietZone: false,
+          hasAncHeadsetRental: false,
           singleOriginBeans: false,
           specialtyEspresso: false,
           oatAlmondMilk: false,
@@ -415,6 +417,8 @@ async function dataAgent(
         }
         if (filters.hasPhoneBooths)
           venues = venues.filter((v: any) => v.hasPhoneBooths);
+        if (filters.hasAncHeadsetRental)
+          venues = venues.filter((v: any) => v.hasAncHeadsetRental);
         if (filters.singleOriginBeans)
           venues = venues.filter((v: any) => v.singleOriginBeans);
 
@@ -484,6 +488,7 @@ async function dataAgent(
       hasPhoneBooths: true,
       hasNoMusic: true,
       hasQuietZone: true,
+      hasAncHeadsetRental: true,
       singleOriginBeans: true,
       specialtyEspresso: true,
       oatAlmondMilk: true,
@@ -577,6 +582,8 @@ async function dataAgent(
     }
     if (filters.hasPhoneBooths)
       filteredMock = filteredMock.filter((v: any) => v.hasPhoneBooths);
+    if (filters.hasAncHeadsetRental)
+      filteredMock = filteredMock.filter((v: any) => v.hasAncHeadsetRental);
     if (filters.hasNoMusic)
       filteredMock = filteredMock.filter((v: any) => v.hasNoMusic);
     if (filters.hasQuietZone)
@@ -628,6 +635,7 @@ interface RawVenue {
   hasPhoneBooths: boolean;
   hasNoMusic: boolean;
   hasQuietZone: boolean;
+  hasAncHeadsetRental: boolean;
 }
 
 async function enrichVenuesWithDBRatings(
@@ -654,6 +662,7 @@ async function enrichVenuesWithDBRatings(
         hasPhoneBooths: boolean;
         hasNoMusic: boolean;
         hasQuietZone: boolean;
+        hasAncHeadsetRental: boolean;
         outletDensity: string | null;
         wifiSpeed: number | null;
       }
@@ -671,6 +680,7 @@ async function enrichVenuesWithDBRatings(
           hasPhoneBooths: dbV.hasPhoneBooths,
           hasNoMusic: dbV.hasNoMusic,
           hasQuietZone: dbV.hasQuietZone,
+          hasAncHeadsetRental: dbV.hasAncHeadsetRental,
           outletDensity: dbV.outletDensity ?? null,
           wifiSpeed: dbV.wifiSpeed ?? null,
         });
@@ -735,6 +745,7 @@ async function enrichVenuesWithDBRatings(
           hasPhoneBooths: phoneBoothsPct >= 50,
           hasNoMusic: noMusicPct >= 50,
           hasQuietZone: quietZonePct >= 50,
+          hasAncHeadsetRental: dbV.hasAncHeadsetRental,
           outletDensity: outletDensityMode,
           wifiSpeed: avgSpeed,
         });
@@ -757,6 +768,7 @@ async function enrichVenuesWithDBRatings(
         hasPhoneBooths: db.hasPhoneBooths,
         hasNoMusic: db.hasNoMusic,
         hasQuietZone: db.hasQuietZone,
+        hasAncHeadsetRental: db.hasAncHeadsetRental,
         outletDensity: db.outletDensity ?? venue.outletDensity,
         wifiSpeed: db.wifiSpeed ?? venue.wifiSpeed,
       };
@@ -1225,6 +1237,11 @@ export async function POST(req: Request) {
         if (filters.hasPhoneBooths) {
           finalFilteredVenues = finalFilteredVenues.filter(
             (v: any) => v.hasPhoneBooths,
+          );
+        }
+        if (filters.hasAncHeadsetRental) {
+          finalFilteredVenues = finalFilteredVenues.filter(
+            (v: any) => v.hasAncHeadsetRental,
           );
         }
         if (filters.hasNoMusic) {

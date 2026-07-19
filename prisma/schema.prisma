@@ -42,6 +42,7 @@ model User {
   notificationEnd    String?
   timezone           String?            @default("UTC")
   folderUpvotes      FolderUpvote[]
+  sentFolderInvites  FolderInvite[]      @relation("FolderInviteSender")
   workStyleProfile   String?
   checkIns           CheckIn[]
 }
@@ -66,6 +67,7 @@ model Venue {
   hasPhoneBooths     Boolean             @default(false)
   hasNoMusic         Boolean             @default(false)
   hasQuietZone       Boolean             @default(false)
+  hasAncHeadsetRental Boolean             @default(false)
   petsAllowedIndoors Boolean             @default(false)
   patioOnly          Boolean             @default(false)
   waterBowlsProvided Boolean             @default(false)
@@ -440,6 +442,7 @@ model Folder {
   venues     FolderVenue[]
   members    FolderMember[]
   upvoteRefs FolderUpvote[]
+  invites     FolderInvite[]
 
   @@index([ownerId])
 }
@@ -515,6 +518,33 @@ model WebhookDeliveryLog {
   @@index([endpointId])
   @@index([createdAt])
   @@index([endpointId, createdAt])
+}
+
+
+model FolderInvite {
+  id        String             @id @default(cuid())
+  folderId  String
+  folder    Folder             @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User               @relation("FolderInviteSender", fields: [senderId], references: [id], onDelete: Cascade)
+  email     String
+  role      FolderRole         @default(MEMBER)
+  token     String             @unique
+  status    FolderInviteStatus @default(PENDING)
+  expiresAt DateTime
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([folderId])
+  @@index([email])
+  @@index([status, expiresAt])
+}
+
+enum FolderInviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
 }
 
 model FolderUpvote {

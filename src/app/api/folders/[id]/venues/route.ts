@@ -19,7 +19,7 @@ const addVenueSchema = z.object({
 // POST /api/folders/[id]/venues - Add venue to folder
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -33,15 +33,18 @@ export async function POST(
     if (!folder) {
       return NextResponse.json({ error: "Folder not found" }, { status: 404 });
     }
-    if (!hasAccess || (role !== "OWNER" && role !== "EDITOR" && role !== "MEMBER")) {
+    if (!hasAccess || (role !== "OWNER" && role !== "EDITOR")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await req.json();
     const validation = addVenueSchema.safeParse(body);
-    
+
     if (!validation.success) {
-      return NextResponse.json({ error: validation.error.format() }, { status: 400 });
+      return NextResponse.json(
+        { error: validation.error.format() },
+        { status: 400 },
+      );
     }
 
     const { venue } = validation.data;
@@ -50,11 +53,8 @@ export async function POST(
 
     let dbVenue = await prisma.venue.findFirst({
       where: {
-        OR: [
-          { id: venue.id },
-          { placeId: effectivePlaceId }
-        ]
-      }
+        OR: [{ id: venue.id }, { placeId: effectivePlaceId }],
+      },
     });
 
     if (!dbVenue) {
@@ -67,7 +67,7 @@ export async function POST(
           longitude: venue.longitude || 0,
           category: venue.category || "cafe",
           address: venue.address || "",
-        }
+        },
       });
     }
 
@@ -80,18 +80,22 @@ export async function POST(
       },
       include: {
         venue: true,
-      }
+      },
     });
 
     return NextResponse.json({ folderVenue }, { status: 201 });
   } catch (error: any) {
     console.error(`POST /api/folders/venues error:`, error);
-    if (error.code === 'P2002') { // Unique constraint
-      return NextResponse.json({ error: "Venue already in folder" }, { status: 400 });
+    if (error.code === "P2002") {
+      // Unique constraint
+      return NextResponse.json(
+        { error: "Venue already in folder" },
+        { status: 400 },
+      );
     }
     return NextResponse.json(
       { error: "Failed to add venue to folder" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

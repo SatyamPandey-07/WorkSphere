@@ -108,9 +108,11 @@ function AutoCenter({
 // other mid-transition.
 function ZoomWatcher({
   onZoomSettled,
+  onZoomStart,
   delay = 150,
 }: {
   onZoomSettled: (zoom: number) => void;
+  onZoomStart?: () => void;
   delay?: number;
 }) {
   const map = useMap();
@@ -118,19 +120,26 @@ function ZoomWatcher({
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
 
-    const scheduleUpdate = () => {
+    const handleZoomStart = () => {
+      clearTimeout(timer);
+      onZoomStart?.();
+    };
+
+    const handleZoomEnd = () => {
       clearTimeout(timer);
       timer = setTimeout(() => onZoomSettled(map.getZoom()), delay);
     };
 
-    map.on("zoomend", scheduleUpdate);
-    scheduleUpdate(); // capture the initial zoom too
+    map.on("zoomstart", handleZoomStart);
+    map.on("zoomend", handleZoomEnd);
+    handleZoomEnd(); // capture the initial zoom too
 
     return () => {
       clearTimeout(timer);
-      map.off("zoomend", scheduleUpdate);
+      map.off("zoomstart", handleZoomStart);
+      map.off("zoomend", handleZoomEnd);
     };
-  }, [map, onZoomSettled, delay]);
+  }, [map, onZoomSettled, onZoomStart, delay]);
 
   return null;
 }
@@ -246,8 +255,17 @@ const Map = ({
   // marker offsets at a consistent on-screen pixel separation regardless of
   // how far the user has zoomed in/out.
   const [settledZoom, setSettledZoom] = useState<number>(13);
+  const [isZooming, setIsZooming] = useState(false);
   const handleZoomSettled = useCallback((zoom: number) => {
     setSettledZoom(zoom);
+    setIsZooming(false);
+  }, []);
+
+  // Collapse spiderfied markers to their center positions during zoom
+  // transitions so overlapping offsets don't render mid-animation,
+  // then respiderfy after the zoom settles (handled via handleZoomSettled).
+  const handleZoomStart = useCallback(() => {
+    setIsZooming(true);
   }, []);
 
   // =========================================================================
@@ -398,15 +416,13 @@ const Map = ({
     Object.keys(groups).forEach((key) => {
       const groupItems = groups[key];
       const n = groupItems.length;
-      if (n === 1) {
+      if (n === 1 || isZooming) {
         result.push({
           ...groupItems[0],
           renderedLat: Number(groupItems[0].position.lat),
           renderedLng: Number(groupItems[0].position.lng),
         });
       } else {
-        const centerLat = Number(groupItems[0].position.lat);
-        const centerLng = Number(groupItems[0].position.lng);
 
         // Keep a consistent ~24px on-screen separation between spiderfied
         // markers at any zoom level, instead of a fixed degree offset that
@@ -432,7 +448,7 @@ const Map = ({
       }
     });
     return result;
-  }, [markers, settledZoom]);
+  }, [markers, settledZoom, isZooming]);
 
   // Derive iconUrl directly from clerkUser state
   const iconUrl = useMemo(() => {
@@ -652,7 +668,7 @@ const Map = ({
 
         <MapController mapView={mapView} />
         <AutoCenter markers={markers} userLocation={center} />
-        <ZoomWatcher onZoomSettled={handleZoomSettled} />
+        <ZoomWatcher onZoomSettled={handleZoomSettled} onZoomStart={handleZoomStart} />
         <ResizeWatcher />
 
         {customIcon && (

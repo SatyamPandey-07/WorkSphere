@@ -45,6 +45,14 @@ model User {
   sentFolderInvites  FolderInvite[]      @relation("FolderInviteSender")
   workStyleProfile   String?
   checkIns           CheckIn[]
+  // ── Activity streak ────────────────────────────────────────────────────────
+  // currentStreak:    consecutive days with at least one check-in
+  // longestStreak:    all-time best streak for profile display
+  // lastCheckInDate:  UTC date string (YYYY-MM-DD) used to detect same-day
+  //                   duplicates and next-day increments
+  currentStreak    Int      @default(0)
+  longestStreak    Int      @default(0)
+  lastCheckInDate  String?  // stored as "YYYY-MM-DD" UTC
 }
 
 model Venue {

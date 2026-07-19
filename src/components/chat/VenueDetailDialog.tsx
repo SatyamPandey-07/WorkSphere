@@ -30,6 +30,8 @@ import {
   Bike,
   Shield,
   ChevronRight,
+  Share,
+  Check,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -96,6 +98,15 @@ export function VenueDetailDialog({
   const [activeDistribution, setActiveDistribution] = useState<
     "wifi" | "outlets" | "noise" | null
   >(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = () => {
+    if (!venue) return;
+    const url = `${window.location.origin}/venues/${venue.id}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // =========================================================================
   // COMMUNITY AMENITY VALIDATION STATE DICTIONARY
@@ -1642,6 +1653,22 @@ export function VenueDetailDialog({
                       Rate
                     </button>
                   )}
+                  <button
+                    onClick={handleShare}
+                    className="flex-1 flex items-center justify-center gap-2 bg-black/40 border-2 border-white/10 text-zinc-200 hover:bg-black/60 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all shadow-md active:scale-[0.98]"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-4 h-4 text-green-500" />
+                        <span className="text-green-500">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Share className="w-4 h-4" />
+                        Share
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </>

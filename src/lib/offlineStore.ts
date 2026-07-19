@@ -1,11 +1,22 @@
 const STORE_NAME = "favorites-outbox";
 const DB_NAME = "WorkSphereOfflineDB";
 
+/**
+ * Maximum number of times the service worker will attempt to sync a queued
+ * action before giving up. Once an action hits this count, it is removed
+ * from the outbox and the user is notified via a postMessage to open
+ * clients (see public/sw.js `syncFavoritesOutbox`) — it is never silently
+ * dropped. (Issue #712)
+ */
+export const MAX_SYNC_RETRIES = 3;
+
 export interface OfflineAction {
   id?: number;
   venueId: string;
   action: "ADD" | "REMOVE";
   timestamp: number;
+  /** Number of failed sync attempts so far. Defaults to 0 for new actions. */
+  retryCount?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +148,9 @@ function getDB(): Promise<IDBDatabase> {
  * (double-click), producing a ConstraintError on the second store.add() call.
  * The autoIncrement counter is serialised by the IndexedDB engine and is
  * guaranteed to be unique across concurrent transactions. (Issue #395)
+ *
+ * Deduplicates by venueId + action before inserting to prevent duplicate
+ * entries from rapid double-clicks while offline.
  */
 export async function queueOfflineFavorite(
   venueId: string,
@@ -144,6 +158,24 @@ export async function queueOfflineFavorite(
 ): Promise<void> {
   try {
     const db = await getDB();
+
+    // Check for existing identical action before inserting
+    const existing = await new Promise<OfflineAction | undefined>(
+      (resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readonly");
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () =>
+          resolve(
+            (request.result || []).find(
+              (a) => a.venueId === venueId && a.action === action,
+            ),
+          );
+        request.onerror = () => reject(request.error);
+      },
+    );
+    if (existing) return;
+
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);
@@ -152,6 +184,7 @@ export async function queueOfflineFavorite(
         venueId,
         action,
         timestamp: Date.now(),
+        retryCount: 0,
       });
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
@@ -177,6 +210,41 @@ export async function getQueuedFavorites(): Promise<OfflineAction[]> {
   } catch (err) {
     console.error("Failed to get queued actions:", err);
     return [];
+  }
+}
+
+/**
+ * Records a failed sync attempt for a queued action and returns the updated
+ * retry count. Called by the service worker each time a fetch to
+ * `/api/favorites` fails or returns a non-OK status for a given action.
+ *
+ * Returns `null` if the action no longer exists (e.g. it was already
+ * dequeued by a concurrent sync pass).
+ */
+export async function incrementRetryCount(id: number): Promise<number | null> {
+  try {
+    const db = await getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const existing = getRequest.result as OfflineAction | undefined;
+        if (!existing) {
+          resolve(null);
+          return;
+        }
+        const nextCount = (existing.retryCount ?? 0) + 1;
+        store.put({ ...existing, retryCount: nextCount });
+        tx.oncomplete = () => resolve(nextCount);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.error("Failed to increment retry count:", err);
+    return null;
   }
 }
 

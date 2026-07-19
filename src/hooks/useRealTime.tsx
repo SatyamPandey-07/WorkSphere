@@ -106,7 +106,6 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
     };
 
     // Handle online/offline events automatically
-    // Handle online/offline events automatically
     const handleOnline = () => {
       console.log("[RealTime] Browser online, reconnecting...");
       currentBackoff = 1000;
@@ -128,20 +127,11 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
           currentBackoff = 1000;
           connect();
         }
-
-        console.log("[RealTime] Tab became visible, resetting connection");
-        currentBackoff = 1000;
-        if (eventSource) {
-          eventSource.close();
-        }
-        connect();
       }
     };
 
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
-
-    window.addEventListener("visibilitychange", handleVisibilityChange); // 🌟 ADD THIS LINE
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
@@ -152,8 +142,6 @@ export function useRealTimeUpdates(options: UseRealTimeUpdatesOptions = {}) {
       clearTimeout(reconnectTimeout);
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
-
-      window.removeEventListener("visibilitychange", handleVisibilityChange); // 🌟 ADD THIS LINE
 
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };

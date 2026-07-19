@@ -75,31 +75,7 @@ export function BookingModal({
   const [isExporting, setIsExporting] = useState(false);
   const [dateFilter, setDateFilter] = useState("all");
 
-  const filteredHistory = history.filter((booking) => {
-    if (dateFilter === "all") return true;
-    const bDate = new Date(booking.date);
-    const now = new Date();
 
-    if (dateFilter === "current_month") {
-      return (
-        bDate.getMonth() === now.getMonth() &&
-        bDate.getFullYear() === now.getFullYear()
-      );
-    }
-    if (dateFilter === "last_month") {
-      const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      return (
-        bDate.getMonth() === lastMonth.getMonth() &&
-        bDate.getFullYear() === lastMonth.getFullYear()
-      );
-    }
-    if (dateFilter.startsWith("q")) {
-      const q = parseInt(dateFilter.charAt(1));
-      const currentQ = Math.floor(bDate.getMonth() / 3) + 1;
-      return q === currentQ && bDate.getFullYear() === now.getFullYear();
-    }
-    return true;
-  });
   const [guests, setGuests] = useState<GuestEntry[]>([]);
   const [guestInviteStatus, setGuestInviteStatus] = useState<
     "idle" | "sending" | "done"

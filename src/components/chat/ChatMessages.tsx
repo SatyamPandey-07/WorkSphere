@@ -24,7 +24,6 @@ import {
   List,
   Copy,
   Check,
-  Mic,
 } from "lucide-react";
 import { RefObject, useState, useEffect, useRef, useCallback } from "react";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
@@ -1151,7 +1150,7 @@ export function ChatInput({
       >
         <button
           type="button"
-          onClick={toggleListening}
+          onClick={handleMicClick}
           className={`p-3 rounded-xl transition-all active:scale-95 shadow-lg group ${
             isListening
               ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"

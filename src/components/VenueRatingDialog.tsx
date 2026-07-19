@@ -1,9 +1,9 @@
 "use client";
 
+import { NoiseMeasurement, NoiseMeter } from "@/components/noise/NoiseMeter";
+import { Star, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Star, X } from "lucide-react";
-import { NoiseMeasurement, NoiseMeter } from "@/components/noise/NoiseMeter";
 
 interface VenueRatingDialogProps {
   venueName: string;
@@ -86,6 +86,17 @@ export function VenueRatingDialog({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // --- FIX  Lock document body scroll context when open ---
+  useEffect(() => {
+    if (isOpen && mounted) {
+      document.body.style.overflow = "hidden";
+    }
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isOpen, mounted]);
 
   const compressImage = (file: File): Promise<Blob> => {
     return new Promise((resolve) => {

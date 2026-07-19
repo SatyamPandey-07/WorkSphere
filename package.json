@@ -76,7 +76,7 @@
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint": "^9",
+    "eslint": "^10",
     "eslint-config-next": "16.2.10",
     "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",

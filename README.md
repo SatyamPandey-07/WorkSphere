@@ -309,6 +309,8 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
    npx prisma db push
    ```
 
+   > See [docs/NEON_DATABASE_POOLING.md](./docs/NEON_DATABASE_POOLING.md) for full connection string configuration, PgBouncer pooling setup, and migration workflow.
+
 5. **Run the development server**
 
    ```bash

@@ -282,7 +282,26 @@ const Map = ({
       return;
     }
 
-    const coordinatesString = dedupedList
+    // Validate coordinates before sending to OSRM — low accuracy or invalid
+    // coordinates (0,0 or out of range) cause routing failures.
+    const isValidCoord = (v: any) => {
+      const lat = Number(v.latitude);
+      const lng = Number(v.longitude);
+      return (
+        !isNaN(lat) && !isNaN(lng) &&
+        lat >= -90 && lat <= 90 &&
+        lng >= -180 && lng <= 180 &&
+        !(lat === 0 && lng === 0)
+      );
+    };
+    const validList = dedupedList.filter(isValidCoord);
+    if (validList.length < 2) {
+      console.warn("[OSRM] Not enough valid coordinates for routing");
+      setOptimizedRoute(null);
+      return;
+    }
+
+    const coordinatesString = validList
       .map((venue) => `${venue.longitude},${venue.latitude}`)
       .join(";");
 

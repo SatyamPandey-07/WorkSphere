@@ -1,6 +1,12 @@
 // Service Worker for WorkSphere PWA
 const CACHE_NAME = "worksphere-v3";
+const IMAGE_CACHE_NAME = "worksphere-images-v3";
 const OFFLINE_URL = "/offline";
+
+// Target max size ~25MB.
+const MAX_IMAGE_CACHE_BYTES = 25 * 1024 * 1024;
+// Fallback size for opaque cross-origin responses where Content-Length is hidden (approx 400KB).
+const OPAQUE_RESPONSE_SIZE_ESTIMATE = 400 * 1024;
 
 // Assets to cache on install
 const PRECACHE_ASSETS = ["/", "/offline", "/icons/icon.svg", "/manifest.json"];
@@ -36,7 +42,10 @@ self.addEventListener("activate", (event) => {
         return Promise.all(
           cacheNames
             .filter(
-              (name) => name !== CACHE_NAME && !name.endsWith("-installing"),
+              (name) =>
+                name !== CACHE_NAME &&
+                name !== IMAGE_CACHE_NAME &&
+                !name.endsWith("-installing"),
             )
             .map((name) => caches.delete(name)),
         );
@@ -98,10 +107,14 @@ self.addEventListener("fetch", (event) => {
     );
   } else if (isExternalAsset) {
     event.respondWith(
-      caches.open(CACHE_NAME).then((cache) => {
+      caches.open(IMAGE_CACHE_NAME).then((cache) => {
         return cache.match(event.request).then((cachedResponse) => {
           // Agar cache mein mil gaya, toh turant return karo
           if (cachedResponse) {
+            // Asynchronously update the LRU timestamp for this hit
+            event.waitUntil(
+              touchLRURecord(event.request.url).catch(console.error),
+            );
             return cachedResponse;
           }
 
@@ -113,7 +126,47 @@ self.addEventListener("fetch", (event) => {
                 networkResponse.status === 200 ||
                 networkResponse.status === 0
               ) {
-                cache.put(event.request, networkResponse.clone());
+                const responseToCache = networkResponse.clone();
+
+                // Calculate size for LRU tracking
+                let size = OPAQUE_RESPONSE_SIZE_ESTIMATE;
+                if (networkResponse.headers.has("content-length")) {
+                  const length = parseInt(
+                    networkResponse.headers.get("content-length") || "0",
+                    10,
+                  );
+                  if (!isNaN(length) && length > 0) size = length;
+                }
+
+                // Wrap cache.put and IDB updates in a promise chain for waitUntil
+                const cachePromise = cache
+                  .put(event.request, responseToCache)
+                  .then(async () => {
+                    await updateLRURecord(event.request.url, size);
+                    await enforceImageCacheQuota(cache);
+                  })
+                  .catch(async (err) => {
+                    if (err.name === "QuotaExceededError") {
+                      console.warn(
+                        "[SW] Quota exceeded. Evicting older images...",
+                      );
+                      await enforceImageCacheQuota(cache, true);
+
+                      try {
+                        await cache.put(event.request, responseToCache);
+                        await updateLRURecord(event.request.url, size);
+                      } catch (retryErr) {
+                        console.error(
+                          "[SW] Still out of quota after eviction:",
+                          retryErr,
+                        );
+                      }
+                    } else {
+                      console.error("[SW] Failed to cache asset:", err);
+                    }
+                  });
+
+                event.waitUntil(cachePromise);
               }
               return networkResponse;
             })
@@ -349,7 +402,7 @@ async function syncConversations() {
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
     try {
-      const request = indexedDB.open("worksphere-offline", 3);
+      const request = indexedDB.open("worksphere-offline", 4);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
@@ -392,6 +445,16 @@ function openIndexedDB() {
           db.createObjectStore("pendingActions", {
             keyPath: "id",
             autoIncrement: true,
+          });
+        }
+
+        // Image Cache LRU store
+        if (!db.objectStoreNames.contains("imageCacheLRU")) {
+          const lruStore = db.createObjectStore("imageCacheLRU", {
+            keyPath: "url",
+          });
+          lruStore.createIndex("lastAccessed", "lastAccessed", {
+            unique: false,
           });
         }
       };
@@ -560,5 +623,98 @@ async function syncFavoritesOutbox() {
       "Background synchronization pipeline failed to complete:",
       error,
     );
+  }
+}
+
+/**
+ * Updates or inserts a record for an image in the LRU IDB store.
+ */
+async function updateLRURecord(url, size) {
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction("imageCacheLRU", "readwrite");
+    const store = tx.objectStore("imageCacheLRU");
+    store.put({ url, size, lastAccessed: Date.now() });
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.error("[SW] Failed to update LRU record:", err);
+  }
+}
+
+/**
+ * Touches an existing record to update its lastAccessed time (True LRU).
+ */
+async function touchLRURecord(url) {
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction("imageCacheLRU", "readwrite");
+    const store = tx.objectStore("imageCacheLRU");
+    const request = store.get(url);
+
+    request.onsuccess = () => {
+      const record = request.result;
+      if (record) {
+        record.lastAccessed = Date.now();
+        store.put(record);
+      }
+    };
+  } catch (err) {
+    console.error("[SW] Failed to touch LRU record:", err);
+  }
+}
+
+let isEnforcingQuota = false;
+
+/**
+ * Helper to keep image cache strictly below quota (~25MB) using True LRU.
+ */
+async function enforceImageCacheQuota(cache, aggressive = false) {
+  // Wait if another sweep is concurrently running to avoid redundant IDB reads/writes
+  while (isEnforcingQuota) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  isEnforcingQuota = true;
+
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction("imageCacheLRU", "readwrite");
+    const store = tx.objectStore("imageCacheLRU");
+
+    const request = store.getAll();
+    const records = await new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+
+    let totalSize = records.reduce((acc, r) => acc + (r.size || 0), 0);
+    const targetSize = aggressive
+      ? MAX_IMAGE_CACHE_BYTES * 0.6
+      : MAX_IMAGE_CACHE_BYTES;
+
+    if (totalSize > targetSize) {
+      // Sort by oldest first
+      records.sort((a, b) => a.lastAccessed - b.lastAccessed);
+
+      let evictedCount = 0;
+      for (const record of records) {
+        if (totalSize <= targetSize) break;
+
+        await cache.delete(record.url);
+        store.delete(record.url);
+
+        totalSize -= record.size || 0;
+        evictedCount++;
+      }
+      console.log(
+        `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
+      );
+    }
+  } catch (err) {
+    console.error("[SW] Failed to enforce image cache LRU quota:", err);
+  } finally {
+    isEnforcingQuota = false;
   }
 }

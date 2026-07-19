@@ -4,6 +4,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import I18nProvider from "../components/I18nProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
+import { SoundProvider } from "../components/SoundProvider";
 
 import { headers } from "next/headers";
 
@@ -80,7 +81,9 @@ export default async function RootLayout({
 
   const innerContent = (
     <ThemeProvider>
-      <I18nProvider>{children}</I18nProvider>
+      <SoundProvider>
+        <I18nProvider>{children}</I18nProvider>
+      </SoundProvider>
     </ThemeProvider>
   );
 

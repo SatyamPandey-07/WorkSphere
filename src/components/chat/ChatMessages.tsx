@@ -24,6 +24,7 @@ import {
   List,
   Copy,
   Check,
+  Mic,
 } from "lucide-react";
 import { RefObject, useState, useEffect, useRef, useCallback } from "react";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
@@ -1052,8 +1053,9 @@ export function ChatInput({
 
   // ── Speech recognition ───────────────────────────────────────────────────
   /**
-   * When recognition returns a final transcript we append it to whatever the
-   * user may have already typed (with a space separator if needed).
+   * When recognition returns a final transcript, prepend whatever the user
+   * had already typed (preserving their original input) then append the
+   * recognised text with a space separator.
    */
   const handleTranscript = useCallback(
     (text: string) => {
@@ -1071,7 +1073,8 @@ export function ChatInput({
 
   /**
    * Handle microphone button click.
-   * - Unsupported browser → show a clear user-facing banner; do NOT crash.
+   * - Unsupported browser (e.g. Firefox Nightly without the flag) →
+   *   show a clear user-facing banner; do NOT crash silently.
    * - Currently listening → stop recognition.
    * - Idle / error → start recognition.
    */
@@ -1092,7 +1095,7 @@ export function ChatInput({
     if (errorMessage) triggerBanner();
   }, [errorMessage, triggerBanner]);
 
-  let counterColor = "text-zinc-500 dark:text-zinc-400";
+  let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
   if (isOverLimit) {
     counterColor = "text-red-500";
   } else if (charCount >= MAX_CHARS - 200) {
@@ -1146,6 +1149,18 @@ export function ChatInput({
         onSubmit={onSubmit}
         className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:border-blue-600 transition-all shadow-inner"
       >
+        <button
+          type="button"
+          onClick={toggleListening}
+          className={`p-3 rounded-xl transition-all active:scale-95 shadow-lg group ${
+            isListening
+              ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+              : "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
+          }`}
+          title={isListening ? "Stop dictation" : "Start dictation"}
+        >
+          <Mic className="w-5 h-5" />
+        </button>
         <input
           type="text"
           value={safeInput}

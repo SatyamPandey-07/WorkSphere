@@ -3,7 +3,6 @@
 import Link from "next/link";
 import Image from "next/image";
 import {
-  MapPin,
   Wifi,
   Zap,
   Volume2,
@@ -11,7 +10,6 @@ import {
   Sparkles,
   Download,
   ArrowRight,
-  Coffee,
   Camera,
   Radio,
   Star,
@@ -21,12 +19,10 @@ import {
   FileText,
   BarChart3,
   ArrowUp,
-  LayoutGrid,
 } from "lucide-react";
-import { useUser, UserButton } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/site-footer";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { TopNav } from "@/components/TopNav";
 import FAQAccordion from "@/components/ui/FAQAccordion";
 

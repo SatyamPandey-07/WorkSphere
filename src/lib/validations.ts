@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+
+// =========================================================================
+// CORE SCHEMAS
+// =========================================================================
+
 // Chat API schemas
 export const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant", "system"]),
@@ -144,7 +149,9 @@ export const locationSchema = z.object({
   longitude: z.number().min(-180).max(180),
 });
 
-// Export types
+// =========================================================================
+// TYPES & DYNAMIC VALIDATION PIPELINE INTERFACES
+// =========================================================================
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 export type VenueSearch = z.infer<typeof venueSearchSchema>;

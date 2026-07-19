@@ -43,6 +43,7 @@ model User {
   timezone           String?            @default("UTC")
   folderUpvotes      FolderUpvote[]
   workStyleProfile   String?
+  checkIns           CheckIn[]
 }
 
 model Venue {
@@ -95,6 +96,9 @@ model Venue {
   wifiTelemetry      WifiTelemetry[]
   validations        AmenityValidation[]
   folderVenues       FolderVenue[]
+  currentOccupancy Int          @default(0)
+  maxCapacity      Int          @default(50) 
+  checkIns         CheckIn[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -524,4 +528,17 @@ model FolderUpvote {
   @@unique([folderId, userId])
   @@index([folderId])
   @@index([userId])
+}
+model CheckIn {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime // To prevent dead states, auto-expire checkout after e.g. 4 hours
+
+  @@unique([userId, venueId])
+  @@index([venueId])
+  @@index([expiresAt])
 }

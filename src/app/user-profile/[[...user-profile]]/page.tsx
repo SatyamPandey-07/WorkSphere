@@ -1,6 +1,7 @@
 import { UserProfile } from "@clerk/nextjs";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { CustomAvatarUpload } from "@/components/CustomAvatarUpload";
 
 export default function UserProfilePage() {
   return (
@@ -15,6 +16,11 @@ export default function UserProfilePage() {
             Back to Home
           </Link>
         </div>
+        
+        <div className="mb-8 max-w-[880px] mx-auto w-full">
+          <CustomAvatarUpload />
+        </div>
+
         <div className="flex justify-center">
           <UserProfile path="/user-profile" routing="path" />
         </div>

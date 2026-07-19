@@ -119,7 +119,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black p-6">
+    <div className="min-h-screen bg-zinc-50 dark:bg-black p-6 pb-24">
       {/* Header */}
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-8">

@@ -791,19 +791,36 @@ export function MessageList({
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  const scrollToBottomIfNeeded = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const isAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      200;
+    if (isAtBottom || isLoading) {
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+      });
+    }
+  }, [isLoading]);
+
+  // Re-check scroll position whenever messages change or loading state changes
+  useEffect(() => {
+    scrollToBottomIfNeeded();
+  }, [messages, isLoading, scrollToBottomIfNeeded]);
+
+  // Also re-check whenever the container's own size changes (e.g. the input
+  // box growing to multiple lines shrinks the visible message area, which
+  // previously left new messages hidden below the fold)
   useEffect(() => {
     const container = containerRef.current;
-    if (container) {
-      const isAtBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight <
-        200;
-      if (isAtBottom || isLoading) {
-        requestAnimationFrame(() => {
-          container.scrollTop = container.scrollHeight;
-        });
-      }
-    }
-  }, [messages, isLoading]);
+    if (!container) return;
+    const resizeObserver = new ResizeObserver(() => {
+      scrollToBottomIfNeeded();
+    });
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [scrollToBottomIfNeeded]);
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">

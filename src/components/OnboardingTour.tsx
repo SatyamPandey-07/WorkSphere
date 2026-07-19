@@ -75,6 +75,50 @@ export function OnboardingTour() {
         zIndex: 10000,
         skipBeacon: true,
       }}
+      styles={{
+        options: {
+          arrowColor: "#fff",
+          backgroundColor: "#fff",
+          overlayColor: "rgba(0, 0, 0, 0.4)",
+          primaryColor: "#2563eb",
+          textColor: "#1f2937",
+          zIndex: 10000,
+        },
+        tooltip: {
+          borderRadius: "1.5rem",
+          fontFamily: "system-ui, sans-serif",
+          padding: "1.5rem",
+        },
+        buttonClose: {
+          display: "none",
+        },
+        buttonNext: {
+          backgroundColor: "#2563eb",
+          borderRadius: "0.75rem",
+          fontFamily: "system-ui, sans-serif",
+          fontWeight: 700,
+          textTransform: "uppercase",
+          fontSize: "11px",
+          letterSpacing: "0.05em",
+        },
+        buttonBack: {
+          color: "#4b5563",
+          fontFamily: "system-ui, sans-serif",
+          fontWeight: 700,
+          textTransform: "uppercase",
+          fontSize: "11px",
+          letterSpacing: "0.05em",
+          marginRight: "0.5rem",
+        },
+        buttonSkip: {
+          color: "#9ca3af",
+          fontFamily: "system-ui, sans-serif",
+          fontWeight: 700,
+          textTransform: "uppercase",
+          fontSize: "11px",
+          letterSpacing: "0.05em",
+        },
+      }}
     />
   );
 }

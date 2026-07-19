@@ -90,6 +90,16 @@ describe("OnboardingTour", () => {
     expect(lastCall.locale.skip).toBe("Skip Tour");
   });
 
+  it("includes custom styles configurations matching design aesthetics", () => {
+    render(<OnboardingTour />);
+
+    const lastCall = mockJoyride.mock.calls[
+      mockJoyride.mock.calls.length - 1
+    ][0] as any;
+    expect(lastCall.styles.options.primaryColor).toBe("#2563eb");
+    expect(lastCall.styles.tooltip.borderRadius).toBe("1.5rem");
+  });
+
   it("saves completion to localStorage when tour finishes", () => {
     render(<OnboardingTour />);
 

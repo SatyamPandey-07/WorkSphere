@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface UserSettings {
-  telegramConnected: boolean;
+  telegramConfigured: boolean;
 }
 
 export function TelegramStatusBanner() {
@@ -30,6 +30,11 @@ export function TelegramStatusBanner() {
         cache: "no-store",
         signal,
       });
+
+      if (response.status === 401) {
+        setData(null);
+        return;
+      }
 
       if (!response.ok) {
         throw new Error("Failed to fetch settings");
@@ -114,14 +119,14 @@ export function TelegramStatusBanner() {
 
   if (!data) return null;
 
-  const { telegramConnected } = data;
+  const { telegramConfigured } = data;
 
   return (
     <div
       role="status"
       aria-live="polite"
       className={`w-full border rounded-xl p-4 sm:p-6 shadow-sm transition-all duration-300 ease-in-out animate-in fade-in flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
-        telegramConnected
+        telegramConfigured
           ? "bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-900/30"
           : "bg-orange-50 dark:bg-orange-900/10 border-orange-200 dark:border-orange-900/30"
       }`}
@@ -129,12 +134,12 @@ export function TelegramStatusBanner() {
       <div className="flex items-start sm:items-center gap-4">
         <div
           className={`p-2 rounded-full flex-shrink-0 transition-colors ${
-            telegramConnected
+            telegramConfigured
               ? "bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400"
               : "bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400"
           }`}
         >
-          {telegramConnected ? (
+          {telegramConfigured ? (
             <CheckCircle2 className="w-6 h-6" aria-hidden="true" />
           ) : (
             <AlertTriangle className="w-6 h-6" aria-hidden="true" />
@@ -143,37 +148,37 @@ export function TelegramStatusBanner() {
         <div>
           <h3
             className={`font-semibold text-lg ${
-              telegramConnected
+              telegramConfigured
                 ? "text-green-900 dark:text-green-300"
                 : "text-orange-900 dark:text-orange-300"
             }`}
           >
-            {telegramConnected
-              ? "✔ Telegram Connected"
-              : "⚠ Telegram Not Connected"}
+            {telegramConfigured
+              ? "Telegram Configured"
+              : "Telegram Not Configured"}
           </h3>
           <p
             className={`text-sm mt-1 ${
-              telegramConnected
+              telegramConfigured
                 ? "text-green-700 dark:text-green-400/80"
                 : "text-orange-700 dark:text-orange-400/80"
             }`}
           >
-            {telegramConnected
-              ? "Real-time alerts are active."
-              : "Connect Telegram to receive instant alerts."}
+            {telegramConfigured
+              ? "Telegram webhook has been configured. Complete verification if required to receive alerts."
+              : "Configure Telegram to enable real-time alerts."}
           </p>
         </div>
       </div>
       <Button
         onClick={() => router.push("/dashboard/webhooks")}
         className={`w-full sm:w-auto transition-transform hover:scale-[1.02] active:scale-[0.98] ${
-          telegramConnected
+          telegramConfigured
             ? "bg-green-600 hover:bg-green-700 text-white dark:bg-green-700 dark:hover:bg-green-600"
             : "bg-orange-600 hover:bg-orange-700 text-white dark:bg-orange-700 dark:hover:bg-orange-600"
         }`}
       >
-        {telegramConnected ? "Manage Telegram" : "Connect Telegram"}
+        {telegramConfigured ? "Manage Telegram" : "Configure Telegram"}
         <ArrowRight className="w-4 h-4 ml-2" aria-hidden="true" />
       </Button>
     </div>

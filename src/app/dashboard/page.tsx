@@ -163,9 +163,11 @@ export default function DashboardPage() {
         </div>
 
         {/* Telegram Status Banner */}
-        <div className="mb-8">
-          <TelegramStatusBanner />
-        </div>
+        {isSignedIn && (
+          <div className="mb-8">
+            <TelegramStatusBanner />
+          </div>
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">

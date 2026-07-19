@@ -32,6 +32,12 @@ describe("useCsrfToken fetch interceptor auto-retry", () => {
           return {
             ok: true,
             status: 200,
+            headers: {
+              get(name: string) {
+                if (name.toLowerCase() === "content-type") return "application/json";
+                return null;
+              },
+            },
             json: async () => ({
               csrfToken: `new-csrf-token-${csrfTokenCallCount}`,
             }),
@@ -45,6 +51,12 @@ describe("useCsrfToken fetch interceptor auto-retry", () => {
             return {
               ok: false,
               status: 403,
+              headers: {
+                get(name: string) {
+                  if (name.toLowerCase() === "content-type") return "application/json";
+                  return null;
+                },
+              },
               clone: function () {
                 return this;
               },

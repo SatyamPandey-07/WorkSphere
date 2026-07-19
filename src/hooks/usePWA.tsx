@@ -8,6 +8,61 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+export function useSyncWorker() {
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.Worker) return;
+
+    // Next.js Webpack automatically bundles this worker
+    const worker = new Worker(
+      new URL("../workers/sync.worker.ts", import.meta.url),
+      {
+        type: "module",
+      },
+    );
+
+    const handleMessage = (event: MessageEvent) => {
+      const msg = event.data;
+      switch (msg.type) {
+        case "SYNC_SUCCESS":
+          console.log(
+            `[Sync Worker] Successfully synced a favorite. Remaining: ${msg.remainingCount}`,
+          );
+          break;
+        case "CIRCUIT_BREAKER_OPEN":
+          console.warn(
+            `[Sync Worker] Circuit breaker OPEN. Pausing sync for ${msg.timeoutMs}ms due to repeated errors.`,
+          );
+          break;
+        case "PERMANENT_FAILURE":
+          console.error(
+            `[Sync Worker] Permanent failure for ${msg.action} on ${msg.venueId} after ${msg.attempts} attempts.`,
+          );
+          break;
+        case "SYNC_ERROR":
+          console.error(`[Sync Worker] Sync error: ${msg.error}`);
+          break;
+      }
+    };
+
+    worker.addEventListener("message", handleMessage);
+
+    // Initial wake up to process any pending offline actions
+    worker.postMessage({ type: "WAKE_UP" });
+
+    // Wake up worker when connection is restored or manually triggered
+    const handleWakeUp = () => worker.postMessage({ type: "WAKE_UP" });
+    window.addEventListener("online", handleWakeUp);
+    window.addEventListener("trigger-sync", handleWakeUp);
+
+    return () => {
+      worker.removeEventListener("message", handleMessage);
+      window.removeEventListener("online", handleWakeUp);
+      window.removeEventListener("trigger-sync", handleWakeUp);
+      worker.terminate();
+    };
+  }, []);
+}
+
 /**
  * Hook to register service worker and manage PWA state
  */
@@ -16,6 +71,9 @@ export function useServiceWorker() {
   const [isOnline, setIsOnline] = useState(true);
   const [registration, setRegistration] =
     useState<ServiceWorkerRegistration | null>(null);
+
+  // Initialize the dedicated sync worker
+  useSyncWorker();
 
   useEffect(() => {
     setIsInstalled(window.matchMedia("(display-mode: standalone)").matches);
@@ -487,13 +545,13 @@ export function PWABanner() {
               <div className="mt-4 flex gap-2">
                 <button
                   onClick={handleInstallClick}
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md shadow-blue-500/20"
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 cursor-pointer active:scale-95 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md shadow-blue-500/20"
                 >
                   Install Now
                 </button>
                 <button
                   onClick={handleDismiss}
-                  className="px-3.5 py-1.5 bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-wider rounded-lg border border-white/10 transition-all"
+                  className="px-3.5 py-1.5 bg-white/5 hover:bg-white/10 cursor-pointer text-[10px] font-black uppercase tracking-wider rounded-lg border border-white/10 transition-all"
                 >
                   Maybe Later
                 </button>

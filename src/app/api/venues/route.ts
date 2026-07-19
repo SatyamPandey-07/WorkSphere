@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
       "hasPhoneBooths",
       "hasNoMusic",
       "hasQuietZone",
+      "hasAncHeadsetRental",
       "lighting",
       "petsAllowedIndoors",
       "patioOnly",
@@ -135,6 +136,7 @@ export async function GET(req: NextRequest) {
       hasPhoneBooths,
       hasNoMusic,
       hasQuietZone,
+      hasAncHeadsetRental,
       lighting,
       petsAllowedIndoors,
       patioOnly,
@@ -216,6 +218,10 @@ export async function GET(req: NextRequest) {
 
     if (hasQuietZone) {
       where.hasQuietZone = true;
+    }
+
+    if (hasAncHeadsetRental) {
+      where.hasAncHeadsetRental = true;
     }
     if (musicStyle && musicStyle !== "all") {
       if (musicStyle === "no_music") {
@@ -325,6 +331,7 @@ export async function POST(req: NextRequest) {
       hasPhoneBooths,
       hasNoMusic,
       hasQuietZone,
+      hasAncHeadsetRental,
       lighting,
       petsAllowedIndoors,
       patioOnly,
@@ -378,6 +385,7 @@ export async function POST(req: NextRequest) {
         outletDensity,
         wifiSpeed,
         hasPhoneBooths,
+        hasAncHeadsetRental,
         hasNoMusic,
         hasQuietZone,
         lighting,
@@ -412,6 +420,7 @@ export async function POST(req: NextRequest) {
         hasPhoneBooths: hasPhoneBooths || false,
         hasNoMusic: hasNoMusic || false,
         hasQuietZone: hasQuietZone || false,
+        hasAncHeadsetRental: hasAncHeadsetRental || false,
         lighting,
         petsAllowedIndoors: petsAllowedIndoors || false,
         patioOnly: patioOnly || false,

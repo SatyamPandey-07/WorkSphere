@@ -3,7 +3,6 @@
 import Link from "next/link";
 import Image from "next/image";
 import {
-  MapPin,
   Wifi,
   Zap,
   Volume2,
@@ -11,7 +10,6 @@ import {
   Sparkles,
   Download,
   ArrowRight,
-  Coffee,
   Camera,
   Radio,
   Star,
@@ -21,17 +19,22 @@ import {
   FileText,
   BarChart3,
   ArrowUp,
+  MapPin,
+  Coffee,
   LayoutGrid,
 } from "lucide-react";
-import { Show, UserButton } from "@clerk/nextjs";
+import { Show, UserButton, useUser } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/site-footer";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { TopNav } from "@/components/TopNav";
 import FAQAccordion from "@/components/ui/FAQAccordion";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function Home() {
   const [isVisible, setIsVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
+
+  const { isSignedIn } = useUser();
 
   useEffect(() => {
     setIsVisible(true);
@@ -79,40 +82,47 @@ export default function Home() {
             </div>
             <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-700 hidden sm:block" />
 
-            <Show when="signed-out">
-              <Link href="/sign-in">
-                <button className="px-3 sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap">
-                  Sign In
-                </button>
-              </Link>
-              <Link href="/sign-up">
-                <button className="px-4 sm:px-5 py-2 text-sm rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105 whitespace-nowrap">
-                  Get Started
-                </button>
-              </Link>
-            </Show>
-            <Show when="signed-in">
-              <Link
-                href="/ai"
-                className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
-              >
-                <Coffee className="w-4 h-4" />
-                Dashboard
-              </Link>
-              <Link
-                href="/collections"
-                className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
-              >
-                <LayoutGrid className="w-4 h-4" />
-                Collections
-              </Link>
-              <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
-                <UserButton />
-              </div>
-            </Show>
+            {!isSignedIn ? (
+              <>
+                <Link href="/sign-in">
+                  <button className="px-3 cursor-pointer sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap">
+                    Sign In
+                  </button>
+                </Link>
+                <Link href="/sign-up">
+                  <button className="px-4 sm:px-5 cursor-pointer py-2 text-sm rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105 whitespace-nowrap">
+                    Get Started
+                  </button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link
+                  href="/ai"
+                  className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
+                >
+                  <Coffee className="w-4 h-4" />
+                  Dashboard
+                </Link>
+                <Link
+                  href="/collections"
+                  className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
+                >
+                  <LayoutGrid className="w-4 h-4" />
+                  Collections
+                </Link>
+                <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
+                  <UserButton
+                    userProfileMode="navigation"
+                    userProfileUrl="/user-profile"
+                  />
+                </div>
+              </>
+            )}
           </div>
         </div>
       </nav>
+      <TopNav />
 
       {/* Hero */}
       <main className="container mx-auto px-4">
@@ -184,6 +194,7 @@ export default function Home() {
                 See Features
               </a>
             </Show>
+
             <Show when="signed-in">
               <Link
                 href="/ai"

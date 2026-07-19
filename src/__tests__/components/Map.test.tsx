@@ -13,6 +13,28 @@ jest.mock("@clerk/nextjs", () => ({
       imageUrl: "https://example.com/avatar.jpg",
     },
   }),
+  useAuth: () => ({
+    getToken: jest.fn().mockResolvedValue(null),
+  }),
+}));
+
+// Mock the seat-availability hook (#703) — its own PartySocket wiring is
+// covered by dedicated hook tests; here we just need a stable, inert stub
+// so Map.tsx's rendering behaviour can be tested in isolation.
+jest.mock("@/hooks/useSeatAvailability", () => ({
+  useSeatAvailability: () => ({
+    availability: {},
+    getAvailability: (venueId: string) => ({
+      venueId,
+      count: 0,
+      capacity: 8,
+      status: "green",
+    }),
+    checkIn: jest.fn(),
+    checkOut: jest.fn(),
+    checkedInVenueId: null,
+    isConnected: true,
+  }),
 }));
 
 // Mock react-leaflet
@@ -75,6 +97,16 @@ jest.mock("react-leaflet", () => ({
         <div data-testid="overlay">{children}</div>
       ),
     },
+  ),
+  LayerGroup: ({ children }: any) => (
+    <div data-testid="layer-group">{children}</div>
+  ),
+  CircleMarker: ({ center, pathOptions }: any) => (
+    <div
+      data-testid="circle-marker"
+      data-center={JSON.stringify(center)}
+      data-color={pathOptions?.color}
+    />
   ),
 
   ScaleControl: ({ position, metric, imperial }: any) => (

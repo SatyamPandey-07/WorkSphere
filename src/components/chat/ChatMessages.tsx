@@ -9,9 +9,12 @@ import {
   Coffee,
   FolderPlus,
   Heart,
+  Headphones,
   Info,
   Loader2,
   MapPin,
+  Mic,
+  MicOff,
   Navigation,
   Send,
   Star,
@@ -22,9 +25,12 @@ import {
   List,
   Copy,
   Check,
-  Mic,
+  Clock,
+  Trash2,
 } from "lucide-react";
-import { RefObject, useState, useEffect, useRef } from "react";
+import { RefObject, useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
 import { MessageRenderer } from "./GenerativeUI";
@@ -55,6 +61,7 @@ export interface Venue {
   hasPhoneBooths?: boolean;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
+  hasAncHeadsetRental?: boolean;
   outletLocations?: string[];
 }
 
@@ -267,6 +274,17 @@ export function VenueChatCard({
                   </span>
                 </div>
               )}
+              {venue.hasAncHeadsetRental && (
+                <div
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/10 border border-violet-500/20"
+                  title="Active noise-cancelling headsets available for rent"
+                >
+                  <Headphones className="w-3 h-3 text-violet-600" />
+                  <span className="text-[9px] font-bold text-violet-600 uppercase">
+                    ANC Rental
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -439,6 +457,17 @@ export function VenueChatCard({
                     <Volume2 className="w-3 h-3 text-blue-600" />
                     <span className="text-[10px] font-bold text-blue-600 uppercase">
                       Quiet
+                    </span>
+                  </div>
+                )}
+                {venue.hasAncHeadsetRental && (
+                  <div
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20"
+                    title="Active noise-cancelling headsets available for rent"
+                  >
+                    <Headphones className="w-3 h-3 text-violet-600" />
+                    <span className="text-[10px] font-bold text-violet-600 uppercase">
+                      ANC Rental
                     </span>
                   </div>
                 )}
@@ -786,19 +815,36 @@ export function MessageList({
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  const scrollToBottomIfNeeded = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const isAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      200;
+    if (isAtBottom || isLoading) {
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+      });
+    }
+  }, [isLoading]);
+
+  // Re-check scroll position whenever messages change or loading state changes
+  useEffect(() => {
+    scrollToBottomIfNeeded();
+  }, [messages, isLoading, scrollToBottomIfNeeded]);
+
+  // Also re-check whenever the container's own size changes (e.g. the input
+  // box growing to multiple lines shrinks the visible message area, which
+  // previously left new messages hidden below the fold)
   useEffect(() => {
     const container = containerRef.current;
-    if (container) {
-      const isAtBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight <
-        200;
-      if (isAtBottom || isLoading) {
-        requestAnimationFrame(() => {
-          container.scrollTop = container.scrollHeight;
-        });
-      }
-    }
-  }, [messages, isLoading]);
+    if (!container) return;
+    const resizeObserver = new ResizeObserver(() => {
+      scrollToBottomIfNeeded();
+    });
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [scrollToBottomIfNeeded]);
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -814,7 +860,7 @@ export function MessageList({
                 key={i}
                 onClick={() => onSuggestionClick(s)}
                 disabled={isLoading}
-                className="text-left px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                className="text-left cursor-pointer px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
               >
                 {s}
               </button>
@@ -1029,58 +1075,104 @@ export function ChatInput({
   const charCount = safeInput.length;
   const isOverLimit = charCount > MAX_CHARS;
 
-  const [isListening, setIsListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
-  const originalInputRef = useRef("");
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const SpeechRecognition =
-        (window as any).SpeechRecognition ||
-        (window as any).webkitSpeechRecognition;
-
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-
-        recognition.onstart = () => setIsListening(true);
-        recognition.onend = () => setIsListening(false);
-        recognition.onerror = (e: any) => {
-          console.error("Speech recognition error:", e.error);
-          setIsListening(false);
-        };
-
-        recognitionRef.current = recognition;
+    const history = localStorage.getItem("ws-recent-searches");
+    if (history) {
+      try {
+        setRecentSearches(JSON.parse(history));
+      } catch (e) {
+        console.error(e);
       }
     }
   }, []);
 
-  useEffect(() => {
-    if (recognitionRef.current) {
-      recognitionRef.current.onresult = (event: any) => {
-        let transcript = "";
-        for (let i = 0; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
-        }
-        const prefix = originalInputRef.current
-          ? originalInputRef.current +
-            (originalInputRef.current.endsWith(" ") ? "" : " ")
-          : "";
-        onInputChange(prefix + transcript);
-      };
-    }
-  }, [onInputChange]);
-
-  const toggleListening = (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (isListening) {
-      recognitionRef.current?.stop();
-    } else {
-      originalInputRef.current = input;
-      recognitionRef.current?.start();
-    }
+  const saveToHistory = (term: string) => {
+    const updated = [
+      term,
+      ...recentSearches.filter((item) => item !== term),
+    ].slice(0, 5);
+    setRecentSearches(updated);
+    localStorage.setItem("ws-recent-searches", JSON.stringify(updated));
   };
+
+  const clearHistory = () => {
+    setRecentSearches([]);
+    localStorage.removeItem("ws-recent-searches");
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (safeInput.trim() && !isOverLimit) {
+      saveToHistory(safeInput.trim());
+    }
+    onSubmit(e);
+  };
+
+  // ── Voice input banner state ─────────────────────────────────────────────
+  // Tracks whether the unsupported-browser banner is currently visible.
+  // It auto-dismisses after 6 s so it never blocks the UI permanently.
+  const [showVoiceBanner, setShowVoiceBanner] = useState(false);
+  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Show the banner and auto-hide it after 6 seconds. */
+  const triggerBanner = useCallback(() => {
+    setShowVoiceBanner(true);
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    bannerTimerRef.current = setTimeout(() => setShowVoiceBanner(false), 6000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    };
+  }, []);
+
+  // ── Speech recognition ───────────────────────────────────────────────────
+  /**
+   * When recognition returns a final transcript, prepend whatever the user
+   * had already typed (preserving their original input) then append the
+   * recognised text with a space separator.
+   */
+  const handleTranscript = useCallback(
+    (text: string) => {
+      if (!text) return;
+      const current = (input || "").trim();
+      onInputChange(current ? `${current} ${text}` : text);
+    },
+    [input, onInputChange],
+  );
+
+  const { isSupported, status, errorMessage, startListening, stopListening } =
+    useSpeechRecognition(handleTranscript);
+
+  const isListening = status === "listening";
+
+  /**
+   * Handle microphone button click.
+   * - Unsupported browser (e.g. Firefox Nightly without the flag) →
+   *   show a clear user-facing banner; do NOT crash silently.
+   * - Currently listening → stop recognition.
+   * - Idle / error → start recognition.
+   */
+  const handleMicClick = useCallback(() => {
+    if (!isSupported) {
+      triggerBanner();
+      return;
+    }
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  }, [isSupported, isListening, startListening, stopListening, triggerBanner]);
+
+  // Show the banner whenever the hook surfaces an error message too
+  useEffect(() => {
+    if (errorMessage) triggerBanner();
+  }, [errorMessage, triggerBanner]);
 
   let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
   if (isOverLimit) {
@@ -1089,17 +1181,102 @@ export function ChatInput({
     counterColor = "text-yellow-500";
   }
 
+  // ── Mic button styling ───────────────────────────────────────────────────
+  const micButtonBase =
+    "p-3 rounded-xl transition-all active:scale-95 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500";
+
+  const micButtonStyle = !isSupported
+    ? // Visually disabled but still focusable so screen readers can reach the
+      // tooltip / aria-label describing why it is unavailable.
+      `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed opacity-60 cursor-pointer`
+    : isListening
+      ? `${micButtonBase} bg-red-500 hover:bg-red-600 text-white animate-pulse cursor-pointer`
+      : `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 cursor-pointer`;
+
+  const micAriaLabel = !isSupported
+    ? "Voice input is not supported in this browser"
+    : isListening
+      ? "Stop voice input"
+      : "Start voice input";
+
   return (
-    <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+    <div className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+      <AnimatePresence>
+        {isFocused && recentSearches.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="absolute bottom-full left-4 right-4 mb-2 z-50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl flex flex-col gap-3"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                Recent Searches
+              </span>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  clearHistory();
+                }}
+                className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" />
+                Clear
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {recentSearches.map((term) => (
+                <button
+                  key={term}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onInputChange(term);
+                  }}
+                  className="px-3 py-1.5 bg-zinc-100 hover:bg-blue-50 dark:bg-zinc-900 dark:hover:bg-blue-950/30 border border-zinc-200/50 dark:border-zinc-800 hover:border-blue-200 dark:hover:border-blue-900/50 text-[11px] font-black uppercase tracking-tight rounded-xl text-zinc-600 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 transition-all flex items-center gap-1"
+                >
+                  {term}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Unsupported-browser / error banner ─────────────────────────── */}
+      {showVoiceBanner && (
+        <div
+          role="alert"
+          className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
+        >
+          <MicOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="font-semibold leading-snug">
+            {errorMessage ||
+              "Voice input is not supported in this browser. Please use Chrome, Edge, or enable speech recognition in Firefox (about:config → media.webspeech.recognition.enable)."}
+          </span>
+          <button
+            type="button"
+            aria-label="Dismiss voice input warning"
+            onClick={() => setShowVoiceBanner(false)}
+            className="ml-auto cursor-pointer shrink-0 rounded p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <form
         id="ws-chat-form"
-        onSubmit={onSubmit}
+        onSubmit={handleFormSubmit}
         className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:border-blue-600 transition-all shadow-inner"
       >
         <button
           type="button"
-          onClick={toggleListening}
-          className={`p-3 rounded-xl transition-all active:scale-95 shadow-lg group ${
+          onClick={handleMicClick}
+          className={`p-3 rounded-xl cursor-pointer transition-all active:scale-95 shadow-lg group ${
             isListening
               ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
               : "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
@@ -1112,14 +1289,38 @@ export function ChatInput({
           type="text"
           value={safeInput}
           onChange={(e) => onInputChange(e.target.value ?? "")}
-          placeholder="Where's the focus mode hotspot?"
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          placeholder={
+            isListening ? "Listening…" : "Where's the focus mode hotspot?"
+          }
           disabled={isLoading}
           className="flex-1 px-4 py-3 bg-transparent text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 text-sm font-bold"
         />
+
+        {/* ── Microphone button ──────────────────────────────────────────── */}
+        <button
+          type="button"
+          onClick={handleMicClick}
+          aria-label={micAriaLabel}
+          // Keep the button in the tab order even when unsupported so
+          // keyboard-only users discover the "not available" message.
+          aria-disabled={!isSupported}
+          title={micAriaLabel}
+          className={micButtonStyle}
+        >
+          {isListening ? (
+            <MicOff className="w-5 h-5" aria-hidden="true" />
+          ) : (
+            <Mic className="w-5 h-5" aria-hidden="true" />
+          )}
+        </button>
+
+        {/* ── Send button ────────────────────────────────────────────────── */}
         <button
           type="submit"
           disabled={isLoading || !input.trim() || isOverLimit}
-          className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
+          className="p-3 bg-blue-600 cursor-pointer hover:bg-blue-700 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
         >
           {isLoading ? (
             <Loader2 className="w-5 h-5 animate-spin" />
@@ -1128,6 +1329,7 @@ export function ChatInput({
           )}
         </button>
       </form>
+
       <div className="mt-2 text-right">
         <span
           className={`text-xs font-semibold transition-colors ${counterColor}`}

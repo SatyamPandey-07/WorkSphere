@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+// =========================================================================
+// CORE SCHEMAS
+// =========================================================================
+
 // Chat API schemas
 export const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant", "system"]),
@@ -35,6 +39,7 @@ export const venueSearchSchema = z.object({
   hasPhoneBooths: z.coerce.boolean().optional(),
   hasNoMusic: z.coerce.boolean().optional(),
   hasQuietZone: z.coerce.boolean().optional(),
+  hasAncHeadsetRental: z.coerce.boolean().optional(),
   singleOriginBeans: z.coerce.boolean().optional(),
   specialtyEspresso: z.coerce.boolean().optional(),
   oatAlmondMilk: z.coerce.boolean().optional(),
@@ -71,6 +76,7 @@ export const venueCreateSchema = z.object({
   hasPhoneBooths: z.boolean().optional(),
   hasNoMusic: z.boolean().optional(),
   hasQuietZone: z.boolean().optional(),
+  hasAncHeadsetRental: z.boolean().optional(),
   lighting: z
     .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
     .optional(),
@@ -138,13 +144,31 @@ export const favoriteSchema = z.object({
   venueId: z.string().min(1),
 });
 
+// Favorite notes schema
+export const favoriteNotesSchema = z.object({
+  notes: z.string().max(2000).nullable(),
+});
+
+// Favorite tag schemas
+export const createFavoriteTagSchema = z.object({
+  name: z.string().min(1).max(50).trim(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color"),
+});
+
+export const updateFavoriteTagSchema = z.object({
+  name: z.string().min(1).max(50).trim().optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color").optional(),
+});
+
 // Location schema
 export const locationSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
 });
 
-// Export types
+// =========================================================================
+// TYPES & DYNAMIC VALIDATION PIPELINE INTERFACES
+// =========================================================================
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 export type VenueSearch = z.infer<typeof venueSearchSchema>;
@@ -153,6 +177,9 @@ export type VenueRating = z.infer<typeof venueRatingSchema>;
 export type ConversationCreate = z.infer<typeof conversationCreateSchema>;
 export type MessageCreate = z.infer<typeof messageCreateSchema>;
 export type Favorite = z.infer<typeof favoriteSchema>;
+export type FavoriteNotes = z.infer<typeof favoriteNotesSchema>;
+export type CreateFavoriteTag = z.infer<typeof createFavoriteTagSchema>;
+export type UpdateFavoriteTag = z.infer<typeof updateFavoriteTagSchema>;
 export type Location = z.infer<typeof locationSchema>;
 
 // Validation helper
@@ -172,6 +199,7 @@ export function validateRequest<T>(
   if (result.success) {
     return { success: true, data: result.data };
   }
+
   return {
     success: false,
     error: result.error.issues

@@ -47,6 +47,7 @@ import { NotificationSettings } from "./NotificationSettings";
 import { CheckInHistory } from "./CheckInHistory";
 import { TelegramStatusBanner } from "@/components/dashboard/TelegramStatusBanner";
 import { WorkStyleProfile } from "./WorkStyleProfile";
+import { StreakCard } from "@/components/dashboard/StreakCard";
 
 interface AgentMetric {
   agent: string;
@@ -119,14 +120,14 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black p-6">
+    <div className="min-h-screen bg-zinc-50 dark:bg-black p-6 pb-24">
       {/* Header */}
       <div className="max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
             <Link
               href="/ai"
-              className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
@@ -388,6 +389,11 @@ export default function DashboardPage() {
         {/* Check-In History */}
         <div className="mt-6">
           <CheckInHistory />
+        </div>
+
+        {/* Activity Streak */}
+        <div className="mt-6">
+          <StreakCard />
         </div>
       </div>
     </div>

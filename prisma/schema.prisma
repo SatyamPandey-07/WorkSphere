@@ -42,7 +42,17 @@ model User {
   notificationEnd    String?
   timezone           String?            @default("UTC")
   folderUpvotes      FolderUpvote[]
+  sentFolderInvites  FolderInvite[]      @relation("FolderInviteSender")
   workStyleProfile   String?
+  checkIns           CheckIn[]
+  // ── Activity streak ────────────────────────────────────────────────────────
+  // currentStreak:    consecutive days with at least one check-in
+  // longestStreak:    all-time best streak for profile display
+  // lastCheckInDate:  UTC date string (YYYY-MM-DD) used to detect same-day
+  //                   duplicates and next-day increments
+  currentStreak    Int      @default(0)
+  longestStreak    Int      @default(0)
+  lastCheckInDate  String?  // stored as "YYYY-MM-DD" UTC
 }
 
 model Venue {
@@ -65,6 +75,7 @@ model Venue {
   hasPhoneBooths     Boolean             @default(false)
   hasNoMusic         Boolean             @default(false)
   hasQuietZone       Boolean             @default(false)
+  hasAncHeadsetRental Boolean             @default(false)
   petsAllowedIndoors Boolean             @default(false)
   patioOnly          Boolean             @default(false)
   waterBowlsProvided Boolean             @default(false)
@@ -95,6 +106,9 @@ model Venue {
   wifiTelemetry      WifiTelemetry[]
   validations        AmenityValidation[]
   folderVenues       FolderVenue[]
+  currentOccupancy Int          @default(0)
+  maxCapacity      Int          @default(50) 
+  checkIns         CheckIn[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -140,15 +154,31 @@ model VenueRating {
 }
 
 model Favorite {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String
-  venue     Venue    @relation(fields: [venueId], references: [id])
-  createdAt DateTime @default(now())
+  venue     Venue     @relation(fields: [venueId], references: [id])
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  tags      FavoriteTag[]
 
   @@unique([userId, venueId])
   @@index([userId])
+}
+
+model FavoriteTag {
+  id         String   @id @default(cuid())
+  favoriteId String
+  favorite   Favorite @relation(fields: [favoriteId], references: [id], onDelete: Cascade)
+  name       String
+  color      String   @default("#3b82f6")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([favoriteId, name])
+  @@index([favoriteId])
 }
 
 model Conversation {
@@ -436,6 +466,7 @@ model Folder {
   venues     FolderVenue[]
   members    FolderMember[]
   upvoteRefs FolderUpvote[]
+  invites     FolderInvite[]
 
   @@index([ownerId])
 }
@@ -513,6 +544,33 @@ model WebhookDeliveryLog {
   @@index([endpointId, createdAt])
 }
 
+
+model FolderInvite {
+  id        String             @id @default(cuid())
+  folderId  String
+  folder    Folder             @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User               @relation("FolderInviteSender", fields: [senderId], references: [id], onDelete: Cascade)
+  email     String
+  role      FolderRole         @default(MEMBER)
+  token     String             @unique
+  status    FolderInviteStatus @default(PENDING)
+  expiresAt DateTime
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([folderId])
+  @@index([email])
+  @@index([status, expiresAt])
+}
+
+enum FolderInviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
 model FolderUpvote {
   id        String   @id @default(cuid())
   folderId  String
@@ -524,4 +582,17 @@ model FolderUpvote {
   @@unique([folderId, userId])
   @@index([folderId])
   @@index([userId])
+}
+model CheckIn {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime // To prevent dead states, auto-expire checkout after e.g. 4 hours
+
+  @@unique([userId, venueId])
+  @@index([venueId])
+  @@index([expiresAt])
 }

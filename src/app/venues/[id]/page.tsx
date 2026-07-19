@@ -4,7 +4,7 @@ import Link from "next/link";
 import { MapPin, Wifi, Zap, Building2, Coffee, BookOpen } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { TopNav } from "@/components/TopNav";
-import { SiteFooter } from "@/components/site-footer";
+import SiteFooter from "@/components/site-footer";
 
 interface PageProps {
   params: { id: string };

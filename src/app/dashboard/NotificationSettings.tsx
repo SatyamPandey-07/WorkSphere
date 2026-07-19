@@ -13,10 +13,11 @@ import {
   X,
 } from "lucide-react";
 import Cropper from "react-easy-crop";
+import type { Area } from "react-easy-crop";
 
 const getCroppedImg = async (
   imageSrc: string,
-  pixelCrop: any,
+  pixelCrop: Area,
 ): Promise<Blob> => {
   const image = new window.Image();
   image.src = imageSrc;
@@ -75,7 +76,7 @@ export function NotificationSettings() {
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const timezones =
@@ -294,7 +295,7 @@ export function NotificationSettings() {
                 showGrid={false}
                 onCropChange={setCrop}
                 onZoomChange={setZoom}
-                onCropComplete={(_, croppedAreaPixels) =>
+                onCropComplete={(_croppedArea: Area, croppedAreaPixels: Area) =>
                   setCroppedAreaPixels(croppedAreaPixels)
                 }
               />
@@ -326,16 +327,20 @@ export function NotificationSettings() {
       <form onSubmit={handleSave} className="space-y-6">
         {/* Phone number */}
         <div>
-          <label className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2">
-            Phone Number
-          </label>
-          <input
-            type="tel"
-            placeholder="+1234567890"
-            value={phoneNumber}
-            onChange={(e) => setPhoneNumber(e.target.value)}
-            className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono text-sm transition-all"
-          />
+          <label
+  htmlFor="phone-number"
+  className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2"
+>
+  Phone Number
+</label>
+<input
+  id="phone-number"
+  type="tel"
+  placeholder="+1234567890"
+  value={phoneNumber}
+  onChange={(e) => setPhoneNumber(e.target.value)}
+  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono text-sm transition-all"
+/>
           <p className="mt-1.5 text-xs text-zinc-500">
             Used for WhatsApp booking confirmations and SMS reminders (E.164
             format).
@@ -344,17 +349,21 @@ export function NotificationSettings() {
 
         {/* WhatsApp webhook URL */}
         <div>
-          <label className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2 flex items-center gap-1.5">
-            <MessageCircle className="w-3.5 h-3.5 text-green-500" />
-            WhatsApp Webhook URL
-          </label>
-          <input
-            type="url"
-            placeholder="https://hooks.make.com/... or https://hooks.zapier.com/..."
-            value={whatsappWebhookUrl}
-            onChange={(e) => setWhatsappWebhookUrl(e.target.value)}
-            className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 font-mono text-sm transition-all"
-          />
+          <label
+  htmlFor="whatsapp-webhook-url"
+  className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2 flex items-center gap-1.5"
+>
+  <MessageCircle className="w-3.5 h-3.5 text-green-500" />
+  WhatsApp Webhook URL
+</label>
+<input
+  id="whatsapp-webhook-url"
+  type="url"
+  placeholder="https://hooks.make.com/... or https://hooks.zapier.com/..."
+  value={whatsappWebhookUrl}
+  onChange={(e) => setWhatsappWebhookUrl(e.target.value)}
+  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 font-mono text-sm transition-all"
+/>
           <p className="mt-1.5 text-xs text-zinc-500">
             Optional. Paste a Make, Zapier, or custom HTTPS webhook to stream
             booking check-ins to a WhatsApp group. WorkSphere will POST venue

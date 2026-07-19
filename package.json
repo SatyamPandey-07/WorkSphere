@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
@@ -47,7 +47,7 @@
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-easy-crop": "^6.2.2",
-    "react-i18next": "^17.0.9",
+    "react-i18next": "^17.0.10",
     "react-is": "^19.2.7",
     "react-joyride": "^3.2.0",
     "react-leaflet": "^5.0.0",

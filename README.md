@@ -346,6 +346,8 @@ npm run test:e2e
 npm run test:e2e:ui  # With UI
 ```
 
+For a full guide on writing, running, and debugging Playwright tests, see [docs/PLAYWRIGHT_TESTING_GUIDE.md](./docs/PLAYWRIGHT_TESTING_GUIDE.md).
+
 ### Test Coverage
 
 - **57 Unit Tests** covering:

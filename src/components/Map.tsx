@@ -444,6 +444,8 @@ const Map = ({
           renderedLng: Number(groupItems[0].position.lng),
         });
       } else {
+        const centerLat = Number(groupItems[0].position.lat);
+        const centerLng = Number(groupItems[0].position.lng);
 
         // Keep a consistent ~24px on-screen separation between spiderfied
         // markers at any zoom level, instead of a fixed degree offset that

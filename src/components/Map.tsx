@@ -10,12 +10,23 @@ import {
   Polyline,
   useMap,
   LayersControl,
+  LayerGroup,
+  CircleMarker,
   ScaleControl,
 } from "react-leaflet";
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
+import { useSeatAvailability, type SeatStatus } from "@/hooks/useSeatAvailability";
+
+// Seat-availability ring colours (#703): green = plenty of room, yellow =
+// filling up, red = at/over capacity.
+const SEAT_RING_COLORS: Record<SeatStatus, string> = {
+  green: "#22c55e",
+  yellow: "#eab308",
+  red: "#ef4444",
+};
 
 // Import Leaflet Heatmap Plugin safely only on client-side and not in Jest tests
 if (typeof window !== "undefined" && process.env.NODE_ENV !== "test") {
@@ -108,9 +119,11 @@ function AutoCenter({
 // other mid-transition.
 function ZoomWatcher({
   onZoomSettled,
+  onZoomStart,
   delay = 150,
 }: {
   onZoomSettled: (zoom: number) => void;
+  onZoomStart?: () => void;
   delay?: number;
 }) {
   const map = useMap();
@@ -118,19 +131,26 @@ function ZoomWatcher({
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
 
-    const scheduleUpdate = () => {
+    const handleZoomStart = () => {
+      clearTimeout(timer);
+      onZoomStart?.();
+    };
+
+    const handleZoomEnd = () => {
       clearTimeout(timer);
       timer = setTimeout(() => onZoomSettled(map.getZoom()), delay);
     };
 
-    map.on("zoomend", scheduleUpdate);
-    scheduleUpdate(); // capture the initial zoom too
+    map.on("zoomstart", handleZoomStart);
+    map.on("zoomend", handleZoomEnd);
+    handleZoomEnd(); // capture the initial zoom too
 
     return () => {
       clearTimeout(timer);
-      map.off("zoomend", scheduleUpdate);
+      map.off("zoomstart", handleZoomStart);
+      map.off("zoomend", handleZoomEnd);
     };
-  }, [map, onZoomSettled, delay]);
+  }, [map, onZoomSettled, onZoomStart, delay]);
 
   return null;
 }
@@ -204,6 +224,16 @@ const Map = ({
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
 
+  // Real-time seat availability (#703) — PartyKit presence layer that
+  // powers the green/yellow/red rings and the popup check-in button.
+  const {
+    getAvailability,
+    checkIn,
+    checkOut,
+    checkedInVenueId,
+    isConnected: isSeatSocketConnected,
+  } = useSeatAvailability();
+
   // Prevent touch/mouse/scroll event propagation on overlays from bubbling to Leaflet Map
   useEffect(() => {
     const el = routingPanelRef.current;
@@ -246,8 +276,17 @@ const Map = ({
   // marker offsets at a consistent on-screen pixel separation regardless of
   // how far the user has zoomed in/out.
   const [settledZoom, setSettledZoom] = useState<number>(13);
+  const [isZooming, setIsZooming] = useState(false);
   const handleZoomSettled = useCallback((zoom: number) => {
     setSettledZoom(zoom);
+    setIsZooming(false);
+  }, []);
+
+  // Collapse spiderfied markers to their center positions during zoom
+  // transitions so overlapping offsets don't render mid-animation,
+  // then respiderfy after the zoom settles (handled via handleZoomSettled).
+  const handleZoomStart = useCallback(() => {
+    setIsZooming(true);
   }, []);
 
   // =========================================================================
@@ -282,7 +321,26 @@ const Map = ({
       return;
     }
 
-    const coordinatesString = dedupedList
+    // Validate coordinates before sending to OSRM — low accuracy or invalid
+    // coordinates (0,0 or out of range) cause routing failures.
+    const isValidCoord = (v: any) => {
+      const lat = Number(v.latitude);
+      const lng = Number(v.longitude);
+      return (
+        !isNaN(lat) && !isNaN(lng) &&
+        lat >= -90 && lat <= 90 &&
+        lng >= -180 && lng <= 180 &&
+        !(lat === 0 && lng === 0)
+      );
+    };
+    const validList = dedupedList.filter(isValidCoord);
+    if (validList.length < 2) {
+      console.warn("[OSRM] Not enough valid coordinates for routing");
+      setOptimizedRoute(null);
+      return;
+    }
+
+    const coordinatesString = validList
       .map((venue) => `${venue.longitude},${venue.latitude}`)
       .join(";");
 
@@ -379,7 +437,7 @@ const Map = ({
     Object.keys(groups).forEach((key) => {
       const groupItems = groups[key];
       const n = groupItems.length;
-      if (n === 1) {
+      if (n === 1 || isZooming) {
         result.push({
           ...groupItems[0],
           renderedLat: Number(groupItems[0].position.lat),
@@ -413,7 +471,7 @@ const Map = ({
       }
     });
     return result;
-  }, [markers, settledZoom]);
+  }, [markers, settledZoom, isZooming]);
 
   // Derive iconUrl directly from clerkUser state
   const iconUrl = useMemo(() => {
@@ -629,11 +687,34 @@ const Map = ({
               gradient={NOISE_GRADIENT}
             />
           </LayersControl.Overlay>
+
+          <LayersControl.Overlay name="Seat Availability">
+            <LayerGroup>
+              {spiderfiedMarkers
+                .filter((marker) => !marker.id.includes("dest"))
+                .map((marker) => {
+                  const seat = getAvailability(marker.id);
+                  return (
+                    <CircleMarker
+                      key={`seat-ring-${marker.id}`}
+                      center={[marker.renderedLat, marker.renderedLng]}
+                      radius={16}
+                      pathOptions={{
+                        color: SEAT_RING_COLORS[seat.status],
+                        weight: 3,
+                        opacity: 0.9,
+                        fillOpacity: 0,
+                      }}
+                    />
+                  );
+                })}
+            </LayerGroup>
+          </LayersControl.Overlay>
         </LayersControl>
 
         <MapController mapView={mapView} />
         <AutoCenter markers={markers} userLocation={center} />
-        <ZoomWatcher onZoomSettled={handleZoomSettled} />
+        <ZoomWatcher onZoomSettled={handleZoomSettled} onZoomStart={handleZoomStart} />
         <ResizeWatcher />
 
         {customIcon && (
@@ -658,6 +739,38 @@ const Map = ({
                     {marker.address}
                   </div>
                 )}
+                {!marker.id.includes("dest") &&
+                  (() => {
+                    const seat = getAvailability(marker.id);
+                    const isCheckedInHere = checkedInVenueId === marker.id;
+                    const seatTextColor =
+                      seat.status === "red"
+                        ? "text-red-400"
+                        : seat.status === "yellow"
+                          ? "text-yellow-400"
+                          : "text-green-400";
+                    return (
+                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
+                        <span className={`text-[10px] font-medium ${seatTextColor}`}>
+                          {isSeatSocketConnected
+                            ? `${seat.count}/${seat.capacity} checked in`
+                            : "Connecting…"}
+                        </span>
+                        <button
+                          onClick={() =>
+                            isCheckedInHere ? checkOut() : checkIn(marker.id)
+                          }
+                          className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                            isCheckedInHere
+                              ? "bg-blue-600 text-white hover:bg-blue-500"
+                              : "bg-zinc-800 text-zinc-200 hover:bg-blue-600 hover:text-white"
+                          }`}
+                        >
+                          {isCheckedInHere ? "Check out" : "Check in here"}
+                        </button>
+                      </div>
+                    );
+                  })()}
               </div>
               <button
                 onClick={() => {

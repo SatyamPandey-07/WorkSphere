@@ -243,6 +243,23 @@ export function BookingModal({
     });
   };
 
+  useEffect(() => {
+    if (isOpen && mode === "history") {
+      setStep("history");
+      const fetchHistory = async () => {
+        setLoadingHistory(true);
+        try {
+          const res = await fetch("/api/bookings/history");
+          if (res.ok) setHistory(await res.json());
+        } catch (e) {
+          console.error(e);
+        }
+        setLoadingHistory(false);
+      };
+      fetchHistory();
+    }
+  }, [isOpen, mode]);
+
   const toggleSelectAll = () => {
     setSelectedIds((prev) =>
       prev.size === filteredHistory.length
@@ -649,13 +666,14 @@ export function BookingModal({
 
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                  <label htmlFor="allocation-date" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
                     Allocation Date
                   </label>
                   <div className="relative">
                     <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="date"
+                      id="allocation-date"
                       min={getTodayString()}
                       className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                       value={bookingDate}
@@ -664,13 +682,14 @@ export function BookingModal({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                  <label htmlFor="arrival-time" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
                     Arrival Time
                   </label>
                   <div className="relative">
                     <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="time"
+                      id="arrival-time"
                       className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                       value={bookingTime}
                       onChange={(e) => setBookingTime(e.target.value)}

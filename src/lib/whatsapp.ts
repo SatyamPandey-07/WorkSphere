@@ -16,6 +16,7 @@
  */
 
 import dns from "dns";
+import https from "https";
 import { isIP } from "net";
 
 // ---------------------------------------------------------------------------
@@ -296,22 +297,59 @@ export class WhatsAppNotificationService {
     if (!webhookUrl || !(await isValidWebhookUrl(webhookUrl))) return;
 
     try {
-      const res = await fetch(webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const parsed = new URL(webhookUrl);
+      const { address } = await dns.promises.lookup(parsed.hostname);
+      if (isPrivateIp(address)) {
+        console.error(`[WhatsApp] Webhook blocked: Resolved to private IP ${address}`);
+        return;
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        const bodyData = JSON.stringify({
           ...payload,
           message: formatBookingMessage(payload),
-        }),
-      });
+        });
 
-      if (!res.ok) {
-        console.error(`[WhatsApp] Webhook ${res.status}: ${await res.text()}`);
-      } else {
-        console.log(
-          `[WhatsApp] Webhook delivered to ${sanitizeLog(webhookUrl)}`,
+        const req = https.request(
+          {
+            hostname: address,
+            port: parsed.port || 443,
+            path: parsed.pathname + parsed.search,
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Host": parsed.hostname,
+            },
+            servername: parsed.hostname,
+            timeout: 5000,
+          },
+          (res) => {
+            let resBody = "";
+            res.on("data", (chunk) => {
+              resBody += chunk;
+            });
+            res.on("end", () => {
+              if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                console.log(`[WhatsApp] Webhook delivered to ${sanitizeLog(webhookUrl)}`);
+                resolve();
+              } else {
+                reject(new Error(`Webhook returned status ${res.statusCode}: ${resBody}`));
+              }
+            });
+          }
         );
-      }
+
+        req.on("timeout", () => {
+          req.destroy(new Error("Request timeout"));
+        });
+
+        req.on("error", (err) => {
+          reject(err);
+        });
+
+        req.write(bodyData);
+        req.end();
+      });
     } catch (err) {
       console.error("[WhatsApp] Webhook delivery failed:", err);
     }

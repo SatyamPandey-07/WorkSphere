@@ -4,9 +4,11 @@
  * - Unsplash for photos
  */
 
-import { LRUCache } from './cache';
+import { LRUCache } from "./cache";
 
-const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY || process.env.NEXT_PUBLIC_UNSPLASH_ACCESS_KEY;
+const UNSPLASH_ACCESS_KEY =
+  process.env.UNSPLASH_ACCESS_KEY ||
+  process.env.NEXT_PUBLIC_UNSPLASH_ACCESS_KEY;
 
 // Cache instances
 // Search cache: capacity 100, TTL 15 minutes (900000ms)
@@ -57,18 +59,17 @@ export async function searchVenuesOSM(
     query?: string;
     radius?: number;
     limit?: number;
-  } = {}
+  } = {},
 ): Promise<VenueData[]> {
   const { query, radius = 2000, limit = 20 } = options;
 
   // Round coordinates to 3 decimal places to increase cache hits (approx 110m grid)
-  const cacheKey = `osm_search:${lat.toFixed(3)}:${lng.toFixed(3)}:${radius}:${query || 'all'}`;
+  const cacheKey = `osm_search:${lat.toFixed(3)}:${lng.toFixed(3)}:${radius}:${query || "all"}`;
   const cachedResult = searchCache.get(cacheKey);
   if (cachedResult) {
-    console.log('[OSM Cache] Hit for:', cacheKey);
+    console.log("[OSM Cache] Hit for:", cacheKey);
     return cachedResult.slice(0, limit);
   }
-
 
   // Use Overpass API for POI search (cafes, coworking, libraries)
   // Search both nodes and ways (buildings are often ways in OSM)
@@ -89,31 +90,37 @@ export async function searchVenuesOSM(
   `;
 
   try {
-    console.log('[OSM] Searching venues:', { lat, lng, radius, query });
-    
+    console.log("[OSM] Searching venues:", { lat, lng, radius, query });
+
     // Add timeout to prevent hanging
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
-    
-    const response = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
+
+    const response = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
       body: `data=${encodeURIComponent(overpassQuery)}`,
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "WorkSphere-Dev-App/1.0",
+        Accept: "application/json",
       },
       signal: controller.signal,
     });
-    
+
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      console.error('[OSM] Overpass API error:', response.status, await response.text());
+      console.error(
+        "[OSM] Overpass API error:",
+        response.status,
+        await response.text(),
+      );
       return searchVenuesNominatim(lat, lng, options);
     }
 
     const data = await response.json();
-    console.log('[OSM] Raw results:', data.elements?.length || 0, 'elements');
-    
+    console.log("[OSM] Raw results:", data.elements?.length || 0, "elements");
+
     const venues: VenueData[] = (data.elements || [])
       .filter((el: any) => el.tags?.name)
       .map((el: any) => {
@@ -121,19 +128,20 @@ export async function searchVenuesOSM(
         // For ways, use center coordinates
         const elLat = el.center ? el.center.lat : el.lat;
         const elLon = el.center ? el.center.lon : el.lon;
-        
+
         return {
           id: `osm-${el.id}`,
           name: tags.name,
           location: {
-            address: tags['addr:street'] ? `${tags['addr:housenumber'] || ''} ${tags['addr:street']}`.trim() : undefined,
-            formatted_address: [
-              tags['addr:street'],
-              tags['addr:city'],
-              tags['addr:postcode'],
-            ].filter(Boolean).join(', ') || undefined,
-            locality: tags['addr:city'],
-            country: tags['addr:country'],
+            address: tags["addr:street"]
+              ? `${tags["addr:housenumber"] || ""} ${tags["addr:street"]}`.trim()
+              : undefined,
+            formatted_address:
+              [tags["addr:street"], tags["addr:city"], tags["addr:postcode"]]
+                .filter(Boolean)
+                .join(", ") || undefined,
+            locality: tags["addr:city"],
+            country: tags["addr:country"],
             lat: elLat,
             lng: elLon,
           },
@@ -141,13 +149,14 @@ export async function searchVenuesOSM(
           distance: calculateDistance(lat, lng, elLat, elLon),
           photos: [], // Will be enriched with Unsplash
           amenities: {
-            wifi: tags.internet_access === 'wlan' || tags.internet_access === 'yes',
-            outdoor_seating: tags.outdoor_seating === 'yes',
-            wheelchair: tags.wheelchair === 'yes',
+            wifi:
+              tags.internet_access === "wlan" || tags.internet_access === "yes",
+            outdoor_seating: tags.outdoor_seating === "yes",
+            wheelchair: tags.wheelchair === "yes",
           },
           opening_hours: tags.opening_hours,
-          website: tags.website || tags['contact:website'],
-          phone: tags.phone || tags['contact:phone'],
+          website: tags.website || tags["contact:website"],
+          phone: tags.phone || tags["contact:phone"],
         };
       });
 
@@ -155,21 +164,22 @@ export async function searchVenuesOSM(
     let finalResult = venues;
     if (query) {
       const q = query.toLowerCase();
-      finalResult = venues.filter(v => 
-        v.name.toLowerCase().includes(q) ||
-        v.categories.some(c => c.name.toLowerCase().includes(q))
+      finalResult = venues.filter(
+        (v) =>
+          v.name.toLowerCase().includes(q) ||
+          v.categories.some((c) => c.name.toLowerCase().includes(q)),
       );
-      console.log('[OSM] Filtered by query:', finalResult.length, 'venues');
+      console.log("[OSM] Filtered by query:", finalResult.length, "venues");
     }
 
-    console.log('[OSM] Returning:', finalResult.length, 'venues');
-    
+    console.log("[OSM] Returning:", finalResult.length, "venues");
+
     // Cache the full result set (unlimited by query limit here if we want, but limiting for memory)
     searchCache.set(cacheKey, finalResult);
-    
+
     return finalResult.slice(0, limit);
   } catch (error) {
-    console.error('[OSM] Search error:', error);
+    console.error("[OSM] Search error:", error);
     // Fallback to Nominatim search
     return searchVenuesNominatim(lat, lng, options);
   }
@@ -181,45 +191,50 @@ export async function searchVenuesOSM(
 async function searchVenuesNominatim(
   lat: number,
   lng: number,
-  options: { query?: string; radius?: number; limit?: number } = {}
+  options: { query?: string; radius?: number; limit?: number } = {},
 ): Promise<VenueData[]> {
   const { limit = 10 } = options;
-  
+
   try {
-    console.log('[Nominatim] Fallback search for cafes near:', lat, lng);
+    console.log("[Nominatim] Fallback search for cafes near:", lat, lng);
     const response = await fetch(
       `https://nominatim.openstreetmap.org/search?` +
-      `q=cafe&format=json&limit=${limit}&` +
-      `viewbox=${lng - 0.02},${lat + 0.02},${lng + 0.02},${lat - 0.02}&bounded=1`,
+        `q=cafe&format=json&limit=${limit}&` +
+        `viewbox=${lng - 0.02},${lat + 0.02},${lng + 0.02},${lat - 0.02}&bounded=1`,
       {
         headers: {
-          'User-Agent': 'WorkSphere/1.0 (https://worksphere.app)',
+          "User-Agent": "WorkSphere/1.0 (https://worksphere.app)",
         },
-      }
+      },
     );
 
     if (!response.ok) {
-      console.error('[Nominatim] Error:', response.status);
+      console.error("[Nominatim] Error:", response.status);
       return [];
     }
 
     const data = await response.json();
-    console.log('[Nominatim] Found:', data.length, 'results');
-    
+    console.log("[Nominatim] Found:", data.length, "results");
+
     return data.map((place: any) => ({
       id: `nom-${place.place_id}`,
-      name: place.display_name?.split(',')[0] || 'Unknown Venue',
+      name: place.display_name?.split(",")[0] || "Unknown Venue",
       location: {
         formatted_address: place.display_name,
         lat: parseFloat(place.lat),
         lng: parseFloat(place.lon),
       },
-      categories: [{ name: 'Café' }],
-      distance: calculateDistance(lat, lng, parseFloat(place.lat), parseFloat(place.lon)),
+      categories: [{ name: "Café" }],
+      distance: calculateDistance(
+        lat,
+        lng,
+        parseFloat(place.lat),
+        parseFloat(place.lon),
+      ),
       photos: [],
     }));
   } catch (error) {
-    console.error('[Nominatim] Error:', error);
+    console.error("[Nominatim] Error:", error);
     return [];
   }
 }
@@ -228,23 +243,31 @@ async function searchVenuesNominatim(
  * Get category name from OSM tags
  */
 function getOSMCategory(tags: Record<string, string>): string {
-  if (tags.office === 'coworking' || tags.amenity === 'coworking_space') return 'Coworking Space';
-  if (tags.amenity === 'library') return 'Library';
-  if (tags.amenity === 'cafe' || tags.amenity === 'coffee_shop') return 'Café';
-  return 'Workspace';
+  if (tags.office === "coworking" || tags.amenity === "coworking_space")
+    return "Coworking Space";
+  if (tags.amenity === "library") return "Library";
+  if (tags.amenity === "cafe" || tags.amenity === "coffee_shop") return "Café";
+  return "Workspace";
 }
 
 /**
  * Calculate distance between two points in meters
  */
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+function calculateDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
   const R = 6371000; // Earth's radius in meters
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = 
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c);
 }
@@ -259,23 +282,23 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
  */
 export async function getVenuePhotos(
   venueName: string,
-  category: string = 'cafe',
-  count: number = 3
+  category: string = "cafe",
+  count: number = 3,
 ): Promise<string[]> {
   if (!UNSPLASH_ACCESS_KEY) {
-    console.warn('Unsplash API key not configured, using fallback');
+    console.warn("Unsplash API key not configured, using fallback");
     return getFallbackPhotos(category);
   }
 
   // Search terms based on venue type
   const searchTerms: Record<string, string> = {
-    'Café': 'coffee shop interior laptop',
-    'Coworking Space': 'coworking space modern office',
-    'Library': 'library study workspace',
-    'Workspace': 'workspace laptop coffee',
+    Café: "coffee shop interior laptop",
+    "Coworking Space": "coworking space modern office",
+    Library: "library study workspace",
+    Workspace: "workspace laptop coffee",
   };
 
-  const query = searchTerms[category] || 'cafe workspace laptop';
+  const query = searchTerms[category] || "cafe workspace laptop";
 
   try {
     const response = await fetch(
@@ -284,20 +307,20 @@ export async function getVenuePhotos(
         headers: {
           Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}`,
         },
-      }
+      },
     );
 
     if (!response.ok) {
-      console.error('Unsplash API error:', response.status);
+      console.error("Unsplash API error:", response.status);
       return getFallbackPhotos(category);
     }
 
     const data = await response.json();
-    return (data.results || []).map((photo: any) => 
-      photo.urls?.regular || photo.urls?.small
-    ).filter(Boolean);
+    return (data.results || [])
+      .map((photo: any) => photo.urls?.regular || photo.urls?.small)
+      .filter(Boolean);
   } catch (error) {
-    console.error('Unsplash error:', error);
+    console.error("Unsplash error:", error);
     return getFallbackPhotos(category);
   }
 }
@@ -308,14 +331,14 @@ export async function getVenuePhotos(
  */
 function getFallbackPhotos(category: string): string[] {
   const queries: Record<string, string> = {
-    'Café': 'coffee-shop',
-    'Coworking Space': 'office-workspace',
-    'Library': 'library',
-    'Workspace': 'laptop-cafe',
+    Café: "coffee-shop",
+    "Coworking Space": "office-workspace",
+    Library: "library",
+    Workspace: "laptop-cafe",
   };
-  
-  const query = queries[category] || 'workspace';
-  
+
+  const query = queries[category] || "workspace";
+
   // Unsplash Source URLs (free, no API key)
   return [
     `https://source.unsplash.com/800x600/?${query}&sig=1`,
@@ -338,47 +361,54 @@ export async function searchAndEnrichVenues(
     query?: string;
     radius?: number;
     limit?: number;
-  } = {}
+  } = {},
 ): Promise<VenueData[]> {
   const venues = await searchVenuesOSM(lat, lng, options);
-  
+
   // Enrich each venue with photos (in parallel, max 5 at a time)
   const enrichedVenues = await Promise.all(
     venues.slice(0, 5).map(async (venue) => {
-      const categoryName = venue.categories[0]?.name || 'Workspace';
+      const categoryName = venue.categories[0]?.name || "Workspace";
       const photos = await getVenuePhotos(venue.name, categoryName, 3);
       return { ...venue, photos };
-    })
+    }),
   );
 
   // Return enriched + non-enriched venues
   return [
     ...enrichedVenues,
-    ...venues.slice(5).map(v => ({ ...v, photos: getFallbackPhotos(v.categories[0]?.name || 'Workspace') })),
+    ...venues
+      .slice(5)
+      .map((v) => ({
+        ...v,
+        photos: getFallbackPhotos(v.categories[0]?.name || "Workspace"),
+      })),
   ];
 }
 
 /**
  * Get venue details by OSM ID
  */
-export async function getVenueDetails(osmId: string): Promise<VenueData | null> {
+export async function getVenueDetails(
+  osmId: string,
+): Promise<VenueData | null> {
   const cachedDetails = detailsCache.get(osmId);
   if (cachedDetails) {
-    console.log('[OSM Cache] Details hit for:', osmId);
+    console.log("[OSM Cache] Details hit for:", osmId);
     return cachedDetails;
   }
 
   // Extract numeric ID from 'osm-123456' format
-  const numericId = osmId.replace('osm-', '');
-  
+  const numericId = osmId.replace("osm-", "");
+
   try {
     const response = await fetch(
       `https://nominatim.openstreetmap.org/lookup?osm_ids=N${numericId}&format=json&addressdetails=1&extratags=1`,
       {
         headers: {
-          'User-Agent': 'WorkSphere/1.0',
+          "User-Agent": "WorkSphere/1.0",
         },
-      }
+      },
     );
 
     if (!response.ok) return null;
@@ -387,14 +417,18 @@ export async function getVenueDetails(osmId: string): Promise<VenueData | null> 
     if (!data.length) return null;
 
     const place = data[0];
-    const category = place.type === 'library' ? 'Library' : 
-                     place.type === 'cafe' ? 'Café' : 'Workspace';
-    
+    const category =
+      place.type === "library"
+        ? "Library"
+        : place.type === "cafe"
+          ? "Café"
+          : "Workspace";
+
     const photos = await getVenuePhotos(place.display_name, category, 5);
 
     const venueData: VenueData = {
       id: osmId,
-      name: place.display_name?.split(',')[0] || place.name,
+      name: place.display_name?.split(",")[0] || place.name,
       location: {
         formatted_address: place.display_name,
         locality: place.address?.city || place.address?.town,
@@ -406,8 +440,8 @@ export async function getVenueDetails(osmId: string): Promise<VenueData | null> 
       categories: [{ name: category }],
       photos,
       amenities: {
-        wifi: place.extratags?.internet_access === 'wlan',
-        outdoor_seating: place.extratags?.outdoor_seating === 'yes',
+        wifi: place.extratags?.internet_access === "wlan",
+        outdoor_seating: place.extratags?.outdoor_seating === "yes",
       },
       opening_hours: place.extratags?.opening_hours,
       website: place.extratags?.website,
@@ -417,7 +451,7 @@ export async function getVenueDetails(osmId: string): Promise<VenueData | null> 
     detailsCache.set(osmId, venueData);
     return venueData;
   } catch (error) {
-    console.error('OSM details error:', error);
+    console.error("OSM details error:", error);
     return null;
   }
 }
@@ -468,19 +502,21 @@ export function toFoursquareFormat(venue: VenueData): FoursquareVenue {
     categories: venue.categories.map((c, i) => ({
       id: i,
       name: c.name,
-      icon: { prefix: '', suffix: '' },
+      icon: { prefix: "", suffix: "" },
     })),
     distance: venue.distance,
     rating: undefined, // OSM doesn't have ratings
     price: undefined,
-    hours: venue.opening_hours ? {
-      display: venue.opening_hours,
-      open_now: undefined,
-    } : undefined,
+    hours: venue.opening_hours
+      ? {
+          display: venue.opening_hours,
+          open_now: undefined,
+        }
+      : undefined,
     photos: venue.photos.map((url, i) => ({
       id: i.toString(),
       prefix: url,
-      suffix: '',
+      suffix: "",
     })),
     tel: venue.phone,
     website: venue.website,
@@ -488,9 +524,9 @@ export function toFoursquareFormat(venue: VenueData): FoursquareVenue {
 }
 
 export const WORKSPACE_CATEGORIES = {
-  CAFE: 'cafe',
-  COFFEE_SHOP: 'coffee',
-  COWORKING: 'coworking',
-  LIBRARY: 'library',
-  ALL: 'cafe,coworking,library',
+  CAFE: "cafe",
+  COFFEE_SHOP: "coffee",
+  COWORKING: "coworking",
+  LIBRARY: "library",
+  ALL: "cafe,coworking,library",
 };

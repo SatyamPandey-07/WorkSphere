@@ -12,6 +12,8 @@ import {
   Info,
   Loader2,
   MapPin,
+  Mic,
+  MicOff,
   Navigation,
   Send,
   Star,
@@ -23,7 +25,8 @@ import {
   Copy,
   Check,
 } from "lucide-react";
-import { RefObject, useState, useEffect, useRef } from "react";
+import { RefObject, useState, useEffect, useRef, useCallback } from "react";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
 import { MessageRenderer } from "./GenerativeUI";
@@ -1028,6 +1031,69 @@ export function ChatInput({
   const charCount = safeInput.length;
   const isOverLimit = charCount > MAX_CHARS;
 
+  // ── Voice input banner state ─────────────────────────────────────────────
+  // Tracks whether the unsupported-browser banner is currently visible.
+  // It auto-dismisses after 6 s so it never blocks the UI permanently.
+  const [showVoiceBanner, setShowVoiceBanner] = useState(false);
+  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Show the banner and auto-hide it after 6 seconds. */
+  const triggerBanner = useCallback(() => {
+    setShowVoiceBanner(true);
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    bannerTimerRef.current = setTimeout(() => setShowVoiceBanner(false), 6000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    };
+  }, []);
+
+  // ── Speech recognition ───────────────────────────────────────────────────
+  /**
+   * When recognition returns a final transcript, prepend whatever the user
+   * had already typed (preserving their original input) then append the
+   * recognised text with a space separator.
+   */
+  const handleTranscript = useCallback(
+    (text: string) => {
+      if (!text) return;
+      const current = (input || "").trim();
+      onInputChange(current ? `${current} ${text}` : text);
+    },
+    [input, onInputChange],
+  );
+
+  const { isSupported, status, errorMessage, startListening, stopListening } =
+    useSpeechRecognition(handleTranscript);
+
+  const isListening = status === "listening";
+
+  /**
+   * Handle microphone button click.
+   * - Unsupported browser (e.g. Firefox Nightly without the flag) →
+   *   show a clear user-facing banner; do NOT crash silently.
+   * - Currently listening → stop recognition.
+   * - Idle / error → start recognition.
+   */
+  const handleMicClick = useCallback(() => {
+    if (!isSupported) {
+      triggerBanner();
+      return;
+    }
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  }, [isSupported, isListening, startListening, stopListening, triggerBanner]);
+
+  // Show the banner whenever the hook surfaces an error message too
+  useEffect(() => {
+    if (errorMessage) triggerBanner();
+  }, [errorMessage, triggerBanner]);
+
   let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
   if (isOverLimit) {
     counterColor = "text-red-500";
@@ -1035,21 +1101,95 @@ export function ChatInput({
     counterColor = "text-yellow-500";
   }
 
+  // ── Mic button styling ───────────────────────────────────────────────────
+  const micButtonBase =
+    "p-3 rounded-xl transition-all active:scale-95 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500";
+
+  const micButtonStyle = !isSupported
+    ? // Visually disabled but still focusable so screen readers can reach the
+      // tooltip / aria-label describing why it is unavailable.
+      `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed opacity-60`
+    : isListening
+      ? `${micButtonBase} bg-red-500 hover:bg-red-600 text-white animate-pulse`
+      : `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700`;
+
+  const micAriaLabel = !isSupported
+    ? "Voice input is not supported in this browser"
+    : isListening
+      ? "Stop voice input"
+      : "Start voice input";
+
   return (
     <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+      {/* ── Unsupported-browser / error banner ─────────────────────────── */}
+      {showVoiceBanner && (
+        <div
+          role="alert"
+          className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
+        >
+          <MicOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="font-semibold leading-snug">
+            {errorMessage ||
+              "Voice input is not supported in this browser. Please use Chrome, Edge, or enable speech recognition in Firefox (about:config → media.webspeech.recognition.enable)."}
+          </span>
+          <button
+            type="button"
+            aria-label="Dismiss voice input warning"
+            onClick={() => setShowVoiceBanner(false)}
+            className="ml-auto shrink-0 rounded p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <form
         id="ws-chat-form"
         onSubmit={onSubmit}
         className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:border-blue-600 transition-all shadow-inner"
       >
+        <button
+          type="button"
+          onClick={handleMicClick}
+          className={`p-3 rounded-xl transition-all active:scale-95 shadow-lg group ${
+            isListening
+              ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+              : "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
+          }`}
+          title={isListening ? "Stop dictation" : "Start dictation"}
+        >
+          <Mic className="w-5 h-5" />
+        </button>
         <input
           type="text"
           value={safeInput}
           onChange={(e) => onInputChange(e.target.value ?? "")}
-          placeholder="Where's the focus mode hotspot?"
+          placeholder={
+            isListening ? "Listening…" : "Where's the focus mode hotspot?"
+          }
           disabled={isLoading}
           className="flex-1 px-4 py-3 bg-transparent text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 text-sm font-bold"
         />
+
+        {/* ── Microphone button ──────────────────────────────────────────── */}
+        <button
+          type="button"
+          onClick={handleMicClick}
+          aria-label={micAriaLabel}
+          // Keep the button in the tab order even when unsupported so
+          // keyboard-only users discover the "not available" message.
+          aria-disabled={!isSupported}
+          title={micAriaLabel}
+          className={micButtonStyle}
+        >
+          {isListening ? (
+            <MicOff className="w-5 h-5" aria-hidden="true" />
+          ) : (
+            <Mic className="w-5 h-5" aria-hidden="true" />
+          )}
+        </button>
+
+        {/* ── Send button ────────────────────────────────────────────────── */}
         <button
           type="submit"
           disabled={isLoading || !input.trim() || isOverLimit}
@@ -1062,6 +1202,7 @@ export function ChatInput({
           )}
         </button>
       </form>
+
       <div className="mt-2 text-right">
         <span
           className={`text-xs font-semibold transition-colors ${counterColor}`}

@@ -27,6 +27,7 @@ import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/site-footer";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import FAQAccordion from "@/components/ui/FAQAccordion";
 
 export default function Home() {
   const [isVisible, setIsVisible] = useState(false);
@@ -445,6 +446,13 @@ export default function Home() {
               />
             ))}
           </div>
+        </div>
+
+        {/* FAQ Section */}
+        <div
+          className={`transition-all duration-1000 delay-600 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
+        >
+          <FAQAccordion />
         </div>
 
         {/* CTA */}

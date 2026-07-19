@@ -12,11 +12,11 @@ import {
   User,
   X,
 } from "lucide-react";
-import Cropper from "react-easy-crop";
+import Cropper, { Area } from "react-easy-crop";
 
 const getCroppedImg = async (
   imageSrc: string,
-  pixelCrop: any,
+  pixelCrop: Area,
 ): Promise<Blob> => {
   const image = new window.Image();
   image.src = imageSrc;
@@ -75,7 +75,7 @@ export function NotificationSettings() {
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   const timezones =
@@ -294,7 +294,7 @@ export function NotificationSettings() {
                 showGrid={false}
                 onCropChange={setCrop}
                 onZoomChange={setZoom}
-                onCropComplete={(_, croppedAreaPixels) =>
+                onCropComplete={(_: any, croppedAreaPixels: Area) =>
                   setCroppedAreaPixels(croppedAreaPixels)
                 }
               />
@@ -326,11 +326,12 @@ export function NotificationSettings() {
       <form onSubmit={handleSave} className="space-y-6">
         {/* Phone number */}
         <div>
-          <label className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2">
+          <label htmlFor="phone-number" className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2">
             Phone Number
           </label>
           <input
             type="tel"
+            id="phone-number"
             placeholder="+1234567890"
             value={phoneNumber}
             onChange={(e) => setPhoneNumber(e.target.value)}
@@ -344,12 +345,13 @@ export function NotificationSettings() {
 
         {/* WhatsApp webhook URL */}
         <div>
-          <label className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2 flex items-center gap-1.5">
+          <label htmlFor="whatsapp-webhook" className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2 flex items-center gap-1.5">
             <MessageCircle className="w-3.5 h-3.5 text-green-500" />
             WhatsApp Webhook URL
           </label>
           <input
             type="url"
+            id="whatsapp-webhook"
             placeholder="https://hooks.make.com/... or https://hooks.zapier.com/..."
             value={whatsappWebhookUrl}
             onChange={(e) => setWhatsappWebhookUrl(e.target.value)}

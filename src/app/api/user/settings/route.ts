@@ -20,7 +20,7 @@ export async function GET() {
         notificationEnd: true,
         timezone: true,
         imageUrl: true,
-        workStyleProfile: true, // <-- NEW: Fetching the profile
+        workStyleProfile: true, // Fetching the workStyleProfile settings for dashboard analytics
       },
     });
 

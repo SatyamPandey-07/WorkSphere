@@ -45,6 +45,7 @@ import Link from "next/link";
 import { MemoryManager } from "./MemoryManager";
 import { NotificationSettings } from "./NotificationSettings";
 import { CheckInHistory } from "./CheckInHistory";
+import { TelegramStatusBanner } from "@/components/dashboard/TelegramStatusBanner";
 
 interface AgentMetric {
   agent: string;
@@ -158,6 +159,11 @@ export default function DashboardPage() {
               Clear
             </button>
           </div>
+        </div>
+
+        {/* Telegram Status Banner */}
+        <div className="mb-8">
+          <TelegramStatusBanner />
         </div>
 
         {/* Stats Grid */}

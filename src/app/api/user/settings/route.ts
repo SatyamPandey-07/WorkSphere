@@ -15,6 +15,7 @@ export async function GET() {
         phoneNumber: true,
         smsAlertsEnabled: true,
         whatsappWebhookUrl: true,
+        telegramWebhookUrl: true,
         notificationStart: true,
         notificationEnd: true,
         timezone: true,
@@ -26,6 +27,8 @@ export async function GET() {
       phoneNumber: user?.phoneNumber || "",
       smsAlertsEnabled: user?.smsAlertsEnabled || false,
       whatsappWebhookUrl: user?.whatsappWebhookUrl || "",
+      telegramWebhookUrl: user?.telegramWebhookUrl || "",
+      telegramConnected: Boolean(user?.telegramWebhookUrl),
       notificationStart: user?.notificationStart || "",
       notificationEnd: user?.notificationEnd || "",
       timezone: user?.timezone || "UTC",
@@ -51,6 +54,7 @@ export async function POST(req: Request) {
       phoneNumber,
       smsAlertsEnabled,
       whatsappWebhookUrl,
+      telegramWebhookUrl,
       notificationStart,
       notificationEnd,
       timezone,
@@ -73,6 +77,9 @@ export async function POST(req: Request) {
       ...(smsAlertsEnabled !== undefined && { smsAlertsEnabled }),
       ...(whatsappWebhookUrl !== undefined && {
         whatsappWebhookUrl: whatsappWebhookUrl || null,
+      }),
+      ...(telegramWebhookUrl !== undefined && {
+        telegramWebhookUrl: telegramWebhookUrl || null,
       }),
       ...(notificationStart !== undefined && {
         notificationStart: notificationStart || null,
@@ -99,6 +106,8 @@ export async function POST(req: Request) {
       phoneNumber: updatedUser.phoneNumber || "",
       smsAlertsEnabled: updatedUser.smsAlertsEnabled,
       whatsappWebhookUrl: updatedUser.whatsappWebhookUrl || "",
+      telegramWebhookUrl: updatedUser.telegramWebhookUrl || "",
+      telegramConnected: Boolean(updatedUser.telegramWebhookUrl),
       notificationStart: updatedUser.notificationStart || "",
       notificationEnd: updatedUser.notificationEnd || "",
       timezone: updatedUser.timezone || "UTC",

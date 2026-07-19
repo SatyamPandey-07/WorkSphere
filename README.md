@@ -173,6 +173,8 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 - **Error Boundaries**: Graceful error handling prevents crashes
 - **Loading Skeletons**: Smooth loading states for better UX
 
+> See [docs/NEXTJS_PERFORMANCE_PLAYBOOK.md](./docs/NEXTJS_PERFORMANCE_PLAYBOOK.md) for a full guide on rendering strategies, bundle optimization, image optimization, caching, and Core Web Vitals measurement.
+
 ### 📊 Analytics & Monitoring
 
 - **Event Tracking**: Track searches, venue interactions, agent performance

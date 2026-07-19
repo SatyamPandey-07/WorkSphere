@@ -107,7 +107,7 @@ export default function Home() {
                 Collections
               </Link>
               <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
-                <UserButton />
+                <UserButton userProfileMode="navigation" userProfileUrl="/user-profile" />
               </div>
             </Show>
           </div>

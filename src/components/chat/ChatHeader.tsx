@@ -305,7 +305,7 @@ export function ChatHeader({
                 PROFILE
               </div>
             </div>
-            <UserButton />
+            <UserButton userProfileMode="navigation" userProfileUrl="/user-profile" />
           </div>
         </div>
       </div>

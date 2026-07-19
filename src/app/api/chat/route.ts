@@ -1410,41 +1410,44 @@ Address the user's query and include UI components if helpful.`;
   } catch (error) {
     console.error("Chat API error:", error);
     const message =
-    error instanceof Error ? error.message : "An unexpected error occurred";
+      error instanceof Error ? error.message : "An unexpected error occurred";
 
-  if (
-    message.includes("Invalid API Key") ||
-    message.includes("Unauthorized") ||
-    message.includes("401") ||
-    message.includes("Cohere API") ||
-    message.includes("COHERE_API_KEY")
-  ) {
+    if (
+      message.includes("Invalid API Key") ||
+      message.includes("Unauthorized") ||
+      message.includes("401") ||
+      message.includes("GROQ_API_KEY") ||
+      message.includes("Cohere API") ||
+      message.includes("COHERE_API_KEY")
+    ) {
+      return Response.json(
+        {
+          error:
+            "AI services are not configured. Please configure the required API keys in your environment variables.",
+        },
+        { status: 503 },
+      );
+    }
+
+    if (
+      message.includes("SCRAM") ||
+      message.includes("DATABASE_URL") ||
+      message.includes("Prisma")
+    ) {
+      return Response.json(
+        {
+          error:
+            "Database is not configured correctly. Please verify your DATABASE_URL.",
+        },
+        { status: 503 },
+      );
+    }
+
     return Response.json(
       {
-        error:
-          "AI services are not configured. Please configure the required API keys in your environment variables.",
+        error: "An unexpected server error occurred. Please try again later.",
       },
-      { status: 503 },
+      { status: 500 },
     );
   }
-
-  if (
-    message.includes("SCRAM") ||
-    message.includes("DATABASE_URL") ||
-    message.includes("Prisma")
-  ) {
-    return Response.json(
-      {
-        error:
-          "Database is not configured correctly. Please verify your DATABASE_URL.",
-      },
-      { status: 503 },
-    );
-  }
-
-  return Response.json(
-    { error: message },
-    { status: 500 },
-  );
-}
 }

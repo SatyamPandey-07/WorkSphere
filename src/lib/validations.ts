@@ -160,15 +160,21 @@ export type ConversationCreate = z.infer<typeof conversationCreateSchema>;
 export type MessageCreate = z.infer<typeof messageCreateSchema>;
 export type Favorite = z.infer<typeof favoriteSchema>;
 export type Location = z.infer<typeof locationSchema>;
-/**
- * Standard request validator helper with support for injection maps
- */
+
+// Validation helper
 export function validateRequest<T>(
   schema: z.ZodSchema<T>,
   data: unknown,
-): | { success: true; data: T } | { success: false; error: string } {
+):
+  | {
+      success: true;
+      data: T;
+    }
+  | {
+      success: false;
+      error: string;
+    } {
   const result = schema.safeParse(data);
-
   if (result.success) {
     return { success: true, data: result.data };
   }
@@ -180,4 +186,3 @@ export function validateRequest<T>(
       .join(", "),
   };
 }
-  

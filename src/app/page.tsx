@@ -3,7 +3,6 @@
 import Link from "next/link";
 import Image from "next/image";
 import {
-  MapPin,
   Wifi,
   Zap,
   Volume2,
@@ -11,7 +10,6 @@ import {
   Sparkles,
   Download,
   ArrowRight,
-  Coffee,
   Camera,
   Radio,
   Star,
@@ -21,18 +19,21 @@ import {
   FileText,
   BarChart3,
   ArrowUp,
+  MapPin,
+  Coffee,
   LayoutGrid,
 } from "lucide-react";
-
-import { UserButton, useUser } from "@clerk/nextjs";
+import { Show, UserButton, useUser } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/site-footer";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { TopNav } from "@/components/TopNav";
 import FAQAccordion from "@/components/ui/FAQAccordion";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function Home() {
   const [isVisible, setIsVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
+
   const { isSignedIn } = useUser();
 
   useEffect(() => {
@@ -80,15 +81,16 @@ export default function Home() {
               <ThemeToggle />
             </div>
             <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-700 hidden sm:block" />
+
             {!isSignedIn ? (
               <>
                 <Link href="/sign-in">
-                  <button className="px-3 sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap">
+                  <button className="px-3 cursor-pointer sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap">
                     Sign In
                   </button>
                 </Link>
                 <Link href="/sign-up">
-                  <button className="px-4 sm:px-5 py-2 text-sm rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105 whitespace-nowrap">
+                  <button className="px-4 sm:px-5 cursor-pointer py-2 text-sm rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105 whitespace-nowrap">
                     Get Started
                   </button>
                 </Link>
@@ -110,13 +112,17 @@ export default function Home() {
                   Collections
                 </Link>
                 <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
-                  <UserButton userProfileMode="navigation" userProfileUrl="/user-profile" />
+                  <UserButton
+                    userProfileMode="navigation"
+                    userProfileUrl="/user-profile"
+                  />
                 </div>
               </>
             )}
           </div>
         </div>
       </nav>
+      <TopNav />
 
       {/* Hero */}
       <main className="container mx-auto px-4">
@@ -169,41 +175,40 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-  {!isSignedIn ? (
-    <>
-      <Link
-        href="/sign-up"
-        className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
-        style={{
-          backgroundImage:
-            "linear-gradient(to right, #2563eb, #7c3aed)",
-        }}
-      >
-        Start for Free
-        <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-      </Link>
+            <Show when="signed-out">
+              <Link
+                href="/sign-up"
+                className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(to right, #2563eb, #7c3aed)",
+                }}
+              >
+                Start for Free
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+              <a
+                href="#features"
+                className="px-8 py-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-zinc-800 dark:text-white/80 font-semibold text-base hover:bg-zinc-50 hover:border-zinc-300 dark:hover:bg-white/10 dark:hover:border-white/20 transition-all backdrop-blur-sm shadow-sm dark:shadow-none"
+              >
+                See Features
+              </a>
+            </Show>
 
-      <a
-        href="#features"
-        className="px-8 py-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-zinc-800 dark:text-white/80 font-semibold text-base hover:bg-zinc-50 hover:border-zinc-300 dark:hover:bg-white/10 dark:hover:border-white/20 transition-all backdrop-blur-sm shadow-sm dark:shadow-none"
-      >
-        See Features
-      </a>
-    </>
-  ) : (
-    <Link
-      href="/ai"
-      className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
-      style={{
-        backgroundImage:
-          "linear-gradient(to right, #2563eb, #7c3aed)",
-      }}
-    >
-      Open Dashboard
-      <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-    </Link>
-  )}
-</div>
+            <Show when="signed-in">
+              <Link
+                href="/ai"
+                className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(to right, #2563eb, #7c3aed)",
+                }}
+              >
+                Open Dashboard
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </Link>
+            </Show>
+          </div>
 
           <p className="mt-6 text-xs text-zinc-500 dark:text-white/30 md:hidden flex items-center justify-center gap-1.5">
             <Download className="w-3 h-3" />

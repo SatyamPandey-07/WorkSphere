@@ -4,8 +4,8 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import I18nProvider from "../components/I18nProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
+import { SoundProvider } from "../components/SoundProvider";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
-
 import { headers, cookies } from "next/headers";
 
 const THEME_INIT_SCRIPT = `
@@ -92,11 +92,14 @@ export default async function RootLayout({
     "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
 
   const cookieStore = await cookies();
-  const theme = (cookieStore.get("worksphere-theme")?.value as "light" | "dark") || "light";
+  const theme =
+    (cookieStore.get("worksphere-theme")?.value as "light" | "dark") || "light";
 
   const innerContent = (
     <ThemeProvider initialTheme={theme}>
-      <I18nProvider>{children}</I18nProvider>
+      <SoundProvider>
+        <I18nProvider>{children}</I18nProvider>
+      </SoundProvider>
     </ThemeProvider>
   );
 
@@ -122,7 +125,11 @@ export default async function RootLayout({
     );
 
   return (
-    <html lang="en" className={theme === "dark" ? "dark" : ""} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={theme === "dark" ? "dark" : ""}
+      suppressHydrationWarning
+    >
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />

@@ -315,7 +315,7 @@ export function VenueSubmissionModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -408,7 +408,7 @@ export function VenueSubmissionModal({
               <button
                 type="button"
                 onClick={handleUseMyLocation}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md transition-all active:scale-95"
+                className="px-3 py-2 bg-blue-600 cursor-pointer text-white rounded-lg hover:bg-blue-700 shadow-md transition-all active:scale-95"
               >
                 <MapPin className="w-5 h-5" />
               </button>
@@ -642,7 +642,7 @@ export function VenueSubmissionModal({
           <button
             type="submit"
             disabled={isSubmitting || !isSignedIn}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-lg disabled:opacity-50 transition-all shadow-lg glow-blue active:scale-[0.98]"
+            className="w-full cursor-pointer flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-lg disabled:opacity-50 transition-all shadow-lg glow-blue active:scale-[0.98]"
           >
             {isSubmitting ? (
               <>

@@ -487,13 +487,13 @@ export function PWABanner() {
               <div className="mt-4 flex gap-2">
                 <button
                   onClick={handleInstallClick}
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md shadow-blue-500/20"
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 cursor-pointer active:scale-95 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md shadow-blue-500/20"
                 >
                   Install Now
                 </button>
                 <button
                   onClick={handleDismiss}
-                  className="px-3.5 py-1.5 bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-wider rounded-lg border border-white/10 transition-all"
+                  className="px-3.5 py-1.5 bg-white/5 hover:bg-white/10 cursor-pointer text-[10px] font-black uppercase tracking-wider rounded-lg border border-white/10 transition-all"
                 >
                   Maybe Later
                 </button>

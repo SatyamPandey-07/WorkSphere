@@ -28,6 +28,8 @@ describe("ShortcutsModal", () => {
       screen.getByText("Close any active modal or panel"),
     ).toBeInTheDocument();
     expect(screen.getByText("Focus the search input")).toBeInTheDocument();
+    expect(screen.getByText("Ctrl / ⌘")).toBeInTheDocument();
+    expect(screen.getByText("K")).toBeInTheDocument();
     expect(
       screen.getByText("Select next venue card in the list"),
     ).toBeInTheDocument();

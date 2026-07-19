@@ -23,11 +23,20 @@
 
 - **Founder & CTO**: [Satyam Pandey](https://github.com/SatyamPandey-07)
 
-### 🚀 Contributors (Live API Tracker)
+> 🔔 **Update for Contributors:**
+>
+> The limit for active assigned issues per person has been increased to **10** (previously 5).
+>
+> You can claim any open issue by posting a comment with exactly:
+> `/claim`
+>
+> You will have **6 days** to complete it! 🚀
+
+### 🚀 Contributors (All 43 Active Rockstars)
 
 Automated contributor tracking synced directly via the GitHub API:
 
-[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100&columns=12)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 
 ---
 
@@ -61,15 +70,16 @@ Automated contributor tracking synced directly via the GitHub API:
 
 The chatbot supports voice-to-text via the [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition):
 
-| Browser | Voice Input |
-|---------|-------------|
-| Chrome 33+ | ✅ Supported |
-| Edge 79+ | ✅ Supported |
+| Browser                 | Voice Input                  |
+| ----------------------- | ---------------------------- |
+| Chrome 33+              | ✅ Supported                 |
+| Edge 79+                | ✅ Supported                 |
 | Safari (desktop/mobile) | ✅ Supported (webkit prefix) |
-| Firefox Stable | ⚠️ Not supported by default |
-| Firefox Nightly | ⚠️ Requires flag — see below |
+| Firefox Stable          | ⚠️ Not supported by default  |
+| Firefox Nightly         | ⚠️ Requires flag — see below |
 
 **Firefox users:** The Web Speech API is disabled by default. To enable it:
+
 1. Navigate to `about:config` in Firefox.
 2. Search for `media.webspeech.recognition.enable` and set it to `true`.
 3. Reload the application.

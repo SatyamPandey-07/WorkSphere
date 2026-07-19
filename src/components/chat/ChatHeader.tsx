@@ -28,7 +28,9 @@ import {
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
 import Link from "next/link";
+import { VolumeX } from "lucide-react";
 import { ThemeToggle } from "../ThemeToggle";
+import { useSound } from "../SoundProvider";
 import { EmptyState } from "../ui/EmptyState";
 
 interface Conversation {
@@ -103,6 +105,8 @@ export function ChatHeader({
 
   onShareSession,
 }: ChatHeaderProps) {
+  const { soundEnabled, toggleSound } = useSound();
+  console.log(soundEnabled);
   const [isHubOpen, setIsHubOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -171,7 +175,7 @@ export function ChatHeader({
           <div className="relative">
             <button
               onClick={() => setIsHubOpen(!isHubOpen)}
-              className="flex items-center gap-2 px-3 py-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all active:scale-95"
+              className="flex items-center gap-2 px-3 py-2 cursor-pointer bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all active:scale-95"
             >
               <Globe className="w-3.5 h-3.5 text-blue-500" />
               <span className="hidden md:inline">{getActiveHubName()}</span>
@@ -189,7 +193,7 @@ export function ChatHeader({
                       onLocationChange(hub.lat, hub.lng);
                       setIsHubOpen(false);
                     }}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-[10px] font-bold uppercase tracking-widest text-zinc-600 dark:text-zinc-400 border-b border-zinc-100 dark:border-zinc-800 last:border-0 transition-colors"
+                    className="w-full cursor-pointer flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-[10px] font-bold uppercase tracking-widest text-zinc-600 dark:text-zinc-400 border-b border-zinc-100 dark:border-zinc-800 last:border-0 transition-colors"
                   >
                     <hub.icon className="w-3.5 h-3.5 text-blue-500" />
                     {hub.name}
@@ -202,7 +206,7 @@ export function ChatHeader({
           {/* New Chat */}
           <button
             onClick={onNewChat}
-            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
             title="New Chat"
           >
             <RotateCcw className="w-4 h-4" />
@@ -212,7 +216,7 @@ export function ChatHeader({
           {onShareSession && (
             <button
               onClick={onShareSession}
-              className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-green-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
+              className="p-2 bg-zinc-100  cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
               title="Share Session"
             >
               <Share2 className="w-4 h-4" />
@@ -222,7 +226,7 @@ export function ChatHeader({
           {/* My Bookings History */}
           <button
             onClick={onShowBookings}
-            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
             title="My Residencies"
           >
             <Inbox className="w-4 h-4" />
@@ -231,7 +235,7 @@ export function ChatHeader({
           {/* Collections */}
           <Link
             href="/collections"
-            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
             title="Collections"
           >
             <LayoutGrid className="w-4 h-4" />
@@ -243,10 +247,10 @@ export function ChatHeader({
               setShowHistory(!showHistory);
               setShowFilters(false);
             }}
-            className={`p-2 border rounded-xl transition-all active:scale-95 ${
+            className={`p-2 border cursor-pointer rounded-xl transition-all active:scale-95 ${
               showHistory
                 ? "bg-purple-600 border-purple-400 text-white shadow-lg shadow-purple-500/20"
-                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200"
+                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-blue-600"
             }`}
             title="Chat History"
           >
@@ -259,10 +263,10 @@ export function ChatHeader({
               setShowFilters(!showFilters);
               setShowHistory(false);
             }}
-            className={`p-2 border rounded-xl transition-all active:scale-95 ${
+            className={`p-2 border cursor-pointer rounded-xl transition-all active:scale-95 ${
               showFilters
                 ? "bg-orange-600 border-orange-400 text-white shadow-lg shadow-orange-500/20"
-                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200"
+                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-blue-600"
             }`}
             title="Filters"
           >
@@ -272,7 +276,7 @@ export function ChatHeader({
           {/* Analytics Link */}
           <Link
             href="/analytics"
-            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden lg:flex"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden lg:flex"
             title="Intelligence Dashboard"
           >
             <BarChart3 className="w-4 h-4" />
@@ -280,13 +284,24 @@ export function ChatHeader({
 
           {/* Theme Toggle */}
           <ThemeToggle />
+          <button
+            onClick={toggleSound}
+            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
+            title={soundEnabled ? "Mute Sounds" : "Enable Sounds"}
+          >
+            {soundEnabled ? (
+              <Volume2 className="w-4 h-4" />
+            ) : (
+              <VolumeX className="w-4 h-4" />
+            )}
+          </button>
 
-          <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
+          <div className="w-px h-8 cursor-pointer bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
 
           {/* Add Venue Suggestion Button - High Contrast */}
           <button
             onClick={onOpenVenueSubmission}
-            className="items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-green-500/20 transition-all border border-green-400/30 active:scale-95 group hidden sm:flex"
+            className="items-center gap-2 cursor-pointer px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-green-500/20 transition-all border border-green-400/30 active:scale-95 group hidden sm:flex"
             title="Suggest a new workspace"
           >
             <PlusCircle className="w-4 h-4 group-hover:rotate-90 transition-transform" />
@@ -305,7 +320,10 @@ export function ChatHeader({
                 PROFILE
               </div>
             </div>
-            <UserButton userProfileMode="navigation" userProfileUrl="/user-profile" />
+            <UserButton
+              userProfileMode="navigation"
+              userProfileUrl="/user-profile"
+            />
           </div>
         </div>
       </div>

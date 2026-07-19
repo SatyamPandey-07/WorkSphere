@@ -24,8 +24,11 @@ import {
   List,
   Copy,
   Check,
+  Clock,
+  Trash2,
 } from "lucide-react";
 import { RefObject, useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
@@ -788,19 +791,36 @@ export function MessageList({
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
+  const scrollToBottomIfNeeded = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const isAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      200;
+    if (isAtBottom || isLoading) {
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+      });
+    }
+  }, [isLoading]);
+
+  // Re-check scroll position whenever messages change or loading state changes
+  useEffect(() => {
+    scrollToBottomIfNeeded();
+  }, [messages, isLoading, scrollToBottomIfNeeded]);
+
+  // Also re-check whenever the container's own size changes (e.g. the input
+  // box growing to multiple lines shrinks the visible message area, which
+  // previously left new messages hidden below the fold)
   useEffect(() => {
     const container = containerRef.current;
-    if (container) {
-      const isAtBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight <
-        200;
-      if (isAtBottom || isLoading) {
-        requestAnimationFrame(() => {
-          container.scrollTop = container.scrollHeight;
-        });
-      }
-    }
-  }, [messages, isLoading]);
+    if (!container) return;
+    const resizeObserver = new ResizeObserver(() => {
+      scrollToBottomIfNeeded();
+    });
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [scrollToBottomIfNeeded]);
 
   return (
     <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -1031,6 +1051,42 @@ export function ChatInput({
   const charCount = safeInput.length;
   const isOverLimit = charCount > MAX_CHARS;
 
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    const history = localStorage.getItem("ws-recent-searches");
+    if (history) {
+      try {
+        setRecentSearches(JSON.parse(history));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
+  const saveToHistory = (term: string) => {
+    const updated = [
+      term,
+      ...recentSearches.filter((item) => item !== term),
+    ].slice(0, 5);
+    setRecentSearches(updated);
+    localStorage.setItem("ws-recent-searches", JSON.stringify(updated));
+  };
+
+  const clearHistory = () => {
+    setRecentSearches([]);
+    localStorage.removeItem("ws-recent-searches");
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (safeInput.trim() && !isOverLimit) {
+      saveToHistory(safeInput.trim());
+    }
+    onSubmit(e);
+  };
+
   // ── Voice input banner state ─────────────────────────────────────────────
   // Tracks whether the unsupported-browser banner is currently visible.
   // It auto-dismisses after 6 s so it never blocks the UI permanently.
@@ -1120,7 +1176,52 @@ export function ChatInput({
       : "Start voice input";
 
   return (
-    <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+    <div className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+      <AnimatePresence>
+        {isFocused && recentSearches.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="absolute bottom-full left-4 right-4 mb-2 z-50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl flex flex-col gap-3"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                Recent Searches
+              </span>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  clearHistory();
+                }}
+                className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" />
+                Clear
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {recentSearches.map((term) => (
+                <button
+                  key={term}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onInputChange(term);
+                  }}
+                  className="px-3 py-1.5 bg-zinc-100 hover:bg-blue-50 dark:bg-zinc-900 dark:hover:bg-blue-950/30 border border-zinc-200/50 dark:border-zinc-800 hover:border-blue-200 dark:hover:border-blue-900/50 text-[11px] font-black uppercase tracking-tight rounded-xl text-zinc-600 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 transition-all flex items-center gap-1"
+                >
+                  {term}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ── Unsupported-browser / error banner ─────────────────────────── */}
       {showVoiceBanner && (
         <div
@@ -1145,7 +1246,7 @@ export function ChatInput({
 
       <form
         id="ws-chat-form"
-        onSubmit={onSubmit}
+        onSubmit={handleFormSubmit}
         className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:border-blue-600 transition-all shadow-inner"
       >
         <button
@@ -1164,6 +1265,8 @@ export function ChatInput({
           type="text"
           value={safeInput}
           onChange={(e) => onInputChange(e.target.value ?? "")}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           placeholder={
             isListening ? "Listening…" : "Where's the focus mode hotspot?"
           }

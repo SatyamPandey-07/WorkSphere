@@ -4,8 +4,8 @@ import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import I18nProvider from "../components/I18nProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
+import { SoundProvider } from "../components/SoundProvider";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
-
 import { headers, cookies } from "next/headers";
 
 const THEME_INIT_SCRIPT = `
@@ -95,6 +95,10 @@ export default async function RootLayout({
   const theme = (cookieStore.get("worksphere-theme")?.value as "light" | "dark") || "light";
 
   const innerContent = (
+    <ThemeProvider>
+      <SoundProvider>
+        <I18nProvider>{children}</I18nProvider>
+      </SoundProvider>
     <ThemeProvider initialTheme={theme}>
       <I18nProvider>{children}</I18nProvider>
     </ThemeProvider>

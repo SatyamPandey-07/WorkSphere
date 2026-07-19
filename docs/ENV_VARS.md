@@ -35,6 +35,7 @@ The table below lists every environment variable currently used by WorkSphere.
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | ✅ Yes | Route used for the sign-in page. |
 | `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | ✅ Yes | Route used for the registration page. |
 | `WEBHOOK_SECRET` | ✅ Yes | Secret used to verify incoming Clerk webhook requests. |
+| `CSRF_SECRET` | Optional | HMAC secret used to sign CSRF tokens. Falls back to `CLERK_SECRET_KEY` if unset (dev-only fallback outside production). |
 | `GROQ_API_KEY` | ✅ Yes | Enables AI chat, recommendations, and agent-based features. |
 | `COHERE_API_KEY` | Optional | Enables semantic search and AI memory capabilities. |
 | `PEXELS_API_KEY` | Optional | Retrieves venue and gallery images from the Pexels API. |
@@ -111,6 +112,23 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
 - Variables beginning with `NEXT_PUBLIC_` are exposed to the browser.
 - Keep `CLERK_SECRET_KEY` and `WEBHOOK_SECRET` private.
+
+---
+
+## CSRF Protection
+
+WorkSphere signs CSRF tokens using an HMAC secret.
+
+### Variable
+
+\`\`\`env
+CSRF_SECRET=
+\`\`\`
+
+### Notes
+
+- Optional. If unset, falls back to `CLERK_SECRET_KEY`.
+- A dev-only fallback secret is used outside production — set `CSRF_SECRET` explicitly in production deployments.
 
 ---
 

@@ -115,7 +115,7 @@ npx playwright test -g "should show chat interface or auth prompt"
 npx playwright install chromium
 ```
 
-**Environment variables:** the app reads Clerk, database, and API keys from `.env`. For local E2E runs you need at minimum a valid `DATABASE_URL` and Clerk publishable/secret keys (see `docs/ENVIRONMENT_VARIABLES.md`), since `webServer` boots a real `npm run dev` instance.
+**Environment variables:** the app reads Clerk, database, and API keys from `.env`. For local E2E runs you need at minimum a valid `DATABASE_URL` and Clerk publishable/secret keys (see `docs/ENV_VARS.md`), since `webServer` boots a real `npm run dev` instance.
 
 ---
 

@@ -159,7 +159,7 @@ Logging is designed to preserve application visibility while protecting user pri
 
 Application keys are managed using environment variables:
 - **Client Exposure**: Only client-side variables prefixed with `NEXT_PUBLIC_` are exposed in browser bundles.
-- **Local Fallbacks**: Secure offline development defaults are supplied for local database, mock Clerk keys, and optional integrations in `.env.local` to enable offline execution without credentials ([ENVIRONMENT_VARIABLES.md](file:///c:/Codes/WorkSphere/docs/ENVIRONMENT_VARIABLES.md)).
+- **Local Fallbacks**: Secure offline development defaults are supplied for local database, mock Clerk keys, and optional integrations in `.env.local` to enable offline execution without credentials ([ENVIRONMENT_VARIABLES.md](file:///c:/Codes/WorkSphere/docs/ENV_VARS.md)).
 - **Key Storage**: Production secrets must be managed using the hosting platform's secure key management infrastructure and never committed to source control.
 
 ---

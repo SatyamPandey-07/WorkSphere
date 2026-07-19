@@ -28,7 +28,9 @@ import {
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
 import Link from "next/link";
+import { Volume2, VolumeX } from "lucide-react";
 import { ThemeToggle } from "../ThemeToggle";
+import { useSound } from "../SoundProvider";
 import { EmptyState } from "../ui/EmptyState";
 
 interface Conversation {
@@ -103,6 +105,8 @@ export function ChatHeader({
 
   onShareSession,
 }: ChatHeaderProps) {
+  const { soundEnabled, toggleSound } = useSound();
+  console.log(soundEnabled);
   const [isHubOpen, setIsHubOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -280,6 +284,17 @@ export function ChatHeader({
 
           {/* Theme Toggle */}
           <ThemeToggle />
+          <button
+            onClick={toggleSound}
+            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
+            title={soundEnabled ? "Mute Sounds" : "Enable Sounds"}
+          >
+            {soundEnabled ? (
+              <Volume2 className="w-4 h-4" />
+            ) : (
+              <VolumeX className="w-4 h-4" />
+            )}
+          </button>
 
           <div className="w-px h-8 cursor-pointer bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
 

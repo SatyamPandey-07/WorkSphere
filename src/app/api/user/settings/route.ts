@@ -20,6 +20,7 @@ export async function GET() {
         notificationEnd: true,
         timezone: true,
         imageUrl: true,
+        workStyleProfile: true, // <-- NEW: Fetching the profile
       },
     });
 
@@ -33,6 +34,7 @@ export async function GET() {
       notificationEnd: user?.notificationEnd || "",
       timezone: user?.timezone || "UTC",
       imageUrl: user?.imageUrl || "",
+      workStyleProfile: user?.workStyleProfile || "", // <-- NEW: Returning it to the frontend
     });
   } catch (error: any) {
     console.error("GET /api/user/settings error:", error);
@@ -59,6 +61,7 @@ export async function POST(req: Request) {
       notificationEnd,
       timezone,
       imageUrl,
+      workStyleProfile, // <-- NEW: Extracting from frontend request
     } = await req.json();
 
     if (
@@ -89,6 +92,9 @@ export async function POST(req: Request) {
       }),
       ...(timezone !== undefined && { timezone: timezone || "UTC" }),
       ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
+      ...(workStyleProfile !== undefined && {
+        workStyleProfile: workStyleProfile || null,
+      }), // <-- NEW: Adding to DB update payload
     };
 
     const updatedUser = await prisma.user.upsert({
@@ -112,6 +118,7 @@ export async function POST(req: Request) {
       notificationEnd: updatedUser.notificationEnd || "",
       timezone: updatedUser.timezone || "UTC",
       imageUrl: updatedUser.imageUrl || "",
+      workStyleProfile: updatedUser.workStyleProfile || "", // <-- NEW: Returning success
     });
   } catch (error: any) {
     console.error("POST /api/user/settings error:", error);

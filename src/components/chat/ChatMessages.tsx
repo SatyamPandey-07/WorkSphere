@@ -20,6 +20,8 @@ import {
   Zap,
   LayoutGrid,
   List,
+  Copy,
+  Check,
 } from "lucide-react";
 import { RefObject, useState, useEffect, useRef } from "react";
 import { BrainTerminal } from "./BrainTerminal";
@@ -27,7 +29,7 @@ import { trackVenueInteraction } from "@/lib/analytics";
 import { MessageRenderer } from "./GenerativeUI";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { ComparisonDrawer } from "@/components/ComparisonDrawer"; // Added this import
+import { ComparisonDrawer } from "@/components/ComparisonDrawer";
 import { ChatMessageSkeleton } from "@/components/ui/skeleton";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
@@ -108,7 +110,6 @@ interface VenueChatCardProps {
   tabIndex?: number;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   "data-index"?: number;
-  // --- New Props for Issue #614 ---
   isSelected?: boolean;
   compareDisabled?: boolean;
   onToggleCompare?: (venue: Venue) => void;
@@ -204,7 +205,6 @@ export function VenueChatCard({
           data-index={dataIndex}
           className="border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 bg-white dark:bg-zinc-900 hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer shadow-sm my-1 active:scale-[0.99] flex items-center gap-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
         >
-          {/* Photo thumbnail */}
           {photoLoading ? (
             <div className="w-12 h-12 bg-zinc-100 dark:bg-zinc-800 animate-pulse rounded-lg shrink-0" />
           ) : (
@@ -221,7 +221,6 @@ export function VenueChatCard({
             </div>
           )}
 
-          {/* Content Area */}
           <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <div className="flex items-center gap-1.5">
@@ -242,7 +241,6 @@ export function VenueChatCard({
               )}
             </div>
 
-            {/* Details (wifi, outlets) horizontally */}
             <div className="flex items-center gap-2 shrink-0">
               {venue.wifi && (
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/20">
@@ -271,12 +269,10 @@ export function VenueChatCard({
             </div>
           </div>
 
-          {/* Mini Actions */}
           <div
             className="flex items-center gap-1.5 shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Compare Checkbox (List View) */}
             {onToggleCompare && (
               <label
                 className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-all ${
@@ -347,7 +343,6 @@ export function VenueChatCard({
         data-index={dataIndex}
         className="relative border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-2xl hover:scale-[1.02] transition-all cursor-pointer shadow-lg my-2 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
       >
-        {/* Venue photo */}
         {photoLoading ? (
           <div className="w-full h-44 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
         ) : (
@@ -363,13 +358,11 @@ export function VenueChatCard({
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
 
-            {/* Category Tag */}
             <span className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-black px-2 py-1 rounded-md bg-zinc-950 border border-zinc-700 text-white">
               <CategoryIcon className="w-3 h-3" />
               {venue.category?.replace("_", " ")}
             </span>
 
-            {/* Compare Checkbox (Card View Overlay) */}
             {onToggleCompare && (
               <div
                 className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2.5 py-1.5 rounded-lg shadow-md backdrop-blur-md"
@@ -423,7 +416,6 @@ export function VenueChatCard({
                 </p>
               )}
 
-              {/* Amenity badges */}
               <div className="flex flex-wrap items-center gap-2 mt-2">
                 {venue.wifi && (
                   <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-green-500/10 border border-green-500/20">
@@ -451,7 +443,6 @@ export function VenueChatCard({
                 )}
               </div>
 
-              {/* Action buttons */}
               <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
@@ -572,6 +563,7 @@ interface VenueListingsProps {
   onRateVenue: (venue: Venue) => void;
   onOpenDetails: (venue: Venue) => void;
   onBook: (venue: Venue) => void;
+  onLoadMore?: () => Promise<void>;
 }
 
 export function VenueListings({
@@ -582,12 +574,58 @@ export function VenueListings({
   onRateVenue,
   onOpenDetails,
   onBook,
+  onLoadMore,
 }: VenueListingsProps) {
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // State to track venues selected for comparison
   const [selectedVenues, setSelectedVenues] = useState<Venue[]>([]);
+
+  // INFINITE SCROLL STATES
+  const [visibleCount, setVisibleCount] = useState(5);
+  const [isFetchingNextPage, setIsFetchingNextPage] = useState(false);
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  // FIX 1: Reset pagination state when a new search result set arrives
+  useEffect(() => {
+    setVisibleCount(5);
+    setIsFetchingNextPage(false);
+  }, [venues]);
+
+  // FIX 2 & 3: Clean up timer and support explicit pagination callback
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetchingNextPage) {
+          // If we have more venues locally, mock the pagination load
+          if (visibleCount < venues.length) {
+            setIsFetchingNextPage(true);
+            timeoutId = setTimeout(() => {
+              setVisibleCount((prev) => Math.min(prev + 5, venues.length));
+              setIsFetchingNextPage(false);
+            }, 800);
+          }
+          // If we hit the end of the local array and have an API callback, fetch real data
+          else if (onLoadMore) {
+            setIsFetchingNextPage(true);
+            onLoadMore().finally(() => setIsFetchingNextPage(false));
+          }
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => {
+      observer.disconnect();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [visibleCount, venues.length, isFetchingNextPage, onLoadMore]);
 
   const handleToggleCompare = (venue: Venue) => {
     setSelectedVenues((prev) => {
@@ -668,7 +706,7 @@ export function VenueListings({
         />
       ) : (
         <div className={viewMode === "card" ? "space-y-3" : "space-y-2"}>
-          {venues.slice(0, 5).map((venue, index) => (
+          {venues.slice(0, visibleCount).map((venue, index) => (
             <VenueChatCard
               key={venue.id}
               venue={venue}
@@ -687,6 +725,15 @@ export function VenueListings({
               onToggleCompare={handleToggleCompare}
             />
           ))}
+
+          {/* Infinite Scroll Sentinel */}
+          {(visibleCount < venues.length || onLoadMore) && (
+            <div ref={observerTarget} className="py-4 flex justify-center">
+              {isFetchingNextPage && (
+                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -738,7 +785,6 @@ export function MessageList({
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll logic to handle rapid streaming chunks and code block heights
   useEffect(() => {
     const container = containerRef.current;
     if (container) {
@@ -789,13 +835,18 @@ export function MessageList({
               className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${
+                className={`group relative max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${
                   message.role === "user"
                     ? "bg-zinc-950 border-zinc-800 text-white rounded-tr-none"
                     : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
                 }`}
               >
-                <div className="text-sm font-medium leading-relaxed">
+                {message.role === "assistant" && (
+                  <CopyMessageButton text={message.content} />
+                )}
+                <div
+                  className={`text-sm font-medium leading-relaxed ${message.role === "assistant" ? "pr-6" : ""}`}
+                >
                   {message.role === "assistant" ? (
                     <div className="relative">
                       <MessageRenderer content={message.content} />
@@ -930,6 +981,31 @@ export function MessageList({
 
 function TerminalIcon(props: any) {
   return <span {...props}>💻</span>;
+}
+
+function CopyMessageButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute top-2 right-2 p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-all opacity-0 group-hover:opacity-100"
+      title="Copy message"
+      aria-label="Copy message"
+    >
+      {copied ? (
+        <Check className="w-3.5 h-3.5 text-green-500" />
+      ) : (
+        <Copy className="w-3.5 h-3.5" />
+      )}
+    </button>
+  );
 }
 
 // ─── ChatInput ────────────────────────────────────────────────────────────────

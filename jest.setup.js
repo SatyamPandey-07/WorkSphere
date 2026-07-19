@@ -171,3 +171,14 @@ jest.mock("groq-sdk", () => {
     Groq: GroqMock,
   };
 });
+
+// Mock IntersectionObserver for JSDOM testing environment
+global.IntersectionObserver = class IntersectionObserver {
+  constructor(callback) {
+    this.callback = callback;
+  }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+

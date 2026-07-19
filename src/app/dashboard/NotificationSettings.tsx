@@ -18,7 +18,7 @@ const getCroppedImg = async (
   imageSrc: string,
   pixelCrop: any,
 ): Promise<Blob> => {
-  const image = new Image();
+  const image = new window.Image();
   image.src = imageSrc;
   await new Promise((resolve) => (image.onload = resolve));
 

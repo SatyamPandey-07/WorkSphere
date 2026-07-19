@@ -772,13 +772,25 @@ export function EnhancedChatbot({
       });
 
       if (!response.ok) {
-        if (response.status === 429) {
-          throw new Error(
-            "High traffic detected. Please wait a few seconds and try searching again.",
-          );
-        }
-        throw new Error("Failed to send message");
-      }
+  let errorMessage = "Failed to send message";
+
+  try {
+    const data = await response.json();
+
+    if (data?.error) {
+      errorMessage = data.error;
+    }
+  } catch {
+    // Ignore JSON parsing errors and use default message
+  }
+
+  if (response.status === 429) {
+    errorMessage =
+      "High traffic detected. Please wait a few seconds and try searching again.";
+  }
+
+  throw new Error(errorMessage);
+}
 
       const assistantMessageId = (Date.now() + 1).toString();
       // Prevent assistant message duplication on hot reload

@@ -10,13 +10,13 @@ The layout uses custom properties mounted to the `:root` pseudo-class for system
 
 ### Core Token Palette
 
-| Token Name | Light Mode Value | Dark Mode Value | Operational Context |
-| :--- | :--- | :--- | :--- |
-| `--background` | `#ffffff` | `#09090b` (`zinc-950`) | Global page viewport default background |
-| `--card` | `#f4f4f5` (`zinc-100`) | `#18181b` (`zinc-900`) | Workspace display cards, panels, and dialog surfaces |
-| `--border` | `#e4e4e7` (`zinc-200`) | `#27272a` (`zinc-800`) | Standard layout component dividing grid borders |
+| Token Name       | Light Mode Value         | Dark Mode Value          | Operational Context                                    |
+| :--------------- | :----------------------- | :----------------------- | :----------------------------------------------------- |
+| `--background`   | `#ffffff`                | `#09090b` (`zinc-950`)   | Global page viewport default background                |
+| `--card`         | `#f4f4f5` (`zinc-100`)   | `#18181b` (`zinc-900`)   | Workspace display cards, panels, and dialog surfaces   |
+| `--border`       | `#e4e4e7` (`zinc-200`)   | `#27272a` (`zinc-800`)   | Standard layout component dividing grid borders        |
 | `--glow-primary` | `rgba(37, 99, 235, 0.1)` | `rgba(37, 99, 235, 0.4)` | AI-chatbot response accents and search glowing borders |
-| `--glow-success` | `rgba(34, 197, 94, 0.1)` | `rgba(34, 197, 94, 0.4)` | Verified active geofenced check-in indicator overlays |
+| `--glow-success` | `rgba(34, 197, 94, 0.1)` | `rgba(34, 197, 94, 0.4)` | Verified active geofenced check-in indicator overlays  |
 
 ### Custom Styling Definitions Example (`src/app/globals.css`)
 
@@ -63,10 +63,10 @@ The project includes a reusable `.glass-card` utility for creating elevated, gla
 
 The design system uses both Tailwind shadow utilities and custom glow effects.
 
-| Style | Common Usage |
-| ------ | ------------ |
-| `shadow-xl` | Elevated cards and panels |
-| `glow-blue` | Blue glow effect for highlighted UI elements |
+| Style       | Common Usage                                         |
+| ----------- | ---------------------------------------------------- |
+| `shadow-xl` | Elevated cards and panels                            |
+| `glow-blue` | Blue glow effect for highlighted UI elements         |
 | `pulseGlow` | Animated glow used to emphasize interactive elements |
 
 ---
@@ -75,14 +75,14 @@ The design system uses both Tailwind shadow utilities and custom glow effects.
 
 In addition to the global theme tokens, the project uses semantic accent colors throughout the interface.
 
-| Color | Common Usage |
-| ------ | ------------ |
-| Blue | Primary actions and glow effects |
-| Purple | Accent backgrounds |
-| Cyan | Informational highlights |
-| Orange | Warning states |
-| Red | Error and destructive states |
-| Violet | Decorative accent elements |
+| Color  | Common Usage                     |
+| ------ | -------------------------------- |
+| Blue   | Primary actions and glow effects |
+| Purple | Accent backgrounds               |
+| Cyan   | Informational highlights         |
+| Orange | Warning states                   |
+| Red    | Error and destructive states     |
+| Violet | Decorative accent elements       |
 
 ---
 
@@ -90,11 +90,11 @@ In addition to the global theme tokens, the project uses semantic accent colors 
 
 The project commonly uses the following typography utilities.
 
-| Utility | Common Usage |
-| -------- | ------------ |
-| `text-sm` | Labels, helper text, and secondary content |
-| `text-base` | Default body text |
-| `text-lg` | Section headings and emphasized content |
+| Utility     | Common Usage                               |
+| ----------- | ------------------------------------------ |
+| `text-sm`   | Labels, helper text, and secondary content |
+| `text-base` | Default body text                          |
+| `text-lg`   | Section headings and emphasized content    |
 
 ---
 
@@ -127,10 +127,10 @@ These spacing utilities are used throughout the project to maintain consistent l
 
 The project uses Tailwind backdrop blur utilities to create translucent, glass-style interfaces.
 
-| Utility | Common Usage |
-| -------- | ------------ |
+| Utility            | Common Usage                                |
+| ------------------ | ------------------------------------------- |
 | `backdrop-blur-sm` | Subtle overlays and lightweight UI elements |
-| `backdrop-blur-md` | Cards and floating panels |
-| `backdrop-blur-xl` | Full-screen modals and dialogs |
+| `backdrop-blur-md` | Cards and floating panels                   |
+| `backdrop-blur-xl` | Full-screen modals and dialogs              |
 
 Backdrop blur utilities are commonly combined with semi-transparent backgrounds, borders, and shadows to achieve the project's glassmorphism design.

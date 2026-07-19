@@ -96,6 +96,7 @@ export async function generateTaxExportPdf(
   let currentPage = summaryPage;
   for (const booking of bookings) {
     if (y < 80) {
+      // Create a new page on overflow to prevent text overlapping on a single summary page (fixes #532)
       currentPage = pdfDoc.addPage([595, 842]);
       y = height - 50;
     }

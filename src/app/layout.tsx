@@ -1,23 +1,49 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { cookies, headers } from "next/headers";
+
 import "./globals.css";
+
 import I18nProvider from "../components/I18nProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
-
-import { headers } from "next/headers";
+import { SoundProvider } from "../components/SoundProvider";
+import { ScrollProgress } from "../components/ui/ScrollProgress";
 
 const THEME_INIT_SCRIPT = `
 (function () {
   try {
     var stored = localStorage.getItem("worksphere-theme");
-    var theme = stored === "light" || stored === "dark"
-      ? stored
-      : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    var theme =
+      stored === "light" || stored === "dark"
+        ? stored
+        : window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+
     var root = document.documentElement;
     root.classList.toggle("dark", theme === "dark");
     root.style.colorScheme = theme;
-  } catch (e) {}
+
+    if (document.cookie.indexOf("worksphere-theme=") === -1) {
+      document.cookie =
+        "worksphere-theme=" +
+        theme +
+        "; path=/; max-age=31536000; SameSite=Lax";
+    }
+  } catch {}
+
+  try {
+    window.addEventListener("error", function (event) {
+      if (
+        event.message &&
+        (event.message.indexOf("ResizeObserver") >= 0 ||
+          event.message.indexOf("Resize observer") >= 0)
+      ) {
+        event.stopImmediatePropagation();
+      }
+    });
+  } catch {}
 })();
 `;
 
@@ -71,28 +97,35 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const headersList = await headers();
-  const pathname = headersList.get("x-pathname") || "";
+  const pathname = headersList.get("x-pathname") ?? "";
   const isAnalyticsPage = pathname.startsWith("/analytics");
 
-  const isDummyKey =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ===
+  const publishableKey =
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
     "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
 
-  const innerContent = (
-    <ThemeProvider>
-      <I18nProvider>{children}</I18nProvider>
+  const isDummyKey = publishableKey === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
+
+  const cookieStore = await cookies();
+  const storedTheme = cookieStore.get("worksphere-theme")?.value;
+  const theme: "light" | "dark" =
+    storedTheme === "dark" || storedTheme === "light" ? storedTheme : "light";
+
+  const appContent = (
+    <ThemeProvider initialTheme={theme}>
+      <SoundProvider>
+        <I18nProvider>{children}</I18nProvider>
+      </SoundProvider>
     </ThemeProvider>
   );
 
   const bodyContent =
     isDummyKey && isAnalyticsPage ? (
-      innerContent
+      appContent
     ) : (
       <ClerkProvider
-        publishableKey={
-          process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-          "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk"
-        }
+        afterSignOutUrl="/"
+        publishableKey={publishableKey}
         appearance={{
           elements: {
             formButtonPrimary: "bg-blue-600 hover:bg-blue-700",
@@ -100,24 +133,28 @@ export default async function RootLayout({
           },
         }}
       >
-        {innerContent}
+        {appContent}
       </ClerkProvider>
     );
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={theme === "dark" ? "dark" : ""}
+      suppressHydrationWarning
+    >
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        {/* Sets the theme class before first paint so the sun/moon icon
-            never flashes the wrong state on load. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
+
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
+        <ScrollProgress />
         {bodyContent}
       </body>
     </html>

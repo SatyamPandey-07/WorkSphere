@@ -14,6 +14,9 @@ export const maxDuration = 60;
 // Lazy init Groq client to avoid build-time errors
 let groq: Groq | null = null;
 function getGroqClient(): Groq {
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error("GROQ_API_KEY is not configured");
+  }
   if (!groq) {
     groq = new Groq({
       apiKey: process.env.GROQ_API_KEY || "",
@@ -236,6 +239,7 @@ async function dataAgent(
     hasPhoneBooths?: boolean;
     hasNoMusic?: boolean;
     hasQuietZone?: boolean;
+    hasAncHeadsetRental?: boolean;
     singleOriginBeans?: boolean;
     specialtyEspresso?: boolean;
     oatAlmondMilk?: boolean;
@@ -291,6 +295,8 @@ async function dataAgent(
         body: `data=${encodeURIComponent(query)}`,
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "WorkSphere-Dev-App/1.0",
+          Accept: "application/json",
         },
         signal: controller.signal,
       });
@@ -361,6 +367,7 @@ async function dataAgent(
           hasPhoneBooths: false,
           hasNoMusic: false,
           hasQuietZone: false,
+          hasAncHeadsetRental: false,
           singleOriginBeans: false,
           specialtyEspresso: false,
           oatAlmondMilk: false,
@@ -410,6 +417,8 @@ async function dataAgent(
         }
         if (filters.hasPhoneBooths)
           venues = venues.filter((v: any) => v.hasPhoneBooths);
+        if (filters.hasAncHeadsetRental)
+          venues = venues.filter((v: any) => v.hasAncHeadsetRental);
         if (filters.singleOriginBeans)
           venues = venues.filter((v: any) => v.singleOriginBeans);
 
@@ -479,6 +488,7 @@ async function dataAgent(
       hasPhoneBooths: true,
       hasNoMusic: true,
       hasQuietZone: true,
+      hasAncHeadsetRental: true,
       singleOriginBeans: true,
       specialtyEspresso: true,
       oatAlmondMilk: true,
@@ -572,6 +582,8 @@ async function dataAgent(
     }
     if (filters.hasPhoneBooths)
       filteredMock = filteredMock.filter((v: any) => v.hasPhoneBooths);
+    if (filters.hasAncHeadsetRental)
+      filteredMock = filteredMock.filter((v: any) => v.hasAncHeadsetRental);
     if (filters.hasNoMusic)
       filteredMock = filteredMock.filter((v: any) => v.hasNoMusic);
     if (filters.hasQuietZone)
@@ -623,6 +635,7 @@ interface RawVenue {
   hasPhoneBooths: boolean;
   hasNoMusic: boolean;
   hasQuietZone: boolean;
+  hasAncHeadsetRental: boolean;
 }
 
 async function enrichVenuesWithDBRatings(
@@ -649,6 +662,7 @@ async function enrichVenuesWithDBRatings(
         hasPhoneBooths: boolean;
         hasNoMusic: boolean;
         hasQuietZone: boolean;
+        hasAncHeadsetRental: boolean;
         outletDensity: string | null;
         wifiSpeed: number | null;
       }
@@ -666,6 +680,7 @@ async function enrichVenuesWithDBRatings(
           hasPhoneBooths: dbV.hasPhoneBooths,
           hasNoMusic: dbV.hasNoMusic,
           hasQuietZone: dbV.hasQuietZone,
+          hasAncHeadsetRental: dbV.hasAncHeadsetRental,
           outletDensity: dbV.outletDensity ?? null,
           wifiSpeed: dbV.wifiSpeed ?? null,
         });
@@ -730,6 +745,7 @@ async function enrichVenuesWithDBRatings(
           hasPhoneBooths: phoneBoothsPct >= 50,
           hasNoMusic: noMusicPct >= 50,
           hasQuietZone: quietZonePct >= 50,
+          hasAncHeadsetRental: dbV.hasAncHeadsetRental,
           outletDensity: outletDensityMode,
           wifiSpeed: avgSpeed,
         });
@@ -752,6 +768,7 @@ async function enrichVenuesWithDBRatings(
         hasPhoneBooths: db.hasPhoneBooths,
         hasNoMusic: db.hasNoMusic,
         hasQuietZone: db.hasQuietZone,
+        hasAncHeadsetRental: db.hasAncHeadsetRental,
         outletDensity: db.outletDensity ?? venue.outletDensity,
         wifiSpeed: db.wifiSpeed ?? venue.wifiSpeed,
       };
@@ -1222,6 +1239,11 @@ export async function POST(req: Request) {
             (v: any) => v.hasPhoneBooths,
           );
         }
+        if (filters.hasAncHeadsetRental) {
+          finalFilteredVenues = finalFilteredVenues.filter(
+            (v: any) => v.hasAncHeadsetRental,
+          );
+        }
         if (filters.hasNoMusic) {
           finalFilteredVenues = finalFilteredVenues.filter(
             (v: any) => v.hasNoMusic,
@@ -1404,8 +1426,44 @@ Address the user's query and include UI components if helpful.`;
     });
   } catch (error) {
     console.error("Chat API error:", error);
+    const message =
+      error instanceof Error ? error.message : "An unexpected error occurred";
+
+    if (
+      message.includes("Invalid API Key") ||
+      message.includes("Unauthorized") ||
+      message.includes("401") ||
+      message.includes("GROQ_API_KEY") ||
+      message.includes("Cohere API") ||
+      message.includes("COHERE_API_KEY")
+    ) {
+      return Response.json(
+        {
+          error:
+            "AI services are not configured. Please configure the required API keys in your environment variables.",
+        },
+        { status: 503 },
+      );
+    }
+
+    if (
+      message.includes("SCRAM") ||
+      message.includes("DATABASE_URL") ||
+      message.includes("Prisma")
+    ) {
+      return Response.json(
+        {
+          error:
+            "Database is not configured correctly. Please verify your DATABASE_URL.",
+        },
+        { status: 503 },
+      );
+    }
+
     return Response.json(
-      { error: error instanceof Error ? error.message : "An error occurred" },
+      {
+        error: "An unexpected server error occurred. Please try again later.",
+      },
       { status: 500 },
     );
   }

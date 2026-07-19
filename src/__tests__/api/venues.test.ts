@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { GET } from "@/app/api/venues/route";
 import { prisma } from "@/lib/prisma";
+import { resetRateLimit } from "@/lib/rateLimit";
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
@@ -14,6 +15,7 @@ jest.mock("@/lib/prisma", () => ({
 describe("GET /api/venues - Search and Pagination", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetRateLimit();
   });
 
   it("should return paginated venues with default values in fallback mode", async () => {
@@ -132,6 +134,57 @@ describe("GET /api/venues - Search and Pagination", () => {
           longitude: expect.any(Object),
         }),
       }),
+    );
+  });
+});
+
+describe("GET /api/venues - Rate limiting (#717)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    resetRateLimit();
+    (prisma.venue.count as jest.Mock).mockResolvedValue(0);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([]);
+  });
+
+  it("allows a burst of fast requests (e.g. rapid autocomplete typing) through", async () => {
+    // Simulate someone typing a long query quickly - many requests in a row from
+    // the same caller should not trip the limiter, since it's tuned well above
+    // realistic keystroke-driven request volume.
+    for (let i = 0; i < 30; i++) {
+      const req = new NextRequest(`http://localhost/api/venues?limit=5`);
+      const res = await GET(req);
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it("returns 429 with a retryAfter once the caller exceeds the limit", async () => {
+    let lastRes;
+    for (let i = 0; i < 121; i++) {
+      const req = new NextRequest(`http://localhost/api/venues?limit=5`);
+      lastRes = await GET(req);
+    }
+
+    expect(lastRes!.status).toBe(429);
+    const data = await lastRes!.json();
+    expect(data.error).toMatch(/too many/i);
+    expect(typeof data.retryAfter).toBe("number");
+    expect(lastRes!.headers.get("Retry-After")).toBeTruthy();
+  });
+
+  it("does not touch the database once a request is rate limited", async () => {
+    for (let i = 0; i < 121; i++) {
+      const req = new NextRequest(`http://localhost/api/venues?limit=5`);
+      await GET(req);
+    }
+
+    const callsBefore = (prisma.venue.findMany as jest.Mock).mock.calls.length;
+
+    const req = new NextRequest(`http://localhost/api/venues?limit=5`);
+    const res = await GET(req);
+
+    expect(res.status).toBe(429);
+    expect((prisma.venue.findMany as jest.Mock).mock.calls.length).toBe(
+      callsBefore,
     );
   });
 });

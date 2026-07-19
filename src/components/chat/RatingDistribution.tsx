@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Star, Wifi, Zap, Volume2, X } from "lucide-react";
 
 interface Review {
@@ -16,6 +16,122 @@ interface RatingDistributionProps {
   onClose?: () => void;
 }
 
+interface ChartDataPoint {
+  label: string;
+  value: number;
+  color: string;
+  icon?: React.ReactNode;
+}
+
+function MetricChart({
+  title,
+  data,
+  total,
+}: {
+  title?: string;
+  data: ChartDataPoint[];
+  total: number;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const radius = 40;
+  const circumference = 2 * Math.PI * radius;
+
+  // Pre-calculate offsets without mutating variables during render
+  const chartItems = data.map((item, index, arr) => {
+    const percentage = total === 0 ? 0 : item.value / total;
+    const strokeLength = percentage * circumference;
+    const offset = arr.slice(0, index).reduce((acc, prev) => {
+      return acc + (total === 0 ? 0 : (prev.value / total) * circumference);
+    }, 0);
+    return { ...item, strokeLength, offset };
+  });
+
+  return (
+    <div className="flex flex-col md:flex-row items-center gap-6">
+      <div className="relative w-32 h-32 flex shrink-0 items-center justify-center">
+        <svg
+          width="128"
+          height="128"
+          viewBox="0 0 100 100"
+          className="-rotate-90 transform"
+        >
+          <circle
+            cx="50"
+            cy="50"
+            r={radius}
+            fill="transparent"
+            stroke="currentColor"
+            className="text-zinc-200 dark:text-zinc-800"
+            strokeWidth="12"
+          />
+          {chartItems.map((item, i) => {
+            if (item.value === 0) return null;
+
+            const dasharray = mounted
+              ? `${item.strokeLength} ${circumference - item.strokeLength}`
+              : `0 ${circumference}`;
+
+            return (
+              <circle
+                key={i}
+                cx="50"
+                cy="50"
+                r={radius}
+                fill="transparent"
+                stroke={item.color}
+                strokeWidth="12"
+                strokeDasharray={dasharray}
+                strokeDashoffset={-item.offset}
+                className="transition-all duration-1000 ease-out"
+              />
+            );
+          })}
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-2xl font-black text-zinc-800 dark:text-zinc-200 leading-none">
+            {total}
+          </span>
+          <span className="text-[9px] font-bold text-zinc-400 uppercase tracking-widest mt-1">
+            Ratings
+          </span>
+        </div>
+      </div>
+
+      <div className="flex-1 w-full space-y-3">
+        {title && (
+          <div className="text-[10px] font-black tracking-widest uppercase text-zinc-400 mb-1 border-b border-zinc-200 dark:border-zinc-800 pb-2">
+            {title}
+          </div>
+        )}
+        {data.map((item, i) => {
+          const pct = total === 0 ? 0 : Math.round((item.value / total) * 100);
+          return (
+            <div key={i} className="flex items-center justify-between group">
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-3 h-3 rounded-full shadow-sm transition-transform group-hover:scale-110"
+                  style={{ backgroundColor: item.color }}
+                />
+                <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 flex items-center gap-1">
+                  {item.label} {item.icon}
+                </span>
+              </div>
+              <div className="text-xs font-black text-zinc-500">
+                {pct}% ({item.value})
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function RatingDistribution({
   reviews,
   activeMetric,
@@ -23,25 +139,8 @@ export function RatingDistribution({
 }: RatingDistributionProps) {
   const totalReviews = reviews.length;
 
-  // 1. WiFi Quality Distribution (1 to 5 stars)
   const wifiCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
-  reviews.forEach((r) => {
-    const q = Math.round(r.wifiQuality);
-    if (q >= 1 && q <= 5) {
-      wifiCounts[q as 1 | 2 | 3 | 4 | 5]++;
-    }
-  });
-
-  // 2. Quietness/Noise Distribution (quiet, moderate, loud)
   const noiseCounts = { quiet: 0, moderate: 0, loud: 0 };
-  reviews.forEach((r) => {
-    const level = r.noiseLevel?.toLowerCase();
-    if (level === "quiet") noiseCounts.quiet++;
-    else if (level === "loud") noiseCounts.loud++;
-    else noiseCounts.moderate++; // default or moderate
-  });
-
-  // 3. Outlet Availability Distribution (Yes / No)
   const outletCounts = { yes: 0, no: 0 };
   const densityCounts = {
     every_table: 0,
@@ -51,11 +150,19 @@ export function RatingDistribution({
   };
 
   reviews.forEach((r) => {
-    if (r.hasOutlets) {
-      outletCounts.yes++;
-    } else {
-      outletCounts.no++;
-    }
+    // WiFi
+    const q = Math.round(r.wifiQuality);
+    if (q >= 1 && q <= 5) wifiCounts[q as 1 | 2 | 3 | 4 | 5]++;
+
+    // Noise
+    const level = r.noiseLevel?.toLowerCase();
+    if (level === "quiet") noiseCounts.quiet++;
+    else if (level === "loud") noiseCounts.loud++;
+    else noiseCounts.moderate++;
+
+    // Outlets
+    if (r.hasOutlets) outletCounts.yes++;
+    else outletCounts.no++;
 
     const density = r.outletDensity;
     if (density === "every_table") densityCounts.every_table++;
@@ -64,14 +171,9 @@ export function RatingDistribution({
     else densityCounts.none++;
   });
 
-  const getPercentage = (count: number) => {
-    if (totalReviews === 0) return 0;
-    return Math.round((count / totalReviews) * 100);
-  };
-
   return (
     <div className="bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800 rounded-2xl p-5 mt-4 animate-in fade-in slide-in-from-top-4 duration-300">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           {activeMetric === "wifi" && (
             <>
@@ -114,134 +216,115 @@ export function RatingDistribution({
           No ratings recorded yet to build distribution.
         </div>
       ) : (
-        <div className="space-y-3.5">
-          {activeMetric === "wifi" &&
-            ([5, 4, 3, 2, 1] as const).map((stars) => {
-              const count = wifiCounts[stars];
-              const pct = getPercentage(count);
-              return (
-                <div key={stars} className="flex items-center gap-3">
-                  <span className="w-12 text-[11px] font-black text-zinc-500 dark:text-zinc-400 flex items-center justify-end gap-1">
-                    {stars}{" "}
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
-                  </span>
-                  <div className="flex-1 h-3.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-blue-600 dark:bg-blue-500 rounded-full transition-all duration-500 ease-out"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="w-16 text-right text-[11px] font-black text-zinc-600 dark:text-zinc-300">
-                    {pct}% ({count})
-                  </span>
-                </div>
-              );
-            })}
+        <div className="space-y-6">
+          {activeMetric === "wifi" && (
+            <MetricChart
+              total={totalReviews}
+              data={[
+                {
+                  label: "5 Stars",
+                  value: wifiCounts[5],
+                  color: "#3b82f6",
+                  icon: (
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  ),
+                },
+                {
+                  label: "4 Stars",
+                  value: wifiCounts[4],
+                  color: "#60a5fa",
+                  icon: (
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  ),
+                },
+                {
+                  label: "3 Stars",
+                  value: wifiCounts[3],
+                  color: "#93c5fd",
+                  icon: (
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  ),
+                },
+                {
+                  label: "2 Stars",
+                  value: wifiCounts[2],
+                  color: "#bfdbfe",
+                  icon: (
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  ),
+                },
+                {
+                  label: "1 Star",
+                  value: wifiCounts[1],
+                  color: "#dbeafe",
+                  icon: (
+                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  ),
+                },
+              ]}
+            />
+          )}
 
-          {activeMetric === "noise" &&
-            (
-              [
-                { key: "quiet", label: "Quiet" },
-                { key: "moderate", label: "Moderate" },
-                { key: "loud", label: "Loud" },
-              ] as const
-            ).map(({ key, label }) => {
-              const count = noiseCounts[key];
-              const pct = getPercentage(count);
-              return (
-                <div key={key} className="flex items-center gap-3">
-                  <span className="w-16 text-left text-[11px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                    {label}
-                  </span>
-                  <div className="flex-1 h-3.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-500 ease-out ${
-                        key === "quiet"
-                          ? "bg-emerald-600 dark:bg-emerald-500"
-                          : key === "moderate"
-                            ? "bg-amber-500 dark:bg-amber-400"
-                            : "bg-rose-600 dark:bg-rose-500"
-                      }`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <span className="w-16 text-right text-[11px] font-black text-zinc-600 dark:text-zinc-300">
-                    {pct}% ({count})
-                  </span>
-                </div>
-              );
-            })}
+          {activeMetric === "noise" && (
+            <MetricChart
+              total={totalReviews}
+              data={[
+                { label: "Quiet", value: noiseCounts.quiet, color: "#10b981" },
+                {
+                  label: "Moderate",
+                  value: noiseCounts.moderate,
+                  color: "#f59e0b",
+                },
+                { label: "Loud", value: noiseCounts.loud, color: "#e11d48" },
+              ]}
+            />
+          )}
 
           {activeMetric === "outlets" && (
-            <div className="space-y-4">
-              <div className="space-y-3.5">
-                <div className="text-[10px] font-black tracking-widest uppercase text-zinc-400 mb-1">
-                  Availability
-                </div>
-                {(
-                  [
-                    { key: "yes", label: "Available" },
-                    { key: "no", label: "Unavailable" },
-                  ] as const
-                ).map(({ key, label }) => {
-                  const count = outletCounts[key];
-                  const pct = getPercentage(count);
-                  return (
-                    <div key={key} className="flex items-center gap-3">
-                      <span className="w-20 text-left text-[11px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                        {label}
-                      </span>
-                      <div className="flex-1 h-3.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ease-out ${
-                            key === "yes"
-                              ? "bg-orange-500"
-                              : "bg-zinc-400 dark:bg-zinc-600"
-                          }`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span className="w-16 text-right text-[11px] font-black text-zinc-600 dark:text-zinc-300">
-                        {pct}% ({count})
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-
+            <div className="space-y-8">
+              <MetricChart
+                title="Availability"
+                total={totalReviews}
+                data={[
+                  {
+                    label: "Available",
+                    value: outletCounts.yes,
+                    color: "#f97316",
+                  },
+                  {
+                    label: "Unavailable",
+                    value: outletCounts.no,
+                    color: "#a1a1aa",
+                  },
+                ]}
+              />
               {reviews.some((r) => r.outletDensity) && (
-                <div className="space-y-3.5 pt-2 border-t border-zinc-200 dark:border-zinc-800">
-                  <div className="text-[10px] font-black tracking-widest uppercase text-zinc-400 mb-1">
-                    Outlet Density
-                  </div>
-                  {(
-                    [
-                      { key: "every_table", label: "Every Table" },
-                      { key: "some_tables", label: "Some Tables" },
-                      { key: "wall_seats", label: "Wall Seats" },
-                      { key: "none", label: "None" },
-                    ] as const
-                  ).map(({ key, label }) => {
-                    const count = densityCounts[key];
-                    const pct = getPercentage(count);
-                    return (
-                      <div key={key} className="flex items-center gap-3">
-                        <span className="w-20 text-left text-[11px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                          {label}
-                        </span>
-                        <div className="flex-1 h-3.5 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-amber-500 rounded-full transition-all duration-500 ease-out"
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        <span className="w-16 text-right text-[11px] font-black text-zinc-600 dark:text-zinc-300">
-                          {pct}% ({count})
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
+                <MetricChart
+                  title="Outlet Density"
+                  total={totalReviews}
+                  data={[
+                    {
+                      label: "Every Table",
+                      value: densityCounts.every_table,
+                      color: "#f59e0b",
+                    },
+                    {
+                      label: "Some Tables",
+                      value: densityCounts.some_tables,
+                      color: "#fbbf24",
+                    },
+                    {
+                      label: "Wall Seats",
+                      value: densityCounts.wall_seats,
+                      color: "#fcd34d",
+                    },
+                    {
+                      label: "None",
+                      value: densityCounts.none,
+                      color: "#a1a1aa",
+                    },
+                  ]}
+                />
               )}
             </div>
           )}

@@ -20,7 +20,8 @@ import {
   CalendarPlus,
   Mail,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import confetti from "canvas-confetti";
 import { Venue } from "./ChatMessages";
 import { trackEvent } from "@/lib/analytics";
 
@@ -57,8 +58,16 @@ export function BookingModal({
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
   >("details");
+  const getTodayString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
   const [bookingDate, setBookingDate] = useState("");
   const [bookingTime, setBookingTime] = useState("");
+  const [confirmationId, setConfirmationId] = useState("");
   const [email, setEmail] = useState("");
   const [billingCode, setBillingCode] = useState("");
   const [history, setHistory] = useState<Booking[]>([]);
@@ -70,6 +79,62 @@ export function BookingModal({
   const [guestInviteStatus, setGuestInviteStatus] = useState<
     "idle" | "sending" | "done"
   >("idle");
+  const [receiptDialogBookingId, setReceiptDialogBookingId] = useState<
+    string | null
+  >(null);
+  const [showTaxId, setShowTaxId] = useState(false);
+  const [includeNotes, setIncludeNotes] = useState(false);
+  const [showLogo, setShowLogo] = useState(true);
+
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // =========================================================================
+  // CELEBRATORY CONFETTI SUCCESS TRIGGER OVERLAY
+  // =========================================================================
+  useEffect(() => {
+    let animationFrameId: number;
+
+    if (step === "success") {
+      const respectsReducedMotion = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+
+      if (respectsReducedMotion) return;
+
+      const duration = 3 * 1000;
+      const end = Date.now() + duration;
+
+      const frame = () => {
+        confetti({
+          particleCount: 2,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0, y: 0.8 },
+          zIndex: 25000,
+        });
+        confetti({
+          particleCount: 2,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1, y: 0.8 },
+          zIndex: 25000,
+        });
+
+        if (Date.now() < end) {
+          animationFrameId = requestAnimationFrame(frame);
+        }
+      };
+
+      frame();
+    }
+
+    // Cleanup function to cancel the animation loop when unmounting or leaving success step
+    return () => {
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+    };
+  }, [step]);
 
   const getFilteredHistory = () => {
     if (dateFilter === "all") return history;
@@ -133,6 +198,43 @@ export function BookingModal({
     }
   }, [isOpen, mode]);
 
+  useEffect(() => {
+    if (!isOpen || !modalRef.current) return;
+
+    const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+
+    if (focusableElements.length === 0) return;
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    firstElement.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+
+      if (event.shiftKey) {
+        if (document.activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          event.preventDefault();
+          firstElement.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
   const toggleSelected = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -141,6 +243,23 @@ export function BookingModal({
       return next;
     });
   };
+
+  useEffect(() => {
+    if (isOpen && mode === "history") {
+      setStep("history");
+      const fetchHistory = async () => {
+        setLoadingHistory(true);
+        try {
+          const res = await fetch("/api/bookings/history");
+          if (res.ok) setHistory(await res.json());
+        } catch (e) {
+          console.error(e);
+        }
+        setLoadingHistory(false);
+      };
+      fetchHistory();
+    }
+  }, [isOpen, mode]);
 
   const toggleSelectAll = () => {
     setSelectedIds((prev) =>
@@ -151,7 +270,22 @@ export function BookingModal({
   };
 
   const handleDownloadSingle = (bookingId: string) => {
-    window.open(`/api/bookings/${bookingId}/download`, "_blank");
+    setReceiptDialogBookingId(bookingId);
+    setShowTaxId(false);
+    setIncludeNotes(false);
+    setShowLogo(true);
+  };
+
+  const confirmDownloadSingle = () => {
+    if (!receiptDialogBookingId) return;
+    const params = new URLSearchParams();
+    if (showTaxId) params.append("showTaxId", "true");
+    if (includeNotes) params.append("includeNotes", "true");
+    if (showLogo) params.append("showLogo", "true");
+
+    const url = `/api/bookings/${receiptDialogBookingId}/download${params.toString() ? `?${params.toString()}` : ""}`;
+    window.open(url, "_blank");
+    setReceiptDialogBookingId(null);
   };
 
   const handleBulkExport = async (format: "pdf" | "csv") => {
@@ -185,6 +319,11 @@ export function BookingModal({
   if (!isOpen) return null;
 
   const handleBooking = async () => {
+    const todayStr = getTodayString();
+    if (bookingDate && bookingDate < todayStr) {
+      alert("Cannot book a date in the past.");
+      return;
+    }
     setStep("processing");
     trackEvent("venue_rated", {
       venueId: venue?.id || "unknown",
@@ -216,6 +355,7 @@ export function BookingModal({
         );
       }
 
+      setConfirmationId(responseData.confirmationId || "");
       setStep("success");
       trackEvent("venue_rated", {
         venueId: venue?.id || "unknown",
@@ -223,7 +363,6 @@ export function BookingModal({
         action: "booking_confirmed",
       });
 
-      // Send guest invitations if any were added
       if (guests.length > 0 && responseData.bookingId) {
         setGuestInviteStatus("sending");
         try {
@@ -253,6 +392,9 @@ export function BookingModal({
   return (
     <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/90 animate-in fade-in duration-300 backdrop-blur-sm">
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
         className="bg-white dark:bg-zinc-900 w-full max-w-2xl overflow-hidden rounded-[2.5rem] shadow-[0_20px_100px_rgba(0,0,0,0.9)] border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-300"
         onClick={(e) => e.stopPropagation()}
       >
@@ -271,6 +413,7 @@ export function BookingModal({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close dialog"
             className="p-3 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-2xl transition-all active:scale-90"
           >
             <X className="w-6 h-6" />
@@ -452,6 +595,8 @@ export function BookingModal({
                                     booking.venue.address,
                                     booking.date,
                                     booking.time,
+                                    booking.duration || 60,
+                                    booking.confirmationId,
                                   )
                                 }
                                 title="Download .ics"
@@ -525,13 +670,18 @@ export function BookingModal({
 
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                  <label
+                    htmlFor="allocation-date"
+                    className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2"
+                  >
                     Allocation Date
                   </label>
                   <div className="relative">
                     <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="date"
+                      id="allocation-date"
+                      min={getTodayString()}
                       className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                       value={bookingDate}
                       onChange={(e) => setBookingDate(e.target.value)}
@@ -539,13 +689,17 @@ export function BookingModal({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                  <label
+                    htmlFor="arrival-time"
+                    className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2"
+                  >
                     Arrival Time
                   </label>
                   <div className="relative">
                     <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="time"
+                      id="arrival-time"
                       className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                       value={bookingTime}
                       onChange={(e) => setBookingTime(e.target.value)}
@@ -610,7 +764,6 @@ export function BookingModal({
 
           {step === "payment" && (
             <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
-              {/* Visual Card Representation */}
               <div className="p-8 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
                 <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-150 transition-transform duration-1000">
                   <Lock className="w-48 h-48" />
@@ -762,6 +915,8 @@ export function BookingModal({
                       venue.address || "",
                       bookingDate,
                       bookingTime,
+                      60,
+                      confirmationId,
                     )
                   }
                   className="w-full border-2 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-black uppercase tracking-widest py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px]"
@@ -796,6 +951,66 @@ export function BookingModal({
             </span>
           </div>
         </div>
+
+        {/* Receipt Customization Dialog */}
+        {receiptDialogBookingId && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 rounded-[2.5rem] backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800">
+              <h3 className="text-lg font-black uppercase tracking-tight mb-4">
+                Customize Receipt
+              </h3>
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showTaxId}
+                    onChange={(e) => setShowTaxId(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                    Show Tax Identifiers
+                  </span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeNotes}
+                    onChange={(e) => setIncludeNotes(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                    Include Custom Notes
+                  </span>
+                </label>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={showLogo}
+                    onChange={(e) => setShowLogo(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                    Show Logo
+                  </span>
+                </label>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setReceiptDialogBookingId(null)}
+                  className="flex-1 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDownloadSingle}
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
+                >
+                  Download
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

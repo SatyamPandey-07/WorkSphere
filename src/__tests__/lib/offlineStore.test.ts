@@ -14,6 +14,8 @@ import {
   queueOfflineFavorite,
   getQueuedFavorites,
   dequeueOfflineAction,
+  incrementRetryCount,
+  MAX_SYNC_RETRIES,
 } from "../../lib/offlineStore";
 
 describe("offlineStore – queueOfflineFavorite", () => {
@@ -72,5 +74,114 @@ describe("offlineStore – queueOfflineFavorite", () => {
 
     const after = await getQueuedFavorites();
     expect(after.find((a) => a.id === target!.id)).toBeUndefined();
+  });
+
+  describe("Safari Private Browsing SecurityError handling", () => {
+    let originalOpen: typeof indexedDB.open;
+    let localQueueOfflineFavorite: typeof queueOfflineFavorite;
+
+    beforeEach(() => {
+      jest.resetModules();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const localStore = require("../../lib/offlineStore");
+      localQueueOfflineFavorite = localStore.queueOfflineFavorite;
+
+      originalOpen = indexedDB.open;
+      global.window = {} as any;
+      global.alert = jest.fn();
+    });
+
+    afterEach(() => {
+      indexedDB.open = originalOpen;
+      if (
+        typeof window !== "undefined" &&
+        (window as any).__worksphere_offline_alert_shown
+      ) {
+        delete (window as any).__worksphere_offline_alert_shown;
+      }
+      delete (global as any).window;
+      delete (global as any).alert;
+    });
+
+    it("gracefully intercepts synchronous SecurityError and alerts user once", async () => {
+      indexedDB.open = jest.fn().mockImplementation(() => {
+        const err = new Error("SecurityError: access blocked");
+        err.name = "SecurityError";
+        throw err;
+      });
+
+      await expect(
+        localQueueOfflineFavorite("venue-fail-sync", "ADD"),
+      ).resolves.toBeUndefined();
+      expect(global.alert).toHaveBeenCalledTimes(1);
+
+      // Verify alert is only shown once (subsequent errors do not spam alerts)
+      await expect(
+        localQueueOfflineFavorite("venue-fail-sync-2", "ADD"),
+      ).resolves.toBeUndefined();
+      expect(global.alert).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+/**
+ * Tests for Issue #712: queued favorite actions that repeatedly fail to sync
+ * must be bounded to MAX_SYNC_RETRIES attempts, and never removed from the
+ * outbox without the caller (the service worker) being told the final
+ * attempt count, so the UI can notify the user instead of the action just
+ * disappearing.
+ */
+describe("offlineStore – incrementRetryCount", () => {
+  it("starts a newly queued action at retryCount 0", async () => {
+    await queueOfflineFavorite("venue-retry-init", "ADD");
+
+    const queued = await getQueuedFavorites();
+    const entry = queued.find((a) => a.venueId === "venue-retry-init");
+
+    expect(entry?.retryCount).toBe(0);
+  });
+
+  it("increments retryCount on each call and persists it", async () => {
+    await queueOfflineFavorite("venue-retry-inc", "ADD");
+    const [entry] = (await getQueuedFavorites()).filter(
+      (a) => a.venueId === "venue-retry-inc",
+    );
+
+    const first = await incrementRetryCount(entry.id!);
+    expect(first).toBe(1);
+
+    const second = await incrementRetryCount(entry.id!);
+    expect(second).toBe(2);
+
+    const [reloaded] = (await getQueuedFavorites()).filter(
+      (a) => a.venueId === "venue-retry-inc",
+    );
+    expect(reloaded.retryCount).toBe(2);
+  });
+
+  it("returns null when incrementing an action that no longer exists", async () => {
+    await queueOfflineFavorite("venue-retry-missing", "ADD");
+    const [entry] = (await getQueuedFavorites()).filter(
+      (a) => a.venueId === "venue-retry-missing",
+    );
+
+    await dequeueOfflineAction(entry.id!);
+
+    const result = await incrementRetryCount(entry.id!);
+    expect(result).toBeNull();
+  });
+
+  it("reaches MAX_SYNC_RETRIES after repeated failures, signalling the caller to stop", async () => {
+    await queueOfflineFavorite("venue-retry-cap", "ADD");
+    const [entry] = (await getQueuedFavorites()).filter(
+      (a) => a.venueId === "venue-retry-cap",
+    );
+
+    let attempts = 0;
+    for (let i = 0; i < MAX_SYNC_RETRIES; i++) {
+      attempts = (await incrementRetryCount(entry.id!)) ?? 0;
+    }
+
+    expect(attempts).toBe(MAX_SYNC_RETRIES);
   });
 });

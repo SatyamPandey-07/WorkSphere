@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+// =========================================================================
+// CORE SCHEMAS
+// =========================================================================
+
 // Chat API schemas
 export const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant", "system"]),
@@ -35,6 +39,7 @@ export const venueSearchSchema = z.object({
   hasPhoneBooths: z.coerce.boolean().optional(),
   hasNoMusic: z.coerce.boolean().optional(),
   hasQuietZone: z.coerce.boolean().optional(),
+  hasAncHeadsetRental: z.coerce.boolean().optional(),
   singleOriginBeans: z.coerce.boolean().optional(),
   specialtyEspresso: z.coerce.boolean().optional(),
   oatAlmondMilk: z.coerce.boolean().optional(),
@@ -71,6 +76,7 @@ export const venueCreateSchema = z.object({
   hasPhoneBooths: z.boolean().optional(),
   hasNoMusic: z.boolean().optional(),
   hasQuietZone: z.boolean().optional(),
+  hasAncHeadsetRental: z.boolean().optional(),
   lighting: z
     .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
     .optional(),
@@ -144,7 +150,9 @@ export const locationSchema = z.object({
   longitude: z.number().min(-180).max(180),
 });
 
-// Export types
+// =========================================================================
+// TYPES & DYNAMIC VALIDATION PIPELINE INTERFACES
+// =========================================================================
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 export type VenueSearch = z.infer<typeof venueSearchSchema>;
@@ -172,6 +180,7 @@ export function validateRequest<T>(
   if (result.success) {
     return { success: true, data: result.data };
   }
+
   return {
     success: false,
     error: result.error.issues

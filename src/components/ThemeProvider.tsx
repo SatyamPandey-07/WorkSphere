@@ -26,20 +26,23 @@ function applyTheme(theme: Theme) {
   root.style.colorScheme = theme;
 }
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  // The blocking script in <head> has already set the class on <html>
-  // before this component ever mounts, so we just read it back here
-  // instead of guessing/defaulting - that's what prevents the flash.
-  const [theme, setThemeState] = useState<Theme>(() => {
-    if (typeof document === "undefined") return "light";
-    return document.documentElement.classList.contains("dark")
-      ? "dark"
-      : "light";
-  });
+interface ThemeProviderProps {
+  children: ReactNode;
+  initialTheme?: Theme;
+}
+
+export function ThemeProvider({ children, initialTheme = "light" }: ThemeProviderProps) {
+  const [theme, setThemeState] = useState<Theme>(initialTheme);
+
+  // Synchronize dynamic client themes on mount/update to ensure local state is pushed to document classes
+  useEffect(() => {
+    applyTheme(theme);
+  }, [theme]);
 
   const setTheme = (next: Theme) => {
     setThemeState(next);
     window.localStorage.setItem(STORAGE_KEY, next);
+    document.cookie = `${STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
     applyTheme(next);
   };
 
@@ -52,6 +55,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const onStorage = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY && (e.newValue === "light" || e.newValue === "dark")) {
         setThemeState(e.newValue);
+        document.cookie = `${STORAGE_KEY}=${e.newValue}; path=/; max-age=31536000; SameSite=Lax`;
         applyTheme(e.newValue);
       }
     };

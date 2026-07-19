@@ -42,10 +42,12 @@ export function useFavorites(venueId: string, initialIsFavorited: boolean) {
       } catch {
         console.warn("Live fallback failed. Reverting to offline queue logic.");
         await queueOfflineFavorite(venueId, actionType);
+        window.dispatchEvent(new CustomEvent("trigger-sync"));
       }
     } else {
       // 2. Offline Fallback: Queue up operation for Background Sync processing
       await queueOfflineFavorite(venueId, actionType);
+      window.dispatchEvent(new CustomEvent("trigger-sync"));
     }
   };
 

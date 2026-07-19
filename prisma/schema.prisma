@@ -15,8 +15,8 @@ model User {
   lastName           String?
   imageUrl           String?
   createdAt          DateTime           @default(now())
-  discordWebhookUrl   String?
-  whatsappWebhookUrl  String?
+  discordWebhookUrl  String?
+  whatsappWebhookUrl String?
   telegramWebhookUrl String?
   favorites          Favorite[]
   ratings            VenueRating[]
@@ -25,23 +25,26 @@ model User {
   memories           UserMemory[]
   crdtState          Bytes?
   preferencesSummary String?
-createdVenues     Venue[]            @relation("VenueCreator")
-  workStatus        WorkBuddyStatus?
-  hostedSessions    CoworkingSession[] @relation("SessionHost")
-  sessionRsvps      SessionRsvp[]
-  isAdmin           Boolean            @default(false)
-  flagsReported     FlaggedItem[]
-  adminAuditLogs    AdminAuditLog[]
-  ownedFolders      Folder[]           @relation("FolderOwner")
-  folderMemberships FolderMember[]     @relation("FolderMembership")
-  addedFolderVenues FolderVenue[]      @relation("FolderVenueAdder")
-  webhookEndpoints  WebhookEndpoint[]
-  phoneNumber       String?
-  smsAlertsEnabled  Boolean            @default(false)
-  notificationStart String?
-  notificationEnd   String?
-  timezone          String?            @default("UTC")
-  folderUpvotes     FolderUpvote[]
+  createdVenues      Venue[]            @relation("VenueCreator")
+  workStatus         WorkBuddyStatus?
+  hostedSessions     CoworkingSession[] @relation("SessionHost")
+  sessionRsvps       SessionRsvp[]
+  isAdmin            Boolean            @default(false)
+  flagsReported      FlaggedItem[]
+  adminAuditLogs     AdminAuditLog[]
+  ownedFolders       Folder[]           @relation("FolderOwner")
+  folderMemberships  FolderMember[]     @relation("FolderMembership")
+  addedFolderVenues  FolderVenue[]      @relation("FolderVenueAdder")
+  webhookEndpoints   WebhookEndpoint[]
+  phoneNumber        String?
+  smsAlertsEnabled   Boolean            @default(false)
+  notificationStart  String?
+  notificationEnd    String?
+  timezone           String?            @default("UTC")
+  folderUpvotes      FolderUpvote[]
+  sentFolderInvites  FolderInvite[]      @relation("FolderInviteSender")
+  workStyleProfile   String?
+  checkIns           CheckIn[]
 }
 
 model Venue {
@@ -64,6 +67,7 @@ model Venue {
   hasPhoneBooths     Boolean             @default(false)
   hasNoMusic         Boolean             @default(false)
   hasQuietZone       Boolean             @default(false)
+  hasAncHeadsetRental Boolean             @default(false)
   petsAllowedIndoors Boolean             @default(false)
   patioOnly          Boolean             @default(false)
   waterBowlsProvided Boolean             @default(false)
@@ -94,6 +98,9 @@ model Venue {
   wifiTelemetry      WifiTelemetry[]
   validations        AmenityValidation[]
   folderVenues       FolderVenue[]
+  currentOccupancy Int          @default(0)
+  maxCapacity      Int          @default(50) 
+  checkIns         CheckIn[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -175,25 +182,25 @@ model Message {
 }
 
 model Booking {
-  id              String        @id @default(cuid())
-  userId          String
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  venueId         String
-  venue           Venue         @relation(fields: [venueId], references: [id])
-  date            String
-  time            String
-  customerEmail   String
-  customerPhone   String?
-  status          BookingStatus @default(CONFIRMED)
-  confirmationId  String        @unique
-  createdAt       DateTime      @default(now())
+  id                 String        @id @default(cuid())
+  userId             String
+  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId            String
+  venue              Venue         @relation(fields: [venueId], references: [id])
+  date               String
+  time               String
+  customerEmail      String
+  customerPhone      String?
+  status             BookingStatus @default(CONFIRMED)
+  confirmationId     String        @unique
+  createdAt          DateTime      @default(now())
   projectBillingCode String?
-  seatId          String?
-  seatNumber      String?
-  duration        Int?
-  amenitiesNeeded String[]      @default([])
-  seat            VenueSeat?    @relation(fields: [seatId], references: [id])
-  guests          BookingGuest[]
+  seatId             String?
+  seatNumber         String?
+  duration           Int?
+  amenitiesNeeded    String[]      @default([])
+  seat               VenueSeat?    @relation(fields: [seatId], references: [id])
+  guests             BookingGuest[]
 
   @@index([userId])
   @@index([venueId])
@@ -202,17 +209,17 @@ model Booking {
 }
 
 model BookingGuest {
-  id          String        @id @default(cuid())
+  id          String      @id @default(cuid())
   bookingId   String
-  booking     Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  booking     Booking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   email       String
   name        String?
   phone       String?
-  status      GuestStatus   @default(PENDING)
+  status      GuestStatus @default(PENDING)
   calendarUid String?
   sentAt      DateTime?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   @@unique([bookingId, email])
   @@index([bookingId])
@@ -342,17 +349,17 @@ enum SeatType {
 }
 
 model VenueSeat {
-  id      String @id @default(cuid())
+  id      String   @id @default(cuid())
   venueId String
-  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  venue   Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
 
   seatNumber String
   type       SeatType @default(HOT_DESK)
 
   x      Int
   y      Int
-  width  Int @default(72)
-  height Int @default(48)
+  width  Int      @default(72)
+  height Int      @default(48)
 
   amenities String[] @default([])
   isEnabled Boolean  @default(true)
@@ -421,20 +428,21 @@ model AdminAuditLog {
 }
 
 model Folder {
-  id          String   @id @default(cuid())
+  id          String         @id @default(cuid())
   name        String
   description String?
   ownerId     String
-  owner       User     @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  inviteToken String?  @unique
-  isPublic    Boolean  @default(false)
-  upvotes     Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  owner       User           @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  inviteToken String?        @unique
+  isPublic    Boolean        @default(false)
+  upvotes     Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
-  venues  FolderVenue[]
-  members FolderMember[]
+  venues     FolderVenue[]
+  members    FolderMember[]
   upvoteRefs FolderUpvote[]
+  invites     FolderInvite[]
 
   @@index([ownerId])
 }
@@ -512,6 +520,33 @@ model WebhookDeliveryLog {
   @@index([endpointId, createdAt])
 }
 
+
+model FolderInvite {
+  id        String             @id @default(cuid())
+  folderId  String
+  folder    Folder             @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User               @relation("FolderInviteSender", fields: [senderId], references: [id], onDelete: Cascade)
+  email     String
+  role      FolderRole         @default(MEMBER)
+  token     String             @unique
+  status    FolderInviteStatus @default(PENDING)
+  expiresAt DateTime
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  @@index([folderId])
+  @@index([email])
+  @@index([status, expiresAt])
+}
+
+enum FolderInviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
 model FolderUpvote {
   id        String   @id @default(cuid())
   folderId  String
@@ -523,4 +558,17 @@ model FolderUpvote {
   @@unique([folderId, userId])
   @@index([folderId])
   @@index([userId])
+}
+model CheckIn {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime // To prevent dead states, auto-expire checkout after e.g. 4 hours
+
+  @@unique([userId, venueId])
+  @@index([venueId])
+  @@index([expiresAt])
 }

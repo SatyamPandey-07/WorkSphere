@@ -47,61 +47,84 @@ let db: IDBDatabase | null = null;
 /**
  * Initialize IndexedDB
  */
+function showPrivateBrowsingAlert() {
+  if (typeof window === "undefined") return;
+  if ((window as any).__worksphere_offline_alert_shown) return;
+  (window as any).__worksphere_offline_alert_shown = true;
+  alert(
+    "Offline storage is disabled because Safari Private Browsing blocks database access. Please disable Private Browsing to use offline features.",
+  );
+}
+
 export async function initOfflineDB(): Promise<IDBDatabase> {
   if (db) return db;
 
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    try {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
 
-    request.onerror = () => {
-      console.error("[OfflineDB] Failed to open database");
-      reject(request.error);
-    };
+      request.onerror = () => {
+        console.error("[OfflineDB] Failed to open database");
+        const err = request.error || new Error("Unknown IndexedDB error");
+        if (err.name === "SecurityError") {
+          showPrivateBrowsingAlert();
+        }
+        reject(err);
+      };
 
-    request.onsuccess = () => {
-      db = request.result;
-      console.log("[OfflineDB] Database opened successfully");
-      resolve(db);
-    };
+      request.onsuccess = () => {
+        db = request.result;
+        console.log("[OfflineDB] Database opened successfully");
+        resolve(db);
+      };
 
-    request.onupgradeneeded = (event) => {
-      const database = (event.target as IDBOpenDBRequest).result;
+      request.onupgradeneeded = (event) => {
+        const database = (event.target as IDBOpenDBRequest).result;
 
-      // Venues store
-      if (!database.objectStoreNames.contains("venues")) {
-        const venuesStore = database.createObjectStore("venues", {
-          keyPath: "id",
-        });
-        venuesStore.createIndex("type", "type", { unique: false });
-        venuesStore.createIndex("savedAt", "savedAt", { unique: false });
+        // Venues store
+        if (!database.objectStoreNames.contains("venues")) {
+          const venuesStore = database.createObjectStore("venues", {
+            keyPath: "id",
+          });
+          venuesStore.createIndex("type", "type", { unique: false });
+          venuesStore.createIndex("savedAt", "savedAt", { unique: false });
+        }
+
+        // Favorites store
+        if (!database.objectStoreNames.contains("favorites")) {
+          const favoritesStore = database.createObjectStore("favorites", {
+            keyPath: "id",
+          });
+          favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
+        }
+
+        // Search history store
+        if (!database.objectStoreNames.contains("searches")) {
+          const searchesStore = database.createObjectStore("searches", {
+            keyPath: "query",
+          });
+          searchesStore.createIndex("timestamp", "timestamp", {
+            unique: false,
+          });
+        }
+
+        // Pending actions store (for sync when back online)
+        if (!database.objectStoreNames.contains("pendingActions")) {
+          database.createObjectStore("pendingActions", {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
+
+        console.log("[OfflineDB] Database schema created");
+      };
+    } catch (err: any) {
+      console.error("[OfflineDB] Synchronous error on open:", err);
+      if (err.name === "SecurityError") {
+        showPrivateBrowsingAlert();
       }
-
-      // Favorites store
-      if (!database.objectStoreNames.contains("favorites")) {
-        const favoritesStore = database.createObjectStore("favorites", {
-          keyPath: "id",
-        });
-        favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
-      }
-
-      // Search history store
-      if (!database.objectStoreNames.contains("searches")) {
-        const searchesStore = database.createObjectStore("searches", {
-          keyPath: "query",
-        });
-        searchesStore.createIndex("timestamp", "timestamp", { unique: false });
-      }
-
-      // Pending actions store (for sync when back online)
-      if (!database.objectStoreNames.contains("pendingActions")) {
-        database.createObjectStore("pendingActions", {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-      }
-
-      console.log("[OfflineDB] Database schema created");
-    };
+      reject(err);
+    }
   });
 }
 
@@ -327,6 +350,8 @@ export async function getSearchOffline(
 
 /**
  * Queue action for when back online
+ * Deduplicates by type + venueId to prevent duplicate entries from
+ * rapid double-clicks while offline.
  */
 export async function queuePendingAction(action: {
   type: "favorite" | "unfavorite" | "rate";
@@ -336,16 +361,29 @@ export async function queuePendingAction(action: {
   const database = await initOfflineDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["pendingActions"], "readwrite");
-    const store = transaction.objectStore("pendingActions");
+    const checkTx = database.transaction(["pendingActions"], "readonly");
+    const checkStore = checkTx.objectStore("pendingActions");
+    const getAll = checkStore.getAll();
 
-    const request = store.add({
-      ...action,
-      timestamp: Date.now(),
-    });
+    getAll.onsuccess = () => {
+      const existing = (getAll.result as Array<{ type: string; venueId: string; id: number }>).find(
+        (a) => a.type === action.type && a.venueId === action.venueId,
+      );
+      if (existing) {
+        resolve();
+        return;
+      }
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+      const addTx = database.transaction(["pendingActions"], "readwrite");
+      const addStore = addTx.objectStore("pendingActions");
+      addStore.add({
+        ...action,
+        timestamp: Date.now(),
+      });
+      addTx.oncomplete = () => resolve();
+      addTx.onerror = () => reject(addTx.error);
+    };
+    getAll.onerror = () => reject(getAll.error);
   });
 }
 

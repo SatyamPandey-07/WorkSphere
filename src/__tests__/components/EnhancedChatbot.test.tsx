@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom';
 
-// Test the component exports and types
+// Test the component exports, types, and integration with sub-components like BookingModal
 describe('EnhancedChatbot', () => {
   it('exports EnhancedChatbot component', async () => {
     // Verify the module can be imported

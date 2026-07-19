@@ -291,6 +291,8 @@ async function dataAgent(
         body: `data=${encodeURIComponent(query)}`,
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "WorkSphere-Dev-App/1.0",
+          Accept: "application/json",
         },
         signal: controller.signal,
       });

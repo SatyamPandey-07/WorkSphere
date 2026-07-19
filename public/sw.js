@@ -10,39 +10,51 @@ self.addEventListener("install", (event) => {
   // Use a temporary cache for installation to prevent locking the main cache
   const tempCacheName = `${CACHE_NAME}-installing`;
   event.waitUntil(
-    caches.open(tempCacheName).then((cache) => {
-      return cache.addAll(PRECACHE_ASSETS);
-    }).then(() => {
-      // Once assets are added, we can skip waiting immediately
-      return self.skipWaiting();
-    }).catch(err => {
-      console.error("[SW] Install failed:", err);
-      // Even if install fails, we skip waiting to avoid getting stuck in 'installing' state
-      return self.skipWaiting();
-    })
+    caches
+      .open(tempCacheName)
+      .then((cache) => {
+        return cache.addAll(PRECACHE_ASSETS);
+      })
+      .then(() => {
+        // Once assets are added, we can skip waiting immediately
+        return self.skipWaiting();
+      })
+      .catch((err) => {
+        console.error("[SW] Install failed:", err);
+        // Even if install fails, we skip waiting to avoid getting stuck in 'installing' state
+        return self.skipWaiting();
+      }),
   );
 });
 
 // Activate event - clean up old caches and move temp assets
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME && !name.endsWith("-installing"))
-          .map((name) => caches.delete(name)),
-      );
-    }).then(() => {
-      // Claim clients immediately to take control of the page
-      return self.clients.claim();
-    }).then(() => {
-      // Clean up any stray installation caches
-      return caches.keys().then(names => {
+    caches
+      .keys()
+      .then((cacheNames) => {
         return Promise.all(
-          names.filter(n => n.endsWith("-installing")).map(n => caches.delete(n))
+          cacheNames
+            .filter(
+              (name) => name !== CACHE_NAME && !name.endsWith("-installing"),
+            )
+            .map((name) => caches.delete(name)),
         );
-      });
-    })
+      })
+      .then(() => {
+        // Claim clients immediately to take control of the page
+        return self.clients.claim();
+      })
+      .then(() => {
+        // Clean up any stray installation caches
+        return caches.keys().then((names) => {
+          return Promise.all(
+            names
+              .filter((n) => n.endsWith("-installing"))
+              .map((n) => caches.delete(n)),
+          );
+        });
+      }),
   );
 });
 
@@ -336,50 +348,56 @@ async function syncConversations() {
 // IndexedDB helpers
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("worksphere-offline", 3);
+    try {
+      const request = indexedDB.open("worksphere-offline", 3);
 
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result);
 
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
 
-      // Venues store
-      if (!db.objectStoreNames.contains("venues")) {
-        const venuesStore = db.createObjectStore("venues", { keyPath: "id" });
-        venuesStore.createIndex("type", "type", { unique: false });
-        venuesStore.createIndex("savedAt", "savedAt", { unique: false });
-      }
+        // Venues store
+        if (!db.objectStoreNames.contains("venues")) {
+          const venuesStore = db.createObjectStore("venues", { keyPath: "id" });
+          venuesStore.createIndex("type", "type", { unique: false });
+          venuesStore.createIndex("savedAt", "savedAt", { unique: false });
+        }
 
-      // Favorites store
-      if (!db.objectStoreNames.contains("favorites")) {
-        const favoritesStore = db.createObjectStore("favorites", {
-          keyPath: "id",
-        });
-        favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
-      }
+        // Favorites store
+        if (!db.objectStoreNames.contains("favorites")) {
+          const favoritesStore = db.createObjectStore("favorites", {
+            keyPath: "id",
+          });
+          favoritesStore.createIndex("savedAt", "savedAt", { unique: false });
+        }
 
-      // Search history store
-      if (!db.objectStoreNames.contains("searches")) {
-        const searchesStore = db.createObjectStore("searches", {
-          keyPath: "query",
-        });
-        searchesStore.createIndex("timestamp", "timestamp", { unique: false });
-      }
+        // Search history store
+        if (!db.objectStoreNames.contains("searches")) {
+          const searchesStore = db.createObjectStore("searches", {
+            keyPath: "query",
+          });
+          searchesStore.createIndex("timestamp", "timestamp", {
+            unique: false,
+          });
+        }
 
-      // Migration
-      if (db.objectStoreNames.contains("pending-actions")) {
-        db.deleteObjectStore("pending-actions");
-      }
+        // Migration
+        if (db.objectStoreNames.contains("pending-actions")) {
+          db.deleteObjectStore("pending-actions");
+        }
 
-      // Pending actions store (unified name)
-      if (!db.objectStoreNames.contains("pendingActions")) {
-        db.createObjectStore("pendingActions", {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-      }
-    };
+        // Pending actions store (unified name)
+        if (!db.objectStoreNames.contains("pendingActions")) {
+          db.createObjectStore("pendingActions", {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
+      };
+    } catch (err) {
+      reject(err);
+    }
   });
 }
 
@@ -465,6 +483,8 @@ self.addEventListener("notificationclick", (event) => {
 import {
   getQueuedFavorites,
   dequeueOfflineAction,
+  incrementRetryCount,
+  MAX_SYNC_RETRIES,
 } from "../src/lib/offlineStore";
 
 self.addEventListener("sync", (event) => {
@@ -473,23 +493,66 @@ self.addEventListener("sync", (event) => {
   }
 });
 
+/**
+ * Notify every open tab/window so the UI can surface a toast. The service
+ * worker has no DOM access, so a permanently-failed sync can only be
+ * surfaced by posting a message to clients rather than showing anything
+ * itself. See usePWA.tsx's `useOfflineSyncNotice` for the listener. (Issue #712)
+ */
+async function notifyClientsOfPermanentFailure(action) {
+  const allClients = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  for (const client of allClients) {
+    client.postMessage({
+      type: "OFFLINE_SYNC_FAILED",
+      venueId: action.venueId,
+      action: action.action,
+      attempts: MAX_SYNC_RETRIES,
+    });
+  }
+}
+
 async function syncFavoritesOutbox() {
   try {
     const actions = await getQueuedFavorites();
 
     for (const action of actions) {
-      const response = await fetch("/api/favorites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          venueId: action.venueId,
-          action: action.action,
-        }),
-      });
+      if (!action.id) continue;
 
-      if (response.ok && action.id) {
-        // Remove from IndexedDB outbox queue on successful endpoint ingestion
-        await dequeueOfflineAction(action.id);
+      try {
+        const response = await fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            venueId: action.venueId,
+            action: action.action,
+          }),
+        });
+
+        if (response.ok) {
+          // Remove from IndexedDB outbox queue on successful endpoint ingestion
+          await dequeueOfflineAction(action.id);
+          continue;
+        }
+
+        // Non-OK response (e.g. 500) counts as a failed attempt, same as a
+        // network-level throw below.
+        throw new Error(`Sync request failed with status ${response.status}`);
+      } catch (error) {
+        console.error("Failed to sync favorite:", error);
+
+        const attempts = await incrementRetryCount(action.id);
+
+        if (attempts !== null && attempts >= MAX_SYNC_RETRIES) {
+          // Give up after MAX_SYNC_RETRIES — but tell the user instead of
+          // purging the action silently.
+          await dequeueOfflineAction(action.id);
+          await notifyClientsOfPermanentFailure(action);
+        }
+        // Otherwise leave it queued; the next "sync-favorites" event (or the
+        // next reconnect) will retry it.
       }
     }
   } catch (error) {

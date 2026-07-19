@@ -23,11 +23,20 @@
 
 - **Founder & CTO**: [Satyam Pandey](https://github.com/SatyamPandey-07)
 
-### 🚀 Contributors (Live API Tracker)
+> 🔔 **Update for Contributors:**
+>
+> The limit for active assigned issues per person has been increased to **10** (previously 5).
+>
+> You can claim any open issue by posting a comment with exactly:
+> `/claim`
+>
+> You will have **6 days** to complete it! 🚀
+
+### 🚀 Contributors (All 43 Active Rockstars)
 
 Automated contributor tracking synced directly via the GitHub API:
 
-[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100&columns=12)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 
 ---
 
@@ -56,6 +65,25 @@ Automated contributor tracking synced directly via the GitHub API:
 - **Natural Language Queries**: "Find a quiet cafe with good WiFi near me"
 - **Smart Intent Understanding**: Extracts work type, amenities, location preferences
 - **Intelligent Scoring**: Ranks venues based on work-friendliness criteria
+
+### 🎙️ Voice Input (Browser Support)
+
+The chatbot supports voice-to-text via the [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition):
+
+| Browser | Voice Input |
+|---------|-------------|
+| Chrome 33+ | ✅ Supported |
+| Edge 79+ | ✅ Supported |
+| Safari (desktop/mobile) | ✅ Supported (webkit prefix) |
+| Firefox Stable | ⚠️ Not supported by default |
+| Firefox Nightly | ⚠️ Requires flag — see below |
+
+**Firefox users:** The Web Speech API is disabled by default. To enable it:
+1. Navigate to `about:config` in Firefox.
+2. Search for `media.webspeech.recognition.enable` and set it to `true`.
+3. Reload the application.
+
+When voice input is unavailable, a clear warning banner is displayed and the feature degrades gracefully — the text input remains fully functional.
 
 ### 🗺️ Interactive Dark Theme Map
 
@@ -501,8 +529,9 @@ worksphere/
 │   │   ├── VenueSubmissionModal.tsx
 │   │   └── ErrorBoundary.tsx
 │   ├── hooks/
-│   │   ├── usePWA.tsx         # PWA installation hook
-│   │   └── useRealTime.tsx    # Real-time updates hook
+│   │   ├── usePWA.tsx              # PWA installation hook
+│   │   ├── useRealTime.tsx         # Real-time updates hook
+│   │   └── useSpeechRecognition.ts # Voice input with browser-support detection
 │   ├── lib/
 │   │   ├── prisma.ts          # Database client
 │   │   ├── utils.ts           # Utilities
@@ -539,6 +568,22 @@ Try these natural language queries:
 - "Find a quiet cafe with good WiFi near me"
 - "Show me coworking spaces within 2km"
 - "I need a library to study"
+
+#### 🎙️ Voice Input
+
+1. Open the app in **Chrome or Edge**
+2. Click the **microphone icon** in the chat input bar
+3. Allow microphone permission when prompted
+4. Speak your query — it will populate the text input automatically
+5. Click Send or press Enter to submit
+
+**Testing the unsupported-browser warning (Firefox Nightly / DevTools simulation):**
+
+1. Open Chrome DevTools (`F12`) → Console tab
+2. Paste: `delete window.SpeechRecognition; delete window.webkitSpeechRecognition;`
+3. Reload the page
+4. The mic button will appear **dimmed/greyed out**
+5. Click it → an amber warning banner appears explaining the limitation
 
 #### ⭐ Favorites & Ratings (Requires Sign-in)
 
@@ -584,6 +629,8 @@ Contributions are welcome! Please refer to our comprehensive [Contributing Guide
 - Coding standards and styling.
 - Testing guidelines (Jest unit tests and Playwright E2E integration).
 - Required pre-commit quality checks to ensure Vercel build compatibility.
+
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 To get started quickly:
 

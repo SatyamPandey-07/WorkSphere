@@ -73,8 +73,10 @@ export async function GET(
     let boldFont: PDFFont;
 
     try {
-      const regularFontBytes = fs.readFileSync(regularFontPath);
-      const boldFontBytes = fs.readFileSync(boldFontPath);
+      const [regularFontBytes, boldFontBytes] = await Promise.all([
+        fs.promises.readFile(regularFontPath),
+        fs.promises.readFile(boldFontPath),
+      ]);
 
       font = await pdfDoc.embedFont(regularFontBytes);
       boldFont = await pdfDoc.embedFont(boldFontBytes);
@@ -135,11 +137,8 @@ export async function GET(
           return String(rawDate);
         }
 
-        return new Intl.DateTimeFormat("en-GB", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        }).format(dateObj);
+        // Standardize to ISO-8601 format (YYYY-MM-DD)
+        return dateObj.toISOString().split("T")[0];
       } catch (err) {
         console.warn(
           "[PDF date format warning]: Failed to format booking date, using raw fallback",

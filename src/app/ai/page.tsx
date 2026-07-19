@@ -17,7 +17,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { OfflineIndicator, PWABanner } from "@/hooks/usePWA";
+import { OfflineIndicator, PWABanner, OfflineSyncNotice } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import {
   saveVenueOffline,
@@ -26,6 +26,11 @@ import {
 } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { Venue } from "@/components/chat/ChatMessages";
+// Dynamically import OnboardingTour to prevent hydration issues with react-joyride
+const OnboardingTour = dynamic(
+  () => import("@/components/OnboardingTour").then((mod) => mod.OnboardingTour),
+  { ssr: false },
+);
 
 // Dynamically import Map to avoid SSR issues with Leaflet
 const Map = dynamic(() => import("@/components/Map"), {
@@ -663,6 +668,7 @@ function AppPage() {
 
   return (
     <div className="flex flex-col h-screen bg-zinc-50 dark:bg-black overflow-hidden">
+      <OnboardingTour />
       {/* Offline Banner */}
       {!isOnline && (
         <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white text-center py-2 text-sm flex items-center justify-center gap-2 shadow-lg">
@@ -713,6 +719,7 @@ function AppPage() {
         {/* Map Section - Hidden on mobile when chat is active */}
         <div
           className={`
+          joyride-map
           ${mobileView === "map" ? "flex" : "hidden"} 
           md:flex flex-1 md:flex-[7] relative
         `}
@@ -733,6 +740,7 @@ function AppPage() {
         {/* Chat Section - Hidden on mobile when map is active */}
         <div
           className={`
+          joyride-chat
           ${mobileView === "chat" ? "flex" : "hidden"} 
           md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
         `}
@@ -870,12 +878,16 @@ function AppPage() {
         onClose={() => setSelectedVenue(null)}
         isFavorited={false} // Will be handled by state if needed later
         onGetDirections={(v: Venue) => {
+          if (!location) {
+            console.warn(
+              "[Directions] User location unavailable. Retry when GPS is acquired.",
+            );
+            return;
+          }
           handleMapUpdate({
             type: "route",
             route: {
-              from: location
-                ? { lat: location.latitude, lng: location.longitude }
-                : { lat: 0, lng: 0 },
+              from: { lat: location.latitude, lng: location.longitude },
               to: { lat: v.lat, lng: v.lng },
             },
           });
@@ -915,6 +927,7 @@ function AppPage() {
 
       {/* Offline Indicator */}
       <OfflineIndicator />
+      <OfflineSyncNotice />
 
       {/* PWA Install Banner */}
       <PWABanner />

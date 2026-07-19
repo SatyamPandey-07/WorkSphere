@@ -11,11 +11,12 @@ This document outlines responsive design practices for maintaining the 70/30 map
 - Mobile: Display one panel at a time using a toggle.
 
 ## Responsive Breakpoints
-| Device | Width |
-|---------|-------|
-| Desktop | >1024px |
-| Tablet | 769px–1024px |
-| Mobile | <=768px |
+
+| Device  | Width        |
+| ------- | ------------ |
+| Desktop | >1024px      |
+| Tablet  | 769px–1024px |
+| Mobile  | <=768px      |
 
 Example:
 

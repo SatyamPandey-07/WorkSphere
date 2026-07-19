@@ -5,8 +5,8 @@ import "./globals.css";
 import I18nProvider from "../components/I18nProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
 import { SoundProvider } from "../components/SoundProvider";
-
-import { headers } from "next/headers";
+import { ScrollProgress } from "../components/ui/ScrollProgress";
+import { headers, cookies } from "next/headers";
 
 const THEME_INIT_SCRIPT = `
 (function () {
@@ -18,6 +18,18 @@ const THEME_INIT_SCRIPT = `
     var root = document.documentElement;
     root.classList.toggle("dark", theme === "dark");
     root.style.colorScheme = theme;
+    // Keep cookie synchronized so server can pre-render correctly
+    if (document.cookie.indexOf("worksphere-theme=") === -1) {
+      document.cookie = "worksphere-theme=" + theme + "; path=/; max-age=31536000; SameSite=Lax";
+    }
+  } catch (e) {}
+
+  try {
+    window.addEventListener("error", function (e) {
+      if (e.message && (e.message.indexOf("ResizeObserver") >= 0 || e.message.indexOf("Resize observer") >= 0)) {
+        e.stopImmediatePropagation();
+      }
+    });
   } catch (e) {}
 })();
 `;
@@ -79,11 +91,16 @@ export default async function RootLayout({
     process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ===
     "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
 
+  const cookieStore = await cookies();
+  const theme = (cookieStore.get("worksphere-theme")?.value as "light" | "dark") || "light";
+
   const innerContent = (
     <ThemeProvider>
       <SoundProvider>
         <I18nProvider>{children}</I18nProvider>
       </SoundProvider>
+    <ThemeProvider initialTheme={theme}>
+      <I18nProvider>{children}</I18nProvider>
     </ThemeProvider>
   );
 
@@ -92,6 +109,7 @@ export default async function RootLayout({
       innerContent
     ) : (
       <ClerkProvider
+        afterSignOutUrl="/"
         publishableKey={
           process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
           "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk"
@@ -108,7 +126,7 @@ export default async function RootLayout({
     );
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={theme === "dark" ? "dark" : ""} suppressHydrationWarning>
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -121,6 +139,7 @@ export default async function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
+        <ScrollProgress />
         {bodyContent}
       </body>
     </html>

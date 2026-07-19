@@ -12,6 +12,8 @@ import {
   Info,
   Loader2,
   MapPin,
+  Mic,
+  MicOff,
   Navigation,
   Send,
   Star,
@@ -20,12 +22,21 @@ import {
   Zap,
   LayoutGrid,
   List,
+  Copy,
+  Check,
+  Clock,
+  Trash2,
 } from "lucide-react";
-import { RefObject, useState, useEffect } from "react";
+import { RefObject, useState, useEffect, useRef, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
 import { MessageRenderer } from "./GenerativeUI";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { ComparisonDrawer } from "@/components/ComparisonDrawer";
+import { ChatMessageSkeleton } from "@/components/ui/skeleton";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
@@ -67,6 +78,7 @@ export interface Message {
   suggestions?: string[];
   cached?: boolean;
   complexity?: string;
+  isStreaming?: boolean;
 }
 
 const AGENT_ICONS: Record<string, React.ElementType> = {
@@ -101,6 +113,12 @@ interface VenueChatCardProps {
   onOpenDetails: (venue: Venue) => void;
   onBook: (venue: Venue) => void;
   viewMode?: "card" | "list";
+  tabIndex?: number;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
+  "data-index"?: number;
+  isSelected?: boolean;
+  compareDisabled?: boolean;
+  onToggleCompare?: (venue: Venue) => void;
 }
 
 export function VenueChatCard({
@@ -112,10 +130,17 @@ export function VenueChatCard({
   onOpenDetails,
   onBook,
   viewMode = "card",
+  tabIndex,
+  onKeyDown,
+  "data-index": dataIndex,
+  isSelected,
+  compareDisabled,
+  onToggleCompare,
 }: VenueChatCardProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [showFolderModal, setShowFolderModal] = useState(false);
+  const [enableTransition, setEnableTransition] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams({
@@ -130,7 +155,6 @@ export function VenueChatCard({
         if (!response.ok) {
           throw new Error("Failed to load venue photo");
         }
-
         setPhotoUrl(response.url);
       })
       .catch(() => {
@@ -140,6 +164,11 @@ export function VenueChatCard({
         setPhotoLoading(false);
       });
   }, [venue.id, venue.name, venue.lat, venue.lng]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setEnableTransition(true), 500);
+    return () => clearTimeout(timer);
+  }, []);
 
   const CategoryIcon =
     venue.category === "cafe"
@@ -177,9 +206,11 @@ export function VenueChatCard({
       <>
         <div
           onClick={() => onOpenDetails(venue)}
-          className="border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 bg-white dark:bg-zinc-900 hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer shadow-sm my-1 active:scale-[0.99] flex items-center gap-3"
+          tabIndex={tabIndex}
+          onKeyDown={onKeyDown}
+          data-index={dataIndex}
+          className="border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 bg-white dark:bg-zinc-900 hover:shadow-md hover:scale-[1.01] transition-all cursor-pointer shadow-sm my-1 active:scale-[0.99] flex items-center gap-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
         >
-          {/* Photo thumbnail */}
           {photoLoading ? (
             <div className="w-12 h-12 bg-zinc-100 dark:bg-zinc-800 animate-pulse rounded-lg shrink-0" />
           ) : (
@@ -196,7 +227,6 @@ export function VenueChatCard({
             </div>
           )}
 
-          {/* Content Area */}
           <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
               <div className="flex items-center gap-1.5">
@@ -217,7 +247,6 @@ export function VenueChatCard({
               )}
             </div>
 
-            {/* Details (wifi, outlets) horizontally */}
             <div className="flex items-center gap-2 shrink-0">
               {venue.wifi && (
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/20">
@@ -246,21 +275,47 @@ export function VenueChatCard({
             </div>
           </div>
 
-          {/* Mini Actions to keep functionality */}
           <div
             className="flex items-center gap-1.5 shrink-0"
             onClick={(e) => e.stopPropagation()}
           >
+            {onToggleCompare && (
+              <label
+                className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg border transition-all ${
+                  !isSelected && compareDisabled
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer"
+                } ${
+                  isSelected
+                    ? "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-400"
+                    : "bg-zinc-100 border-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => onToggleCompare(venue)}
+                  disabled={!isSelected && compareDisabled}
+                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                />
+                <span className="text-[10px] font-black uppercase tracking-tighter hidden sm:inline">
+                  Compare
+                </span>
+              </label>
+            )}
+
             <button
               onClick={() => onBook(venue)}
-              className="p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all active:scale-[0.95]"
+              className="joyride-booking p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all active:scale-[0.95]"
               title="Book Now"
             >
               <Zap className="w-3.5 h-3.5 fill-current" />
             </button>
             <button
               onClick={() => onToggleFavorite(venue)}
-              className={`p-1.5 rounded-lg border transition-all active:scale-[0.95] ${
+              className={`p-1.5 rounded-lg border active:scale-[0.95] ${
+                enableTransition ? "transition-all duration-300" : ""
+              } ${
                 isFavorited
                   ? "bg-red-500 text-white border-red-500"
                   : "bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:bg-zinc-200"
@@ -268,7 +323,9 @@ export function VenueChatCard({
               title="Save favorite"
             >
               <Heart
-                className={`w-3.5 h-3.5 ${isFavorited ? "fill-current" : ""}`}
+                className={`w-3.5 h-3.5 ${
+                  enableTransition ? "transition-all duration-300" : ""
+                } ${isFavorited ? "fill-current" : ""}`}
               />
             </button>
           </div>
@@ -287,9 +344,11 @@ export function VenueChatCard({
     <>
       <div
         onClick={() => onOpenDetails(venue)}
-        className="border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-2xl hover:scale-[1.02] transition-all cursor-pointer shadow-lg my-2 active:scale-95"
+        tabIndex={tabIndex}
+        onKeyDown={onKeyDown}
+        data-index={dataIndex}
+        className="relative border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 hover:shadow-2xl hover:scale-[1.02] transition-all cursor-pointer shadow-lg my-2 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
       >
-        {/* Venue photo */}
         {photoLoading ? (
           <div className="w-full h-44 bg-zinc-100 dark:bg-zinc-800 animate-pulse" />
         ) : (
@@ -304,13 +363,36 @@ export function VenueChatCard({
               }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+
             <span className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-black px-2 py-1 rounded-md bg-zinc-950 border border-zinc-700 text-white">
               <CategoryIcon className="w-3 h-3" />
               {venue.category?.replace("_", " ")}
             </span>
 
+            {onToggleCompare && (
+              <div
+                className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2.5 py-1.5 rounded-lg shadow-md backdrop-blur-md"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  id={`compare-card-${venue.id}`}
+                  checked={isSelected}
+                  onChange={() => onToggleCompare(venue)}
+                  disabled={!isSelected && compareDisabled}
+                  className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                />
+                <label
+                  htmlFor={`compare-card-${venue.id}`}
+                  className="text-xs font-bold text-zinc-800 dark:text-zinc-200 cursor-pointer select-none uppercase tracking-tight"
+                >
+                  Compare
+                </label>
+              </div>
+            )}
+
             {venue.score != null && (
-              <div className="absolute top-3 right-3 flex flex-col items-center justify-center h-12 w-12 rounded-full bg-blue-600 text-white border-2 border-blue-400 shadow-2xl">
+              <div className="absolute top-3 right-3 flex flex-col items-center justify-center h-12 w-12 rounded-full bg-blue-600 text-white border-2 border-blue-400 shadow-2xl z-10">
                 <span className="text-[10px] font-black leading-none uppercase">
                   Vibe
                 </span>
@@ -340,7 +422,6 @@ export function VenueChatCard({
                 </p>
               )}
 
-              {/* Amenity badges */}
               <div className="flex flex-wrap items-center gap-2 mt-2">
                 {venue.wifi && (
                   <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-green-500/10 border border-green-500/20">
@@ -368,7 +449,6 @@ export function VenueChatCard({
                 )}
               </div>
 
-              {/* Action buttons */}
               <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button
@@ -391,7 +471,7 @@ export function VenueChatCard({
                       e.stopPropagation();
                       onBook(venue);
                     }}
-                    className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs shadow-lg uppercase tracking-tight active:scale-[0.98]"
+                    className="joyride-booking flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs shadow-lg uppercase tracking-tight active:scale-[0.98]"
                   >
                     <Zap className="w-3.5 h-3.5 fill-current" />
                     Book Now
@@ -427,14 +507,18 @@ export function VenueChatCard({
                       );
                       onToggleFavorite(venue);
                     }}
-                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg transition-all ${
+                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg ${
+                      enableTransition ? "transition-all duration-300" : ""
+                    } ${
                       isFavorited
                         ? "bg-red-500 text-white shadow-md shadow-red-500/20"
                         : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
                     }`}
                   >
                     <Heart
-                      className={`w-3 h-3 ${isFavorited ? "fill-current" : ""}`}
+                      className={`w-3 h-3 ${
+                        enableTransition ? "transition-all duration-300" : ""
+                      } ${isFavorited ? "fill-current" : ""}`}
                     />
                     {isFavorited ? "Saved" : "Save"}
                   </button>
@@ -485,6 +569,7 @@ interface VenueListingsProps {
   onRateVenue: (venue: Venue) => void;
   onOpenDetails: (venue: Venue) => void;
   onBook: (venue: Venue) => void;
+  onLoadMore?: () => Promise<void>;
 }
 
 export function VenueListings({
@@ -495,11 +580,98 @@ export function VenueListings({
   onRateVenue,
   onOpenDetails,
   onBook,
+  onLoadMore,
 }: VenueListingsProps) {
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const [selectedVenues, setSelectedVenues] = useState<Venue[]>([]);
+
+  // INFINITE SCROLL STATES
+  const [visibleCount, setVisibleCount] = useState(5);
+  const [isFetchingNextPage, setIsFetchingNextPage] = useState(false);
+  const observerTarget = useRef<HTMLDivElement>(null);
+
+  // FIX 1: Reset pagination state when a new search result set arrives
+  useEffect(() => {
+    setVisibleCount(5);
+    setIsFetchingNextPage(false);
+  }, [venues]);
+
+  // FIX 2 & 3: Clean up timer and support explicit pagination callback
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !isFetchingNextPage) {
+          // If we have more venues locally, mock the pagination load
+          if (visibleCount < venues.length) {
+            setIsFetchingNextPage(true);
+            timeoutId = setTimeout(() => {
+              setVisibleCount((prev) => Math.min(prev + 5, venues.length));
+              setIsFetchingNextPage(false);
+            }, 800);
+          }
+          // If we hit the end of the local array and have an API callback, fetch real data
+          else if (onLoadMore) {
+            setIsFetchingNextPage(true);
+            onLoadMore().finally(() => setIsFetchingNextPage(false));
+          }
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    if (observerTarget.current) {
+      observer.observe(observerTarget.current);
+    }
+
+    return () => {
+      observer.disconnect();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [visibleCount, venues.length, isFetchingNextPage, onLoadMore]);
+
+  const handleToggleCompare = (venue: Venue) => {
+    setSelectedVenues((prev) => {
+      const isSelected = prev.some((v) => v.id === venue.id);
+      if (isSelected) {
+        return prev.filter((v) => v.id !== venue.id);
+      } else if (prev.length < 3) {
+        return [...prev, venue];
+      }
+      return prev;
+    });
+  };
+
+  const handleKeyDown = (
+    e: React.KeyboardEvent,
+    index: number,
+    venue: Venue,
+  ) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const nextIndex = Math.min(index + 1, venues.length - 1);
+      const nextEl = containerRef.current?.querySelector(
+        `[data-index="${nextIndex}"]`,
+      ) as HTMLElement;
+      nextEl?.focus();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const prevIndex = Math.max(index - 1, 0);
+      const prevEl = containerRef.current?.querySelector(
+        `[data-index="${prevIndex}"]`,
+      ) as HTMLElement;
+      prevEl?.focus();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      onOpenDetails(venue);
+    }
+  };
 
   return (
-    <div className="space-y-3 pl-2">
+    <div className="space-y-3 pl-2" ref={containerRef}>
       <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2 mb-1">
         <p className="text-[10px] uppercase font-black tracking-widest text-zinc-400">
           Recommended Venues ({venues.length})
@@ -532,21 +704,52 @@ export function VenueListings({
         </div>
       </div>
 
-      <div className={viewMode === "card" ? "space-y-3" : "space-y-2"}>
-        {venues.slice(0, 5).map((venue) => (
-          <VenueChatCard
-            key={venue.id}
-            venue={venue}
-            isFavorited={favorites.has(venue.id)}
-            onGetDirections={onGetDirections}
-            onToggleFavorite={onToggleFavorite}
-            onRate={onRateVenue}
-            onOpenDetails={onOpenDetails}
-            onBook={onBook}
-            viewMode={viewMode}
-          />
-        ))}
-      </div>
+      {venues.length === 0 ? (
+        <EmptyState
+          illustration="search"
+          message="No venues found"
+          description="Try broadening your search criteria or adjusting your chat request."
+        />
+      ) : (
+        <div className={viewMode === "card" ? "space-y-3" : "space-y-2"}>
+          {venues.slice(0, visibleCount).map((venue, index) => (
+            <VenueChatCard
+              key={venue.id}
+              venue={venue}
+              isFavorited={favorites.has(venue.id)}
+              onGetDirections={onGetDirections}
+              onToggleFavorite={onToggleFavorite}
+              onRate={onRateVenue}
+              onOpenDetails={onOpenDetails}
+              onBook={onBook}
+              viewMode={viewMode}
+              tabIndex={0}
+              data-index={index}
+              onKeyDown={(e) => handleKeyDown(e, index, venue)}
+              isSelected={selectedVenues.some((v) => v.id === venue.id)}
+              compareDisabled={selectedVenues.length >= 3}
+              onToggleCompare={handleToggleCompare}
+            />
+          ))}
+
+          {/* Infinite Scroll Sentinel */}
+          {(visibleCount < venues.length || onLoadMore) && (
+            <div ref={observerTarget} className="py-4 flex justify-center">
+              {isFetchingNextPage && (
+                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Comparison Drawer Integration */}
+      <ComparisonDrawer
+        selectedVenues={selectedVenues as any}
+        onRemoveVenue={(id) =>
+          setSelectedVenues((prev) => prev.filter((v) => v.id !== id))
+        }
+      />
     </div>
   );
 }
@@ -586,8 +789,41 @@ export function MessageList({
   onSuggestionClick,
   initialSuggestions,
 }: MessageListProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToBottomIfNeeded = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const isAtBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight <
+      200;
+    if (isAtBottom || isLoading) {
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+      });
+    }
+  }, [isLoading]);
+
+  // Re-check scroll position whenever messages change or loading state changes
+  useEffect(() => {
+    scrollToBottomIfNeeded();
+  }, [messages, isLoading, scrollToBottomIfNeeded]);
+
+  // Also re-check whenever the container's own size changes (e.g. the input
+  // box growing to multiple lines shrinks the visible message area, which
+  // previously left new messages hidden below the fold)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const resizeObserver = new ResizeObserver(() => {
+      scrollToBottomIfNeeded();
+    });
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [scrollToBottomIfNeeded]);
+
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
       {messages.length === 0 && (
         <div className="text-center py-8">
           <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />
@@ -614,25 +850,46 @@ export function MessageList({
           key={message.id}
           className="space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-300"
         >
-          <div
-            className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-          >
+          {message.role === "assistant" &&
+          message.content.trim().length === 0 ? (
+            <ChatMessageSkeleton />
+          ) : (
             <div
-              className={`max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${
-                message.role === "user"
-                  ? "bg-zinc-950 border-zinc-800 text-white rounded-tr-none"
-                  : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
-              }`}
+              className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
             >
-              <div className="text-sm font-medium leading-relaxed">
-                {message.role === "assistant" ? (
-                  <MessageRenderer content={message.content} />
-                ) : (
-                  <span className="whitespace-pre-wrap">{message.content}</span>
+              <div
+                className={`group relative max-w-[90%] rounded-2xl px-5 py-3 shadow-md border-2 ${
+                  message.role === "user"
+                    ? "bg-zinc-950 border-zinc-800 text-white rounded-tr-none"
+                    : "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-50 border-zinc-100 dark:border-zinc-700 rounded-tl-none"
+                }`}
+              >
+                {message.role === "assistant" && (
+                  <CopyMessageButton text={message.content} />
                 )}
+                <div
+                  className={`text-sm font-medium leading-relaxed ${message.role === "assistant" ? "pr-6" : ""}`}
+                >
+                  {message.role === "assistant" ? (
+                    <div className="relative">
+                      <MessageRenderer content={message.content} />
+                      {message.isStreaming && (
+                        <span className="inline-flex gap-0.5 items-center ml-1 text-blue-600 dark:text-blue-400 font-black animate-pulse">
+                          <span>.</span>
+                          <span>.</span>
+                          <span>.</span>
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="whitespace-pre-wrap">
+                      {message.content}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           {message.agentSteps && message.agentSteps.length > 0 && (
             <div className="ml-2">
@@ -749,6 +1006,31 @@ function TerminalIcon(props: any) {
   return <span {...props}>💻</span>;
 }
 
+function CopyMessageButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute top-2 right-2 p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-all opacity-0 group-hover:opacity-100"
+      title="Copy message"
+      aria-label="Copy message"
+    >
+      {copied ? (
+        <Check className="w-3.5 h-3.5 text-green-500" />
+      ) : (
+        <Copy className="w-3.5 h-3.5" />
+      )}
+    </button>
+  );
+}
+
 // ─── ChatInput ────────────────────────────────────────────────────────────────
 
 interface ChatInputProps {
@@ -759,29 +1041,261 @@ interface ChatInputProps {
 }
 
 export function ChatInput({
-  input,
+  input = "",
   isLoading,
   onInputChange,
   onSubmit,
 }: ChatInputProps) {
+  const safeInput = input || "";
+  const MAX_CHARS = 2000;
+  const charCount = safeInput.length;
+  const isOverLimit = charCount > MAX_CHARS;
+
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [isFocused, setIsFocused] = useState(false);
+
+  useEffect(() => {
+    const history = localStorage.getItem("ws-recent-searches");
+    if (history) {
+      try {
+        setRecentSearches(JSON.parse(history));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, []);
+
+  const saveToHistory = (term: string) => {
+    const updated = [
+      term,
+      ...recentSearches.filter((item) => item !== term),
+    ].slice(0, 5);
+    setRecentSearches(updated);
+    localStorage.setItem("ws-recent-searches", JSON.stringify(updated));
+  };
+
+  const clearHistory = () => {
+    setRecentSearches([]);
+    localStorage.removeItem("ws-recent-searches");
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (safeInput.trim() && !isOverLimit) {
+      saveToHistory(safeInput.trim());
+    }
+    onSubmit(e);
+  };
+
+  // ── Voice input banner state ─────────────────────────────────────────────
+  // Tracks whether the unsupported-browser banner is currently visible.
+  // It auto-dismisses after 6 s so it never blocks the UI permanently.
+  const [showVoiceBanner, setShowVoiceBanner] = useState(false);
+  const bannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Show the banner and auto-hide it after 6 seconds. */
+  const triggerBanner = useCallback(() => {
+    setShowVoiceBanner(true);
+    if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    bannerTimerRef.current = setTimeout(() => setShowVoiceBanner(false), 6000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+    };
+  }, []);
+
+  // ── Speech recognition ───────────────────────────────────────────────────
+  /**
+   * When recognition returns a final transcript, prepend whatever the user
+   * had already typed (preserving their original input) then append the
+   * recognised text with a space separator.
+   */
+  const handleTranscript = useCallback(
+    (text: string) => {
+      if (!text) return;
+      const current = (input || "").trim();
+      onInputChange(current ? `${current} ${text}` : text);
+    },
+    [input, onInputChange],
+  );
+
+  const { isSupported, status, errorMessage, startListening, stopListening } =
+    useSpeechRecognition(handleTranscript);
+
+  const isListening = status === "listening";
+
+  /**
+   * Handle microphone button click.
+   * - Unsupported browser (e.g. Firefox Nightly without the flag) →
+   *   show a clear user-facing banner; do NOT crash silently.
+   * - Currently listening → stop recognition.
+   * - Idle / error → start recognition.
+   */
+  const handleMicClick = useCallback(() => {
+    if (!isSupported) {
+      triggerBanner();
+      return;
+    }
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  }, [isSupported, isListening, startListening, stopListening, triggerBanner]);
+
+  // Show the banner whenever the hook surfaces an error message too
+  useEffect(() => {
+    if (errorMessage) triggerBanner();
+  }, [errorMessage, triggerBanner]);
+
+  let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
+  if (isOverLimit) {
+    counterColor = "text-red-500";
+  } else if (charCount >= MAX_CHARS - 200) {
+    counterColor = "text-yellow-500";
+  }
+
+  // ── Mic button styling ───────────────────────────────────────────────────
+  const micButtonBase =
+    "p-3 rounded-xl transition-all active:scale-95 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500";
+
+  const micButtonStyle = !isSupported
+    ? // Visually disabled but still focusable so screen readers can reach the
+      // tooltip / aria-label describing why it is unavailable.
+      `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed opacity-60`
+    : isListening
+      ? `${micButtonBase} bg-red-500 hover:bg-red-600 text-white animate-pulse`
+      : `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700`;
+
+  const micAriaLabel = !isSupported
+    ? "Voice input is not supported in this browser"
+    : isListening
+      ? "Stop voice input"
+      : "Start voice input";
+
   return (
-    <div className="p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+    <div className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+      <AnimatePresence>
+        {isFocused && recentSearches.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            className="absolute bottom-full left-4 right-4 mb-2 z-50 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 shadow-2xl flex flex-col gap-3"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] uppercase font-black tracking-widest text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                Recent Searches
+              </span>
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  clearHistory();
+                }}
+                className="text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors flex items-center gap-1"
+              >
+                <Trash2 className="w-3 h-3" />
+                Clear
+              </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {recentSearches.map((term) => (
+                <button
+                  key={term}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onInputChange(term);
+                  }}
+                  className="px-3 py-1.5 bg-zinc-100 hover:bg-blue-50 dark:bg-zinc-900 dark:hover:bg-blue-950/30 border border-zinc-200/50 dark:border-zinc-800 hover:border-blue-200 dark:hover:border-blue-900/50 text-[11px] font-black uppercase tracking-tight rounded-xl text-zinc-600 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 transition-all flex items-center gap-1"
+                >
+                  {term}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Unsupported-browser / error banner ─────────────────────────── */}
+      {showVoiceBanner && (
+        <div
+          role="alert"
+          className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
+        >
+          <MicOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="font-semibold leading-snug">
+            {errorMessage ||
+              "Voice input is not supported in this browser. Please use Chrome, Edge, or enable speech recognition in Firefox (about:config → media.webspeech.recognition.enable)."}
+          </span>
+          <button
+            type="button"
+            aria-label="Dismiss voice input warning"
+            onClick={() => setShowVoiceBanner(false)}
+            className="ml-auto shrink-0 rounded p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <form
         id="ws-chat-form"
-        onSubmit={onSubmit}
+        onSubmit={handleFormSubmit}
         className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:border-blue-600 transition-all shadow-inner"
       >
+        <button
+          type="button"
+          onClick={handleMicClick}
+          className={`p-3 rounded-xl transition-all active:scale-95 shadow-lg group ${
+            isListening
+              ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
+              : "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
+          }`}
+          title={isListening ? "Stop dictation" : "Start dictation"}
+        >
+          <Mic className="w-5 h-5" />
+        </button>
         <input
           type="text"
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          placeholder="Where's the focus mode hotspot?"
+          value={safeInput}
+          onChange={(e) => onInputChange(e.target.value ?? "")}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          placeholder={
+            isListening ? "Listening…" : "Where's the focus mode hotspot?"
+          }
           disabled={isLoading}
           className="flex-1 px-4 py-3 bg-transparent text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 text-sm font-bold"
         />
+
+        {/* ── Microphone button ──────────────────────────────────────────── */}
+        <button
+          type="button"
+          onClick={handleMicClick}
+          aria-label={micAriaLabel}
+          // Keep the button in the tab order even when unsupported so
+          // keyboard-only users discover the "not available" message.
+          aria-disabled={!isSupported}
+          title={micAriaLabel}
+          className={micButtonStyle}
+        >
+          {isListening ? (
+            <MicOff className="w-5 h-5" aria-hidden="true" />
+          ) : (
+            <Mic className="w-5 h-5" aria-hidden="true" />
+          )}
+        </button>
+
+        {/* ── Send button ────────────────────────────────────────────────── */}
         <button
           type="submit"
-          disabled={isLoading || !input.trim()}
+          disabled={isLoading || !input.trim() || isOverLimit}
           className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
         >
           {isLoading ? (
@@ -791,6 +1305,14 @@ export function ChatInput({
           )}
         </button>
       </form>
+
+      <div className="mt-2 text-right">
+        <span
+          className={`text-xs font-semibold transition-colors ${counterColor}`}
+        >
+          {charCount}/{MAX_CHARS}
+        </span>
+      </div>
     </div>
   );
 }

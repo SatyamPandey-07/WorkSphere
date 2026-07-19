@@ -8,6 +8,7 @@ import { VenueRatingDialog } from "./VenueRatingDialog";
 import { VenueSubmissionModal } from "./VenueSubmissionModal";
 import { BookingModal } from "./chat/BookingModal";
 import { ChatHeader } from "./chat/ChatHeader";
+import { ShortcutsModal } from "./ui/ShortcutsModal";
 import { ChatInput, MessageList, Venue, Message } from "./chat/ChatMessages";
 import {
   trackSearch,
@@ -116,6 +117,18 @@ export function EnhancedChatbot({
   const { isSignedIn, user } = useUser();
 
   const { socket } = useMultiplayerSession(roomId || null);
+  const sendSocketMessage = useCallback(
+    (data: string) => {
+      if (socket && socket.readyState === 1) {
+        try {
+          socket.send(data);
+        } catch (err) {
+          console.error("[Socket] Failed to send message:", err);
+        }
+      }
+    },
+    [socket],
+  );
   const { getToken } = useAuth();
 
   // Presence state
@@ -152,6 +165,7 @@ export function EnhancedChatbot({
     "booking",
   );
   const [showVenueSubmission, setShowVenueSubmission] = useState(false);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
 
   // Conversations & favorites
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -166,7 +180,7 @@ export function EnhancedChatbot({
     const handleMouseMove = (e: MouseEvent) => {
       // Throttle mouse moves to avoid flooding
       if (Math.random() > 0.8) {
-        socket.send(
+        sendSocketMessage(
           JSON.stringify({
             type: "cursor",
             x: e.clientX,
@@ -179,7 +193,7 @@ export function EnhancedChatbot({
 
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [socket, roomId, user]);
+  }, [socket, roomId, user, sendSocketMessage]);
 
   // Handle incoming presence
   useEffect(() => {
@@ -227,11 +241,6 @@ export function EnhancedChatbot({
   }, [socket, onMapUpdate]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
-
-  // Auto-scroll
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   // Geolocation fallback
   const getPreciseLocation = useCallback(() => {
@@ -300,7 +309,7 @@ export function EnhancedChatbot({
       onMapUpdate?.(update);
 
       if (socket && roomId) {
-        socket.send(JSON.stringify({ type: "map-update", update }));
+        sendSocketMessage(JSON.stringify({ type: "map-update", update }));
       }
     }
   };
@@ -435,6 +444,41 @@ export function EnhancedChatbot({
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
   }, [isSignedIn, loadConversations]);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const isTyping =
+        activeEl &&
+        (activeEl.tagName === "INPUT" ||
+          activeEl.tagName === "TEXTAREA" ||
+          activeEl.getAttribute("contenteditable") === "true");
+
+      if (e.key === "?" && !isTyping) {
+        e.preventDefault();
+        setShowShortcutsModal((prev) => !prev);
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        const chatInput = document.querySelector(
+          "#ws-chat-form input",
+        ) as HTMLInputElement;
+        chatInput?.focus();
+      }
+
+      if (e.key === "Escape") {
+        setRatingVenue(null);
+        setBookingVenue(null);
+        setBookingMode("booking");
+        setShowVenueSubmission(false);
+        setShowShortcutsModal(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
 
   const startNewChat = () => {
     setCurrentConversationId(null);
@@ -653,12 +697,13 @@ export function EnhancedChatbot({
 
   // Main submit
   const handleInputChange = (val: string) => {
-    setInput(val);
+    const safeVal = typeof val === "string" ? val : "";
+    setInput(safeVal);
     if (socket && roomId) {
-      socket.send(
+      sendSocketMessage(
         JSON.stringify({
           type: "typing",
-          isTyping: val.length > 0,
+          isTyping: safeVal.length > 0,
           name: user?.firstName || "Anonymous",
         }),
       );
@@ -670,7 +715,7 @@ export function EnhancedChatbot({
     if (!input.trim() || isLoading) return;
 
     if (socket && roomId) {
-      socket.send(
+      sendSocketMessage(
         JSON.stringify({
           type: "typing",
           isTyping: false,
@@ -696,10 +741,15 @@ export function EnhancedChatbot({
       content: userMessage,
       name: user?.firstName || "Anonymous",
     };
-    setMessages((prev) => [...prev, newUserMessage]);
+
+    // Prevent user message duplication on hot reload
+    setMessages((prev) => {
+      if (prev.some((m) => m.id === newUserMessage.id)) return prev;
+      return [...prev, newUserMessage];
+    });
 
     if (socket && roomId) {
-      socket.send(
+      sendSocketMessage(
         JSON.stringify({ type: "new-message", message: newUserMessage }),
       );
     }
@@ -731,14 +781,19 @@ export function EnhancedChatbot({
       }
 
       const assistantMessageId = (Date.now() + 1).toString();
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: assistantMessageId,
-          role: "assistant",
-          content: "",
-        },
-      ]);
+      // Prevent assistant message duplication on hot reload
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === assistantMessageId)) return prev;
+        return [
+          ...prev,
+          {
+            id: assistantMessageId,
+            role: "assistant",
+            content: "",
+            isStreaming: true,
+          },
+        ];
+      });
 
       setIsLoading(false); // Stream starts, disable loading spinner
 
@@ -825,7 +880,9 @@ export function EnhancedChatbot({
                   };
                   onMapUpdate(update);
                   if (socket && roomId) {
-                    socket.send(JSON.stringify({ type: "map-update", update }));
+                    sendSocketMessage(
+                      JSON.stringify({ type: "map-update", update }),
+                    );
                   }
                 }
               } catch (e) {
@@ -894,15 +951,16 @@ export function EnhancedChatbot({
         }
       }
 
-      // Final message sync for socket
       setMessages((prev) => {
         const finalMsg = prev.find((m) => m.id === assistantMessageId);
         if (finalMsg && socket && roomId) {
-          socket.send(
+          sendSocketMessage(
             JSON.stringify({ type: "new-message", message: finalMsg }),
           );
         }
-        return prev;
+        return prev.map((m) =>
+          m.id === assistantMessageId ? { ...m, isStreaming: false } : m,
+        );
       });
     } catch (err) {
       console.error("Chat error:", err);
@@ -980,6 +1038,9 @@ export function EnhancedChatbot({
       );
     } finally {
       setIsLoading(false);
+      setMessages((prev) =>
+        prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)),
+      );
     }
   };
 
@@ -1137,6 +1198,11 @@ export function EnhancedChatbot({
             },
           ]);
         }}
+      />
+
+      <ShortcutsModal
+        isOpen={showShortcutsModal}
+        onClose={() => setShowShortcutsModal(false)}
       />
     </div>
   );

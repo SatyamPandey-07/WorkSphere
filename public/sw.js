@@ -483,6 +483,8 @@ self.addEventListener("notificationclick", (event) => {
 import {
   getQueuedFavorites,
   dequeueOfflineAction,
+  incrementRetryCount,
+  MAX_SYNC_RETRIES,
 } from "../src/lib/offlineStore";
 
 self.addEventListener("sync", (event) => {
@@ -491,23 +493,66 @@ self.addEventListener("sync", (event) => {
   }
 });
 
+/**
+ * Notify every open tab/window so the UI can surface a toast. The service
+ * worker has no DOM access, so a permanently-failed sync can only be
+ * surfaced by posting a message to clients rather than showing anything
+ * itself. See usePWA.tsx's `useOfflineSyncNotice` for the listener. (Issue #712)
+ */
+async function notifyClientsOfPermanentFailure(action) {
+  const allClients = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  for (const client of allClients) {
+    client.postMessage({
+      type: "OFFLINE_SYNC_FAILED",
+      venueId: action.venueId,
+      action: action.action,
+      attempts: MAX_SYNC_RETRIES,
+    });
+  }
+}
+
 async function syncFavoritesOutbox() {
   try {
     const actions = await getQueuedFavorites();
 
     for (const action of actions) {
-      const response = await fetch("/api/favorites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          venueId: action.venueId,
-          action: action.action,
-        }),
-      });
+      if (!action.id) continue;
 
-      if (response.ok && action.id) {
-        // Remove from IndexedDB outbox queue on successful endpoint ingestion
-        await dequeueOfflineAction(action.id);
+      try {
+        const response = await fetch("/api/favorites", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            venueId: action.venueId,
+            action: action.action,
+          }),
+        });
+
+        if (response.ok) {
+          // Remove from IndexedDB outbox queue on successful endpoint ingestion
+          await dequeueOfflineAction(action.id);
+          continue;
+        }
+
+        // Non-OK response (e.g. 500) counts as a failed attempt, same as a
+        // network-level throw below.
+        throw new Error(`Sync request failed with status ${response.status}`);
+      } catch (error) {
+        console.error("Failed to sync favorite:", error);
+
+        const attempts = await incrementRetryCount(action.id);
+
+        if (attempts !== null && attempts >= MAX_SYNC_RETRIES) {
+          // Give up after MAX_SYNC_RETRIES — but tell the user instead of
+          // purging the action silently.
+          await dequeueOfflineAction(action.id);
+          await notifyClientsOfPermanentFailure(action);
+        }
+        // Otherwise leave it queued; the next "sync-favorites" event (or the
+        // next reconnect) will retry it.
       }
     }
   } catch (error) {

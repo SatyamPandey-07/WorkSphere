@@ -161,6 +161,105 @@ export function BookingModal({
     };
   }, [step]);
 
+  const getFilteredHistory = () => {
+    if (dateFilter === "all") return history;
+    const now = new Date();
+    const currentYear = now.getFullYear();
+
+    return history.filter((b) => {
+      const bDate = new Date(b.date);
+      if (isNaN(bDate.getTime())) return true;
+
+      const bMonth = bDate.getMonth();
+      const bYear = bDate.getFullYear();
+
+      switch (dateFilter) {
+        case "current_month":
+          return bMonth === now.getMonth() && bYear === currentYear;
+        case "last_month": {
+          const lastMonth = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+          const lastMonthYear =
+            now.getMonth() === 0 ? currentYear - 1 : currentYear;
+          return bMonth === lastMonth && bYear === lastMonthYear;
+        }
+        case "q1":
+          return bMonth >= 0 && bMonth <= 2 && bYear === currentYear;
+        case "q2":
+          return bMonth >= 3 && bMonth <= 5 && bYear === currentYear;
+        case "q3":
+          return bMonth >= 6 && bMonth <= 8 && bYear === currentYear;
+        case "q4":
+          return bMonth >= 9 && bMonth <= 11 && bYear === currentYear;
+        default:
+          return true;
+      }
+    });
+  };
+
+  const filteredHistory = getFilteredHistory();
+
+  const fetchHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const res = await fetch("/api/bookings/history");
+      const data = await res.json();
+      setHistory(data.bookings || []);
+      setSelectedIds(new Set());
+      setStep("history");
+    } catch (err) {
+      console.error("Failed to fetch history:", err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setStep(mode === "history" ? "history" : "details");
+      setGuests([]);
+      setGuestInviteStatus("idle");
+    } else if (mode === "history") {
+      fetchHistory();
+    }
+  }, [isOpen, mode]);
+
+  useEffect(() => {
+    if (!isOpen || !modalRef.current) return;
+
+    const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+
+    if (focusableElements.length === 0) return;
+
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    firstElement.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+
+      if (event.shiftKey) {
+        if (document.activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          event.preventDefault();
+          firstElement.focus();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen]);
+
   const toggleSelected = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -593,13 +692,14 @@ export function BookingModal({
 
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                  <label htmlFor="allocation-date" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
                     Allocation Date
                   </label>
                   <div className="relative">
                     <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="date"
+                      id="allocation-date"
                       min={getTodayString()}
                       className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                       value={bookingDate}
@@ -608,13 +708,14 @@ export function BookingModal({
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                  <label htmlFor="arrival-time" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
                     Arrival Time
                   </label>
                   <div className="relative">
                     <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="time"
+                      id="arrival-time"
                       className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
                       value={bookingTime}
                       onChange={(e) => setBookingTime(e.target.value)}
@@ -622,6 +723,7 @@ export function BookingModal({
                   </div>
                 </div>
               </div>
+
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">

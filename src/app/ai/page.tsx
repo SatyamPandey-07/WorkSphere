@@ -17,7 +17,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { OfflineIndicator, PWABanner } from "@/hooks/usePWA";
+import { OfflineIndicator, PWABanner, OfflineSyncNotice } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import {
   saveVenueOffline,
@@ -879,7 +879,9 @@ function AppPage() {
         isFavorited={false} // Will be handled by state if needed later
         onGetDirections={(v: Venue) => {
           if (!location) {
-            console.warn("[Directions] User location unavailable. Retry when GPS is acquired.");
+            console.warn(
+              "[Directions] User location unavailable. Retry when GPS is acquired.",
+            );
             return;
           }
           handleMapUpdate({
@@ -925,6 +927,7 @@ function AppPage() {
 
       {/* Offline Indicator */}
       <OfflineIndicator />
+      <OfflineSyncNotice />
 
       {/* PWA Install Banner */}
       <PWABanner />

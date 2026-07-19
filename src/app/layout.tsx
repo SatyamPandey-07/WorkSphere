@@ -105,6 +105,7 @@ export default async function RootLayout({
       innerContent
     ) : (
       <ClerkProvider
+        afterSignOutUrl="/"
         publishableKey={
           process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
           "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk"

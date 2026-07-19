@@ -1,5 +1,6 @@
-import { isPrivateIp, isValidWebhookUrl } from "@/lib/whatsapp";
+import { isPrivateIp, isValidWebhookUrl, whatsAppService } from "@/lib/whatsapp";
 import dns from "dns";
+import https from "https";
 
 jest.mock("dns", () => {
   return {
@@ -17,6 +18,32 @@ jest.mock("dns", () => {
         throw new Error("DNS resolution failed");
       }),
     },
+  };
+});
+
+jest.mock("https", () => {
+  return {
+    request: jest.fn().mockImplementation((options, callback) => {
+      const mockRes = {
+        statusCode: 200,
+        on: jest.fn().mockImplementation((event, cb) => {
+          if (event === "data") {
+            cb(Buffer.from("OK"));
+          }
+          if (event === "end") {
+            cb();
+          }
+        }),
+      };
+      const mockReq = {
+        on: jest.fn(),
+        write: jest.fn(),
+        end: jest.fn().mockImplementation(() => {
+          if (callback) callback(mockRes);
+        }),
+      };
+      return mockReq;
+    }),
   };
 });
 
@@ -99,5 +126,53 @@ describe("isValidWebhookUrl", () => {
       "https://nonexistent-domain.xyz/webhook",
     );
     expect(res).toBe(false);
+  });
+});
+
+describe("whatsAppService webhook delivery", () => {
+  const mockRequest = https.request as jest.Mock;
+
+  beforeEach(() => {
+    mockRequest.mockClear();
+  });
+
+  it("should successfully send webhook to a public IP using resolved IP hostname and servername", async () => {
+    const payload = {
+      to: "+1234567890",
+      venueName: "Cool Venue",
+      date: "2026-07-19",
+      time: "12:00",
+      confirmationId: "123456",
+    };
+
+    await whatsAppService.sendBookingConfirmation(
+      null,
+      "https://example.com/webhook",
+      payload
+    );
+
+    expect(mockRequest).toHaveBeenCalled();
+    const callArgs = mockRequest.mock.calls[0][0];
+    expect(callArgs.hostname).toBe("93.184.216.34"); // resolved IP
+    expect(callArgs.servername).toBe("example.com"); // original hostname
+    expect(callArgs.headers["Host"]).toBe("example.com");
+  });
+
+  it("should block webhook and not call https.request if IP resolves to private IP", async () => {
+    const payload = {
+      to: "+1234567890",
+      venueName: "Cool Venue",
+      date: "2026-07-19",
+      time: "12:00",
+      confirmationId: "123456",
+    };
+
+    await whatsAppService.sendBookingConfirmation(
+      null,
+      "https://internal.localdomain/webhook",
+      payload
+    );
+
+    expect(mockRequest).not.toHaveBeenCalled();
   });
 });

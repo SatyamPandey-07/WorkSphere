@@ -18,7 +18,10 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
-import { useSeatAvailability, type SeatStatus } from "@/hooks/useSeatAvailability";
+import {
+  useSeatAvailability,
+  type SeatStatus,
+} from "@/hooks/useSeatAvailability";
 
 // Seat-availability ring colours (#703): green = plenty of room, yellow =
 // filling up, red = at/over capacity.
@@ -327,9 +330,12 @@ const Map = ({
       const lat = Number(v.latitude);
       const lng = Number(v.longitude);
       return (
-        !isNaN(lat) && !isNaN(lng) &&
-        lat >= -90 && lat <= 90 &&
-        lng >= -180 && lng <= 180 &&
+        !isNaN(lat) &&
+        !isNaN(lng) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        lng >= -180 &&
+        lng <= 180 &&
         !(lat === 0 && lng === 0)
       );
     };
@@ -714,7 +720,10 @@ const Map = ({
 
         <MapController mapView={mapView} />
         <AutoCenter markers={markers} userLocation={center} />
-        <ZoomWatcher onZoomSettled={handleZoomSettled} onZoomStart={handleZoomStart} />
+        <ZoomWatcher
+          onZoomSettled={handleZoomSettled}
+          onZoomStart={handleZoomStart}
+        />
         <ResizeWatcher />
 
         {customIcon && (
@@ -751,7 +760,9 @@ const Map = ({
                           : "text-green-400";
                     return (
                       <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
-                        <span className={`text-[10px] font-medium ${seatTextColor}`}>
+                        <span
+                          className={`text-[10px] font-medium ${seatTextColor}`}
+                        >
                           {isSeatSocketConnected
                             ? `${seat.count}/${seat.capacity} checked in`
                             : "Connecting…"}

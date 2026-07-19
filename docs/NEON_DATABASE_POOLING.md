@@ -54,12 +54,12 @@ The sections below explain exactly how WorkSphere is configured to prevent these
 
 ### Component Overview
 
-| Component | Role |
-| :--- | :--- |
-| **Prisma Client** | Type-safe query builder that translates TypeScript calls into SQL |
-| **Neon Serverless PostgreSQL** | Fully managed, autoscaling PostgreSQL database |
-| **PgBouncer** | Connection pooler built into every Neon project |
-| **Vercel Serverless Functions** | Short-lived Node.js processes that handle each API request |
+| Component                       | Role                                                              |
+| :------------------------------ | :---------------------------------------------------------------- |
+| **Prisma Client**               | Type-safe query builder that translates TypeScript calls into SQL |
+| **Neon Serverless PostgreSQL**  | Fully managed, autoscaling PostgreSQL database                    |
+| **PgBouncer**                   | Connection pooler built into every Neon project                   |
+| **Vercel Serverless Functions** | Short-lived Node.js processes that handle each API request        |
 
 ### Request Lifecycle
 
@@ -117,13 +117,13 @@ DIRECT_URL="postgresql://user:password@ep-xxxx.region.neon.tech/neondb?sslmode=r
 
 ### Parameter Reference
 
-| Parameter | Applies To | Description |
-| :--- | :--- | :--- |
-| `pgbouncer=true` | `DATABASE_URL` | Tells Prisma it is connecting through PgBouncer. Disables prepared statement caching, which is incompatible with PgBouncer's transaction mode. **Required** when using the pooled endpoint. |
+| Parameter            | Applies To     | Description                                                                                                                                                                                                                               |
+| :------------------- | :------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pgbouncer=true`     | `DATABASE_URL` | Tells Prisma it is connecting through PgBouncer. Disables prepared statement caching, which is incompatible with PgBouncer's transaction mode. **Required** when using the pooled endpoint.                                               |
 | `connection_limit=1` | `DATABASE_URL` | Limits each serverless function instance to one connection. Since Vercel scales horizontally by creating more instances, `N instances × 1 connection = N total connections`. Without this, a single instance could open many connections. |
-| `sslmode=require` | Both | Enforces an encrypted TLS connection. Required by Neon for all connections. |
-| `pool_timeout=15` | `DATABASE_URL` | Seconds to wait for a free connection from the pool before throwing a timeout error. Increase this if you see pool timeout errors under heavy load. Default is `10`. |
-| `connect_timeout=10` | Both | Seconds to wait when establishing the initial TCP connection to the server. Useful for catching network issues early. Default is `5`. |
+| `sslmode=require`    | Both           | Enforces an encrypted TLS connection. Required by Neon for all connections.                                                                                                                                                               |
+| `pool_timeout=15`    | `DATABASE_URL` | Seconds to wait for a free connection from the pool before throwing a timeout error. Increase this if you see pool timeout errors under heavy load. Default is `10`.                                                                      |
+| `connect_timeout=10` | Both           | Seconds to wait when establishing the initial TCP connection to the server. Useful for catching network issues early. Default is `5`.                                                                                                     |
 
 ### Full Example
 
@@ -157,10 +157,10 @@ datasource db {
 }
 ```
 
-| Field | Purpose |
-| :--- | :--- |
-| `provider` | Specifies PostgreSQL as the database engine |
-| `url` | The connection Prisma Client uses at runtime. Should always be the pooled `DATABASE_URL`. |
+| Field       | Purpose                                                                                     |
+| :---------- | :------------------------------------------------------------------------------------------ |
+| `provider`  | Specifies PostgreSQL as the database engine                                                 |
+| `url`       | The connection Prisma Client uses at runtime. Should always be the pooled `DATABASE_URL`.   |
 | `directUrl` | The connection Prisma uses for schema migrations. Should always be the direct `DIRECT_URL`. |
 
 ### prisma.config.ts
@@ -168,27 +168,27 @@ datasource db {
 WorkSphere uses `prisma.config.ts` at the project root for advanced configuration with the `@prisma/adapter-pg` driver adapter:
 
 ```typescript
-import path from 'node:path'
-import { defineConfig } from 'prisma/config'
-import { config } from 'dotenv'
+import path from "node:path";
+import { defineConfig } from "prisma/config";
+import { config } from "dotenv";
 
-config({ path: '.env.local' })
+config({ path: ".env.local" });
 
 export default defineConfig({
   earlyAccess: true,
-  schema: path.join(__dirname, 'prisma', 'schema.prisma'),
+  schema: path.join(__dirname, "prisma", "schema.prisma"),
   datasource: {
-    url: process.env.DATABASE_URL,   // Pooled URL for runtime
+    url: process.env.DATABASE_URL, // Pooled URL for runtime
   },
   migrate: {
     adapter: async () => {
-      const { PrismaPg } = await import('@prisma/adapter-pg')
-      const { Pool } = await import('pg')
-      const pool = new Pool({ connectionString: process.env.DATABASE_URL })
-      return new PrismaPg(pool)
-    }
-  }
-})
+      const { PrismaPg } = await import("@prisma/adapter-pg");
+      const { Pool } = await import("pg");
+      const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+      return new PrismaPg(pool);
+    },
+  },
+});
 ```
 
 > **Tip:** The driver adapter (`PrismaPg` + `pg.Pool`) gives WorkSphere fine-grained control over connection pooling behaviour at the Node.js level, on top of PgBouncer's server-side pooling.
@@ -228,8 +228,7 @@ function createPrismaClient() {
 // Reuse the existing instance in development to survive hot reloads.
 // In production each function instance is isolated, so this just
 // ensures the client is only created once per invocation context.
-export const prisma =
-  globalForPrisma.prisma ?? createPrismaClient();
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
@@ -238,13 +237,13 @@ if (process.env.NODE_ENV !== "production") {
 
 ### Environment-Specific Recommendations
 
-| Environment | Recommendation |
-| :--- | :--- |
-| **Vercel (Production)** | Use `connection_limit=1`. Vercel scales by adding function instances, not by increasing connections per instance. |
-| **Vercel (Preview)** | Same as production. Preview deployments also run as serverless functions. |
-| **Local Development** | `connection_limit` can be set to `5`–`10`. Your machine runs a single long-lived Node.js process, so multiple connections are fine and improve parallelism during development. |
-| **Edge Functions** | The `@prisma/adapter-pg` driver adapter is not compatible with the Edge Runtime. Use Neon's HTTP-based driver (`@neondatabase/serverless`) for Edge Functions instead. |
-| **CI / Testing** | Use a separate Neon branch or a local PostgreSQL instance. Never run tests against the production database. |
+| Environment             | Recommendation                                                                                                                                                                 |
+| :---------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Vercel (Production)** | Use `connection_limit=1`. Vercel scales by adding function instances, not by increasing connections per instance.                                                              |
+| **Vercel (Preview)**    | Same as production. Preview deployments also run as serverless functions.                                                                                                      |
+| **Local Development**   | `connection_limit` can be set to `5`–`10`. Your machine runs a single long-lived Node.js process, so multiple connections are fine and improve parallelism during development. |
+| **Edge Functions**      | The `@prisma/adapter-pg` driver adapter is not compatible with the Edge Runtime. Use Neon's HTTP-based driver (`@neondatabase/serverless`) for Edge Functions instead.         |
+| **CI / Testing**        | Use a separate Neon branch or a local PostgreSQL instance. Never run tests against the production database.                                                                    |
 
 ### Avoiding Connection Leaks
 
@@ -267,6 +266,7 @@ npx prisma migrate dev --name describe-your-change
 ```
 
 This command:
+
 1. Connects using `DIRECT_URL`
 2. Compares your `schema.prisma` against the current database state
 3. Generates a new SQL migration file in `prisma/migrations/`
@@ -282,6 +282,7 @@ npx prisma migrate deploy
 ```
 
 This command:
+
 1. Connects using `DIRECT_URL`
 2. Applies all unapplied migrations from `prisma/migrations/` in order
 3. Does **not** generate new migrations or modify `schema.prisma`
@@ -298,14 +299,14 @@ npx prisma generate
 
 ### Migration Command Reference
 
-| Command | Uses | Purpose |
-| :--- | :--- | :--- |
-| `npx prisma migrate dev` | `DIRECT_URL` | Create and apply migrations in development |
-| `npx prisma migrate deploy` | `DIRECT_URL` | Apply pending migrations in production/CI |
-| `npx prisma migrate status` | `DIRECT_URL` | Check which migrations have been applied |
-| `npx prisma db push` | `DIRECT_URL` | Sync schema without migration history (prototyping only) |
-| `npx prisma generate` | None (local only) | Regenerate Prisma Client from schema |
-| `npx prisma studio` | `DATABASE_URL` | Open browser-based database explorer |
+| Command                     | Uses              | Purpose                                                  |
+| :-------------------------- | :---------------- | :------------------------------------------------------- |
+| `npx prisma migrate dev`    | `DIRECT_URL`      | Create and apply migrations in development               |
+| `npx prisma migrate deploy` | `DIRECT_URL`      | Apply pending migrations in production/CI                |
+| `npx prisma migrate status` | `DIRECT_URL`      | Check which migrations have been applied                 |
+| `npx prisma db push`        | `DIRECT_URL`      | Sync schema without migration history (prototyping only) |
+| `npx prisma generate`       | None (local only) | Regenerate Prisma Client from schema                     |
+| `npx prisma studio`         | `DATABASE_URL`    | Open browser-based database explorer                     |
 
 ---
 
@@ -316,11 +317,13 @@ npx prisma generate
 **Symptoms:** `remaining connection slots are reserved`, `sorry, too many clients already`
 
 **Causes:**
+
 - `new PrismaClient()` is being called inside a route handler
 - `connection_limit` is not set or is set too high
 - A previous deployment left orphaned connections open
 
 **Solutions:**
+
 1. Confirm the singleton pattern is used in `src/lib/prisma.ts`
 2. Add `&connection_limit=1` to `DATABASE_URL`
 3. Restart the Neon compute endpoint from the Neon dashboard to forcibly close all idle connections
@@ -332,11 +335,13 @@ npx prisma generate
 **Symptoms:** `Timed out waiting to acquire connection from pool`
 
 **Causes:**
+
 - All connections in the pool are in use and none are being released
 - A long-running transaction is holding a connection open
 - `pool_timeout` is set too low for your workload
 
 **Solutions:**
+
 1. Increase `pool_timeout` in `DATABASE_URL` (e.g. `&pool_timeout=30`)
 2. Ensure no slow external API calls are made inside database transactions
 3. Review query performance in the Neon dashboard — slow queries hold connections longer
@@ -348,10 +353,12 @@ npx prisma generate
 **Symptoms:** `@prisma/client did not initialize yet`, `Cannot find module '.prisma/client'`
 
 **Causes:**
+
 - Prisma Client has not been generated after a schema change
 - The `postinstall` script did not run after `npm install`
 
 **Solutions:**
+
 ```bash
 npx prisma generate
 ```
@@ -369,10 +376,12 @@ If the issue persists after deployment, ensure `prisma generate` runs as part of
 **Symptoms:** `prepared statement already exists`, `SET LOCAL is not allowed in transaction mode`, unexpected behaviour in long-running sessions
 
 **Causes:**
+
 - `pgbouncer=true` is missing from `DATABASE_URL`, so Prisma sends prepared statements that PgBouncer cannot handle
 - Session-level PostgreSQL features are being used (advisory locks, `SET search_path`, cursors)
 
 **Solutions:**
+
 1. Confirm `&pgbouncer=true` is present in `DATABASE_URL`
 2. Avoid session-scoped PostgreSQL features in application code
 3. For operations that genuinely require session mode, use `DIRECT_URL` with a short-lived connection
@@ -384,10 +393,12 @@ If the issue persists after deployment, ensure `prisma generate` runs as part of
 **Symptoms:** `Error: P3009 migrate found failed migrations`, `ERROR: prepared statement "s0" already exists`
 
 **Causes:**
+
 - Migration was run against the pooled endpoint instead of the direct endpoint
 - A previous migration was interrupted and left in a failed state
 
 **Solutions:**
+
 1. Confirm `DIRECT_URL` points to the direct (non-pooler) Neon endpoint
 2. Check migration status:
    ```bash
@@ -406,10 +417,12 @@ If the issue persists after deployment, ensure `prisma generate` runs as part of
 **Symptoms:** `connect ETIMEDOUT`, `Connection timed out`
 
 **Causes:**
+
 - Neon compute has scaled to zero and the cold-start is taking longer than `connect_timeout`
 - Network issues between the deployment region and Neon's region
 
 **Solutions:**
+
 1. Add `&connect_timeout=15` to both `DATABASE_URL` and `DIRECT_URL`
 2. Ensure your Vercel deployment region matches your Neon project region to minimise latency
 3. Consider enabling Neon's "Always-on" compute for production to avoid cold starts
@@ -418,18 +431,18 @@ If the issue persists after deployment, ensure `prisma generate` runs as part of
 
 ## 8. Best Practices Summary
 
-| Practice | Reason |
-| :--- | :--- |
-| Use a singleton `PrismaClient` | Prevents a new connection being opened on every request |
-| Set `connection_limit=1` in `DATABASE_URL` | Keeps total connections equal to the number of active function instances |
+| Practice                                          | Reason                                                                                |
+| :------------------------------------------------ | :------------------------------------------------------------------------------------ |
+| Use a singleton `PrismaClient`                    | Prevents a new connection being opened on every request                               |
+| Set `connection_limit=1` in `DATABASE_URL`        | Keeps total connections equal to the number of active function instances              |
 | Always include `pgbouncer=true` in `DATABASE_URL` | Prevents Prisma from using prepared statements, which are incompatible with PgBouncer |
-| Use `DIRECT_URL` for all migration commands | PgBouncer transaction mode blocks the session-level SQL that migrations require |
-| Never run migrations against `DATABASE_URL` | Doing so will cause intermittent and hard-to-debug failures |
-| Keep `DATABASE_URL` as the pooled endpoint | All runtime queries benefit from PgBouncer's connection reuse |
-| Keep `DIRECT_URL` as the direct endpoint | Ensures reliable migration execution and schema introspection |
-| Avoid slow operations inside transactions | Holding a connection open longer increases pool pressure |
-| Match Vercel region to Neon region | Reduces latency and the likelihood of connection timeouts |
-| Monitor connections in the Neon dashboard | Catch connection ceiling issues before they affect users |
+| Use `DIRECT_URL` for all migration commands       | PgBouncer transaction mode blocks the session-level SQL that migrations require       |
+| Never run migrations against `DATABASE_URL`       | Doing so will cause intermittent and hard-to-debug failures                           |
+| Keep `DATABASE_URL` as the pooled endpoint        | All runtime queries benefit from PgBouncer's connection reuse                         |
+| Keep `DIRECT_URL` as the direct endpoint          | Ensures reliable migration execution and schema introspection                         |
+| Avoid slow operations inside transactions         | Holding a connection open longer increases pool pressure                              |
+| Match Vercel region to Neon region                | Reduces latency and the likelihood of connection timeouts                             |
+| Monitor connections in the Neon dashboard         | Catch connection ceiling issues before they affect users                              |
 
 ---
 

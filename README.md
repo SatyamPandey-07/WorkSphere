@@ -70,15 +70,16 @@ Automated contributor tracking synced directly via the GitHub API:
 
 The chatbot supports voice-to-text via the [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition):
 
-| Browser | Voice Input |
-|---------|-------------|
-| Chrome 33+ | ✅ Supported |
-| Edge 79+ | ✅ Supported |
+| Browser                 | Voice Input                  |
+| ----------------------- | ---------------------------- |
+| Chrome 33+              | ✅ Supported                 |
+| Edge 79+                | ✅ Supported                 |
 | Safari (desktop/mobile) | ✅ Supported (webkit prefix) |
-| Firefox Stable | ⚠️ Not supported by default |
-| Firefox Nightly | ⚠️ Requires flag — see below |
+| Firefox Stable          | ⚠️ Not supported by default  |
+| Firefox Nightly         | ⚠️ Requires flag — see below |
 
 **Firefox users:** The Web Speech API is disabled by default. To enable it:
+
 1. Navigate to `about:config` in Firefox.
 2. Search for `media.webspeech.recognition.enable` and set it to `true`.
 3. Reload the application.

@@ -19,16 +19,22 @@ import {
   FileText,
   BarChart3,
   ArrowUp,
+  MapPin,
+  Coffee,
+  LayoutGrid,
 } from "lucide-react";
-import { Show } from "@clerk/nextjs";
+import { Show, UserButton, useUser } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/site-footer";
 import { TopNav } from "@/components/TopNav";
 import FAQAccordion from "@/components/ui/FAQAccordion";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 export default function Home() {
   const [isVisible, setIsVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
+
+  const { isSignedIn } = useUser();
 
   useEffect(() => {
     setIsVisible(true);
@@ -106,7 +112,10 @@ export default function Home() {
                   Collections
                 </Link>
                 <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
-                  <UserButton userProfileMode="navigation" userProfileUrl="/user-profile" />
+                  <UserButton
+                    userProfileMode="navigation"
+                    userProfileUrl="/user-profile"
+                  />
                 </div>
               </>
             )}
@@ -185,7 +194,7 @@ export default function Home() {
                 See Features
               </a>
             </Show>
-            
+
             <Show when="signed-in">
               <Link
                 href="/ai"

@@ -14,6 +14,9 @@ export const maxDuration = 60;
 // Lazy init Groq client to avoid build-time errors
 let groq: Groq | null = null;
 function getGroqClient(): Groq {
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error("GROQ_API_KEY is not configured");
+  }
   if (!groq) {
     groq = new Groq({
       apiKey: process.env.GROQ_API_KEY || "",
@@ -1423,8 +1426,44 @@ Address the user's query and include UI components if helpful.`;
     });
   } catch (error) {
     console.error("Chat API error:", error);
+    const message =
+      error instanceof Error ? error.message : "An unexpected error occurred";
+
+    if (
+      message.includes("Invalid API Key") ||
+      message.includes("Unauthorized") ||
+      message.includes("401") ||
+      message.includes("GROQ_API_KEY") ||
+      message.includes("Cohere API") ||
+      message.includes("COHERE_API_KEY")
+    ) {
+      return Response.json(
+        {
+          error:
+            "AI services are not configured. Please configure the required API keys in your environment variables.",
+        },
+        { status: 503 },
+      );
+    }
+
+    if (
+      message.includes("SCRAM") ||
+      message.includes("DATABASE_URL") ||
+      message.includes("Prisma")
+    ) {
+      return Response.json(
+        {
+          error:
+            "Database is not configured correctly. Please verify your DATABASE_URL.",
+        },
+        { status: 503 },
+      );
+    }
+
     return Response.json(
-      { error: error instanceof Error ? error.message : "An error occurred" },
+      {
+        error: "An unexpected server error occurred. Please try again later.",
+      },
       { status: 500 },
     );
   }

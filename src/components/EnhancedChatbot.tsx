@@ -773,12 +773,24 @@ export function EnhancedChatbot({
       });
 
       if (!response.ok) {
-        if (response.status === 429) {
-          throw new Error(
-            "High traffic detected. Please wait a few seconds and try searching again.",
-          );
+        let errorMessage = "Failed to send message";
+
+        try {
+          const data = await response.json();
+
+          if (data?.error) {
+            errorMessage = data.error;
+          }
+        } catch {
+          // Ignore JSON parsing errors and use default message
         }
-        throw new Error("Failed to send message");
+
+        if (response.status === 429) {
+          errorMessage =
+            "High traffic detected. Please wait a few seconds and try searching again.";
+        }
+
+        throw new Error(errorMessage);
       }
 
       const assistantMessageId = (Date.now() + 1).toString();
@@ -969,65 +981,71 @@ export function EnhancedChatbot({
         err instanceof Error
           ? err.message
           : "Failed to send message. Please try again.";
-      try {
-        const cached = await getSearchOffline(userMessage);
+      const isOfflineError =
+        err instanceof TypeError ||
+        errMsg.toLowerCase().includes("failed to fetch") ||
+        errMsg.toLowerCase().includes("network");
+      if (isOfflineError) {
+        try {
+          const cached = await getSearchOffline(userMessage);
+          if (cached) {
+            const venues: Venue[] = cached.results.map((v) => ({
+              id: v.id,
+              name: v.name,
+              lat: v.latitude,
+              lng: v.longitude,
+              category: v.category ?? "coworking_space",
+              address: v.address,
+            }));
 
-        if (cached) {
-          const venues: Venue[] = cached.results.map((v) => ({
-            id: v.id,
-            name: v.name,
-            lat: v.latitude,
-            lng: v.longitude,
-            category: v.category ?? "coworking_space",
-            address: v.address,
-          }));
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                role: "assistant",
+                content:
+                  "📦 You're offline. Showing your cached search results.",
+                venues,
+                cached: true,
+              },
+            ]);
 
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              role: "assistant",
-              content: "📦 You're offline. Showing your cached search results.",
-              venues,
-              cached: true,
-            },
-          ]);
+            if (onMapUpdate) {
+              onMapUpdate({
+                type: "markers",
+                markers: venues.map((v) => ({
+                  id: v.id,
+                  lat: v.lat,
+                  lng: v.lng,
+                  name: v.name,
+                  category: v.category,
+                  address: v.address,
+                })),
+              });
+            }
 
-          if (onMapUpdate) {
-            onMapUpdate({
-              type: "markers",
-              markers: venues.map((v) => ({
-                id: v.id,
-                lat: v.lat,
-                lng: v.lng,
-                name: v.name,
-                category: v.category,
-                address: v.address,
-              })),
-            });
+            setIsLoading(false);
+            return;
           }
 
-          setIsLoading(false);
-          return;
+          const recentSearches = await getAllSearchesOffline();
+          if (recentSearches.length > 0) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: Date.now().toString(),
+                role: "assistant",
+                content:
+                  "📡 You're offline and we don't have a cached result for that search. Try one of your recent searches:",
+                suggestions: recentSearches.map((s) => s.query),
+              },
+            ]);
+            setIsLoading(false);
+            return;
+          }
+        } catch (offlineError) {
+          console.error(offlineError);
         }
-
-        const recentSearches = await getAllSearchesOffline();
-        if (recentSearches.length > 0) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Date.now().toString(),
-              role: "assistant",
-              content:
-                "📡 You're offline and we don't have a cached result for that search. Try one of your recent searches:",
-              suggestions: recentSearches.map((s) => s.query),
-            },
-          ]);
-          setIsLoading(false);
-          return;
-        }
-      } catch (offlineError) {
-        console.error(offlineError);
       }
       setError(errMsg);
       if (errMsg.includes("High traffic detected")) {

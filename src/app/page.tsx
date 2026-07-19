@@ -23,7 +23,7 @@ import {
   ArrowUp,
   LayoutGrid,
 } from "lucide-react";
-import { SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+import { Show, UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/site-footer";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -78,7 +78,7 @@ export default function Home() {
             </div>
             <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-700 hidden sm:block" />
 
-            <SignedOut>
+            <Show when="signed-out">
               <Link href="/sign-in">
                 <button className="px-3 sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap">
                   Sign In
@@ -89,8 +89,9 @@ export default function Home() {
                   Get Started
                 </button>
               </Link>
-            </SignedOut>
-            <SignedIn>
+            </Show>
+            
+            <Show when="signed-in">
               <Link
                 href="/ai"
                 className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
@@ -106,9 +107,9 @@ export default function Home() {
                 Collections
               </Link>
               <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
-                <UserButton afterSignOutUrl="/" />
+                <UserButton signOutUrl="/" />
               </div>
-            </SignedIn>
+            </Show>
           </div>
         </div>
       </nav>
@@ -164,7 +165,7 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <SignedOut>
+            <Show when="signed-out">
               <Link
                 href="/sign-up"
                 className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
@@ -182,8 +183,9 @@ export default function Home() {
               >
                 See Features
               </a>
-            </SignedOut>
-            <SignedIn>
+            </Show>
+            
+            <Show when="signed-in">
               <Link
                 href="/ai"
                 className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
@@ -195,7 +197,7 @@ export default function Home() {
                 Open Dashboard
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Link>
-            </SignedIn>
+            </Show>
           </div>
 
           <p className="mt-6 text-xs text-zinc-500 dark:text-white/30 md:hidden flex items-center justify-center gap-1.5">

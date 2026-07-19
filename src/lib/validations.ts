@@ -1,5 +1,32 @@
 import { z } from "zod";
 
+// =========================================================================
+// LOCALIZATION ERROR MAP GENERATOR ENGINE
+// =========================================================================
+export const createLocalizedErrorMap = (t: (key: string) => string): z.ZodErrorMap => {
+  return (issue, ctx) => {
+    // 1. Check for empty string validation rules (.min(1))
+    if (issue.code === z.ZodIssueCode.too_small && issue.type === "string" && issue.minimum === 1) {
+      const fieldPath = issue.path.join('.');
+      if (fieldPath === 'name') return { message: t("validation.workspace.name_required") };
+      if (fieldPath === 'content') return { message: t("validation.chat.content_required") };
+    }
+
+    // 2. Check for type structure issues
+    if (issue.code === z.ZodIssueCode.invalid_type && issue.received === "undefined") {
+      const fieldPath = issue.path.join('.');
+      if (fieldPath === 'name') return { message: t("validation.workspace.name_required") };
+    }
+
+    // Default structural fallback
+    return { message: ctx.defaultError };
+  };
+};
+
+// =========================================================================
+// CORE SCHEMAS
+// =========================================================================
+
 // Chat API schemas
 export const chatMessageSchema = z.object({
   role: z.enum(["user", "assistant", "system"]),
@@ -144,7 +171,9 @@ export const locationSchema = z.object({
   longitude: z.number().min(-180).max(180),
 });
 
-// Export types
+// =========================================================================
+// TYPES & DYNAMIC VALIDATION PIPELINE INTERFACES
+// =========================================================================
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
 export type VenueSearch = z.infer<typeof venueSearchSchema>;
@@ -155,6 +184,7 @@ export type MessageCreate = z.infer<typeof messageCreateSchema>;
 export type Favorite = z.infer<typeof favoriteSchema>;
 export type Location = z.infer<typeof locationSchema>;
 
+<<<<<<< Updated upstream
 // Validation helper
 export function validateRequest<T>(
   schema: z.ZodSchema<T>,
@@ -169,6 +199,21 @@ export function validateRequest<T>(
       error: string;
     } {
   const result = schema.safeParse(data);
+=======
+/**
+ * Standard request validator helper with support for injection maps
+ */
+export function validateRequest<T>(
+  schema: z.ZodSchema<T>, 
+  data: unknown,
+  t?: (key: string) => string
+): { success: true; data: T } | { success: false; error: string } {
+  
+  // Set the dynamic local contextual key definitions if passed down by controllers
+  const options = t ? { errorMap: createLocalizedErrorMap(t) } : undefined;
+  const result = schema.safeParse(data, options);
+  
+>>>>>>> Stashed changes
   if (result.success) {
     return { success: true, data: result.data };
   }

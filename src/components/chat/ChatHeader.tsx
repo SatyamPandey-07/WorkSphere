@@ -314,7 +314,7 @@ export function ChatHeader({
       <div className="relative">
         {/* Filter Overlay Area - Solid High Contrast */}
         {showFilters && (
-          <div className="mt-4 p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl">
+          <div className="mt-4 p-3.5 sm:p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-4 sm:gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl">
             {/* Section 1: Standard Toggles */}
             <div>
               <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
@@ -323,28 +323,28 @@ export function ChatHeader({
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => onToggleFilter("wifi")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.wifi ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.wifi ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
                   <Wifi className="w-3.5 h-3.5" />
                   High-Speed WiFi
                 </button>
                 <button
                   onClick={() => onToggleFilter("outlets")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.outlets ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.outlets ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
                   <Outlets className="w-3.5 h-3.5" />
                   Power Outlets
                 </button>
                 <button
                   onClick={() => onToggleFilter("quiet")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.quiet ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.quiet ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
                   <Volume2 className="w-3.5 h-3.5" />
                   Low Noise
                 </button>
                 <button
                   onClick={() => onToggleFilter("ergonomic")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.ergonomic ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.ergonomic ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
                   <Activity className="w-3.5 h-3.5" />
                   Ergonomic Setup
@@ -360,7 +360,7 @@ export function ChatHeader({
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => onToggleFilter("singleOriginBeans")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
                     filters.singleOriginBeans
                       ? "bg-orange-600 text-white shadow-md"
                       : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
@@ -371,7 +371,7 @@ export function ChatHeader({
 
                 <button
                   onClick={() => onToggleFilter("specialtyEspresso")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
                     filters.specialtyEspresso
                       ? "bg-orange-600 text-white shadow-md"
                       : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
@@ -382,7 +382,7 @@ export function ChatHeader({
 
                 <button
                   onClick={() => onToggleFilter("oatAlmondMilk")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
                     filters.oatAlmondMilk
                       ? "bg-orange-600 text-white shadow-md"
                       : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
@@ -393,7 +393,7 @@ export function ChatHeader({
 
                 <button
                   onClick={() => onToggleFilter("pourOverAvailable")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
                     filters.pourOverAvailable
                       ? "bg-orange-600 text-white shadow-md"
                       : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
@@ -411,19 +411,19 @@ export function ChatHeader({
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => onToggleFilter("hasPhoneBooths")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.hasPhoneBooths ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.hasPhoneBooths ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
                   Phone Booths Available
                 </button>
                 <button
                   onClick={() => onToggleFilter("hasNoMusic")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.hasNoMusic ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.hasNoMusic ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
                   No Background Music
                 </button>
                 <button
                   onClick={() => onToggleFilter("hasQuietZone")}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${filters.hasQuietZone ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.hasQuietZone ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
                   Strict Silence Zones
                 </button>
@@ -447,7 +447,7 @@ export function ChatHeader({
                     onClick={() =>
                       onSetFilter && onSetFilter("outletDensity", density.value)
                     }
-                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                    className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
                       (filters.outletDensity || "none") === density.value
                         ? "bg-orange-600 text-white shadow-md"
                         : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700"
@@ -476,7 +476,7 @@ export function ChatHeader({
                     onClick={() =>
                       onSetFilter && onSetFilter("wifiSpeedBand", band.value)
                     }
-                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                    className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
                       (filters.wifiSpeedBand || "all") === band.value
                         ? "bg-orange-600 text-white shadow-md"
                         : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700"
@@ -505,7 +505,7 @@ export function ChatHeader({
                     onClick={() =>
                       onSetFilter && onSetFilter("musicStyle", style.value)
                     }
-                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                    className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
                       (filters.musicStyle || "all") === style.value
                         ? "bg-orange-600 text-white shadow-md"
                         : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700"

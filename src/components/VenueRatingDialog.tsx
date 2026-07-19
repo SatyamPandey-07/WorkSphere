@@ -1,9 +1,9 @@
 "use client";
 
+import { NoiseMeasurement, NoiseMeter } from "@/components/noise/NoiseMeter";
+import { Star, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Star, X } from "lucide-react";
-import { NoiseMeasurement, NoiseMeter } from "@/components/noise/NoiseMeter";
 
 interface VenueRatingDialogProps {
   venueName: string;
@@ -86,6 +86,17 @@ export function VenueRatingDialog({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // --- FIX  Lock document body scroll context when open ---
+  useEffect(() => {
+    if (isOpen && mounted) {
+      document.body.style.overflow = "hidden";
+    }
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isOpen, mounted]);
 
   const compressImage = (file: File): Promise<Blob> => {
     return new Promise((resolve) => {
@@ -263,7 +274,7 @@ export function VenueRatingDialog({
                   key={rating}
                   type="button"
                   onClick={() => setWifiQuality(rating)}
-                  className={`rounded-lg p-2 transition ${
+                  className={`rounded-lg p-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2  ${
                     rating <= wifiQuality
                       ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30"
                       : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"

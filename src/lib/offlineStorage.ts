@@ -350,6 +350,8 @@ export async function getSearchOffline(
 
 /**
  * Queue action for when back online
+ * Deduplicates by type + venueId to prevent duplicate entries from
+ * rapid double-clicks while offline.
  */
 export async function queuePendingAction(action: {
   type: "favorite" | "unfavorite" | "rate";
@@ -359,16 +361,29 @@ export async function queuePendingAction(action: {
   const database = await initOfflineDB();
 
   return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["pendingActions"], "readwrite");
-    const store = transaction.objectStore("pendingActions");
+    const checkTx = database.transaction(["pendingActions"], "readonly");
+    const checkStore = checkTx.objectStore("pendingActions");
+    const getAll = checkStore.getAll();
 
-    const request = store.add({
-      ...action,
-      timestamp: Date.now(),
-    });
+    getAll.onsuccess = () => {
+      const existing = (getAll.result as Array<{ type: string; venueId: string; id: number }>).find(
+        (a) => a.type === action.type && a.venueId === action.venueId,
+      );
+      if (existing) {
+        resolve();
+        return;
+      }
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+      const addTx = database.transaction(["pendingActions"], "readwrite");
+      const addStore = addTx.objectStore("pendingActions");
+      addStore.add({
+        ...action,
+        timestamp: Date.now(),
+      });
+      addTx.oncomplete = () => resolve();
+      addTx.onerror = () => reject(addTx.error);
+    };
+    getAll.onerror = () => reject(getAll.error);
   });
 }
 

@@ -137,6 +137,9 @@ function getDB(): Promise<IDBDatabase> {
  * (double-click), producing a ConstraintError on the second store.add() call.
  * The autoIncrement counter is serialised by the IndexedDB engine and is
  * guaranteed to be unique across concurrent transactions. (Issue #395)
+ *
+ * Deduplicates by venueId + action before inserting to prevent duplicate
+ * entries from rapid double-clicks while offline.
  */
 export async function queueOfflineFavorite(
   venueId: string,
@@ -144,6 +147,24 @@ export async function queueOfflineFavorite(
 ): Promise<void> {
   try {
     const db = await getDB();
+
+    // Check for existing identical action before inserting
+    const existing = await new Promise<OfflineAction | undefined>(
+      (resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readonly");
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () =>
+          resolve(
+            (request.result || []).find(
+              (a) => a.venueId === venueId && a.action === action,
+            ),
+          );
+        request.onerror = () => reject(request.error);
+      },
+    );
+    if (existing) return;
+
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);

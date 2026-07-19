@@ -816,7 +816,7 @@ export function MessageList({
                 key={i}
                 onClick={() => onSuggestionClick(s)}
                 disabled={isLoading}
-                className="text-left px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                className="text-left cursor-pointer px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
               >
                 {s}
               </button>
@@ -1108,10 +1108,10 @@ export function ChatInput({
   const micButtonStyle = !isSupported
     ? // Visually disabled but still focusable so screen readers can reach the
       // tooltip / aria-label describing why it is unavailable.
-      `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed opacity-60`
+      `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed opacity-60 cursor-pointer`
     : isListening
-      ? `${micButtonBase} bg-red-500 hover:bg-red-600 text-white animate-pulse`
-      : `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700`;
+      ? `${micButtonBase} bg-red-500 hover:bg-red-600 text-white animate-pulse cursor-pointer`
+      : `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 cursor-pointer`;
 
   const micAriaLabel = !isSupported
     ? "Voice input is not supported in this browser"
@@ -1136,7 +1136,7 @@ export function ChatInput({
             type="button"
             aria-label="Dismiss voice input warning"
             onClick={() => setShowVoiceBanner(false)}
-            className="ml-auto shrink-0 rounded p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
+            className="ml-auto cursor-pointer shrink-0 rounded p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
           >
             ✕
           </button>
@@ -1151,7 +1151,7 @@ export function ChatInput({
         <button
           type="button"
           onClick={handleMicClick}
-          className={`p-3 rounded-xl transition-all active:scale-95 shadow-lg group ${
+          className={`p-3 rounded-xl cursor-pointer transition-all active:scale-95 shadow-lg group ${
             isListening
               ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
               : "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
@@ -1193,7 +1193,7 @@ export function ChatInput({
         <button
           type="submit"
           disabled={isLoading || !input.trim() || isOverLimit}
-          className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
+          className="p-3 bg-blue-600 cursor-pointer hover:bg-blue-700 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
         >
           {isLoading ? (
             <Loader2 className="w-5 h-5 animate-spin" />

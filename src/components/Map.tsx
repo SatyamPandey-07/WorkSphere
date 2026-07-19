@@ -897,7 +897,7 @@ const Map = ({
               <button
                 key={mode}
                 onClick={() => setTravelProfile(mode)}
-                className={`rounded-md py-1.5 font-medium uppercase transition-all ${
+                className={`rounded-md py-1.5 font-medium cursor-pointer uppercase transition-all ${
                   travelProfile === mode
                     ? "bg-blue-600 text-white shadow"
                     : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"

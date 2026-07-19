@@ -138,6 +138,22 @@ export const favoriteSchema = z.object({
   venueId: z.string().min(1),
 });
 
+// Favorite notes schema
+export const favoriteNotesSchema = z.object({
+  notes: z.string().max(2000).nullable(),
+});
+
+// Favorite tag schemas
+export const createFavoriteTagSchema = z.object({
+  name: z.string().min(1).max(50).trim(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color"),
+});
+
+export const updateFavoriteTagSchema = z.object({
+  name: z.string().min(1).max(50).trim().optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color").optional(),
+});
+
 // Location schema
 export const locationSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -153,6 +169,9 @@ export type VenueRating = z.infer<typeof venueRatingSchema>;
 export type ConversationCreate = z.infer<typeof conversationCreateSchema>;
 export type MessageCreate = z.infer<typeof messageCreateSchema>;
 export type Favorite = z.infer<typeof favoriteSchema>;
+export type FavoriteNotes = z.infer<typeof favoriteNotesSchema>;
+export type CreateFavoriteTag = z.infer<typeof createFavoriteTagSchema>;
+export type UpdateFavoriteTag = z.infer<typeof updateFavoriteTagSchema>;
 export type Location = z.infer<typeof locationSchema>;
 
 // Validation helper

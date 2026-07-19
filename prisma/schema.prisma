@@ -140,15 +140,31 @@ model VenueRating {
 }
 
 model Favorite {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String
-  venue     Venue    @relation(fields: [venueId], references: [id])
-  createdAt DateTime @default(now())
+  venue     Venue     @relation(fields: [venueId], references: [id])
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  tags      FavoriteTag[]
 
   @@unique([userId, venueId])
   @@index([userId])
+}
+
+model FavoriteTag {
+  id         String   @id @default(cuid())
+  favoriteId String
+  favorite   Favorite @relation(fields: [favoriteId], references: [id], onDelete: Cascade)
+  name       String
+  color      String   @default("#3b82f6")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([favoriteId, name])
+  @@index([favoriteId])
 }
 
 model Conversation {

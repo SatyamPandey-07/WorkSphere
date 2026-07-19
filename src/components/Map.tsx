@@ -181,9 +181,11 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
 
     const handleResize = () => {
       clearTimeout(timer);
+      const centerBeforeResize = map.getCenter();
 
       timer = setTimeout(() => {
         map.invalidateSize();
+        map.setView(centerBeforeResize, map.getZoom(), { animate: false });
       }, delay);
     };
 

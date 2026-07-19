@@ -23,7 +23,7 @@ import {
   ArrowUp,
   LayoutGrid,
 } from "lucide-react";
-import { UserButton, useUser } from "@clerk/nextjs";
+import { useUser, UserButton } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/site-footer";
 import { ThemeToggle } from "@/components/ThemeToggle";

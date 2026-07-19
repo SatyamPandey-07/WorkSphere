@@ -310,7 +310,7 @@ export function VenueCard({
   const scannerLowConfidence = isLibrary && voteMetrics.scanner.hidden;
 
   return (
-    <div className="bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative">
+    <div className="antialiased bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative">
       {wifiLowConfidence && (
         <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -394,7 +394,7 @@ export function VenueCard({
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
               {venue.name}
               {isLoading && (
-                <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+                <Loader2 className="w-3 h-3 animate-spin text-blue-500 shrink-0" />
               )}
             </h3>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
@@ -410,7 +410,9 @@ export function VenueCard({
                 : "hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
             }`}
           >
-            <Heart className={`w-5 h-5 ${isFavorited ? "fill-current" : ""}`} />
+            <Heart
+              className={`w-5 h-5 shrink-0 ${isFavorited ? "fill-current" : ""}`}
+            />
           </button>
         </div>
 
@@ -418,7 +420,7 @@ export function VenueCard({
         <div className="flex items-center gap-3 mb-3">
           {displayRating && (
             <div className="flex items-center gap-1">
-              <Star className="w-4 h-4 text-yellow-500 fill-current" />
+              <Star className="w-4 h-4 text-yellow-500 fill-current shrink-0" />
               <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
                 {typeof displayRating === "number"
                   ? displayRating.toFixed(1)
@@ -443,19 +445,19 @@ export function VenueCard({
           <div className="flex items-center gap-3 mb-3">
             {amenities.wifi && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-                <Wifi className="w-3 h-3" />
+                <Wifi className="w-3 h-3 shrink-0" />
                 <span>WiFi Verified</span>
               </div>
             )}
             {amenities.outdoor_seating && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-                <TreePine className="w-3 h-3" />
+                <TreePine className="w-3 h-3 shrink-0" />
                 <span>Outdoor</span>
               </div>
             )}
             {amenities.wheelchair && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
-                <Accessibility className="w-3 h-3" />
+                <Accessibility className="w-3 h-3 shrink-0" />
                 <span>Accessible</span>
               </div>
             )}
@@ -465,7 +467,7 @@ export function VenueCard({
         {/* Hours */}
         {enrichData?.opening_hours && (
           <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
-            <Clock className="w-3 h-3" />
+            <Clock className="w-3 h-3 shrink-0" />
             <span>{enrichData.opening_hours}</span>
           </div>
         )}
@@ -486,7 +488,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <Wifi className="w-3.5 h-3.5 text-blue-500" />
+                <Wifi className="w-3.5 h-3.5 text-blue-500 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   WiFi ({voteMetrics.wifi.confidenceScore}%)
                 </span>
@@ -517,7 +519,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <Zap className="w-3.5 h-3.5 text-yellow-500" />
+                <Zap className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   Outlets ({voteMetrics.outlets.confidenceScore}%)
                 </span>
@@ -548,7 +550,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <Accessibility className="w-3.5 h-3.5 text-purple-500" />
+                <Accessibility className="w-3.5 h-3.5 text-purple-500 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   Ergonomic ({voteMetrics.ergonomic.confidenceScore}%)
                 </span>
@@ -579,7 +581,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <VolumeX className="w-3.5 h-3.5 text-emerald-500" />
+                <VolumeX className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   Silent Room ({voteMetrics.silentRoom.confidenceScore}%)
                 </span>
@@ -610,7 +612,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                <Calendar className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   Study Tables ({voteMetrics.studyTable.confidenceScore}%)
                 </span>
@@ -641,7 +643,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <Printer className="w-3.5 h-3.5 text-cyan-500" />
+                <Printer className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   Scanners/Printers ({voteMetrics.scanner.confidenceScore}%)
                 </span>
@@ -672,7 +674,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <Car className="w-3.5 h-3.5 text-blue-400" />
+                <Car className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   Street Parking (
                   {voteMetrics.freeStreetParking.confidenceScore}%)
@@ -706,7 +708,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <CircleDollarSign className="w-3.5 h-3.5 text-emerald-600" />
+                <CircleDollarSign className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   Paid Garage ({voteMetrics.paidGarage.confidenceScore}%)
                 </span>
@@ -737,7 +739,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <Bike className="w-3.5 h-3.5 text-orange-500" />
+                <Bike className="w-3.5 h-3.5 text-orange-500 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   Bicycle Rack ({voteMetrics.bicycleRack.confidenceScore}%)
                 </span>
@@ -768,7 +770,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <Shield className="w-3.5 h-3.5 text-zinc-500" />
+                <Shield className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   Moto Parking (
                   {voteMetrics.secureMotorcycleParking.confidenceScore}%)
@@ -804,7 +806,7 @@ export function VenueCard({
                     : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <PawPrint className="w-3.5 h-3.5 text-orange-500" />
+                <PawPrint className="w-3.5 h-3.5 text-orange-500 shrink-0" />
                 <span className="font-medium font-mono text-[11px]">
                   Pets Allowed ({voteMetrics.petsAllowedIndoors.confidenceScore}
                   %)
@@ -901,7 +903,7 @@ export function VenueCard({
             {venue.noiseLevel && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
                 <Volume2
-                  className={`w-3.5 h-3.5 ${
+                  className={`w-3.5 h-3.5 shrink-0 ${
                     venue.noiseLevel === "quiet"
                       ? "text-green-600"
                       : venue.noiseLevel === "moderate"
@@ -915,7 +917,7 @@ export function VenueCard({
             {/* Lighting profile badge */}
             {venue.lighting && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
-                <Sun className="w-3.5 h-3.5 text-amber-500" />
+                <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                 <span className="capitalize">
                   {venue.lighting.replace("_", " ")}
                 </span>
@@ -934,14 +936,14 @@ export function VenueCard({
         <div className="flex flex-wrap gap-2 mb-4">
           {venue.wifiQuality && venue.wifiQuality >= 3 && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <Wifi className="w-4 h-4 text-blue-600" />
+              <Wifi className="w-4 h-4 text-blue-600 shrink-0" />
               <span>WiFi {venue.wifiQuality}/5</span>
             </div>
           )}
           {venue.hasOutlets &&
             (!venue.powerTypes || venue.powerTypes.length === 0) && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-                <Zap className="w-4 h-4 text-yellow-600" />
+                <Zap className="w-4 h-4 text-yellow-600 shrink-0" />
                 <span>Outlets</span>
               </div>
             )}
@@ -949,7 +951,7 @@ export function VenueCard({
             venue.powerTypes &&
             venue.powerTypes.includes("ac_wall") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-                <Plug className="w-4 h-4 text-yellow-600" />
+                <Plug className="w-4 h-4 text-yellow-600 shrink-0" />
                 <span>AC Outlets</span>
               </div>
             )}
@@ -957,7 +959,7 @@ export function VenueCard({
             venue.powerTypes &&
             venue.powerTypes.includes("usb_c") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-                <Smartphone className="w-4 h-4 text-blue-500" />
+                <Smartphone className="w-4 h-4 text-blue-500 shrink-0" />
                 <span>USB-C PD</span>
               </div>
             )}
@@ -965,7 +967,7 @@ export function VenueCard({
             venue.powerTypes &&
             venue.powerTypes.includes("wireless") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-                <BatteryCharging className="w-4 h-4 text-green-500" />
+                <BatteryCharging className="w-4 h-4 text-green-500 shrink-0" />
                 <span>Wireless</span>
               </div>
             )}
@@ -1048,7 +1050,7 @@ export function VenueCard({
           {venue.noiseLevel && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Volume2
-                className={`w-4 h-4 ${
+                className={`w-4 h-4 shrink-0 ${
                   venue.noiseLevel === "quiet"
                     ? "text-green-600"
                     : venue.noiseLevel === "moderate"
@@ -1061,7 +1063,7 @@ export function VenueCard({
           )}
           {venue.lighting && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <Sun className="w-4 h-4 text-amber-500" />
+              <Sun className="w-4 h-4 text-amber-500 shrink-0" />
               <span className="capitalize">
                 {venue.lighting.replace("_", " ")}
               </span>
@@ -1085,14 +1087,14 @@ export function VenueCard({
             onClick={() => onGetDirections?.(venue)}
             className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
           >
-            <Navigation className="w-4 h-4" />
+            <Navigation className="w-4 h-4 shrink-0" />
             Directions
           </button>
           <button
             onClick={() => onRate?.(venue)}
             className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
           >
-            <MessageSquare className="w-4 h-4" />
+            <MessageSquare className="w-4 h-4 shrink-0" />
             Rate
           </button>
           {venue.id && (
@@ -1101,7 +1103,7 @@ export function VenueCard({
               className="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
               title="Add to Collection"
             >
-              <FolderPlus className="w-4 h-4" />
+              <FolderPlus className="w-4 h-4 shrink-0" />
             </button>
           )}
           {enrichData?.website && (
@@ -1111,7 +1113,7 @@ export function VenueCard({
               rel="noopener noreferrer"
               className="flex items-center justify-center px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
             >
-              <ExternalLink className="w-4 h-4" />
+              <ExternalLink className="w-4 h-4 shrink-0" />
             </a>
           )}
           {enrichData?.venueId && (

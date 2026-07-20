@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useUser, UserButton } from "@clerk/nextjs";
-import { Coffee, LayoutGrid, MapPin, Menu, X } from "lucide-react";
+import { Coffee, LayoutGrid, MapPin, Menu, Shield, X } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface TopNavProps {
@@ -96,7 +96,13 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                     <LayoutGrid className="w-4 h-4" />
                     Collections
                   </Link>
-
+                  <Link
+                    href="/admin/performance"
+                    className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 font-medium transition-colors whitespace-nowrap"
+                  >
+                    <Shield className="w-4 h-4" />
+                    Admin
+                  </Link>
                   <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
                     <UserButton
                       userProfileMode="navigation"

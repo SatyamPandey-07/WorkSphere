@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
@@ -48,7 +48,7 @@
     "prisma": "^7.8.0",
     "radix-ui": "^1.6.2",
     "react": "19.2.7",
-    "react-dom": "19.2.7",
+    "react-dom": "^19.2.7",
     "react-easy-crop": "^6.2.2",
     "react-i18next": "^17.0.10",
     "react-is": "^19.2.7",

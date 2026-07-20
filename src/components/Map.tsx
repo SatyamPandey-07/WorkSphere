@@ -333,6 +333,11 @@ const Map = ({
   const { theme } = useTheme();
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
+  // Forecast selector state
+  const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay()); // 0=Sun
+  const [selectedHour, setSelectedHour] = useState<number>(
+    new Date().getHours(),
+  );
 
   // Memoized event handlers for all interactive markers to prevent react-leaflet
   // from removing and re-adding event listeners on every render.
@@ -525,16 +530,24 @@ const Map = ({
   };
 
   // Async load data context when layer UI toggles active
+  // Fetch heatmap points for selected day and hour (forecast)
   useEffect(() => {
-    fetch("/api/map/heatmap")
-      .then((res) => res.json())
-      .then((resData) => {
-        if (resData.success) {
-          setHeatmapPoints(resData.data);
-        }
-      })
-      .catch((err) => console.error("Could not populate heatmap context", err));
-  }, []);
+    // Debounce fetch to avoid rapid requests when sliding time
+    const timer = setTimeout(() => {
+      const url = `/api/map/forecast-heatmap?day=${selectedDay}&hour=${selectedHour}`;
+      fetch(url)
+        .then((res) => res.json())
+        .then((resData) => {
+          if (resData.success) {
+            setHeatmapPoints(resData.data);
+          }
+        })
+        .catch((err) =>
+          console.error("Could not populate forecast heatmap", err),
+        );
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [selectedDay, selectedHour]);
 
   useEffect(() => {
     fetch("/api/map/noise-heatmap")
@@ -819,6 +832,25 @@ const Map = ({
         
         /* Floating toggle position above canvas layers */
         .map-noise-toggle {
+        /* Position for existing noise toggle */
+        }
+        .map-forecast-controls {
+          position: absolute;
+          top: 120px;
+          right: 20px;
+          z-index: 1000;
+          background: rgba(24,24,27,0.9);
+          padding: 8px 12px;
+          border-radius: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          color: #f4f4f5;
+        }
+        .map-forecast-controls select,
+        .map-forecast-controls input[type="range"] {
+          width: 120px;
+        }
   position: absolute;
   top: 68px;
   right: 20px;
@@ -850,6 +882,33 @@ const Map = ({
         }}
       >
         <ScaleControl position="bottomleft" metric={true} imperial={false} />
+        {/* Forecast selector UI */}
+        <div className="map-forecast-controls">
+          <label htmlFor="day-select">Day</label>
+          <select
+            id="day-select"
+            value={selectedDay}
+            onChange={(e) => setSelectedDay(parseInt(e.target.value))}
+          >
+            <option value={0}>Sunday</option>
+            <option value={1}>Monday</option>
+            <option value={2}>Tuesday</option>
+            <option value={3}>Wednesday</option>
+            <option value={4}>Thursday</option>
+            <option value={5}>Friday</option>
+            <option value={6}>Saturday</option>
+          </select>
+          <label htmlFor="hour-range">Hour</label>
+          <input
+            id="hour-range"
+            type="range"
+            min={0}
+            max={23}
+            value={selectedHour}
+            onChange={(e) => setSelectedHour(parseInt(e.target.value))}
+          />
+          <span>{selectedHour}:00</span>
+        </div>
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer

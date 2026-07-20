@@ -54,13 +54,15 @@ The proposed WebRTC connection lifecycle consists of signaling, negotiation, con
    - A participant requests to join a communication session.
    - PartyKit coordinates signaling between peers.
 
-2. **Offer Creation**
+2.2. **Offer Creation**
    - The initiating peer creates an SDP offer.
+   - The offer is applied using `setLocalDescription()`.
    - The offer is transmitted through PartyKit signaling.
-
 3. **Answer Generation**
-   - The receiving peer validates the offer.
-   - An SDP answer is generated and returned through PartyKit.
+   - The receiving peer sets the remote offer using `setRemoteDescription()`.
+   - An SDP answer is generated.
+   - The answer is applied using `setLocalDescription()`.
+   - The SDP answer is returned through PartyKit.
 
 4. **ICE Candidate Exchange**
    - Both peers exchange ICE candidates.
@@ -159,14 +161,14 @@ PartyKit is responsible only for forwarding signaling messages between participa
 
 Interactive Connectivity Establishment (ICE) enables peers to discover the best available network path for communication. Candidate information is exchanged through PartyKit signaling during connection setup.
 
-### ICE Candidate Workflow
-
 1. Each peer gathers local ICE candidates.
 2. STUN servers help determine the public IP address and port.
 3. ICE candidates are exchanged through PartyKit.
-4. Connectivity checks are performed for all candidate pairs.
-5. The best working candidate pair is selected.
-6. If direct connectivity is unavailable, TURN relays media traffic.
+4. If ICE candidates arrive before the remote description is available, they are temporarily queued.
+5. After `setRemoteDescription()` completes, queued candidates are applied using `addIceCandidate()`.
+6. Connectivity checks are performed for all candidate pairs.
+7. The best working candidate pair is selected.
+8. If no direct candidate pair succeeds, TURN relays the media traffic.
 
 ### Candidate Exchange Flow
 
@@ -193,7 +195,9 @@ STUN (Session Traversal Utilities for NAT) helps a peer discover its public-faci
 
 TURN (Traversal Using Relays around NAT) provides a relay server when a direct peer-to-peer connection cannot be established because of restrictive NATs or firewalls. Although TURN introduces additional latency and bandwidth usage, it improves connection reliability.
 
-### Recommended Connection Priority
+### Candidate Preference
+
+ICE gathers multiple candidate types and performs connectivity checks in parallel. The final connection is selected based on successful ICE checks rather than a fixed sequential fallback order.
 
 1. Host candidates
 2. Server reflexive (STUN) candidates
@@ -288,11 +292,14 @@ Reliable communication requires fallback mechanisms when ideal network condition
 
 ### Failure Handling
 
-- Retry ICE gathering when appropriate.
-- Handle signaling timeouts gracefully.
-- Detect disconnected peers.
+### Failure Handling
+
+- Retry signaling if negotiation fails.
+- Use `RTCPeerConnection.restartIce()` when an established connection loses connectivity.
+- Perform a new SDP offer/answer exchange after restarting ICE.
+- Recreate the peer connection only if ICE restart cannot recover the session.
 - Clean up inactive sessions.
-- Allow participants to reconnect without restarting the application.
+- Allow participants to reconnect gracefully.
 
 ### Network Priority
 

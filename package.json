@@ -108,7 +108,7 @@
     "seed": "node prisma/seed.js"
   },
   "lint-staged": {
-    "*.{js,jsx,ts,tsx}": [
+    "!(jest.setup|jest.config)*.{js,jsx,ts,tsx}": [
       "eslint --fix --max-warnings=0",
       "prettier --write"
     ],

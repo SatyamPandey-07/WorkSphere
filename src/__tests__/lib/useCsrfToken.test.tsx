@@ -1,6 +1,15 @@
 import { useCsrfToken } from "@/hooks/useCsrfToken";
 import { renderHook } from "@testing-library/react";
 
+// Mock Clerk
+jest.mock("@clerk/nextjs", () => ({
+  useUser: () => ({
+    isSignedIn: true,
+    isLoaded: true,
+    user: { id: "user_123" },
+  }),
+}));
+
 // Mock i18next
 jest.mock("i18next", () => ({
   on: jest.fn(),
@@ -34,7 +43,8 @@ describe("useCsrfToken fetch interceptor auto-retry", () => {
             status: 200,
             headers: {
               get(name: string) {
-                if (name.toLowerCase() === "content-type") return "application/json";
+                if (name.toLowerCase() === "content-type")
+                  return "application/json";
                 return null;
               },
             },
@@ -53,7 +63,8 @@ describe("useCsrfToken fetch interceptor auto-retry", () => {
               status: 403,
               headers: {
                 get(name: string) {
-                  if (name.toLowerCase() === "content-type") return "application/json";
+                  if (name.toLowerCase() === "content-type")
+                    return "application/json";
                   return null;
                 },
               },

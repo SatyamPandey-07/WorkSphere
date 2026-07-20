@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { useUser } from "@clerk/nextjs";
 import i18n from "i18next";
 import { CSRF_HEADER_NAME } from "@/lib/csrf";
 
@@ -64,7 +65,11 @@ function installCsrfFetchInterceptor() {
           const clone = response.clone();
           try {
             const body = await clone.json();
-            if (body && body.error && body.error.toLowerCase().includes("csrf")) {
+            if (
+              body &&
+              body.error &&
+              body.error.toLowerCase().includes("csrf")
+            ) {
               const freshToken = await fetchFreshToken();
               if (freshToken) {
                 const retryHeaders = new Headers(
@@ -130,14 +135,17 @@ export async function ensureCsrfToken(): Promise<string | null> {
  */
 export function useCsrfToken() {
   const initialized = useRef(false);
+  const { user, isSignedIn, isLoaded } = useUser();
+  const prevUserIdRef = useRef<string | null>(null);
 
   const refresh = useCallback(() => fetchFreshToken(), []);
 
   useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
-    installCsrfFetchInterceptor();
-    void fetchFreshToken();
+    if (!initialized.current) {
+      initialized.current = true;
+      installCsrfFetchInterceptor();
+      void fetchFreshToken();
+    }
 
     const handleLanguageChanged = () => {
       void fetchFreshToken();
@@ -148,6 +156,19 @@ export function useCsrfToken() {
       i18n.off("languageChanged", handleLanguageChanged);
     };
   }, []);
+
+  // Re-sync CSRF token whenever Clerk authentication state changes (e.g. returning from OAuth redirect)
+  useEffect(() => {
+    if (!isLoaded) return;
+    const currentUserId = user?.id ?? (isSignedIn ? "signed-in" : "signed-out");
+    if (
+      prevUserIdRef.current !== null &&
+      prevUserIdRef.current !== currentUserId
+    ) {
+      void fetchFreshToken();
+    }
+    prevUserIdRef.current = currentUserId;
+  }, [isLoaded, isSignedIn, user?.id]);
 
   return { refresh };
 }

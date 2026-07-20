@@ -53,9 +53,6 @@ async function applyCsrfProtection(
 ): Promise<NextResponse> {
   const url = new URL(req.url);
   const isApiRoute = url.pathname.startsWith("/api");
-  if (!isApiRoute || isCsrfExemptRoute(req as any)) {
-    return res;
-  }
 
   const cookieHeader = req.headers.get("cookie") || "";
   const existingCookie = cookieHeader
@@ -64,7 +61,11 @@ async function applyCsrfProtection(
     .find((c) => c.startsWith(`${CSRF_COOKIE_NAME}=`))
     ?.slice(CSRF_COOKIE_NAME.length + 1);
 
-  if (CSRF_PROTECTED_METHODS.has(req.method)) {
+  if (
+    isApiRoute &&
+    !isCsrfExemptRoute(req as any) &&
+    CSRF_PROTECTED_METHODS.has(req.method)
+  ) {
     const headerToken = req.headers.get(CSRF_HEADER_NAME);
     const isValid = await verifyCsrfToken(existingCookie, headerToken);
     if (!isValid) {
@@ -76,9 +77,9 @@ async function applyCsrfProtection(
     return res;
   }
 
-  // Safe method: issue a fresh token if one isn't already set (first visit,
-  // expired cookie, or cleared client state — including after a locale switch).
-  if (!existingCookie) {
+  // Safe request (GET/HEAD): issue a fresh token cookie if one isn't already set
+  // (first visit, OAuth redirect return, expired cookie, or cleared client state).
+  if (!existingCookie && !isCsrfExemptRoute(req as any)) {
     const { cookieValue } = await issueCsrfToken();
     res.cookies.set(CSRF_COOKIE_NAME, cookieValue, {
       httpOnly: true,
@@ -99,10 +100,17 @@ export default function middleware(request: any, event: any) {
 
     if (isAdminRoute(req)) {
       const authObj = await auth();
-      const role = (authObj.sessionClaims?.metadata?.role as string | undefined)?.toLowerCase();
-      const isAdminRole = role === "admin" || role === "super_admin" || role === "superadmin";
+      const role = (
+        authObj.sessionClaims?.metadata?.role as string | undefined
+      )?.toLowerCase();
+      const isAdminRole =
+        role === "admin" || role === "super_admin" || role === "superadmin";
 
-      const adminEmails = (process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "")
+      const adminEmails = (
+        process.env.ADMIN_EMAILS ||
+        process.env.ADMIN_EMAIL ||
+        ""
+      )
         .split(",")
         .map((e) => e.trim().toLowerCase())
         .filter(Boolean);
@@ -130,7 +138,11 @@ export default function middleware(request: any, event: any) {
       req.headers.get("x-vercel-edge-region") ||
       "local";
 
-    recordApiLatency(req.nextUrl.pathname, Math.max(5, Date.now() - start), region);
+    recordApiLatency(
+      req.nextUrl.pathname,
+      Math.max(5, Date.now() - start),
+      region,
+    );
 
     const res = NextResponse.next({
       request: {

@@ -139,8 +139,8 @@ export function useCanvasWhiteboard(
     undoManagerRef.current = um;
 
     const updateUndoState = () => {
-      setCanUndo(um.undoStack.size > 0);
-      setCanRedo(um.redoStack.size > 0);
+      setCanUndo(um.undoStack.length > 0);
+      setCanRedo(um.redoStack.length > 0);
     };
     um.on("stack-item-added", updateUndoState);
     um.on("stack-item-popped", updateUndoState);

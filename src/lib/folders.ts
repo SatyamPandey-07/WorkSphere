@@ -24,7 +24,7 @@ function isTransientWriteConflict(error: unknown): boolean {
  * write conflict or deadlock (P2034).
  */
 async function runInShortTransaction<T>(
-  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  fn: (tx: any) => Promise<T>,
 ): Promise<T> {
   let attempt = 0;
   for (;;) {
@@ -32,10 +32,7 @@ async function runInShortTransaction<T>(
       return await prisma.$transaction(fn, {
         maxWait: 5_000,
         timeout: 10_000,
-        // Plain string literal (rather than a Prisma.TransactionIsolationLevel
-        // enum reference) since the isolation-level type is generated per
-        // project and this string form is guaranteed stable across clients.
-        isolationLevel: "ReadCommitted",
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
       });
     } catch (error) {
       attempt += 1;
@@ -102,7 +99,7 @@ export async function deleteFolderWithRelations(folderId: string) {
       if (batch.length === 0) return 0;
 
       await tx.folderVenue.deleteMany({
-        where: { id: { in: batch.map((row) => row.id) } },
+        where: { id: { in: batch.map((row: any) => row.id) } },
       });
       return batch.length;
     });

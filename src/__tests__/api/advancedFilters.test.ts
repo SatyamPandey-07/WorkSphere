@@ -66,13 +66,13 @@ describe("Advanced Workspace Filters validations", () => {
         noiseLevel: "quiet",
         hasErgonomic: true,
         outletDensity: "every_table",
-        wifiSpeed: 75,
+        downloadSpeed: 75,
       });
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.hasErgonomic).toBe(true);
         expect(result.data.outletDensity).toBe("every_table");
-        expect(result.data.wifiSpeed).toBe(75);
+        expect(result.data.downloadSpeed).toBe(75);
       }
     });
 
@@ -86,7 +86,7 @@ describe("Advanced Workspace Filters validations", () => {
       if (result.success) {
         expect(result.data.hasErgonomic).toBe(false);
         expect(result.data.outletDensity).toBe("none");
-        expect(result.data.wifiSpeed).toBeUndefined();
+        expect(result.data.downloadSpeed).toBeUndefined();
       }
     });
   });
@@ -95,16 +95,16 @@ describe("Advanced Workspace Filters validations", () => {
     it("should calculate correct average speed, dominant density and ergonomic percentages", () => {
       // Mock ratings array simulating allRatings in route.ts
       const allRatings = [
-        { wifiSpeed: 80, outletDensity: "every_table", hasErgonomic: true },
-        { wifiSpeed: 120, outletDensity: "every_table", hasErgonomic: false },
-        { wifiSpeed: null, outletDensity: "some_tables", hasErgonomic: true },
-        { wifiSpeed: 0, outletDensity: "every_table", hasErgonomic: true },
+        { downloadSpeed: 80, outletDensity: "every_table", hasErgonomic: true },
+        { downloadSpeed: 120, outletDensity: "every_table", hasErgonomic: false },
+        { downloadSpeed: null, outletDensity: "some_tables", hasErgonomic: true },
+        { downloadSpeed: 0, outletDensity: "every_table", hasErgonomic: true },
       ];
 
       // Wi-Fi Speed Average (ignoring null and 0 values)
       const validSpeeds = allRatings
-        .filter((r) => r.wifiSpeed !== null && r.wifiSpeed > 0)
-        .map((r) => r.wifiSpeed as number);
+        .filter((r) => r.downloadSpeed !== null && r.downloadSpeed > 0)
+        .map((r) => r.downloadSpeed as number);
       
       const avgSpeed = validSpeeds.length > 0
         ? Math.round(validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length)

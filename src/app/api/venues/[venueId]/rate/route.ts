@@ -38,7 +38,9 @@ export async function POST(
       comment,
       hasErgonomic,
       outletDensity,
-      wifiSpeed,
+      downloadSpeed,
+      uploadSpeed,
+      ping,
       speedtestPhoto,
     } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
@@ -81,7 +83,9 @@ export async function POST(
         peakDecibels: peakDecibels || null,
         hasErgonomic,
         outletDensity,
-        wifiSpeed,
+        downloadSpeed: downloadSpeed ?? null,
+        uploadSpeed: uploadSpeed ?? null,
+        ping: ping ?? null,
         comment,
         speedtestPhoto,
       },
@@ -95,7 +99,9 @@ export async function POST(
         peakDecibels: peakDecibels || null,
         hasErgonomic: hasErgonomic || false,
         outletDensity: outletDensity || "none",
-        wifiSpeed: wifiSpeed || null,
+        downloadSpeed: downloadSpeed ?? null,
+        uploadSpeed: uploadSpeed ?? null,
+        ping: ping ?? null,
         comment,
         speedtestPhoto,
       },
@@ -128,11 +134,17 @@ export async function POST(
       ? Object.entries(densityCounts).reduce((a, b) => b[1] > a[1] ? b : a)[0]
       : "none";
 
-    // Average wifi speed
-    const validSpeeds = allRatings.filter((r: any) => r.wifiSpeed !== null && r.wifiSpeed > 0).map((r: any) => r.wifiSpeed as number);
-    const avgSpeed = validSpeeds.length > 0
-      ? Math.round(validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length)
-      : null;
+    // Average download speed
+    const validSpeeds = allRatings
+      .filter((r: any) => r.downloadSpeed != null && r.downloadSpeed > 0)
+      .map((r: any) => r.downloadSpeed as number);
+    const avgSpeed =
+      validSpeeds.length > 0
+        ? Math.round(
+          validSpeeds.reduce((sum, speed) => sum + speed, 0) /
+           validSpeeds.length
+      )
+    : null;
 
     await prisma.venue.update({
       where: { id: finalVenueId },

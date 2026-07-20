@@ -502,7 +502,7 @@ async function enrichVenuesWithDBRatings(venues: RawVenue[]): Promise<RawVenue[]
         const ergonomicPct =
           (ratings.filter((r) => r.hasErgonomic).length / ratings.length) * 100;
 
-        const validSpeeds = ratings.filter((r) => r.wifiSpeed !== null && r.wifiSpeed > 0).map((r) => r.wifiSpeed as number);
+        const validSpeeds = ratings.filter((r) => r.downloadSpeed !== null && r.downloadSpeed > 0).map((r) => r.downloadSpeed as number);
         const avgSpeed = validSpeeds.length > 0 ? Math.round(validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length) : null;
 
         const densityCounts: Record<string, number> = {};

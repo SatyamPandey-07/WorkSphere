@@ -9,22 +9,22 @@ datasource db {
 }
 
 model User {
-  id             String             @id
-  email          String?            @unique
-  firstName      String?
-  lastName       String?
-  createdAt      DateTime           @default(now())
-  favorites      Favorite[]
-  ratings        VenueRating[]
-  conversations  Conversation[]
-  bookings       Booking[]
-  memories       UserMemory[]
-  crdtState      Bytes?
+  id                 String             @id
+  email              String?            @unique
+  firstName          String?
+  lastName           String?
+  createdAt          DateTime           @default(now())
+  favorites          Favorite[]
+  ratings            VenueRating[]
+  conversations      Conversation[]
+  bookings           Booking[]
+  memories           UserMemory[]
+  crdtState          Bytes?
   preferencesSummary String?
-  createdVenues  Venue[]            @relation("VenueCreator")
-  workStatus     WorkBuddyStatus?
-  hostedSessions CoworkingSession[] @relation("SessionHost")
-  sessionRsvps   SessionRsvp[]
+  createdVenues      Venue[]            @relation("VenueCreator")
+  workStatus         WorkBuddyStatus?
+  hostedSessions     CoworkingSession[] @relation("SessionHost")
+  sessionRsvps       SessionRsvp[]
 }
 
 model Venue {
@@ -45,11 +45,11 @@ model Venue {
   crowdsourced   Boolean            @default(false)
   requiresReview Boolean            @default(false)
   imageUrl       String?
-  googlePlaceId  String?       // Cached Google place_id (for photo lookup)
-  photoReference String?       // Cached Google Places photo_reference
-  menuPhotos     String[]      @default([])
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  googlePlaceId  String? // Cached Google place_id (for photo lookup)
+  photoReference String? // Cached Google Places photo_reference
+  menuPhotos     String[]           @default([])
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
   ratings        VenueRating[]
   favorites      Favorite[]
   bookings       Booking[]
@@ -64,22 +64,24 @@ model Venue {
 }
 
 model VenueRating {
-  id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
-  venueId       String
-  venue         Venue    @relation(fields: [venueId], references: [id])
-  wifiQuality   Int // 1-5
-  hasOutlets    Boolean
-  noiseLevel    String // quiet, moderate, loud
-  hasErgonomic  Boolean  @default(false)
-  outletDensity String? // every_table, some_tables, wall_seats, none
-  wifiSpeed     Int? // in Mbps
-  comment       String?
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  venueId        String
+  venue          Venue    @relation(fields: [venueId], references: [id])
+  wifiQuality    Int
+  hasOutlets     Boolean
+  noiseLevel     String
+  hasErgonomic   Boolean  @default(false)
+  outletDensity  String?
+  downloadSpeed  Int? // Mbps
+  uploadSpeed    Int? // Mbps
+  ping           Int? // ms
+  comment        String?
   speedtestPhoto String?
-  createdAt     DateTime @default(now())
-  avgDecibels   Float?
-  peakDecibels  Float?
+  createdAt      DateTime @default(now())
+  avgDecibels    Float?
+  peakDecibels   Float?
 
   @@unique([userId, venueId])
   @@index([venueId])

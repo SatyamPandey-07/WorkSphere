@@ -76,7 +76,7 @@ export async function GET() {
             where: { userId },
             select: {
                 createdAt: true,
-                wifiSpeed: true,
+                downloadSpeed: true,
             }
         });
 
@@ -101,7 +101,7 @@ export async function GET() {
         });
 
         const reviewsCount = allRatings.length;
-        const speedtestsCount = allRatings.filter(r => r.wifiSpeed !== null && r.wifiSpeed > 0).length;
+        const speedtestsCount = allRatings.filter(r => r.downloadSpeed !== null && r.downloadSpeed > 0).length;
         
         const nightOwlReviewsCount = allRatings.filter(r => {
             const hours = new Date(r.createdAt).getHours();

@@ -599,72 +599,30 @@ model CheckIn {
   @@index([expiresAt])
 }
 
-enum EmailStatus {
-  SENT
-  FAILED
-  PENDING
-}
-
-enum EmailType {
-  VERIFICATION_CODE
-  OTP
-  PASSWORD_RESET
-  GUEST_INVITE
-  NEWSLETTER
-  COLLECTION_INVITE
-  TEST
-}
-
-model EmailLog {
-  id        String      @id @default(cuid())
-  type      EmailType
-  recipient String
-  subject   String
-  status    EmailStatus @default(PENDING)
-  error     String?
-  metadata  Json?
-  createdAt DateTime    @default(now())
-
-  @@index([createdAt])
-  @@index([status])
-  @@index([type])
-  @@index([recipient])
-}
-
 model PushSubscription {
-  id           String   @id @default(cuid())
-  userId       String
-  endpoint     String
-  p256dh       String
-  auth         String
-  userAgent    String?
-  createdAt    DateTime @default(now())
-  lastUsedAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([endpoint])
   @@index([userId])
 }
 
 model PushNotificationLog {
-  id             String   @id @default(cuid())
-  userId         String
-  venueId        String?
-  title          String
-  body           String
-  status         PushDeliveryStatus @default(PENDING)
-  error          String?
-  sentAt         DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId   String?
+  title     String
+  body      String
+  status    String
+  error     String?
+  createdAt DateTime @default(now())
 
   @@index([userId])
-  @@index([sentAt])
-}
-
-enum PushDeliveryStatus {
-  SENT
-  FAILED
-  PENDING
 }

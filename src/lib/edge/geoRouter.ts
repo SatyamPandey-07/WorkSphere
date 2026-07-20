@@ -121,7 +121,7 @@ export function resolveRegion(geo: GeoLocation): Region {
 }
 
 export function extractGeoFromHeaders(
-  headers: Headers,
+  headers: { get(name: string): string | null } | Headers,
 ): GeoLocation | null {
   const country =
     headers.get("cf-ipcountry") ??

@@ -225,7 +225,7 @@ describe("Map Component", () => {
       render(<Map {...defaultProps} />);
 
       const tileLayer = screen.getByTestId("tile-layer");
-      expect(tileLayer.dataset.url).toContain("openstreetmap.org");
+      expect(tileLayer.dataset.url).toMatch(/cartocdn|openstreetmap/);
     });
   });
 

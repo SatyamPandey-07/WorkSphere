@@ -48,7 +48,7 @@ export async function importPublicKey(rawBase64: string): Promise<CryptoKey> {
   const raw = Uint8Array.from(atob(rawBase64), (c) => c.charCodeAt(0));
   return crypto.subtle.importKey(
     "raw",
-    raw,
+    raw as unknown as BufferSource,
     { name: "ECDH", namedCurve: "P-256" },
     false,
     [],
@@ -84,9 +84,9 @@ export async function encryptChunk(
 ): Promise<EncryptedChunk> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv, tagLength: 128 },
+    { name: "AES-GCM", iv: iv as unknown as BufferSource, tagLength: 128 },
     key,
-    data,
+    data as unknown as BufferSource,
   );
 
   return {
@@ -104,9 +104,9 @@ export async function decryptChunk(
   key: CryptoKey,
 ): Promise<Uint8Array> {
   const plainBuffer = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: encrypted.iv, tagLength: 128 },
+    { name: "AES-GCM", iv: encrypted.iv as unknown as BufferSource, tagLength: 128 },
     key,
-    encrypted.ciphertext,
+    encrypted.ciphertext as unknown as BufferSource,
   );
   return new Uint8Array(plainBuffer);
 }
@@ -115,7 +115,7 @@ export async function decryptChunk(
  * Compute SHA-256 checksum of a file for integrity verification.
  */
 export async function computeSHA256(data: Uint8Array): Promise<string> {
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data as unknown as BufferSource);
   const hashArray = new Uint8Array(hashBuffer);
   return Array.from(hashArray)
     .map((b) => b.toString(16).padStart(2, "0"))

@@ -32,7 +32,7 @@ async function runInShortTransaction<T>(
       return await prisma.$transaction(fn, {
         maxWait: 5_000,
         timeout: 10_000,
-        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+        isolationLevel: Prisma.TransactionIsolationLevel?.ReadCommitted ?? ("ReadCommitted" as any),
       });
     } catch (error) {
       attempt += 1;

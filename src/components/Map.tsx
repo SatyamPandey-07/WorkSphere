@@ -2,6 +2,7 @@
 
 import { useUser, useAuth } from "@clerk/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "./ThemeProvider";
 import {
   MapContainer,
   TileLayer,
@@ -85,7 +86,6 @@ if (typeof window !== "undefined") {
 
 function MapController({ mapView }: { mapView: MapView | null }) {
   const map = useMap();
-
   useEffect(() => {
     if (mapView && mapView.center && mapView.zoom) {
       if (mapView.animate) {
@@ -278,7 +278,9 @@ function WebGLContextWatcher() {
   const map = useMap();
 
   useEffect(() => {
+    if (!map || typeof map.getContainer !== "function") return;
     const container = map.getContainer();
+    if (!container) return;
     const cleanups: Array<() => void> = [];
 
     const setupCanvases = () => {
@@ -328,133 +330,7 @@ const Map = ({
   roomId?: string | null;
 }) => {
   const clerkUser = useUser();
-  const { getToken } = useAuth();
-  const [token, setToken] = useState<string | null>(null);
-
-  useEffect(() => {
-    getToken()
-      .then(setToken)
-      .catch(() => setToken(null));
-  }, [getToken]);
-
-  interface MapCursor {
-    lat: number;
-    lng: number;
-    name: string;
-    avatar: string;
-  }
-
-  const [mapCursors, setMapCursors] = useState<Record<string, MapCursor>>({});
-  const cursorLastSeen = useRef<Record<string, number>>({});
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      setMapCursors((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        for (const [userId, lastSeen] of Object.entries(
-          cursorLastSeen.current,
-        )) {
-          if (now - lastSeen > 3000) {
-            delete next[userId];
-            delete cursorLastSeen.current[userId];
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const socket = usePartySocket({
-    host: "127.0.0.1:1999",
-    room: roomId || "default",
-    query: token ? { token } : undefined,
-    onMessage(event) {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "map-cursor") {
-          const userId = data.userId || data.name;
-          cursorLastSeen.current[userId] = Date.now();
-          setMapCursors((prev) => ({
-            ...prev,
-            [userId]: {
-              lat: data.lat,
-              lng: data.lng,
-              name: data.name,
-              avatar: data.avatar,
-            },
-          }));
-        } else if (data.type === "map-cursor-offline") {
-          const userId = data.userId || data.name;
-          delete cursorLastSeen.current[userId];
-          setMapCursors((prev) => {
-            if (!(userId in prev)) return prev;
-            const next = { ...prev };
-            delete next[userId];
-            return next;
-          });
-        }
-      } catch {
-        // Ignore
-      }
-    },
-  });
-
-  const userRef = useRef(clerkUser);
-  useEffect(() => {
-    userRef.current = clerkUser;
-  }, [clerkUser]);
-
-  const throttledBroadcastRef = useRef<((latlng: L.LatLng) => void) | null>(
-    null,
-  );
-
-  useEffect(() => {
-    throttledBroadcastRef.current = throttle((latlng: L.LatLng) => {
-      if (socket && socket.readyState === 1) {
-        const user = userRef.current.user;
-        socket.send(
-          JSON.stringify({
-            type: "map-cursor",
-            lat: latlng.lat,
-            lng: latlng.lng,
-            name: user?.firstName || "Anonymous",
-            avatar: user?.imageUrl || "default",
-            userId: user?.id || "anonymous",
-          }),
-        );
-      }
-    }, 50);
-  }, [socket]);
-
-  const throttledBroadcast = useCallback((latlng: L.LatLng) => {
-    if (throttledBroadcastRef.current) {
-      throttledBroadcastRef.current(latlng);
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (socket && socket.readyState === 1) {
-        const user = userRef.current.user;
-        try {
-          socket.send(
-            JSON.stringify({
-              type: "map-cursor-offline",
-              name: user?.firstName || "Anonymous",
-              userId: user?.id || "anonymous",
-            }),
-          );
-        } catch {
-          // ignore
-        }
-      }
-    };
-  }, [socket]);
-
+  const { theme } = useTheme();
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
 
@@ -762,7 +638,12 @@ const Map = ({
   }, [iconUrl]);
 
   const center: [number, number] = [latitude, longitude];
-
+  const tileUrl =
+    theme === "light"
+      ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+      : theme === "cyberpunk"
+        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   return (
     <>
       <style
@@ -973,7 +854,7 @@ const Map = ({
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              url={tileUrl}
               className="map-tiles-dark"
               maxZoom={18}
               maxNativeZoom={18}
@@ -1038,19 +919,6 @@ const Map = ({
             <Popup>You are here!</Popup>
           </Marker>
         )}
-        <MapEvents onMouseMove={throttledBroadcast} />
-        {Object.entries(mapCursors).map(([userId, cursor]) => {
-          const presenceIcon = createCursorIcon(cursor.avatar, cursor.name);
-          if (!presenceIcon) return null;
-          return (
-            <Marker
-              key={`presence-${userId}`}
-              position={[cursor.lat, cursor.lng]}
-              icon={presenceIcon}
-              interactive={false}
-            />
-          );
-        })}
         {spiderfiedMarkers.map((marker) => (
           <Marker
             key={marker.id}

@@ -7,6 +7,16 @@
 
 import { vertexShader, fragmentShader } from "./shaders.wgsl";
 
+const BufferUsage =
+  typeof GPUBufferUsage !== "undefined"
+    ? GPUBufferUsage
+    : { VERTEX: 0x0020, INDEX: 0x0010, UNIFORM: 0x0040, COPY_DST: 0x0008 };
+
+const TextureUsage =
+  typeof GPUTextureUsage !== "undefined"
+    ? GPUTextureUsage
+    : { COPY_SRC: 0x01, COPY_DST: 0x02, TEXTURE_BINDING: 0x04, STORAGE_BINDING: 0x08, RENDER_ATTACHMENT: 0x10 };
+
 export interface FloorPlanVertex {
   position: [number, number, number];
   normal: [number, number, number];
@@ -482,7 +492,7 @@ export class WebGPUFloorPlanRenderer {
       if (!adapter) return false;
 
       this.device = await adapter.requestDevice();
-      this.context = this.canvas.getContext("webgpu");
+      this.context = (this.canvas.getContext("webgpu") as unknown) as GPUCanvasContext | null;
       if (!this.context) return false;
 
       const format = navigator.gpu.getPreferredCanvasFormat();
@@ -532,11 +542,11 @@ export class WebGPUFloorPlanRenderer {
 
       this.uniformBuffer = this.device.createBuffer({
         size: 128,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+        usage: BufferUsage.UNIFORM | BufferUsage.COPY_DST,
       });
 
       this.bindGroup = this.device.createBindGroup({
-        layout: this.pipeline.getBindGroupLayout(0),
+        layout: this.pipeline!.getBindGroupLayout(0),
         entries: [
           { binding: 0, resource: { buffer: this.uniformBuffer } },
         ],
@@ -560,13 +570,13 @@ export class WebGPUFloorPlanRenderer {
 
     this.vertexBuffer = this.device.createBuffer({
       size: mesh.vertices.byteLength,
-      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.vertexBuffer, 0, mesh.vertices);
 
     this.indexBuffer = this.device.createBuffer({
       size: mesh.indices.byteLength,
-      usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+      usage: BufferUsage.INDEX | BufferUsage.COPY_DST,
     });
     this.device.queue.writeBuffer(this.indexBuffer, 0, mesh.indices);
   }
@@ -621,7 +631,7 @@ export class WebGPUFloorPlanRenderer {
     const depthTexture = this.device.createTexture({
       size: [this.canvas.width, this.canvas.height],
       format: "depth24plus",
-      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+      usage: TextureUsage.RENDER_ATTACHMENT,
     });
 
     const renderPass = commandEncoder.beginRenderPass({

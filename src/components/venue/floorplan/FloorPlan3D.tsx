@@ -239,20 +239,20 @@ function renderWebGLFallback(
     }
   `;
 
-  function compileShader(type: number, source: string): WebGLShader | null {
-    const shader = gl.createShader(type);
+  function compileShader(glContext: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
+    const shader = glContext.createShader(type);
     if (!shader) return null;
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-      gl.deleteShader(shader);
+    glContext.shaderSource(shader, source);
+    glContext.compileShader(shader);
+    if (!glContext.getShaderParameter(shader, glContext.COMPILE_STATUS)) {
+      glContext.deleteShader(shader);
       return null;
     }
     return shader;
   }
 
-  const vs = compileShader(gl.VERTEX_SHADER, vertexSource);
-  const fs = compileShader(gl.FRAGMENT_SHADER, fragmentSource);
+  const vs = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
+  const fs = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
   if (!vs || !fs) return;
 
   const program = gl.createProgram();

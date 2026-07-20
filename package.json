@@ -16,7 +16,6 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "22": "^0.0.0",
     "@clerk/nextjs": "^7.5.20",
     "@pdf-lib/fontkit": "^1.1.1",
     "@prisma/adapter-pg": "^7.8.0",
@@ -37,6 +36,7 @@
     "leaflet.heat": "^0.2.0",
     "lucide-react": "^0.562.0",
     "next": "^16.2.10",
+    "next-themes": "^0.4.6",
     "nodemailer": "^8.0.1",
     "onnxruntime-web": "^1.27.0",
     "openai": "^6.46.0",
@@ -55,7 +55,7 @@
     "react-joyride": "^3.2.0",
     "react-leaflet": "^5.0.0",
     "recharts": "^3.9.2",
-    "snarkjs": "^0.7.5",
+    "snarkjs": "^0.7.6",
     "svix": "^1.96.1",
     "tailwind-merge": "^3.6.0",
     "tesseract.js": "^7.0.0",

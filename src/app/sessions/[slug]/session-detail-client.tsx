@@ -1,16 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useUser } from "@clerk/nextjs";
 import {
   CalendarDays,
   Check,
   Clock3,
-  
   MapPin,
   Navigation,
   Share2,
   UsersRound,
 } from "lucide-react";
+import ScreenSharePanel from "@/components/sessions/ScreenSharePanel";
 
 type Props = {
   session: {
@@ -21,6 +22,7 @@ type Props = {
     endsAt: string;
     maxGuests: number | null;
     host: {
+      id: string;
       firstName: string | null;
       lastName: string | null;
     };
@@ -44,6 +46,7 @@ type Props = {
 };
 
 export default function SessionDetailClient({ session }: Props) {
+  const { user } = useUser();
   const [rsvps, setRsvps] = useState(session.rsvps);
   const [message, setMessage] = useState("");
   const going = useMemo(
@@ -138,6 +141,12 @@ export default function SessionDetailClient({ session }: Props) {
             </div>
 
             {message && <p className="mt-4 text-sm text-violet-200">{message}</p>}
+
+            <ScreenSharePanel
+              sessionSlug={session.slug}
+              hostId={session.host.id}
+              currentUserId={user?.id}
+            />
           </section>
 
           <aside className="space-y-6">

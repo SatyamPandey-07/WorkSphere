@@ -139,7 +139,7 @@ A typical exponential backoff sequence may be:
 - Attempt 4: 4 seconds
 - Attempt 5: 8 seconds
 
-This approach reduces unnecessary traffic, improves service stability, and increases the likelihood of successful recovery during temporary outages.
+This approach reduces unnecessary traffic, improves service stability, and increases the likelihood of successful recovery during temporary outages. Operations that are not replay-safe should use idempotency mechanisms, such as idempotency keys or server-side request deduplication, before automatic retries are enabled.
 
 ## 8. CPU Offloading Guidelines
 

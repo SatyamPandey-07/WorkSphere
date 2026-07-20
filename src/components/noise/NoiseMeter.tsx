@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Volume2 } from "lucide-react";
+import { processAudioFrame, resetNoiseProcessor } from "@/lib/wasm/noiseProcessor";
 
 export type NoiseMeasurement = {
   averageDb: number;
@@ -117,27 +118,33 @@ export function NoiseMeter({ onMeasured }: Props) {
         cancelAnimationFrame(animationFrame);
         stream.getTracks().forEach((track) => track.stop());
         audioContext.close().catch(() => {});
+        resetNoiseProcessor();
       };
 
       cleanupRef.current = cleanup;
       setStatus("measuring");
       setRemaining(timer);
 
-      const tick = () => {
+      const tick = async () => {
         analyser.getFloatTimeDomainData(samples);
 
-        let sumSquares = 0;
-        for (let i = 0; i < samples.length; i += 1) {
-          sumSquares += samples[i] * samples[i];
-        }
+        let db: number;
 
-        const rms = Math.sqrt(sumSquares / samples.length);
-        const db = rmsToApproxDb(rms);
+        try {
+          const result = await processAudioFrame(samples);
+          db = result.db;
+        } catch {
+          let sumSquares = 0;
+          for (let i = 0; i < samples.length; i += 1) {
+            sumSquares += samples[i] * samples[i];
+          }
+          const rms = Math.sqrt(sumSquares / samples.length);
+          db = rmsToApproxDb(rms);
+        }
 
         values.push(db);
         setLiveDb(db);
 
-        // Waveform canvas rendering
         const canvas = canvasRef.current;
         if (canvas) {
           const ctx = canvas.getContext("2d");
@@ -146,7 +153,6 @@ export function NoiseMeter({ onMeasured }: Props) {
             const height = canvas.height;
             ctx.clearRect(0, 0, width, height);
 
-            // Draw center baseline grid
             ctx.strokeStyle = "rgba(63, 63, 70, 0.2)";
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -154,12 +160,11 @@ export function NoiseMeter({ onMeasured }: Props) {
             ctx.lineTo(width, height / 2);
             ctx.stroke();
 
-            // Dynamic color determination based on decibel level
-            let strokeColor = "#10b981"; // Quiet
+            let strokeColor = "#10b981";
             if (db >= 70) {
-              strokeColor = "#f43f5e"; // Loud
+              strokeColor = "#f43f5e";
             } else if (db >= 50) {
-              strokeColor = "#f59e0b"; // Moderate
+              strokeColor = "#f59e0b";
             }
 
             ctx.strokeStyle = strokeColor;
@@ -171,7 +176,7 @@ export function NoiseMeter({ onMeasured }: Props) {
             let x = 0;
 
             for (let i = 0; i < samples.length; i++) {
-              const v = samples[i] * 2.0; // gain amplifier factor
+              const v = samples[i] * 2.0;
               const y = (v * height) / 2 + height / 2;
 
               if (i === 0) {
@@ -191,7 +196,6 @@ export function NoiseMeter({ onMeasured }: Props) {
         animationFrame = requestAnimationFrame(tick);
       };
 
-      // Small delay to ensure browser rendering context resolves canvasRef
       setTimeout(() => {
         tick();
       }, 50);

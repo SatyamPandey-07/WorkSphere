@@ -35,12 +35,14 @@ export default class WorkspaceServer implements Party.Server {
     const token = url.searchParams.get("token");
 
     let isViewer = false;
+    let verifiedUserId: string | undefined;
 
     if (token) {
       try {
         const secretKey = process.env.CLERK_SECRET_KEY;
         const verifiedToken = await verifyToken(token, { secretKey });
         const userId = verifiedToken.sub;
+        verifiedUserId = userId;
 
         // Extract folder ID if room is named "folder-{id}"
         let folderId = this.room.id;
@@ -73,7 +75,10 @@ export default class WorkspaceServer implements Party.Server {
       isViewer = true;
     }
 
-    conn.setState({ role: isViewer ? "VIEWER" : "EDITOR" });
+    conn.setState({
+      role: isViewer ? "VIEWER" : "EDITOR",
+      userId: verifiedUserId,
+    });
 
     // Bring newly connected clients up to speed on current seat availability
     // (#703) so rings render correctly before any new check-in event fires.
@@ -103,14 +108,20 @@ export default class WorkspaceServer implements Party.Server {
   }
 
   onMessage(message: string, sender: Party.Connection) {
-    const state = sender.state as { role?: string };
+    const state = sender.state as { role?: string; userId?: string };
 
     try {
       const parsed = JSON.parse(message);
 
-      // Typing + WebRTC signaling are coordination messages, not doc edits,
-      // so VIEWERS can send them too (screen share offers/answers/ICE).
-      if (parsed.type === "typing" || parsed.type === "webrtc-signal") {
+      if (parsed.type === "typing") {
+        this.room.broadcast(message, [sender.id]);
+        return;
+      }
+
+      // WebRTC signaling is allowed for VIEWERS, but `from` must match the
+      // Clerk userId we verified on connect — never trust the client field alone.
+      if (parsed.type === "webrtc-signal") {
+        if (!state.userId || parsed.from !== state.userId) return;
         this.room.broadcast(message, [sender.id]);
         return;
       }

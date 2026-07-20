@@ -175,21 +175,29 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
 
       if (msg.kind === "offer" && msg.to === userId) {
         const pc = ensurePeer(msg.from, false);
-        await pc.setRemoteDescription(msg.sdp!);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        sendSignal({
-          kind: "answer",
-          to: msg.from,
-          sdp: pc.localDescription ?? answer,
-        });
+        try {
+          await pc.setRemoteDescription(msg.sdp!);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          sendSignal({
+            kind: "answer",
+            to: msg.from,
+            sdp: pc.localDescription ?? answer,
+          });
+        } catch {
+          cleanupPeer(msg.from);
+        }
         return;
       }
 
       if (msg.kind === "answer" && msg.to === userId) {
         const pc = peersRef.current.get(msg.from);
         if (!pc) return;
-        await pc.setRemoteDescription(msg.sdp!);
+        try {
+          await pc.setRemoteDescription(msg.sdp!);
+        } catch {
+          cleanupPeer(msg.from);
+        }
         return;
       }
 

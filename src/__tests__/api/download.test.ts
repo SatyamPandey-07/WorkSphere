@@ -31,7 +31,7 @@ jest.mock("fs", () => {
 });
 
 describe("GET /api/bookings/[bookingId]/download", () => {
-  const mockAuth = auth as jest.Mock;
+  const mockAuth = auth as unknown as jest.Mock;
   const mockFindFirst = (prisma as any).booking.findFirst as jest.Mock;
   const mockReadFile = fs.promises.readFile as jest.Mock;
 
@@ -89,7 +89,9 @@ describe("GET /api/bookings/[bookingId]/download", () => {
     mockReadFile.mockResolvedValue(Buffer.from("dummy-font-data"));
 
     const req = {
-      nextUrl: new URL("http://localhost/api/bookings/booking_123/download?showLogo=true"),
+      nextUrl: new URL(
+        "http://localhost/api/bookings/booking_123/download?showLogo=true",
+      ),
     };
     const context = { params: Promise.resolve({ bookingId: "booking_123" }) };
 

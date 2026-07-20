@@ -42,8 +42,9 @@ The lifecycle of a Web Worker typically follows these stages:
    - Long-lived workers may continue running to process future requests.
 
 5. **Termination**
-   - When no longer required, the main thread calls `terminate()` to release resources.
-   - Workers should also clean up temporary data before shutting down.
+
+   - When graceful shutdown is required, the main thread should send a shutdown message and wait for the worker to complete cleanup before the worker calls `close()`.
+   - The main thread should use `terminate()` only for immediate or unrecoverable shutdowns, as it stops the worker without allowing pending cleanup tasks to complete.
 
    ## 4. Thread Communication Protocols
 

@@ -415,10 +415,26 @@ export function VenueDetailDialog({
                                                     <span>Noise: {review.noiseLevel}</span>
                                                 </div>
                                             </div>
-                                            {review.wifiSpeed && (
-                                                <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded text-[9px] font-black tracking-wider">
-                                                    {review.wifiSpeed} MBPS
-                                                </span>
+                                            {(review.downloadSpeed != null ||
+                                              review.uploadSpeed != null ||
+                                              review.ping != null) && (
+                                              <div className="flex flex-wrap gap-2">
+                                                {review.downloadSpeed != null && (
+                                                  <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded text-[9px] font-black tracking-wider">
+                                                    ⬇ {review.downloadSpeed} Mbps
+                                                  </span>
+                                                )}
+                                                {review.uploadSpeed != null && (
+                                                  <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 rounded text-[9px] font-black tracking-wider">
+                                                    ⬆ {review.uploadSpeed} Mbps
+                                                  </span>
+                                                )}
+                                                {review.ping != null && (
+                                                  <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded text-[9px] font-black tracking-wider">
+                                                    📶 {review.ping} ms
+                                                  </span>
+                                                )}
+                                              </div>
                                             )}
                                         </div>
                                         {review.comment && (

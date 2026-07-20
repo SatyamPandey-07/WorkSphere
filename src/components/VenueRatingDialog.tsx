@@ -22,7 +22,9 @@ interface VenueRatingDialogProps {
     comment?: string;
     hasErgonomic: boolean;
     outletDensity: "every_table" | "some_tables" | "wall_seats" | "none";
-    wifiSpeed?: number;
+    downloadSpeed?: number;
+    uploadSpeed?: number;
+    ping?: number;
     speedtestPhoto?: string;
   }) => void;
 }
@@ -35,6 +37,9 @@ export function VenueRatingDialog({
   onSubmit,
 }: VenueRatingDialogProps) {
   const [wifiQuality, setWifiQuality] = useState(3);
+  const [downloadSpeed, setDownloadSpeed] = useState("");
+  const [uploadSpeed, setUploadSpeed] = useState("");
+  const [ping, setPing] = useState("");
   const [hasOutlets, setHasOutlets] = useState<boolean | null>(null);
   const [noiseLevel, setNoiseLevel] = useState<
     "quiet" | "moderate" | "loud"
@@ -142,11 +147,15 @@ export function VenueRatingDialog({
         comment: comment.trim() || undefined,
         hasErgonomic,
         outletDensity,
-        wifiSpeed: wifiSpeed ? parseInt(wifiSpeed, 10) : undefined,
+        downloadSpeed: downloadSpeed ? parseInt(downloadSpeed, 10) : undefined,
+        uploadSpeed: uploadSpeed ? parseInt(uploadSpeed, 10) : undefined,
+        ping: ping ? parseInt(ping, 10) : undefined,
         speedtestPhoto: speedtestPhoto || undefined,
       });
 
-      setWifiQuality(3);
+      setDownloadSpeed("");
+      setUploadSpeed("");
+      setPing("");
       setHasOutlets(null);
       setNoiseLevel("moderate");
       setMeasurement(null);
@@ -372,16 +381,52 @@ export function VenueRatingDialog({
 
           <section>
             <label className="mb-2 block text-sm font-medium">
-              Comments (optional)
+              Internet Speed Test (Optional)
             </label>
 
-            <textarea
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder="Share your experience..."
-              rows={3}
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
-            />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs text-zinc-500">
+                  Download (Mbps)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={downloadSpeed}
+                  onChange={(event) => setDownloadSpeed(event.target.value)}
+                  placeholder="e.g. 120"
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-zinc-500">
+                  Upload (Mbps)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={uploadSpeed}
+                  onChange={(event) => setUploadSpeed(event.target.value)}
+                  placeholder="e.g. 40"
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-zinc-500">
+                  Ping (ms)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={ping}
+                  onChange={(event) => setPing(event.target.value)}
+                  placeholder="e.g. 18"
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+                />
+              </div>
+            </div>
           </section>
 
           <div className="flex gap-2">

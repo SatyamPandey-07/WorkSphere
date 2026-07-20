@@ -44,6 +44,8 @@ model User {
   folderUpvotes      FolderUpvote[]
   sentFolderInvites  FolderInvite[]      @relation("FolderInviteSender")
   workStyleProfile   String?
+  pushSubscriptions  PushSubscription[]
+  pushNotificationLogs PushNotificationLog[]
   checkIns           CheckIn[]
   // ── Activity streak ────────────────────────────────────────────────────────
   // currentStreak:    consecutive days with at least one check-in
@@ -627,4 +629,42 @@ model EmailLog {
   @@index([status])
   @@index([type])
   @@index([recipient])
+}
+
+model PushSubscription {
+  id           String   @id @default(cuid())
+  userId       String
+  endpoint     String
+  p256dh       String
+  auth         String
+  userAgent    String?
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([endpoint])
+  @@index([userId])
+}
+
+model PushNotificationLog {
+  id             String   @id @default(cuid())
+  userId         String
+  venueId        String?
+  title          String
+  body           String
+  status         PushDeliveryStatus @default(PENDING)
+  error          String?
+  sentAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sentAt])
+}
+
+enum PushDeliveryStatus {
+  SENT
+  FAILED
+  PENDING
 }

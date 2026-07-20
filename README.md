@@ -23,11 +23,20 @@
 
 - **Founder & CTO**: [Satyam Pandey](https://github.com/SatyamPandey-07)
 
-### 🚀 Contributors (Live API Tracker)
+> 🔔 **Update for Contributors:**
+>
+> The limit for active assigned issues per person has been increased to **10** (previously 5).
+>
+> You can claim any open issue by posting a comment with exactly:
+> `/claim`
+>
+> You will have **6 days** to complete it! 🚀
+
+### 🚀 Contributors (All 47 Active Rockstars)
 
 Automated contributor tracking synced directly via the GitHub API:
 
-[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100&columns=12)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 
 ---
 
@@ -61,15 +70,16 @@ Automated contributor tracking synced directly via the GitHub API:
 
 The chatbot supports voice-to-text via the [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition):
 
-| Browser | Voice Input |
-|---------|-------------|
-| Chrome 33+ | ✅ Supported |
-| Edge 79+ | ✅ Supported |
+| Browser                 | Voice Input                  |
+| ----------------------- | ---------------------------- |
+| Chrome 33+              | ✅ Supported                 |
+| Edge 79+                | ✅ Supported                 |
 | Safari (desktop/mobile) | ✅ Supported (webkit prefix) |
-| Firefox Stable | ⚠️ Not supported by default |
-| Firefox Nightly | ⚠️ Requires flag — see below |
+| Firefox Stable          | ⚠️ Not supported by default  |
+| Firefox Nightly         | ⚠️ Requires flag — see below |
 
 **Firefox users:** The Web Speech API is disabled by default. To enable it:
+
 1. Navigate to `about:config` in Firefox.
 2. Search for `media.webspeech.recognition.enable` and set it to `true`.
 3. Reload the application.
@@ -162,6 +172,8 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 - **Data Caching**: Multi-layer caching with TTL support
 - **Error Boundaries**: Graceful error handling prevents crashes
 - **Loading Skeletons**: Smooth loading states for better UX
+
+> See [docs/NEXTJS_PERFORMANCE_PLAYBOOK.md](./docs/NEXTJS_PERFORMANCE_PLAYBOOK.md) for a full guide on rendering strategies, bundle optimization, image optimization, caching, and Core Web Vitals measurement.
 
 ### 📊 Analytics & Monitoring
 
@@ -300,6 +312,8 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
    npx prisma db push
    ```
 
+   > See [docs/NEON_DATABASE_POOLING.md](./docs/NEON_DATABASE_POOLING.md) for full connection string configuration, PgBouncer pooling setup, and migration workflow.
+
 5. **Run the development server**
 
    ```bash
@@ -333,6 +347,8 @@ npm run test:watch
 npm run test:e2e
 npm run test:e2e:ui  # With UI
 ```
+
+For a full guide on writing, running, and debugging Playwright tests, see [docs/PLAYWRIGHT_TESTING_GUIDE.md](./docs/PLAYWRIGHT_TESTING_GUIDE.md).
 
 ### Test Coverage
 

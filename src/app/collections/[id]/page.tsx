@@ -5,7 +5,8 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Users,
-  Link as LinkIcon,
+  Mail,
+  Copy,
   Trash2,
   MapPin,
   Loader2,
@@ -29,8 +30,11 @@ export default function FolderDetailsPage({
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [inviteToken, setInviteToken] = useState("");
-  const [generatingInvite, setGeneratingInvite] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"EDITOR" | "MEMBER">("EDITOR");
+  const [inviteMessage, setInviteMessage] = useState("");
+  const [inviteLink, setInviteLink] = useState("");
+  const [sendingInvite, setSendingInvite] = useState(false);
   const [updatingPublic, setUpdatingPublic] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [filters, setFilters] = useState({
@@ -69,9 +73,6 @@ export default function FolderDetailsPage({
       if (data.folder) {
         setFolder(data.folder);
         setUserRole(data.role || null);
-        if (data.folder.inviteToken) {
-          setInviteToken(data.folder.inviteToken);
-        }
       } else {
         setError(data.error || "Failed to load folder");
       }
@@ -127,18 +128,34 @@ export default function FolderDetailsPage({
     },
   });
 
-  const generateInvite = async () => {
-    setGeneratingInvite(true);
+  const sendInvite = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSendingInvite(true);
+    setInviteMessage("");
+    setInviteLink("");
+
     try {
-      const res = await fetch(`/api/folders/${id}/invites`, { method: "POST" });
-      const data = await res.json();
-      if (data.inviteToken) {
-        setInviteToken(data.inviteToken);
+      const response = await fetch(`/api/folders/${id}/invites`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setInviteMessage(data.error || "Unable to invite teammate");
+        return;
       }
-    } catch (e) {
-      console.error(e);
+
+      setInviteMessage(data.message || "Invitation created.");
+      setInviteLink(data.invite?.inviteUrl || "");
+      setInviteEmail("");
+      await fetchFolder();
+    } catch (error) {
+      console.error(error);
+      setInviteMessage("Unable to invite teammate");
     } finally {
-      setGeneratingInvite(false);
+      setSendingInvite(false);
     }
   };
 
@@ -160,11 +177,6 @@ export default function FolderDetailsPage({
     }
   };
 
-  const getInviteLink = () => {
-    if (typeof window === "undefined" || !inviteToken) return "";
-    return `${window.location.origin}/collections/join?token=${inviteToken}`;
-  };
-
   if (loading)
     return (
       <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">
@@ -176,10 +188,7 @@ export default function FolderDetailsPage({
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
         <p>{error}</p>
-        <Link
-          href="/collections"
-          className="mt-4 text-blue-500 hover:underline"
-        >
+        <Link href="/collections" className="mt-4 accent-text hover:underline">
           Back to Collections
         </Link>
       </div>
@@ -364,7 +373,7 @@ export default function FolderDetailsPage({
             {userRole === "OWNER" && (
               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm">
                 <h2 className="text-lg font-semibold text-zinc-900 dark:text-white flex items-center gap-2 mb-4">
-                  <Globe className="w-5 h-5 text-blue-500" /> Share Settings
+                  <Globe className="w-5 h-5 accent-text" /> Share Settings
                 </h2>
                 <div className="flex items-center justify-between">
                   <div>
@@ -378,9 +387,9 @@ export default function FolderDetailsPage({
                   <button
                     onClick={togglePublic}
                     disabled={updatingPublic}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] ${
                       folder.isPublic
-                        ? "bg-blue-600"
+                        ? "accent-bg"
                         : "bg-zinc-200 dark:bg-zinc-800"
                     }`}
                   >
@@ -395,12 +404,12 @@ export default function FolderDetailsPage({
             )}
 
             {userRole === "VIEWER" && (
-              <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-2xl p-5 shadow-sm text-center">
-                <Globe className="w-8 h-8 text-blue-500 mx-auto mb-2 animate-pulse" />
-                <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+              <div className="accent-bg-10 accent-bg-dark-30 accent-border accent-border-dark-30 rounded-2xl p-5 shadow-sm text-center">
+                <Globe className="w-8 h-8 accent-text mx-auto mb-2 animate-pulse" />
+                <h3 className="text-sm font-semibold accent-text">
                   Public Collection
                 </h3>
-                <p className="text-xs text-blue-700/80 dark:text-blue-400 mt-1">
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
                   You are discovering this list shared by a WorkSphere community
                   member.
                 </p>
@@ -436,50 +445,68 @@ export default function FolderDetailsPage({
               </div>
 
               {userRole !== "VIEWER" && (
-                <div className="border-t border-zinc-200 dark:border-zinc-800 pt-4">
-                  <h3 className="text-sm font-medium text-zinc-900 dark:text-white mb-2">
-                    Invite Link
-                  </h3>
-                  {inviteToken ? (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 px-3 py-2 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg">
-                        <LinkIcon className="w-4 h-4 text-zinc-400 shrink-0" />
-                        <input
-                          readOnly
-                          value={getInviteLink()}
-                          className="bg-transparent border-none outline-none text-xs text-zinc-600 dark:text-zinc-400 flex-1 min-w-0"
-                        />
-                      </div>
-                      <button
-                        onClick={() =>
-                          navigator.clipboard.writeText(getInviteLink())
-                        }
-                        className="text-xs text-blue-500 hover:underline"
-                      >
-                        Copy Link
-                      </button>
-                      <button
-                        onClick={generateInvite}
-                        disabled={generatingInvite}
-                        className="ml-4 text-xs text-zinc-500 hover:underline"
-                      >
-                        {generatingInvite ? "Generating..." : "Regenerate"}
-                      </button>
-                    </div>
-                  ) : (
+                <form
+                  onSubmit={sendInvite}
+                  className="border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-3"
+                >
+                  <div>
+                    <h3 className="text-sm font-medium text-zinc-900 dark:text-white flex items-center gap-2">
+                      <Mail className="w-4 h-4 accent-text" /> Invite teammate
+                    </h3>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Invite by email as an editor or read-only viewer.
+                    </p>
+                  </div>
+
+                  <input
+                    type="email"
+                    required
+                    value={inviteEmail}
+                    onChange={(event) => setInviteEmail(event.target.value)}
+                    placeholder="teammate@example.com"
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-[var(--primary-accent)] dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+                  />
+
+                  <select
+                    value={inviteRole}
+                    onChange={(event) =>
+                      setInviteRole(event.target.value as "EDITOR" | "MEMBER")
+                    }
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-[var(--primary-accent)] dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+                  >
+                    <option value="EDITOR">
+                      Editor — can add or remove venues
+                    </option>
+                    <option value="MEMBER">Viewer — read only</option>
+                  </select>
+
+                  <button
+                    type="submit"
+                    disabled={sendingInvite}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl accent-bg px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
+                  >
+                    {sendingInvite && (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    )}
+                    {sendingInvite ? "Sending invitation…" : "Send invitation"}
+                  </button>
+
+                  {inviteMessage && (
+                    <p className="rounded-lg bg-zinc-100 px-3 py-2 text-xs text-zinc-600 dark:bg-zinc-950 dark:text-zinc-300">
+                      {inviteMessage}
+                    </p>
+                  )}
+
+                  {inviteLink && (
                     <button
-                      onClick={generateInvite}
-                      disabled={generatingInvite}
-                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-medium rounded-xl text-sm transition-all"
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(inviteLink)}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium accent-text accent-bg-hover accent-bg-dark-20 dark:border-zinc-800"
                     >
-                      {generatingInvite ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        "Generate Invite Link"
-                      )}
+                      <Copy className="w-4 h-4" /> Copy fallback invite link
                     </button>
                   )}
-                </div>
+                </form>
               )}
             </div>
           </div>

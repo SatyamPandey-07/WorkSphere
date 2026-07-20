@@ -16,9 +16,15 @@ const eslintConfig = defineConfig([
     "prisma/seed.js",
     "scratch/**",
     "jest.setup.js",
+    "wasm/**",
   ]),
   // Custom rules for this project
   {
+    settings: {
+      react: {
+        version: "19.2.7",
+      },
+    },
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],

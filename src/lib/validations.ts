@@ -1,29 +1,6 @@
 import { z } from "zod";
 
 // =========================================================================
-// LOCALIZATION ERROR MAP GENERATOR ENGINE
-// =========================================================================
-export const createLocalizedErrorMap = (t: (key: string) => string): z.ZodErrorMap => {
-  return (issue, ctx) => {
-    // 1. Check for empty string validation rules (.min(1))
-    if (issue.code === z.ZodIssueCode.too_small && issue.type === "string" && issue.minimum === 1) {
-      const fieldPath = issue.path.join('.');
-      if (fieldPath === 'name') return { message: t("validation.workspace.name_required") };
-      if (fieldPath === 'content') return { message: t("validation.chat.content_required") };
-    }
-
-    // 2. Check for type structure issues
-    if (issue.code === z.ZodIssueCode.invalid_type && issue.received === "undefined") {
-      const fieldPath = issue.path.join('.');
-      if (fieldPath === 'name') return { message: t("validation.workspace.name_required") };
-    }
-
-    // Default structural fallback
-    return { message: ctx.defaultError };
-  };
-};
-
-// =========================================================================
 // CORE SCHEMAS
 // =========================================================================
 
@@ -62,6 +39,7 @@ export const venueSearchSchema = z.object({
   hasPhoneBooths: z.coerce.boolean().optional(),
   hasNoMusic: z.coerce.boolean().optional(),
   hasQuietZone: z.coerce.boolean().optional(),
+  hasAncHeadsetRental: z.coerce.boolean().optional(),
   singleOriginBeans: z.coerce.boolean().optional(),
   specialtyEspresso: z.coerce.boolean().optional(),
   oatAlmondMilk: z.coerce.boolean().optional(),
@@ -98,6 +76,7 @@ export const venueCreateSchema = z.object({
   hasPhoneBooths: z.boolean().optional(),
   hasNoMusic: z.boolean().optional(),
   hasQuietZone: z.boolean().optional(),
+  hasAncHeadsetRental: z.boolean().optional(),
   lighting: z
     .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
     .optional(),
@@ -165,6 +144,22 @@ export const favoriteSchema = z.object({
   venueId: z.string().min(1),
 });
 
+// Favorite notes schema
+export const favoriteNotesSchema = z.object({
+  notes: z.string().max(2000).nullable(),
+});
+
+// Favorite tag schemas
+export const createFavoriteTagSchema = z.object({
+  name: z.string().min(1).max(50).trim(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color"),
+});
+
+export const updateFavoriteTagSchema = z.object({
+  name: z.string().min(1).max(50).trim().optional(),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color").optional(),
+});
+
 // Location schema
 export const locationSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -182,9 +177,11 @@ export type VenueRating = z.infer<typeof venueRatingSchema>;
 export type ConversationCreate = z.infer<typeof conversationCreateSchema>;
 export type MessageCreate = z.infer<typeof messageCreateSchema>;
 export type Favorite = z.infer<typeof favoriteSchema>;
+export type FavoriteNotes = z.infer<typeof favoriteNotesSchema>;
+export type CreateFavoriteTag = z.infer<typeof createFavoriteTagSchema>;
+export type UpdateFavoriteTag = z.infer<typeof updateFavoriteTagSchema>;
 export type Location = z.infer<typeof locationSchema>;
 
-<<<<<<< Updated upstream
 // Validation helper
 export function validateRequest<T>(
   schema: z.ZodSchema<T>,
@@ -199,24 +196,10 @@ export function validateRequest<T>(
       error: string;
     } {
   const result = schema.safeParse(data);
-=======
-/**
- * Standard request validator helper with support for injection maps
- */
-export function validateRequest<T>(
-  schema: z.ZodSchema<T>, 
-  data: unknown,
-  t?: (key: string) => string
-): { success: true; data: T } | { success: false; error: string } {
-  
-  // Set the dynamic local contextual key definitions if passed down by controllers
-  const options = t ? { errorMap: createLocalizedErrorMap(t) } : undefined;
-  const result = schema.safeParse(data, options);
-  
->>>>>>> Stashed changes
   if (result.success) {
     return { success: true, data: result.data };
   }
+
   return {
     success: false,
     error: result.error.issues

@@ -20,6 +20,9 @@ export async function GET() {
       where: { userId },
       include: {
         venue: true,
+        tags: {
+          orderBy: { createdAt: "asc" },
+        },
       },
       orderBy: {
         createdAt: "desc",
@@ -92,6 +95,7 @@ export async function POST(req: NextRequest) {
       },
       include: {
         venue: true,
+        tags: true,
       },
     });
 

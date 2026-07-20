@@ -18,7 +18,10 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
-import { useSeatAvailability, type SeatStatus } from "@/hooks/useSeatAvailability";
+import {
+  useSeatAvailability,
+  type SeatStatus,
+} from "@/hooks/useSeatAvailability";
 
 // Seat-availability ring colours (#703): green = plenty of room, yellow =
 // filling up, red = at/over capacity.
@@ -192,9 +195,11 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
 
     const handleResize = () => {
       clearTimeout(timer);
+      const centerBeforeResize = map.getCenter();
 
       timer = setTimeout(() => {
         map.invalidateSize();
+        map.setView(centerBeforeResize, map.getZoom(), { animate: false });
       }, delay);
     };
 
@@ -223,6 +228,29 @@ const Map = ({
   const clerkUser = useUser();
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
+
+  // Memoized event handlers for all interactive markers to prevent react-leaflet
+  // from removing and re-adding event listeners on every render.
+  const markerEventHandlers = useMemo(
+    () => ({
+      keydown: (e: any) => {
+        if (e.originalEvent.key === "Enter" || e.originalEvent.key === " ") {
+          e.originalEvent.preventDefault();
+          e.target.openPopup();
+        }
+      },
+      add: (e: any) => {
+        const el = e.target.getElement();
+        if (el) {
+          const name = e.target.options.title || "Map marker";
+          el.setAttribute("aria-label", name);
+          el.setAttribute("role", "button");
+          el.setAttribute("tabindex", "0");
+        }
+      },
+    }),
+    [],
+  );
 
   // Real-time seat availability (#703) — PartyKit presence layer that
   // powers the green/yellow/red rings and the popup check-in button.
@@ -327,9 +355,12 @@ const Map = ({
       const lat = Number(v.latitude);
       const lng = Number(v.longitude);
       return (
-        !isNaN(lat) && !isNaN(lng) &&
-        lat >= -90 && lat <= 90 &&
-        lng >= -180 && lng <= 180 &&
+        !isNaN(lat) &&
+        !isNaN(lng) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        lng >= -180 &&
+        lng <= 180 &&
         !(lat === 0 && lng === 0)
       );
     };
@@ -714,11 +745,21 @@ const Map = ({
 
         <MapController mapView={mapView} />
         <AutoCenter markers={markers} userLocation={center} />
-        <ZoomWatcher onZoomSettled={handleZoomSettled} onZoomStart={handleZoomStart} />
+        <ZoomWatcher
+          onZoomSettled={handleZoomSettled}
+          onZoomStart={handleZoomStart}
+        />
         <ResizeWatcher />
 
         {customIcon && (
-          <Marker position={center} icon={customIcon}>
+          <Marker
+            position={center}
+            icon={customIcon}
+            title="Your location"
+            alt="Your location"
+            keyboard={true}
+            eventHandlers={markerEventHandlers}
+          >
             <Popup>You are here!</Popup>
           </Marker>
         )}
@@ -727,6 +768,10 @@ const Map = ({
             key={marker.id}
             position={[marker.renderedLat, marker.renderedLng]}
             icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
+            title={marker.name}
+            alt={marker.name}
+            keyboard={true}
+            eventHandlers={markerEventHandlers}
           >
             <Popup>
               <div className="text-sm">
@@ -751,7 +796,9 @@ const Map = ({
                           : "text-green-400";
                     return (
                       <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
-                        <span className={`text-[10px] font-medium ${seatTextColor}`}>
+                        <span
+                          className={`text-[10px] font-medium ${seatTextColor}`}
+                        >
                           {isSeatSocketConnected
                             ? `${seat.count}/${seat.capacity} checked in`
                             : "Connecting…"}
@@ -762,8 +809,8 @@ const Map = ({
                           }
                           className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
                             isCheckedInHere
-                              ? "bg-blue-600 text-white hover:bg-blue-500"
-                              : "bg-zinc-800 text-zinc-200 hover:bg-blue-600 hover:text-white"
+                              ? "accent-bg text-white hover:opacity-90"
+                              : "bg-zinc-800 text-zinc-200 hover:accent-bg hover:text-white"
                           }`}
                         >
                           {isCheckedInHere ? "Check out" : "Check in here"}
@@ -789,7 +836,7 @@ const Map = ({
                     calculateOptimizedRoute(updated);
                   }
                 }}
-                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:bg-blue-600 hover:text-white transition-colors"
+                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:accent-bg hover:text-white transition-colors"
               >
                 ➕ Add to Workday Timeline
               </button>
@@ -897,9 +944,9 @@ const Map = ({
               <button
                 key={mode}
                 onClick={() => setTravelProfile(mode)}
-                className={`rounded-md py-1.5 font-medium uppercase transition-all ${
+                className={`rounded-md py-1.5 font-medium cursor-pointer uppercase transition-all ${
                   travelProfile === mode
-                    ? "bg-blue-600 text-white shadow"
+                    ? "accent-bg text-white shadow"
                     : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
                 }`}
               >
@@ -954,7 +1001,10 @@ const Map = ({
               {routingQueue.length >= 2 && (
                 <button
                   onClick={() => calculateOptimizedRoute()}
-                  className="mt-3 w-full rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:from-blue-500 hover:to-indigo-500 active:scale-[0.98]"
+                  className="mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white shadow-lg transition-all active:scale-[0.98]"
+                  style={{
+                    background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 80%, #4f46e5))`,
+                  }}
                 >
                   🚀 Calculate Combined Travel Timeline
                 </button>

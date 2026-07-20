@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { MapPin } from "lucide-react";
 import { useUser, UserButton } from "@clerk/nextjs";
+import { Coffee, LayoutGrid, MapPin } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface TopNavProps {
@@ -10,7 +10,7 @@ interface TopNavProps {
 }
 
 export function TopNav({ hideAuth = false }: TopNavProps) {
-  const { isSignedIn } = useUser();
+  const { isSignedIn, isLoaded } = useUser();
 
   return (
     <nav className="sticky top-0 z-50 border-b border-zinc-200/80 dark:border-white/5 backdrop-blur-xl bg-white/70 dark:bg-black/40 transition-colors">
@@ -27,7 +27,8 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
           <div className="flex items-center justify-center shrink-0">
             <ThemeToggle />
           </div>
-          {!hideAuth && (
+
+          {!hideAuth && isLoaded && (
             <>
               <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-700 hidden sm:block" />
               {!isSignedIn ? (
@@ -38,15 +39,34 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                     </button>
                   </Link>
                   <Link href="/sign-up">
-                    <button className="px-4 sm:px-5 py-2 text-sm rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105 whitespace-nowrap">
+                    <button className="px-4 sm:px-5 py-2 text-sm rounded-xl accent-bg text-white font-semibold hover:shadow-lg accent-shadow-md transition-all hover:scale-105 whitespace-nowrap">
                       Get Started
                     </button>
                   </Link>
                 </>
               ) : (
-                <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
-                  <UserButton userProfileMode="navigation" userProfileUrl="/user-profile" />
-                </div>
+                <>
+                  <Link
+                    href="/ai"
+                    className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
+                  >
+                    <Coffee className="w-4 h-4" />
+                    Dashboard
+                  </Link>
+                  <Link
+                    href="/collections"
+                    className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
+                  >
+                    <LayoutGrid className="w-4 h-4" />
+                    Collections
+                  </Link>
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
+                    <UserButton
+                      userProfileMode="navigation"
+                      userProfileUrl="/user-profile"
+                    />
+                  </div>
+                </>
               )}
             </>
           )}

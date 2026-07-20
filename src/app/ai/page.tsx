@@ -667,7 +667,7 @@ function AppPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-50 dark:bg-black overflow-hidden">
+    <div className="flex flex-col h-dvh bg-zinc-50 dark:bg-black overflow-hidden">
       <OnboardingTour />
       {/* Offline Banner */}
       {!isOnline && (

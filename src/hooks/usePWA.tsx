@@ -221,6 +221,11 @@ interface OfflineSyncFailureMessage {
   attempts: number;
 }
 
+interface PushNavigateMessage {
+  type: "NAVIGATE_PUSH";
+  url: string;
+}
+
 function isOfflineSyncFailureMessage(
   data: unknown,
 ): data is OfflineSyncFailureMessage {
@@ -228,6 +233,14 @@ function isOfflineSyncFailureMessage(
     typeof data === "object" &&
     data !== null &&
     (data as { type?: unknown }).type === "OFFLINE_SYNC_FAILED"
+  );
+}
+
+function isPushNavigateMessage(data: unknown): data is PushNavigateMessage {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as { type?: unknown }).type === "NAVIGATE_PUSH"
   );
 }
 
@@ -247,6 +260,9 @@ function useOfflineSyncNotice() {
       if (isOfflineSyncFailureMessage(event.data)) {
         setNotice(event.data);
         setTimeout(() => setNotice(null), 4000);
+      }
+      if (isPushNavigateMessage(event.data)) {
+        window.location.href = event.data.url;
       }
     };
 

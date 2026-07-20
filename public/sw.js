@@ -497,14 +497,25 @@ function removePendingAction(db, typeOrId, id) {
 self.addEventListener("push", (event) => {
   if (!event.data) return;
 
-  const data = event.data.json();
+  let data;
+  try {
+    data = event.data.json();
+  } catch {
+    data = { title: "WorkSphere", body: event.data.text() };
+  }
+
+  const isAvailability = data.tag?.startsWith("venue-availability-");
   const options = {
     body: data.body || "New update from WorkSphere",
-    icon: "/icons/icon.svg",
-    badge: "/icons/icon.svg",
-    vibrate: [100, 50, 100],
+    icon: data.icon || "/icons/icon.svg",
+    badge: data.badge || "/icons/icon.svg",
+    vibrate: isAvailability ? [200, 100, 200, 100, 200] : [100, 50, 100],
+    tag: data.tag || "worksphere-notification",
+    renotify: true,
+    requireInteraction: isAvailability,
     data: {
       url: data.url || "/",
+      ...(data.data || {}),
     },
     actions: [
       { action: "open", title: "Open" },
@@ -517,27 +528,30 @@ self.addEventListener("push", (event) => {
   );
 });
 
-// Notification click handler
+// Notification click handler — navigate to the target venue page
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
   if (event.action === "dismiss") return;
 
-  const url = event.notification.data?.url || "/";
+  const targetUrl = event.notification.data?.url || "/";
+  const fullUrl = new URL(targetUrl, self.location.origin).href;
 
   event.waitUntil(
     clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((windowClients) => {
-        // Focus existing window if available
         for (const client of windowClients) {
-          if (client.url === url && "focus" in client) {
+          if (client.url.includes(new URL(fullUrl).pathname) && "focus" in client) {
+            client.postMessage({
+              type: "NAVIGATE_PUSH",
+              url: fullUrl,
+            });
             return client.focus();
           }
         }
-        // Open new window
         if (clients.openWindow) {
-          return clients.openWindow(url);
+          return clients.openWindow(fullUrl);
         }
       }),
   );

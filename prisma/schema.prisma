@@ -44,6 +44,8 @@ model User {
   folderUpvotes      FolderUpvote[]
   sentFolderInvites  FolderInvite[]      @relation("FolderInviteSender")
   workStyleProfile   String?
+  pushSubscriptions  PushSubscription[]
+  pushNotificationLogs PushNotificationLog[]
   checkIns           CheckIn[]
   // ── Activity streak ────────────────────────────────────────────────────────
   // currentStreak:    consecutive days with at least one check-in
@@ -595,36 +597,4 @@ model CheckIn {
   @@unique([userId, venueId])
   @@index([venueId])
   @@index([expiresAt])
-}
-
-enum EmailStatus {
-  SENT
-  FAILED
-  PENDING
-}
-
-enum EmailType {
-  VERIFICATION_CODE
-  OTP
-  PASSWORD_RESET
-  GUEST_INVITE
-  NEWSLETTER
-  COLLECTION_INVITE
-  TEST
-}
-
-model EmailLog {
-  id        String      @id @default(cuid())
-  type      EmailType
-  recipient String
-  subject   String
-  status    EmailStatus @default(PENDING)
-  error     String?
-  metadata  Json?
-  createdAt DateTime    @default(now())
-
-  @@index([createdAt])
-  @@index([status])
-  @@index([type])
-  @@index([recipient])
 }

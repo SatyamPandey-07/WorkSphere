@@ -15,6 +15,22 @@ const THEME_INIT_SCRIPT = `
 (function () {
   try {
     var stored = localStorage.getItem("worksphere-theme");
+
+    var theme = stored === "light" || stored === "dark" ||  stored === "cyberpunk"
+      ? stored
+      : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    var root = document.documentElement;
+   root.classList.remove("dark", "cyberpunk");
+
+if (theme === "dark") {
+  root.classList.add("dark");
+} else if (theme === "cyberpunk") {
+  root.classList.add("cyberpunk");
+}
+
+root.style.colorScheme = theme === "light" ? "light" : "dark";
+  } catch (e) {}
+
     var theme =
       stored === "light" || stored === "dark"
         ? stored
@@ -57,6 +73,7 @@ const THEME_INIT_SCRIPT = `
       }
     });
   } catch {}
+
 })();
 `;
 

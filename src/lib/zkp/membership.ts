@@ -8,7 +8,7 @@
 import { computeMembershipCommit } from "./commitment";
 
 // Demo members used in local/dev + tests (token values are not stored server-side).
-const DEMO_TOKENS = [42n, 99n, 123456n];
+const DEMO_TOKENS = [BigInt(42), BigInt(99), BigInt(123456)];
 
 function defaultCommits(): Set<string> {
   return new Set(DEMO_TOKENS.map((t) => computeMembershipCommit(t)));

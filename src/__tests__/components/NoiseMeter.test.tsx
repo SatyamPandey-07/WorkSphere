@@ -143,7 +143,7 @@ it("shows result state after measurement", async () => {
 
   if (rafCallback) {
     await act(async () => {
-      rafCallback(performance.now());
+      rafCallback!(performance.now());
       await jest.advanceTimersByTimeAsync(5000);
     });
   }

@@ -684,7 +684,7 @@ function AppPage() {
       )}
 
       {/* Mobile Navigation Toggle */}
-      <div className="md:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+      <div className="lg:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <button
           onClick={() => setMobileView("chat")}
           className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
@@ -715,13 +715,13 @@ function AppPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex flex-1 md:flex-row overflow-hidden">
+      <div className="flex flex-1 lg:flex-row overflow-hidden">
         {/* Map Section - Hidden on mobile when chat is active */}
         <div
           className={`
           joyride-map
           ${mobileView === "map" ? "flex" : "hidden"} 
-          md:flex flex-1 md:flex-[7] relative
+          lg:flex flex-1 lg:flex-[7] relative
         `}
         >
           <MapErrorBoundary>
@@ -735,14 +735,14 @@ function AppPage() {
         </div>
 
         {/* Divider - Desktop only */}
-        <div className="hidden md:block w-px bg-gradient-to-b from-zinc-200 via-zinc-300 to-zinc-200 dark:from-zinc-800 dark:via-zinc-700 dark:to-zinc-800" />
+        <div className="hidden lg:block w-px bg-gradient-to-b from-zinc-200 via-zinc-300 to-zinc-200 dark:from-zinc-800 dark:via-zinc-700 dark:to-zinc-800" />
 
         {/* Chat Section - Hidden on mobile when map is active */}
         <div
           className={`
           joyride-chat
           ${mobileView === "chat" ? "flex" : "hidden"} 
-          md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
+          lg:flex flex-1 lg:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
         `}
         >
           {/* Route Profile Toggle Widget */}

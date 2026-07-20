@@ -34,14 +34,14 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
               {!isSignedIn ? (
                 <>
                   <Link href="/sign-in">
-                     <button className="px-3 sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap">
-                       Sign In
-                     </button>
+                    <button className="px-3 sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap">
+                      Sign In
+                    </button>
                   </Link>
                   <Link href="/sign-up">
-                     <button className="px-4 sm:px-5 py-2 text-sm rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105 whitespace-nowrap">
-                       Get Started
-                     </button>
+                    <button className="px-4 sm:px-5 py-2 text-sm rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105 whitespace-nowrap">
+                      Get Started
+                    </button>
                   </Link>
                 </>
               ) : (
@@ -61,7 +61,10 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                     Collections
                   </Link>
                   <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
-                    <UserButton userProfileMode="navigation" userProfileUrl="/user-profile" />
+                    <UserButton
+                      userProfileMode="navigation"
+                      userProfileUrl="/user-profile"
+                    />
                   </div>
                 </>
               )}

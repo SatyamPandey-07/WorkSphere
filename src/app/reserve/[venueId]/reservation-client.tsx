@@ -226,8 +226,13 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <a
                   href={
-                    getCalendarUrls(venue.name, venue.address || "", date, time)
-                      .googleUrl
+                    getCalendarUrls(
+                      venue.name,
+                      venue.address || "",
+                      date,
+                      time,
+                      duration,
+                    ).googleUrl
                   }
                   target="_blank"
                   rel="noopener noreferrer"
@@ -237,8 +242,13 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                 </a>
                 <a
                   href={
-                    getCalendarUrls(venue.name, venue.address || "", date, time)
-                      .outlookUrl
+                    getCalendarUrls(
+                      venue.name,
+                      venue.address || "",
+                      date,
+                      time,
+                      duration,
+                    ).outlookUrl
                   }
                   target="_blank"
                   rel="noopener noreferrer"
@@ -248,7 +258,14 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                 </a>
                 <button
                   onClick={() =>
-                    downloadICS(venue.name, venue.address || "", date, time)
+                    downloadICS(
+                      venue.name,
+                      venue.address || "",
+                      date,
+                      time,
+                      duration,
+                      confirmationId || "",
+                    )
                   }
                   className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10 transition-colors text-zinc-300"
                 >

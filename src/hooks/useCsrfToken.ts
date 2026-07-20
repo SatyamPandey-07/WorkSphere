@@ -59,21 +59,24 @@ function installCsrfFetchInterceptor() {
       }
       const response = await originalFetch(input, { ...init, headers });
       if (response.status === 403) {
-        const clone = response.clone();
-        try {
-          const body = await clone.json();
-          if (body && body.error && body.error.toLowerCase().includes("csrf")) {
-            const freshToken = await fetchFreshToken();
-            if (freshToken) {
-              const retryHeaders = new Headers(
-                init?.headers ?? (isInputRequest ? input.headers : undefined),
-              );
-              retryHeaders.set(CSRF_HEADER_NAME, freshToken);
-              return originalFetch(input, { ...init, headers: retryHeaders });
+        const contentType = response.headers.get("content-type") || "";
+        if (contentType.includes("application/json")) {
+          const clone = response.clone();
+          try {
+            const body = await clone.json();
+            if (body && body.error && body.error.toLowerCase().includes("csrf")) {
+              const freshToken = await fetchFreshToken();
+              if (freshToken) {
+                const retryHeaders = new Headers(
+                  init?.headers ?? (isInputRequest ? input.headers : undefined),
+                );
+                retryHeaders.set(CSRF_HEADER_NAME, freshToken);
+                return originalFetch(input, { ...init, headers: retryHeaders });
+              }
             }
+          } catch {
+            // Response was not valid JSON
           }
-        } catch {
-          // Response was not JSON or did not have CSRF error
         }
       }
       return response;
@@ -89,12 +92,12 @@ async function fetchFreshToken(): Promise<string | null> {
       credentials: "same-origin",
     });
     if (!res.ok) return null;
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) return null;
     const data = await res.json();
     currentCsrfToken = data.csrfToken ?? null;
     return currentCsrfToken;
   } catch {
-    // Network hiccup — leave the previous token in place; the next mutating
-    // request will surface a 403 if it's genuinely stale, which triggers a retry.
     return currentCsrfToken;
   }
 }

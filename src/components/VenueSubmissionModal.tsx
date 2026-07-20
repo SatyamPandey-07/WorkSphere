@@ -24,6 +24,7 @@ interface VenueFormData {
   hasPhoneBooths: boolean;
   hasNoMusic: boolean;
   hasQuietZone: boolean;
+  hasAncHeadsetRental: boolean;
   singleOriginBeans: boolean;
   specialtyEspresso: boolean;
   oatAlmondMilk: boolean;
@@ -67,6 +68,7 @@ export function VenueSubmissionModal({
     hasPhoneBooths: false,
     hasNoMusic: false,
     hasQuietZone: false,
+    hasAncHeadsetRental: false,
     singleOriginBeans: false,
     specialtyEspresso: false,
     oatAlmondMilk: false,
@@ -154,6 +156,7 @@ export function VenueSubmissionModal({
           hasPhoneBooths: formData.hasPhoneBooths,
           hasNoMusic: formData.hasNoMusic,
           hasQuietZone: formData.hasQuietZone,
+          hasAncHeadsetRental: formData.hasAncHeadsetRental,
           singleOriginBeans: formData.singleOriginBeans,
           specialtyEspresso: formData.specialtyEspresso,
           oatAlmondMilk: formData.oatAlmondMilk,
@@ -190,6 +193,7 @@ export function VenueSubmissionModal({
           hasPhoneBooths: false,
           hasNoMusic: false,
           hasQuietZone: false,
+          hasAncHeadsetRental: false,
           singleOriginBeans: false,
           specialtyEspresso: false,
           oatAlmondMilk: false,
@@ -531,6 +535,20 @@ export function VenueSubmissionModal({
                   className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
                 />
                 Strict Silence Zones
+              </label>
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.hasAncHeadsetRental}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      hasAncHeadsetRental: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                />
+                🎧 ANC Headset Rentals Available
               </label>
               <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
                 <input

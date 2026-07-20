@@ -18,6 +18,7 @@ import {
   Wifi,
   Zap as Outlets,
   Volume2,
+  Headphones,
   BarChart3,
   Inbox,
   Share2,
@@ -28,9 +29,7 @@ import {
 import { UserButton } from "@clerk/nextjs";
 import { useState } from "react";
 import Link from "next/link";
-import { Volume2, VolumeX } from "lucide-react";
 import { ThemeToggle } from "../ThemeToggle";
-import { useSound } from "../SoundProvider";
 import { EmptyState } from "../ui/EmptyState";
 
 interface Conversation {
@@ -53,6 +52,7 @@ interface ChatHeaderProps {
     hasPhoneBooths?: boolean;
     hasNoMusic?: boolean;
     hasQuietZone?: boolean;
+    hasAncHeadsetRental?: boolean;
     singleOriginBeans?: boolean;
     specialtyEspresso?: boolean;
     oatAlmondMilk?: boolean;
@@ -105,8 +105,6 @@ export function ChatHeader({
 
   onShareSession,
 }: ChatHeaderProps) {
-  const { soundEnabled, toggleSound } = useSound();
-  console.log(soundEnabled);
   const [isHubOpen, setIsHubOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -284,17 +282,6 @@ export function ChatHeader({
 
           {/* Theme Toggle */}
           <ThemeToggle />
-          <button
-            onClick={toggleSound}
-            className="p-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
-            title={soundEnabled ? "Mute Sounds" : "Enable Sounds"}
-          >
-            {soundEnabled ? (
-              <Volume2 className="w-4 h-4" />
-            ) : (
-              <VolumeX className="w-4 h-4" />
-            )}
-          </button>
 
           <div className="w-px h-8 cursor-pointer bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
 
@@ -320,7 +307,10 @@ export function ChatHeader({
                 PROFILE
               </div>
             </div>
-            <UserButton userProfileMode="navigation" userProfileUrl="/user-profile" />
+            <UserButton
+              userProfileMode="navigation"
+              userProfileUrl="/user-profile"
+            />
           </div>
         </div>
       </div>
@@ -441,6 +431,15 @@ export function ChatHeader({
                   className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.hasQuietZone ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
                   Strict Silence Zones
+                </button>
+                <button
+                  onClick={() => onToggleFilter("hasAncHeadsetRental")}
+                  aria-pressed={Boolean(filters.hasAncHeadsetRental)}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.hasAncHeadsetRental ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  title="Show venues that rent active noise-cancelling headsets"
+                >
+                  <Headphones className="w-3.5 h-3.5" />
+                  ANC Headset Rental
                 </button>
               </div>
             </div>

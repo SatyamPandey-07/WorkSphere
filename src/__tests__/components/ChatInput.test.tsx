@@ -73,7 +73,9 @@ describe("ChatInput Recent Searches", () => {
       />,
     );
 
-    const form = screen.getByPlaceholderText("Where's the focus mode hotspot?").closest("form");
+    const form = screen
+      .getByPlaceholderText("Where's the focus mode hotspot?")
+      .closest("form");
     expect(form).toBeInTheDocument();
     fireEvent.submit(form!);
 

@@ -33,6 +33,7 @@ export interface OfflineVenue {
   address?: string;
   rating?: number;
   amenities?: string[];
+  hasAncHeadsetRental?: boolean;
   savedAt?: number;
 }
 
@@ -366,9 +367,9 @@ export async function queuePendingAction(action: {
     const getAll = checkStore.getAll();
 
     getAll.onsuccess = () => {
-      const existing = (getAll.result as Array<{ type: string; venueId: string; id: number }>).find(
-        (a) => a.type === action.type && a.venueId === action.venueId,
-      );
+      const existing = (
+        getAll.result as Array<{ type: string; venueId: string; id: number }>
+      ).find((a) => a.type === action.type && a.venueId === action.venueId);
       if (existing) {
         resolve();
         return;

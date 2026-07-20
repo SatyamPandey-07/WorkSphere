@@ -13,6 +13,7 @@ import {
   PDFPageDrawTextOptions,
   StandardFonts,
   rgb,
+  breakTextIntoLines,
 } from "pdf-lib";
 export const dynamic = "force-dynamic";
 
@@ -213,13 +214,24 @@ export async function GET(
       { x: 50, y: yPosition, size: 10, font },
     );
     yPosition -= 18;
-    drawSafeText(`ADDRESS: ${booking.venue.address || "Verified Workspace"}`, {
-      x: 50,
-      y: yPosition,
-      size: 10,
-      font,
-    });
-    yPosition -= 18;
+    const addressText = `ADDRESS: ${booking.venue.address || "Verified Workspace"}`;
+    const addressLines = breakTextIntoLines(
+      addressText,
+      [" ", ",", "-"],
+      450, // max width before reaching the edge
+      (t) => font.widthOfTextAtSize(t, 10),
+    );
+
+    for (const line of addressLines) {
+      drawSafeText(line, {
+        x: 50,
+        y: yPosition,
+        size: 10,
+        font,
+      });
+      yPosition -= 12; // line height for wrapped text
+    }
+    yPosition -= 6; // adjust remaining margin to equal original 18 total
     drawSafeText(
       `SCHEDULE: ${formatBookingDate(booking.date)} @ ${booking.time}`,
       {

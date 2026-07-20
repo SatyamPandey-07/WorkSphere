@@ -9,19 +9,18 @@ jest.mock("@/lib/prisma", () => ({
     },
     booking: {
       groupBy: jest.fn(),
-      findMany: jest.fn(),
       count: jest.fn(),
     },
     venueRating: {
       groupBy: jest.fn(),
-      findMany: jest.fn(),
     },
     conversation: {
-      findMany: jest.fn(),
+      groupBy: jest.fn(),
     },
     venue: {
       findMany: jest.fn(),
     },
+    $queryRaw: jest.fn(),
   },
 }));
 
@@ -66,18 +65,14 @@ describe("getAdminAnalytics", () => {
       { venueId: "venue-1", _avg: { wifiQuality: 4.5 } },
     ]);
 
-    // 5. Mock booking findMany for trends
-    (prisma.booking.findMany as jest.Mock).mockResolvedValue([
-      { createdAt: new Date() },
-    ]);
+    // 5. Mock booking raw trends
+    const todayStr = new Date().toISOString().slice(0, 10);
+    (prisma.$queryRaw as jest.Mock)
+      .mockResolvedValueOnce([{ day: todayStr, count: 1 }]) // first query (bookings)
+      .mockResolvedValueOnce([{ day: todayStr, total: 4, count: 1 }]); // second query (ratings)
 
-    // 6. Mock rating findMany for trends
-    (prisma.venueRating.findMany as jest.Mock).mockResolvedValue([
-      { createdAt: new Date(), wifiQuality: 4 },
-    ]);
-
-    // 7. Mock active conversations (distinct users)
-    (prisma.conversation.findMany as jest.Mock).mockResolvedValue([
+    // 7. Mock active conversations (groupBy distinct users)
+    (prisma.conversation.groupBy as jest.Mock).mockResolvedValue([
       { userId: "user-1" },
       { userId: "user-2" },
     ]);

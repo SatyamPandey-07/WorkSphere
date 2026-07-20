@@ -11,6 +11,7 @@
     "test:watch": "jest --watch",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "zkp:compile": "bash scripts/compile-zkp.sh",
     "postinstall": "prisma generate",
     "prepare": "husky"
   },
@@ -53,6 +54,7 @@
     "react-joyride": "^3.2.0",
     "react-leaflet": "^5.0.0",
     "recharts": "^3.9.2",
+    "snarkjs": "^0.7.5",
     "svix": "^1.96.1",
     "tailwind-merge": "^3.6.0",
     "tesseract.js": "^7.0.0",
@@ -77,6 +79,7 @@
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "circom2": "^0.2.23",
     "eslint": "^10",
     "eslint-config-next": "16.2.10",
     "fake-indexeddb": "^6.2.5",

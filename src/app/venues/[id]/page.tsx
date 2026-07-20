@@ -5,6 +5,8 @@ import { MapPin, Wifi, Zap, Building2, Coffee, BookOpen } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { TopNav } from "@/components/TopNav";
 import SiteFooter from "@/components/site-footer";
+import PremiumZkpGate from "@/components/venues/PremiumZkpGate";
+import { isPremiumVenue } from "@/lib/zkp/membership";
 
 interface PageProps {
   params: { id: string };
@@ -165,7 +167,10 @@ export default async function VenuePage({ params }: PageProps) {
               ) : null}
             </div>
 
-            <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800">
+            <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800 space-y-4">
+              {isPremiumVenue(venue) && (
+                <PremiumZkpGate venueId={venue.id} venueName={venue.name} />
+              )}
               <Link
                 href={`/dashboard?venue=${venue.id}`}
                 className="w-full flex items-center justify-center py-4 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-blue-600/20 active:scale-[0.98]"

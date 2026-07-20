@@ -72,7 +72,7 @@ The Service Worker attempts to retrieve the latest version from the network. If 
 - External images
 - Static assets that change infrequently
 
-The Service Worker checks the cache before making a network request. If the resource is already cached, it is returned immediately. Otherwise, it is downloaded, stored, and reused for future requests.
+TThe Service Worker checks the cache before making a network request. If the resource is already cached, it is returned immediately. Otherwise, the Service Worker attempts to fetch the resource from the network and cache it for future requests. Since runtime cache writes are best-effort, external resources may not always be available from the cache on subsequent requests.
 
 **Benefits**
 

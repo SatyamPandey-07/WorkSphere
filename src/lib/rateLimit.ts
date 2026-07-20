@@ -27,15 +27,53 @@ function getUpstashRatelimit(limitPerMinute: number) {
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
     });
 
-    return new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(limitPerMinute, "1 m"),
-      analytics: true,
-      prefix: "worksphere:ratelimit",
-    }) as {
-      limit: (
-        identifier: string,
-      ) => Promise<{ success: boolean; remaining: number; reset: number }>;
+    return {
+      limit: async (identifier: string) => {
+        const key = `worksphere:ratelimit:${identifier}`;
+        const now = Date.now();
+        // Atomic Lua script for token bucket evaluation
+        const script = `
+          local key = KEYS[1]
+          local limit = tonumber(ARGV[1])
+          local now = tonumber(ARGV[2])
+
+          local state = redis.call("HMGET", key, "tokens", "last_refill")
+          local tokens = tonumber(state[1])
+          local last_refill = tonumber(state[2])
+
+          if not tokens then
+            tokens = limit
+            last_refill = now
+          else
+            local elapsed = math.max(0, now - last_refill)
+            local new_tokens = math.floor(elapsed * (limit / 60000))
+            if new_tokens > 0 then
+              tokens = math.min(limit, tokens + new_tokens)
+              last_refill = last_refill + (new_tokens * (60000 / limit))
+            end
+          end
+
+          if tokens > 0 then
+            redis.call("HMSET", key, "tokens", tokens - 1, "last_refill", last_refill)
+            redis.call("PEXPIRE", key, 60000)
+            return { 1, tokens - 1 }
+          else
+            return { 0, tokens }
+          end
+        `;
+        try {
+          const result = await redis.eval(script, [key], [limitPerMinute, now]);
+          return {
+            success: result[0] === 1,
+            remaining: result[1],
+            reset: now + 60000,
+          };
+        } catch (e) {
+          console.error("Redis ratelimit eval error", e);
+          // Fail open
+          return { success: true, remaining: 1, reset: now + 60000 };
+        }
+      }
     };
   } catch {
     return null;

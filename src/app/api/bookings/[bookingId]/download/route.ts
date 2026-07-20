@@ -13,6 +13,7 @@ import {
   PDFPageDrawTextOptions,
   StandardFonts,
   rgb,
+  breakTextIntoLines,
 } from "pdf-lib";
 export const dynamic = "force-dynamic";
 
@@ -73,8 +74,10 @@ export async function GET(
     let boldFont: PDFFont;
 
     try {
-      const regularFontBytes = fs.readFileSync(regularFontPath);
-      const boldFontBytes = fs.readFileSync(boldFontPath);
+      const [regularFontBytes, boldFontBytes] = await Promise.all([
+        fs.promises.readFile(regularFontPath),
+        fs.promises.readFile(boldFontPath),
+      ]);
 
       font = await pdfDoc.embedFont(regularFontBytes);
       boldFont = await pdfDoc.embedFont(boldFontBytes);
@@ -135,11 +138,8 @@ export async function GET(
           return String(rawDate);
         }
 
-        return new Intl.DateTimeFormat("en-GB", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        }).format(dateObj);
+        // Standardize to ISO-8601 format (YYYY-MM-DD)
+        return dateObj.toISOString().split("T")[0];
       } catch (err) {
         console.warn(
           "[PDF date format warning]: Failed to format booking date, using raw fallback",
@@ -214,13 +214,24 @@ export async function GET(
       { x: 50, y: yPosition, size: 10, font },
     );
     yPosition -= 18;
-    drawSafeText(`ADDRESS: ${booking.venue.address || "Verified Workspace"}`, {
-      x: 50,
-      y: yPosition,
-      size: 10,
-      font,
-    });
-    yPosition -= 18;
+    const addressText = `ADDRESS: ${booking.venue.address || "Verified Workspace"}`;
+    const addressLines = breakTextIntoLines(
+      addressText,
+      [" ", ",", "-"],
+      450, // max width before reaching the edge
+      (t) => font.widthOfTextAtSize(t, 10),
+    );
+
+    for (const line of addressLines) {
+      drawSafeText(line, {
+        x: 50,
+        y: yPosition,
+        size: 10,
+        font,
+      });
+      yPosition -= 12; // line height for wrapped text
+    }
+    yPosition -= 6; // adjust remaining margin to equal original 18 total
     drawSafeText(
       `SCHEDULE: ${formatBookingDate(booking.date)} @ ${booking.time}`,
       {

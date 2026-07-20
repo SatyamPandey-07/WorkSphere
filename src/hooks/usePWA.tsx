@@ -8,6 +8,61 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+export function useSyncWorker() {
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.Worker) return;
+
+    // Next.js Webpack automatically bundles this worker
+    const worker = new Worker(
+      new URL("../workers/sync.worker.ts", import.meta.url),
+      {
+        type: "module",
+      },
+    );
+
+    const handleMessage = (event: MessageEvent) => {
+      const msg = event.data;
+      switch (msg.type) {
+        case "SYNC_SUCCESS":
+          console.log(
+            `[Sync Worker] Successfully synced a favorite. Remaining: ${msg.remainingCount}`,
+          );
+          break;
+        case "CIRCUIT_BREAKER_OPEN":
+          console.warn(
+            `[Sync Worker] Circuit breaker OPEN. Pausing sync for ${msg.timeoutMs}ms due to repeated errors.`,
+          );
+          break;
+        case "PERMANENT_FAILURE":
+          console.error(
+            `[Sync Worker] Permanent failure for ${msg.action} on ${msg.venueId} after ${msg.attempts} attempts.`,
+          );
+          break;
+        case "SYNC_ERROR":
+          console.error(`[Sync Worker] Sync error: ${msg.error}`);
+          break;
+      }
+    };
+
+    worker.addEventListener("message", handleMessage);
+
+    // Initial wake up to process any pending offline actions
+    worker.postMessage({ type: "WAKE_UP" });
+
+    // Wake up worker when connection is restored or manually triggered
+    const handleWakeUp = () => worker.postMessage({ type: "WAKE_UP" });
+    window.addEventListener("online", handleWakeUp);
+    window.addEventListener("trigger-sync", handleWakeUp);
+
+    return () => {
+      worker.removeEventListener("message", handleMessage);
+      window.removeEventListener("online", handleWakeUp);
+      window.removeEventListener("trigger-sync", handleWakeUp);
+      worker.terminate();
+    };
+  }, []);
+}
+
 /**
  * Hook to register service worker and manage PWA state
  */
@@ -16,6 +71,9 @@ export function useServiceWorker() {
   const [isOnline, setIsOnline] = useState(true);
   const [registration, setRegistration] =
     useState<ServiceWorkerRegistration | null>(null);
+
+  // Initialize the dedicated sync worker
+  useSyncWorker();
 
   useEffect(() => {
     setIsInstalled(window.matchMedia("(display-mode: standalone)").matches);
@@ -156,6 +214,97 @@ export function useInstallPrompt() {
   return { canInstall, isIOS, install };
 }
 
+interface OfflineSyncFailureMessage {
+  type: "OFFLINE_SYNC_FAILED";
+  venueId: string;
+  action: "ADD" | "REMOVE";
+  attempts: number;
+}
+
+function isOfflineSyncFailureMessage(
+  data: unknown,
+): data is OfflineSyncFailureMessage {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as { type?: unknown }).type === "OFFLINE_SYNC_FAILED"
+  );
+}
+
+/**
+ * Listens for the service worker's OFFLINE_SYNC_FAILED message, sent when a
+ * queued favorite action has failed to sync MAX_SYNC_RETRIES times and has
+ * been removed from the outbox. Surfaces this to the user instead of the
+ * action just silently disappearing. (Issue #712)
+ */
+function useOfflineSyncNotice() {
+  const [notice, setNotice] = useState<OfflineSyncFailureMessage | null>(null);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (isOfflineSyncFailureMessage(event.data)) {
+        setNotice(event.data);
+        setTimeout(() => setNotice(null), 4000);
+      }
+    };
+
+    navigator.serviceWorker.addEventListener("message", handleMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener("message", handleMessage);
+    };
+  }, []);
+
+  return { notice, dismiss: () => setNotice(null) };
+}
+
+/**
+ * Toast shown when a favorite couldn't be synced after repeated retries.
+ * Mount once alongside <OfflineIndicator /> / <PWABanner />.
+ */
+export function OfflineSyncNotice() {
+  const { notice, dismiss } = useOfflineSyncNotice();
+
+  if (!notice) return null;
+
+  const verb = notice.action === "ADD" ? "save" : "remove";
+
+  return (
+    <div className="fixed bottom-20 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50">
+      <div className="bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-start gap-3">
+        <svg
+          className="w-5 h-5 flex-shrink-0 mt-0.5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"
+          />
+        </svg>
+        <div className="flex-1 text-sm">
+          <p className="font-medium">Couldn&apos;t sync your changes</p>
+          <p className="text-red-100 text-xs mt-0.5">
+            We couldn&apos;t {verb} that favorite after {notice.attempts}{" "}
+            attempts. Please try again when you&apos;re back online.
+          </p>
+        </div>
+        <button
+          onClick={dismiss}
+          className="text-red-100 hover:text-white flex-shrink-0"
+          aria-label="Dismiss"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Offline indicator component
  */
@@ -206,7 +355,7 @@ export function InstallAppButton() {
     <>
       <button
         onClick={handleInstallClick}
-        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        className="flex items-center gap-2 px-4 py-2 bg-[var(--primary-accent)] text-white rounded-lg hover:opacity-90 transition-colors"
       >
         <svg
           className="w-5 h-5"
@@ -246,7 +395,7 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
       >
         <div className="flex justify-between items-start mb-4">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500 animate-pulse">
+            <div className="p-2 rounded-xl bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.9)] text-[var(--primary-accent)] animate-pulse">
               <Download className="w-5 h-5" />
             </div>
             <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-white">
@@ -279,7 +428,7 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
                 Look for
                 <span className="inline-flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
                   <svg
-                    className="w-3.5 h-3.5 text-blue-500"
+                    className="w-3.5 h-3.5 text-[var(--primary-accent)]"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -326,7 +475,7 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
 
         <button
           onClick={onClose}
-          className="w-full mt-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/25"
+          className="w-full mt-6 py-2.5 bg-[var(--primary-accent)] hover:opacity-90 active:scale-[0.98] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-[color-mix(in_srgb,var(--primary-accent),transparent_0.75)]"
         >
           Got it
         </button>
@@ -370,7 +519,7 @@ export function PWABanner() {
       <div className="fixed bottom-20 left-4 right-4 md:bottom-6 md:right-6 md:left-auto md:w-96 z-50 animate-in slide-in-from-bottom duration-300">
         <div className="relative overflow-hidden bg-zinc-900/90 dark:bg-black/90 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl text-white">
           {/* Subtle colored background glow */}
-          <div className="absolute -top-10 -right-10 w-24 h-24 bg-blue-500/10 rounded-full blur-xl pointer-events-none" />
+          <div className="absolute -top-10 -right-10 w-24 h-24 bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.9)] rounded-full blur-xl pointer-events-none" />
 
           <button
             onClick={handleDismiss}
@@ -380,13 +529,13 @@ export function PWABanner() {
           </button>
 
           <div className="flex gap-3">
-            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white">
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-[var(--primary-accent)] flex items-center justify-center text-white">
               <Download className="w-4 h-4" />
             </div>
             <div className="flex-1 pr-4">
               <h4 className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
                 Install WorkSphere
-                <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                <Sparkles className="w-3.5 h-3.5 text-[color-mix(in_srgb,var(--primary-accent),white_0.7)] animate-pulse" />
               </h4>
               <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed font-medium">
                 Install as a lightweight app for faster load times, seamless
@@ -396,13 +545,13 @@ export function PWABanner() {
               <div className="mt-4 flex gap-2">
                 <button
                   onClick={handleInstallClick}
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md shadow-blue-500/20"
+                  className="px-3.5 py-1.5 bg-[var(--primary-accent)] hover:opacity-90 cursor-pointer active:scale-95 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md shadow-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)]"
                 >
                   Install Now
                 </button>
                 <button
                   onClick={handleDismiss}
-                  className="px-3.5 py-1.5 bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-wider rounded-lg border border-white/10 transition-all"
+                  className="px-3.5 py-1.5 bg-white/5 hover:bg-white/10 cursor-pointer text-[10px] font-black uppercase tracking-wider rounded-lg border border-white/10 transition-all"
                 >
                   Maybe Later
                 </button>

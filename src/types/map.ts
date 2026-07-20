@@ -29,11 +29,13 @@ export interface MapMarker {
   outletDensity?: string;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
+  hasAncHeadsetRental?: boolean;
   amenities?: {
     wifi?: boolean;
     outlets?: boolean;
     quiet?: boolean;
     hasErgonomic?: boolean;
+    hasAncHeadsetRental?: boolean;
     outletDensity?: string;
     powerTypes?: string[];
     wifiSpeed?: number | null;

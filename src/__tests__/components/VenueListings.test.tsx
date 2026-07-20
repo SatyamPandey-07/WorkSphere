@@ -96,4 +96,45 @@ describe("VenueListings Component", () => {
     expect(screen.getAllByText("WiFi").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Power").length).toBeGreaterThan(0);
   });
+
+  it("navigates venues using arrow keys and selects with enter", async () => {
+    await renderVenueListings();
+
+    const cards = screen
+      .getAllByRole("generic")
+      .filter((el) => el.hasAttribute("data-index"));
+    expect(cards.length).toBe(mockVenues.length);
+
+    // Focus the first item
+    cards[0].focus();
+    expect(cards[0]).toHaveFocus();
+
+    // Simulate arrow down
+    fireEvent.keyDown(cards[0], { key: "ArrowDown", code: "ArrowDown" });
+    expect(cards[1]).toHaveFocus();
+
+    // Simulate arrow up
+    fireEvent.keyDown(cards[1], { key: "ArrowUp", code: "ArrowUp" });
+    expect(cards[0]).toHaveFocus();
+
+    // Simulate enter on first item
+    fireEvent.keyDown(cards[0], { key: "Enter", code: "Enter" });
+    expect(mockOnOpenDetails).toHaveBeenCalledWith(mockVenues[0]);
+  });
+
+  it("renders empty state when venues list is empty", async () => {
+    render(
+      <VenueListings
+        venues={[]}
+        favorites={new Set()}
+        onGetDirections={mockOnGetDirections}
+        onToggleFavorite={mockOnToggleFavorite}
+        onRateVenue={mockOnRateVenue}
+        onOpenDetails={mockOnOpenDetails}
+        onBook={mockOnBook}
+      />,
+    );
+
+    expect(screen.getByText("No venues found")).toBeInTheDocument();
+  });
 });

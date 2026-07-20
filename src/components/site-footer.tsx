@@ -3,11 +3,22 @@
 import Link from "next/link";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { MapPin, Github, Twitter, Linkedin, MessageSquare, Send, Check, Loader2 } from "lucide-react";
+import {
+  MapPin,
+  Github,
+  Twitter,
+  Linkedin,
+  MessageSquare,
+  Send,
+  Check,
+  Loader2,
+} from "lucide-react";
 
 export default function SiteFooter() {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
   const [message, setMessage] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -47,9 +58,21 @@ export default function SiteFooter() {
       { name: "Live Updates", href: "/ai" },
     ],
     community: [
-      { name: "GitHub Repository", href: "https://github.com/SatyamPandey-07/WorkSphere", external: true },
-      { name: "Contributors", href: "https://github.com/SatyamPandey-07/WorkSphere/contributors", external: true },
-      { name: "Open Source", href: "https://github.com/SatyamPandey-07/WorkSphere", external: true },
+      {
+        name: "GitHub Repository",
+        href: "https://github.com/SatyamPandey-07/WorkSphere",
+        external: true,
+      },
+      {
+        name: "Contributors",
+        href: "https://github.com/SatyamPandey-07/WorkSphere/contributors",
+        external: true,
+      },
+      {
+        name: "Open Source",
+        href: "https://github.com/SatyamPandey-07/WorkSphere",
+        external: true,
+      },
     ],
     legal: [
       { name: "Privacy Policy", href: "/privacy" },
@@ -59,14 +82,30 @@ export default function SiteFooter() {
   };
 
   const socialLinks = [
-    { icon: <Github className="w-5 h-5" />, href: "https://github.com/SatyamPandey-07/WorkSphere", label: "GitHub" },
-    { icon: <Twitter className="w-5 h-5" />, href: "https://twitter.com", label: "Twitter" },
-    { icon: <Linkedin className="w-5 h-5" />, href: "https://linkedin.com", label: "LinkedIn" },
-    { icon: <MessageSquare className="w-5 h-5" />, href: "https://discord.com", label: "Discord" },
+    {
+      icon: <Github className="w-5 h-5" />,
+      href: "https://github.com/SatyamPandey-07/WorkSphere",
+      label: "GitHub",
+    },
+    {
+      icon: <Twitter className="w-5 h-5" />,
+      href: "https://twitter.com",
+      label: "Twitter",
+    },
+    {
+      icon: <Linkedin className="w-5 h-5" />,
+      href: "https://linkedin.com",
+      label: "LinkedIn",
+    },
+    {
+      icon: <MessageSquare className="w-5 h-5" />,
+      href: "https://discord.com",
+      label: "Discord",
+    },
   ];
 
   return (
-    <footer className="relative z-10 border-t border-zinc-200/50 dark:border-white/5 bg-zinc-50/80 dark:bg-black/30 backdrop-blur-md py-16 text-zinc-600 dark:text-white/60">
+    <footer className="relative z-10 border-t border-zinc-200/50 dark:border-white/5 bg-zinc-50/80 dark:bg-black/30 backdrop-blur-md py-16 pb-28 sm:pb-16 text-zinc-600 dark:text-white/60">
       {/* Decorative ambient gradient backdrop */}
       <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none opacity-40 dark:opacity-100">
         <div className="absolute -bottom-10 left-1/4 w-[500px] h-[300px] rounded-full bg-blue-600/5 dark:bg-blue-600/10 blur-[80px]" />
@@ -87,7 +126,9 @@ export default function SiteFooter() {
             </Link>
 
             <p className="text-sm leading-relaxed text-zinc-500 dark:text-white/40">
-              AI-powered workspace discovery for remote workers. Find cafes, coworking hubs, and libraries with premium work-friendly amenities.
+              AI-powered workspace discovery for remote workers. Find cafes,
+              coworking hubs, and libraries with premium work-friendly
+              amenities.
             </p>
 
             {/* Social handles with hover transitions */}
@@ -99,7 +140,7 @@ export default function SiteFooter() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={social.label}
-                  className="w-9 h-9 rounded-xl bg-zinc-200/50 hover:bg-zinc-200 dark:bg-white/5 dark:hover:bg-white/10 flex items-center justify-center text-zinc-600 dark:text-white/50 hover:text-blue-600 dark:hover:text-white transition-colors duration-200 border border-zinc-300/30 dark:border-white/5"
+                  className="w-9 h-9 rounded-xl bg-zinc-200/50 hover:bg-zinc-200 dark:bg-white/5 dark:hover:bg-white/10 flex items-center justify-center text-zinc-600 dark:text-white/50 accent-text-hover transition-colors duration-200 border border-zinc-300/30 dark:border-white/5"
                   whileHover={{ y: -3, scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -119,7 +160,10 @@ export default function SiteFooter() {
               <ul className="flex flex-col gap-2.5 text-sm">
                 {footerLinks.discover.map((link, idx) => (
                   <li key={idx}>
-                    <Link href={link.href} className="hover:text-blue-600 dark:hover:text-white transition-colors duration-200 block">
+                    <Link
+                      href={link.href}
+                      className="accent-text-hover transition-colors duration-200 block"
+                    >
                       {link.name}
                     </Link>
                   </li>
@@ -140,12 +184,15 @@ export default function SiteFooter() {
                         href={link.href}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="hover:text-blue-600 dark:hover:text-white transition-colors duration-200 block"
+                        className="accent-text-hover transition-colors duration-200 block"
                       >
                         {link.name}
                       </a>
                     ) : (
-                      <Link href={link.href} className="hover:text-blue-600 dark:hover:text-white transition-colors duration-200 block">
+                      <Link
+                        href={link.href}
+                        className="accent-text-hover transition-colors duration-200 block"
+                      >
                         {link.name}
                       </Link>
                     )}
@@ -162,7 +209,10 @@ export default function SiteFooter() {
               <ul className="flex flex-col gap-2.5 text-sm">
                 {footerLinks.legal.map((link, idx) => (
                   <li key={idx}>
-                    <Link href={link.href} className="hover:text-blue-600 dark:hover:text-white transition-colors duration-200 block">
+                    <Link
+                      href={link.href}
+                      className="accent-text-hover transition-colors duration-200 block"
+                    >
                       {link.name}
                     </Link>
                   </li>
@@ -177,10 +227,14 @@ export default function SiteFooter() {
               Stay Connected
             </h3>
             <p className="text-xs leading-relaxed text-zinc-500 dark:text-white/40">
-              Get weekly updates on premium workspace suggestions and newly added venues.
+              Get weekly updates on premium workspace suggestions and newly
+              added venues.
             </p>
 
-            <form onSubmit={handleSubmit} className="flex flex-col gap-2.5 mt-1">
+            <form
+              onSubmit={handleSubmit}
+              className="flex flex-col gap-2.5 mt-1"
+            >
               <div className="relative flex items-center">
                 <input
                   type="email"
@@ -189,15 +243,17 @@ export default function SiteFooter() {
                   value={email}
                   disabled={status === "loading" || status === "success"}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-3.5 pr-11 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-white/10 bg-white/70 dark:bg-white/5 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-blue-500/30 transition-all disabled:opacity-50"
+                  className="w-full pl-3.5 pr-11 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-white/10 bg-white/70 dark:bg-white/5 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-white/30 focus:outline-none focus:ring-2 accent-ring-20 transition-all disabled:opacity-50"
                   aria-label="Email Address for newsletter"
                 />
 
                 <div className="absolute right-1">
                   <button
                     type="submit"
-                    disabled={status === "loading" || status === "success" || !email}
-                    className="p-2 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium disabled:opacity-60 transition-colors flex items-center justify-center"
+                    disabled={
+                      status === "loading" || status === "success" || !email
+                    }
+                    className="p-2 rounded-lg accent-bg text-white font-medium disabled:opacity-60 transition-colors flex items-center justify-center"
                     aria-label="Subscribe"
                   >
                     {status === "loading" ? (

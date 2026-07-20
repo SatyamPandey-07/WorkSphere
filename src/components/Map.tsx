@@ -11,11 +11,26 @@ import {
   Polyline,
   useMap,
   LayersControl,
+  LayerGroup,
+  CircleMarker,
+  ScaleControl,
 } from "react-leaflet";
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
+import {
+  useSeatAvailability,
+  type SeatStatus,
+} from "@/hooks/useSeatAvailability";
+
+// Seat-availability ring colours (#703): green = plenty of room, yellow =
+// filling up, red = at/over capacity.
+const SEAT_RING_COLORS: Record<SeatStatus, string> = {
+  green: "#22c55e",
+  yellow: "#eab308",
+  red: "#ef4444",
+};
 
 // Import Leaflet Heatmap Plugin safely only on client-side and not in Jest tests
 if (typeof window !== "undefined" && process.env.NODE_ENV !== "test") {
@@ -107,9 +122,11 @@ function AutoCenter({
 // other mid-transition.
 function ZoomWatcher({
   onZoomSettled,
+  onZoomStart,
   delay = 150,
 }: {
   onZoomSettled: (zoom: number) => void;
+  onZoomStart?: () => void;
   delay?: number;
 }) {
   const map = useMap();
@@ -117,19 +134,26 @@ function ZoomWatcher({
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
 
-    const scheduleUpdate = () => {
+    const handleZoomStart = () => {
+      clearTimeout(timer);
+      onZoomStart?.();
+    };
+
+    const handleZoomEnd = () => {
       clearTimeout(timer);
       timer = setTimeout(() => onZoomSettled(map.getZoom()), delay);
     };
 
-    map.on("zoomend", scheduleUpdate);
-    scheduleUpdate(); // capture the initial zoom too
+    map.on("zoomstart", handleZoomStart);
+    map.on("zoomend", handleZoomEnd);
+    handleZoomEnd(); // capture the initial zoom too
 
     return () => {
       clearTimeout(timer);
-      map.off("zoomend", scheduleUpdate);
+      map.off("zoomstart", handleZoomStart);
+      map.off("zoomend", handleZoomEnd);
     };
-  }, [map, onZoomSettled, delay]);
+  }, [map, onZoomSettled, onZoomStart, delay]);
 
   return null;
 }
@@ -171,9 +195,11 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
 
     const handleResize = () => {
       clearTimeout(timer);
+      const centerBeforeResize = map.getCenter();
 
       timer = setTimeout(() => {
         map.invalidateSize();
+        map.setView(centerBeforeResize, map.getZoom(), { animate: false });
       }, delay);
     };
 
@@ -203,6 +229,39 @@ const Map = ({
   const { theme } = useTheme();
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
+
+  // Memoized event handlers for all interactive markers to prevent react-leaflet
+  // from removing and re-adding event listeners on every render.
+  const markerEventHandlers = useMemo(
+    () => ({
+      keydown: (e: any) => {
+        if (e.originalEvent.key === "Enter" || e.originalEvent.key === " ") {
+          e.originalEvent.preventDefault();
+          e.target.openPopup();
+        }
+      },
+      add: (e: any) => {
+        const el = e.target.getElement();
+        if (el) {
+          const name = e.target.options.title || "Map marker";
+          el.setAttribute("aria-label", name);
+          el.setAttribute("role", "button");
+          el.setAttribute("tabindex", "0");
+        }
+      },
+    }),
+    [],
+  );
+
+  // Real-time seat availability (#703) — PartyKit presence layer that
+  // powers the green/yellow/red rings and the popup check-in button.
+  const {
+    getAvailability,
+    checkIn,
+    checkOut,
+    checkedInVenueId,
+    isConnected: isSeatSocketConnected,
+  } = useSeatAvailability();
 
   // Prevent touch/mouse/scroll event propagation on overlays from bubbling to Leaflet Map
   useEffect(() => {
@@ -246,8 +305,17 @@ const Map = ({
   // marker offsets at a consistent on-screen pixel separation regardless of
   // how far the user has zoomed in/out.
   const [settledZoom, setSettledZoom] = useState<number>(13);
+  const [isZooming, setIsZooming] = useState(false);
   const handleZoomSettled = useCallback((zoom: number) => {
     setSettledZoom(zoom);
+    setIsZooming(false);
+  }, []);
+
+  // Collapse spiderfied markers to their center positions during zoom
+  // transitions so overlapping offsets don't render mid-animation,
+  // then respiderfy after the zoom settles (handled via handleZoomSettled).
+  const handleZoomStart = useCallback(() => {
+    setIsZooming(true);
   }, []);
 
   // =========================================================================
@@ -282,7 +350,29 @@ const Map = ({
       return;
     }
 
-    const coordinatesString = dedupedList
+    // Validate coordinates before sending to OSRM — low accuracy or invalid
+    // coordinates (0,0 or out of range) cause routing failures.
+    const isValidCoord = (v: any) => {
+      const lat = Number(v.latitude);
+      const lng = Number(v.longitude);
+      return (
+        !isNaN(lat) &&
+        !isNaN(lng) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        lng >= -180 &&
+        lng <= 180 &&
+        !(lat === 0 && lng === 0)
+      );
+    };
+    const validList = dedupedList.filter(isValidCoord);
+    if (validList.length < 2) {
+      console.warn("[OSRM] Not enough valid coordinates for routing");
+      setOptimizedRoute(null);
+      return;
+    }
+
+    const coordinatesString = validList
       .map((venue) => `${venue.longitude},${venue.latitude}`)
       .join(";");
 
@@ -379,7 +469,7 @@ const Map = ({
     Object.keys(groups).forEach((key) => {
       const groupItems = groups[key];
       const n = groupItems.length;
-      if (n === 1) {
+      if (n === 1 || isZooming) {
         result.push({
           ...groupItems[0],
           renderedLat: Number(groupItems[0].position.lat),
@@ -413,7 +503,7 @@ const Map = ({
       }
     });
     return result;
-  }, [markers, settledZoom]);
+  }, [markers, settledZoom, isZooming]);
 
   // Derive iconUrl directly from clerkUser state
   const iconUrl = useMemo(() => {
@@ -591,6 +681,15 @@ const Map = ({
   right: 20px;
   z-index: 1000;
 }
+  .leaflet-control-scale {
+  background: transparent;
+}
+
+.leaflet-control-scale-line {
+  border: 1px solid #3f3f46;
+  background: rgba(24, 24, 27, 0.9);
+  color: #f4f4f5;
+}
       `,
         }}
       />
@@ -605,6 +704,7 @@ const Map = ({
           position: "relative",
         }}
       >
+        <ScaleControl position="bottomleft" metric={true} imperial={false} />
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer
@@ -624,15 +724,48 @@ const Map = ({
               gradient={NOISE_GRADIENT}
             />
           </LayersControl.Overlay>
+
+          <LayersControl.Overlay name="Seat Availability">
+            <LayerGroup>
+              {spiderfiedMarkers
+                .filter((marker) => !marker.id.includes("dest"))
+                .map((marker) => {
+                  const seat = getAvailability(marker.id);
+                  return (
+                    <CircleMarker
+                      key={`seat-ring-${marker.id}`}
+                      center={[marker.renderedLat, marker.renderedLng]}
+                      radius={16}
+                      pathOptions={{
+                        color: SEAT_RING_COLORS[seat.status],
+                        weight: 3,
+                        opacity: 0.9,
+                        fillOpacity: 0,
+                      }}
+                    />
+                  );
+                })}
+            </LayerGroup>
+          </LayersControl.Overlay>
         </LayersControl>
 
         <MapController mapView={mapView} />
         <AutoCenter markers={markers} userLocation={center} />
-        <ZoomWatcher onZoomSettled={handleZoomSettled} />
+        <ZoomWatcher
+          onZoomSettled={handleZoomSettled}
+          onZoomStart={handleZoomStart}
+        />
         <ResizeWatcher />
 
         {customIcon && (
-          <Marker position={center} icon={customIcon}>
+          <Marker
+            position={center}
+            icon={customIcon}
+            title="Your location"
+            alt="Your location"
+            keyboard={true}
+            eventHandlers={markerEventHandlers}
+          >
             <Popup>You are here!</Popup>
           </Marker>
         )}
@@ -641,6 +774,10 @@ const Map = ({
             key={marker.id}
             position={[marker.renderedLat, marker.renderedLng]}
             icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
+            title={marker.name}
+            alt={marker.name}
+            keyboard={true}
+            eventHandlers={markerEventHandlers}
           >
             <Popup>
               <div className="text-sm">
@@ -653,6 +790,40 @@ const Map = ({
                     {marker.address}
                   </div>
                 )}
+                {!marker.id.includes("dest") &&
+                  (() => {
+                    const seat = getAvailability(marker.id);
+                    const isCheckedInHere = checkedInVenueId === marker.id;
+                    const seatTextColor =
+                      seat.status === "red"
+                        ? "text-red-400"
+                        : seat.status === "yellow"
+                          ? "text-yellow-400"
+                          : "text-green-400";
+                    return (
+                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
+                        <span
+                          className={`text-[10px] font-medium ${seatTextColor}`}
+                        >
+                          {isSeatSocketConnected
+                            ? `${seat.count}/${seat.capacity} checked in`
+                            : "Connecting…"}
+                        </span>
+                        <button
+                          onClick={() =>
+                            isCheckedInHere ? checkOut() : checkIn(marker.id)
+                          }
+                          className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                            isCheckedInHere
+                              ? "accent-bg text-white hover:opacity-90"
+                              : "bg-zinc-800 text-zinc-200 hover:accent-bg hover:text-white"
+                          }`}
+                        >
+                          {isCheckedInHere ? "Check out" : "Check in here"}
+                        </button>
+                      </div>
+                    );
+                  })()}
               </div>
               <button
                 onClick={() => {
@@ -671,7 +842,7 @@ const Map = ({
                     calculateOptimizedRoute(updated);
                   }
                 }}
-                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:bg-blue-600 hover:text-white transition-colors"
+                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:accent-bg hover:text-white transition-colors"
               >
                 ➕ Add to Workday Timeline
               </button>
@@ -779,9 +950,9 @@ const Map = ({
               <button
                 key={mode}
                 onClick={() => setTravelProfile(mode)}
-                className={`rounded-md py-1.5 font-medium uppercase transition-all ${
+                className={`rounded-md py-1.5 font-medium cursor-pointer uppercase transition-all ${
                   travelProfile === mode
-                    ? "bg-blue-600 text-white shadow"
+                    ? "accent-bg text-white shadow"
                     : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
                 }`}
               >
@@ -836,7 +1007,10 @@ const Map = ({
               {routingQueue.length >= 2 && (
                 <button
                   onClick={() => calculateOptimizedRoute()}
-                  className="mt-3 w-full rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:from-blue-500 hover:to-indigo-500 active:scale-[0.98]"
+                  className="mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white shadow-lg transition-all active:scale-[0.98]"
+                  style={{
+                    background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 80%, #4f46e5))`,
+                  }}
                 >
                   🚀 Calculate Combined Travel Timeline
                 </button>

@@ -18,21 +18,27 @@ export default function SignInPage() {
 
         <div className="space-y-6">
           <h1 className="text-4xl font-bold text-white leading-tight">
-            Welcome back to<br />
+            Welcome back to
+            <br />
             <span className="bg-gradient-to-r from-blue-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">
               your workspace finder
             </span>
           </h1>
           <p className="text-lg text-zinc-400 max-w-md">
-            Sign in to discover perfect workspaces with AI-powered recommendations tailored to your needs.
+            Sign in to discover perfect workspaces with AI-powered
+            recommendations tailored to your needs.
           </p>
           <div className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-900/50 border border-zinc-800 max-w-md">
             <div className="w-10 h-10 rounded-xl bg-purple-600/20 flex items-center justify-center">
               <Sparkles className="w-5 h-5 text-purple-400" />
             </div>
             <div>
-              <p className="text-sm font-medium text-white">AI-Powered Search</p>
-              <p className="text-xs text-zinc-500">Find workspaces that match your exact needs</p>
+              <p className="text-sm font-medium text-white">
+                AI-Powered Search
+              </p>
+              <p className="text-xs text-zinc-500">
+                Find workspaces that match your exact needs
+              </p>
             </div>
           </div>
         </div>
@@ -72,10 +78,10 @@ export default function SignInPage() {
                   dividerText: "text-zinc-500",
                   formFieldLabel: "text-zinc-300 font-medium",
                   formFieldInput:
-                    "bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-500 rounded-xl focus:border-blue-500 focus:ring-blue-500/20",
-                  footerActionLink: "text-blue-400 hover:text-blue-300 font-medium",
+                    "bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-500 rounded-xl focus:border-[var(--primary-accent)] focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)]",
+                  footerActionLink: "accent-text font-medium",
                   formButtonPrimary:
-                    "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white rounded-xl shadow-lg shadow-blue-500/20 transition-all",
+                    "accent-bg hover:opacity-90 text-white rounded-xl shadow-lg shadow-[var(--primary-accent)]/20 transition-all",
                   footer: "hidden",
                 },
               }}
@@ -87,7 +93,7 @@ export default function SignInPage() {
 
           <p className="mt-6 text-center text-sm text-zinc-500">
             Don&apos;t have an account?{" "}
-            <Link href="/sign-up" className="text-blue-400 hover:text-blue-300 font-medium">
+            <Link href="/sign-up" className="accent-text font-medium">
               Sign up free
             </Link>
           </p>

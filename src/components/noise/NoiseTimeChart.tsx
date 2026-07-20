@@ -85,7 +85,7 @@ export function NoiseTimeChart({ venueId }: { venueId: string }) {
 
                 <div className="h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
                   <div
-                    className="h-full rounded-full bg-blue-500 transition-all"
+                    className="h-full rounded-full accent-bg transition-all"
                     style={{ width: `${width}%` }}
                   />
                 </div>

@@ -5,8 +5,8 @@ export default function AILoading() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-zinc-50 to-zinc-100 dark:from-zinc-900 dark:to-zinc-950">
       <div className="flex flex-col items-center gap-6">
         <div className="relative">
-          <div className="w-20 h-20 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-            <Loader2 className="w-10 h-10 animate-spin text-blue-600" />
+          <div className="w-20 h-20 rounded-full accent-bg-10 accent-bg-dark-10 flex items-center justify-center">
+            <Loader2 className="w-10 h-10 animate-spin accent-text" />
           </div>
           <div className="absolute -top-1 -right-1 w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
             <Map className="w-4 h-4 text-green-600" />

@@ -16,7 +16,7 @@ The default dataset is centered on **Brooklyn, NY** (roughly 40.67–40.73°N, -
 
 | Requirement                              | Why                                                                                                                                               |
 | :--------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------ |
-| A working `DATABASE_URL` in `.env.local` | The seed script connects via Prisma's configured adapter — see `docs/ENVIRONMENT_VARIABLES.md` §2.A for how to get a free Neon connection string. |
+| A working `DATABASE_URL` in `.env.local` | The seed script connects via Prisma's configured adapter — see the "PostgreSQL Database" section in `docs/ENV_VARS.md` for how to get a Neon connection string. |
 | Migrations applied                       | Run `npx prisma migrate dev` first if you haven't already — the seed script will fail if the tables it writes to don't exist yet.                 |
 
 ## 3. Running the Seed Script

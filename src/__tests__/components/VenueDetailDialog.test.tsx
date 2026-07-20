@@ -95,7 +95,7 @@ describe("VenueDetailDialog Rating Distribution Integration", () => {
   const renderDialog = async () => {
     const utils = render(
       <VenueDetailDialog
-        venue={mockVenue}
+        venue={mockVenue as any}
         isOpen={true}
         isFavorited={false}
         onClose={mockOnClose}

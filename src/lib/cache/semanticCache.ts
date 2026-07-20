@@ -2,7 +2,10 @@ import { prisma } from '@/lib/prisma';
 
 // Generate Cohere embedding
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const embedRes = await fetch('https://api.cohere.ai/v1/embed', {
+  if (!process.env.COHERE_API_KEY) {
+    throw new Error("COHERE_API_KEY is not configured");
+  }
+    const embedRes = await fetch('https://api.cohere.ai/v1/embed', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${process.env.COHERE_API_KEY}`,
@@ -16,8 +19,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   });
 
   if (!embedRes.ok) {
-    throw new Error(`Cohere API error: ${embedRes.statusText}`);
-  }
+  throw new Error(
+    `Cohere API error (${embedRes.status}): ${embedRes.statusText}`,
+  );
+}
 
   const embedData = await embedRes.json();
   return embedData.embeddings[0];

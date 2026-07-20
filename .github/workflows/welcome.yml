@@ -36,7 +36,15 @@ jobs:
             ✅ Expected behavior
             ✅ Screenshots if possible
 
-            The maintainers will review it shortly.
+            ---
+            🔔 **Update for Contributors:**
+
+            The limit for active assigned issues per person has been increased to 10 (previously 5).
+
+            You can claim this issue by posting a comment with exactly:
+            \`/claim\`
+
+            You will have 6 days to complete it! 🚀
 
             ---
             💡 **Connect & Support:**

@@ -75,7 +75,7 @@ export function BrainTerminal() {
   }, [currentLog]);
 
   return (
-    <div className="glass-card rounded-2xl p-6 glow-blue max-w-lg mx-auto overflow-hidden">
+    <div className="glass-card rounded-2xl p-6 glow-accent max-w-lg mx-auto overflow-hidden">
       <div className="flex items-center gap-3 mb-6 border-b border-white/10 pb-4">
         <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
           <Brain className="w-5 h-5 text-blue-500 animate-pulse" />
@@ -138,38 +138,40 @@ export function BrainTerminal() {
                 />
 
                 {isCurrent && (
-                  <motion.div
-                    layoutId="active-glow-outline"
-                    className="absolute -inset-1.5 rounded-2xl border-2 border-dashed z-0 pointer-events-none"
-                    style={{
-                      borderColor:
-                        i === 0
-                          ? "#3b82f6"
-                          : i === 1
-                            ? "#22c55e"
-                            : i === 2
-                              ? "#f97316"
-                              : "#ec4899",
-                      opacity: 0.6,
-                    }}
-                    animate={{
-                      rotate: 360,
-                      scale: [1, 1.05, 1],
-                    }}
-                    transition={{
-                      rotate: {
-                        duration: 12,
-                        repeat: Infinity,
-                        ease: "linear",
-                      },
-                      scale: {
-                        duration: 2,
-                        repeat: Infinity,
-                        ease: "easeInOut",
-                      },
-                      layout: { type: "spring", stiffness: 260, damping: 22 },
-                    }}
-                  />
+                  <div className="absolute -inset-1.5 min-w-0 min-h-0 [transform:translateZ(0)] pointer-events-none z-0">
+                    <motion.div
+                      layoutId="active-glow-outline"
+                      className="w-full h-full rounded-2xl border-2 border-dashed"
+                      style={{
+                        borderColor:
+                          i === 0
+                            ? "#3b82f6"
+                            : i === 1
+                              ? "#22c55e"
+                              : i === 2
+                                ? "#f97316"
+                                : "#ec4899",
+                        opacity: 0.6,
+                      }}
+                      animate={{
+                        rotate: 360,
+                        scale: [1, 1.05, 1],
+                      }}
+                      transition={{
+                        rotate: {
+                          duration: 12,
+                          repeat: Infinity,
+                          ease: "linear",
+                        },
+                        scale: {
+                          duration: 2,
+                          repeat: Infinity,
+                          ease: "easeInOut",
+                        },
+                        layout: { type: "spring", stiffness: 260, damping: 22 },
+                      }}
+                    />
+                  </div>
                 )}
               </motion.div>
               <span

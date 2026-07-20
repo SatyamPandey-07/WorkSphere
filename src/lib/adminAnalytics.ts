@@ -184,21 +184,23 @@ export async function getAdminAnalytics(range: RangeKey) {
         wifiQuality: true,
       },
     }),
-    prisma.booking.findMany({
-      where: { createdAt: { gte: startDate } },
-      select: { createdAt: true },
-    }),
-    prisma.venueRating.findMany({
-      where: { createdAt: { gte: startDate } },
-      select: {
-        createdAt: true,
-        wifiQuality: true,
-      },
-    }),
-    prisma.conversation.findMany({
+    prisma.$queryRaw<{ day: string; count: number }[]>`
+      SELECT TO_CHAR("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+      FROM "Booking"
+      WHERE "createdAt" >= ${startDate}
+      GROUP BY day
+      ORDER BY day ASC
+    `,
+    prisma.$queryRaw<{ day: string; total: number; count: number }[]>`
+      SELECT TO_CHAR("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, SUM("wifiQuality")::float AS total, COUNT(*)::int AS count
+      FROM "VenueRating"
+      WHERE "createdAt" >= ${startDate}
+      GROUP BY day
+      ORDER BY day ASC
+    `,
+    prisma.conversation.groupBy({
+      by: ["userId"],
       where: { updatedAt: { gte: startDate } },
-      distinct: ["userId"],
-      select: { userId: true },
     }),
     prisma.booking.count({
       where: {
@@ -296,18 +298,13 @@ export async function getAdminAnalytics(range: RangeKey) {
 
   // 6. Build booking and rating daily trend series
   const bookingByDay = createDaySeries(startDate);
-  for (const booking of bookingTrendData) {
-    const day = isoDay(booking.createdAt);
-    if (day in bookingByDay) bookingByDay[day] += 1;
+  for (const { day, count } of bookingTrendData) {
+    if (day in bookingByDay) bookingByDay[day] = count;
   }
 
   const ratingByDay = new Map<string, { total: number; count: number }>();
-  for (const rating of ratingTrendData) {
-    const day = isoDay(rating.createdAt);
-    const current = ratingByDay.get(day) ?? { total: 0, count: 0 };
-    current.total += rating.wifiQuality;
-    current.count += 1;
-    ratingByDay.set(day, current);
+  for (const { day, total, count } of ratingTrendData) {
+    ratingByDay.set(day, { total, count });
   }
 
   const agentDurations = recentEvents

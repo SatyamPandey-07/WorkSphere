@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { X, MapPin, Loader2 } from "lucide-react";
 
@@ -24,6 +24,7 @@ interface VenueFormData {
   hasPhoneBooths: boolean;
   hasNoMusic: boolean;
   hasQuietZone: boolean;
+  hasAncHeadsetRental: boolean;
   singleOriginBeans: boolean;
   specialtyEspresso: boolean;
   oatAlmondMilk: boolean;
@@ -41,12 +42,18 @@ export function VenueSubmissionModal({
 }: VenueSubmissionModalProps) {
   const { isSignedIn } = useUser();
   const { getToken } = useAuth();
+
+  // Existing State
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState("");
+
+  // New Drag & Drop State and Ref
+  const [dragActive, setDragActive] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState<VenueFormData>({
     name: "",
@@ -61,6 +68,7 @@ export function VenueSubmissionModal({
     hasPhoneBooths: false,
     hasNoMusic: false,
     hasQuietZone: false,
+    hasAncHeadsetRental: false,
     singleOriginBeans: false,
     specialtyEspresso: false,
     oatAlmondMilk: false,
@@ -69,6 +77,15 @@ export function VenueSubmissionModal({
     patioOnly: false,
     waterBowlsProvided: false,
   });
+
+  // Cleanup memory leak when component unmounts or imagePreview changes
+  useEffect(() => {
+    return () => {
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+  }, [imagePreview]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,6 +156,7 @@ export function VenueSubmissionModal({
           hasPhoneBooths: formData.hasPhoneBooths,
           hasNoMusic: formData.hasNoMusic,
           hasQuietZone: formData.hasQuietZone,
+          hasAncHeadsetRental: formData.hasAncHeadsetRental,
           singleOriginBeans: formData.singleOriginBeans,
           specialtyEspresso: formData.specialtyEspresso,
           oatAlmondMilk: formData.oatAlmondMilk,
@@ -175,6 +193,7 @@ export function VenueSubmissionModal({
           hasPhoneBooths: false,
           hasNoMusic: false,
           hasQuietZone: false,
+          hasAncHeadsetRental: false,
           singleOriginBeans: false,
           specialtyEspresso: false,
           oatAlmondMilk: false,
@@ -184,6 +203,7 @@ export function VenueSubmissionModal({
           waterBowlsProvided: false,
         });
         setFile(null);
+        if (imagePreview) URL.revokeObjectURL(imagePreview);
         setImagePreview(null);
         setUploadStatus("");
       }, 2000);
@@ -195,15 +215,64 @@ export function VenueSubmissionModal({
     }
   };
 
+  // Centralized File Validation and Processing
+  const processFile = (selected: File) => {
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+    const clearState = () => {
+      setFile(null);
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview);
+      }
+      setImagePreview(null);
+      if (inputRef.current) inputRef.current.value = "";
+    };
+
+    if (!allowedTypes.includes(selected.type)) {
+      setError("Invalid file type. Please upload a JPEG, PNG, or WEBP.");
+      clearState();
+      return;
+    }
+
+    if (selected.size > 5 * 1024 * 1024) {
+      setError("Image must be smaller than 5MB");
+      clearState();
+      return;
+    }
+
+    setError(null);
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+    }
+    setFile(selected);
+    setImagePreview(URL.createObjectURL(selected));
+  };
+
+  // Dropzone Event Handlers
+  const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
     if (selected) {
-      if (selected.size > 5 * 1024 * 1024) {
-        setError("Image must be smaller than 5MB");
-        return;
-      }
-      setFile(selected);
-      setImagePreview(URL.createObjectURL(selected));
+      processFile(selected);
     }
   };
 
@@ -248,8 +317,9 @@ export function VenueSubmissionModal({
             Suggest a Workspace
           </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -283,7 +353,7 @@ export function VenueSubmissionModal({
                 setFormData((prev) => ({ ...prev, name: e.target.value }))
               }
               placeholder="e.g., Blue Bottle Coffee"
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-[var(--primary-accent)] outline-none"
               required
             />
           </div>
@@ -300,7 +370,7 @@ export function VenueSubmissionModal({
                   category: e.target.value as VenueFormData["category"],
                 }))
               }
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-[var(--primary-accent)] outline-none"
             >
               <option value="cafe">☕ Cafe</option>
               <option value="coworking">🏢 Coworking Space</option>
@@ -342,7 +412,7 @@ export function VenueSubmissionModal({
               <button
                 type="button"
                 onClick={handleUseMyLocation}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md transition-all active:scale-95"
+                className="px-3 py-2 accent-bg cursor-pointer text-white rounded-lg accent-bg-hover shadow-md transition-all active:scale-95"
               >
                 <MapPin className="w-5 h-5" />
               </button>
@@ -353,25 +423,66 @@ export function VenueSubmissionModal({
             <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">
               Venue Photo (Optional)
             </label>
+
+            {/* Drag & Drop File Zone */}
             <div className="flex flex-col gap-2">
-              <input
-                type="file"
-                accept="image/jpeg, image/png, image/webp"
-                onChange={handleFileChange}
-                className="block w-full text-sm text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-blue-50 file:text-blue-700 dark:file:bg-blue-900/30 dark:file:text-blue-400 hover:file:bg-blue-100 dark:hover:file:bg-blue-900/50"
-              />
+              <div
+                className={`relative flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
+                  dragActive
+                    ? "accent-border accent-bg-10 accent-bg-dark-20"
+                    : "border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                }`}
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
+                onClick={() => inputRef.current?.click()}
+              >
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept="image/jpeg, image/png, image/webp"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+
+                <div className="text-center pointer-events-none">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-300 font-bold">
+                    Drag & drop a venue photo here
+                  </p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                    or click to browse (JPEG, PNG, WEBP max 5MB)
+                  </p>
+                </div>
+              </div>
+
               {imagePreview && (
-                <div className="relative w-full h-32 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800">
+                <div className="relative w-full h-32 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 mt-2">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={imagePreview}
                     alt="Preview"
                     className="object-cover w-full h-full"
                   />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFile(null);
+                      if (imagePreview) {
+                        URL.revokeObjectURL(imagePreview);
+                      }
+                      setImagePreview(null);
+                      if (inputRef.current) inputRef.current.value = "";
+                    }}
+                    className="absolute top-2 right-2 p-1 bg-black/60 text-white rounded-full hover:bg-black/80 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
               )}
             </div>
-            <p className="text-[10px] text-zinc-400 mt-1">
+            <p className="text-[10px] text-zinc-400 mt-2">
               Photos are scanned by AI to verify amenities.
             </p>
           </div>
@@ -391,7 +502,7 @@ export function VenueSubmissionModal({
                       hasPhoneBooths: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 Phone Booths Available
               </label>
@@ -406,7 +517,7 @@ export function VenueSubmissionModal({
                       hasNoMusic: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 No Background Music
               </label>
@@ -421,9 +532,23 @@ export function VenueSubmissionModal({
                       hasQuietZone: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 Strict Silence Zones
+              </label>
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.hasAncHeadsetRental}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      hasAncHeadsetRental: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
+                />
+                🎧 ANC Headset Rentals Available
               </label>
               <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
                 <input
@@ -435,7 +560,7 @@ export function VenueSubmissionModal({
                       singleOriginBeans: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 ☕ Single-Origin Beans
               </label>
@@ -450,7 +575,7 @@ export function VenueSubmissionModal({
                       specialtyEspresso: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 ⚙️ Specialty Espresso Machine
               </label>
@@ -465,7 +590,7 @@ export function VenueSubmissionModal({
                       oatAlmondMilk: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 🥛 Oat / Almond Milk Available
               </label>
@@ -480,7 +605,7 @@ export function VenueSubmissionModal({
                       pourOverAvailable: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 🫖 Pour-Over Available
               </label>
@@ -495,7 +620,7 @@ export function VenueSubmissionModal({
                       petsAllowedIndoors: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 🐶 Pets Allowed Indoors
               </label>
@@ -510,7 +635,7 @@ export function VenueSubmissionModal({
                       patioOnly: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 🌿 Patio Only (Pets allowed outdoors only)
               </label>
@@ -525,7 +650,7 @@ export function VenueSubmissionModal({
                       waterBowlsProvided: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 💧 Water Bowls Provided for Pets
               </label>
@@ -535,7 +660,7 @@ export function VenueSubmissionModal({
           <button
             type="submit"
             disabled={isSubmitting || !isSignedIn}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-lg disabled:opacity-50 transition-all shadow-lg glow-blue active:scale-[0.98]"
+            className="w-full cursor-pointer flex items-center justify-center gap-2 py-3 accent-bg accent-bg-hover text-white font-black uppercase tracking-widest rounded-lg disabled:opacity-50 transition-all shadow-lg glow-accent active:scale-[0.98]"
           >
             {isSubmitting ? (
               <>

@@ -24,6 +24,7 @@ This guide explains how to add localized labels, placeholders, and validation er
 Add a `validation` namespace to each locale file, keyed by schema name → field → rule, in dot notation. This mirrors the existing `venue.*` namespace style already in `src/locales/*.json`.
 
 **`src/locales/en.json`** (additive — don't touch the existing `venue` block):
+
 ```json
 {
   "venue": { "...": "..." },
@@ -53,9 +54,11 @@ Add a `validation` namespace to each locale file, keyed by schema name → field
 **`src/locales/es.json`, `fr.json`, `de.json`, `hi.json`** — mirror the exact same key paths with translated values. Missing keys in a non-`en` file silently fall back to `en` because `I18nProvider.tsx` sets `fallbackLng: "en"`, so partial translation coverage during a rollout is safe — you won't get raw keys rendered to users.
 
 **Naming convention:**
-- Top-level key = the exported schema name from `validations.ts` / `schemas.ts` (e.g. `venueRatingSchema` → `validation.venueRating`).
-- Second level = the field name, matching the Zod object key exactly.
-- Third level = a short rule identifier (`required`, `tooLong`, `tooShort`, `range`, `invalid`) rather than reusing Zod's internal issue codes verbatim — this keeps keys stable if the underlying Zod validator changes.
+
+- Top-level key is always the literal `validation`.
+- Second level = the schema-name segment, derived from the exported schema name (e.g. `venueRatingSchema` → `venueRating`).
+- Third level = the field name, matching the Zod object key exactly.
+- Fourth level = a short rule identifier (`required`, `tooLong`, `tooShort`, `range`, `invalid`)...
 
 ---
 
@@ -71,7 +74,11 @@ export function validateRequest<T>(
   data: unknown,
 ):
   | { success: true; data: T }
-  | { success: false; error: string; issues: { field: string; rule: string; key: string }[] } {
+  | {
+      success: false;
+      error: string;
+      issues: { field: string; rule: string; key: string }[];
+    } {
   const result = schema.safeParse(data);
   if (result.success) {
     return { success: true, data: result.data };
@@ -79,19 +86,26 @@ export function validateRequest<T>(
   const issues = result.error.issues.map((e) => {
     const field = e.path.join(".");
     const rule = zodCodeToRule(e.code, e); // maps ZodIssueCode -> "required" | "tooLong" | "range" | ...
-    return { field, rule, key: `validation.${schema._def.description ?? "form"}.${field}.${rule}` };
+    return {
+      field,
+      rule,
+      key: `validation.${schema._def.description ?? "form"}.${field}.${rule}`,
+    };
   });
   return {
     success: false,
-    error: result.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`).join(", "), // kept for logs/back-compat
+    error: result.error.issues
+      .map((e) => `${e.path.join(".")}: ${e.message}`)
+      .join(", "), // kept for logs/back-compat
     issues,
   };
 }
 ```
 
 Give each schema a `.describe("venueRating")` (matching the locale namespace) so `schema._def.description` resolves correctly, e.g.:
+
 ```ts
-export const venueRatingSchema = z.object({ /* ... */ }).describe("venueRating");
+export const venueRatingSchema = z.object({/* ... */}).describe("venueRating");
 ```
 
 **Step 2 — resolve keys on the client.** Wherever a form currently does `setError(data.error)` after a failed fetch (e.g. `VenueSubmissionModal.tsx`), switch to reading `data.issues` and translating each key:

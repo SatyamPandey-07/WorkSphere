@@ -4,6 +4,11 @@ Thank you for your interest in contributing to WorkSphere! This document details
 
 ---
 
+## Community Standards
+Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing to help maintain a welcoming and respectful community.
+
+---
+
 ## 📋 Table of Contents
 1. [Git Workflow & PRs](#1-git-workflow--prs)
 2. [Code Style & Quality Checks](#2-code-style--quality-checks)

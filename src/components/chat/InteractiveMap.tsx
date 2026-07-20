@@ -10,7 +10,8 @@ import { Map as MapIcon } from "lucide-react";
 if (typeof window !== "undefined") {
   delete (L.Icon.Default.prototype as any)._getIconUrl;
   L.Icon.Default.mergeOptions({
-    iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+    iconRetinaUrl:
+      "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
     iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
     shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
   });
@@ -22,7 +23,13 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
     const groups: { [key: string]: any[] } = {};
     if (markers) {
       markers.forEach((m) => {
-        if (m && m.lat != null && m.lng != null && !isNaN(Number(m.lat)) && !isNaN(Number(m.lng))) {
+        if (
+          m &&
+          m.lat != null &&
+          m.lng != null &&
+          !isNaN(Number(m.lat)) &&
+          !isNaN(Number(m.lng))
+        ) {
           const key = `${Number(m.lat).toFixed(6)},${Number(m.lng).toFixed(6)}`;
           if (!groups[key]) {
             groups[key] = [];
@@ -48,8 +55,8 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
         // Base radius of ~200 meters to visually separate markers at default zoom
         const baseRadius = 0.002;
         // Expand slightly if many markers share the location
-        const radius = baseRadius + (0.0002 * n);
-        
+        const radius = baseRadius + 0.0002 * n;
+
         groupItems.forEach((item, index) => {
           const angle = (2 * Math.PI * index) / n;
           const offsetLat = centerLat + radius * Math.cos(angle);
@@ -64,6 +71,30 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
     });
     return result;
   }, [markers]);
+
+  // Memoized event handlers for all interactive markers to prevent react-leaflet
+  // from removing and re-adding event listeners on every render.
+  const markerEventHandlers = React.useMemo(
+    () => ({
+      keydown: (e: any) => {
+        if (e.originalEvent.key === "Enter" || e.originalEvent.key === " ") {
+          e.originalEvent.preventDefault();
+          e.target.openPopup();
+        }
+      },
+      add: (e: any) => {
+        const el = e.target.getElement();
+        if (el) {
+          const name = e.target.options.title || "Map marker";
+          el.setAttribute("aria-label", name);
+          el.setAttribute("role", "button");
+          el.setAttribute("tabindex", "0");
+        }
+      },
+    }),
+    [],
+  );
+
   if (!markers || markers.length === 0) return <div>No markers provided</div>;
 
   const center = {
@@ -77,16 +108,29 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
         <MapIcon className="w-3 h-3 text-blue-500" />
         Interactive Map View
       </div>
-      <MapContainer center={center} zoom={13} style={{ height: "100%", width: "100%", zIndex: 0 }}>
+      <MapContainer
+        center={center}
+        zoom={13}
+        style={{ height: "100%", width: "100%", zIndex: 0 }}
+      >
         <TileLayer
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
         {spiderfiedMarkers.map((marker, idx) => (
-          <Marker key={idx} position={[marker.renderedLat, marker.renderedLng]}>
+          <Marker
+            key={idx}
+            position={[marker.renderedLat, marker.renderedLng]}
+            title={marker.name}
+            alt={marker.name}
+            keyboard={true}
+            eventHandlers={markerEventHandlers}
+          >
             <Popup>
               <div className="font-bold text-sm">{marker.name}</div>
-              <div className="text-xs text-gray-500 capitalize">{marker.category?.replace("_", " ")}</div>
+              <div className="text-xs text-gray-500 capitalize">
+                {marker.category?.replace("_", " ")}
+              </div>
             </Popup>
           </Marker>
         ))}

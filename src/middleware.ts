@@ -18,6 +18,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/auth/verify-otp",
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
+  "/api/auth/webauthn/verify",
   "/privacy(.*)",
   "/terms(.*)",
 ]);
@@ -28,6 +29,11 @@ const isPublicRoute = createRouteMatcher([
 const isCsrfExemptRoute = createRouteMatcher([
   "/api/webhook(.*)",
   "/api/auth/csrf-token",
+]);
+
+const isAdminRoute = createRouteMatcher([
+  "/admin(.*)",
+  "/api/admin(.*)",
 ]);
 
 /**
@@ -100,6 +106,20 @@ export default function middleware(request: any, event: any) {
     if (!isPublicRoute(req)) {
       await auth.protect();
     }
+
+    if (isAdminRoute(req)) {
+      const authObj = await auth();
+      if (authObj.sessionClaims?.metadata?.role !== "admin") {
+        if (req.nextUrl.pathname.startsWith("/api")) {
+          return NextResponse.json(
+            { error: "Forbidden: Admin access required" },
+            { status: 403 }
+          );
+        }
+        return NextResponse.redirect(new URL("/", req.url));
+      }
+    }
+
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set("x-pathname", req.nextUrl.pathname);
     const res = NextResponse.next({

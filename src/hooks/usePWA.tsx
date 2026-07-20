@@ -79,8 +79,8 @@ export function useServiceWorker() {
     setIsInstalled(window.matchMedia("(display-mode: standalone)").matches);
     setIsOnline(navigator.onLine);
 
-    // Register service worker
-    if ("serviceWorker" in navigator) {
+    // Register service worker in production mode only to prevent dev evaluation errors
+    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
       navigator.serviceWorker
         .register("/sw.js")
         .then((reg) => {
@@ -121,6 +121,18 @@ export function useServiceWorker() {
           window.location.reload();
         }
       });
+    } else if (
+      "serviceWorker" in navigator &&
+      process.env.NODE_ENV === "development"
+    ) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => {
+          for (const reg of registrations) {
+            reg.unregister().catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
 
     // Online/offline detection

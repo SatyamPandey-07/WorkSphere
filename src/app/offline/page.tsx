@@ -1,7 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { WifiOff, RefreshCw, Home, MapPin, Clock, ArrowRight } from "lucide-react";
+import {
+  WifiOff,
+  RefreshCw,
+  Home,
+  MapPin,
+  Clock,
+  ArrowRight,
+} from "lucide-react";
 import { useState, useEffect } from "react";
 
 export default function OfflinePage() {
@@ -16,7 +23,7 @@ export default function OfflinePage() {
       const now = new Date();
       const diffMs = now.getTime() - date.getTime();
       const diffMins = Math.floor(diffMs / 60000);
-      
+
       if (diffMins < 1) {
         setLastOnline("just now");
       } else if (diffMins < 60) {
@@ -30,7 +37,7 @@ export default function OfflinePage() {
 
   const handleRetry = async () => {
     setIsRetrying(true);
-    
+
     // Try to fetch to check connection
     try {
       await fetch("/api/location", { method: "HEAD" });
@@ -60,11 +67,11 @@ export default function OfflinePage() {
             <span className="text-white text-lg font-bold">!</span>
           </div>
         </div>
-        
+
         <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50 mb-3">
           You&apos;re Offline
         </h1>
-        
+
         <p className="text-lg text-zinc-600 dark:text-zinc-400 mb-4">
           WorkSphere needs an internet connection to find workspaces near you.
         </p>
@@ -75,14 +82,19 @@ export default function OfflinePage() {
             Last connected: {lastOnline}
           </div>
         )}
-        
+
         <div className="space-y-4">
           <button
             onClick={handleRetry}
             disabled={isRetrying}
-            className="group w-full px-6 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold rounded-2xl hover:shadow-lg hover:shadow-blue-500/25 transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+            className="group w-full px-6 py-4 text-white font-semibold rounded-2xl hover:shadow-lg hover:shadow-[var(--primary-accent)]/25 transition-all disabled:opacity-70 flex items-center justify-center gap-2"
+            style={{
+              background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 70%, #7c3aed))`,
+            }}
           >
-            <RefreshCw className={`w-5 h-5 ${isRetrying ? "animate-spin" : "group-hover:rotate-180 transition-transform duration-500"}`} />
+            <RefreshCw
+              className={`w-5 h-5 ${isRetrying ? "animate-spin" : "group-hover:rotate-180 transition-transform duration-500"}`}
+            />
             {isRetrying ? "Checking connection..." : "Try Again"}
           </button>
 
@@ -106,16 +118,21 @@ export default function OfflinePage() {
                 <MapPin className="w-5 h-5 text-green-600 dark:text-green-400" />
               </div>
               <div className="text-left">
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">View Saved Venues</p>
-                <p className="text-xs text-zinc-500">Your previously searched locations</p>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                  View Saved Venues
+                </p>
+                <p className="text-xs text-zinc-500">
+                  Your previously searched locations
+                </p>
               </div>
               <ArrowRight className="w-4 h-4 text-zinc-400 ml-auto" />
             </div>
           </div>
         </div>
-        
+
         <p className="text-xs text-zinc-500 mt-6">
-          WorkSphere works best with an internet connection for real-time workspace data.
+          WorkSphere works best with an internet connection for real-time
+          workspace data.
         </p>
       </div>
     </div>

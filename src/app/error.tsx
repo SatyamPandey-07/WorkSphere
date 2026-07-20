@@ -39,7 +39,8 @@ export default function Error({
         </h1>
 
         <p className="text-white/60 text-sm leading-relaxed mb-8">
-          We encountered an unexpected error while loading this page. Please try reloading or head back home.
+          We encountered an unexpected error while loading this page. Please try
+          reloading or head back home.
         </p>
 
         {error.digest && (
@@ -51,7 +52,10 @@ export default function Error({
         <div className="flex flex-col sm:flex-row gap-4.5 justify-center">
           <button
             onClick={reset}
-            className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/20 active:scale-[0.98] transition-all cursor-pointer group"
+            className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl text-white font-semibold hover:shadow-lg active:scale-[0.98] transition-all cursor-pointer group"
+            style={{
+              background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 70%, #7c3aed))`,
+            }}
           >
             <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-500" />
             Try Again

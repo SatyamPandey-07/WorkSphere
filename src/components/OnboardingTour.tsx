@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { Joyride, STATUS, EVENTS } from "react-joyride";
 import type { Step, EventData } from "react-joyride";
+import { useTheme } from "./ThemeProvider";
 
 export function OnboardingTour() {
   const [run, setRun] = useState(false);
+  const { accentHex } = useTheme();
 
   useEffect(() => {
     // Only run on the client side
@@ -71,7 +73,7 @@ export function OnboardingTour() {
       options={{
         showProgress: true,
         buttons: ["back", "skip", "primary"],
-        primaryColor: "#2563eb",
+        primaryColor: accentHex,
         zIndex: 10000,
         skipBeacon: true,
       }}

@@ -55,11 +55,6 @@ export default function middleware(request: any, event: any) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-pathname", request.nextUrl.pathname);
 
-  // Local/dev fallback when Clerk isn't configured
-  if (process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk") {
-    return NextResponse.next({ request: { headers: requestHeaders } });
-  }
-
   return clerkMiddleware(async (auth, req) => {
     if (!isPublicRoute(req)) {
       await auth.protect();
@@ -78,10 +73,9 @@ export const config = {
 **Step by step:**
 
 1. **`createRouteMatcher`** defines an allowlist of public routes — the landing page, sign-in/sign-up pages, the Clerk webhook endpoint, and static legal pages. Everything not on this list is treated as protected.
-2. **The dev-key escape hatch**: if the app is running with Clerk's placeholder publishable key (i.e., Clerk hasn't been configured yet), middleware skips auth entirely and just forwards the request. This lets contributors run the app locally without setting up a Clerk project first.
-3. **`clerkMiddleware(...)`** wraps the request. Inside the callback, `auth.protect()` is called for any route that *isn't* public. `auth.protect()` is what actually triggers JWT verification — if the session is missing or invalid, it short-circuits the request (redirecting to sign-in for pages, or returning a 401 for API routes) before your handler code ever runs.
-4. **The `matcher` export** controls which requests Next.js even routes through this middleware. It deliberately excludes static assets (images, fonts, the service worker, `manifest.json`) so those aren't needlessly gated behind auth, but explicitly *includes* everything under `/api` and `/trpc`.
-5. A custom `x-pathname` header is attached to the forwarded request, which app code uses to know the current route without re-parsing the URL.
+2. **`clerkMiddleware(...)`** wraps the request. Inside the callback, `auth.protect()` is called for any route that _isn't_ public. `auth.protect()` is what actually triggers JWT verification — if the session is missing or invalid, it short-circuits the request (redirecting to sign-in for pages, or returning a 401 for API routes) before your handler code ever runs.
+3. **The `matcher` export** controls which requests Next.js even routes through this middleware. It deliberately excludes static assets (images, fonts, the service worker, `manifest.json`) so those aren't needlessly gated behind auth, but explicitly _includes_ everything under `/api` and `/trpc`.
+4. A custom `x-pathname` header is attached to the forwarded request, which app code uses to know the current route without re-parsing the URL.
 
 **Net effect:** by the time a request reaches an API route handler or Server Component, one of two things is already true — it hit a public route with no auth check, or `auth.protect()` already confirmed there's a valid, verified session.
 
@@ -165,11 +159,11 @@ If verification fails, the route returns a `400` and does not process the payloa
 
 ## Summary
 
-| Layer | Mechanism | Secret used |
-|---|---|---|
-| Browser → Middleware | Session JWT in cookie, verified by `clerkMiddleware()` | `CLERK_SECRET_KEY` (server-side, via Clerk SDK) |
-| Middleware → Route | `auth.protect()` gates non-public routes before handlers run | — |
-| Route → Session data | `auth()` / `currentUser()` read the already-verified session | `CLERK_SECRET_KEY` |
-| Clerk → Webhook route | Svix HMAC signature on the raw payload, unrelated to session JWTs | `WEBHOOK_SECRET` |
+| Layer                 | Mechanism                                                         | Secret used                                     |
+| --------------------- | ----------------------------------------------------------------- | ----------------------------------------------- |
+| Browser → Middleware  | Session JWT in cookie, verified by `clerkMiddleware()`            | `CLERK_SECRET_KEY` (server-side, via Clerk SDK) |
+| Middleware → Route    | `auth.protect()` gates non-public routes before handlers run      | —                                               |
+| Route → Session data  | `auth()` / `currentUser()` read the already-verified session      | `CLERK_SECRET_KEY`                              |
+| Clerk → Webhook route | Svix HMAC signature on the raw payload, unrelated to session JWTs | `WEBHOOK_SECRET`                                |
 
 Related env vars (see `README.md` → Environment Variables): `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_SIGN_IN_URL`, `NEXT_PUBLIC_CLERK_SIGN_UP_URL`, and `WEBHOOK_SECRET`.

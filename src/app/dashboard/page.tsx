@@ -1,28 +1,6 @@
 "use client";
-
 import { useState, useEffect, useCallback } from "react";
-import { useUser as useClerkUser } from "@clerk/nextjs";
-// Mock useUser for local development bypass if dummy keys are used
-const useUser = () => {
-  const isDummy =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ===
-    "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const clerkUser = !isDummy ? useClerkUser() : null;
-
-  if (isDummy) {
-    return {
-      isLoaded: true,
-      isSignedIn: true,
-      user: {
-        firstName: "Nomad",
-        lastName: "Scout",
-        emailAddresses: [{ emailAddress: "nomad.scout@worksphere.dev" }],
-      },
-    };
-  }
-  return clerkUser || { isLoaded: false, isSignedIn: false, user: null };
-};
+import { useUser } from "@clerk/nextjs";
 import {
   getAnalyticsSummary,
   getAgentMetrics,
@@ -146,7 +124,7 @@ export default function DashboardPage() {
             <button
               onClick={loadData}
               disabled={isRefreshing}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm accent-bg text-white rounded-lg accent-bg-hover disabled:opacity-50 transition-colors"
             >
               <RefreshCw
                 className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`}
@@ -370,7 +348,7 @@ export default function DashboardPage() {
                   <span className="text-zinc-700 dark:text-zinc-300">
                     {event.replace(/_/g, " ")}
                   </span>
-                  <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+                  <span className="px-2 py-0.5 accent-bg text-white text-xs rounded-full">
                     {count}
                   </span>
                 </div>

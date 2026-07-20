@@ -8,6 +8,7 @@ import {
   BarChart3,
   Bot,
   CalendarDays,
+  Gauge,
   RefreshCw,
   Search,
   Sparkles,
@@ -211,6 +212,27 @@ export default function AdminAnalyticsDashboard() {
             {error}
           </div>
         )}
+
+        {/* ── Quick navigation to sub-dashboards ─────────────────────── */}
+        <nav
+          aria-label="Admin sub-dashboards"
+          className="mb-6 flex flex-wrap gap-3"
+        >
+          <Link
+            href="/admin/system"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-white/[0.08] hover:text-white"
+          >
+            <Gauge className="h-4 w-4 text-violet-400" />
+            System Health
+          </Link>
+          <Link
+            href="/admin/performance"
+            className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 px-4 py-2.5 text-sm text-cyan-300 transition hover:bg-cyan-400/10 hover:text-white"
+          >
+            <Activity className="h-4 w-4" />
+            Performance Telemetry
+          </Link>
+        </nav>
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <MetricCard

@@ -32,6 +32,7 @@ import {
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
+import { AmbientSoundPlayer } from "@/components/noise/AmbientSoundPlayer";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
 
@@ -411,7 +412,7 @@ export function VenueCard({
                 checked={isSelected}
                 onChange={() => onToggleCompare(venue)}
                 disabled={!isSelected && compareDisabled}
-                className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                className="w-4 h-4 accent-text rounded border-zinc-300 focus:ring-[var(--primary-accent)] cursor-pointer disabled:opacity-50"
               />
               <label
                 htmlFor={`compare-${venue.id}`}
@@ -433,7 +434,7 @@ export function VenueCard({
             checked={isSelected}
             onChange={() => onToggleCompare(venue)}
             disabled={!isSelected && compareDisabled}
-            className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+            className="w-4 h-4 accent-text rounded border-zinc-300 focus:ring-[var(--primary-accent)] cursor-pointer disabled:opacity-50"
           />
           <label
             htmlFor={`compare-no-photo-${venue.id}`}
@@ -451,7 +452,7 @@ export function VenueCard({
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
               {venue.name}
               {isLoading && (
-                <Loader2 className="w-3 h-3 animate-spin text-blue-500 shrink-0" />
+                <Loader2 className="w-3 h-3 animate-spin accent-text shrink-0" />
               )}
             </h3>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
@@ -470,9 +471,9 @@ export function VenueCard({
             }`}
           >
             <Heart
-className={`w-5 h-5 shrink-0 ${
-  enableTransition ? "transition-all duration-300" : ""
-} ${isFavorited ? "fill-current" : ""}`}
+              className={`w-5 h-5 shrink-0 ${
+                enableTransition ? "transition-all duration-300" : ""
+              } ${isFavorited ? "fill-current" : ""}`}
             />
           </button>
         </div>
@@ -970,7 +971,7 @@ className={`w-5 h-5 shrink-0 ${
               </div>
             )}
 
-            {/* Noise profile badge */}
+            {/* Noise profile badge — Issue #701: ambient audio preview */}
             {venue.noiseLevel && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
                 <Volume2
@@ -983,6 +984,7 @@ className={`w-5 h-5 shrink-0 ${
                   }`}
                 />
                 <span className="capitalize">{venue.noiseLevel}</span>
+                <AmbientSoundPlayer noiseLevel={venue.noiseLevel} />
               </div>
             )}
             {/* Lighting profile badge */}
@@ -1118,8 +1120,9 @@ className={`w-5 h-5 shrink-0 ${
               <span>📞 Soundproof Booths Available</span>
             </div>
           )}
+          {/* Noise level row — Issue #701: ambient audio preview */}
           {venue.noiseLevel && (
-            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+            <div className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
               <Volume2
                 className={`w-4 h-4 shrink-0 ${
                   venue.noiseLevel === "quiet"
@@ -1130,6 +1133,7 @@ className={`w-5 h-5 shrink-0 ${
                 }`}
               />
               <span className="capitalize">{venue.noiseLevel}</span>
+              <AmbientSoundPlayer noiseLevel={venue.noiseLevel} />
             </div>
           )}
           {venue.lighting && (
@@ -1156,7 +1160,7 @@ className={`w-5 h-5 shrink-0 ${
         <div className="flex gap-2">
           <button
             onClick={() => onGetDirections?.(venue)}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors"
           >
             <Navigation className="w-4 h-4 shrink-0" />
             Directions

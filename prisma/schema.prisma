@@ -44,6 +44,8 @@ model User {
   folderUpvotes      FolderUpvote[]
   sentFolderInvites  FolderInvite[]      @relation("FolderInviteSender")
   workStyleProfile   String?
+  pushSubscriptions  PushSubscription[]
+  pushNotificationLogs PushNotificationLog[]
   checkIns           CheckIn[]
   // ── Activity streak ────────────────────────────────────────────────────────
   // currentStreak:    consecutive days with at least one check-in
@@ -612,6 +614,16 @@ model PasskeyCredential {
   aaguid       String?
   createdAt    DateTime @default(now())
   lastUsedAt   DateTime @default(now())
+model PushSubscription {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
 
   @@index([userId])
 }
@@ -624,4 +636,16 @@ model PasskeyChallenge {
   createdAt DateTime @default(now())
 
   @@index([challenge])
+model PushNotificationLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId   String?
+  title     String
+  body      String
+  status    String
+  error     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }

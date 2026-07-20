@@ -1,6 +1,6 @@
-import "@testing-library/jest-dom";
-import { TextEncoder, TextDecoder } from "util";
-import { webcrypto } from "crypto";
+require("@testing-library/jest-dom");
+const { TextEncoder, TextDecoder } = require("util");
+const { webcrypto } = require("crypto");
 // jsdom doesn't provide these globals; Node's implementations are drop-in
 // replacements and let us test Edge-runtime-style code (e.g. src/lib/csrf.ts)
 // under the standard jsdom test environment.
@@ -43,7 +43,7 @@ if (typeof global.crypto === "undefined" || !global.crypto.subtle) {
 if (typeof global.structuredClone === "undefined") {
   global.structuredClone = (val) => JSON.parse(JSON.stringify(val));
 }
-import "fake-indexeddb/auto";
+require("fake-indexeddb/auto");
 
 // Mock Leaflet global variable L
 global.L = {

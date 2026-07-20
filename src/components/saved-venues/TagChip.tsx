@@ -32,7 +32,8 @@ export function TagChip({
         active
           ? "ring-2 ring-offset-1 dark:ring-offset-zinc-900"
           : "opacity-90 hover:opacity-100",
-        onClick && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-zinc-900",
+        onClick &&
+          "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-1 dark:focus-visible:ring-offset-zinc-900",
         className,
       )}
       style={{
@@ -58,7 +59,11 @@ export function TagChip({
     >
       <span
         className="shrink-0 rounded-full"
-        style={{ backgroundColor: color, width: size === "sm" ? 6 : 8, height: size === "sm" ? 6 : 8 }}
+        style={{
+          backgroundColor: color,
+          width: size === "sm" ? 6 : 8,
+          height: size === "sm" ? 6 : 8,
+        }}
         aria-hidden="true"
       />
       <span className="truncate max-w-[120px]">{name}</span>
@@ -69,11 +74,22 @@ export function TagChip({
             e.stopPropagation();
             onDelete();
           }}
-          className="ml-0.5 shrink-0 rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-zinc-900"
+          className="ml-0.5 shrink-0 rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-1 dark:focus-visible:ring-offset-zinc-900"
           aria-label={`Remove tag ${name}`}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-            <path d="M7.5 2.5L2.5 7.5M2.5 2.5l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M7.5 2.5L2.5 7.5M2.5 2.5l5 5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
           </svg>
         </button>
       )}
@@ -84,11 +100,23 @@ export function TagChip({
             e.stopPropagation();
             onRename();
           }}
-          className="ml-0.5 shrink-0 rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 dark:focus-visible:ring-offset-zinc-900"
+          className="ml-0.5 shrink-0 rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/20 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-1 dark:focus-visible:ring-offset-zinc-900"
           aria-label={`Edit tag ${name}`}
         >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true">
-            <path d="M7.1 1.5l1.4 1.4-5 5H2.1v-1.4l5-5z" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" />
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M7.1 1.5l1.4 1.4-5 5H2.1v-1.4l5-5z"
+              stroke="currentColor"
+              strokeWidth="1"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
           </svg>
         </button>
       )}

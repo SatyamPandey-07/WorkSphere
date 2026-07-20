@@ -108,8 +108,9 @@ export default class WorkspaceServer implements Party.Server {
     try {
       const parsed = JSON.parse(message);
 
-      // If it's a typing indicator, broadcast it safely
-      if (parsed.type === "typing") {
+      // Typing + WebRTC signaling are coordination messages, not doc edits,
+      // so VIEWERS can send them too (screen share offers/answers/ICE).
+      if (parsed.type === "typing" || parsed.type === "webrtc-signal") {
         this.room.broadcast(message, [sender.id]);
         return;
       }

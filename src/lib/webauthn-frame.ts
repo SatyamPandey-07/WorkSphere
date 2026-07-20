@@ -79,7 +79,12 @@ export function getFrameWebAuthnStatus(): FrameWebAuthnStatus {
   const shouldBlockPasskeys =
     isEmbedded && (isCrossOrigin || permissionDelegated === false);
 
-  return { isEmbedded, isCrossOrigin, permissionDelegated, shouldBlockPasskeys };
+  return {
+    isEmbedded,
+    isCrossOrigin,
+    permissionDelegated,
+    shouldBlockPasskeys,
+  };
 }
 
 const WEBAUTHN_FRAME_ERROR_PATTERNS = [
@@ -92,10 +97,16 @@ function looksLikeWebAuthnFrameError(reason: unknown): boolean {
   if (!reason) return false;
   const name = (reason as { name?: string }).name;
   const message = (reason as { message?: string }).message ?? String(reason);
-  if (name !== "SecurityError" && !WEBAUTHN_FRAME_ERROR_PATTERNS.some((p) => p.test(message))) {
+  if (
+    name !== "SecurityError" &&
+    !WEBAUTHN_FRAME_ERROR_PATTERNS.some((p) => p.test(message))
+  ) {
     return false;
   }
-  return WEBAUTHN_FRAME_ERROR_PATTERNS.some((p) => p.test(message)) || name === "SecurityError";
+  return (
+    WEBAUTHN_FRAME_ERROR_PATTERNS.some((p) => p.test(message)) ||
+    name === "SecurityError"
+  );
 }
 
 /**
@@ -116,5 +127,46 @@ export function installWebAuthnFrameGuard(onBlocked: () => void): () => void {
   };
 
   window.addEventListener("unhandledrejection", handler);
-  return () => window.removeEventListener("unhandledrejection", handler);
+
+  let originalGet: typeof navigator.credentials.get | undefined;
+  let originalCreate: typeof navigator.credentials.create | undefined;
+
+  if (navigator.credentials) {
+    originalGet = navigator.credentials.get?.bind(navigator.credentials);
+    originalCreate = navigator.credentials.create?.bind(navigator.credentials);
+
+    if (originalGet) {
+      navigator.credentials.get = async function (options) {
+        const status = getFrameWebAuthnStatus();
+        if (status.shouldBlockPasskeys) {
+          throw new DOMException(
+            "The Relying Party ID is not a valid domain suffix.",
+            "SecurityError",
+          );
+        }
+        return originalGet!(options);
+      };
+    }
+
+    if (originalCreate) {
+      navigator.credentials.create = async function (options) {
+        const status = getFrameWebAuthnStatus();
+        if (status.shouldBlockPasskeys) {
+          throw new DOMException(
+            "The Relying Party ID is not a valid domain suffix.",
+            "SecurityError",
+          );
+        }
+        return originalCreate!(options);
+      };
+    }
+  }
+
+  return () => {
+    window.removeEventListener("unhandledrejection", handler);
+    if (navigator.credentials) {
+      if (originalGet) navigator.credentials.get = originalGet;
+      if (originalCreate) navigator.credentials.create = originalCreate;
+    }
+  };
 }

@@ -29,7 +29,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { RefObject, useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
@@ -735,36 +735,52 @@ export function VenueListings({
           description="Try broadening your search criteria or adjusting your chat request."
         />
       ) : (
-        <div className={viewMode === "card" ? "space-y-3" : "space-y-2"}>
-          {venues.slice(0, visibleCount).map((venue, index) => (
-            <VenueChatCard
-              key={venue.id}
-              venue={venue}
-              isFavorited={favorites.has(venue.id)}
-              onGetDirections={onGetDirections}
-              onToggleFavorite={onToggleFavorite}
-              onRate={onRateVenue}
-              onOpenDetails={onOpenDetails}
-              onBook={onBook}
-              viewMode={viewMode}
-              tabIndex={0}
-              data-index={index}
-              onKeyDown={(e) => handleKeyDown(e, index, venue)}
-              isSelected={selectedVenues.some((v) => v.id === venue.id)}
-              compareDisabled={selectedVenues.length >= 3}
-              onToggleCompare={handleToggleCompare}
-            />
-          ))}
+        <LayoutGroup id="venue-listings">
+          <div
+            className={`@container min-w-0 [transform:translate3d(0,0,0)] ${
+              viewMode === "card" ? "space-y-3" : "space-y-2"
+            }`}
+            data-testid="venue-listings-grid"
+          >
+            {venues.slice(0, visibleCount).map((venue, index) => (
+              <motion.div
+                key={venue.id}
+                layout
+                layoutId={`venue-card-${venue.id}`}
+                className="min-w-0 [transform:translate3d(0,0,0)]"
+                transition={{
+                  layout: { type: "spring", stiffness: 350, damping: 30 },
+                }}
+              >
+                <VenueChatCard
+                  venue={venue}
+                  isFavorited={favorites.has(venue.id)}
+                  onGetDirections={onGetDirections}
+                  onToggleFavorite={onToggleFavorite}
+                  onRate={onRateVenue}
+                  onOpenDetails={onOpenDetails}
+                  onBook={onBook}
+                  viewMode={viewMode}
+                  tabIndex={0}
+                  data-index={index}
+                  onKeyDown={(e) => handleKeyDown(e, index, venue)}
+                  isSelected={selectedVenues.some((v) => v.id === venue.id)}
+                  compareDisabled={selectedVenues.length >= 3}
+                  onToggleCompare={handleToggleCompare}
+                />
+              </motion.div>
+            ))}
 
-          {/* Infinite Scroll Sentinel */}
-          {(visibleCount < venues.length || onLoadMore) && (
-            <div ref={observerTarget} className="py-4 flex justify-center">
-              {isFetchingNextPage && (
-                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
-              )}
-            </div>
-          )}
-        </div>
+            {/* Infinite Scroll Sentinel */}
+            {(visibleCount < venues.length || onLoadMore) && (
+              <div ref={observerTarget} className="py-4 flex justify-center">
+                {isFetchingNextPage && (
+                  <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+                )}
+              </div>
+            )}
+          </div>
+        </LayoutGroup>
       )}
 
       {/* Comparison Drawer Integration */}

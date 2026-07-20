@@ -77,6 +77,10 @@ describe("VenueListings Component", () => {
 
     // Details button is visible on Card view but not in List view
     expect(screen.getAllByText("Details").length).toBeGreaterThan(0);
+
+    const grid = screen.getByTestId("venue-listings-grid");
+    expect(grid.className).toContain("[transform:translate3d(0,0,0)]");
+    expect(grid.className).toContain("@container");
   });
 
   it("toggles to list view when list view button is clicked", async () => {

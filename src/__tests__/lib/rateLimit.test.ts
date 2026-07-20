@@ -1,4 +1,9 @@
-import { rateLimit, getRateLimitInfo, resetRateLimit } from "@/lib/rateLimit";
+import {
+  rateLimit,
+  getRateLimitInfo,
+  resetRateLimit,
+  microTimestampMember,
+} from "@/lib/rateLimit";
 
 describe("Rate Limiting", () => {
   beforeEach(() => {
@@ -71,5 +76,19 @@ describe("Rate Limiting", () => {
     expect(info?.count).toBe(5);
     expect(info?.remaining).toBe(0);
     expect(info?.isLimited).toBe(true);
+  });
+});
+
+describe("microTimestampMember", () => {
+  it("stringifies sec+usec so same-ms hits stay unique", () => {
+    const a = microTimestampMember(1700000000, 12, "a");
+    const b = microTimestampMember(1700000000, 13, "a");
+    expect(a).toBe("1700000000000012:a");
+    expect(b).toBe("1700000000000013:a");
+    expect(a).not.toBe(b);
+  });
+
+  it("pads usec to 6 digits", () => {
+    expect(microTimestampMember("100", 5, "x")).toBe("100000005:x");
   });
 });

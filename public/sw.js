@@ -1,9 +1,53 @@
 // Service Worker for WorkSphere PWA
-const CACHE_NAME = "worksphere-v3";
+const CACHE_NAME = "worksphere-v4";
 const OFFLINE_URL = "/offline";
+// iOS Safari PWAs get killed around ~50MB of Cache Storage — keep a buffer.
+const MAX_CACHE_BYTES = 20 * 1024 * 1024;
 
 // Assets to cache on install
 const PRECACHE_ASSETS = ["/", "/offline", "/icons/icon.svg", "/manifest.json"];
+
+async function estimateResponseSize(response) {
+  const header = response.headers.get("content-length");
+  if (header) {
+    const n = Number(header);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  try {
+    const buf = await response.clone().arrayBuffer();
+    return buf.byteLength;
+  } catch (e) {
+    return 0;
+  }
+}
+
+// Drop oldest cache entries until we're under MAX_CACHE_BYTES (LRU-ish:
+// Cache.keys() is insertion order; we re-put on hit to bump recency).
+async function trimCacheToMaxBytes(cache) {
+  const keys = await cache.keys();
+  const entries = [];
+  let total = 0;
+
+  for (const request of keys) {
+    const response = await cache.match(request);
+    if (!response) continue;
+    const size = await estimateResponseSize(response);
+    entries.push({ request, size });
+    total += size;
+  }
+
+  let i = 0;
+  while (total > MAX_CACHE_BYTES && i < entries.length) {
+    const entry = entries[i++];
+    await cache.delete(entry.request);
+    total -= entry.size;
+  }
+}
+
+async function cachePutWithLimit(cache, request, response) {
+  await cache.put(request, response);
+  await trimCacheToMaxBytes(cache);
+}
 
 // Install event - precache essential assets
 self.addEventListener("install", (event) => {
@@ -84,7 +128,7 @@ self.addEventListener("fetch", (event) => {
             const responseClone = response.clone();
             event.waitUntil(
               caches.open(CACHE_NAME).then((cache) => {
-                return cache.put(event.request, responseClone);
+                return cachePutWithLimit(cache, event.request, responseClone);
               }),
             );
           }
@@ -102,6 +146,13 @@ self.addEventListener("fetch", (event) => {
         return cache.match(event.request).then((cachedResponse) => {
           // Agar cache mein mil gaya, toh turant return karo
           if (cachedResponse) {
+            // Re-put so this entry counts as most-recently-used for eviction
+            event.waitUntil(
+              cache
+                .put(event.request, cachedResponse.clone())
+                .then(() => trimCacheToMaxBytes(cache))
+                .catch(() => {}),
+            );
             return cachedResponse;
           }
 
@@ -113,7 +164,13 @@ self.addEventListener("fetch", (event) => {
                 networkResponse.status === 200 ||
                 networkResponse.status === 0
               ) {
-                cache.put(event.request, networkResponse.clone());
+                event.waitUntil(
+                  cachePutWithLimit(
+                    cache,
+                    event.request,
+                    networkResponse.clone(),
+                  ),
+                );
               }
               return networkResponse;
             })
@@ -128,9 +185,11 @@ self.addEventListener("fetch", (event) => {
         .then((response) => {
           if (response.ok) {
             const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
+            event.waitUntil(
+              caches.open(CACHE_NAME).then((cache) => {
+                return cachePutWithLimit(cache, event.request, responseClone);
+              }),
+            );
           }
           return response;
         })

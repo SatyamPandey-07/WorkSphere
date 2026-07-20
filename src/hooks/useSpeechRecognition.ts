@@ -20,8 +20,7 @@ interface ISpeechRecognition extends EventTarget {
   onstart: ((this: ISpeechRecognition, ev: Event) => void) | null;
   onend: ((this: ISpeechRecognition, ev: Event) => void) | null;
   onresult:
-    | ((this: ISpeechRecognition, ev: ISpeechRecognitionEvent) => void)
-    | null;
+    ((this: ISpeechRecognition, ev: ISpeechRecognitionEvent) => void) | null;
   onerror:
     | ((this: ISpeechRecognition, ev: ISpeechRecognitionErrorEvent) => void)
     | null;
@@ -59,11 +58,7 @@ type SpeechRecognitionConstructor = new () => ISpeechRecognition;
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type SpeechRecognitionStatus =
-  | "idle"
-  | "listening"
-  | "processing"
-  | "unsupported"
-  | "error";
+  "idle" | "listening" | "processing" | "unsupported" | "error";
 
 export interface UseSpeechRecognitionReturn {
   /** Whether the Web Speech API is available in this browser */
@@ -95,12 +90,18 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
 
   // Standard (Chrome 33+, Edge 79+)
   if ("SpeechRecognition" in window) {
-    return (window as unknown as { SpeechRecognition: SpeechRecognitionConstructor }).SpeechRecognition;
+    return (
+      window as unknown as { SpeechRecognition: SpeechRecognitionConstructor }
+    ).SpeechRecognition;
   }
 
   // Webkit-prefixed (Chrome, Edge, Safari TP)
   if ("webkitSpeechRecognition" in window) {
-    return (window as unknown as { webkitSpeechRecognition: SpeechRecognitionConstructor }).webkitSpeechRecognition;
+    return (
+      window as unknown as {
+        webkitSpeechRecognition: SpeechRecognitionConstructor;
+      }
+    ).webkitSpeechRecognition;
   }
 
   // Firefox does not expose SpeechRecognition by default. In Firefox Nightly
@@ -223,7 +224,7 @@ export function useSpeechRecognition(
 
     try {
       recognition.start();
-    } catch (err) {
+    } catch {
       // Some browsers throw synchronously (e.g. when already listening)
       setErrorMessage(
         "Could not start voice recognition. Please refresh and try again.",

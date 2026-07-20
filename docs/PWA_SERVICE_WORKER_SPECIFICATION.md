@@ -105,7 +105,7 @@ This versioning strategy prevents outdated resources from remaining after applic
 
 To prevent unlimited cache growth, the Service Worker should implement a Least Recently Used (LRU) eviction policy for runtime caches.
 
-The current Service Worker implementation does not include automatic LRU cache eviction. The following policy and example describe a recommended approach for future enhancement to control runtime cache growth.
+The current Service Worker implementation does not include automatic LRU cache eviction. The following policy describes a recommended approach for future enhancement to control runtime cache growth.
 
 ### Recommended Behavior
 

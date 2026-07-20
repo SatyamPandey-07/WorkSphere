@@ -79,7 +79,7 @@ export default function FAQAccordion() {
             >
               <button
                 onClick={() => toggleItem(index)}
-                className="w-full px-6 cursor-pointer py-5 flex items-center justify-between text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-2xl"
+                className="w-full px-6 cursor-pointer py-5 flex items-center justify-between text-left focus:outline-none focus-visible:ring-2 accent-ring rounded-2xl"
                 aria-expanded={isOpen}
                 aria-controls={`faq-answer-${index}`}
                 id={`faq-question-${index}`}

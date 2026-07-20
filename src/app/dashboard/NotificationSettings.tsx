@@ -210,7 +210,7 @@ export function NotificationSettings() {
   if (isLoading) {
     return (
       <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6 flex justify-center items-center h-48">
-        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+        <Loader2 className="w-6 h-6 animate-spin accent-text" />
       </div>
     );
   }
@@ -218,7 +218,7 @@ export function NotificationSettings() {
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 p-6">
       <div className="flex items-center gap-2 mb-6">
-        <Bell className="w-5 h-5 text-blue-600" />
+        <Bell className="w-5 h-5 accent-text" />
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50 font-sans">
           Notification Settings
         </h2>
@@ -310,7 +310,7 @@ export function NotificationSettings() {
               <button
                 onClick={handleSaveAvatar}
                 disabled={uploadingAvatar}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
+                className="px-4 py-2 accent-bg accent-bg-hover text-white text-sm font-semibold rounded-lg flex items-center gap-2 transition-colors disabled:opacity-50"
               >
                 {uploadingAvatar ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -328,19 +328,19 @@ export function NotificationSettings() {
         {/* Phone number */}
         <div>
           <label
-  htmlFor="phone-number"
-  className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2"
->
-  Phone Number
-</label>
-<input
-  id="phone-number"
-  type="tel"
-  placeholder="+1234567890"
-  value={phoneNumber}
-  onChange={(e) => setPhoneNumber(e.target.value)}
-  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono text-sm transition-all"
-/>
+            htmlFor="phone-number"
+            className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2"
+          >
+            Phone Number
+          </label>
+          <input
+            id="phone-number"
+            type="tel"
+            placeholder="+1234567890"
+            value={phoneNumber}
+            onChange={(e) => setPhoneNumber(e.target.value)}
+            className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:border-[var(--primary-accent)] font-mono text-sm transition-all"
+          />
           <p className="mt-1.5 text-xs text-zinc-500">
             Used for WhatsApp booking confirmations and SMS reminders (E.164
             format).
@@ -350,20 +350,20 @@ export function NotificationSettings() {
         {/* WhatsApp webhook URL */}
         <div>
           <label
-  htmlFor="whatsapp-webhook-url"
-  className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2 flex items-center gap-1.5"
->
-  <MessageCircle className="w-3.5 h-3.5 text-green-500" />
-  WhatsApp Webhook URL
-</label>
-<input
-  id="whatsapp-webhook-url"
-  type="url"
-  placeholder="https://hooks.make.com/... or https://hooks.zapier.com/..."
-  value={whatsappWebhookUrl}
-  onChange={(e) => setWhatsappWebhookUrl(e.target.value)}
-  className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 font-mono text-sm transition-all"
-/>
+            htmlFor="whatsapp-webhook-url"
+            className="block text-xs font-black uppercase tracking-widest text-zinc-500 mb-2 flex items-center gap-1.5"
+          >
+            <MessageCircle className="w-3.5 h-3.5 text-green-500" />
+            WhatsApp Webhook URL
+          </label>
+          <input
+            id="whatsapp-webhook-url"
+            type="url"
+            placeholder="https://hooks.make.com/... or https://hooks.zapier.com/..."
+            value={whatsappWebhookUrl}
+            onChange={(e) => setWhatsappWebhookUrl(e.target.value)}
+            className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 font-mono text-sm transition-all"
+          />
           <p className="mt-1.5 text-xs text-zinc-500">
             Optional. Paste a Make, Zapier, or custom HTTPS webhook to stream
             booking check-ins to a WhatsApp group. WorkSphere will POST venue
@@ -386,7 +386,7 @@ export function NotificationSettings() {
                 type="time"
                 value={notificationStart}
                 onChange={(e) => setNotificationStart(e.target.value)}
-                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:border-[var(--primary-accent)] text-sm transition-all"
               />
             </div>
 
@@ -398,7 +398,7 @@ export function NotificationSettings() {
                 type="time"
                 value={notificationEnd}
                 onChange={(e) => setNotificationEnd(e.target.value)}
-                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:border-[var(--primary-accent)] text-sm transition-all"
               />
             </div>
 
@@ -409,7 +409,7 @@ export function NotificationSettings() {
               <select
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
-                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm transition-all"
+                className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:border-[var(--primary-accent)] text-sm transition-all"
               >
                 {timezones.map((tz) => (
                   <option key={tz} value={tz}>
@@ -432,7 +432,7 @@ export function NotificationSettings() {
             type="checkbox"
             checked={smsAlertsEnabled}
             onChange={(e) => setSmsAlertsEnabled(e.target.checked)}
-            className="w-4 h-4 mt-1 border-zinc-300 dark:border-zinc-700 rounded focus:ring-blue-500"
+            className="w-4 h-4 mt-1 border-zinc-300 dark:border-zinc-700 rounded focus:ring-[var(--primary-accent)]"
           />
           <label
             htmlFor="sms-alerts"
@@ -450,7 +450,7 @@ export function NotificationSettings() {
           <button
             type="submit"
             disabled={isSaving}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl disabled:opacity-50 flex items-center gap-2 transition-colors active:scale-[0.98]"
+            className="px-6 py-2.5 accent-bg accent-bg-hover text-white text-sm font-semibold rounded-xl disabled:opacity-50 flex items-center gap-2 transition-colors active:scale-[0.98]"
           >
             {isSaving ? (
               <>

@@ -1,10 +1,10 @@
 // Service Worker for WorkSphere PWA
 const CACHE_NAME = "worksphere-v3";
-const IMAGE_CACHE_NAME = "worksphere-images-v3";
+const IMAGE_CACHE_NAME = "worksphere-images-v4";
 const OFFLINE_URL = "/offline";
 
-// Target max size ~25MB.
-const MAX_IMAGE_CACHE_BYTES = 25 * 1024 * 1024;
+// Cap image cache at 20MB so iOS Safari PWA (~50MB quota) doesn't get killed.
+const MAX_IMAGE_CACHE_BYTES = 20 * 1024 * 1024;
 // Fallback size for opaque cross-origin responses where Content-Length is hidden (approx 400KB).
 const OPAQUE_RESPONSE_SIZE_ESTIMATE = 400 * 1024;
 
@@ -693,7 +693,7 @@ async function touchLRURecord(url) {
 let isEnforcingQuota = false;
 
 /**
- * Helper to keep image cache strictly below quota (~25MB) using True LRU.
+ * Helper to keep image cache strictly below quota (~20MB) using True LRU.
  */
 async function enforceImageCacheQuota(cache, aggressive = false) {
   // Wait if another sweep is concurrently running to avoid redundant IDB reads/writes

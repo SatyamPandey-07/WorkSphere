@@ -27,5 +27,7 @@ describe("collection invitation utilities", () => {
     expect(
       isCollectionInviteExpired(new Date("2026-07-20T12:00:01.000Z"), now),
     ).toBe(false);
+    expect(isCollectionInviteExpired(null, now)).toBe(true);
+    expect(isCollectionInviteExpired("not-a-date", now)).toBe(true);
   });
 });

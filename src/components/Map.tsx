@@ -809,8 +809,8 @@ const Map = ({
                           }
                           className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
                             isCheckedInHere
-                              ? "bg-blue-600 text-white hover:bg-blue-500"
-                              : "bg-zinc-800 text-zinc-200 hover:bg-blue-600 hover:text-white"
+                              ? "accent-bg text-white hover:opacity-90"
+                              : "bg-zinc-800 text-zinc-200 hover:accent-bg hover:text-white"
                           }`}
                         >
                           {isCheckedInHere ? "Check out" : "Check in here"}
@@ -836,7 +836,7 @@ const Map = ({
                     calculateOptimizedRoute(updated);
                   }
                 }}
-                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:bg-blue-600 hover:text-white transition-colors"
+                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:accent-bg hover:text-white transition-colors"
               >
                 ➕ Add to Workday Timeline
               </button>
@@ -946,7 +946,7 @@ const Map = ({
                 onClick={() => setTravelProfile(mode)}
                 className={`rounded-md py-1.5 font-medium cursor-pointer uppercase transition-all ${
                   travelProfile === mode
-                    ? "bg-blue-600 text-white shadow"
+                    ? "accent-bg text-white shadow"
                     : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
                 }`}
               >
@@ -1001,7 +1001,10 @@ const Map = ({
               {routingQueue.length >= 2 && (
                 <button
                   onClick={() => calculateOptimizedRoute()}
-                  className="mt-3 w-full rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:from-blue-500 hover:to-indigo-500 active:scale-[0.98]"
+                  className="mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white shadow-lg transition-all active:scale-[0.98]"
+                  style={{
+                    background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 80%, #4f46e5))`,
+                  }}
                 >
                   🚀 Calculate Combined Travel Timeline
                 </button>

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 // Mock Clerk
@@ -60,15 +60,52 @@ jest.mock("react-leaflet", () => ({
       data-attribution={attribution}
     />
   ),
-  Marker: ({ children, position, icon }: any) => (
-    <div
-      data-testid="marker"
-      data-position={JSON.stringify(position)}
-      data-icon={icon?.options?.className || "default"}
-    >
-      {children}
-    </div>
-  ),
+  Marker: React.forwardRef(function MockMarker(
+    { children, position, icon, title, eventHandlers }: any,
+    _ref: any,
+  ) {
+    const elRef = React.useRef<HTMLDivElement>(null);
+    React.useEffect(() => {
+      if (eventHandlers?.add && elRef.current) {
+        const e = {
+          target: {
+            getElement: () => elRef.current,
+            options: { title },
+          },
+        };
+        eventHandlers.add(e);
+      }
+    }, [eventHandlers, title]);
+
+    return (
+      <div
+        ref={elRef}
+        data-testid="marker"
+        data-position={JSON.stringify(position)}
+        data-icon={icon?.options?.className || "default"}
+        onKeyDown={(e) => {
+          if (eventHandlers?.keydown) {
+            const mockOriginalEvent = {
+              key: e.key,
+              preventDefault: jest.fn(),
+            };
+            eventHandlers.keydown({
+              originalEvent: mockOriginalEvent,
+              target: {
+                openPopup: () => {
+                  if (elRef.current) {
+                    elRef.current.dataset.popupOpen = "true";
+                  }
+                },
+              },
+            });
+          }
+        }}
+      >
+        {children}
+      </div>
+    );
+  }),
   Popup: ({ children }: any) => <div data-testid="popup">{children}</div>,
   Polyline: ({ children, positions, pathOptions }: any) => (
     <div
@@ -267,6 +304,51 @@ describe("Map Component", () => {
       render(<Map {...defaultProps} markers={markers} />);
 
       expect(screen.getByText("456 Market Street")).toBeInTheDocument();
+    });
+  });
+
+  describe("Marker Accessibility", () => {
+    const a11yMarkers: MapMarker[] = [
+      {
+        id: "1",
+        name: "Accessible Cafe",
+        position: { lat: 37.78, lng: -122.42 },
+        category: "cafe",
+      },
+    ];
+
+    it("applies correct semantic attributes to markers", () => {
+      render(<Map {...defaultProps} markers={a11yMarkers} />);
+
+      const allMarkers = screen.getAllByTestId("marker");
+      // The second marker is the venue marker (first is user location)
+      const venueMarker = allMarkers[1];
+
+      expect(venueMarker).toHaveAttribute("role", "button");
+      expect(venueMarker).toHaveAttribute("tabindex", "0");
+      expect(venueMarker).toHaveAttribute("aria-label", "Accessible Cafe");
+    });
+
+    it("triggers popup on Enter key", () => {
+      render(<Map {...defaultProps} markers={a11yMarkers} />);
+      const venueMarker = screen.getAllByTestId("marker")[1];
+
+      venueMarker.focus();
+      // Simulate Enter key
+      fireEvent.keyDown(venueMarker, { key: "Enter" });
+
+      expect(venueMarker.dataset.popupOpen).toBe("true");
+    });
+
+    it("triggers popup on Space key", () => {
+      render(<Map {...defaultProps} markers={a11yMarkers} />);
+      const venueMarker = screen.getAllByTestId("marker")[1];
+
+      venueMarker.focus();
+      // Simulate Space key
+      fireEvent.keyDown(venueMarker, { key: " " });
+
+      expect(venueMarker.dataset.popupOpen).toBe("true");
     });
   });
 

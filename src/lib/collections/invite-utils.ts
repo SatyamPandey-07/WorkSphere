@@ -8,6 +8,15 @@ export function createCollectionInviteExpiry(now = Date.now()) {
   return new Date(now + COLLECTION_INVITE_TTL_MS);
 }
 
-export function isCollectionInviteExpired(expiresAt: Date, now = new Date()) {
-  return expiresAt.getTime() <= now.getTime();
+export function isCollectionInviteExpired(
+  expiresAt: Date | string | null | undefined,
+  now = new Date(),
+) {
+  if (!expiresAt) return true;
+  const ms =
+    expiresAt instanceof Date
+      ? expiresAt.getTime()
+      : new Date(expiresAt).getTime();
+  if (Number.isNaN(ms)) return true;
+  return ms <= now.getTime();
 }

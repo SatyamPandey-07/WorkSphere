@@ -229,6 +229,29 @@ const Map = ({
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
 
+  // Memoized event handlers for all interactive markers to prevent react-leaflet
+  // from removing and re-adding event listeners on every render.
+  const markerEventHandlers = useMemo(
+    () => ({
+      keydown: (e: any) => {
+        if (e.originalEvent.key === "Enter" || e.originalEvent.key === " ") {
+          e.originalEvent.preventDefault();
+          e.target.openPopup();
+        }
+      },
+      add: (e: any) => {
+        const el = e.target.getElement();
+        if (el) {
+          const name = e.target.options.title || "Map marker";
+          el.setAttribute("aria-label", name);
+          el.setAttribute("role", "button");
+          el.setAttribute("tabindex", "0");
+        }
+      },
+    }),
+    [],
+  );
+
   // Real-time seat availability (#703) — PartyKit presence layer that
   // powers the green/yellow/red rings and the popup check-in button.
   const {
@@ -729,7 +752,14 @@ const Map = ({
         <ResizeWatcher />
 
         {customIcon && (
-          <Marker position={center} icon={customIcon}>
+          <Marker
+            position={center}
+            icon={customIcon}
+            title="Your location"
+            alt="Your location"
+            keyboard={true}
+            eventHandlers={markerEventHandlers}
+          >
             <Popup>You are here!</Popup>
           </Marker>
         )}
@@ -738,6 +768,10 @@ const Map = ({
             key={marker.id}
             position={[marker.renderedLat, marker.renderedLng]}
             icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
+            title={marker.name}
+            alt={marker.name}
+            keyboard={true}
+            eventHandlers={markerEventHandlers}
           >
             <Popup>
               <div className="text-sm">

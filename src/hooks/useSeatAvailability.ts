@@ -12,6 +12,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "partysocket/react";
+import { useToast } from "@/components/ui/Toast";
+import {
+  queueOfflineCheckIn,
+  getQueuedCheckIns,
+  dequeueOfflineCheckIn,
+  incrementCheckInRetryCount,
+} from "@/lib/offlineStore";
 
 export type SeatStatus = "green" | "yellow" | "red";
 
@@ -48,9 +55,7 @@ export function useSeatAvailability() {
     Record<string, SeatAvailability>
   >({});
   const [isConnected, setIsConnected] = useState(false);
-  const [checkedInVenueId, setCheckedInVenueId] = useState<string | null>(
-    null,
-  );
+  const [checkedInVenueId, setCheckedInVenueId] = useState<string | null>(null);
   // Mirrors checkedInVenueId in a ref so send handlers stay stable across
   // renders without needing checkedInVenueId itself as a dependency.
   const checkedInVenueRef = useRef<string | null>(null);
@@ -74,8 +79,7 @@ export function useSeatAvailability() {
     onMessage(event) {
       try {
         const data = JSON.parse(event.data) as
-          | SeatUpdateMessage
-          | SeatSnapshotMessage;
+          SeatUpdateMessage | SeatSnapshotMessage;
 
         if (data.type === "seat_update") {
           setAvailability((prev) => ({
@@ -102,14 +106,88 @@ export function useSeatAvailability() {
     },
   });
 
+  const { toast } = useToast();
+
   const checkIn = useCallback(
     (venueId: string, capacity: number = DEFAULT_SEAT_CAPACITY) => {
       checkedInVenueRef.current = venueId;
       setCheckedInVenueId(venueId);
-      socket.send(JSON.stringify({ type: "seat_checkin", venueId, capacity }));
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        queueOfflineCheckIn(venueId).catch(console.error);
+        toast("You are offline. Check-in queued for sync.", "success");
+      } else {
+        socket.send(
+          JSON.stringify({ type: "seat_checkin", venueId, capacity }),
+        );
+      }
     },
-    [socket],
+    [socket, toast],
   );
+
+  useEffect(() => {
+    let isSyncing = false;
+
+    const handleOnline = async () => {
+      if (isSyncing) return;
+
+      const checkIns = await getQueuedCheckIns();
+      if (!checkIns || checkIns.length === 0) return;
+
+      isSyncing = true;
+      toast("Sync started", "success");
+
+      let hasFailures = false;
+
+      for (const item of checkIns) {
+        try {
+          const response = await fetch("/api/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ checkIns: [item] }),
+          });
+
+          if (response.ok) {
+            await dequeueOfflineCheckIn(item.id!);
+            // Also notify partykit so other users see the seat update
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              socket.send(
+                JSON.stringify({
+                  type: "seat_checkin",
+                  venueId: item.venueId,
+                  capacity: DEFAULT_SEAT_CAPACITY,
+                }),
+              );
+            }
+          } else {
+            hasFailures = true;
+            await incrementCheckInRetryCount(item.id!);
+          }
+        } catch {
+          hasFailures = true;
+          await incrementCheckInRetryCount(item.id!);
+        }
+      }
+
+      if (hasFailures) {
+        toast("Sync failed", "error");
+      } else {
+        toast("Sync completed", "success");
+      }
+
+      isSyncing = false;
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", handleOnline);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", handleOnline);
+      }
+    };
+  }, [toast, socket]);
 
   const checkOut = useCallback(() => {
     checkedInVenueRef.current = null;

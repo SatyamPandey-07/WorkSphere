@@ -30,14 +30,25 @@ export function CrowdForecastChart({
       { type: "module" }
     );
 
-    worker.postMessage({
-      venueId,
-      historicalTelemetry,
-      weatherScore,
-      eventImpact,
-    });
+    // Message queue throttling: Delay the postMessage to avoid concurrent rapid lockups
+    const throttleTimeout = setTimeout(() => {
+      worker.postMessage({
+        venueId,
+        historicalTelemetry,
+        weatherScore,
+        eventImpact,
+      });
+    }, 300); // 300ms throttle
+
+    // Explicit worker termination timeout
+    const terminationTimeout = setTimeout(() => {
+      console.warn("Worker termination timeout exceeded");
+      worker.terminate();
+      setLoading(false);
+    }, 15000); // 15 seconds
 
     worker.onmessage = (e: MessageEvent) => {
+      clearTimeout(terminationTimeout);
       if (e.data.success) {
         setPredictions(e.data.predictions);
       } else {
@@ -52,7 +63,11 @@ export function CrowdForecastChart({
       worker.terminate();
     };
 
-    return () => worker.terminate();
+    return () => {
+      clearTimeout(throttleTimeout);
+      clearTimeout(terminationTimeout);
+      worker.terminate();
+    };
   }, [venueId, weatherScore, eventImpact]);
 
   return (

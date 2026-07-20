@@ -43,7 +43,7 @@ const Map = dynamic(() => import("@/components/Map"), {
       aria-label="Loading interactive map"
     >
       <Loader2
-        className="h-8 w-8 animate-spin text-blue-600"
+        className="h-8 w-8 animate-spin accent-text"
         aria-hidden="true"
       />
       <span className="sr-only">Loading interactive map...</span>
@@ -646,7 +646,7 @@ function AppPage() {
             <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 animate-pulse flex items-center justify-center">
               <Loader2 className="w-10 h-10 animate-spin text-white" />
             </div>
-            <div className="absolute inset-0 w-20 h-20 rounded-full bg-blue-500/20 animate-ping" />
+            <div className="absolute inset-0 w-20 h-20 rounded-full accent-bg-20 animate-ping" />
           </div>
           <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">
             Finding Your Location
@@ -684,12 +684,12 @@ function AppPage() {
       )}
 
       {/* Mobile Navigation Toggle */}
-      <div className="md:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+      <div className="lg:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <button
           onClick={() => setMobileView("chat")}
           className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
             mobileView === "chat"
-              ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
+              ? "accent-text accent-bg-10 accent-bg-dark-20 border-b-2 accent-border"
               : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
           }`}
         >
@@ -700,14 +700,19 @@ function AppPage() {
           onClick={() => setMobileView("map")}
           className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
             mobileView === "map"
-              ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
+              ? "accent-text accent-bg-10 accent-bg-dark-20 border-b-2 accent-border"
               : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
           }`}
         >
           <MapIcon className="w-5 h-5" />
           Map
           {markers.length > 0 && (
-            <span className="px-2 py-0.5 text-xs bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full font-bold shadow-sm">
+            <span
+              className="px-2 py-0.5 text-xs text-white rounded-full font-bold shadow-sm"
+              style={{
+                background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 70%, #7c3aed))`,
+              }}
+            >
               {markers.length}
             </span>
           )}
@@ -715,13 +720,13 @@ function AppPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex flex-1 md:flex-row overflow-hidden">
+      <div className="flex flex-1 lg:flex-row overflow-hidden">
         {/* Map Section - Hidden on mobile when chat is active */}
         <div
           className={`
           joyride-map
           ${mobileView === "map" ? "flex" : "hidden"} 
-          md:flex flex-1 md:flex-[7] relative
+          lg:flex flex-1 lg:flex-[7] relative
         `}
         >
           <MapErrorBoundary>
@@ -736,14 +741,14 @@ function AppPage() {
         </div>
 
         {/* Divider - Desktop only */}
-        <div className="hidden md:block w-px bg-gradient-to-b from-zinc-200 via-zinc-300 to-zinc-200 dark:from-zinc-800 dark:via-zinc-700 dark:to-zinc-800" />
+        <div className="hidden lg:block w-px bg-gradient-to-b from-zinc-200 via-zinc-300 to-zinc-200 dark:from-zinc-800 dark:via-zinc-700 dark:to-zinc-800" />
 
         {/* Chat Section - Hidden on mobile when map is active */}
         <div
           className={`
           joyride-chat
           ${mobileView === "chat" ? "flex" : "hidden"} 
-          md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
+          lg:flex flex-1 lg:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
         `}
         >
           {/* Route Profile Toggle Widget */}
@@ -754,7 +759,7 @@ function AppPage() {
                   Route Profile
                 </span>
                 {routes[0].duration && (
-                  <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                  <span className="text-xs font-medium accent-text accent-text-60">
                     {Math.round(routes[0].duration / 60)} mins •{" "}
                     {(routes[0].distance! / 1000).toFixed(1)} km
                   </span>
@@ -792,7 +797,7 @@ function AppPage() {
                     }}
                     className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${
                       routeProfile === profile
-                        ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
+                        ? "accent-bg text-white shadow-lg shadow-[var(--primary-accent)]/20"
                         : "bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-750"
                     }`}
                   >
@@ -957,7 +962,7 @@ export default function AppPageWrapper() {
     <Suspense
       fallback={
         <div className="flex items-center justify-center h-screen bg-zinc-50">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <Loader2 className="w-8 h-8 animate-spin accent-text" />
         </div>
       }
     >

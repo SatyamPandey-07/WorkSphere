@@ -18,6 +18,7 @@ const isPublicRoute = createRouteMatcher([
   "/api/auth/verify-otp",
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
+  "/api/auth/webauthn/verify",
   "/privacy(.*)",
   "/terms(.*)",
 ]);

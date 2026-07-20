@@ -67,6 +67,7 @@ export function BookingModal({
   };
   const [bookingDate, setBookingDate] = useState("");
   const [bookingTime, setBookingTime] = useState("");
+  const [confirmationId, setConfirmationId] = useState("");
   const [email, setEmail] = useState("");
   const [billingCode, setBillingCode] = useState("");
   const [history, setHistory] = useState<Booking[]>([]);
@@ -74,6 +75,7 @@ export function BookingModal({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
   const [dateFilter, setDateFilter] = useState("all");
+
   const [guests, setGuests] = useState<GuestEntry[]>([]);
   const [guestInviteStatus, setGuestInviteStatus] = useState<
     "idle" | "sending" | "done"
@@ -354,6 +356,7 @@ export function BookingModal({
         );
       }
 
+      setConfirmationId(responseData.confirmationId || "");
       setStep("success");
       trackEvent("venue_rated", {
         venueId: venue?.id || "unknown",
@@ -402,7 +405,7 @@ export function BookingModal({
             <h2 className="text-2xl font-black uppercase tracking-tighter">
               {step === "history" ? "Neural Ledger" : "Secure Booking"}
             </h2>
-            <div className="flex items-center gap-1.5 text-[10px] font-black text-blue-500 uppercase tracking-widest mt-0.5">
+            <div className="flex items-center gap-1.5 text-[10px] font-black accent-text uppercase tracking-widest mt-0.5">
               <ShieldCheck className="w-3 h-3" />
               {step === "history"
                 ? "Archived Signal Chain"
@@ -424,7 +427,7 @@ export function BookingModal({
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
               {loadingHistory ? (
                 <div className="py-20 flex flex-col items-center justify-center gap-4">
-                  <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+                  <Loader2 className="w-12 h-12 accent-text animate-spin" />
                   <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
                     Retrieving Archived Signals...
                   </p>
@@ -457,7 +460,7 @@ export function BookingModal({
                           setDateFilter(e.target.value);
                           setSelectedIds(new Set());
                         }}
-                        className="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                        className="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)]"
                       >
                         <option value="all">All Bookings</option>
                         <option value="current_month">Current Month</option>
@@ -479,12 +482,13 @@ export function BookingModal({
                           filteredHistory.length > 0
                         }
                         onChange={toggleSelectAll}
-                        className="w-4 h-4 accent-blue-600 cursor-pointer"
+                        className="w-4 h-4 cursor-pointer"
+                        style={{ accentColor: "var(--primary-accent)" }}
                       />
                       Select All ({filteredHistory.length})
                     </label>
                     {selectedIds.size > 0 && (
-                      <span className="text-[10px] font-black uppercase tracking-widest text-blue-500">
+                      <span className="text-[10px] font-black uppercase tracking-widest accent-text">
                         {selectedIds.size} Selected
                       </span>
                     )}
@@ -499,10 +503,10 @@ export function BookingModal({
                       return (
                         <div
                           key={booking.id}
-                          className={`group relative bg-zinc-50 dark:bg-zinc-800/50 border rounded-3xl p-6 transition-all hover:shadow-xl hover:shadow-blue-500/5 ${
+                          className={`group relative bg-zinc-50 dark:bg-zinc-800/50 border rounded-3xl p-6 transition-all hover:shadow-xl hover:shadow-[color-mix(in_srgb,var(--primary-accent),transparent_0.95)] ${
                             selectedIds.has(booking.id)
-                              ? "border-blue-500 ring-2 ring-blue-500/20"
-                              : "border-zinc-200 dark:border-zinc-700 hover:border-blue-500/50"
+                              ? "accent-border ring-2 ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)]"
+                              : "border-zinc-200 dark:border-zinc-700 hover:accent-border-50"
                           }`}
                         >
                           <div className="flex justify-between items-start mb-4">
@@ -511,18 +515,19 @@ export function BookingModal({
                                 type="checkbox"
                                 checked={selectedIds.has(booking.id)}
                                 onChange={() => toggleSelected(booking.id)}
-                                className="w-4 h-4 mt-1 accent-blue-600 cursor-pointer shrink-0"
+                                className="w-4 h-4 mt-1 cursor-pointer shrink-0"
+                                style={{ accentColor: "var(--primary-accent)" }}
                               />
                               <div>
                                 <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-[8px] font-black bg-blue-600 text-white px-2 py-0.5 rounded uppercase tracking-widest">
+                                  <span className="text-[8px] font-black bg-[var(--primary-accent)] text-white px-2 py-0.5 rounded uppercase tracking-widest">
                                     {booking.venue.category}
                                   </span>
                                   <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
                                     {booking.confirmationId}
                                   </span>
                                 </div>
-                                <h4 className="text-lg font-black uppercase tracking-tight group-hover:text-blue-500 transition-colors">
+                                <h4 className="text-lg font-black uppercase tracking-tight group-hover:accent-text transition-colors">
                                   {booking.venue.name}
                                 </h4>
                                 <p className="text-[10px] text-zinc-500 font-bold flex items-center gap-1 uppercase tracking-widest mt-1">
@@ -535,7 +540,7 @@ export function BookingModal({
                               <p className="text-sm font-black text-zinc-900 dark:text-zinc-100">
                                 {booking.date}
                               </p>
-                              <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">
+                              <p className="text-[10px] font-black accent-text uppercase tracking-widest">
                                 {booking.time}
                               </p>
                               <p className="text-[10px] font-bold text-zinc-400 mt-2">
@@ -565,7 +570,7 @@ export function BookingModal({
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 title="Add to Google Calendar"
-                                className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-blue-500"
+                                className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors accent-text"
                               >
                                 <CalendarPlus className="w-4 h-4" />
                               </a>
@@ -582,7 +587,7 @@ export function BookingModal({
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 title="Add to Outlook"
-                                className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors text-blue-600"
+                                className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 transition-colors accent-text"
                               >
                                 <Mail className="w-4 h-4" />
                               </a>
@@ -593,6 +598,8 @@ export function BookingModal({
                                     booking.venue.address,
                                     booking.date,
                                     booking.time,
+                                    booking.duration || 60,
+                                    booking.confirmationId,
                                   )
                                 }
                                 title="Download .ics"
@@ -625,7 +632,7 @@ export function BookingModal({
                         <button
                           onClick={() => handleBulkExport("pdf")}
                           disabled={isExporting}
-                          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all disabled:opacity-50"
+                          className="flex items-center gap-2 px-4 py-2 bg-[var(--primary-accent)] text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:opacity-90 transition-all disabled:opacity-50"
                         >
                           {isExporting ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -644,7 +651,7 @@ export function BookingModal({
 
           {step === "details" && venue && (
             <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
-              <div className="flex items-center gap-4 p-6 bg-zinc-900 dark:bg-blue-600 rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">
+              <div className="flex items-center gap-4 p-6 bg-zinc-900 dark:bg-[var(--primary-accent)] rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">
                 <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-125 transition-transform duration-700">
                   <Zap className="w-32 h-32" />
                 </div>
@@ -666,7 +673,10 @@ export function BookingModal({
 
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <label htmlFor="allocation-date" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                  <label
+                    htmlFor="allocation-date"
+                    className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2"
+                  >
                     Allocation Date
                   </label>
                   <div className="relative">
@@ -675,14 +685,17 @@ export function BookingModal({
                       type="date"
                       id="allocation-date"
                       min={getTodayString()}
-                      className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                      className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:accent-border outline-none transition-all"
                       value={bookingDate}
                       onChange={(e) => setBookingDate(e.target.value)}
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label htmlFor="arrival-time" className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2">
+                  <label
+                    htmlFor="arrival-time"
+                    className="text-[10px] font-black uppercase tracking-widest text-zinc-500 ml-2"
+                  >
                     Arrival Time
                   </label>
                   <div className="relative">
@@ -690,7 +703,7 @@ export function BookingModal({
                     <input
                       type="time"
                       id="arrival-time"
-                      className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                      className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:accent-border outline-none transition-all"
                       value={bookingTime}
                       onChange={(e) => setBookingTime(e.target.value)}
                     />
@@ -718,7 +731,7 @@ export function BookingModal({
                     <input
                       type="email"
                       placeholder="you@example.com"
-                      className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                      className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:accent-border outline-none transition-all"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                     />
@@ -733,7 +746,7 @@ export function BookingModal({
                     <input
                       type="text"
                       placeholder="e.g. PRJ-2026"
-                      className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all"
+                      className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:accent-border outline-none transition-all"
                       value={billingCode}
                       onChange={(e) => setBillingCode(e.target.value)}
                     />
@@ -754,7 +767,12 @@ export function BookingModal({
 
           {step === "payment" && (
             <div className="space-y-8 animate-in slide-in-from-right-4 duration-300">
-              <div className="p-8 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group">
+              <div
+                className="p-8 rounded-[2.5rem] text-white shadow-2xl relative overflow-hidden group"
+                style={{
+                  background: `linear-gradient(to bottom right, var(--primary-accent), #4338ca)`,
+                }}
+              >
                 <div className="absolute top-0 right-0 p-12 opacity-10 group-hover:scale-150 transition-transform duration-1000">
                   <Lock className="w-48 h-48" />
                 </div>
@@ -804,7 +822,7 @@ export function BookingModal({
                   <span className="uppercase tracking-tighter">
                     Total Signal Weight
                   </span>
-                  <span className="text-blue-500">$0.00</span>
+                  <span className="accent-text">$0.00</span>
                 </div>
               </div>
 
@@ -822,8 +840,8 @@ export function BookingModal({
             <div className="py-24 flex flex-col items-center justify-center space-y-8 animate-in fade-in duration-500">
               <div className="relative">
                 <div className="w-24 h-24 rounded-full border-4 border-zinc-100 dark:border-zinc-800"></div>
-                <div className="absolute top-0 left-0 w-24 h-24 rounded-full border-4 border-blue-600 border-t-transparent animate-spin"></div>
-                <Lock className="absolute inset-0 m-auto w-8 h-8 text-blue-600 animate-pulse" />
+                <div className="absolute top-0 left-0 w-24 h-24 rounded-full border-4 accent-border border-t-transparent animate-spin"></div>
+                <Lock className="absolute inset-0 m-auto w-8 h-8 accent-text animate-pulse" />
               </div>
               <div className="text-center">
                 <h3 className="text-lg font-black uppercase tracking-widest mb-2">
@@ -847,7 +865,7 @@ export function BookingModal({
                 </h3>
                 <p className="text-sm text-zinc-500 font-bold max-w-[320px] mx-auto leading-relaxed">
                   Your spot at{" "}
-                  <span className="text-zinc-900 dark:text-zinc-100 font-black underline decoration-blue-500 decoration-2 underline-offset-4">
+                  <span className="text-zinc-900 dark:text-zinc-100 font-black underline decoration-[var(--primary-accent)] decoration-2 underline-offset-4">
                     {venue.name}
                   </span>{" "}
                   is now yours. A professional PDF receipt has been dispatched
@@ -905,6 +923,8 @@ export function BookingModal({
                       venue.address || "",
                       bookingDate,
                       bookingTime,
+                      60,
+                      confirmationId,
                     )
                   }
                   className="w-full border-2 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-black uppercase tracking-widest py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all text-[10px]"
@@ -953,7 +973,8 @@ export function BookingModal({
                     type="checkbox"
                     checked={showTaxId}
                     onChange={(e) => setShowTaxId(e.target.checked)}
-                    className="w-4 h-4 accent-blue-600"
+                    className="w-4 h-4"
+                    style={{ accentColor: "var(--primary-accent)" }}
                   />
                   <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                     Show Tax Identifiers
@@ -964,7 +985,8 @@ export function BookingModal({
                     type="checkbox"
                     checked={includeNotes}
                     onChange={(e) => setIncludeNotes(e.target.checked)}
-                    className="w-4 h-4 accent-blue-600"
+                    className="w-4 h-4"
+                    style={{ accentColor: "var(--primary-accent)" }}
                   />
                   <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                     Include Custom Notes
@@ -975,7 +997,8 @@ export function BookingModal({
                     type="checkbox"
                     checked={showLogo}
                     onChange={(e) => setShowLogo(e.target.checked)}
-                    className="w-4 h-4 accent-blue-600"
+                    className="w-4 h-4"
+                    style={{ accentColor: "var(--primary-accent)" }}
                   />
                   <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                     Show Logo
@@ -991,7 +1014,7 @@ export function BookingModal({
                 </button>
                 <button
                   onClick={confirmDownloadSingle}
-                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
+                  className="flex-1 py-3 bg-[var(--primary-accent)] hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
                 >
                   Download
                 </button>

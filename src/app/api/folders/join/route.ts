@@ -1,85 +1,128 @@
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
-import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+
 import { ensureUserExists } from "@/lib/auth";
+import {
+  isCollectionInviteExpired,
+  normalizeCollectionInviteEmail,
+} from "@/lib/collections/invite-utils";
+import { prisma } from "@/lib/prisma";
 
-const joinSchema = z.object({
-  token: z.string(),
-});
+const joinSchema = z.object({ token: z.string().min(20) });
 
-// POST /api/folders/join - Join a folder using an invite token
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Ensure the guest user exists in the local database to avoid foreign key violations
     await ensureUserExists(userId);
 
-    const body = await req.json();
-    const validation = joinSchema.safeParse(body);
-
-    if (!validation.success) {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
       return NextResponse.json(
-        { error: "Invalid token format" },
+        { error: "Invalid invitation token" },
         { status: 400 },
       );
     }
 
-    const { token } = validation.data;
+    const parsed = joinSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Invalid invitation token" },
+        { status: 400 },
+      );
+    }
 
-    const folder = await prisma.folder.findUnique({
-      where: { inviteToken: token },
-      include: { members: true },
+    const invite = await prisma.folderInvite.findUnique({
+      where: { token: parsed.data.token },
+      include: { folder: { select: { id: true, name: true } } },
     });
 
-    if (!folder) {
+    if (!invite) {
       return NextResponse.json(
-        { error: "Invalid or expired invite token" },
+        { error: "Invitation not found" },
         { status: 404 },
       );
     }
 
-    // Check validity timestamp (48 hours validity)
-    const parts = token.split("_");
-    const timestamp = Number(parts[parts.length - 1]);
-    const fortyEightHours = 48 * 60 * 60 * 1000;
-    if (isNaN(timestamp) || Date.now() - timestamp > fortyEightHours) {
+    const expired =
+      invite.status === "EXPIRED" ||
+      isCollectionInviteExpired(invite.expiresAt);
+
+    if (expired) {
+      // Best-effort status flip — never turn an expired invite into a 500
+      if (invite.status === "PENDING") {
+        try {
+          await prisma.folderInvite.update({
+            where: { id: invite.id },
+            data: { status: "EXPIRED" },
+          });
+        } catch (err) {
+          console.error("Failed to mark invitation expired:", err);
+        }
+      }
+
       return NextResponse.json(
-        { error: "Invalid or expired invite token" },
+        {
+          error:
+            "This invitation has expired. Ask the collection owner for a new invite link.",
+        },
         { status: 410 },
       );
     }
 
-    // Check if already a member
-    const existingMember = folder.members.find((m) => m.userId === userId);
-    if (existingMember) {
+    if (invite.status !== "PENDING") {
       return NextResponse.json(
-        { message: "Already a member", folderId: folder.id },
-        { status: 200 },
+        { error: "This invitation is no longer valid" },
+        { status: 410 },
       );
     }
 
-    // Add user as member
-    await prisma.folderMember.create({
-      data: {
-        folderId: folder.id,
-        userId: userId,
-        role: "MEMBER",
-      },
-    });
+    const user = await currentUser();
+    const signedInEmails =
+      user?.emailAddresses.map((entry) =>
+        normalizeCollectionInviteEmail(entry.emailAddress),
+      ) ?? [];
 
-    return NextResponse.json(
-      { success: true, folderId: folder.id },
-      { status: 200 },
-    );
+    if (
+      !signedInEmails.includes(normalizeCollectionInviteEmail(invite.email))
+    ) {
+      return NextResponse.json(
+        {
+          error: "Sign in with the email address that received this invitation",
+        },
+        { status: 403 },
+      );
+    }
+
+    await prisma.$transaction([
+      prisma.folderMember.upsert({
+        where: {
+          folderId_userId: { folderId: invite.folderId, userId },
+        },
+        update: { role: invite.role },
+        create: { folderId: invite.folderId, userId, role: invite.role },
+      }),
+      prisma.folderInvite.update({
+        where: { id: invite.id },
+        data: { status: "ACCEPTED" },
+      }),
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      folderId: invite.folder.id,
+      folderName: invite.folder.name,
+    });
   } catch (error) {
     console.error("POST /api/folders/join error:", error);
     return NextResponse.json(
-      { error: "Failed to join folder" },
+      { error: "Failed to accept collection invitation" },
       { status: 500 },
     );
   }

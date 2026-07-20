@@ -9,6 +9,7 @@ import {
   Coffee,
   FolderPlus,
   Heart,
+  Headphones,
   Info,
   Loader2,
   MapPin,
@@ -60,6 +61,7 @@ export interface Venue {
   hasPhoneBooths?: boolean;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
+  hasAncHeadsetRental?: boolean;
   outletLocations?: string[];
 }
 
@@ -272,6 +274,17 @@ export function VenueChatCard({
                   </span>
                 </div>
               )}
+              {venue.hasAncHeadsetRental && (
+                <div
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/10 border border-violet-500/20"
+                  title="Active noise-cancelling headsets available for rent"
+                >
+                  <Headphones className="w-3 h-3 text-violet-600" />
+                  <span className="text-[9px] font-bold text-violet-600 uppercase">
+                    ANC Rental
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -296,7 +309,7 @@ export function VenueChatCard({
                   checked={isSelected}
                   onChange={() => onToggleCompare(venue)}
                   disabled={!isSelected && compareDisabled}
-                  className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+                  className="w-3.5 h-3.5 rounded accent-text disabled:opacity-50"
                 />
                 <span className="text-[10px] font-black uppercase tracking-tighter hidden sm:inline">
                   Compare
@@ -306,7 +319,7 @@ export function VenueChatCard({
 
             <button
               onClick={() => onBook(venue)}
-              className="joyride-booking p-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-all active:scale-[0.95]"
+              className="joyride-booking p-1.5 rounded-lg bg-[var(--primary-accent)] text-white hover:opacity-90 transition-all active:scale-[0.95]"
               title="Book Now"
             >
               <Zap className="w-3.5 h-3.5 fill-current" />
@@ -380,7 +393,7 @@ export function VenueChatCard({
                   checked={isSelected}
                   onChange={() => onToggleCompare(venue)}
                   disabled={!isSelected && compareDisabled}
-                  className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                  className="w-4 h-4 accent-text rounded border-zinc-300 focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] cursor-pointer disabled:opacity-50"
                 />
                 <label
                   htmlFor={`compare-card-${venue.id}`}
@@ -392,7 +405,7 @@ export function VenueChatCard({
             )}
 
             {venue.score != null && (
-              <div className="absolute top-3 right-3 flex flex-col items-center justify-center h-12 w-12 rounded-full bg-blue-600 text-white border-2 border-blue-400 shadow-2xl z-10">
+              <div className="absolute top-3 right-3 flex flex-col items-center justify-center h-12 w-12 rounded-full bg-[var(--primary-accent)] text-white border-2 border-[color-mix(in_srgb,var(--primary-accent),white_0.4)] shadow-2xl z-10">
                 <span className="text-[10px] font-black leading-none uppercase">
                   Vibe
                 </span>
@@ -447,6 +460,17 @@ export function VenueChatCard({
                     </span>
                   </div>
                 )}
+                {venue.hasAncHeadsetRental && (
+                  <div
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20"
+                    title="Active noise-cancelling headsets available for rent"
+                  >
+                    <Headphones className="w-3 h-3 text-violet-600" />
+                    <span className="text-[10px] font-bold text-violet-600 uppercase">
+                      ANC Rental
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
@@ -471,7 +495,7 @@ export function VenueChatCard({
                       e.stopPropagation();
                       onBook(venue);
                     }}
-                    className="joyride-booking flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-black text-xs shadow-lg uppercase tracking-tight active:scale-[0.98]"
+                    className="joyride-booking flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-[var(--primary-accent)] text-white hover:opacity-90 transition-all font-black text-xs shadow-lg uppercase tracking-tight active:scale-[0.98]"
                   >
                     <Zap className="w-3.5 h-3.5 fill-current" />
                     Book Now
@@ -681,7 +705,7 @@ export function VenueListings({
             onClick={() => setViewMode("card")}
             className={`p-1 rounded-md transition-all active:scale-90 ${
               viewMode === "card"
-                ? "bg-white dark:bg-zinc-800 text-blue-600 dark:text-blue-400 shadow-sm"
+                ? "bg-white dark:bg-zinc-800 accent-text dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] shadow-sm"
                 : "text-zinc-400 hover:text-zinc-600"
             }`}
             title="Card View"
@@ -693,7 +717,7 @@ export function VenueListings({
             onClick={() => setViewMode("list")}
             className={`p-1 rounded-md transition-all active:scale-90 ${
               viewMode === "list"
-                ? "bg-white dark:bg-zinc-800 text-blue-600 dark:text-blue-400 shadow-sm"
+                ? "bg-white dark:bg-zinc-800 accent-text dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] shadow-sm"
                 : "text-zinc-400 hover:text-zinc-600"
             }`}
             title="List View"
@@ -736,7 +760,7 @@ export function VenueListings({
           {(visibleCount < venues.length || onLoadMore) && (
             <div ref={observerTarget} className="py-4 flex justify-center">
               {isFetchingNextPage && (
-                <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+                <Loader2 className="w-6 h-6 accent-text animate-spin" />
               )}
             </div>
           )}
@@ -836,7 +860,7 @@ export function MessageList({
                 key={i}
                 onClick={() => onSuggestionClick(s)}
                 disabled={isLoading}
-                className="text-left px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                className="text-left cursor-pointer px-4 py-3 text-xs font-black uppercase tracking-tighter rounded-xl border-2 border-zinc-200 dark:border-zinc-800 hover:bg-[var(--primary-accent)] hover:text-white transition-all shadow-sm"
               >
                 {s}
               </button>
@@ -874,7 +898,7 @@ export function MessageList({
                     <div className="relative">
                       <MessageRenderer content={message.content} />
                       {message.isStreaming && (
-                        <span className="inline-flex gap-0.5 items-center ml-1 text-blue-600 dark:text-blue-400 font-black animate-pulse">
+                        <span className="inline-flex gap-0.5 items-center ml-1 accent-text dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] font-black animate-pulse">
                           <span>.</span>
                           <span>.</span>
                           <span>.</span>
@@ -912,7 +936,7 @@ export function MessageList({
                   </span>
                 )}
                 {message.complexity === "simple" && !message.cached && (
-                  <span className="flex items-center gap-1 px-2 py-1 rounded bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] font-bold uppercase tracking-wider">
+                  <span className="flex items-center gap-1 px-2 py-1 rounded accent-bg-10 accent-text accent-bg-dark-20 dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] text-[10px] font-bold uppercase tracking-wider">
                     ⚡ Simple Routing
                   </span>
                 )}
@@ -1159,15 +1183,15 @@ export function ChatInput({
 
   // ── Mic button styling ───────────────────────────────────────────────────
   const micButtonBase =
-    "p-3 rounded-xl transition-all active:scale-95 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500";
+    "p-3 rounded-xl transition-all active:scale-95 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--primary-accent)]";
 
   const micButtonStyle = !isSupported
     ? // Visually disabled but still focusable so screen readers can reach the
       // tooltip / aria-label describing why it is unavailable.
-      `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed opacity-60`
+      `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed opacity-60 cursor-pointer`
     : isListening
-      ? `${micButtonBase} bg-red-500 hover:bg-red-600 text-white animate-pulse`
-      : `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700`;
+      ? `${micButtonBase} bg-red-500 hover:bg-red-600 text-white animate-pulse cursor-pointer`
+      : `${micButtonBase} bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 cursor-pointer`;
 
   const micAriaLabel = !isSupported
     ? "Voice input is not supported in this browser"
@@ -1212,7 +1236,7 @@ export function ChatInput({
                     e.preventDefault();
                     onInputChange(term);
                   }}
-                  className="px-3 py-1.5 bg-zinc-100 hover:bg-blue-50 dark:bg-zinc-900 dark:hover:bg-blue-950/30 border border-zinc-200/50 dark:border-zinc-800 hover:border-blue-200 dark:hover:border-blue-900/50 text-[11px] font-black uppercase tracking-tight rounded-xl text-zinc-600 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 transition-all flex items-center gap-1"
+                  className="px-3 py-1.5 bg-zinc-100 accent-bg-hover dark:bg-zinc-900 accent-bg-dark-10 border border-zinc-200/50 dark:border-zinc-800 accent-border-20 accent-border-dark-20 text-[11px] font-black uppercase tracking-tight rounded-xl text-zinc-600 accent-text-hover dark:text-zinc-400 dark:text-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)] transition-all flex items-center gap-1"
                 >
                   {term}
                 </button>
@@ -1237,7 +1261,7 @@ export function ChatInput({
             type="button"
             aria-label="Dismiss voice input warning"
             onClick={() => setShowVoiceBanner(false)}
-            className="ml-auto shrink-0 rounded p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
+            className="ml-auto cursor-pointer shrink-0 rounded p-0.5 hover:bg-amber-200 dark:hover:bg-amber-800 transition-colors"
           >
             ✕
           </button>
@@ -1247,12 +1271,12 @@ export function ChatInput({
       <form
         id="ws-chat-form"
         onSubmit={handleFormSubmit}
-        className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:border-blue-600 transition-all shadow-inner"
+        className="flex gap-2 p-1 rounded-2xl bg-zinc-100 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 focus-within:accent-border transition-all shadow-inner"
       >
         <button
           type="button"
           onClick={handleMicClick}
-          className={`p-3 rounded-xl transition-all active:scale-95 shadow-lg group ${
+          className={`p-3 rounded-xl cursor-pointer transition-all active:scale-95 shadow-lg group ${
             isListening
               ? "bg-red-500 hover:bg-red-600 text-white animate-pulse"
               : "bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300"
@@ -1296,7 +1320,7 @@ export function ChatInput({
         <button
           type="submit"
           disabled={isLoading || !input.trim() || isOverLimit}
-          className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
+          className="p-3 bg-[var(--primary-accent)] cursor-pointer hover:opacity-90 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
         >
           {isLoading ? (
             <Loader2 className="w-5 h-5 animate-spin" />

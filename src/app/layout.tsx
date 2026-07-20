@@ -1,36 +1,62 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
+import { cookies, headers } from "next/headers";
+
 import "./globals.css";
+
 import I18nProvider from "../components/I18nProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
 import { SoundProvider } from "../components/SoundProvider";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
-import { headers, cookies } from "next/headers";
+import { CookieBanner } from "../components/CookieBanner";
 
 const THEME_INIT_SCRIPT = `
 (function () {
   try {
     var stored = localStorage.getItem("worksphere-theme");
-    var theme = stored === "light" || stored === "dark"
-      ? stored
-      : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    var theme =
+      stored === "light" || stored === "dark"
+        ? stored
+        : window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+
     var root = document.documentElement;
     root.classList.toggle("dark", theme === "dark");
     root.style.colorScheme = theme;
-    // Keep cookie synchronized so server can pre-render correctly
+
     if (document.cookie.indexOf("worksphere-theme=") === -1) {
-      document.cookie = "worksphere-theme=" + theme + "; path=/; max-age=31536000; SameSite=Lax";
+      document.cookie =
+        "worksphere-theme=" +
+        theme +
+        "; path=/; max-age=31536000; SameSite=Lax";
     }
-  } catch (e) {}
+  } catch {}
 
   try {
-    window.addEventListener("error", function (e) {
-      if (e.message && (e.message.indexOf("ResizeObserver") >= 0 || e.message.indexOf("Resize observer") >= 0)) {
-        e.stopImmediatePropagation();
+    var accentStored = localStorage.getItem("worksphere-accent");
+    var accentColors = {
+      blue: "#3b82f6",
+      purple: "#a855f7",
+      emerald: "#10b981",
+      amber: "#f59e0b"
+    };
+    var accent = accentColors[accentStored] || accentColors.blue;
+    document.documentElement.style.setProperty("--primary-accent", accent);
+  } catch {}
+
+  try {
+    window.addEventListener("error", function (event) {
+      if (
+        event.message &&
+        (event.message.indexOf("ResizeObserver") >= 0 ||
+          event.message.indexOf("Resize observer") >= 0)
+      ) {
+        event.stopImmediatePropagation();
       }
     });
-  } catch (e) {}
+  } catch {}
 })();
 `;
 
@@ -84,19 +110,31 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const headersList = await headers();
-  const pathname = headersList.get("x-pathname") || "";
+  const pathname = headersList.get("x-pathname") ?? "";
   const isAnalyticsPage = pathname.startsWith("/analytics");
 
-  const isDummyKey =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ===
+  const publishableKey =
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
     "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
 
-  const cookieStore = await cookies();
-  const theme =
-    (cookieStore.get("worksphere-theme")?.value as "light" | "dark") || "light";
+  const isDummyKey = publishableKey === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
 
-  const innerContent = (
-    <ThemeProvider initialTheme={theme}>
+  const cookieStore = await cookies();
+  const storedTheme = cookieStore.get("worksphere-theme")?.value;
+  const theme: "light" | "dark" =
+    storedTheme === "dark" || storedTheme === "light" ? storedTheme : "light";
+
+  const storedAccent = cookieStore.get("worksphere-accent")?.value;
+  const accent: "blue" | "purple" | "emerald" | "amber" =
+    storedAccent === "blue" ||
+    storedAccent === "purple" ||
+    storedAccent === "emerald" ||
+    storedAccent === "amber"
+      ? storedAccent
+      : "blue";
+
+  const appContent = (
+    <ThemeProvider initialTheme={theme} initialAccent={accent}>
       <SoundProvider>
         <I18nProvider>{children}</I18nProvider>
       </SoundProvider>
@@ -105,22 +143,19 @@ export default async function RootLayout({
 
   const bodyContent =
     isDummyKey && isAnalyticsPage ? (
-      innerContent
+      appContent
     ) : (
       <ClerkProvider
         afterSignOutUrl="/"
-        publishableKey={
-          process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-          "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk"
-        }
+        publishableKey={publishableKey}
         appearance={{
           elements: {
-            formButtonPrimary: "bg-blue-600 hover:bg-blue-700",
+            formButtonPrimary: "accent-bg hover:opacity-90",
             card: "shadow-xl",
           },
         }}
       >
-        {innerContent}
+        {appContent}
       </ClerkProvider>
     );
 
@@ -134,16 +169,16 @@ export default async function RootLayout({
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        {/* Sets the theme class before first paint so the sun/moon icon
-            never flashes the wrong state on load. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
+
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning
       >
         <ScrollProgress />
         {bodyContent}
+        <CookieBanner />
       </body>
     </html>
   );

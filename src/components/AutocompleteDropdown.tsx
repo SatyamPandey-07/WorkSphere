@@ -216,7 +216,7 @@ export function AutocompleteDropdown({
                 onMouseEnter={() => setSelectedIndex(itemIndex)}
                 className={`w-full text-left px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-tighter transition-all ${
                   isSelected
-                    ? "bg-blue-600 text-white shadow-lg"
+                    ? "accent-bg text-white shadow-lg"
                     : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                 }`}
                 whileHover={{ scale: 1.02 }}

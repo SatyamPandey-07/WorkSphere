@@ -2,7 +2,16 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { ArrowLeft, Shield, Lock, Eye, ShieldAlert, CheckCircle, Mail, MapPin } from "lucide-react";
+import {
+  ArrowLeft,
+  Shield,
+  Lock,
+  Eye,
+  ShieldAlert,
+  CheckCircle,
+  Mail,
+  MapPin,
+} from "lucide-react";
 import SiteFooter from "@/components/site-footer";
 
 const sections = [
@@ -85,7 +94,7 @@ export default function PrivacyPolicyPage() {
       {/* Page Title & Main Content Grid */}
       <main className="container mx-auto px-4 py-12 max-w-6xl flex-grow">
         <div className="mb-12">
-          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-blue-500/30 bg-blue-500/10 text-xs font-semibold text-blue-400 mb-4 backdrop-blur-sm">
+          <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full accent-border-30 accent-bg-10 accent-text text-xs font-semibold mb-4 backdrop-blur-sm">
             <Shield className="w-3.5 h-3.5" />
             Privacy Policy
           </span>
@@ -111,9 +120,16 @@ export default function PrivacyPolicyPage() {
                     onClick={() => scrollToSection(section.id)}
                     className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                       activeSection === section.id
-                        ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md shadow-blue-500/10"
+                        ? "text-white shadow-md shadow-[var(--primary-accent)]/10"
                         : "text-white/60 hover:text-white hover:bg-white/5"
                     }`}
+                    style={
+                      activeSection === section.id
+                        ? {
+                            background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 70%, #7c3aed))`,
+                          }
+                        : undefined
+                    }
                   >
                     {section.label}
                   </button>
@@ -132,10 +148,16 @@ export default function PrivacyPolicyPage() {
               </h2>
               <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
                 <p>
-                  Welcome to WorkSphere. We value your privacy and are committed to protecting your personal data. This Privacy Policy describes how we collect, use, process, and disclose your information when you access or use the WorkSphere platform.
+                  Welcome to WorkSphere. We value your privacy and are committed
+                  to protecting your personal data. This Privacy Policy
+                  describes how we collect, use, process, and disclose your
+                  information when you access or use the WorkSphere platform.
                 </p>
                 <p>
-                  By accessing or using WorkSphere, you agree to the collection and use of information in accordance with this policy. If you do not agree with any terms in this policy, please discontinue use of our service immediately.
+                  By accessing or using WorkSphere, you agree to the collection
+                  and use of information in accordance with this policy. If you
+                  do not agree with any terms in this policy, please discontinue
+                  use of our service immediately.
                 </p>
               </div>
             </section>
@@ -148,31 +170,41 @@ export default function PrivacyPolicyPage() {
               </h2>
               <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
                 <p>
-                  We collect information to provide a tailored, feature-rich workspace search experience. This includes:
+                  We collect information to provide a tailored, feature-rich
+                  workspace search experience. This includes:
                 </p>
                 <ul className="space-y-3.5 list-none pl-0">
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
                     <span>
-                      <strong>Account Information:</strong> If you sign up or log in via Clerk, we collect your email address, first name, last name, and profile picture.
+                      <strong>Account Information:</strong> If you sign up or
+                      log in via Clerk, we collect your email address, first
+                      name, last name, and profile picture.
                     </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
                     <span>
-                      <strong>Usage & Search Parameters:</strong> We track search parameters such as wifi requirements, noise preferences, target category, and approximate search radius.
+                      <strong>Usage & Search Parameters:</strong> We track
+                      search parameters such as wifi requirements, noise
+                      preferences, target category, and approximate search
+                      radius.
                     </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
                     <span>
-                      <strong>Booking details:</strong> When you book a workspace, we store confirmation details, schedules, customer email, and optionally a phone number.
+                      <strong>Booking details:</strong> When you book a
+                      workspace, we store confirmation details, schedules,
+                      customer email, and optionally a phone number.
                     </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
                     <span>
-                      <strong>Geolocation Data:</strong> We access your coordinates with your explicit consent to find workspaces in your proximity.
+                      <strong>Geolocation Data:</strong> We access your
+                      coordinates with your explicit consent to find workspaces
+                      in your proximity.
                     </span>
                   </li>
                 </ul>
@@ -186,23 +218,37 @@ export default function PrivacyPolicyPage() {
                 How We Use Information
               </h2>
               <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
-                <p>We process your personal information for the following legitimate business purposes:</p>
+                <p>
+                  We process your personal information for the following
+                  legitimate business purposes:
+                </p>
                 <ul className="space-y-3.5 list-none pl-0">
                   <li className="flex items-start gap-3">
                     <Eye className="w-4 h-4 text-blue-400 mt-1 shrink-0" />
-                    <span>To run, maintain, and optimize the AI workspace finder recommendation engine.</span>
+                    <span>
+                      To run, maintain, and optimize the AI workspace finder
+                      recommendation engine.
+                    </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <Eye className="w-4 h-4 text-blue-400 mt-1 shrink-0" />
-                    <span>To dispatch secure transactional email confirmations for reservation bookings.</span>
+                    <span>
+                      To dispatch secure transactional email confirmations for
+                      reservation bookings.
+                    </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <Eye className="w-4 h-4 text-blue-400 mt-1 shrink-0" />
-                    <span>To monitor overall system performance, analytics counters, and prevent system abuse.</span>
+                    <span>
+                      To monitor overall system performance, analytics counters,
+                      and prevent system abuse.
+                    </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <Eye className="w-4 h-4 text-blue-400 mt-1 shrink-0" />
-                    <span>To deliver newsletter email updates, if you opt in.</span>
+                    <span>
+                      To deliver newsletter email updates, if you opt in.
+                    </span>
                   </li>
                 </ul>
               </div>
@@ -216,10 +262,15 @@ export default function PrivacyPolicyPage() {
               </h2>
               <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
                 <p>
-                  WorkSphere utilizes local storage and authentication cookies (via Clerk) to maintain user session persistence and secure access.
+                  WorkSphere utilizes local storage and authentication cookies
+                  (via Clerk) to maintain user session persistence and secure
+                  access.
                 </p>
                 <p>
-                  We also use cookies for caching search history and UI preferences. You can configure your browser to reject all cookies, but certain core features of the search application may become disabled.
+                  We also use cookies for caching search history and UI
+                  preferences. You can configure your browser to reject all
+                  cookies, but certain core features of the search application
+                  may become disabled.
                 </p>
               </div>
             </section>
@@ -234,11 +285,17 @@ export default function PrivacyPolicyPage() {
                 <p className="flex items-start gap-3">
                   <Lock className="w-4 h-4 text-amber-400 mt-1 shrink-0 animate-pulse" />
                   <span>
-                    Our primary database is hosted on Supabase (PostgreSQL), protected with modern TLS encryption protocols. User authentication flows are managed entirely through Clerk, ensuring no passwords or sensitive login credentials ever touch or reside on our database servers.
+                    Our primary database is hosted on Supabase (PostgreSQL),
+                    protected with modern TLS encryption protocols. User
+                    authentication flows are managed entirely through Clerk,
+                    ensuring no passwords or sensitive login credentials ever
+                    touch or reside on our database servers.
                   </span>
                 </p>
                 <p>
-                  While we implement strong industrial safeguards, no method of transmission or digital storage is 100% secure. Therefore, we cannot guarantee absolute security.
+                  While we implement strong industrial safeguards, no method of
+                  transmission or digital storage is 100% secure. Therefore, we
+                  cannot guarantee absolute security.
                 </p>
               </div>
             </section>
@@ -250,19 +307,31 @@ export default function PrivacyPolicyPage() {
                 Your Rights & Choices
               </h2>
               <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
-                <p>Depending on your legal jurisdiction (such as GDPR or CCPA), you possess the following rights:</p>
+                <p>
+                  Depending on your legal jurisdiction (such as GDPR or CCPA),
+                  you possess the following rights:
+                </p>
                 <ul className="space-y-3.5 list-none pl-0">
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
-                    <span>The right to access, edit, or delete your account records directly via the Clerk User Profile modal.</span>
+                    <span>
+                      The right to access, edit, or delete your account records
+                      directly via the Clerk User Profile modal.
+                    </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
-                    <span>The right to unsubscribe from our newsletter lists by clicking the link at the bottom of any email.</span>
+                    <span>
+                      The right to unsubscribe from our newsletter lists by
+                      clicking the link at the bottom of any email.
+                    </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
-                    <span>The right to request deletion of all your booking history from our local database.</span>
+                    <span>
+                      The right to request deletion of all your booking history
+                      from our local database.
+                    </span>
                   </li>
                 </ul>
               </div>
@@ -278,12 +347,23 @@ export default function PrivacyPolicyPage() {
                 <p className="flex items-start gap-3">
                   <ShieldAlert className="w-4 h-4 text-rose-400 mt-1 shrink-0" />
                   <span>
-                    We may update our Privacy Policy periodically to reflect shifts in our legal structure, scaling features, or changes in regulatory guidelines. Any modifications will be posted here with a revised "Last Updated" timestamp.
+                    We may update our Privacy Policy periodically to reflect
+                    shifts in our legal structure, scaling features, or changes
+                    in regulatory guidelines. Any modifications will be posted
+                    here with a revised "Last Updated" timestamp.
                   </span>
                 </p>
                 <p className="flex items-center gap-2 text-white/50 text-sm">
-                  <Mail className="w-4 h-4 text-blue-400" />
-                  <span>Have inquiries? Contact us at: <a href="mailto:support@worksphere.io" className="text-blue-400 hover:underline">support@worksphere.io</a></span>
+                  <Mail className="w-4 h-4 accent-text" />
+                  <span>
+                    Have inquiries? Contact us at:{" "}
+                    <a
+                      href="mailto:support@worksphere.io"
+                      className="accent-text hover:underline"
+                    >
+                      support@worksphere.io
+                    </a>
+                  </span>
                 </p>
               </div>
             </section>

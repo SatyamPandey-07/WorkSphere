@@ -59,7 +59,6 @@ export default function Home() {
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:60px_60px]" />
       </div>
 
-      {/* Navigation */}
       <TopNav />
 
       {/* Hero */}
@@ -116,11 +115,7 @@ export default function Home() {
             <Show when="signed-out">
               <Link
                 href="/sign-up"
-                className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(to right, #2563eb, #7c3aed)",
-                }}
+                className="group px-8 py-4 rounded-2xl accent-bg text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
               >
                 Start for Free
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -132,15 +127,11 @@ export default function Home() {
                 See Features
               </a>
             </Show>
-            
+
             <Show when="signed-in">
               <Link
                 href="/ai"
-                className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
-                style={{
-                  backgroundImage:
-                    "linear-gradient(to right, #2563eb, #7c3aed)",
-                }}
+                className="group px-8 py-4 rounded-2xl accent-bg text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
               >
                 Open Dashboard
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -272,7 +263,7 @@ export default function Home() {
           className={`mb-24 transition-all duration-1000 delay-300 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
         >
           <div className="text-center mb-12">
-            <span className="text-xs font-semibold tracking-widest text-blue-600 dark:text-blue-400 uppercase">
+            <span className="text-xs font-semibold tracking-widest accent-text uppercase">
               Everything you need
             </span>
             <h2 className="text-3xl md:text-4xl font-bold text-zinc-900 dark:text-white mt-3 mb-4">
@@ -426,7 +417,7 @@ export default function Home() {
             </p>
             <Link
               href="/ai"
-              className="group inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-white text-blue-700 font-bold text-base hover:bg-zinc-100 transition-all shadow-2xl hover:shadow-white/20 hover:scale-105"
+              className="group inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-white accent-text font-bold text-base hover:bg-zinc-100 transition-all shadow-2xl hover:shadow-white/20 hover:scale-105"
             >
               Get Started Free
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
@@ -442,7 +433,7 @@ export default function Home() {
       {scrollY > 300 && (
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="fixed bottom-6 left-6 z-50 p-3 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 text-white shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 hover:scale-110 active:scale-95 transition-all duration-300 border border-white/10 cursor-pointer group"
+          className="fixed bottom-6 left-6 z-50 p-3 rounded-xl accent-bg text-white shadow-lg shadow-blue-500/20 hover:shadow-blue-500/40 hover:scale-110 active:scale-95 transition-all duration-300 border border-white/10 cursor-pointer group"
           aria-label="Scroll to top"
         >
           <ArrowUp className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
@@ -468,8 +459,8 @@ function FeatureCard({
   const accents: Record<string, { glow: string; text: string; bg: string }> = {
     blue: {
       glow: "hover:shadow-blue-500/20",
-      text: "text-blue-400",
-      bg: "bg-blue-500/10",
+      text: "accent-text",
+      bg: "accent-bg-10",
     },
     green: {
       glow: "hover:shadow-green-500/20",

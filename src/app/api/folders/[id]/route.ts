@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { hasFolderAccess } from "@/lib/folders";
+import { deleteFolderWithRelations, hasFolderAccess } from "@/lib/folders";
 
 const updateFolderSchema = z.object({
   name: z.string().min(1, "Folder name is required").max(100).optional(),
@@ -138,9 +138,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    await prisma.folder.delete({
-      where: { id }
-    });
+    await deleteFolderWithRelations(id);
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -24,6 +24,7 @@ interface VenueFormData {
   hasPhoneBooths: boolean;
   hasNoMusic: boolean;
   hasQuietZone: boolean;
+  hasAncHeadsetRental: boolean;
   singleOriginBeans: boolean;
   specialtyEspresso: boolean;
   oatAlmondMilk: boolean;
@@ -67,6 +68,7 @@ export function VenueSubmissionModal({
     hasPhoneBooths: false,
     hasNoMusic: false,
     hasQuietZone: false,
+    hasAncHeadsetRental: false,
     singleOriginBeans: false,
     specialtyEspresso: false,
     oatAlmondMilk: false,
@@ -154,6 +156,7 @@ export function VenueSubmissionModal({
           hasPhoneBooths: formData.hasPhoneBooths,
           hasNoMusic: formData.hasNoMusic,
           hasQuietZone: formData.hasQuietZone,
+          hasAncHeadsetRental: formData.hasAncHeadsetRental,
           singleOriginBeans: formData.singleOriginBeans,
           specialtyEspresso: formData.specialtyEspresso,
           oatAlmondMilk: formData.oatAlmondMilk,
@@ -190,6 +193,7 @@ export function VenueSubmissionModal({
           hasPhoneBooths: false,
           hasNoMusic: false,
           hasQuietZone: false,
+          hasAncHeadsetRental: false,
           singleOriginBeans: false,
           specialtyEspresso: false,
           oatAlmondMilk: false,
@@ -315,7 +319,7 @@ export function VenueSubmissionModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -349,7 +353,7 @@ export function VenueSubmissionModal({
                 setFormData((prev) => ({ ...prev, name: e.target.value }))
               }
               placeholder="e.g., Blue Bottle Coffee"
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-[var(--primary-accent)] outline-none"
               required
             />
           </div>
@@ -366,7 +370,7 @@ export function VenueSubmissionModal({
                   category: e.target.value as VenueFormData["category"],
                 }))
               }
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-50 focus:ring-2 focus:ring-[var(--primary-accent)] outline-none"
             >
               <option value="cafe">☕ Cafe</option>
               <option value="coworking">🏢 Coworking Space</option>
@@ -408,7 +412,7 @@ export function VenueSubmissionModal({
               <button
                 type="button"
                 onClick={handleUseMyLocation}
-                className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md transition-all active:scale-95"
+                className="px-3 py-2 accent-bg cursor-pointer text-white rounded-lg accent-bg-hover shadow-md transition-all active:scale-95"
               >
                 <MapPin className="w-5 h-5" />
               </button>
@@ -425,7 +429,7 @@ export function VenueSubmissionModal({
               <div
                 className={`relative flex flex-col items-center justify-center w-full p-6 border-2 border-dashed rounded-lg cursor-pointer transition-all ${
                   dragActive
-                    ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                    ? "accent-border accent-bg-10 accent-bg-dark-20"
                     : "border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                 }`}
                 onDragEnter={handleDrag}
@@ -498,7 +502,7 @@ export function VenueSubmissionModal({
                       hasPhoneBooths: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 Phone Booths Available
               </label>
@@ -513,7 +517,7 @@ export function VenueSubmissionModal({
                       hasNoMusic: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 No Background Music
               </label>
@@ -528,9 +532,23 @@ export function VenueSubmissionModal({
                       hasQuietZone: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 Strict Silence Zones
+              </label>
+              <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={formData.hasAncHeadsetRental}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      hasAncHeadsetRental: e.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
+                />
+                🎧 ANC Headset Rentals Available
               </label>
               <label className="flex items-center gap-3 text-sm text-zinc-700 dark:text-zinc-300">
                 <input
@@ -542,7 +560,7 @@ export function VenueSubmissionModal({
                       singleOriginBeans: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 ☕ Single-Origin Beans
               </label>
@@ -557,7 +575,7 @@ export function VenueSubmissionModal({
                       specialtyEspresso: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 ⚙️ Specialty Espresso Machine
               </label>
@@ -572,7 +590,7 @@ export function VenueSubmissionModal({
                       oatAlmondMilk: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 🥛 Oat / Almond Milk Available
               </label>
@@ -587,7 +605,7 @@ export function VenueSubmissionModal({
                       pourOverAvailable: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 🫖 Pour-Over Available
               </label>
@@ -602,7 +620,7 @@ export function VenueSubmissionModal({
                       petsAllowedIndoors: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 🐶 Pets Allowed Indoors
               </label>
@@ -617,7 +635,7 @@ export function VenueSubmissionModal({
                       patioOnly: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 🌿 Patio Only (Pets allowed outdoors only)
               </label>
@@ -632,7 +650,7 @@ export function VenueSubmissionModal({
                       waterBowlsProvided: e.target.checked,
                     }))
                   }
-                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-blue-600 focus:ring-blue-500"
+                  className="h-4 w-4 rounded bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 accent-text focus:ring-[var(--primary-accent)]"
                 />
                 💧 Water Bowls Provided for Pets
               </label>
@@ -642,7 +660,7 @@ export function VenueSubmissionModal({
           <button
             type="submit"
             disabled={isSubmitting || !isSignedIn}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest rounded-lg disabled:opacity-50 transition-all shadow-lg glow-blue active:scale-[0.98]"
+            className="w-full cursor-pointer flex items-center justify-center gap-2 py-3 accent-bg accent-bg-hover text-white font-black uppercase tracking-widest rounded-lg disabled:opacity-50 transition-all shadow-lg glow-accent active:scale-[0.98]"
           >
             {isSubmitting ? (
               <>

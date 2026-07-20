@@ -61,85 +61,150 @@ export async function POST(
 
     const targetPlaceId = venueData?.placeId || venueId;
 
-    // Check if venue exists, create/update if not (identify by placeId)
-    const dbVenue = await prisma.venue.upsert({
-      where: { placeId: targetPlaceId },
-      update: {
-        name: venueData?.name || "Unknown Venue",
-        address: venueData?.address || null,
-        category: venueData?.category || "other",
-      },
-      create: {
-        placeId: targetPlaceId,
-        name: venueData?.name || "Unknown Venue",
-        latitude: venueData?.lat || venueData?.latitude || 0,
-        longitude: venueData?.lng || venueData?.longitude || 0,
-        category: venueData?.category || "other",
-        address: venueData?.address || null,
-      },
-    });
+    // Helper function to safely upsert venue handling concurrent creation/updates
+    async function executeVenueUpsert() {
+      let retries = 0;
+      while (retries < 3) {
+        try {
+          return await prisma.venue.upsert({
+            where: { placeId: targetPlaceId },
+            update: {
+              name: venueData?.name || "Unknown Venue",
+              address: venueData?.address || null,
+              category: venueData?.category || "other",
+            },
+            create: {
+              placeId: targetPlaceId,
+              name: venueData?.name || "Unknown Venue",
+              latitude: venueData?.lat || venueData?.latitude || 0,
+              longitude: venueData?.lng || venueData?.longitude || 0,
+              category: venueData?.category || "other",
+              address: venueData?.address || null,
+            },
+          });
+        } catch (err: any) {
+          retries++;
+          if (err?.code === "P2002" || err?.code === "P2034") {
+            const existing = await prisma.venue.findFirst({
+              where: {
+                OR: [{ placeId: targetPlaceId }, { id: targetPlaceId }],
+              },
+            });
+            if (existing) return existing;
+            await new Promise((res) => setTimeout(res, 50 * retries));
+          } else {
+            throw err;
+          }
+        }
+      }
+      return await prisma.venue.findFirstOrThrow({
+        where: { OR: [{ placeId: targetPlaceId }, { id: targetPlaceId }] },
+      });
+    }
 
+    const dbVenue = await executeVenueUpsert();
     const finalVenueId = dbVenue.id;
 
-    // Upsert rating (user can only have one rating per venue)
-    const rating = await prisma.venueRating.upsert({
-      where: {
-        userId_venueId: {
-          userId,
-          venueId: finalVenueId,
+    const ratingUpdatePayload = {
+      wifiQuality,
+      hasOutlets,
+      noiseLevel,
+      avgDecibels: avgDecibels || null,
+      peakDecibels: peakDecibels || null,
+      hasErgonomic,
+      outletDensity,
+      wifiSpeed,
+      comment,
+      speedtestPhoto,
+      hasPhoneBooths,
+      hasNoMusic,
+      hasQuietZone,
+      lighting,
+      musicStyle,
+      powerTypes: powerTypes || [],
+      outletLocations: outletLocations || [],
+      petsAllowedIndoors,
+      patioOnly,
+      waterBowlsProvided,
+      dogFriendly,
+      catsAllowed,
+    };
+
+    const ratingCreatePayload = {
+      userId,
+      venueId: finalVenueId,
+      wifiQuality,
+      hasOutlets,
+      noiseLevel,
+      avgDecibels: avgDecibels || null,
+      peakDecibels: peakDecibels || null,
+      hasErgonomic: hasErgonomic || false,
+      outletDensity: outletDensity || "none",
+      wifiSpeed: wifiSpeed || null,
+      comment,
+      speedtestPhoto,
+      hasPhoneBooths: hasPhoneBooths || false,
+      hasNoMusic: hasNoMusic || false,
+      hasQuietZone: hasQuietZone || false,
+      lighting: lighting || null,
+      musicStyle,
+      powerTypes: powerTypes || [],
+      outletLocations: outletLocations || [],
+      petsAllowedIndoors: petsAllowedIndoors || false,
+      patioOnly: patioOnly || false,
+      waterBowlsProvided: waterBowlsProvided || false,
+      dogFriendly: dogFriendly || false,
+      catsAllowed: catsAllowed || false,
+    };
+
+    // Helper function to safely upsert rating handling concurrent user review updates
+    async function executeRatingUpsert() {
+      let retries = 0;
+      while (retries < 3) {
+        try {
+          return await prisma.venueRating.upsert({
+            where: {
+              userId_venueId: {
+                userId,
+                venueId: finalVenueId,
+              },
+            },
+            update: ratingUpdatePayload,
+            create: ratingCreatePayload,
+          });
+        } catch (err: any) {
+          retries++;
+          if (err?.code === "P2002" || err?.code === "P2034") {
+            try {
+              return await prisma.venueRating.update({
+                where: {
+                  userId_venueId: {
+                    userId,
+                    venueId: finalVenueId,
+                  },
+                },
+                data: ratingUpdatePayload,
+              });
+            } catch {
+              if (retries >= 3) throw err;
+              await new Promise((res) => setTimeout(res, 50 * retries));
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
+      return await prisma.venueRating.findUniqueOrThrow({
+        where: {
+          userId_venueId: {
+            userId,
+            venueId: finalVenueId,
+          },
         },
-      },
-      update: {
-        wifiQuality,
-        hasOutlets,
-        noiseLevel,
-        avgDecibels: avgDecibels || null,
-        peakDecibels: peakDecibels || null,
-        hasErgonomic,
-        outletDensity,
-        wifiSpeed,
-        comment,
-        speedtestPhoto,
-        hasPhoneBooths,
-        hasNoMusic,
-        hasQuietZone,
-        lighting,
-        musicStyle,
-        powerTypes: powerTypes || [],
-        outletLocations: outletLocations || [],
-        petsAllowedIndoors,
-        patioOnly,
-        waterBowlsProvided,
-        dogFriendly,
-        catsAllowed,
-      },
-      create: {
-        userId,
-        venueId: finalVenueId,
-        wifiQuality,
-        hasOutlets,
-        noiseLevel,
-        avgDecibels: avgDecibels || null,
-        peakDecibels: peakDecibels || null,
-        hasErgonomic: hasErgonomic || false,
-        outletDensity: outletDensity || "none",
-        wifiSpeed: wifiSpeed || null,
-        comment,
-        speedtestPhoto,
-        hasPhoneBooths: hasPhoneBooths || false,
-        hasNoMusic: hasNoMusic || false,
-        hasQuietZone: hasQuietZone || false,
-        lighting: lighting || null,
-        musicStyle,
-        powerTypes: powerTypes || [],
-        outletLocations: outletLocations || [],
-        petsAllowedIndoors: petsAllowedIndoors || false,
-        patioOnly: patioOnly || false,
-        waterBowlsProvided: waterBowlsProvided || false,
-        dogFriendly: dogFriendly || false,
-        catsAllowed: catsAllowed || false,
-      },
-    });
+      });
+    }
+
+    const rating = await executeRatingUpsert();
 
     // Create WifiTelemetry entry if all speed/latency/crowd data is provided
     if (downloadSpeed && uploadSpeed && latency && crowdLevel) {

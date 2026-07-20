@@ -167,6 +167,7 @@ export function VenueRatingDialog({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (isSubmitting) return;
 
     if (hasOutlets === null) {
       alert("Please indicate if outlets are available");

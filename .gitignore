@@ -44,3 +44,6 @@ next-env.d.ts
 /.clerk/
 .partykit/
 .partykit/
+
+# circom build scratch (wasm/zkey for the app live in public/zkp)
+/circuits/build/

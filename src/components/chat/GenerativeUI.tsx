@@ -78,6 +78,13 @@ export function DataChart({
 }) {
   if (!data || data.length === 0) return <div>No data available</div>;
 
+  const accentHex =
+    typeof window !== "undefined"
+      ? getComputedStyle(document.documentElement)
+          .getPropertyValue("--primary-accent")
+          .trim() || "#3b82f6"
+      : "#3b82f6";
+
   const xAxisKey = columns[0];
   const dataKeys = columns.slice(1);
 
@@ -121,7 +128,7 @@ export function DataChart({
             <Bar
               key={key}
               dataKey={key}
-              fill={i === 0 ? "#3b82f6" : i === 1 ? "#10b981" : "#f59e0b"}
+              fill={i === 0 ? accentHex : i === 1 ? "#10b981" : "#f59e0b"}
               radius={[4, 4, 0, 0]}
               maxBarSize={40}
             />

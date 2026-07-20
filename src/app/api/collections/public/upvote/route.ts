@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/rateLimit";
 import { z } from "zod";
+
+const UPVOTE_RATE_LIMIT = 5;
 
 const upvoteSchema = z.object({
   folderId: z.string().min(1, "Folder ID is required"),
@@ -14,6 +17,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const allowed = await rateLimit(`upvote:${userId}`, UPVOTE_RATE_LIMIT);
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please slow down." },
+        { status: 429 },
+      );
+    }
+
     const body = await req.json();
     const validation = upvoteSchema.safeParse(body);
     if (!validation.success) {
@@ -22,82 +33,60 @@ export async function POST(req: NextRequest) {
 
     const { folderId } = validation.data;
 
-    // Verify folder exists and is public
-    const folder = await prisma.folder.findUnique({
-      where: { id: folderId },
-    });
+    const result = await prisma.$transaction(async (tx) => {
+      const folder = await tx.folder.findUnique({
+        where: { id: folderId },
+      });
 
-    if (!folder) {
-      return NextResponse.json({ error: "Collection not found" }, { status: 404 });
-    }
-    if (!folder.isPublic) {
-      return NextResponse.json({ error: "Cannot vote on private collections" }, { status: 400 });
-    }
+      if (!folder) {
+        throw new Error("NOT_FOUND");
+      }
+      if (!folder.isPublic) {
+        throw new Error("NOT_PUBLIC");
+      }
 
-    // Check if user has already upvoted
-    const existingUpvote = await prisma.folderUpvote.findUnique({
-      where: {
-        folderId_userId: {
-          folderId,
-          userId,
-        },
-      },
-    });
-
-    let hasUpvoted = false;
-    let newUpvoteCount = folder.upvotes;
-
-    if (existingUpvote) {
-      // Toggle off: remove upvote
-      await prisma.$transaction([
-        prisma.folderUpvote.delete({
-          where: {
-            id: existingUpvote.id,
-          },
-        }),
-        prisma.folder.update({
-          where: { id: folderId },
-          data: {
-            upvotes: {
-              decrement: 1,
-            },
-          },
-        }),
-      ]);
-      newUpvoteCount -= 1;
-      hasUpvoted = false;
-    } else {
-      // Toggle on: add upvote
-      await prisma.$transaction([
-        prisma.folderUpvote.create({
-          data: {
+      const existingUpvote = await tx.folderUpvote.findUnique({
+        where: {
+          folderId_userId: {
             folderId,
             userId,
           },
-        }),
-        prisma.folder.update({
-          where: { id: folderId },
-          data: {
-            upvotes: {
-              increment: 1,
-            },
-          },
-        }),
-      ]);
-      newUpvoteCount += 1;
-      hasUpvoted = true;
-    }
+        },
+      });
 
-    return NextResponse.json({ 
-      success: true, 
-      hasUpvoted, 
-      upvotes: newUpvoteCount 
+      if (existingUpvote) {
+        await tx.folderUpvote.delete({
+          where: { id: existingUpvote.id },
+        });
+        await tx.folder.update({
+          where: { id: folderId },
+          data: { upvotes: { decrement: 1 } },
+        });
+        return { hasUpvoted: false, upvotes: folder.upvotes - 1 };
+      }
+
+      await tx.folderUpvote.create({
+        data: { folderId, userId },
+      });
+      await tx.folder.update({
+        where: { id: folderId },
+        data: { upvotes: { increment: 1 } },
+      });
+      return { hasUpvoted: true, upvotes: folder.upvotes + 1 };
     });
-  } catch (error) {
+
+    return NextResponse.json({ success: true, ...result });
+  } catch (error: any) {
+    if (error?.message === "NOT_FOUND") {
+      return NextResponse.json({ error: "Collection not found" }, { status: 404 });
+    }
+    if (error?.message === "NOT_PUBLIC") {
+      return NextResponse.json({ error: "Cannot vote on private collections" }, { status: 400 });
+    }
     console.error("POST /api/collections/public/upvote error:", error);
     return NextResponse.json(
       { error: "Failed to process upvote" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

@@ -44,6 +44,7 @@ export default async function SessionPage({
       venue: true,
       host: {
         select: {
+          id: true,
           firstName: true,
           lastName: true,
         },
@@ -55,6 +56,7 @@ export default async function SessionPage({
               id: true,
               firstName: true,
               lastName: true,
+              imageUrl: true,
             },
           },
         },

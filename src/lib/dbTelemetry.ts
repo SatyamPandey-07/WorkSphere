@@ -1,4 +1,5 @@
 import { Redis } from "@upstash/redis";
+import { recordApiLatency } from "@/lib/performanceTelemetry";
 
 /**
  * Lightweight DB query latency telemetry.
@@ -94,6 +95,9 @@ export function recordQueryDuration(model: string, durationMs: number) {
   }
 
   samplesByModel.set(key, samples);
+
+  // Feed into performance telemetry
+  recordApiLatency(`prisma:${key}`, Math.round(durationMs), "local");
 
   // Write to Upstash Redis asynchronously if configured
   const redis = getRedis();

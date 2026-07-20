@@ -78,15 +78,13 @@ export function WorkStyleProfile() {
         {isLoading ? (
           <span className="text-zinc-400">Loading...</span>
         ) : (
-          <span className="font-bold text-blue-600">
-            {profile || "Not Set"}
-          </span>
+          <span className="font-bold accent-text">{profile || "Not Set"}</span>
         )}
       </p>
 
       <button
         onClick={() => setIsOpen(true)}
-        className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors w-full"
+        className="px-4 py-2 text-sm accent-bg text-white rounded-lg accent-bg-hover transition-colors w-full"
       >
         Discover Your Work Style
       </button>
@@ -165,7 +163,7 @@ export function WorkStyleProfile() {
 
               <button
                 type="submit"
-                className="w-full px-4 py-2 mt-4 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="w-full px-4 py-2 mt-4 text-sm accent-bg text-white rounded-lg accent-bg-hover transition-colors"
               >
                 Save Profile
               </button>

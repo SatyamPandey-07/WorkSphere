@@ -43,6 +43,11 @@ export default function FolderDetailsPage({
     quietOnly: false,
   });
 
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const handleExportBilling = async () => {
     try {
       setExporting(true);
@@ -115,7 +120,7 @@ export default function FolderDetailsPage({
   // Real-time synchronization
   usePartySocket({
     host: "127.0.0.1:1999",
-    room: `folder-${id}`,
+    room: isMounted ? `folder-${id}` : undefined,
     onMessage(event) {
       try {
         const data = JSON.parse(event.data);
@@ -188,10 +193,7 @@ export default function FolderDetailsPage({
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50">
         <p>{error}</p>
-        <Link
-          href="/collections"
-          className="mt-4 text-blue-500 hover:underline"
-        >
+        <Link href="/collections" className="mt-4 accent-text hover:underline">
           Back to Collections
         </Link>
       </div>
@@ -376,7 +378,7 @@ export default function FolderDetailsPage({
             {userRole === "OWNER" && (
               <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm">
                 <h2 className="text-lg font-semibold text-zinc-900 dark:text-white flex items-center gap-2 mb-4">
-                  <Globe className="w-5 h-5 text-blue-500" /> Share Settings
+                  <Globe className="w-5 h-5 accent-text" /> Share Settings
                 </h2>
                 <div className="flex items-center justify-between">
                   <div>
@@ -390,9 +392,9 @@ export default function FolderDetailsPage({
                   <button
                     onClick={togglePublic}
                     disabled={updatingPublic}
-                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] ${
                       folder.isPublic
-                        ? "bg-blue-600"
+                        ? "accent-bg"
                         : "bg-zinc-200 dark:bg-zinc-800"
                     }`}
                   >
@@ -407,12 +409,12 @@ export default function FolderDetailsPage({
             )}
 
             {userRole === "VIEWER" && (
-              <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900 rounded-2xl p-5 shadow-sm text-center">
-                <Globe className="w-8 h-8 text-blue-500 mx-auto mb-2 animate-pulse" />
-                <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+              <div className="accent-bg-10 accent-bg-dark-30 accent-border accent-border-dark-30 rounded-2xl p-5 shadow-sm text-center">
+                <Globe className="w-8 h-8 accent-text mx-auto mb-2 animate-pulse" />
+                <h3 className="text-sm font-semibold accent-text">
                   Public Collection
                 </h3>
-                <p className="text-xs text-blue-700/80 dark:text-blue-400 mt-1">
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
                   You are discovering this list shared by a WorkSphere community
                   member.
                 </p>
@@ -454,7 +456,7 @@ export default function FolderDetailsPage({
                 >
                   <div>
                     <h3 className="text-sm font-medium text-zinc-900 dark:text-white flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-blue-500" /> Invite teammate
+                      <Mail className="w-4 h-4 accent-text" /> Invite teammate
                     </h3>
                     <p className="mt-1 text-xs text-zinc-500">
                       Invite by email as an editor or read-only viewer.
@@ -467,7 +469,7 @@ export default function FolderDetailsPage({
                     value={inviteEmail}
                     onChange={(event) => setInviteEmail(event.target.value)}
                     placeholder="teammate@example.com"
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-blue-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-[var(--primary-accent)] dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
                   />
 
                   <select
@@ -475,7 +477,7 @@ export default function FolderDetailsPage({
                     onChange={(event) =>
                       setInviteRole(event.target.value as "EDITOR" | "MEMBER")
                     }
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-blue-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-[var(--primary-accent)] dark:border-zinc-800 dark:bg-zinc-950 dark:text-white"
                   >
                     <option value="EDITOR">
                       Editor — can add or remove venues
@@ -486,7 +488,7 @@ export default function FolderDetailsPage({
                   <button
                     type="submit"
                     disabled={sendingInvite}
-                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 rounded-xl accent-bg px-4 py-2 text-sm font-medium text-white transition-colors hover:opacity-90 disabled:opacity-50"
                   >
                     {sendingInvite && (
                       <Loader2 className="w-4 h-4 animate-spin" />
@@ -504,7 +506,7 @@ export default function FolderDetailsPage({
                     <button
                       type="button"
                       onClick={() => navigator.clipboard.writeText(inviteLink)}
-                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 dark:border-zinc-800 dark:text-blue-400 dark:hover:bg-blue-950/30"
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-200 px-3 py-2 text-xs font-medium accent-text accent-bg-hover accent-bg-dark-20 dark:border-zinc-800"
                     >
                       <Copy className="w-4 h-4" /> Copy fallback invite link
                     </button>

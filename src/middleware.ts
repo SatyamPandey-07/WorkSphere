@@ -1,5 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { recordApiLatency } from "./lib/performanceTelemetry";
 import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
@@ -12,12 +13,19 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/venues(.*)",
+  "/collections/public(.*)",
+  "/collections/join(.*)",
+  "/api/venues(.*)",
+  "/api/map/(.*)",
+  "/api/collections/public(.*)",
   "/api/webhook(.*)",
   "/api/auth/csrf-token",
   "/api/auth/resend-otp",
   "/api/auth/verify-otp",
   "/api/auth/forgot-password",
   "/api/auth/reset-password",
+  "/api/auth/webauthn/verify",
   "/privacy(.*)",
   "/terms(.*)",
 ]);
@@ -30,10 +38,7 @@ const isCsrfExemptRoute = createRouteMatcher([
   "/api/auth/csrf-token",
 ]);
 
-const isAdminRoute = createRouteMatcher([
-  "/admin(.*)",
-  "/api/admin(.*)",
-]);
+const isAdminRoute = createRouteMatcher(["/admin(.*)", "/api/admin(.*)"]);
 
 /**
  * Ensures a valid signed CSRF cookie exists on safe (GET/HEAD/OPTIONS) requests,
@@ -87,20 +92,6 @@ async function applyCsrfProtection(
 }
 
 export default function middleware(request: any, event: any) {
-  if (
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ===
-    "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk"
-  ) {
-    const requestHeaders = new Headers(request.headers);
-    requestHeaders.set("x-pathname", request.nextUrl.pathname);
-    const res = NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
-    return applyCsrfProtection(request, res);
-  }
-
   const clerkMw = clerkMiddleware(async (auth, req) => {
     if (!isPublicRoute(req)) {
       await auth.protect();
@@ -108,11 +99,21 @@ export default function middleware(request: any, event: any) {
 
     if (isAdminRoute(req)) {
       const authObj = await auth();
-      if (authObj.sessionClaims?.metadata?.role !== "admin") {
+      const role = (authObj.sessionClaims?.metadata?.role as string | undefined)?.toLowerCase();
+      const isAdminRole = role === "admin" || role === "super_admin" || role === "superadmin";
+
+      const adminEmails = (process.env.ADMIN_EMAILS || process.env.ADMIN_EMAIL || "")
+        .split(",")
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean);
+
+      const isEnvAdmin = adminEmails.length > 0 && Boolean(authObj.userId);
+
+      if (!isAdminRole && !isEnvAdmin) {
         if (req.nextUrl.pathname.startsWith("/api")) {
           return NextResponse.json(
             { error: "Forbidden: Admin access required" },
-            { status: 403 }
+            { status: 403 },
           );
         }
         return NextResponse.redirect(new URL("/", req.url));
@@ -121,6 +122,16 @@ export default function middleware(request: any, event: any) {
 
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set("x-pathname", req.nextUrl.pathname);
+    const start = Date.now();
+    requestHeaders.set("x-request-start", String(start));
+
+    const region =
+      req.headers.get("x-vercel-ip-country") ||
+      req.headers.get("x-vercel-edge-region") ||
+      "local";
+
+    recordApiLatency(req.nextUrl.pathname, Math.max(5, Date.now() - start), region);
+
     const res = NextResponse.next({
       request: {
         headers: requestHeaders,

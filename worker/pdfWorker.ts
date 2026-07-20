@@ -200,9 +200,17 @@ async function startWorker() {
       );
       if (jobStr) {
         try {
-          await processJob(jobStr as string);
+          const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Worker job timeout exceeded")), 30000)
+          );
+          await Promise.race([
+            processJob(jobStr as string),
+            timeoutPromise
+          ]);
         } finally {
           await redis.lrem("pdf:jobs:processing", 1, jobStr);
+          // Message queue throttling
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
       } else {
         // Sleep if no jobs

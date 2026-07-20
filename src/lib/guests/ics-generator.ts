@@ -30,6 +30,7 @@ function escapeIcsText(text: string): string {
     .replace(/\\/g, "\\\\")
     .replace(/;/g, "\\;")
     .replace(/,/g, "\\,")
+    .replace(/\r/g, "")
     .replace(/\n/g, "\\n");
 }
 

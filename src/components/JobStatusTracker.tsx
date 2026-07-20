@@ -21,9 +21,9 @@ export function JobStatusTracker({ jobId }: JobStatusTrackerProps) {
         const res = await fetch(`/api/jobs/${jobId}`);
         if (!res.ok) return;
         const data = await res.json();
-        
+
         setStatus(data.status);
-        
+
         if (data.status === "COMPLETED") {
           setResultUrl(data.resultUrl);
           clearInterval(interval);
@@ -47,27 +47,33 @@ export function JobStatusTracker({ jobId }: JobStatusTrackerProps) {
       {status === "QUEUED" && (
         <>
           <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-          <p className="text-sm font-medium text-gray-700">Waiting in queue...</p>
+          <p className="text-sm font-medium text-gray-700">
+            Waiting in queue...
+          </p>
         </>
       )}
-      
+
       {status === "PROCESSING" && (
         <>
           <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-          <p className="text-sm font-medium text-gray-700">Generating PDF and uploading to Cloudinary...</p>
+          <p className="text-sm font-medium text-gray-700">
+            Generating PDF and uploading to Cloudinary...
+          </p>
         </>
       )}
 
       {status === "COMPLETED" && (
         <>
           <CheckCircle className="w-10 h-10 text-green-500" />
-          <p className="text-sm font-medium text-green-700">Your PDF is ready!</p>
+          <p className="text-sm font-medium text-green-700">
+            Your PDF is ready!
+          </p>
           {resultUrl && (
-            <a 
-              href={resultUrl} 
-              target="_blank" 
+            <a
+              href={resultUrl}
+              target="_blank"
               rel="noreferrer"
-              className="mt-2 flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm font-medium"
+              className="mt-2 flex items-center px-4 py-2 accent-bg text-white rounded-md accent-bg-hover text-sm font-medium"
             >
               <Download className="w-4 h-4 mr-2" />
               Download PDF
@@ -79,7 +85,9 @@ export function JobStatusTracker({ jobId }: JobStatusTrackerProps) {
       {status === "FAILED" && (
         <>
           <XCircle className="w-10 h-10 text-red-500" />
-          <p className="text-sm font-medium text-red-700">Failed to generate PDF.</p>
+          <p className="text-sm font-medium text-red-700">
+            Failed to generate PDF.
+          </p>
           {error && <p className="text-xs text-red-500">{error}</p>}
         </>
       )}

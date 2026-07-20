@@ -2,12 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  Bookmark,
-  Search,
-  X,
-} from "lucide-react";
+import { ArrowLeft, Bookmark, Search, X } from "lucide-react";
 import { useSavedVenues } from "@/hooks/useSavedVenues";
 import { SavedVenueCard, TagFilter } from "@/components/saved-venues";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -54,7 +49,9 @@ export default function SavedVenuesPage() {
 
   const toggleTag = useCallback((tagId: string) => {
     setSelectedTagIds((prev) =>
-      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId],
+      prev.includes(tagId)
+        ? prev.filter((id) => id !== tagId)
+        : [...prev, tagId],
     );
   }, []);
 
@@ -63,7 +60,8 @@ export default function SavedVenuesPage() {
     setSearchQuery("");
   }, []);
 
-  const hasActiveFilters = selectedTagIds.length > 0 || searchQuery.trim().length > 0;
+  const hasActiveFilters =
+    selectedTagIds.length > 0 || searchQuery.trim().length > 0;
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -73,14 +71,14 @@ export default function SavedVenuesPage() {
           <div className="flex items-center gap-4">
             <Link
               href="/ai"
-              className="p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
+              className="p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
               aria-label="Go back to map"
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div>
               <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-                <Bookmark className="w-6 h-6 text-blue-500" />
+                <Bookmark className="w-6 h-6 accent-text" />
                 Saved Venues
               </h1>
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -101,7 +99,7 @@ export default function SavedVenuesPage() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search venues, notes, tags..."
-                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-blue-500 transition-colors text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
+                className="w-full pl-10 pr-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-[var(--primary-accent)] transition-colors text-zinc-900 dark:text-white placeholder:text-zinc-400 focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
                 aria-label="Search saved venues"
               />
               {searchQuery && (
@@ -182,7 +180,7 @@ export default function SavedVenuesPage() {
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
+              className="px-4 py-2 accent-bg hover:opacity-90 text-white rounded-xl text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
             >
               Try Again
             </button>
@@ -203,7 +201,7 @@ export default function SavedVenuesPage() {
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="px-4 py-2 text-sm font-medium text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-colors"
+                  className="px-4 py-2 text-sm font-medium accent-text accent-bg-hover accent-bg-dark-20 rounded-xl transition-colors"
                 >
                   Clear all filters
                 </button>
@@ -230,7 +228,8 @@ export default function SavedVenuesPage() {
         {!loading && favorites.length > 0 && (
           <div className="mt-6 text-center">
             <p className="text-xs text-zinc-400 dark:text-zinc-500">
-              Showing {filteredFavorites.length} of {favorites.length} saved venues
+              Showing {filteredFavorites.length} of {favorites.length} saved
+              venues
             </p>
           </div>
         )}

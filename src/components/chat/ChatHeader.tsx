@@ -27,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "../ThemeToggle";
 import { EmptyState } from "../ui/EmptyState";
@@ -108,6 +108,22 @@ export function ChatHeader({
   const [isHubOpen, setIsHubOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const filtersBtnRef = useRef<HTMLButtonElement>(null);
+  const filtersPanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showFilters) return;
+
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (filtersBtnRef.current?.contains(target)) return;
+      if (filtersPanelRef.current?.contains(target)) return;
+      setShowFilters(false);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [showFilters, setShowFilters]);
 
   const startRenaming = (conv: Conversation) => {
     setRenamingId(conv.id);
@@ -154,7 +170,7 @@ export function ChatHeader({
               </span>
             </div>
             <div className="flex items-center gap-2 mt-1">
-              <span className="flex items-center gap-1 text-[9px] font-bold text-blue-500">
+              <span className="flex items-center gap-1 text-[9px] font-bold accent-text">
                 <ShieldCheck className="w-2.5 h-2.5" />
                 SECURE
               </span>
@@ -204,7 +220,7 @@ export function ChatHeader({
           {/* New Chat */}
           <button
             onClick={onNewChat}
-            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95"
             title="New Chat"
           >
             <RotateCcw className="w-4 h-4" />
@@ -214,7 +230,7 @@ export function ChatHeader({
           {onShareSession && (
             <button
               onClick={onShareSession}
-              className="p-2 bg-zinc-100  cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
+              className="p-2 bg-zinc-100  cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
               title="Share Session"
             >
               <Share2 className="w-4 h-4" />
@@ -224,7 +240,7 @@ export function ChatHeader({
           {/* My Bookings History */}
           <button
             onClick={onShowBookings}
-            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
             title="My Residencies"
           >
             <Inbox className="w-4 h-4" />
@@ -233,7 +249,7 @@ export function ChatHeader({
           {/* Collections */}
           <Link
             href="/collections"
-            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
             title="Collections"
           >
             <LayoutGrid className="w-4 h-4" />
@@ -248,7 +264,7 @@ export function ChatHeader({
             className={`p-2 border cursor-pointer rounded-xl transition-all active:scale-95 ${
               showHistory
                 ? "bg-purple-600 border-purple-400 text-white shadow-lg shadow-purple-500/20"
-                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-blue-600"
+                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white"
             }`}
             title="Chat History"
           >
@@ -257,6 +273,8 @@ export function ChatHeader({
 
           {/* Filters */}
           <button
+            ref={filtersBtnRef}
+            type="button"
             onClick={() => {
               setShowFilters(!showFilters);
               setShowHistory(false);
@@ -264,9 +282,10 @@ export function ChatHeader({
             className={`p-2 border cursor-pointer rounded-xl transition-all active:scale-95 ${
               showFilters
                 ? "bg-orange-600 border-orange-400 text-white shadow-lg shadow-orange-500/20"
-                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-blue-600"
+                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white"
             }`}
             title="Filters"
+            aria-expanded={showFilters}
           >
             <Filter className="w-4 h-4" />
           </button>
@@ -274,7 +293,7 @@ export function ChatHeader({
           {/* Analytics Link */}
           <Link
             href="/analytics"
-            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden lg:flex"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden lg:flex"
             title="Intelligence Dashboard"
           >
             <BarChart3 className="w-4 h-4" />
@@ -319,41 +338,65 @@ export function ChatHeader({
       <div className="relative">
         {/* Filter Overlay Area - Solid High Contrast */}
         {showFilters && (
-          <div className="mt-4 p-3.5 sm:p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-4 sm:gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl">
+          <div
+            ref={filtersPanelRef}
+            className="mt-4 p-3.5 sm:p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-4 sm:gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             {/* Section 1: Standard Toggles */}
             <div>
               <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
                 Amenity Toggles
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => onToggleFilter("wifi")}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.wifi ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.wifi ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.wifi}
+                    onChange={() => onToggleFilter("wifi")}
+                    className="sr-only"
+                  />
                   <Wifi className="w-3.5 h-3.5" />
                   High-Speed WiFi
-                </button>
-                <button
-                  onClick={() => onToggleFilter("outlets")}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.outlets ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                </label>
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.outlets ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.outlets}
+                    onChange={() => onToggleFilter("outlets")}
+                    className="sr-only"
+                  />
                   <Outlets className="w-3.5 h-3.5" />
-                  Power Outlets
-                </button>
-                <button
-                  onClick={() => onToggleFilter("quiet")}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.quiet ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  Has Outlets
+                </label>
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.quiet ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.quiet}
+                    onChange={() => onToggleFilter("quiet")}
+                    className="sr-only"
+                  />
                   <Volume2 className="w-3.5 h-3.5" />
                   Low Noise
-                </button>
-                <button
-                  onClick={() => onToggleFilter("ergonomic")}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.ergonomic ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                </label>
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.ergonomic ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.ergonomic}
+                    onChange={() => onToggleFilter("ergonomic")}
+                    className="sr-only"
+                  />
                   <Activity className="w-3.5 h-3.5" />
                   Ergonomic Setup
-                </button>
+                </label>
               </div>
             </div>
             {/* Section: Coffee Quality */}
@@ -616,7 +659,7 @@ export function ChatHeader({
                           </button>
                           <button
                             onClick={() => onLoadConversation(conv.id)}
-                            className="p-1.5 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            className="p-1.5 rounded-md text-zinc-400 hover:text-[var(--primary-accent)] hover:bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.1)] dark:hover:bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)]"
                           >
                             <ChevronRight className="w-3.5 h-3.5" />
                           </button>
@@ -658,8 +701,8 @@ export function ChatHeader({
         </div>
 
         <div className="flex items-center gap-3">
-          <LayoutGrid className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-blue-500 cursor-pointer transition-colors" />
-          <Terminal className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-blue-500 cursor-pointer transition-colors" />
+          <LayoutGrid className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors" />
+          <Terminal className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors" />
         </div>
       </div>
     </div>

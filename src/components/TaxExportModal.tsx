@@ -83,13 +83,13 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
 
         <div className="mb-4 flex gap-2">
           <button
-            className={`flex-1 rounded px-3 py-2 text-sm ${mode === "year" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+            className={`flex-1 rounded px-3 py-2 text-sm ${mode === "year" ? "accent-bg text-white" : "bg-gray-100"}`}
             onClick={() => setMode("year")}
           >
             Tax Year
           </button>
           <button
-            className={`flex-1 rounded px-3 py-2 text-sm ${mode === "custom" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+            className={`flex-1 rounded px-3 py-2 text-sm ${mode === "custom" ? "accent-bg text-white" : "bg-gray-100"}`}
             onClick={() => setMode("custom")}
           >
             Custom Range
@@ -127,13 +127,13 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
 
         <div className="mb-4 flex gap-2">
           <button
-            className={`flex-1 rounded px-3 py-2 text-sm ${format === "pdf" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+            className={`flex-1 rounded px-3 py-2 text-sm ${format === "pdf" ? "accent-bg text-white" : "bg-gray-100"}`}
             onClick={() => setFormat("pdf")}
           >
             PDF
           </button>
           <button
-            className={`flex-1 rounded px-3 py-2 text-sm ${format === "csv" ? "bg-blue-600 text-white" : "bg-gray-100"}`}
+            className={`flex-1 rounded px-3 py-2 text-sm ${format === "csv" ? "accent-bg text-white" : "bg-gray-100"}`}
             onClick={() => setFormat("csv")}
           >
             CSV
@@ -148,7 +148,8 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
           </div>
         ) : (
           <p className="mb-4 text-xs text-gray-500">
-            Estimate only — $15/hr flat rate, 8% flat tax. Verify against your actual invoices before filing.
+            Estimate only — $15/hr flat rate, 8% flat tax. Verify against your
+            actual invoices before filing.
           </p>
         )}
 
@@ -170,7 +171,7 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
                 Cancel
               </button>
               <button
-                className="rounded bg-blue-600 px-4 py-2 text-sm text-white disabled:opacity-50"
+                className="rounded accent-bg px-4 py-2 text-sm text-white disabled:opacity-50"
                 onClick={handleExport}
                 disabled={loading}
               >

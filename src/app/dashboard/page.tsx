@@ -146,7 +146,7 @@ export default function DashboardPage() {
             <button
               onClick={loadData}
               disabled={isRefreshing}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 text-sm accent-bg text-white rounded-lg accent-bg-hover disabled:opacity-50 transition-colors"
             >
               <RefreshCw
                 className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`}
@@ -370,7 +370,7 @@ export default function DashboardPage() {
                   <span className="text-zinc-700 dark:text-zinc-300">
                     {event.replace(/_/g, " ")}
                   </span>
-                  <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+                  <span className="px-2 py-0.5 accent-bg text-white text-xs rounded-full">
                     {count}
                   </span>
                 </div>

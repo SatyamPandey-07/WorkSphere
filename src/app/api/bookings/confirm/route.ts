@@ -22,6 +22,7 @@ export async function POST(req: Request) {
     const {
       venue,
       date,
+      dates: inputDates,
       time,
       customerEmail,
       customerPhone,
@@ -35,12 +36,20 @@ export async function POST(req: Request) {
       );
     }
 
+    const bookingDates = inputDates || (date ? [date] : []);
+    if (bookingDates.length === 0) {
+      return NextResponse.json(
+        { error: "Missing booking dates" },
+        { status: 400 },
+      );
+    }
+
     const confirmationId = `WS-#${Math.floor(100000 + Math.random() * 900000)}`;
     const targetPlaceId = venue.placeId || venue.id;
 
     // --- CONCURRENCY FIX IMPLEMENTATION ---
     // Wrap database steps inside an interactive transaction to prevent key collisions
-    const { booking, dbVenue } = await prisma.$transaction(async (tx) => {
+    const { bookings, dbVenue } = await prisma.$transaction(async (tx) => {
       // 0.5 Ensure Venue exists in local ledger via transaction client
       const localVenue = await tx.venue.upsert({
         where: { placeId: targetPlaceId },
@@ -60,35 +69,39 @@ export async function POST(req: Request) {
       });
 
       // Double check race condition inside the isolated transaction window
-      const existingBooking = await tx.booking.findFirst({
+      const existingBookings = await tx.booking.findMany({
         where: {
           venueId: localVenue.id,
-          date: date,
+          date: { in: bookingDates },
           time: time,
         },
       });
 
-      if (existingBooking) {
+      if (existingBookings.length > 0) {
         throw new Error(
-          "COLLISION: This workspace slot has already been claimed by another runtime thread.",
+          "COLLISION: One or more workspace slots have already been claimed by another runtime thread.",
         );
       }
 
       // 1. Persist to Database safely using transaction context
-      const newBooking = await (tx as any).booking.create({
-        data: {
-          userId,
-          venueId: localVenue.id,
-          date,
-          time,
-          customerEmail: customerEmail || "pandeysatyam1802@gmail.com",
-          customerPhone: customerPhone || null,
-          projectBillingCode: projectBillingCode || null,
-          confirmationId,
-        },
-      });
+      const createdBookings = [];
+      for (const d of bookingDates) {
+        const newBooking = await (tx as any).booking.create({
+          data: {
+            userId,
+            venueId: localVenue.id,
+            date: d,
+            time,
+            customerEmail: customerEmail || "pandeysatyam1802@gmail.com",
+            customerPhone: customerPhone || null,
+            projectBillingCode: projectBillingCode || null,
+            confirmationId,
+          },
+        });
+        createdBookings.push(newBooking);
+      }
 
-      return { booking: newBooking, dbVenue: localVenue };
+      return { bookings: createdBookings, dbVenue: localVenue };
     });
     // --- END OF FIX ---
 
@@ -96,19 +109,21 @@ export async function POST(req: Request) {
     // --- ASYNC PDF FIX IMPLEMENTATION (#518) ---
     after(async () => {
       try {
-        await eventBus.emit("booking:confirmed", {
-          bookingId: booking.id,
-          confirmationId,
-          venue: {
-            id: dbVenue.id,
-            name: venue.name || "Unknown Venue",
-            category: venue.category || "other",
-            address: venue.address || undefined,
-          },
-          customerEmail: customerEmail || "pandeysatyam1802@gmail.com",
-          date,
-          time,
-        });
+        for (const booking of bookings) {
+          await eventBus.emit("booking:confirmed", {
+            bookingId: booking.id,
+            confirmationId,
+            venue: {
+              id: dbVenue.id,
+              name: venue.name || "Unknown Venue",
+              category: venue.category || "other",
+              address: venue.address || undefined,
+            },
+            customerEmail: customerEmail || "pandeysatyam1802@gmail.com",
+            date: booking.date,
+            time,
+          });
+        }
       } catch (backgroundError) {
         console.error("[Background Event Bus Error]:", backgroundError);
       }
@@ -117,7 +132,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
-      bookingId: booking.id,
+      bookingId: bookings[0].id,
+      bookingIds: bookings.map((b: any) => b.id),
       confirmationId,
     });
   } catch (error: any) {

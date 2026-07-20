@@ -42,34 +42,37 @@ export default class WorkspaceServer implements Party.Server {
         const verifiedToken = await verifyToken(token, { secretKey });
         const userId = verifiedToken.sub;
 
-        // Extract folder ID if room is named "folder-{id}"
-        let folderId = this.room.id;
-        if (folderId.startsWith("folder-")) {
-          folderId = folderId.replace("folder-", "");
-        }
+        // Canvas whiteboard rooms: any authenticated user can edit
+        if (this.room.id.startsWith("canvas-")) {
+          isViewer = false;
+        } else {
+          // Extract folder ID if room is named "folder-{id}"
+          let folderId = this.room.id;
+          if (folderId.startsWith("folder-")) {
+            folderId = folderId.replace("folder-", "");
+          }
 
-        // Fetch user's role in the folder via Next.js internal API to avoid Edge Prisma errors
-        const NEXT_PUBLIC_APP_URL =
-          process.env.NEXT_PUBLIC_APP_URL || "http://127.0.0.1:3000";
-        const authRes = await fetch(
-          `${NEXT_PUBLIC_APP_URL}/api/partykit/auth?userId=${userId}&folderId=${folderId}`,
-        );
+          // Fetch user's role in the folder via Next.js internal API to avoid Edge Prisma errors
+          const NEXT_PUBLIC_APP_URL =
+            process.env.NEXT_PUBLIC_APP_URL || "http://127.0.0.1:3000";
+          const authRes = await fetch(
+            `${NEXT_PUBLIC_APP_URL}/api/partykit/auth?userId=${userId}&folderId=${folderId}`,
+          );
 
-        if (authRes.ok) {
-          const authData = await authRes.json();
-          if (authData.role === "MEMBER" || authData.role === "VIEWER") {
+          if (authRes.ok) {
+            const authData = await authRes.json();
+            if (authData.role === "MEMBER" || authData.role === "VIEWER") {
+              isViewer = true;
+            }
+          } else {
             isViewer = true;
           }
-        } else {
-          isViewer = true;
         }
       } catch (err) {
         console.error("Token verification or DB fetch failed:", err);
-        // Fail-safe: if token invalid or DB fails, default to read-only
         isViewer = true;
       }
     } else {
-      // Unauthenticated connections are read-only
       isViewer = true;
     }
 
@@ -78,7 +81,9 @@ export default class WorkspaceServer implements Party.Server {
     // Bring newly connected clients up to speed on current seat availability
     // (#703) so rings render correctly before any new check-in event fires.
     if (this.seatCheckins.size > 0) {
-      conn.send(JSON.stringify({ type: "seat_snapshot", venues: this.seatSummary() }));
+      conn.send(
+        JSON.stringify({ type: "seat_snapshot", venues: this.seatSummary() }),
+      );
     }
 
     // Yjs connection for shared state (messages, markers)
@@ -117,7 +122,10 @@ export default class WorkspaceServer implements Party.Server {
       // Seat availability check-in/checkout (#703). This is presence data,
       // not a document edit, so VIEWERS are allowed to use it too — it
       // deliberately skips the role gate below.
-      if (parsed.type === "seat_checkin" && typeof parsed.venueId === "string") {
+      if (
+        parsed.type === "seat_checkin" &&
+        typeof parsed.venueId === "string"
+      ) {
         this.handleSeatCheckin(sender, parsed.venueId, parsed.capacity);
         return;
       }
@@ -215,7 +223,12 @@ export default class WorkspaceServer implements Party.Server {
     }
     return Array.from(counts.entries()).map(([venueId, count]) => {
       const capacity = this.capacityForVenue(venueId);
-      return { venueId, count, capacity, status: seatStatusFor(count, capacity) };
+      return {
+        venueId,
+        count,
+        capacity,
+        status: seatStatusFor(count, capacity),
+      };
     });
   }
 }

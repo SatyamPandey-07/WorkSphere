@@ -19,8 +19,16 @@ import type { SavedVenue, FavoriteTag } from "@/hooks/useSavedVenues";
 interface SavedVenueCardProps {
   favorite: SavedVenue;
   onUpdateNotes: (favoriteId: string, notes: string) => Promise<void>;
-  onAddTag: (favoriteId: string, name: string, color: string) => Promise<FavoriteTag>;
-  onUpdateTag: (favoriteId: string, tagId: string, data: { name?: string; color?: string }) => Promise<void>;
+  onAddTag: (
+    favoriteId: string,
+    name: string,
+    color: string,
+  ) => Promise<FavoriteTag>;
+  onUpdateTag: (
+    favoriteId: string,
+    tagId: string,
+    data: { name?: string; color?: string },
+  ) => Promise<void>;
   onDeleteTag: (favoriteId: string, tagId: string) => Promise<void>;
   onRemoveFavorite: (venueId: string) => Promise<void>;
 }
@@ -67,18 +75,25 @@ export const SavedVenueCard = memo(function SavedVenueCard({
       return;
     }
     try {
-      await onUpdateTag(favorite.id, editingTagId, { name: editingTagName.trim() });
+      await onUpdateTag(favorite.id, editingTagId, {
+        name: editingTagName.trim(),
+      });
     } catch {
       // Error handled by hook
     }
     setEditingTagId(null);
   }, [editingTagId, editingTagName, favorite.id, onUpdateTag]);
 
-  const categoryColor = venue.category === "cafe" ? "text-amber-600" : venue.category === "coworking" ? "text-blue-600" : "text-green-600";
+  const categoryColor =
+    venue.category === "cafe"
+      ? "text-amber-600"
+      : venue.category === "coworking"
+        ? "text-blue-600"
+        : "text-green-600";
 
   return (
     <article
-      className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5 transition-all"
+      className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden hover:accent-border-30 hover:shadow-lg hover:accent-shadow-sm transition-all"
       aria-label={`Saved venue: ${venue.name}`}
     >
       {/* Card Header */}
@@ -108,7 +123,12 @@ export const SavedVenueCard = memo(function SavedVenueCard({
 
         {/* Venue meta */}
         <div className="flex items-center gap-3 mt-3 flex-wrap">
-          <span className={cn("text-xs font-semibold uppercase tracking-wider", categoryColor)}>
+          <span
+            className={cn(
+              "text-xs font-semibold uppercase tracking-wider",
+              categoryColor,
+            )}
+          >
             {venue.category}
           </span>
           {venue.rating && (
@@ -150,7 +170,7 @@ export const SavedVenueCard = memo(function SavedVenueCard({
                   if (e.key === "Enter") handleSaveRename();
                   if (e.key === "Escape") setEditingTagId(null);
                 }}
-                className="px-2 py-0.5 text-sm rounded-full border border-blue-500 bg-white dark:bg-zinc-900 outline-none text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 dark:focus:ring-offset-zinc-900"
+                className="px-2 py-0.5 text-sm rounded-full border accent-border bg-white dark:bg-zinc-900 outline-none text-zinc-900 dark:text-white focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-1 dark:focus:ring-offset-zinc-900"
                 autoFocus
                 aria-label={`Rename tag ${tag.name}`}
               />
@@ -165,7 +185,10 @@ export const SavedVenueCard = memo(function SavedVenueCard({
               />
             ),
           )}
-          <TagInput onAdd={handleAddTag} existingNames={tags.map((t) => t.name)} />
+          <TagInput
+            onAdd={handleAddTag}
+            existingNames={tags.map((t) => t.name)}
+          />
         </div>
 
         {/* Notes preview / expand */}
@@ -173,7 +196,7 @@ export const SavedVenueCard = memo(function SavedVenueCard({
           <button
             type="button"
             onClick={() => setIsExpanded(true)}
-            className="w-full mt-3 text-left px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800/50 text-sm text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap line-clamp-2 hover:border-blue-500/30 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
+            className="w-full mt-3 text-left px-3 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800/50 text-sm text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap line-clamp-2 hover:accent-border-30 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
             aria-label="Show note"
           >
             {favorite.notes}
@@ -186,7 +209,7 @@ export const SavedVenueCard = memo(function SavedVenueCard({
         <button
           type="button"
           onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full flex items-center justify-center gap-1 py-1.5 text-xs text-zinc-400 hover:text-blue-500 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 rounded-lg"
+          className="w-full flex items-center justify-center gap-1 py-1.5 text-xs text-zinc-400 accent-text-hover transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-2 dark:focus:ring-offset-zinc-900 rounded-lg"
           aria-expanded={isExpanded}
           aria-label={isExpanded ? "Show less" : "Show more"}
         >

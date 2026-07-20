@@ -56,6 +56,12 @@ export function useSeatAvailability() {
   >({});
   const [isConnected, setIsConnected] = useState(false);
   const [checkedInVenueId, setCheckedInVenueId] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Mirrors checkedInVenueId in a ref so send handlers stay stable across
   // renders without needing checkedInVenueId itself as a dependency.
   const checkedInVenueRef = useRef<string | null>(null);
@@ -230,6 +236,6 @@ export function useSeatAvailability() {
     checkIn,
     checkOut,
     checkedInVenueId,
-    isConnected,
+    isConnected: isMounted && isConnected,
   };
 }

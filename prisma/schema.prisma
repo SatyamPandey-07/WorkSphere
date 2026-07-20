@@ -44,6 +44,8 @@ model User {
   folderUpvotes      FolderUpvote[]
   sentFolderInvites  FolderInvite[]      @relation("FolderInviteSender")
   workStyleProfile   String?
+  pushSubscriptions  PushSubscription[]
+  pushNotificationLogs PushNotificationLog[]
   checkIns           CheckIn[]
   // ── Activity streak ────────────────────────────────────────────────────────
   // currentStreak:    consecutive days with at least one check-in

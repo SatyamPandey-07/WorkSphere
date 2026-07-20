@@ -125,18 +125,7 @@ The current Service Worker implementation does not include automatic LRU cache e
 
 This policy helps reduce unnecessary storage consumption while keeping frequently accessed resources available offline.
 
-```javascript
-// Example LRU cleanup
-async function trimCache(cacheName, maxEntries) {
-  const cache = await caches.open(cacheName);
-  const keys = await cache.keys();
-
-  while (keys.length > maxEntries) {
-    await cache.delete(keys[0]);
-    keys.shift();
-  }
-}
-```
+If LRU eviction is introduced in the future, it should track resource access history rather than insertion order to ensure that the least recently used entries are removed first.
 
 ---
 
@@ -213,7 +202,7 @@ registerRoute(
 );
 ```
 
-Using Workbox can simplify runtime caching, cache expiration, route management, and long-term maintenance while preserving the existing caching behavior.
+If Workbox is adopted in the future, the recommended strategies above represent a potential enhancement to the current caching behavior. Workbox can simplify runtime caching, cache expiration, route management, and long-term maintenance.
 
 ## Summary
 

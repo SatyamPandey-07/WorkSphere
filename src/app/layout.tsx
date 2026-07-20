@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 
 import "./globals.css";
 
@@ -109,15 +109,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const headersList = await headers();
-  const pathname = headersList.get("x-pathname") ?? "";
-  const isAnalyticsPage = pathname.startsWith("/analytics");
-
-  const publishableKey =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
-    "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
-
-  const isDummyKey = publishableKey === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
   const cookieStore = await cookies();
   const storedTheme = cookieStore.get("worksphere-theme")?.value;
@@ -141,23 +133,20 @@ export default async function RootLayout({
     </ThemeProvider>
   );
 
-  const bodyContent =
-    isDummyKey && isAnalyticsPage ? (
-      appContent
-    ) : (
-      <ClerkProvider
-        afterSignOutUrl="/"
-        publishableKey={publishableKey}
-        appearance={{
-          elements: {
-            formButtonPrimary: "accent-bg hover:opacity-90",
-            card: "shadow-xl",
-          },
-        }}
-      >
-        {appContent}
-      </ClerkProvider>
-    );
+  const bodyContent = (
+    <ClerkProvider
+      afterSignOutUrl="/"
+      publishableKey={publishableKey}
+      appearance={{
+        elements: {
+          formButtonPrimary: "accent-bg hover:opacity-90",
+          card: "shadow-xl",
+        },
+      }}
+    >
+      {appContent}
+    </ClerkProvider>
+  );
 
   return (
     <html

@@ -9,5 +9,5 @@ export function computeMembershipCommit(
   identityToken: string | number | bigint,
 ): string {
   const t = BigInt(identityToken);
-  return (t * t + 5n * t + 17n).toString();
+  return (t * t + BigInt(5) * t + BigInt(17)).toString();
 }

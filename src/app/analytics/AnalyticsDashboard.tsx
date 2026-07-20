@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useUser as useClerkUser } from "@clerk/nextjs";
-import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import {
   MapPin,
   Star,
@@ -257,148 +256,17 @@ export default function AnalyticsDashboard() {
   }) => {
     setDownloadingId(booking.id);
     try {
-      // Generate PDF entirely in the browser - blob: URLs bypass Service Worker completely!
-      const pdfDoc = await PDFDocument.create();
-      const page = pdfDoc.addPage([595, 842]); // A4
-      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-      const { width, height } = page.getSize();
-      let y = height - 50;
-
-      const safe = (t: string | undefined | null) =>
-        (t || "").replace(/[^\x20-\x7E]/g, "?");
-      const text = (t: string, opts: object) => {
-        try {
-          page.drawText(t, opts);
-        } catch {
-          /* skip */
-        }
-      };
-
-      // Header bar
-      page.drawRectangle({
-        x: 0,
-        y: height - 10,
-        width,
-        height: 10,
-        color: rgb(0.23, 0.51, 0.96),
-      });
-      y -= 60;
-      text("WORKSPHERE CONFIRMATION", {
-        x: 150,
-        y,
-        size: 24,
-        font: boldFont,
-        color: rgb(0, 0, 0),
-      });
-      y -= 15;
-      text("SECURE NEURAL TRANSACTION RECEIPT", {
-        x: 180,
-        y,
-        size: 8,
-        font,
-        color: rgb(0.5, 0.5, 0.5),
-      });
-      y -= 50;
-
-      // Details
-      text("BOOKING DETAILS:", {
-        x: 50,
-        y,
-        size: 12,
-        font: boldFont,
-        color: rgb(0, 0, 0),
-      });
-      y -= 15;
-      text("-".repeat(50), { x: 50, y, size: 10, font, color: rgb(0, 0, 0) });
-      y -= 20;
-      text(`REFERENCE ID: ${safe(booking.confirmationId)}`, {
-        x: 50,
-        y,
-        size: 10,
-        font,
-        color: rgb(0, 0, 0),
-      });
-      y -= 18;
-      text(`VENUE: ${safe(booking.venue.name)}`, {
-        x: 50,
-        y,
-        size: 10,
-        font,
-        color: rgb(0, 0, 0),
-      });
-      y -= 18;
-      text(`CATEGORY: ${safe(booking.venue.category?.toUpperCase())}`, {
-        x: 50,
-        y,
-        size: 10,
-        font,
-        color: rgb(0, 0, 0),
-      });
-      y -= 18;
-      text(`ADDRESS: ${safe(booking.venue.address || "Verified Workspace")}`, {
-        x: 50,
-        y,
-        size: 10,
-        font,
-        color: rgb(0, 0, 0),
-      });
-      y -= 18;
-      text(`SCHEDULE: ${safe(booking.date)} @ ${safe(booking.time)}`, {
-        x: 50,
-        y,
-        size: 10,
-        font,
-        color: rgb(0, 0, 0),
-      });
-      y -= 18;
-      text(`STATUS: ${safe(booking.status)}`, {
-        x: 50,
-        y,
-        size: 10,
-        font,
-        color: rgb(0, 0, 0),
-      });
-      y -= 40;
-
-      text("SECURITY PROTOCOL:", {
-        x: 50,
-        y,
-        size: 12,
-        font: boldFont,
-        color: rgb(0, 0, 0),
-      });
-      y -= 18;
-      text("ZERO-FEE ACCESS PROTOCOL ACTIVE", {
-        x: 50,
-        y,
-        size: 10,
-        font,
-        color: rgb(0, 0, 0),
-      });
-      y -= 18;
-      text("ENCRYPTED VIA WORKSPHERE L3", {
-        x: 50,
-        y,
-        size: 10,
-        font,
-        color: rgb(0, 0, 0),
-      });
-      y -= 80;
-      text(
-        "Thank you for choosing WorkSphere. Your workspace is ready for you.",
-        { x: 80, y, size: 8, font, color: rgb(0.4, 0.4, 0.4) },
-      );
-
-      const pdfBytes = await pdfDoc.save();
-      // blob: URLs are NEVER intercepted by Service Workers
-      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], {
-        type: "application/pdf",
-      });
+      // Fetch the receipt from the server instead of generating on the main thread
+      const res = await fetch(`/api/bookings/${booking.id}/download`);
+      if (!res.ok) {
+        throw new Error("Failed to fetch receipt");
+      }
+      
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `WorkSphere_Receipt_${booking.confirmationId}.pdf`;
+      a.download = `WorkSphere_Receipt_${booking.confirmationId || booking.id}.pdf`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

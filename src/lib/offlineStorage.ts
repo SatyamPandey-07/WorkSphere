@@ -22,6 +22,31 @@ userDoc.on("update", async (update: Uint8Array) => {
 const DB_NAME = "worksphere-offline";
 const DB_VERSION = 2;
 
+const IDB_STORAGE_LOCK = "worksphere-offline-storage-lock";
+
+/**
+ * Web Locks API wrapper to serialize IndexedDB transactions across concurrent tabs (#910)
+ */
+export async function withWebLock<T>(
+  callback: () => Promise<T>,
+  lockName = IDB_STORAGE_LOCK,
+): Promise<T> {
+  if (
+    typeof navigator !== "undefined" &&
+    "locks" in navigator &&
+    navigator.locks?.request
+  ) {
+    try {
+      return await navigator.locks.request(lockName, async () => {
+        return callback();
+      });
+    } catch {
+      return callback();
+    }
+  }
+  return callback();
+}
+
 export interface OfflineVenue {
   id: string;
   name: string;
@@ -133,19 +158,21 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
  * Save venue to offline storage
  */
 export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["venues"], "readwrite");
-    const store = transaction.objectStore("venues");
+    return new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["venues"], "readwrite");
+      const store = transaction.objectStore("venues");
 
-    const request = store.put({
-      ...venue,
-      savedAt: Date.now(),
+      const request = store.put({
+        ...venue,
+        savedAt: Date.now(),
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
     });
-
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
   });
 }
 
@@ -189,23 +216,25 @@ export async function getAllVenuesOffline(): Promise<OfflineVenue[]> {
  * Save favorite to offline storage
  */
 export async function saveFavoriteOffline(venue: OfflineVenue): Promise<void> {
-  // 1. Update CRDT state (triggers userDoc.on('update') automatically)
-  yFavorites.set(venue.id, venue);
+  return withWebLock(async () => {
+    // 1. Update CRDT state (triggers userDoc.on('update') automatically)
+    yFavorites.set(venue.id, venue);
 
-  // 2. Update local IndexedDB for immediate UI reads
-  const database = await initOfflineDB();
+    // 2. Update local IndexedDB for immediate UI reads
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["favorites"], "readwrite");
-    const store = transaction.objectStore("favorites");
+    return new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["favorites"], "readwrite");
+      const store = transaction.objectStore("favorites");
 
-    const request = store.put({
-      ...venue,
-      savedAt: Date.now(),
+      const request = store.put({
+        ...venue,
+        savedAt: Date.now(),
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
     });
-
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
   });
 }
 
@@ -213,20 +242,22 @@ export async function saveFavoriteOffline(venue: OfflineVenue): Promise<void> {
  * Remove favorite from offline storage
  */
 export async function removeFavoriteOffline(id: string): Promise<void> {
-  // 1. Update CRDT state
-  yFavorites.delete(id);
+  return withWebLock(async () => {
+    // 1. Update CRDT state
+    yFavorites.delete(id);
 
-  // 2. Update local IndexedDB
-  const database = await initOfflineDB();
+    // 2. Update local IndexedDB
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["favorites"], "readwrite");
-    const store = transaction.objectStore("favorites");
+    return new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["favorites"], "readwrite");
+      const store = transaction.objectStore("favorites");
 
-    const request = store.delete(id);
+      const request = store.delete(id);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
   });
 }
 

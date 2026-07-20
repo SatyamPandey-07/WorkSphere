@@ -43,6 +43,11 @@ export default function FolderDetailsPage({
     quietOnly: false,
   });
 
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const handleExportBilling = async () => {
     try {
       setExporting(true);
@@ -115,7 +120,7 @@ export default function FolderDetailsPage({
   // Real-time synchronization
   usePartySocket({
     host: "127.0.0.1:1999",
-    room: `folder-${id}`,
+    room: isMounted ? `folder-${id}` : null,
     onMessage(event) {
       try {
         const data = JSON.parse(event.data);

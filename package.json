@@ -36,6 +36,7 @@
     "lucide-react": "^0.562.0",
     "next": "^16.2.10",
     "nodemailer": "^8.0.1",
+    "onnxruntime-web": "^1.27.0",
     "openai": "^6.46.0",
     "partykit": "^0.0.115",
     "partysocket": "^1.3.0",

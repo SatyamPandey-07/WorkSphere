@@ -18,7 +18,10 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
-import { useSeatAvailability, type SeatStatus } from "@/hooks/useSeatAvailability";
+import {
+  useSeatAvailability,
+  type SeatStatus,
+} from "@/hooks/useSeatAvailability";
 
 // Seat-availability ring colours (#703): green = plenty of room, yellow =
 // filling up, red = at/over capacity.
@@ -192,9 +195,11 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
 
     const handleResize = () => {
       clearTimeout(timer);
+      const centerBeforeResize = map.getCenter();
 
       timer = setTimeout(() => {
         map.invalidateSize();
+        map.setView(centerBeforeResize, map.getZoom(), { animate: false });
       }, delay);
     };
 
@@ -223,6 +228,29 @@ const Map = ({
   const clerkUser = useUser();
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
+
+  // Memoized event handlers for all interactive markers to prevent react-leaflet
+  // from removing and re-adding event listeners on every render.
+  const markerEventHandlers = useMemo(
+    () => ({
+      keydown: (e: any) => {
+        if (e.originalEvent.key === "Enter" || e.originalEvent.key === " ") {
+          e.originalEvent.preventDefault();
+          e.target.openPopup();
+        }
+      },
+      add: (e: any) => {
+        const el = e.target.getElement();
+        if (el) {
+          const name = e.target.options.title || "Map marker";
+          el.setAttribute("aria-label", name);
+          el.setAttribute("role", "button");
+          el.setAttribute("tabindex", "0");
+        }
+      },
+    }),
+    [],
+  );
 
   // Real-time seat availability (#703) — PartyKit presence layer that
   // powers the green/yellow/red rings and the popup check-in button.
@@ -327,9 +355,12 @@ const Map = ({
       const lat = Number(v.latitude);
       const lng = Number(v.longitude);
       return (
-        !isNaN(lat) && !isNaN(lng) &&
-        lat >= -90 && lat <= 90 &&
-        lng >= -180 && lng <= 180 &&
+        !isNaN(lat) &&
+        !isNaN(lng) &&
+        lat >= -90 &&
+        lat <= 90 &&
+        lng >= -180 &&
+        lng <= 180 &&
         !(lat === 0 && lng === 0)
       );
     };
@@ -714,11 +745,21 @@ const Map = ({
 
         <MapController mapView={mapView} />
         <AutoCenter markers={markers} userLocation={center} />
-        <ZoomWatcher onZoomSettled={handleZoomSettled} onZoomStart={handleZoomStart} />
+        <ZoomWatcher
+          onZoomSettled={handleZoomSettled}
+          onZoomStart={handleZoomStart}
+        />
         <ResizeWatcher />
 
         {customIcon && (
-          <Marker position={center} icon={customIcon}>
+          <Marker
+            position={center}
+            icon={customIcon}
+            title="Your location"
+            alt="Your location"
+            keyboard={true}
+            eventHandlers={markerEventHandlers}
+          >
             <Popup>You are here!</Popup>
           </Marker>
         )}
@@ -727,6 +768,10 @@ const Map = ({
             key={marker.id}
             position={[marker.renderedLat, marker.renderedLng]}
             icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
+            title={marker.name}
+            alt={marker.name}
+            keyboard={true}
+            eventHandlers={markerEventHandlers}
           >
             <Popup>
               <div className="text-sm">
@@ -751,7 +796,9 @@ const Map = ({
                           : "text-green-400";
                     return (
                       <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
-                        <span className={`text-[10px] font-medium ${seatTextColor}`}>
+                        <span
+                          className={`text-[10px] font-medium ${seatTextColor}`}
+                        >
                           {isSeatSocketConnected
                             ? `${seat.count}/${seat.capacity} checked in`
                             : "Connecting…"}

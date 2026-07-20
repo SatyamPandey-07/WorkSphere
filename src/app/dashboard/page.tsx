@@ -47,6 +47,7 @@ import { NotificationSettings } from "./NotificationSettings";
 import { CheckInHistory } from "./CheckInHistory";
 import { TelegramStatusBanner } from "@/components/dashboard/TelegramStatusBanner";
 import { WorkStyleProfile } from "./WorkStyleProfile";
+import { StreakCard } from "@/components/dashboard/StreakCard";
 
 interface AgentMetric {
   agent: string;
@@ -388,6 +389,11 @@ export default function DashboardPage() {
         {/* Check-In History */}
         <div className="mt-6">
           <CheckInHistory />
+        </div>
+
+        {/* Activity Streak */}
+        <div className="mt-6">
+          <StreakCard />
         </div>
       </div>
     </div>

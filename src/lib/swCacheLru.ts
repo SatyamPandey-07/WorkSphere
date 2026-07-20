@@ -1,6 +1,6 @@
 /**
- * Shared helpers for Service Worker cache size limits.
- * Used by unit tests; mirrored in public/sw.js (classic SW, no module imports).
+ * Helpers mirroring the Service Worker image-cache quota (20MB LRU).
+ * Unit-tested here; enforced in public/sw.js via IndexedDB LRU + Cache Storage.
  */
 
 export const MAX_CACHE_BYTES = 20 * 1024 * 1024; // 20MB — under iOS Safari ~50MB PWA quota

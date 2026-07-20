@@ -9,6 +9,7 @@ import {
   Coffee,
   FolderPlus,
   Heart,
+  Headphones,
   Info,
   Loader2,
   MapPin,
@@ -60,6 +61,7 @@ export interface Venue {
   hasPhoneBooths?: boolean;
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
+  hasAncHeadsetRental?: boolean;
   outletLocations?: string[];
 }
 
@@ -272,6 +274,17 @@ export function VenueChatCard({
                   </span>
                 </div>
               )}
+              {venue.hasAncHeadsetRental && (
+                <div
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-violet-500/10 border border-violet-500/20"
+                  title="Active noise-cancelling headsets available for rent"
+                >
+                  <Headphones className="w-3 h-3 text-violet-600" />
+                  <span className="text-[9px] font-bold text-violet-600 uppercase">
+                    ANC Rental
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -444,6 +457,17 @@ export function VenueChatCard({
                     <Volume2 className="w-3 h-3 text-blue-600" />
                     <span className="text-[10px] font-bold text-blue-600 uppercase">
                       Quiet
+                    </span>
+                  </div>
+                )}
+                {venue.hasAncHeadsetRental && (
+                  <div
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20"
+                    title="Active noise-cancelling headsets available for rent"
+                  >
+                    <Headphones className="w-3 h-3 text-violet-600" />
+                    <span className="text-[10px] font-bold text-violet-600 uppercase">
+                      ANC Rental
                     </span>
                   </div>
                 )}

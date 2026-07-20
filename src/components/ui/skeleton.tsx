@@ -97,6 +97,36 @@ export function AgentStepsSkeleton() {
   );
 }
 
+export function SavedVenueCardSkeleton() {
+  return (
+    <article className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden">
+      <div className="p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <Skeleton className="h-4 w-36 mb-2" />
+            <Skeleton className="h-3 w-48" />
+          </div>
+          <Skeleton className="w-8 h-8 rounded-lg shrink-0" />
+        </div>
+        <div className="flex items-center gap-3 mt-3">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-3 w-10" />
+          <Skeleton className="h-3 w-12" />
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 mt-3">
+          <Skeleton className="h-6 w-16 rounded-full" />
+          <Skeleton className="h-6 w-20 rounded-full" />
+          <Skeleton className="h-6 w-14 rounded-full" />
+        </div>
+        <Skeleton className="h-10 w-full mt-3 rounded-xl" />
+      </div>
+      <div className="px-4 sm:px-5 pb-4 sm:pb-5">
+        <Skeleton className="h-4 w-24 mx-auto" />
+      </div>
+    </article>
+  );
+}
+
 export function MapMarkerSkeleton() {
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 rounded-lg">

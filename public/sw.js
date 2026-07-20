@@ -1,53 +1,15 @@
 // Service Worker for WorkSphere PWA
-const CACHE_NAME = "worksphere-v4";
+const CACHE_NAME = "worksphere-v3";
+const IMAGE_CACHE_NAME = "worksphere-images-v4";
 const OFFLINE_URL = "/offline";
-// iOS Safari PWAs get killed around ~50MB of Cache Storage — keep a buffer.
-const MAX_CACHE_BYTES = 20 * 1024 * 1024;
+
+// Cap image cache at 20MB so iOS Safari PWA (~50MB quota) doesn't get killed.
+const MAX_IMAGE_CACHE_BYTES = 20 * 1024 * 1024;
+// Fallback size for opaque cross-origin responses where Content-Length is hidden (approx 400KB).
+const OPAQUE_RESPONSE_SIZE_ESTIMATE = 400 * 1024;
 
 // Assets to cache on install
 const PRECACHE_ASSETS = ["/", "/offline", "/icons/icon.svg", "/manifest.json"];
-
-async function estimateResponseSize(response) {
-  const header = response.headers.get("content-length");
-  if (header) {
-    const n = Number(header);
-    if (Number.isFinite(n) && n >= 0) return n;
-  }
-  try {
-    const buf = await response.clone().arrayBuffer();
-    return buf.byteLength;
-  } catch (e) {
-    return 0;
-  }
-}
-
-// Drop oldest cache entries until we're under MAX_CACHE_BYTES (LRU-ish:
-// Cache.keys() is insertion order; we re-put on hit to bump recency).
-async function trimCacheToMaxBytes(cache) {
-  const keys = await cache.keys();
-  const entries = [];
-  let total = 0;
-
-  for (const request of keys) {
-    const response = await cache.match(request);
-    if (!response) continue;
-    const size = await estimateResponseSize(response);
-    entries.push({ request, size });
-    total += size;
-  }
-
-  let i = 0;
-  while (total > MAX_CACHE_BYTES && i < entries.length) {
-    const entry = entries[i++];
-    await cache.delete(entry.request);
-    total -= entry.size;
-  }
-}
-
-async function cachePutWithLimit(cache, request, response) {
-  await cache.put(request, response);
-  await trimCacheToMaxBytes(cache);
-}
 
 // Install event - precache essential assets
 self.addEventListener("install", (event) => {
@@ -80,7 +42,10 @@ self.addEventListener("activate", (event) => {
         return Promise.all(
           cacheNames
             .filter(
-              (name) => name !== CACHE_NAME && !name.endsWith("-installing"),
+              (name) =>
+                name !== CACHE_NAME &&
+                name !== IMAGE_CACHE_NAME &&
+                !name.endsWith("-installing"),
             )
             .map((name) => caches.delete(name)),
         );
@@ -128,7 +93,7 @@ self.addEventListener("fetch", (event) => {
             const responseClone = response.clone();
             event.waitUntil(
               caches.open(CACHE_NAME).then((cache) => {
-                return cachePutWithLimit(cache, event.request, responseClone);
+                return cache.put(event.request, responseClone);
               }),
             );
           }
@@ -142,16 +107,13 @@ self.addEventListener("fetch", (event) => {
     );
   } else if (isExternalAsset) {
     event.respondWith(
-      caches.open(CACHE_NAME).then((cache) => {
+      caches.open(IMAGE_CACHE_NAME).then((cache) => {
         return cache.match(event.request).then((cachedResponse) => {
           // Agar cache mein mil gaya, toh turant return karo
           if (cachedResponse) {
-            // Re-put so this entry counts as most-recently-used for eviction
+            // Asynchronously update the LRU timestamp for this hit
             event.waitUntil(
-              cache
-                .put(event.request, cachedResponse.clone())
-                .then(() => trimCacheToMaxBytes(cache))
-                .catch(() => {}),
+              touchLRURecord(event.request.url).catch(console.error),
             );
             return cachedResponse;
           }
@@ -164,13 +126,47 @@ self.addEventListener("fetch", (event) => {
                 networkResponse.status === 200 ||
                 networkResponse.status === 0
               ) {
-                event.waitUntil(
-                  cachePutWithLimit(
-                    cache,
-                    event.request,
-                    networkResponse.clone(),
-                  ),
-                );
+                const responseToCache = networkResponse.clone();
+
+                // Calculate size for LRU tracking
+                let size = OPAQUE_RESPONSE_SIZE_ESTIMATE;
+                if (networkResponse.headers.has("content-length")) {
+                  const length = parseInt(
+                    networkResponse.headers.get("content-length") || "0",
+                    10,
+                  );
+                  if (!isNaN(length) && length > 0) size = length;
+                }
+
+                // Wrap cache.put and IDB updates in a promise chain for waitUntil
+                const cachePromise = cache
+                  .put(event.request, responseToCache)
+                  .then(async () => {
+                    await updateLRURecord(event.request.url, size);
+                    await enforceImageCacheQuota(cache);
+                  })
+                  .catch(async (err) => {
+                    if (err.name === "QuotaExceededError") {
+                      console.warn(
+                        "[SW] Quota exceeded. Evicting older images...",
+                      );
+                      await enforceImageCacheQuota(cache, true);
+
+                      try {
+                        await cache.put(event.request, responseToCache);
+                        await updateLRURecord(event.request.url, size);
+                      } catch (retryErr) {
+                        console.error(
+                          "[SW] Still out of quota after eviction:",
+                          retryErr,
+                        );
+                      }
+                    } else {
+                      console.error("[SW] Failed to cache asset:", err);
+                    }
+                  });
+
+                event.waitUntil(cachePromise);
               }
               return networkResponse;
             })
@@ -185,11 +181,9 @@ self.addEventListener("fetch", (event) => {
         .then((response) => {
           if (response.ok) {
             const responseClone = response.clone();
-            event.waitUntil(
-              caches.open(CACHE_NAME).then((cache) => {
-                return cachePutWithLimit(cache, event.request, responseClone);
-              }),
-            );
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, responseClone);
+            });
           }
           return response;
         })
@@ -408,7 +402,7 @@ async function syncConversations() {
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
     try {
-      const request = indexedDB.open("worksphere-offline", 3);
+      const request = indexedDB.open("worksphere-offline", 4);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
@@ -451,6 +445,16 @@ function openIndexedDB() {
           db.createObjectStore("pendingActions", {
             keyPath: "id",
             autoIncrement: true,
+          });
+        }
+
+        // Image Cache LRU store
+        if (!db.objectStoreNames.contains("imageCacheLRU")) {
+          const lruStore = db.createObjectStore("imageCacheLRU", {
+            keyPath: "url",
+          });
+          lruStore.createIndex("lastAccessed", "lastAccessed", {
+            unique: false,
           });
         }
       };
@@ -574,50 +578,167 @@ async function notifyClientsOfPermanentFailure(action) {
 }
 
 async function syncFavoritesOutbox() {
-  try {
-    const actions = await getQueuedFavorites();
+  const processQueue = async () => {
+    try {
+      const actions = await getQueuedFavorites();
 
-    for (const action of actions) {
-      if (!action.id) continue;
+      for (const action of actions) {
+        if (!action.id) continue;
 
-      try {
-        const response = await fetch("/api/favorites", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            venueId: action.venueId,
-            action: action.action,
-          }),
-        });
+        try {
+          const response = await fetch("/api/favorites", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              venueId: action.venueId,
+              action: action.action,
+            }),
+          });
 
-        if (response.ok) {
-          // Remove from IndexedDB outbox queue on successful endpoint ingestion
-          await dequeueOfflineAction(action.id);
-          continue;
+          if (response.ok) {
+            // Remove from IndexedDB outbox queue on successful endpoint ingestion
+            await dequeueOfflineAction(action.id);
+            continue;
+          }
+
+          // Non-OK response (e.g. 500) counts as a failed attempt, same as a
+          // network-level throw below.
+          throw new Error(`Sync request failed with status ${response.status}`);
+        } catch (error) {
+          console.error("Failed to sync favorite:", error);
+
+          const attempts = await incrementRetryCount(action.id);
+
+          if (attempts !== null && attempts >= MAX_SYNC_RETRIES) {
+            // Give up after MAX_SYNC_RETRIES — but tell the user instead of
+            // purging the action silently.
+            await dequeueOfflineAction(action.id);
+            await notifyClientsOfPermanentFailure(action);
+          }
+          // Otherwise leave it queued; the next "sync-favorites" event (or the
+          // next reconnect) will retry it.
         }
-
-        // Non-OK response (e.g. 500) counts as a failed attempt, same as a
-        // network-level throw below.
-        throw new Error(`Sync request failed with status ${response.status}`);
-      } catch (error) {
-        console.error("Failed to sync favorite:", error);
-
-        const attempts = await incrementRetryCount(action.id);
-
-        if (attempts !== null && attempts >= MAX_SYNC_RETRIES) {
-          // Give up after MAX_SYNC_RETRIES — but tell the user instead of
-          // purging the action silently.
-          await dequeueOfflineAction(action.id);
-          await notifyClientsOfPermanentFailure(action);
-        }
-        // Otherwise leave it queued; the next "sync-favorites" event (or the
-        // next reconnect) will retry it.
       }
+    } catch (err) {
+      console.error("[SW] Error in processQueue:", err);
+    }
+  };
+
+  try {
+    if ("locks" in navigator) {
+      await navigator.locks.request(
+        "sync-favorites-queue",
+        { ifAvailable: true },
+        async (lock) => {
+          if (!lock) {
+            console.log(
+              "[SW] Queue is currently being processed by another agent. Skipping.",
+            );
+            return;
+          }
+          await processQueue();
+        },
+      );
+    } else {
+      await processQueue();
     }
   } catch (error) {
     console.error(
       "Background synchronization pipeline failed to complete:",
       error,
     );
+  }
+}
+
+/**
+ * Updates or inserts a record for an image in the LRU IDB store.
+ */
+async function updateLRURecord(url, size) {
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction("imageCacheLRU", "readwrite");
+    const store = tx.objectStore("imageCacheLRU");
+    store.put({ url, size, lastAccessed: Date.now() });
+    return new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (err) {
+    console.error("[SW] Failed to update LRU record:", err);
+  }
+}
+
+/**
+ * Touches an existing record to update its lastAccessed time (True LRU).
+ */
+async function touchLRURecord(url) {
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction("imageCacheLRU", "readwrite");
+    const store = tx.objectStore("imageCacheLRU");
+    const request = store.get(url);
+
+    request.onsuccess = () => {
+      const record = request.result;
+      if (record) {
+        record.lastAccessed = Date.now();
+        store.put(record);
+      }
+    };
+  } catch (err) {
+    console.error("[SW] Failed to touch LRU record:", err);
+  }
+}
+
+let isEnforcingQuota = false;
+
+/**
+ * Helper to keep image cache strictly below quota (~20MB) using True LRU.
+ */
+async function enforceImageCacheQuota(cache, aggressive = false) {
+  // Wait if another sweep is concurrently running to avoid redundant IDB reads/writes
+  while (isEnforcingQuota) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  isEnforcingQuota = true;
+
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction("imageCacheLRU", "readwrite");
+    const store = tx.objectStore("imageCacheLRU");
+
+    const request = store.getAll();
+    const records = await new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+
+    let totalSize = records.reduce((acc, r) => acc + (r.size || 0), 0);
+    const targetSize = aggressive
+      ? MAX_IMAGE_CACHE_BYTES * 0.6
+      : MAX_IMAGE_CACHE_BYTES;
+
+    if (totalSize > targetSize) {
+      // Sort by oldest first
+      records.sort((a, b) => a.lastAccessed - b.lastAccessed);
+
+      let evictedCount = 0;
+      for (const record of records) {
+        if (totalSize <= targetSize) break;
+
+        await cache.delete(record.url);
+        store.delete(record.url);
+
+        totalSize -= record.size || 0;
+        evictedCount++;
+      }
+      console.log(
+        `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
+      );
+    }
+  } catch (err) {
+    console.error("[SW] Failed to enforce image cache LRU quota:", err);
+  } finally {
+    isEnforcingQuota = false;
   }
 }

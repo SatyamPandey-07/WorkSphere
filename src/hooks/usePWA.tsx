@@ -355,7 +355,7 @@ export function InstallAppButton() {
     <>
       <button
         onClick={handleInstallClick}
-        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        className="flex items-center gap-2 px-4 py-2 bg-[var(--primary-accent)] text-white rounded-lg hover:opacity-90 transition-colors"
       >
         <svg
           className="w-5 h-5"
@@ -395,7 +395,7 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
       >
         <div className="flex justify-between items-start mb-4">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500 animate-pulse">
+            <div className="p-2 rounded-xl bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.9)] text-[var(--primary-accent)] animate-pulse">
               <Download className="w-5 h-5" />
             </div>
             <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-white">
@@ -428,7 +428,7 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
                 Look for
                 <span className="inline-flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
                   <svg
-                    className="w-3.5 h-3.5 text-blue-500"
+                    className="w-3.5 h-3.5 text-[var(--primary-accent)]"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -475,7 +475,7 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
 
         <button
           onClick={onClose}
-          className="w-full mt-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/25"
+          className="w-full mt-6 py-2.5 bg-[var(--primary-accent)] hover:opacity-90 active:scale-[0.98] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-[color-mix(in_srgb,var(--primary-accent),transparent_0.75)]"
         >
           Got it
         </button>
@@ -519,7 +519,7 @@ export function PWABanner() {
       <div className="fixed bottom-20 left-4 right-4 md:bottom-6 md:right-6 md:left-auto md:w-96 z-50 animate-in slide-in-from-bottom duration-300">
         <div className="relative overflow-hidden bg-zinc-900/90 dark:bg-black/90 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl text-white">
           {/* Subtle colored background glow */}
-          <div className="absolute -top-10 -right-10 w-24 h-24 bg-blue-500/10 rounded-full blur-xl pointer-events-none" />
+          <div className="absolute -top-10 -right-10 w-24 h-24 bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.9)] rounded-full blur-xl pointer-events-none" />
 
           <button
             onClick={handleDismiss}
@@ -529,13 +529,13 @@ export function PWABanner() {
           </button>
 
           <div className="flex gap-3">
-            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white">
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-[var(--primary-accent)] flex items-center justify-center text-white">
               <Download className="w-4 h-4" />
             </div>
             <div className="flex-1 pr-4">
               <h4 className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
                 Install WorkSphere
-                <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                <Sparkles className="w-3.5 h-3.5 text-[color-mix(in_srgb,var(--primary-accent),white_0.7)] animate-pulse" />
               </h4>
               <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed font-medium">
                 Install as a lightweight app for faster load times, seamless
@@ -545,7 +545,7 @@ export function PWABanner() {
               <div className="mt-4 flex gap-2">
                 <button
                   onClick={handleInstallClick}
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 cursor-pointer active:scale-95 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md shadow-blue-500/20"
+                  className="px-3.5 py-1.5 bg-[var(--primary-accent)] hover:opacity-90 cursor-pointer active:scale-95 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md shadow-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)]"
                 >
                   Install Now
                 </button>

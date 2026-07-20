@@ -75,7 +75,7 @@ export function BrainTerminal() {
   }, [currentLog]);
 
   return (
-    <div className="glass-card rounded-2xl p-6 glow-blue max-w-lg mx-auto overflow-hidden">
+    <div className="glass-card rounded-2xl p-6 glow-accent max-w-lg mx-auto overflow-hidden">
       <div className="flex items-center gap-3 mb-6 border-b border-white/10 pb-4">
         <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
           <Brain className="w-5 h-5 text-blue-500 animate-pulse" />

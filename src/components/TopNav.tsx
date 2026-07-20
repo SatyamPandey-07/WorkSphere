@@ -39,7 +39,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                     </button>
                   </Link>
                   <Link href="/sign-up">
-                    <button className="px-4 sm:px-5 py-2 text-sm rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold hover:shadow-lg hover:shadow-blue-500/25 transition-all hover:scale-105 whitespace-nowrap">
+                    <button className="px-4 sm:px-5 py-2 text-sm rounded-xl accent-bg text-white font-semibold hover:shadow-lg accent-shadow-md transition-all hover:scale-105 whitespace-nowrap">
                       Get Started
                     </button>
                   </Link>

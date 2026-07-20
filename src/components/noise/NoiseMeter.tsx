@@ -372,7 +372,7 @@ export function NoiseMeter({ onMeasured }: Props) {
         type="button"
         onClick={measure}
         disabled={status === "requesting" || status === "measuring"}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-black uppercase tracking-tight text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] shadow-md shadow-blue-500/10"
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl accent-bg px-4 py-2.5 text-sm font-black uppercase tracking-tight text-white transition accent-bg-hover disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] shadow-md accent-shadow-sm"
       >
         {status === "measuring" ? (
           <>

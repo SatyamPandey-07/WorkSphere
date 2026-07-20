@@ -411,7 +411,7 @@ export function VenueCard({
                 checked={isSelected}
                 onChange={() => onToggleCompare(venue)}
                 disabled={!isSelected && compareDisabled}
-                className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                className="w-4 h-4 accent-text rounded border-zinc-300 focus:ring-[var(--primary-accent)] cursor-pointer disabled:opacity-50"
               />
               <label
                 htmlFor={`compare-${venue.id}`}
@@ -433,7 +433,7 @@ export function VenueCard({
             checked={isSelected}
             onChange={() => onToggleCompare(venue)}
             disabled={!isSelected && compareDisabled}
-            className="w-4 h-4 text-blue-600 rounded border-zinc-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+            className="w-4 h-4 accent-text rounded border-zinc-300 focus:ring-[var(--primary-accent)] cursor-pointer disabled:opacity-50"
           />
           <label
             htmlFor={`compare-no-photo-${venue.id}`}
@@ -451,7 +451,7 @@ export function VenueCard({
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
               {venue.name}
               {isLoading && (
-                <Loader2 className="w-3 h-3 animate-spin text-blue-500 shrink-0" />
+                <Loader2 className="w-3 h-3 animate-spin accent-text shrink-0" />
               )}
             </h3>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
@@ -470,9 +470,9 @@ export function VenueCard({
             }`}
           >
             <Heart
-className={`w-5 h-5 shrink-0 ${
-  enableTransition ? "transition-all duration-300" : ""
-} ${isFavorited ? "fill-current" : ""}`}
+              className={`w-5 h-5 shrink-0 ${
+                enableTransition ? "transition-all duration-300" : ""
+              } ${isFavorited ? "fill-current" : ""}`}
             />
           </button>
         </div>
@@ -1156,7 +1156,7 @@ className={`w-5 h-5 shrink-0 ${
         <div className="flex gap-2">
           <button
             onClick={() => onGetDirections?.(venue)}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors"
           >
             <Navigation className="w-4 h-4 shrink-0" />
             Directions

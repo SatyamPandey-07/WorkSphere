@@ -83,12 +83,12 @@ export function CheckInHistory() {
           {mockCheckIns.map((checkIn) => (
             <div key={checkIn.id} className="relative pl-6 group">
               {/* Timeline dot */}
-              <div className="absolute w-4 h-4 rounded-full bg-white dark:bg-zinc-900 border-2 border-blue-500 -left-[9px] top-1.5 group-hover:scale-110 group-hover:bg-blue-500 transition-all duration-300" />
+              <div className="absolute w-4 h-4 rounded-full bg-white dark:bg-zinc-900 border-2 accent-border -left-[9px] top-1.5 group-hover:scale-110 group-hover:bg-[var(--primary-accent)] transition-all duration-300" />
 
               <div className="flex flex-col gap-3">
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                    <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50 group-hover:text-[var(--primary-accent)] dark:group-hover:text-[var(--primary-accent)] transition-colors">
                       {checkIn.location}
                     </h3>
                     <div className="flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400 mt-1">

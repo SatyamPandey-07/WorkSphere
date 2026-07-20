@@ -27,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "../ThemeToggle";
 import { EmptyState } from "../ui/EmptyState";
@@ -108,6 +108,22 @@ export function ChatHeader({
   const [isHubOpen, setIsHubOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const filtersBtnRef = useRef<HTMLButtonElement>(null);
+  const filtersPanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showFilters) return;
+
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (filtersBtnRef.current?.contains(target)) return;
+      if (filtersPanelRef.current?.contains(target)) return;
+      setShowFilters(false);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [showFilters, setShowFilters]);
 
   const startRenaming = (conv: Conversation) => {
     setRenamingId(conv.id);
@@ -257,6 +273,8 @@ export function ChatHeader({
 
           {/* Filters */}
           <button
+            ref={filtersBtnRef}
+            type="button"
             onClick={() => {
               setShowFilters(!showFilters);
               setShowHistory(false);
@@ -267,6 +285,7 @@ export function ChatHeader({
                 : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white"
             }`}
             title="Filters"
+            aria-expanded={showFilters}
           >
             <Filter className="w-4 h-4" />
           </button>
@@ -319,41 +338,65 @@ export function ChatHeader({
       <div className="relative">
         {/* Filter Overlay Area - Solid High Contrast */}
         {showFilters && (
-          <div className="mt-4 p-3.5 sm:p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-4 sm:gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl">
+          <div
+            ref={filtersPanelRef}
+            className="mt-4 p-3.5 sm:p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-4 sm:gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
             {/* Section 1: Standard Toggles */}
             <div>
               <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
                 Amenity Toggles
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => onToggleFilter("wifi")}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.wifi ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.wifi ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.wifi}
+                    onChange={() => onToggleFilter("wifi")}
+                    className="sr-only"
+                  />
                   <Wifi className="w-3.5 h-3.5" />
                   High-Speed WiFi
-                </button>
-                <button
-                  onClick={() => onToggleFilter("outlets")}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.outlets ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                </label>
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.outlets ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.outlets}
+                    onChange={() => onToggleFilter("outlets")}
+                    className="sr-only"
+                  />
                   <Outlets className="w-3.5 h-3.5" />
-                  Power Outlets
-                </button>
-                <button
-                  onClick={() => onToggleFilter("quiet")}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.quiet ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  Has Outlets
+                </label>
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.quiet ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.quiet}
+                    onChange={() => onToggleFilter("quiet")}
+                    className="sr-only"
+                  />
                   <Volume2 className="w-3.5 h-3.5" />
                   Low Noise
-                </button>
-                <button
-                  onClick={() => onToggleFilter("ergonomic")}
-                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.ergonomic ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                </label>
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.ergonomic ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                 >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.ergonomic}
+                    onChange={() => onToggleFilter("ergonomic")}
+                    className="sr-only"
+                  />
                   <Activity className="w-3.5 h-3.5" />
                   Ergonomic Setup
-                </button>
+                </label>
               </div>
             </div>
             {/* Section: Coffee Quality */}

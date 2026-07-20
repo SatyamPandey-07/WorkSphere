@@ -95,12 +95,10 @@ export default async function RootLayout({
   const theme = (cookieStore.get("worksphere-theme")?.value as "light" | "dark") || "light";
 
   const innerContent = (
-    <ThemeProvider>
+    <ThemeProvider initialTheme={theme}>
       <SoundProvider>
         <I18nProvider>{children}</I18nProvider>
       </SoundProvider>
-    <ThemeProvider initialTheme={theme}>
-      <I18nProvider>{children}</I18nProvider>
     </ThemeProvider>
   );
 

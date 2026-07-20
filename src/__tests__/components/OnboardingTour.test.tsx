@@ -1,5 +1,6 @@
 import { render, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 // Mock react-joyride before importing the component
 const mockJoyride = jest.fn((_props: any) => null);
@@ -19,6 +20,15 @@ jest.mock("react-joyride", () => ({
 
 import { OnboardingTour } from "@/components/OnboardingTour";
 
+/** Renders OnboardingTour inside the required ThemeProvider wrapper. */
+function renderTour() {
+  return render(
+    <ThemeProvider>
+      <OnboardingTour />
+    </ThemeProvider>,
+  );
+}
+
 describe("OnboardingTour", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -36,7 +46,7 @@ describe("OnboardingTour", () => {
   });
 
   it("starts the tour for first-time users (no localStorage flag)", () => {
-    render(<OnboardingTour />);
+    renderTour();
 
     // The tour uses a 1-second delay before starting
     act(() => {
@@ -53,7 +63,7 @@ describe("OnboardingTour", () => {
   it("does NOT start the tour when onboarding is already completed", () => {
     localStorage.setItem("worksphere-onboarding-completed", "true");
 
-    render(<OnboardingTour />);
+    renderTour();
 
     act(() => {
       jest.advanceTimersByTime(1100);
@@ -67,7 +77,7 @@ describe("OnboardingTour", () => {
   });
 
   it("defines exactly 3 tour steps targeting map, chat, and booking", () => {
-    render(<OnboardingTour />);
+    renderTour();
 
     const lastCall = mockJoyride.mock.calls[
       mockJoyride.mock.calls.length - 1
@@ -81,7 +91,7 @@ describe("OnboardingTour", () => {
   });
 
   it("includes a skip button in the options", () => {
-    render(<OnboardingTour />);
+    renderTour();
 
     const lastCall = mockJoyride.mock.calls[
       mockJoyride.mock.calls.length - 1
@@ -91,7 +101,7 @@ describe("OnboardingTour", () => {
   });
 
   it("saves completion to localStorage when tour finishes", () => {
-    render(<OnboardingTour />);
+    renderTour();
 
     // Simulate Joyride calling onEvent with tour:end + finished status
     const lastCall = mockJoyride.mock.calls[
@@ -107,7 +117,7 @@ describe("OnboardingTour", () => {
   });
 
   it("saves completion to localStorage when tour is skipped", () => {
-    render(<OnboardingTour />);
+    renderTour();
 
     const lastCall = mockJoyride.mock.calls[
       mockJoyride.mock.calls.length - 1
@@ -122,7 +132,7 @@ describe("OnboardingTour", () => {
   });
 
   it("does NOT save to localStorage for non-end events", () => {
-    render(<OnboardingTour />);
+    renderTour();
 
     const lastCall = mockJoyride.mock.calls[
       mockJoyride.mock.calls.length - 1
@@ -135,7 +145,7 @@ describe("OnboardingTour", () => {
   });
 
   it("each step has a title and content", () => {
-    render(<OnboardingTour />);
+    renderTour();
 
     const lastCall = mockJoyride.mock.calls[
       mockJoyride.mock.calls.length - 1

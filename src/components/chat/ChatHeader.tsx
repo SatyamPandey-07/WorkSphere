@@ -170,7 +170,7 @@ export function ChatHeader({
               </span>
             </div>
             <div className="flex items-center gap-2 mt-1">
-              <span className="flex items-center gap-1 text-[9px] font-bold text-blue-500">
+              <span className="flex items-center gap-1 text-[9px] font-bold accent-text">
                 <ShieldCheck className="w-2.5 h-2.5" />
                 SECURE
               </span>
@@ -220,7 +220,7 @@ export function ChatHeader({
           {/* New Chat */}
           <button
             onClick={onNewChat}
-            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95"
             title="New Chat"
           >
             <RotateCcw className="w-4 h-4" />
@@ -230,7 +230,7 @@ export function ChatHeader({
           {onShareSession && (
             <button
               onClick={onShareSession}
-              className="p-2 bg-zinc-100  cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
+              className="p-2 bg-zinc-100  cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
               title="Share Session"
             >
               <Share2 className="w-4 h-4" />
@@ -240,7 +240,7 @@ export function ChatHeader({
           {/* My Bookings History */}
           <button
             onClick={onShowBookings}
-            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
             title="My Residencies"
           >
             <Inbox className="w-4 h-4" />
@@ -249,7 +249,7 @@ export function ChatHeader({
           {/* Collections */}
           <Link
             href="/collections"
-            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden sm:flex"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
             title="Collections"
           >
             <LayoutGrid className="w-4 h-4" />
@@ -264,7 +264,7 @@ export function ChatHeader({
             className={`p-2 border cursor-pointer rounded-xl transition-all active:scale-95 ${
               showHistory
                 ? "bg-purple-600 border-purple-400 text-white shadow-lg shadow-purple-500/20"
-                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-blue-600"
+                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white"
             }`}
             title="Chat History"
           >
@@ -282,7 +282,7 @@ export function ChatHeader({
             className={`p-2 border cursor-pointer rounded-xl transition-all active:scale-95 ${
               showFilters
                 ? "bg-orange-600 border-orange-400 text-white shadow-lg shadow-orange-500/20"
-                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-blue-600"
+                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white"
             }`}
             title="Filters"
             aria-expanded={showFilters}
@@ -293,7 +293,7 @@ export function ChatHeader({
           {/* Analytics Link */}
           <Link
             href="/analytics"
-            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-blue-600 hover:text-white transition-all active:scale-95 hidden lg:flex"
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden lg:flex"
             title="Intelligence Dashboard"
           >
             <BarChart3 className="w-4 h-4" />
@@ -659,7 +659,7 @@ export function ChatHeader({
                           </button>
                           <button
                             onClick={() => onLoadConversation(conv.id)}
-                            className="p-1.5 rounded-md text-zinc-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                            className="p-1.5 rounded-md text-zinc-400 hover:text-[var(--primary-accent)] hover:bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.1)] dark:hover:bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)]"
                           >
                             <ChevronRight className="w-3.5 h-3.5" />
                           </button>
@@ -701,8 +701,8 @@ export function ChatHeader({
         </div>
 
         <div className="flex items-center gap-3">
-          <LayoutGrid className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-blue-500 cursor-pointer transition-colors" />
-          <Terminal className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-blue-500 cursor-pointer transition-colors" />
+          <LayoutGrid className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors" />
+          <Terminal className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors" />
         </div>
       </div>
     </div>

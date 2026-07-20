@@ -2,6 +2,7 @@ import { SignUp } from "@clerk/nextjs";
 import Link from "next/link";
 import { MapPin, Wifi, Zap, Volume2 } from "lucide-react";
 import { ResendOtpButton } from "@/components/ResendOtpButton";
+import { PasskeyFrameNotice } from "@/components/PasskeyFrameNotice";
 
 export default function SignUpPage() {
   return (
@@ -80,6 +81,7 @@ export default function SignUpPage() {
           </div>
 
           <div className="w-full">
+            <PasskeyFrameNotice />
             <SignUp
               appearance={{
                 elements: {

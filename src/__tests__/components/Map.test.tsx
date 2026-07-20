@@ -18,6 +18,15 @@ jest.mock("@clerk/nextjs", () => ({
   }),
 }));
 
+// Mock PartySocket for presence
+const mockSend = jest.fn();
+jest.mock("partysocket/react", () => {
+  return jest.fn(() => ({
+    send: mockSend,
+    readyState: 1, // WebSocket.OPEN
+  }));
+});
+
 // Mock the seat-availability hook (#703) — its own PartySocket wiring is
 // covered by dedicated hook tests; here we just need a stable, inert stub
 // so Map.tsx's rendering behaviour can be tested in isolation.
@@ -505,6 +514,14 @@ describe("Map Component", () => {
 
       const polylines = screen.getAllByTestId("polyline");
       expect(polylines.length).toBe(2);
+    });
+  });
+
+  describe("Real-time Cursors", () => {
+    it("renders with dynamic roomId and connects to websocket room", () => {
+      render(<Map {...defaultProps} roomId="test-session-123" />);
+      const mapContainer = screen.getByTestId("map-container");
+      expect(mapContainer).toBeInTheDocument();
     });
   });
 

@@ -14,7 +14,10 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ErrorBoundary extends Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -66,7 +69,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 // Functional wrapper for easier use
 export function withErrorBoundary<P extends object>(
   WrappedComponent: React.ComponentType<P>,
-  fallback?: ReactNode
+  fallback?: ReactNode,
 ) {
   return function WithErrorBoundary(props: P) {
     return (
@@ -89,7 +92,7 @@ export function ChatErrorBoundary({ children }: { children: ReactNode }) {
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="text-sm text-blue-600 hover:underline"
+            className="text-sm accent-text hover:underline"
           >
             Refresh page
           </button>
@@ -116,7 +119,7 @@ export function MapErrorBoundary({ children }: { children: ReactNode }) {
           </p>
           <button
             onClick={() => window.location.reload()}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="flex items-center gap-2 px-3 py-1.5 text-sm accent-bg text-white rounded-lg accent-bg-hover"
           >
             <RefreshCw className="w-3 h-3" />
             Reload

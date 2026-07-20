@@ -138,6 +138,12 @@ export function RatingDistribution({
   onClose,
 }: RatingDistributionProps) {
   const totalReviews = reviews.length;
+  const accentHex =
+    typeof window !== "undefined"
+      ? getComputedStyle(document.documentElement)
+          .getPropertyValue("--primary-accent")
+          .trim() || "#3b82f6"
+      : "#3b82f6";
 
   const wifiCounts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
   const noiseCounts = { quiet: 0, moderate: 0, loud: 0 };
@@ -224,7 +230,7 @@ export function RatingDistribution({
                 {
                   label: "5 Stars",
                   value: wifiCounts[5],
-                  color: "#3b82f6",
+                  color: accentHex,
                   icon: (
                     <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
                   ),

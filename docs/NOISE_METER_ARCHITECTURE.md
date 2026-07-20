@@ -1,12 +1,12 @@
 # Web Audio API Noise Meter Architecture
 
-This document provides a comprehensive implementation guide for the client-side noise meter, detailing browser microphone permissions, the Web Audio API lifecycle, frequency bin calculations, and real-time decibel (dB) measurements.
+This document provides a comprehensive implementation guide for the client-side noise meter, detailing browser microphone permissions, the Web Audio API lifecycle, frequency bin calculations, real-time decibel (dB) measurements, and the WebAssembly (WASM) acceleration layer.
 
 ---
 
 ## 1. High-Level Architecture Overview
 
-The noise meter functions by capturing hardware microphone input, feeding it through a real-time signal processing graph, and extracting amplitude values to map human-perceivable environmental loudness levels.
+The noise meter functions by capturing hardware microphone input, feeding it through a real-time signal processing graph, and extracting amplitude values to map human-perceivable environmental loudness levels. The RMS computation is offloaded to a WebAssembly module for performance, with proper heap memory management to prevent leaks.
 
 The data pipeline flows linearly through the following stages:
 
@@ -22,7 +22,9 @@ The data pipeline flows linearly through the following stages:
 [ AnalyserNode (Fast Fourier Transform) ]
 │
 ▼
-[ Logarithmic Decibel Mapping Loop ] -> [ UI Render Component ]
+[ WASM RMS Processor ] ──→ [ JavaScript dB Conversion ] ──→ [ UI Render Component ]
+│                             │
+└── malloc/free/resetHeap ────┘     (memory lifecycle per frame)
 
 ---
 
@@ -48,7 +50,46 @@ The framework relies on an isolated environment called the `AudioContext`. Insid
 
 ---
 
-## 4. Signal Analysis & Decibel Calculation
+## 4. WebAssembly Memory Management (Memory Leak Fix)
+
+The core fix for the WASM memory growth issue is implemented in `src/lib/wasm/noiseProcessor.ts`. The WASM module (`public/noise-processor.wasm`) provides a bump allocator with explicit `malloc`/`free` functions.
+
+### Key Memory Management Strategy:
+
+1. **Fixed Pointer Reuse**: A single cached WASM memory pointer (`cachedBufferPtr`) is allocated on the first frame and reused for all subsequent frames. New allocations happen only when a larger buffer is needed.
+
+2. **Explicit Free on Cleanup**: When measurement completes or the component unmounts, `resetNoiseProcessor()` calls `wasm.free()` on the cached pointer and resets the heap via `resetHeap()`.
+
+3. **Module Lifecycle**: The WASM module is loaded lazily on first use and cached via `instancePromise`. `resetNoiseProcessor()` clears this cache to allow full garbage collection.
+
+### WASM Module Exports:
+
+| Export       | Signature                  | Purpose                           |
+|-------------|----------------------------|-----------------------------------|
+| `malloc`     | `(size: i32) -> i32`       | Allocate `size` bytes, return ptr |
+| `free`       | `(ptr: i32, size: i32)`    | Free allocation at ptr            |
+| `computeRMS` | `(ptr: i32, len: i32) -> f32` | Compute RMS of float32 array   |
+| `resetHeap`  | `() -> void`               | Reset bump allocator to initial   |
+
+### Without this fix:
+```
+Frame 1: malloc(8192) → ptr=1024  ✓
+Frame 2: malloc(8192) → ptr=9216  ✗ (new allocation, old not freed)
+...
+Frame N: heap exhausted → browser crash
+```
+
+### With this fix:
+```
+Frame 1: malloc(8192) → ptr=1024 (cached)
+Frame 2: reuse ptr=1024           ✓ (same pointer)
+...
+Frame N: free(ptr, 8192)          ✓ (on cleanup)
+```
+
+---
+
+## 5. Signal Analysis & Decibel Calculation
 
 The real-time calculation translates raw computational arrays into human-readable decibel sound scales.
 
@@ -60,10 +101,10 @@ The `AnalyserNode.fftSize` property defines the window size used for frequency a
 
 To measure the overall intensity over a discrete time window, we calculate the Root Mean Square (RMS) of the raw time-domain pulse samples, then map it logarithmically to a decibel scale:
 
-1. RMS Calculation:
+1. RMS Calculation (offloaded to WASM):
    Square each absolute amplitude sample in the array, find the mathematical average of those squared values, and compute the square root of that average.
 
-2. Logarithmic Decibel Conversion:
+2. Logarithmic Decibel Conversion (JavaScript):
    Convert the derived average pressure scale into decibel levels using the standard formula:
    dB = 20 * log10(RMS)
 
@@ -71,68 +112,13 @@ Because raw digital audio amplitudes top out at a float ceiling value of 1.0, th
 
 ---
 
-## 5. Complete Architecture Code Snippet
+## 6. Source Files Reference
 
-The following standalone JavaScript structure represents the foundational pipeline pattern used to implement the noise tracking cycle:
-
-// Main processing loop wrapper encapsulation
-async function initializeNoiseMeter() {
-try {
-// 1. Request hardware capture constraints from user
-const stream = await navigator.mediaDevices.getUserMedia({
-audio: { echoCancellation: true, noiseSuppression: false }
-});
-
-    // 2. Initialize the main processing environment
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    const audioContext = new AudioContextClass();
-
-    // 3. Construct modular graph nodes
-    const sourceNode = audioContext.createMediaStreamSource(stream);
-    const analyserNode = audioContext.createAnalyser();
-
-    // 4. Set FFT resolution configuration parameters
-    analyserNode.fftSize = 2048;
-    const bufferLength = analyserNode.fftSize;
-    const dataArray = new Float32Array(bufferLength);
-
-    // 5. Connect node streams sequentially
-    sourceNode.connect(analyserNode);
-
-    console.log("Audio processing architecture successfully connected.");
-
-    // 6. Define tracking cycle loop
-    function calculateVolume() {
-      // Pull raw audio waveform timeline values into local float array
-      analyserNode.getFloatTimeDomainData(dataArray);
-
-      let sumSquares = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sumSquares += dataArray[i] * dataArray[i];
-      }
-
-      const rms = Math.sqrt(sumSquares / dataArray.length);
-
-      // Enforce lower bound safety baseline check to avoid log10(0) evaluation errors
-      const safeFloor = 0.00001;
-      const currentRMS = rms > safeFloor ? rms : safeFloor;
-
-      // Logarithmic evaluation conversion scale mapping
-      let decibels = 20 * Math.log10(currentRMS);
-
-      // Normalize dynamic scale range to a positive 0-100 UI mapping spectrum
-      let normalizedVolume = Math.max(0, Math.min(100, Math.round(decibels + 100)));
-
-      console.log("Real-time sound level volume:", normalizedVolume);
-
-      // Request next frame execution cycle from window manager
-      requestAnimationFrame(calculateVolume);
-    }
-
-    // Initiate execution engine cycle loop
-    calculateVolume();
-
-} catch (error) {
-console.error("Microphone hardware configuration permission rejected:", error);
-}
-}
+| File | Purpose |
+|------|---------|
+| `src/components/noise/NoiseMeter.tsx` | React component, UI + measurement orchestration |
+| `src/lib/wasm/noiseProcessor.ts` | WASM loader with memory management |
+| `public/noise-processor.wasm` | Compiled WASM module |
+| `wasm/noise-processor.wat` | WebAssembly Text Format source |
+| `wasm/compile.js` | WAT → WASM compilation script |
+| `wasm/verify.js` | WASM module functional verification |

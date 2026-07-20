@@ -1,7 +1,8 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "./ThemeProvider";
 import {
   MapContainer,
   TileLayer,
@@ -22,6 +23,21 @@ import {
   useSeatAvailability,
   type SeatStatus,
 } from "@/hooks/useSeatAvailability";
+import usePartySocket from "partysocket/react";
+
+function throttle<T extends (...args: any[]) => void>(
+  func: T,
+  limit: number,
+): T {
+  let inThrottle = false;
+  return function (this: any, ...args: any[]) {
+    if (!inThrottle) {
+      func.apply(this, args);
+      inThrottle = true;
+      setTimeout(() => (inThrottle = false), limit);
+    }
+  } as unknown as T;
+}
 
 // Seat-availability ring colours (#703): green = plenty of room, yellow =
 // filling up, red = at/over capacity.
@@ -70,7 +86,6 @@ if (typeof window !== "undefined") {
 
 function MapController({ mapView }: { mapView: MapView | null }) {
   const map = useMap();
-
   useEffect(() => {
     if (mapView && mapView.center && mapView.zoom) {
       if (mapView.animate) {
@@ -213,19 +228,107 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
 
   return null;
 }
+function MapEvents({
+  onMouseMove,
+}: {
+  onMouseMove: (latlng: L.LatLng) => void;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    const handleMouseMove = ({ latlng }: L.LeafletMouseEvent) => {
+      onMouseMove(latlng);
+    };
+    map.on("mousemove", handleMouseMove);
+    return () => {
+      map.off("mousemove", handleMouseMove);
+    };
+  }, [map, onMouseMove]);
+  return null;
+}
+
+const createCursorIcon = (avatarUrl: string, name: string) => {
+  if (typeof window === "undefined") return null;
+  let html: string;
+  if (avatarUrl && avatarUrl !== "default" && avatarUrl.startsWith("http")) {
+    html = `
+      <div class="map-cursor-container">
+        <div class="map-cursor-avatar" style="background-image: url(${avatarUrl})"></div>
+        <div class="map-cursor-label">${name}</div>
+      </div>
+    `;
+  } else {
+    html = `
+      <div class="map-cursor-container">
+        <div class="map-cursor-avatar-default"></div>
+        <div class="map-cursor-label">${name}</div>
+      </div>
+    `;
+  }
+  return L.divIcon({
+    className: "map-presence-marker",
+    html,
+    iconSize: [32, 48],
+    iconAnchor: [16, 16],
+  });
+};
+
+import { attachWebGLContextRecovery } from "@/lib/webgl/contextManager";
+
+function WebGLContextWatcher() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const cleanups: Array<() => void> = [];
+
+    const setupCanvases = () => {
+      const canvases = container.querySelectorAll("canvas");
+      canvases.forEach((canvas) => {
+        const cleanup = attachWebGLContextRecovery(
+          canvas as HTMLCanvasElement,
+          () => {
+            map.invalidateSize();
+          },
+        );
+        cleanups.push(cleanup);
+      });
+    };
+
+    setupCanvases();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setupCanvases();
+        map.invalidateSize();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cleanups.forEach((c) => c());
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [map]);
+
+  return null;
+}
 
 const Map = ({
   location,
   markers,
   routes,
   mapView,
+  roomId,
 }: {
   location: { latitude: number; longitude: number };
   markers: MapMarker[];
   routes: MapRoute[];
   mapView: MapView | null;
+  roomId?: string | null;
 }) => {
   const clerkUser = useUser();
+  const { theme } = useTheme();
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
 
@@ -533,7 +636,12 @@ const Map = ({
   }, [iconUrl]);
 
   const center: [number, number] = [latitude, longitude];
-
+  const tileUrl =
+    theme === "light"
+      ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+      : theme === "cyberpunk"
+        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   return (
     <>
       <style
@@ -637,7 +745,46 @@ const Map = ({
           display: flex;
           align-items: center;
           justify-content: center;
+        /* Animated User Cursors Presence styles */
+        .map-presence-marker {
+          transition: transform 0.08s linear;
           will-change: transform;
+          z-index: 1000 !important;
+        }
+        .map-cursor-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          position: relative;
+        }
+        .map-cursor-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background-size: cover;
+          background-position: center;
+          border: 2px solid #ef4444; /* Vibrant Red border for presence indicators */
+          box-shadow: 0 0 8px rgba(239, 68, 68, 0.5), 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+        .map-cursor-avatar-default {
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background-color: #ef4444;
+          border: 2px solid white;
+          box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+        }
+        .map-cursor-label {
+          background-color: rgba(239, 68, 68, 0.9);
+          color: white;
+          font-size: 9px;
+          font-weight: bold;
+          padding: 1px 6px;
+          border-radius: 4px;
+          margin-top: 2px;
+          white-space: nowrap;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+          pointer-events: none;
         }
 
         /* Disable animation on reduced motion/low performance mode */
@@ -691,6 +838,8 @@ const Map = ({
       <MapContainer
         center={center}
         zoom={13}
+        maxZoom={18}
+        preferCanvas={true}
         style={{
           width: "95%",
           height: "95%",
@@ -703,8 +852,12 @@ const Map = ({
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              url={tileUrl}
               className="map-tiles-dark"
+              maxZoom={18}
+              maxNativeZoom={18}
+              keepBuffer={4}
+              updateWhenIdle={true}
             />
           </LayersControl.BaseLayer>
 
@@ -750,6 +903,7 @@ const Map = ({
           onZoomStart={handleZoomStart}
         />
         <ResizeWatcher />
+        <WebGLContextWatcher />
 
         {customIcon && (
           <Marker
@@ -763,6 +917,19 @@ const Map = ({
             <Popup>You are here!</Popup>
           </Marker>
         )}
+        <MapEvents onMouseMove={throttledBroadcast} />
+        {Object.entries(mapCursors).map(([userId, cursor]) => {
+          const presenceIcon = createCursorIcon(cursor.avatar, cursor.name);
+          if (!presenceIcon) return null;
+          return (
+            <Marker
+              key={`presence-${userId}`}
+              position={[cursor.lat, cursor.lng]}
+              icon={presenceIcon}
+              interactive={false}
+            />
+          );
+        })}
         {spiderfiedMarkers.map((marker) => (
           <Marker
             key={marker.id}
@@ -809,8 +976,8 @@ const Map = ({
                           }
                           className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
                             isCheckedInHere
-                              ? "bg-blue-600 text-white hover:bg-blue-500"
-                              : "bg-zinc-800 text-zinc-200 hover:bg-blue-600 hover:text-white"
+                              ? "accent-bg text-white hover:opacity-90"
+                              : "bg-zinc-800 text-zinc-200 hover:accent-bg hover:text-white"
                           }`}
                         >
                           {isCheckedInHere ? "Check out" : "Check in here"}
@@ -836,7 +1003,7 @@ const Map = ({
                     calculateOptimizedRoute(updated);
                   }
                 }}
-                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:bg-blue-600 hover:text-white transition-colors"
+                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:accent-bg hover:text-white transition-colors"
               >
                 ➕ Add to Workday Timeline
               </button>
@@ -946,7 +1113,7 @@ const Map = ({
                 onClick={() => setTravelProfile(mode)}
                 className={`rounded-md py-1.5 font-medium cursor-pointer uppercase transition-all ${
                   travelProfile === mode
-                    ? "bg-blue-600 text-white shadow"
+                    ? "accent-bg text-white shadow"
                     : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
                 }`}
               >
@@ -1001,7 +1168,10 @@ const Map = ({
               {routingQueue.length >= 2 && (
                 <button
                   onClick={() => calculateOptimizedRoute()}
-                  className="mt-3 w-full rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 py-2 text-xs font-semibold text-white shadow-lg transition-all hover:from-blue-500 hover:to-indigo-500 active:scale-[0.98]"
+                  className="mt-3 w-full rounded-lg py-2 text-xs font-semibold text-white shadow-lg transition-all active:scale-[0.98]"
+                  style={{
+                    background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 80%, #4f46e5))`,
+                  }}
                 >
                   🚀 Calculate Combined Travel Timeline
                 </button>

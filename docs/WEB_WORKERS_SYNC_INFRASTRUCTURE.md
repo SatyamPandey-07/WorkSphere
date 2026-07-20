@@ -92,6 +92,8 @@ Background synchronization is commonly used for:
 
 Applications should validate synchronization results and gracefully handle failures to avoid duplicate operations or inconsistent state.
 
+Background synchronization should be treated as a best-effort mechanism rather than a guaranteed delivery system. Operations may be retried up to a defined maximum retry limit. If synchronization continues to fail after the retry limit is reached, the queued operation may be discarded, the failure should be reported to the user, and appropriate remediation or manual retry options should be provided. Applications should also verify network connectivity before scheduling additional synchronization attempts.
+
 ## 6. Circuit Breaker Pattern
 
 A circuit breaker prevents an application from repeatedly sending requests to an unavailable or failing service. Instead of continuously retrying failed operations, it temporarily blocks requests until the service is likely to recover.

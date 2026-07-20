@@ -5,9 +5,54 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-const upstashLimiters = new Map<number, any>();
+const WINDOW_MS = 60_000;
 
-function getUpstashRatelimit(limitPerMinute: number) {
+// ZSET sliding window. Member = stringified microsecond stamp so concurrent
+// hits in the same ms don't collide / get dropped under load.
+const SLIDING_WINDOW_LUA = `
+local key = KEYS[1]
+local limit = tonumber(ARGV[1])
+local windowMs = tonumber(ARGV[2])
+local nonce = ARGV[3]
+
+local t = redis.call("TIME")
+local sec = t[1]
+local usec = t[2]
+local nowMs = tonumber(sec) * 1000 + math.floor(tonumber(usec) / 1000)
+local member = sec .. string.format("%06d", tonumber(usec)) .. ":" .. nonce
+
+redis.call("ZREMRANGEBYSCORE", key, "-inf", nowMs - windowMs)
+local count = redis.call("ZCARD", key)
+if count >= limit then
+  return 0
+end
+
+redis.call("ZADD", key, nowMs, member)
+redis.call("PEXPIRE", key, windowMs)
+return 1
+`;
+
+/** ZSET member id used by the Lua script (exported for tests). */
+export function microTimestampMember(
+  sec: string | number,
+  usec: string | number,
+  nonce: string,
+): string {
+  const u = String(usec).padStart(6, "0");
+  return `${sec}${u}:${nonce}`;
+}
+
+type RedisScript = {
+  eval: (keys: string[], args: string[]) => Promise<unknown>;
+};
+
+type RedisClient = {
+  createScript: (script: string) => RedisScript;
+};
+
+const scriptByLimit = new Map<number, RedisScript>();
+
+function getRedisScript(limitPerMinute: number): RedisScript | null {
   if (
     !process.env.UPSTASH_REDIS_REST_URL ||
     !process.env.UPSTASH_REDIS_REST_TOKEN
@@ -15,67 +60,44 @@ function getUpstashRatelimit(limitPerMinute: number) {
     return null;
   }
 
+  const cached = scriptByLimit.get(limitPerMinute);
+  if (cached) return cached;
+
   try {
-    // Dynamic require so the build doesn't fail if packages aren't present yet
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Ratelimit } = require("@upstash/ratelimit");
+    // Dynamic require so jest doesn't pull in @upstash/redis ESM
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Redis } = require("@upstash/redis");
 
     const redis = new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    });
+    }) as RedisClient;
 
-    return {
-      limit: async (identifier: string) => {
-        const key = `worksphere:ratelimit:${identifier}`;
-        const now = Date.now();
-        // Atomic Lua script for token bucket evaluation
-        const script = `
-          local key = KEYS[1]
-          local limit = tonumber(ARGV[1])
-          local now = tonumber(ARGV[2])
-
-          local state = redis.call("HMGET", key, "tokens", "last_refill")
-          local tokens = tonumber(state[1])
-          local last_refill = tonumber(state[2])
-
-          if not tokens then
-            tokens = limit
-            last_refill = now
-          else
-            local elapsed = math.max(0, now - last_refill)
-            local new_tokens = math.floor(elapsed * (limit / 60000))
-            if new_tokens > 0 then
-              tokens = math.min(limit, tokens + new_tokens)
-              last_refill = last_refill + (new_tokens * (60000 / limit))
-            end
-          end
-
-          if tokens > 0 then
-            redis.call("HMSET", key, "tokens", tokens - 1, "last_refill", last_refill)
-            redis.call("PEXPIRE", key, 60000)
-            return { 1, tokens - 1 }
-          else
-            return { 0, tokens }
-          end
-        `;
-        try {
-          const result = await redis.eval(script, [key], [limitPerMinute, now]);
-          return {
-            success: result[0] === 1,
-            remaining: result[1],
-            reset: now + 60000,
-          };
-        } catch (e) {
-          console.error("Redis ratelimit eval error", e);
-          // Fail open
-          return { success: true, remaining: 1, reset: now + 60000 };
-        }
-      }
-    };
+    const script = redis.createScript(SLIDING_WINDOW_LUA);
+    scriptByLimit.set(limitPerMinute, script);
+    return script;
   } catch {
+    return null;
+  }
+}
+
+async function redisSlidingWindow(
+  identifier: string,
+  limit: number,
+): Promise<boolean | null> {
+  const script = getRedisScript(limit);
+  if (!script) return null;
+
+  try {
+    const key = `worksphere:ratelimit:${limit}:${identifier}`;
+    const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const result = await script.eval(
+      [key],
+      [String(limit), String(WINDOW_MS), nonce],
+    );
+    return Number(result) === 1;
+  } catch (err) {
+    console.error("[rateLimit] redis eval failed, falling back to memory", err);
     return null;
   }
 }
@@ -86,7 +108,6 @@ interface MemEntry {
   resetTime: number;
 }
 const memStore = new Map<string, MemEntry>();
-const WINDOW_MS = 60_000;
 
 interface RateLimitInfo {
   count: number;
@@ -96,7 +117,6 @@ interface RateLimitInfo {
 }
 const rateLimitInfoStore = new Map<string, RateLimitInfo>();
 
-// Run cleanup in the background instead of on the request path.
 const CLEANUP_INTERVAL_MS = 60_000;
 
 function cleanupExpiredEntries() {
@@ -115,7 +135,6 @@ function cleanupExpiredEntries() {
   }
 }
 
-// Start a single background cleanup task.
 const globalCleanup = globalThis as typeof globalThis & {
   __rateLimitCleanupTimer?: NodeJS.Timeout;
 };
@@ -176,17 +195,9 @@ export async function rateLimit(
   identifier: string,
   limit = 10,
 ): Promise<boolean> {
-  let rl = upstashLimiters.get(limit);
-  if (!rl) {
-    rl = getUpstashRatelimit(limit);
-    if (rl) {
-      upstashLimiters.set(limit, rl);
-    }
-  }
-
-  if (rl) {
-    const { success } = await rl.limit(identifier);
-    return success;
+  const redisResult = await redisSlidingWindow(identifier, limit);
+  if (redisResult !== null) {
+    return redisResult;
   }
 
   return memRateLimit(identifier, limit);
@@ -213,4 +224,9 @@ export function resetRateLimit(identifier?: string): void {
     memStore.clear();
     rateLimitInfoStore.clear();
   }
+}
+
+/** Clear cached Redis scripts (tests). */
+export function resetRedisScripts(): void {
+  scriptByLimit.clear();
 }

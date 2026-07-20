@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
-type Theme = "light" | "dark";
+type Theme = "light" | "dark" | "cyberpunk";
 
 interface ThemeContextValue {
   theme: Theme;
@@ -22,8 +22,16 @@ const STORAGE_KEY = "worksphere-theme";
 
 function applyTheme(theme: Theme) {
   const root = document.documentElement;
-  root.classList.toggle("dark", theme === "dark");
-  root.style.colorScheme = theme;
+
+  root.classList.remove("dark", "cyberpunk");
+
+  if (theme === "dark") {
+    root.classList.add("dark");
+  } else if (theme === "cyberpunk") {
+    root.classList.add("cyberpunk");
+  }
+
+  root.style.colorScheme = theme === "light" ? "light" : "dark";
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -32,9 +40,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // instead of guessing/defaulting - that's what prevents the flash.
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof document === "undefined") return "light";
-    return document.documentElement.classList.contains("dark")
-      ? "dark"
-      : "light";
+
+    const root = document.documentElement;
+
+    if (root.classList.contains("cyberpunk")) return "cyberpunk";
+    if (root.classList.contains("dark")) return "dark";
+
+    return "light";
   });
 
   const setTheme = (next: Theme) => {
@@ -44,15 +56,26 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
+    if (theme === "light") {
+      setTheme("dark");
+    } else if (theme === "dark") {
+      setTheme("cyberpunk");
+    } else {
+      setTheme("light");
+    }
   };
 
   // Keep in sync if the theme is changed in another tab.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && (e.newValue === "light" || e.newValue === "dark")) {
-        setThemeState(e.newValue);
-        applyTheme(e.newValue);
+      if (
+        e.key === STORAGE_KEY &&
+        (e.newValue === "light" ||
+          e.newValue === "dark" ||
+          e.newValue === "cyberpunk")
+      ) {
+        setThemeState(e.newValue as Theme);
+        applyTheme(e.newValue as Theme);
       }
     };
     window.addEventListener("storage", onStorage);

@@ -2,6 +2,7 @@
 
 import { useUser } from "@clerk/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "./ThemeProvider";
 import {
   MapContainer,
   TileLayer,
@@ -55,7 +56,6 @@ if (typeof window !== "undefined") {
 
 function MapController({ mapView }: { mapView: MapView | null }) {
   const map = useMap();
-
   useEffect(() => {
     if (mapView && mapView.center && mapView.zoom) {
       if (mapView.animate) {
@@ -200,6 +200,7 @@ const Map = ({
   mapView: MapView | null;
 }) => {
   const clerkUser = useUser();
+  const { theme } = useTheme();
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
 
@@ -443,7 +444,12 @@ const Map = ({
   }, [iconUrl]);
 
   const center: [number, number] = [latitude, longitude];
-
+  const tileUrl =
+    theme === "light"
+      ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+      : theme === "cyberpunk"
+        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   return (
     <>
       <style
@@ -603,7 +609,7 @@ const Map = ({
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              url={tileUrl}
               className="map-tiles-dark"
             />
           </LayersControl.BaseLayer>

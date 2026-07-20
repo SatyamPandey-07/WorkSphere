@@ -1,19 +1,14 @@
 @import "tailwindcss";
-@import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer utilities {
   .glass-card {
-    @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl;
+    @apply bg-white border border-zinc-200 shadow-xl;
   }
 
-  .glow-blue {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
-  }
-
-  .text-glow {
-    text-shadow: none;
+  .dark .glass-card {
+    @apply bg-zinc-900 border-zinc-800;
   }
 }
 
@@ -23,6 +18,11 @@
   --foreground: #171717;
 
   color-scheme: light dark;
+}
+
+.cyberpunk {
+  --background: #090014;
+  --foreground: #f4f4ff;
 }
 
 @theme inline {
@@ -59,6 +59,11 @@ html {
   scroll-behavior: smooth;
   scrollbar-color: var(--color-zinc-300) transparent;
   scrollbar-width: thin;
+}
+
+.leaflet-layer {
+  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3)
+    brightness(0.7);
 }
 
 /* Gradient animation */
@@ -192,39 +197,51 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   .bg-blue-700\/10 {
     background-color: rgba(29, 78, 216, 0.1);
   }
+
   .bg-blue-700\/20 {
     background-color: rgba(29, 78, 216, 0.2);
   }
+
   .bg-purple-700\/10 {
     background-color: rgba(126, 34, 206, 0.1);
   }
+
   .bg-purple-700\/15 {
     background-color: rgba(126, 34, 206, 0.15);
   }
+
   .bg-red-700\/10 {
     background-color: rgba(185, 28, 28, 0.1);
   }
+
   .bg-orange-700\/10 {
     background-color: rgba(194, 65, 12, 0.1);
   }
+
   .bg-cyan-700\/10 {
     background-color: rgba(14, 116, 144, 0.1);
   }
+
   .bg-violet-700\/15 {
     background-color: rgba(109, 40, 217, 0.15);
   }
+
   .bg-violet-700\/20 {
     background-color: rgba(109, 40, 217, 0.2);
   }
+
   .bg-amber-500\/10 {
     background-color: rgba(245, 158, 11, 0.1);
   }
+
   .bg-amber-500\/20 {
     background-color: rgba(245, 158, 11, 0.2);
   }
+
   .bg-red-500\/10 {
     background-color: rgba(239, 68, 68, 0.1);
   }
+
   .bg-red-500\/20 {
     background-color: rgba(239, 68, 68, 0.2);
   }
@@ -233,21 +250,27 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   .border-amber-500\/30 {
     border-color: rgba(245, 158, 11, 0.3);
   }
+
   .border-red-500\/30 {
     border-color: rgba(239, 68, 68, 0.3);
   }
+
   .border-blue-500\/30 {
     border-color: rgba(59, 130, 246, 0.3);
   }
+
   .border-purple-500\/30 {
     border-color: rgba(168, 85, 247, 0.3);
   }
+
   .border-violet-400\/20 {
     border-color: rgba(167, 139, 250, 0.2);
   }
+
   .border-emerald-400\/20 {
     border-color: rgba(52, 211, 153, 0.2);
   }
+
   /* Legacy Firefox fallback for additional Tailwind opacity utilities */
 
   .bg-zinc-950\/95 {

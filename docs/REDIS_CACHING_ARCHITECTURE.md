@@ -21,8 +21,8 @@ Caches search queries for workspaces and venues to ensure low-latency responses 
 
 Prevents API abuse and ensures fair usage across the platform using a distributed rate-limiting strategy.
 
-- **Cache Key Pattern:** `ratelimit:{endpoint}:{user_id_or_ip}`
-  - _Example:_ `ratelimit:/api/v1/bookings:192.168.1.1`
+- **Cache Key Pattern:** `worksphere:ratelimit:{action}:{userId_or_ip}`
+  - _Example:_ `worksphere:ratelimit:venues-search:192.168.1.1`
 - **TTL Policy:** `60 seconds` (1 minute window)
 - **Invalidation Strategy:**
   - **Time-based:** Keys automatically expire at the end of the rate limit window.
@@ -32,8 +32,8 @@ Prevents API abuse and ensures fair usage across the platform using a distribute
 
 Manages active user authentication sessions for fast validation and immediate global revocation capabilities.
 
-- **Cache Key Pattern:** `session:{user_id}:{session_token}`
-  - _Example:_ `session:usr_98765:9f86d081884c7d659a2feaa0c55ad015`
+- **Cache Key Pattern:** `session:{opaque_session_id}`
+  - _Example:_ `session:9f86d081884c7d659a2feaa0c55ad015`
 - **TTL Policy:** `604800 seconds` (7 days) - Often refreshed upon active user interaction depending on middleware logic.
 - **Invalidation Strategy:**
   - **Time-based:** Expires automatically if the user remains inactive beyond the TTL.

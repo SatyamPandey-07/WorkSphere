@@ -10,7 +10,7 @@ The Service Worker is responsible for improving application performance, offline
 
 ### Installation
 
-During installation, essential application assets are precached using a temporary installation cache. Once all required assets have been stored successfully, the Service Worker immediately activates using `self.skipWaiting()`.
+During installation, essential application assets are precached using a temporary installation cache. The Service Worker attempts to cache the required assets before calling `self.skipWaiting()`. If precaching is incomplete, activation may still proceed depending on the implementation, and some resources may need to be fetched from the network later.
 
 **Precached assets include:**
 

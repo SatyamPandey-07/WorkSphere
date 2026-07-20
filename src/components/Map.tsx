@@ -214,6 +214,48 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
   return null;
 }
 
+import { attachWebGLContextRecovery } from "@/lib/webgl/contextManager";
+
+function WebGLContextWatcher() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+    const cleanups: Array<() => void> = [];
+
+    const setupCanvases = () => {
+      const canvases = container.querySelectorAll("canvas");
+      canvases.forEach((canvas) => {
+        const cleanup = attachWebGLContextRecovery(
+          canvas as HTMLCanvasElement,
+          () => {
+            map.invalidateSize();
+          },
+        );
+        cleanups.push(cleanup);
+      });
+    };
+
+    setupCanvases();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setupCanvases();
+        map.invalidateSize();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cleanups.forEach((c) => c());
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [map]);
+
+  return null;
+}
+
 const Map = ({
   location,
   markers,
@@ -750,6 +792,7 @@ const Map = ({
           onZoomStart={handleZoomStart}
         />
         <ResizeWatcher />
+        <WebGLContextWatcher />
 
         {customIcon && (
           <Marker

@@ -191,6 +191,12 @@ export default async function VenuePage({ params }: PageProps) {
               >
                 Open in WorkSphere
               </Link>
+              <Link
+                href={`/venues/${venue.id}/navigate`}
+                className="w-full flex items-center justify-center py-4 rounded-2xl bg-zinc-800 hover:bg-zinc-700 text-white font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-zinc-800/20 active:scale-[0.98]"
+              >
+                Start AR Navigation
+              </Link>
             </div>
           </div>
         </div>

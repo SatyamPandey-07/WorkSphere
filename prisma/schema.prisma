@@ -225,11 +225,14 @@ model Booking {
   amenitiesNeeded    String[]      @default([])
   seat               VenueSeat?    @relation(fields: [seatId], references: [id])
   guests             BookingGuest[]
+  recurringGroupId   String?
+  frequency          String?
 
   @@index([userId])
   @@index([venueId])
   @@index([seatId])
   @@index([createdAt])
+  @@index([recurringGroupId])
 }
 
 model BookingGuest {

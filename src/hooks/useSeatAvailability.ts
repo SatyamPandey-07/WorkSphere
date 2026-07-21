@@ -74,7 +74,7 @@ export function useSeatAvailability() {
 
   const socket = usePartySocket({
     host: "127.0.0.1:1999",
-    room: isMounted ? SEAT_ROOM : undefined,
+    room: SEAT_ROOM,
     query: token ? { token } : undefined,
     onOpen() {
       setIsConnected(true);
@@ -213,7 +213,6 @@ export function useSeatAvailability() {
         }
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
   const getAvailability = useCallback(

@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { verifyAuthenticationResponse } from "@simplewebauthn/server";
 import { createClerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import { getRpId, getOrigin } from "@/lib/passkey";
+import { getRpId, getExpectedOrigin } from "@/lib/passkey";
+import { parseClientDataJSON } from "@/lib/webauthn";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/browser";
 import type { AuthenticatorTransportFuture } from "@simplewebauthn/server";
 
@@ -49,10 +50,14 @@ export async function POST(req: Request) {
       );
     }
 
+    const clientData = authenticationResponse.response?.clientDataJSON
+      ? parseClientDataJSON(authenticationResponse.response.clientDataJSON)
+      : null;
+
     const verification = await verifyAuthenticationResponse({
       response: authenticationResponse,
       expectedChallenge: challengeRecord.challenge,
-      expectedOrigin: getOrigin(req),
+      expectedOrigin: getExpectedOrigin(req, clientData?.origin),
       expectedRPID: getRpId(req),
       credential: {
         id: passkey.credentialId,

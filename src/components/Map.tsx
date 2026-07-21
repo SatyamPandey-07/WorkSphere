@@ -19,6 +19,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
+import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import {
   useSeatAvailability,
   type SeatStatus,
@@ -688,6 +689,27 @@ const Map = ({
       );
   }, []);
 
+  // Compute WebGL GPU Heatmap Telemetry Points (combining forecast telemetry & markers)
+  const webglTelemetryPoints = useMemo(() => {
+    if (heatmapPoints && heatmapPoints.length > 0) {
+      return heatmapPoints.map((pt: any) => ({
+        lat: Number(pt[0]),
+        lng: Number(pt[1]),
+        intensity: pt[2] != null ? Number(pt[2]) : 0.75,
+        radius: 32,
+      }));
+    }
+    // Fallback: map venue markers to telemetry point data
+    return markers
+      .filter((m) => m.position?.lat != null && m.position?.lng != null)
+      .map((m) => ({
+        lat: Number(m.position.lat),
+        lng: Number(m.position.lng),
+        intensity: 0.85,
+        radius: 36,
+      }));
+  }, [heatmapPoints, markers]);
+
   // Group and spiderfy overlapping markers
   const spiderfiedMarkers = useMemo(() => {
     const groups: { [key: string]: any[] } = {};
@@ -834,6 +856,14 @@ const Map = ({
           z-index: 400 !important;
           mix-blend-mode: screen;
           filter: none !important; /* Forces the browser to keep full color saturation */
+        }
+
+        /* WebGL GPU Heatmap Canvas Overlay (#818) */
+        .leaflet-webgl-heatmap-layer {
+          z-index: 401 !important;
+          mix-blend-mode: screen;
+          filter: none !important;
+          pointer-events: none;
         }
         
         /* GPU-accelerated pulsing keyframes */
@@ -1045,6 +1075,16 @@ const Map = ({
               updateWhenIdle={true}
             />
           </LayersControl.BaseLayer>
+
+          <LayersControl.Overlay checked name="GPU WebGL Heatmap (60 FPS)">
+            <LayerGroup>
+              <WebGLHeatmapLayer
+                points={webglTelemetryPoints}
+                opacity={0.85}
+                blur={1.0}
+              />
+            </LayerGroup>
+          </LayersControl.Overlay>
 
           <LayersControl.Overlay name="Live Crowd Heatmap">
             <HeatmapOverlay points={heatmapPoints} />

@@ -1,6 +1,7 @@
 // Service Worker for WorkSphere PWA
 const CACHE_NAME = "worksphere-v3";
 const IMAGE_CACHE_NAME = "worksphere-images-v4";
+const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
 const OFFLINE_URL = "/offline";
 
 // Cap image cache at 20MB so iOS Safari PWA (~50MB quota) doesn't get killed.
@@ -45,6 +46,7 @@ self.addEventListener("activate", (event) => {
               (name) =>
                 name !== CACHE_NAME &&
                 name !== IMAGE_CACHE_NAME &&
+                name !== MAP_TILE_CACHE_NAME &&
                 !name.endsWith("-installing"),
             )
             .map((name) => caches.delete(name)),
@@ -80,9 +82,11 @@ self.addEventListener("fetch", (event) => {
   }
 
   const isVenuesApi = event.request.url.includes("/api/venues");
-  const isExternalAsset =
+  const isMapTile =
     event.request.url.includes("tile.openstreetmap.org") ||
-    event.request.url.includes("images.unsplash.com");
+    event.request.url.includes("basemaps.cartocdn.com");
+
+  const isExternalAsset = event.request.url.includes("images.unsplash.com");
 
   if (isVenuesApi) {
     // Network-First strategy for /api/venues
@@ -104,6 +108,28 @@ self.addEventListener("fetch", (event) => {
           if (cachedResponse) return cachedResponse;
           return new Response("Offline", { status: 503 });
         }),
+    );
+  } else if (isMapTile) {
+    // Cache map tiles in a dedicated bucket
+    event.respondWith(
+      caches.open(MAP_TILE_CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((cachedResponse) => {
+          if (cachedResponse) {
+            return cachedResponse;
+          }
+          return fetch(event.request)
+            .then((networkResponse) => {
+              if (
+                networkResponse.status === 200 ||
+                networkResponse.status === 0
+              ) {
+                cache.put(event.request, networkResponse.clone());
+              }
+              return networkResponse;
+            })
+            .catch(() => new Response("Map Tile Offline", { status: 503 }));
+        });
+      }),
     );
   } else if (isExternalAsset) {
     event.respondWith(
@@ -212,6 +238,9 @@ self.addEventListener("sync", (event) => {
   }
   if (event.tag === "sync-conversations") {
     event.waitUntil(syncConversations());
+  }
+  if (event.tag === "receipt-export-sync") {
+    event.waitUntil(syncReceiptExports());
   }
 });
 
@@ -398,14 +427,143 @@ async function syncConversations() {
   }
 }
 
+let isSyncingReceipts = false;
+async function syncReceiptExports() {
+  if (isSyncingReceipts) return;
+  isSyncingReceipts = true;
+
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction("receiptExports", "readonly");
+    const store = tx.objectStore("receiptExports");
+    const jobs = await new Promise((resolve, reject) => {
+      const req = store.getAll();
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result || []);
+    });
+
+    const pendingJobs = jobs.filter(
+      (j) => j.status === "pending" || j.status === "downloading",
+    );
+
+    for (const job of pendingJobs) {
+      try {
+        const downloadUrl = `/api/bookings/${job.bookingId}/download`;
+        const response = await fetch(downloadUrl);
+
+        if (response.ok) {
+          const pdfArrayBuffer = await response.arrayBuffer();
+
+          // Store PDF ArrayBuffer and mark status ready in IndexedDB
+          const writeTx = db.transaction("receiptExports", "readwrite");
+          const writeStore = writeTx.objectStore("receiptExports");
+          writeStore.put({
+            ...job,
+            status: "ready",
+            pdf: pdfArrayBuffer,
+            downloadedAt: Date.now(),
+          });
+
+          await new Promise((res, rej) => {
+            writeTx.oncomplete = res;
+            writeTx.onerror = () => rej(writeTx.error);
+          });
+
+          // Show Notification
+          if (self.registration && "showNotification" in self.registration) {
+            await self.registration.showNotification("Receipt ready", {
+              body: "Your booking receipt has been downloaded.",
+              icon: "/icons/icon.svg",
+              badge: "/icons/icon.svg",
+              tag: `receipt-ready-${job.bookingId}`,
+              data: {
+                url: `/api/bookings/${job.bookingId}/download`,
+                bookingId: job.bookingId,
+              },
+            });
+          }
+
+          // Notify all open window clients via postMessage to trigger automatic download/save
+          const windowClients = await self.clients.matchAll({
+            type: "window",
+            includeUncontrolled: true,
+          });
+
+          for (const client of windowClients) {
+            client.postMessage({
+              type: "RECEIPT_SYNC_READY",
+              bookingId: job.bookingId,
+              filename: job.filename,
+            });
+          }
+        } else {
+          throw new Error(
+            `Receipt fetch failed with status ${response.status}`,
+          );
+        }
+      } catch (err) {
+        console.error(`[SW] Failed to sync receipt for ${job.bookingId}:`, err);
+        const retryCount = (job.retryCount || 0) + 1;
+        const maxRetries = 3;
+        const newStatus = retryCount >= maxRetries ? "failed" : "pending";
+
+        const writeTx = db.transaction("receiptExports", "readwrite");
+        const writeStore = writeTx.objectStore("receiptExports");
+        writeStore.put({
+          ...job,
+          retryCount,
+          status: newStatus,
+        });
+
+        await new Promise((res) => {
+          writeTx.oncomplete = res;
+          writeTx.onerror = res;
+        });
+
+        if (newStatus === "failed") {
+          const windowClients = await self.clients.matchAll({
+            type: "window",
+            includeUncontrolled: true,
+          });
+          for (const client of windowClients) {
+            client.postMessage({
+              type: "RECEIPT_SYNC_FAILED",
+              bookingId: job.bookingId,
+              attempts: retryCount,
+            });
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[SW] Sync receipt exports failed:", error);
+  } finally {
+    isSyncingReceipts = false;
+  }
+}
+
 // IndexedDB helpers
+let swDb = null;
 function openIndexedDB() {
+  if (swDb) return Promise.resolve(swDb);
   return new Promise((resolve, reject) => {
     try {
-      const request = indexedDB.open("worksphere-offline", 4);
+      const request = indexedDB.open("worksphere-offline", 5);
+
+      request.onblocked = () => {
+        console.warn("[SW] IndexedDB upgrade blocked");
+      };
 
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
+
+      request.onsuccess = () => {
+        swDb = request.result;
+        swDb.onversionchange = () => {
+          swDb.close();
+          swDb = null;
+        };
+        resolve(swDb);
+      };
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
@@ -456,6 +614,15 @@ function openIndexedDB() {
           lruStore.createIndex("lastAccessed", "lastAccessed", {
             unique: false,
           });
+        }
+
+        // Receipt exports store for offline background sync (Issue #1069)
+        if (!db.objectStoreNames.contains("receiptExports")) {
+          const receiptStore = db.createObjectStore("receiptExports", {
+            keyPath: "bookingId",
+          });
+          receiptStore.createIndex("status", "status", { unique: false });
+          receiptStore.createIndex("createdAt", "createdAt", { unique: false });
         }
       };
     } catch (err) {
@@ -560,121 +727,7 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-import {
-  getQueuedFavorites,
-  dequeueOfflineAction,
-  incrementRetryCount,
-  MAX_SYNC_RETRIES,
-} from "../src/lib/offlineStore";
-
-self.addEventListener("sync", (event) => {
-  if (event.tag === "sync-favorites") {
-    event.waitUntil(syncFavoritesOutbox());
-  }
-});
-
-/**
- * Notify every open tab/window so the UI can surface a toast. The service
- * worker has no DOM access, so a permanently-failed sync can only be
- * surfaced by posting a message to clients rather than showing anything
- * itself. See usePWA.tsx's `useOfflineSyncNotice` for the listener. (Issue #712)
- */
-async function notifyClientsOfPermanentFailure(action) {
-  const allClients = await self.clients.matchAll({
-    type: "window",
-    includeUncontrolled: true,
-  });
-  for (const client of allClients) {
-    client.postMessage({
-      type: "OFFLINE_SYNC_FAILED",
-      venueId: action.venueId,
-      action: action.action,
-      attempts: MAX_SYNC_RETRIES,
-    });
-  }
-}
-
-async function syncFavoritesOutbox() {
-  const processQueue = async () => {
-    try {
-      const actions = await getQueuedFavorites();
-
-      for (const action of actions) {
-        if (!action.id) continue;
-
-        try {
-          const response = await fetch("/api/favorites", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              venueId: action.venueId,
-              action: action.action,
-            }),
-          });
-
-          if (response.ok) {
-            // Remove from IndexedDB outbox queue on successful endpoint ingestion
-            await dequeueOfflineAction(action.id);
-            continue;
-          }
-
-          // Non-OK response (e.g. 500) counts as a failed attempt, same as a
-          // network-level throw below.
-          throw new Error(`Sync request failed with status ${response.status}`);
-        } catch (error) {
-          console.error("Failed to sync favorite:", error);
-
-          if (
-            typeof self !== "undefined" &&
-            self.navigator &&
-            !self.navigator.onLine
-          ) {
-            console.warn("[SW] Offline network error; preserving outbox item.");
-            break;
-          }
-
-          const attempts = await incrementRetryCount(action.id);
-
-          if (attempts !== null && attempts >= MAX_SYNC_RETRIES) {
-            // Give up after MAX_SYNC_RETRIES — but tell the user instead of
-            // purging the action silently.
-            await dequeueOfflineAction(action.id);
-            await notifyClientsOfPermanentFailure(action);
-          }
-          // Otherwise leave it queued; the next "sync-favorites" event (or the
-          // next reconnect) will retry it.
-        }
-      }
-    } catch (err) {
-      console.error("[SW] Error in processQueue:", err);
-    }
-  };
-
-  try {
-    if ("locks" in navigator) {
-      await navigator.locks.request(
-        "sync-favorites-queue",
-        { ifAvailable: true },
-        async (lock) => {
-          if (!lock) {
-            console.log(
-              "[SW] Queue is currently being processed by another agent. Skipping.",
-            );
-            return;
-          }
-          await processQueue();
-        },
-      );
-    } else {
-      await processQueue();
-    }
-  } catch (error) {
-    console.error(
-      "Background synchronization pipeline failed to complete:",
-      error,
-    );
-  }
-}
+// Invalid import and duplicate syncFavoritesOutbox removed to fix SyntaxError
 
 /**
  * Updates or inserts a record for an image in the LRU IDB store.

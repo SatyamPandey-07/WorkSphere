@@ -249,11 +249,6 @@ export function useMultiplayerSession(roomId: string | null) {
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
 
-  const [isMounted, setIsMounted] = useState(false);
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
   useEffect(() => {
     getToken().then(setToken).catch(console.error);
   }, [getToken]);
@@ -283,7 +278,7 @@ export function useMultiplayerSession(roomId: string | null) {
   // Use standard websocket for simple presence broadcast
   const socket = usePartySocket({
     host: "127.0.0.1:1999",
-    room: isMounted ? roomId || "default" : undefined,
+    room: roomId || "default",
     query: token ? { token } : undefined,
     onMessage() {
       // handled in component

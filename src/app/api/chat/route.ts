@@ -943,8 +943,8 @@ export async function POST(req: Request) {
     const identifier = userId || forwarded?.split(",")[0] || "anonymous";
 
     // Rate limiting (now async)
-    if (!(await rateLimit(identifier, 20))) {
-      const info = await getRateLimitInfo(identifier);
+    if (!(await rateLimit(identifier, 10))) {
+      const info = await getRateLimitInfo(identifier, 10);
       return Response.json(
         {
           error:

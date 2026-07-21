@@ -34,7 +34,8 @@ import Image from "next/image";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
 import { AmbientSoundPlayer } from "@/components/noise/AmbientSoundPlayer";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
-import { FolderPlus } from "lucide-react";
+import { FolderPlus, Cloud } from "lucide-react";
+import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
 
 interface VenueEnrichData {
   found: boolean;
@@ -90,6 +91,7 @@ export function VenueCard({
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
+  const [showWeather3D, setShowWeather3D] = useState(false);
 
   // =========================================================================
   // COMMUNITY VERIFICATION VOTE STATE TRACKING SYSTEM
@@ -403,23 +405,24 @@ export function VenueCard({
           {/* NEW: Compare Checkbox UI */}
           {onToggleCompare && (
             <div
-              className="absolute top-2 right-2 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2 py-1 rounded-md shadow-sm backdrop-blur-sm"
-              onClick={(e) => e.stopPropagation()} // Prevent photo cycle when clicking checkbox
+              className="absolute top-2 right-2 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2 py-1 rounded-md shadow-sm backdrop-blur-sm cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!(!isSelected && compareDisabled)) {
+                  onToggleCompare(venue);
+                }
+              }}
             >
               <input
                 type="checkbox"
-                id={`compare-${venue.id}`}
                 checked={isSelected}
-                onChange={() => onToggleCompare(venue)}
+                readOnly
                 disabled={!isSelected && compareDisabled}
-                className="w-4 h-4 accent-text rounded border-zinc-300 focus:ring-[var(--primary-accent)] cursor-pointer disabled:opacity-50"
+                className="w-4 h-4 accent-text rounded border-zinc-300 focus:ring-[var(--primary-accent)] disabled:opacity-50 pointer-events-none"
               />
-              <label
-                htmlFor={`compare-${venue.id}`}
-                className="text-xs font-bold text-zinc-800 dark:text-zinc-200 cursor-pointer select-none"
-              >
+              <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 select-none pointer-events-none">
                 Compare
-              </label>
+              </span>
             </div>
           )}
         </div>
@@ -427,21 +430,25 @@ export function VenueCard({
 
       {/* Fallback Checkbox (If no photos exist) */}
       {photos.length === 0 && onToggleCompare && (
-        <div className="absolute top-2 right-2 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2 py-1 rounded-md shadow-sm border border-zinc-200 dark:border-zinc-700">
+        <div
+          className="absolute top-2 right-2 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2 py-1 rounded-md shadow-sm border border-zinc-200 dark:border-zinc-700 cursor-pointer"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!(!isSelected && compareDisabled)) {
+              onToggleCompare(venue);
+            }
+          }}
+        >
           <input
             type="checkbox"
-            id={`compare-no-photo-${venue.id}`}
             checked={isSelected}
-            onChange={() => onToggleCompare(venue)}
+            readOnly
             disabled={!isSelected && compareDisabled}
-            className="w-4 h-4 accent-text rounded border-zinc-300 focus:ring-[var(--primary-accent)] cursor-pointer disabled:opacity-50"
+            className="w-4 h-4 accent-text rounded border-zinc-300 focus:ring-[var(--primary-accent)] disabled:opacity-50 pointer-events-none"
           />
-          <label
-            htmlFor={`compare-no-photo-${venue.id}`}
-            className="text-xs font-bold text-zinc-800 dark:text-zinc-200 cursor-pointer select-none"
-          >
+          <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 select-none pointer-events-none">
             Compare
-          </label>
+          </span>
         </div>
       )}
 
@@ -504,7 +511,7 @@ export function VenueCard({
 
         {/* OpenStreetMap Base Feature List */}
         {amenities && (
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex flex-wrap items-center gap-3 mb-3">
             {amenities.wifi && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <Wifi className="w-3 h-3 shrink-0" />
@@ -523,14 +530,73 @@ export function VenueCard({
                 <span>Accessible</span>
               </div>
             )}
+            <button
+              onClick={() => setShowWeather3D((prev) => !prev)}
+              className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors"
+              title="Toggle WebGL 3D Weather Clouds"
+            >
+              <Cloud className="w-3 h-3" />
+              <span>{showWeather3D ? "Hide 3D Weather" : "3D Weather"}</span>
+            </button>
+          </div>
+        )}
+
+        {/* 3D Volumetric Cloud Visualizer */}
+        {showWeather3D && (
+          <div className="mb-4 animate-in fade-in duration-300">
+            <WeatherCloudRenderer
+              lat={venue.position.lat}
+              lng={venue.position.lng}
+              height="200px"
+              interactive={true}
+            />
           </div>
         )}
 
         {/* Hours */}
-        {enrichData?.opening_hours && (
+        {(enrichData?.opening_hours || venue.openingHours) && (
           <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
             <Clock className="w-3 h-3 shrink-0" />
-            <span>{enrichData.opening_hours}</span>
+            <span>{enrichData?.opening_hours || venue.openingHours}</span>
+            {(() => {
+              const hoursStr = enrichData?.opening_hours || venue.openingHours;
+              if (!hoursStr) return null;
+              const match = hoursStr.match(
+                /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/,
+              );
+              if (!match) return null;
+
+              const now = new Date();
+              const currentMinutes = now.getHours() * 60 + now.getMinutes();
+              const [openH, openM] = match[1].split(":").map(Number);
+              const [closeH, closeM] = match[2].split(":").map(Number);
+
+              const openMinutes = openH * 60 + openM;
+              const closeMinutes = closeH * 60 + closeM;
+
+              let isOpen = false;
+              if (closeMinutes < openMinutes) {
+                isOpen =
+                  currentMinutes >= openMinutes ||
+                  currentMinutes <= closeMinutes;
+              } else {
+                isOpen =
+                  currentMinutes >= openMinutes &&
+                  currentMinutes < closeMinutes;
+              }
+
+              return (
+                <span
+                  className={`px-2 py-0.5 rounded-full font-semibold ${
+                    isOpen
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                  }`}
+                >
+                  {isOpen ? "Open Now" : "Closed"}
+                </span>
+              );
+            })()}
           </div>
         )}
 

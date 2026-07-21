@@ -91,7 +91,7 @@ export default function AnalyticsDashboard() {
     }
   };
 
-  const handleDownloadReceipt = async (booking: {
+  const handleDownloadReceipt = (booking: {
     id: string;
     confirmationId: string;
     date: string;
@@ -100,28 +100,42 @@ export default function AnalyticsDashboard() {
     venue: { name: string; category: string; address?: string };
   }) => {
     setDownloadingId(booking.id);
-    try {
-      // Fetch the receipt from the server instead of generating on the main thread
-      const res = await fetch(`/api/bookings/${booking.id}/download`);
-      if (!res.ok) {
-        throw new Error("Failed to fetch receipt");
+
+    const downloadUrl = `/api/bookings/${booking.id}/download`;
+    const filename = `WorkSphere_Receipt_${booking.confirmationId || booking.id}.pdf`;
+
+    const worker = new Worker(
+      new URL("@/workers/receiptDownload.worker.ts", import.meta.url),
+    );
+
+    worker.onmessage = (event: MessageEvent) => {
+      const { type, blobUrl, error } = event.data;
+
+      if (type === "done") {
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+      } else {
+        console.error("[PDF Worker Error]:", error);
+        alert("Failed to generate receipt. Please try again.");
       }
 
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `WorkSphere_Receipt_${booking.confirmationId || booking.id}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("[PDF Client Error]:", err);
-      alert("Failed to generate receipt. Please try again.");
-    } finally {
       setDownloadingId(null);
-    }
+      worker.terminate();
+    };
+
+    worker.onerror = (err) => {
+      console.error("[PDF Worker Error]:", err);
+      alert("Failed to generate receipt. Please try again.");
+      setDownloadingId(null);
+      worker.terminate();
+    };
+
+    worker.postMessage({ url: downloadUrl, filename });
   };
 
   const handleViewVenue = (venue: {

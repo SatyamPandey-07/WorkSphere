@@ -285,6 +285,22 @@ function useOfflineSyncNotice() {
       if (isPushNavigateMessage(event.data)) {
         window.location.href = event.data.url;
       }
+      if (
+        typeof event.data === "object" &&
+        event.data !== null &&
+        event.data.type === "RECEIPT_SYNC_READY"
+      ) {
+        const { bookingId, filename } = event.data;
+        // Trigger download from client when receipt background sync completes
+        const downloadUrl = `/api/bookings/${bookingId}/download`;
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download =
+          filename || `WorkSphere_Receipt_${bookingId.slice(-6)}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
     };
 
     navigator.serviceWorker.addEventListener("message", handleMessage);

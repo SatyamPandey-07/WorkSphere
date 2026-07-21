@@ -123,10 +123,35 @@ export default class WorkspaceServer implements Party.Server {
         return;
       }
 
+      if (
+        parsed.type === "request_room_snapshot" ||
+        parsed.type === "request_snapshot"
+      ) {
+        const snapshotId = parsed.snapshotId || `snap-${Date.now()}`;
+        sender.send(
+          JSON.stringify({
+            type: "room_snapshot_response",
+            roomId: this.room.id,
+            snapshotId,
+            timestamp: Date.now(),
+            seats: this.seatSummary(),
+          }),
+        );
+        return;
+      }
+
       // WebRTC signaling is allowed for VIEWERS, but `from` must match the
       // Clerk userId we verified on connect — never trust the client field alone.
       if (parsed.type === "webrtc-signal") {
         if (!state.userId || parsed.from !== state.userId) return;
+        this.room.broadcast(message, [sender.id]);
+        return;
+      }
+
+      // Spatial audio listener position updates are high-frequency ephemeral state,
+      // allowed for all viewers/editors, but `userId` must match verified connection state.
+      if (parsed.type === "spatial_listener_update") {
+        if (!state.userId || parsed.userId !== state.userId) return;
         this.room.broadcast(message, [sender.id]);
         return;
       }

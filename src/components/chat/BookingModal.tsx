@@ -87,6 +87,7 @@ export function BookingModal({
   const [showTaxId, setShowTaxId] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
   const [showLogo, setShowLogo] = useState(true);
+  const [dateFilter, setDateFilter] = useState("all");
 
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -278,7 +279,7 @@ export function BookingModal({
     setShowLogo(true);
   };
 
-  const confirmDownloadSingle = () => {
+  const confirmDownloadSingle = async () => {
     if (!receiptDialogBookingId) return;
     const params = new URLSearchParams();
     if (showTaxId) params.append("showTaxId", "true");
@@ -286,7 +287,23 @@ export function BookingModal({
     if (showLogo) params.append("showLogo", "true");
 
     const url = `/api/bookings/${receiptDialogBookingId}/download${params.toString() ? `?${params.toString()}` : ""}`;
-    window.open(url, "_blank");
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      try {
+        const { queueOfflineReceipt } = await import("@/lib/offlineStorage");
+        await queueOfflineReceipt(
+          receiptDialogBookingId,
+          `WorkSphere_Receipt_${receiptDialogBookingId.slice(-6).toUpperCase()}.pdf`,
+        );
+        alert(
+          "You are currently offline. Your receipt request has been queued for background sync and will download automatically when you reconnect.",
+        );
+      } catch (err) {
+        console.error("Failed to queue offline receipt:", err);
+      }
+    } else {
+      window.open(url, "_blank");
+    }
     setReceiptDialogBookingId(null);
   };
 

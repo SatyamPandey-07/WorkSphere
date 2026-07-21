@@ -20,7 +20,7 @@ userDoc.on("update", async (update: Uint8Array) => {
 });
 
 const DB_NAME = "worksphere-offline";
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 
 const IDB_STORAGE_LOCK = "worksphere-offline-storage-lock";
 
@@ -70,6 +70,17 @@ interface OfflineSearch {
 
 let db: IDBDatabase | null = null;
 
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "beforeunload",
+    () => {
+      db?.close();
+      db = null;
+    },
+    { once: true },
+  );
+}
+
 /**
  * Initialize IndexedDB
  */
@@ -89,6 +100,10 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
+      request.onblocked = () => {
+        console.warn("[OfflineDB] Database upgrade blocked");
+      };
+
       request.onerror = () => {
         console.error("[OfflineDB] Failed to open database");
         const err = request.error || new Error("Unknown IndexedDB error");
@@ -100,6 +115,10 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
 
       request.onsuccess = () => {
         db = request.result;
+        db.onversionchange = () => {
+          db?.close();
+          db = null;
+        };
         console.log("[OfflineDB] Database opened successfully");
         resolve(db);
       };
@@ -140,6 +159,15 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
             keyPath: "id",
             autoIncrement: true,
           });
+        }
+
+        // Receipt exports store for offline background sync (Issue #1069)
+        if (!database.objectStoreNames.contains("receiptExports")) {
+          const receiptStore = database.createObjectStore("receiptExports", {
+            keyPath: "bookingId",
+          });
+          receiptStore.createIndex("status", "status", { unique: false });
+          receiptStore.createIndex("createdAt", "createdAt", { unique: false });
         }
 
         console.log("[OfflineDB] Database schema created");
@@ -728,4 +756,110 @@ export async function cleanupOldData(
       cursor.continue();
     }
   };
+}
+
+/**
+ * Offline Receipt Sync Queue & Storage Helpers (Issue #1069)
+ */
+
+export interface QueuedReceiptJob {
+  bookingId: string;
+  filename: string;
+  createdAt: number;
+  retryCount: number;
+  status: "pending" | "downloading" | "ready" | "failed";
+  pdf?: ArrayBuffer;
+}
+
+export async function queueOfflineReceipt(
+  bookingId: string,
+  filename?: string,
+): Promise<void> {
+  const database = await initOfflineDB();
+  const name =
+    filename || `WorkSphere_Receipt_${bookingId.slice(-6).toUpperCase()}.pdf`;
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = database.transaction(["receiptExports"], "readwrite");
+    const store = tx.objectStore("receiptExports");
+
+    const getReq = store.get(bookingId);
+    getReq.onsuccess = () => {
+      const existing = getReq.result as QueuedReceiptJob | undefined;
+      const job: QueuedReceiptJob = {
+        bookingId,
+        filename: name,
+        createdAt: existing?.createdAt || Date.now(),
+        retryCount: existing?.retryCount || 0,
+        status: existing?.status === "ready" ? "ready" : "pending",
+        pdf: existing?.pdf,
+      };
+
+      const putReq = store.put(job);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+
+  // Register background sync if Service Worker is available
+  if ("serviceWorker" in navigator && "SyncManager" in window) {
+    try {
+      const swRegistration = await navigator.serviceWorker.ready;
+      await (swRegistration as any).sync.register("receipt-export-sync");
+    } catch (err) {
+      console.error("Background Sync registration failed for receipt:", err);
+    }
+  }
+}
+
+export async function getQueuedReceiptJobs(): Promise<QueuedReceiptJob[]> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(["receiptExports"], "readonly");
+    const store = tx.objectStore("receiptExports");
+    const req = store.getAll();
+
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function updateReceiptJob(
+  job: Partial<QueuedReceiptJob> & { bookingId: string },
+): Promise<void> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(["receiptExports"], "readwrite");
+    const store = tx.objectStore("receiptExports");
+
+    const getReq = store.get(job.bookingId);
+    getReq.onsuccess = () => {
+      const existing = getReq.result as QueuedReceiptJob | undefined;
+      if (!existing) {
+        resolve();
+        return;
+      }
+      const updated: QueuedReceiptJob = { ...existing, ...job };
+      const putReq = store.put(updated);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+export async function removeReceiptJob(bookingId: string): Promise<void> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(["receiptExports"], "readwrite");
+    const store = tx.objectStore("receiptExports");
+    const req = store.delete(bookingId);
+
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
 }

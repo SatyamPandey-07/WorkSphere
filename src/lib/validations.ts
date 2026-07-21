@@ -172,7 +172,7 @@ export const locationSchema = z.object({
 // Collection / Folder schemas
 export const createFolderSchema = z.object({
   name: z
-    .string({ required_error: "Folder name is required" })
+    .string()
     .trim()
     .min(1, "Folder name is required")
     .max(100, "Folder name must be 100 characters or less"),

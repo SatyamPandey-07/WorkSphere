@@ -455,10 +455,31 @@ export class WebGPUFloorPlanRenderer {
   private lastMouse = { x: 0, y: 0 };
   private animationFrame = 0;
   private time = 0;
+  private isDeviceLost = false;
+  private currentData: FloorPlanData | null = null;
+  private visibilityHandler: (() => void) | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.setupInteraction();
+    this.setupVisibilityHandler();
+  }
+
+  private setupVisibilityHandler(): void {
+    if (typeof document === "undefined") return;
+
+    this.visibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        if (this.isDeviceLost || !this.device) {
+          console.warn(
+            "[WebGPU] Page resumed from sleep/hidden state; re-initializing render pipeline...",
+          );
+          this.reinitialize();
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", this.visibilityHandler);
   }
 
   private setupInteraction(): void {
@@ -539,6 +560,16 @@ export class WebGPUFloorPlanRenderer {
       if (!adapter) return false;
 
       this.device = await adapter.requestDevice();
+      this.isDeviceLost = false;
+
+      this.device.lost.then((info: { reason: string; message: string }) => {
+        console.warn(
+          `[WebGPU] GPUDevice lost (${info.reason}): ${info.message}`,
+        );
+        this.isDeviceLost = true;
+        this.cleanupGPUResources();
+      });
+
       this.context = this.canvas.getContext(
         "webgpu",
       ) as unknown as GPUCanvasContext | null;
@@ -606,8 +637,17 @@ export class WebGPUFloorPlanRenderer {
     }
   }
 
+  async reinitialize(): Promise<boolean> {
+    const success = await this.initialize();
+    if (success && this.currentData) {
+      this.loadFloorPlan(this.currentData);
+    }
+    return success;
+  }
+
   loadFloorPlan(data: FloorPlanData): void {
-    if (!this.device) return;
+    this.currentData = data;
+    if (!this.device || this.isDeviceLost) return;
 
     const mesh = buildFloorPlanMesh(data);
     this.indexCount = mesh.indexCount;
@@ -630,6 +670,7 @@ export class WebGPUFloorPlanRenderer {
 
   render(): void {
     if (
+      this.isDeviceLost ||
       !this.device ||
       !this.context ||
       !this.pipeline ||
@@ -639,86 +680,91 @@ export class WebGPUFloorPlanRenderer {
     )
       return;
 
-    this.time += 0.016;
+    try {
+      this.time += 0.016;
 
-    const aspect = this.canvas.width / this.canvas.height;
-    const projection = mat4Perspective(Math.PI / 4, aspect, 0.1, 100);
+      const aspect = this.canvas.width / this.canvas.height;
+      const projection = mat4Perspective(Math.PI / 4, aspect, 0.1, 100);
 
-    const eyeX =
-      this.camera.target[0] +
-      this.camera.panX +
-      this.camera.distance *
-        Math.cos(this.camera.rotationX) *
-        Math.sin(this.camera.rotationY);
-    const eyeY =
-      this.camera.target[1] +
-      this.camera.panY +
-      this.camera.distance * Math.sin(-this.camera.rotationX);
-    const eyeZ =
-      this.camera.target[2] +
-      this.camera.distance *
-        Math.cos(this.camera.rotationX) *
-        Math.cos(this.camera.rotationY);
+      const eyeX =
+        this.camera.target[0] +
+        this.camera.panX +
+        this.camera.distance *
+          Math.cos(this.camera.rotationX) *
+          Math.sin(this.camera.rotationY);
+      const eyeY =
+        this.camera.target[1] +
+        this.camera.panY +
+        this.camera.distance * Math.sin(-this.camera.rotationX);
+      const eyeZ =
+        this.camera.target[2] +
+        this.camera.distance *
+          Math.cos(this.camera.rotationX) *
+          Math.cos(this.camera.rotationY);
 
-    const view = mat4LookAt(
-      [eyeX, eyeY, eyeZ],
-      [
-        this.camera.target[0] + this.camera.panX,
-        this.camera.target[1] + this.camera.panY,
-        this.camera.target[2],
-      ],
-      [0, 1, 0],
-    );
+      const view = mat4LookAt(
+        [eyeX, eyeY, eyeZ],
+        [
+          this.camera.target[0] + this.camera.panX,
+          this.camera.target[1] + this.camera.panY,
+          this.camera.target[2],
+        ],
+        [0, 1, 0],
+      );
 
-    const model = mat4Identity();
-    const mvp = mat4Multiply(view, model);
-    const mvpFinal = mat4Multiply(projection, mvp);
+      const model = mat4Identity();
+      const mvp = mat4Multiply(view, model);
+      const mvpFinal = mat4Multiply(projection, mvp);
 
-    // Upload uniforms
-    const uniformData = new Float32Array(32);
-    uniformData.set(mvpFinal, 0);
-    uniformData.set(model, 16);
-    uniformData[24] = 0.5;
-    uniformData[25] = 1.0;
-    uniformData[26] = 0.7;
-    uniformData[27] = this.time;
-    this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
+      // Upload uniforms
+      const uniformData = new Float32Array(32);
+      uniformData.set(mvpFinal, 0);
+      uniformData.set(model, 16);
+      uniformData[24] = 0.5;
+      uniformData[25] = 1.0;
+      uniformData[26] = 0.7;
+      uniformData[27] = this.time;
+      this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
 
-    const commandEncoder = this.device.createCommandEncoder();
-    const textureView = this.context.getCurrentTexture().createView();
+      const commandEncoder = this.device.createCommandEncoder();
+      const textureView = this.context.getCurrentTexture().createView();
 
-    const depthTexture = this.device.createTexture({
-      size: [this.canvas.width, this.canvas.height],
-      format: "depth24plus",
-      usage: TextureUsage.RENDER_ATTACHMENT,
-    });
+      const depthTexture = this.device.createTexture({
+        size: [this.canvas.width, this.canvas.height],
+        format: "depth24plus",
+        usage: TextureUsage.RENDER_ATTACHMENT,
+      });
 
-    const renderPass = commandEncoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: textureView,
-          clearValue: { r: 0.08, g: 0.08, b: 0.1, a: 1.0 },
-          loadOp: "clear",
-          storeOp: "store",
+      const renderPass = commandEncoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: textureView,
+            clearValue: { r: 0.08, g: 0.08, b: 0.1, a: 1.0 },
+            loadOp: "clear",
+            storeOp: "store",
+          },
+        ],
+        depthStencilAttachment: {
+          view: depthTexture.createView(),
+          depthClearValue: 1.0,
+          depthLoadOp: "clear",
+          depthStoreOp: "store",
         },
-      ],
-      depthStencilAttachment: {
-        view: depthTexture.createView(),
-        depthClearValue: 1.0,
-        depthLoadOp: "clear",
-        depthStoreOp: "store",
-      },
-    });
+      });
 
-    renderPass.setPipeline(this.pipeline);
-    renderPass.setBindGroup(0, this.bindGroup);
-    renderPass.setVertexBuffer(0, this.vertexBuffer);
-    renderPass.setIndexBuffer(this.indexBuffer, "uint16");
-    renderPass.drawIndexed(this.indexCount);
-    renderPass.end();
+      renderPass.setPipeline(this.pipeline);
+      renderPass.setBindGroup(0, this.bindGroup);
+      renderPass.setVertexBuffer(0, this.vertexBuffer);
+      renderPass.setIndexBuffer(this.indexBuffer, "uint16");
+      renderPass.drawIndexed(this.indexCount);
+      renderPass.end();
 
-    this.device.queue.submit([commandEncoder.finish()]);
-    depthTexture.destroy();
+      this.device.queue.submit([commandEncoder.finish()]);
+      depthTexture.destroy();
+    } catch (error) {
+      console.error("[WebGPU] Render pass error (device lost):", error);
+      this.isDeviceLost = true;
+    }
   }
 
   startRenderLoop(): void {
@@ -733,11 +779,32 @@ export class WebGPUFloorPlanRenderer {
     cancelAnimationFrame(this.animationFrame);
   }
 
+  private cleanupGPUResources(): void {
+    this.pipeline = null;
+    this.bindGroup = null;
+    this.vertexBuffer?.destroy();
+    this.vertexBuffer = null;
+    this.indexBuffer?.destroy();
+    this.indexBuffer = null;
+    this.uniformBuffer?.destroy();
+    this.uniformBuffer = null;
+    this.context = null;
+    this.device = null;
+  }
+
+  getIsDeviceLost(): boolean {
+    return this.isDeviceLost;
+  }
+
+  getDevice(): GPUDevice | null {
+    return this.device;
+  }
+
   destroy(): void {
     this.stopRenderLoop();
-    this.vertexBuffer?.destroy();
-    this.indexBuffer?.destroy();
-    this.uniformBuffer?.destroy();
-    this.device?.destroy();
+    if (this.visibilityHandler && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.visibilityHandler);
+    }
+    this.cleanupGPUResources();
   }
 }

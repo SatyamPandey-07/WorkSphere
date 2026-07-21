@@ -6,33 +6,39 @@
  */
 
 /**
- * Sliding Window Rate Limiting Lua Script for Redis.
+ * Token Bucket Rate Limiting Lua Script for Upstash Redis.
  *
- * Atomically removes expired entries from sorted set (zset), checks current requests
- * against limit, adds current timestamp, and appends EXPIRE key window_seconds to
- * prevent key/zset accumulation in Redis memory under high concurrency (300+ req/s).
+ * Uses a hash to store (tokens, lastRefill) and atomically refills tokens
+ * based on elapsed time. Handles concurrent burst traffic correctly because
+ * the Lua script executes atomically — no duplicate-member issue that the
+ * previous sliding-window ZADD approach had.
  */
-export const SLIDING_WINDOW_LUA = `
+export const TOKEN_BUCKET_LUA = `
 local key = KEYS[1]
 local now = tonumber(ARGV[1])
-local windowStart = tonumber(ARGV[2])
-local limit = tonumber(ARGV[3])
-local window_seconds = tonumber(ARGV[4])
+local limit = tonumber(ARGV[2])
+local window_seconds = tonumber(ARGV[3])
 
--- Remove entries outside the sliding window
-redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
+local state = redis.call('HMGET', key, 'tokens', 'lastRefill')
+local tokens = tonumber(state[1])
+local lastRefill = tonumber(state[2])
 
--- Get current request count in window
-local current_requests = redis.call('ZCARD', key)
+if tokens == nil then
+    redis.call('HMSET', key, 'tokens', limit - 1, 'lastRefill', now)
+    redis.call('EXPIRE', key, window_seconds)
+    return 1
+end
 
-if current_requests < limit then
-    -- Add timestamp to sorted set
-    redis.call('ZADD', key, now, now)
-    -- Atomically append EXPIRE key window_seconds
+local elapsed_ms = math.max(0, now - lastRefill)
+local refill = math.floor(elapsed_ms / (window_seconds * 1000) * limit)
+tokens = math.min(limit, tokens + refill)
+
+if tokens >= 1 then
+    tokens = tokens - 1
+    redis.call('HMSET', key, 'tokens', tokens, 'lastRefill', now)
     redis.call('EXPIRE', key, window_seconds)
     return 1
 else
-    -- Refresh key expiration even when limited
     redis.call('EXPIRE', key, window_seconds)
     return 0
 end
@@ -71,15 +77,13 @@ async function upstashRateLimit(
 
   try {
     const now = Date.now();
-    const windowMs = 60_000;
-    const windowSeconds = Math.ceil(windowMs / 1000);
-    const windowStart = now - windowMs;
+    const windowSeconds = 60;
     const key = `worksphere:ratelimit:${identifier}`;
 
     const allowed = await redis.eval(
-      SLIDING_WINDOW_LUA,
+      TOKEN_BUCKET_LUA,
       [key],
-      [now, windowStart, limit, windowSeconds],
+      [now, limit, windowSeconds],
     );
 
     return Number(allowed) === 1;

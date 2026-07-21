@@ -8,6 +8,7 @@ import SiteFooter from "@/components/site-footer";
 import PremiumZkpGate from "@/components/venues/PremiumZkpGate";
 import { isPremiumVenue } from "@/lib/zkp/membership";
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
+import { VenueGodRays } from "@/components/VenueGodRays";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -180,6 +181,19 @@ export default async function VenuePage({ params }: PageProps) {
                 lng={venue.longitude}
                 height="260px"
                 interactive={true}
+              />
+            </div>
+
+            {/* WebGL 2.0 Volumetric Light Shaft (God Rays) Renderer */}
+            <div className="pt-2">
+              <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
+                <span>Volumetric Light Shafts</span>
+              </h3>
+              <VenueGodRays
+                lat={venue.latitude}
+                lng={venue.longitude}
+                height="200px"
+                quality="medium"
               />
             </div>
 

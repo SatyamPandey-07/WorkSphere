@@ -607,6 +607,15 @@ async function syncFavoritesOutbox() {
         } catch (error) {
           console.error("Failed to sync favorite:", error);
 
+          if (
+            typeof self !== "undefined" &&
+            self.navigator &&
+            !self.navigator.onLine
+          ) {
+            console.warn("[SW] Offline network error; preserving outbox item.");
+            break;
+          }
+
           const attempts = await incrementRetryCount(action.id);
 
           if (attempts !== null && attempts >= MAX_SYNC_RETRIES) {

@@ -64,6 +64,15 @@ export function useSyncWorker() {
 }
 
 /**
+ * Global Sync Manager component to ensure outbox sync worker and listeners
+ * remain active across all pages in the application. (Issue #871)
+ */
+export function SyncManager() {
+  useSyncWorker();
+  return null;
+}
+
+/**
  * Hook to register service worker and manage PWA state
  */
 export function useServiceWorker() {

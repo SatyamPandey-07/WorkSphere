@@ -10,6 +10,7 @@ import { ThemeProvider } from "../components/ThemeProvider";
 import { SoundProvider } from "../components/SoundProvider";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
 import { CookieBanner } from "../components/CookieBanner";
+import { SyncManager } from "../hooks/usePWA";
 
 const THEME_INIT_SCRIPT = `
 (function () {
@@ -177,6 +178,7 @@ export default async function RootLayout({
         suppressHydrationWarning
       >
         <ScrollProgress />
+        <SyncManager />
         {bodyContent}
         <CookieBanner />
       </body>

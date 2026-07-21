@@ -1,13 +1,14 @@
-const mockMultiExec = jest.fn();
-const mockMulti = {
-  incr: jest.fn().mockReturnThis(),
+const mockPipeline = {
+  zremrangebyscore: jest.fn().mockReturnThis(),
+  zcard: jest.fn().mockReturnThis(),
+  zadd: jest.fn().mockReturnThis(),
   expire: jest.fn().mockReturnThis(),
-  exec: mockMultiExec,
+  exec: jest.fn(),
 };
 
 jest.mock("@upstash/redis", () => ({
   Redis: jest.fn().mockImplementation(() => ({
-    multi: () => mockMulti,
+    pipeline: () => mockPipeline,
   })),
 }));
 
@@ -23,9 +24,11 @@ describe("Rate Limiting", () => {
   beforeEach(() => {
     resetRateLimit();
     resetRedisScripts();
-    mockMultiExec.mockReset();
-    mockMulti.incr.mockClear();
-    mockMulti.expire.mockClear();
+    mockPipeline.exec.mockReset();
+    mockPipeline.zremrangebyscore.mockClear();
+    mockPipeline.zcard.mockClear();
+    mockPipeline.zadd.mockClear();
+    mockPipeline.expire.mockClear();
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
   });
@@ -41,12 +44,10 @@ describe("Rate Limiting", () => {
   it("should block requests over the limit", async () => {
     const ip = "192.168.1.2";
 
-    // Make 10 requests (default limit)
     for (let i = 0; i < 10; i++) {
       await rateLimit(ip);
     }
 
-    // 11th request should be blocked
     expect(await rateLimit(ip)).toBe(false);
   });
 
@@ -54,19 +55,16 @@ describe("Rate Limiting", () => {
     const ip1 = "192.168.1.3";
     const ip2 = "192.168.1.4";
 
-    // Exhaust limit for ip1
     for (let i = 0; i < 10; i++) {
       await rateLimit(ip1);
     }
 
-    // ip2 should still be allowed
     expect(await rateLimit(ip2)).toBe(true);
   });
 
   it("should respect custom limits", async () => {
     const ip = "192.168.1.5";
 
-    // Custom limit of 5
     for (let i = 0; i < 5; i++) {
       expect(await rateLimit(ip, 5)).toBe(true);
     }
@@ -97,8 +95,6 @@ describe("Rate Limiting", () => {
     expect(info?.remaining).toBe(0);
     expect(info?.isLimited).toBe(true);
   });
-
-  // Lua script test removed in favor of pipeline transactions.
 });
 
 describe("microTimestampMember", () => {
@@ -115,12 +111,14 @@ describe("microTimestampMember", () => {
   });
 });
 
-describe("Redis sliding window path", () => {
+describe("Redis sliding window ZREMRANGEBYSCORE + ZCARD pipeline", () => {
   beforeEach(() => {
     resetRedisScripts();
-    mockMultiExec.mockReset();
-    mockMulti.incr.mockClear();
-    mockMulti.expire.mockClear();
+    mockPipeline.exec.mockReset();
+    mockPipeline.zremrangebyscore.mockClear();
+    mockPipeline.zcard.mockClear();
+    mockPipeline.zadd.mockClear();
+    mockPipeline.expire.mockClear();
     process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
     process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
   });
@@ -131,37 +129,49 @@ describe("Redis sliding window path", () => {
     resetRedisScripts();
   });
 
-  it("blocks after the pipeline result count exceeds limit", async () => {
-    let hits = 0;
-    mockMultiExec.mockImplementation(async () => {
-      hits += 1;
-      return [hits];
-    });
+  it("pipelines zremrangebyscore then zcard before allowing a hit", async () => {
+    mockPipeline.exec
+      .mockResolvedValueOnce([0, 0])
+      .mockResolvedValueOnce([1, 1]);
 
     expect(await rateLimit("redis-ip", 3)).toBe(true);
-    expect(await rateLimit("redis-ip", 3)).toBe(true);
-    expect(await rateLimit("redis-ip", 3)).toBe(true);
-    expect(await rateLimit("redis-ip", 3)).toBe(false);
-    expect(mockMultiExec).toHaveBeenCalledTimes(4);
+
+    expect(mockPipeline.zremrangebyscore).toHaveBeenCalledTimes(1);
+    expect(mockPipeline.zcard).toHaveBeenCalledTimes(1);
+    expect(mockPipeline.zadd).toHaveBeenCalledTimes(1);
+    expect(mockPipeline.expire).toHaveBeenCalledTimes(1);
+    expect(mockPipeline.exec).toHaveBeenCalledTimes(2);
+
+    const key = mockPipeline.zremrangebyscore.mock.calls[0][0];
+    expect(key).toBe("worksphere:ratelimit:redis-ip");
+    expect(mockPipeline.zcard.mock.calls[0][0]).toBe(key);
   });
 
-  it("uses the correct rate limit key format with pipeline", async () => {
-    mockMultiExec.mockResolvedValue([1]);
+  it("blocks when ZCARD is already at the limit without writing", async () => {
+    mockPipeline.exec.mockResolvedValueOnce([0, 3]);
 
-    await Promise.all([
-      rateLimit("burst-ip", 10),
-      rateLimit("burst-ip", 10),
-      rateLimit("burst-ip", 10),
-    ]);
+    expect(await rateLimit("full-ip", 3)).toBe(false);
+    expect(mockPipeline.zadd).not.toHaveBeenCalled();
+    expect(mockPipeline.exec).toHaveBeenCalledTimes(1);
+  });
 
-    expect(mockMultiExec).toHaveBeenCalledTimes(3);
-    const keys = mockMulti.incr.mock.calls.map((call) => call[0]);
-    expect(
-      keys.every(
-        (k) =>
-          typeof k === "string" &&
-          k.startsWith("worksphere:ratelimit:burst-ip:"),
-      ),
-    ).toBe(true);
+  it("allows until ZCARD reaches the limit across calls", async () => {
+    mockPipeline.exec
+      .mockResolvedValueOnce([0, 0])
+      .mockResolvedValueOnce([1, 1])
+      .mockResolvedValueOnce([0, 1])
+      .mockResolvedValueOnce([1, 1])
+      .mockResolvedValueOnce([0, 2])
+      .mockResolvedValueOnce([1, 1])
+      .mockResolvedValueOnce([0, 3]);
+
+    expect(await rateLimit("burst-ip", 3)).toBe(true);
+    expect(await rateLimit("burst-ip", 3)).toBe(true);
+    expect(await rateLimit("burst-ip", 3)).toBe(true);
+    expect(await rateLimit("burst-ip", 3)).toBe(false);
+
+    expect(mockPipeline.zremrangebyscore).toHaveBeenCalledTimes(4);
+    expect(mockPipeline.zcard).toHaveBeenCalledTimes(4);
+    expect(mockPipeline.zadd).toHaveBeenCalledTimes(3);
   });
 });

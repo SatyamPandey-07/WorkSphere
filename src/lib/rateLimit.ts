@@ -5,7 +5,7 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-// Lua script removed in favor of Redis pipeline transactions for atomic counter increments.
+const WINDOW_MS = 60_000;
 
 let redisClient: any = null;
 
@@ -31,6 +31,10 @@ function getRedisClient() {
   }
 }
 
+/**
+ * Sliding-window check via a single Redis pipeline of ZREMRANGEBYSCORE + ZCARD.
+ * Avoids Upstash Lua `eval` timeouts under ~200 RPS (issue #1034).
+ */
 async function upstashRateLimit(
   identifier: string,
   limit: number,
@@ -39,18 +43,33 @@ async function upstashRateLimit(
   if (!redis) return memRateLimit(identifier, limit);
 
   try {
-    const windowMs = 60_000;
-    const windowSeconds = Math.ceil(windowMs / 1000);
-    const windowMinute = Math.floor(Date.now() / windowMs);
-    const key = `worksphere:ratelimit:${identifier}:${windowMinute}`;
+    const now = Date.now();
+    const windowStart = now - WINDOW_MS;
+    const windowSeconds = Math.ceil(WINDOW_MS / 1000);
+    const key = `worksphere:ratelimit:${identifier}`;
+    const member = microTimestampMember(
+      Math.floor(now / 1000),
+      (now % 1000) * 1000,
+      `${Math.random().toString(36).slice(2, 10)}`,
+    );
 
-    const tx = redis.multi();
-    tx.incr(key);
-    tx.expire(key, windowSeconds);
-    const result = await tx.exec();
+    // One pipeline round-trip: prune expired hits, then count the window.
+    const countPipe = redis.pipeline();
+    countPipe.zremrangebyscore(key, 0, windowStart);
+    countPipe.zcard(key);
+    const countResult = await countPipe.exec();
+    const count = Number(countResult?.[1] ?? 0);
 
-    const count = result[0] as number;
-    return count <= limit;
+    if (count >= limit) {
+      return false;
+    }
+
+    const writePipe = redis.pipeline();
+    writePipe.zadd(key, { score: now, member });
+    writePipe.expire(key, windowSeconds);
+    await writePipe.exec();
+
+    return true;
   } catch {
     return memRateLimit(identifier, limit);
   }
@@ -62,7 +81,6 @@ interface MemEntry {
   resetTime: number;
 }
 const memStore = new Map<string, MemEntry>();
-const WINDOW_MS = 60_000;
 
 interface RateLimitInfo {
   count: number;

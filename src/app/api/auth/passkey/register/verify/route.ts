@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import { prisma } from "@/lib/prisma";
-import { getRpId, getOrigin } from "@/lib/passkey";
+import { parseClientDataJSON } from "@/lib/webauthn";
 import type { RegistrationResponseJSON } from "@simplewebauthn/browser";
 
 export async function POST(req: Request) {
@@ -41,10 +41,14 @@ export async function POST(req: Request) {
       );
     }
 
+    const clientData = registrationResponse.response?.clientDataJSON
+      ? parseClientDataJSON(registrationResponse.response.clientDataJSON)
+      : null;
+
     const verification = await verifyRegistrationResponse({
       response: registrationResponse,
       expectedChallenge: challengeRecord.challenge,
-      expectedOrigin: getOrigin(req),
+      expectedOrigin: getExpectedOrigin(req, clientData?.origin),
       expectedRPID: getRpId(req),
     });
 

@@ -38,6 +38,11 @@ import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ComparisonDrawer } from "@/components/ComparisonDrawer";
 import { ChatMessageSkeleton } from "@/components/ui/skeleton";
+import {
+  VenueGrid,
+  LayoutBoundary,
+  SubgridCell,
+} from "@/components/ui/VenueGrid";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
@@ -736,39 +741,43 @@ export function VenueListings({
         />
       ) : (
         <LayoutGroup id="venue-listings">
-          <div
-            className={`@container min-w-0 [transform:translate3d(0,0,0)] ${
-              viewMode === "card" ? "space-y-3" : "space-y-2"
-            }`}
-            data-testid="venue-listings-grid"
-          >
+          <VenueGrid viewMode={viewMode}>
             {venues.slice(0, visibleCount).map((venue, index) => (
-              <motion.div
-                key={venue.id}
-                layout
-                layoutId={`venue-card-${venue.id}`}
-                className="min-w-0 [transform:translate3d(0,0,0)]"
-                transition={{
-                  layout: { type: "spring", stiffness: 350, damping: 30 },
-                }}
-              >
-                <VenueChatCard
-                  venue={venue}
-                  isFavorited={favorites.has(venue.id)}
-                  onGetDirections={onGetDirections}
-                  onToggleFavorite={onToggleFavorite}
-                  onRate={onRateVenue}
-                  onOpenDetails={onOpenDetails}
-                  onBook={onBook}
-                  viewMode={viewMode}
-                  tabIndex={0}
-                  data-index={index}
-                  onKeyDown={(e) => handleKeyDown(e, index, venue)}
-                  isSelected={selectedVenues.some((v) => v.id === venue.id)}
-                  compareDisabled={selectedVenues.length >= 3}
-                  onToggleCompare={handleToggleCompare}
-                />
-              </motion.div>
+              <SubgridCell key={venue.id}>
+                {/* 
+                  Measurement Container Pattern for Issue #1037:
+                  LayoutBoundary (parent) is position: relative, preserving layout measurements during grid/subgrid resize.
+                  motion.div layoutId wrapper is positioned relative within the boundary so layout transitions stay stable
+                  when drawers open/close or column counts change.
+                */}
+                <LayoutBoundary>
+                  <motion.div
+                    layout
+                    layoutId={`venue-card-${venue.id}`}
+                    className="w-full min-w-0 [transform:translate3d(0,0,0)]"
+                    transition={{
+                      layout: { type: "spring", stiffness: 350, damping: 30 },
+                    }}
+                  >
+                    <VenueChatCard
+                      venue={venue}
+                      isFavorited={favorites.has(venue.id)}
+                      onGetDirections={onGetDirections}
+                      onToggleFavorite={onToggleFavorite}
+                      onRate={onRateVenue}
+                      onOpenDetails={onOpenDetails}
+                      onBook={onBook}
+                      viewMode={viewMode}
+                      tabIndex={0}
+                      data-index={index}
+                      onKeyDown={(e) => handleKeyDown(e, index, venue)}
+                      isSelected={selectedVenues.some((v) => v.id === venue.id)}
+                      compareDisabled={selectedVenues.length >= 3}
+                      onToggleCompare={handleToggleCompare}
+                    />
+                  </motion.div>
+                </LayoutBoundary>
+              </SubgridCell>
             ))}
 
             {/* Infinite Scroll Sentinel */}
@@ -779,7 +788,7 @@ export function VenueListings({
                 )}
               </div>
             )}
-          </div>
+          </VenueGrid>
         </LayoutGroup>
       )}
 

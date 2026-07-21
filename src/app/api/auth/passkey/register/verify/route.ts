@@ -3,6 +3,10 @@ import { auth } from "@clerk/nextjs/server";
 import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import { prisma } from "@/lib/prisma";
 import { parseClientDataJSON } from "@/lib/webauthn";
+import {
+  getKeyExpiryDate,
+  type AttestationFormat,
+} from "@/lib/passkey/attestation";
 import type { RegistrationResponseJSON } from "@simplewebauthn/browser";
 
 export async function POST(req: Request) {
@@ -62,6 +66,10 @@ export async function POST(req: Request) {
     const { credential, credentialDeviceType, credentialBackedUp, aaguid } =
       verification.registrationInfo;
 
+    const attestationFmt = (
+      registrationResponse.response?.attestationObject ? "packed" : "none"
+    ) as AttestationFormat;
+
     // Delete spent challenge
     await prisma.passkeyChallenge
       .delete({
@@ -69,7 +77,8 @@ export async function POST(req: Request) {
       })
       .catch(() => {});
 
-    // Save newly verified credential
+    // Save newly verified credential with expiry
+    const now = new Date();
     const newPasskey = await prisma.passkeyCredential.create({
       data: {
         userId,
@@ -81,6 +90,8 @@ export async function POST(req: Request) {
         backedUp: credentialBackedUp,
         name: name?.trim() || "Passkey Credential",
         aaguid: aaguid || null,
+        attestationFormat: attestationFmt,
+        expiresAt: getKeyExpiryDate(now),
       },
     });
 
@@ -92,6 +103,8 @@ export async function POST(req: Request) {
         name: newPasskey.name,
         deviceType: newPasskey.deviceType,
         backedUp: newPasskey.backedUp,
+        attestationFormat: newPasskey.attestationFormat,
+        expiresAt: newPasskey.expiresAt,
         createdAt: newPasskey.createdAt,
       },
     });

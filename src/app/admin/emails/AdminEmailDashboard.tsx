@@ -25,7 +25,6 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  Cell,
 } from "recharts";
 
 type RangeKey = "7d" | "30d" | "90d";
@@ -99,17 +98,13 @@ function MetricCard({
           <Icon className="h-5 w-5" />
         </span>
       </div>
-      <p className="text-3xl font-semibold tracking-tight text-white">{value}</p>
+      <p className="text-3xl font-semibold tracking-tight text-white">
+        {value}
+      </p>
       <p className="mt-2 text-xs text-zinc-500">{detail}</p>
     </article>
   );
 }
-
-const STATUS_COLORS: Record<string, string> = {
-  SENT: "#22c55e",
-  FAILED: "#ef4444",
-  PENDING: "#f59e0b",
-};
 
 const STATUS_BADGE: Record<string, string> = {
   SENT: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
@@ -140,24 +135,41 @@ export default function AdminEmailDashboard() {
   // Test email state
   const [testEmail, setTestEmail] = useState("");
   const [sendingTest, setSendingTest] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
 
-  async function loadMetrics(selectedRange: RangeKey, searchQuery?: string, pageNum = 1) {
+  async function loadMetrics(
+    selectedRange: RangeKey,
+    searchQuery?: string,
+    pageNum = 1,
+  ) {
     setLoading(true);
     setError("");
 
     try {
-      const params = new URLSearchParams({ range: selectedRange, page: String(pageNum), pageSize: String(pageSize) });
+      const params = new URLSearchParams({
+        range: selectedRange,
+        page: String(pageNum),
+        pageSize: String(pageSize),
+      });
       if (searchQuery) params.set("search", searchQuery);
 
-      const response = await fetch(`/api/admin/emails?${params}`, { cache: "no-store" });
+      const response = await fetch(`/api/admin/emails?${params}`, {
+        cache: "no-store",
+      });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.error ?? "Unable to load email metrics");
       }
       setData(await response.json());
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to load email metrics");
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to load email metrics",
+      );
     } finally {
       setLoading(false);
     }
@@ -165,7 +177,7 @@ export default function AdminEmailDashboard() {
 
   useEffect(() => {
     loadMetrics(range, search, page);
-  }, [range, page]);
+  }, [range, search, page]);
 
   function handleSearch() {
     setPage(1);
@@ -194,7 +206,7 @@ export default function AdminEmailDashboard() {
         setTestEmail("");
         loadMetrics(range, search, page);
       }
-    } catch (err) {
+    } catch {
       setTestResult({ success: false, message: "Network error" });
     } finally {
       setSendingTest(false);
@@ -236,7 +248,8 @@ export default function AdminEmailDashboard() {
             </div>
 
             <p className="mt-4 max-w-2xl text-sm leading-6 text-zinc-400">
-              Monitor SMTP delivery, verification email queues, sign-up OTP failures, and send test emails.
+              Monitor SMTP delivery, verification email queues, sign-up OTP
+              failures, and send test emails.
             </p>
           </div>
 
@@ -245,9 +258,14 @@ export default function AdminEmailDashboard() {
               {ranges.map((item) => (
                 <button
                   key={item.key}
-                  onClick={() => { setRange(item.key); setPage(1); }}
+                  onClick={() => {
+                    setRange(item.key);
+                    setPage(1);
+                  }}
                   className={`rounded-xl px-4 py-2 text-sm transition ${
-                    range === item.key ? "bg-white text-black" : "text-zinc-400 hover:text-white"
+                    range === item.key
+                      ? "bg-white text-black"
+                      : "text-zinc-400 hover:text-white"
                   }`}
                 >
                   {item.label}
@@ -261,7 +279,9 @@ export default function AdminEmailDashboard() {
               className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-zinc-300 transition hover:bg-white/[0.08] disabled:opacity-50"
               aria-label="Refresh"
             >
-              <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-5 w-5 ${loading ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
         </header>
@@ -304,14 +324,22 @@ export default function AdminEmailDashboard() {
           />
           <MetricCard
             label="Deliverability"
-            value={data ? `${(100 - data.overview.bounceRate).toFixed(1)}%` : "—"}
+            value={
+              data ? `${(100 - data.overview.bounceRate).toFixed(1)}%` : "—"
+            }
             detail="success rate"
             icon={CheckCircle2}
             accent="emerald"
           />
           <MetricCard
             label="Total volume"
-            value={data ? data.overview.totalSent + data.overview.totalFailed + data.overview.totalPending : "—"}
+            value={
+              data
+                ? data.overview.totalSent +
+                  data.overview.totalFailed +
+                  data.overview.totalPending
+                : "—"
+            }
             detail="emails in selected window"
             icon={BarChart3}
           />
@@ -322,7 +350,9 @@ export default function AdminEmailDashboard() {
           <article className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 xl:col-span-3">
             <div className="mb-6">
               <h2 className="text-lg font-semibold">Delivery trend</h2>
-              <p className="mt-1 text-sm text-zinc-500">Sent and failed emails per day</p>
+              <p className="mt-1 text-sm text-zinc-500">
+                Sent and failed emails per day
+              </p>
             </div>
 
             <div className="h-80">
@@ -334,7 +364,11 @@ export default function AdminEmailDashboard() {
                       <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="failedFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.35} />
+                      <stop
+                        offset="5%"
+                        stopColor="#ef4444"
+                        stopOpacity={0.35}
+                      />
                       <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
                     </linearGradient>
                   </defs>
@@ -349,10 +383,26 @@ export default function AdminEmailDashboard() {
                   <YAxis allowDecimals={false} stroke="#71717a" fontSize={12} />
                   <Tooltip
                     labelFormatter={(value: any) => compactDate(String(value))}
-                    contentStyle={{ background: "#111114", border: "1px solid #27272a", borderRadius: 16 }}
+                    contentStyle={{
+                      background: "#111114",
+                      border: "1px solid #27272a",
+                      borderRadius: 16,
+                    }}
                   />
-                  <Area type="monotone" dataKey="sent" stroke="#22c55e" strokeWidth={2} fill="url(#sentFill)" />
-                  <Area type="monotone" dataKey="failed" stroke="#ef4444" strokeWidth={2} fill="url(#failedFill)" />
+                  <Area
+                    type="monotone"
+                    dataKey="sent"
+                    stroke="#22c55e"
+                    strokeWidth={2}
+                    fill="url(#sentFill)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="failed"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    fill="url(#failedFill)"
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -361,7 +411,9 @@ export default function AdminEmailDashboard() {
           <article className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 xl:col-span-2">
             <div className="mb-6">
               <h2 className="text-lg font-semibold">By type</h2>
-              <p className="mt-1 text-sm text-zinc-500">Email volume breakdown by purpose</p>
+              <p className="mt-1 text-sm text-zinc-500">
+                Email volume breakdown by purpose
+              </p>
             </div>
 
             <div className="h-80">
@@ -379,14 +431,35 @@ export default function AdminEmailDashboard() {
                     stroke="#71717a"
                     fontSize={11}
                     width={90}
-                    tickFormatter={(value: string) => TYPE_LABELS[value] ?? value}
+                    tickFormatter={(value: string) =>
+                      TYPE_LABELS[value] ?? value
+                    }
                   />
                   <Tooltip
-                    contentStyle={{ background: "#111114", border: "1px solid #27272a", borderRadius: 16 }}
-                    formatter={(value, name) => [value ?? 0, name === "sent" ? "Sent" : "Failed"]}
+                    contentStyle={{
+                      background: "#111114",
+                      border: "1px solid #27272a",
+                      borderRadius: 16,
+                    }}
+                    formatter={(value, name) => [
+                      value ?? 0,
+                      name === "sent" ? "Sent" : "Failed",
+                    ]}
                   />
-                  <Bar dataKey="sent" name="sent" stackId="a" fill="#22c55e" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="failed" name="failed" stackId="a" fill="#ef4444" radius={[0, 4, 4, 0]} />
+                  <Bar
+                    dataKey="sent"
+                    name="sent"
+                    stackId="a"
+                    fill="#22c55e"
+                    radius={[0, 0, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="failed"
+                    name="failed"
+                    stackId="a"
+                    fill="#ef4444"
+                    radius={[0, 4, 4, 0]}
+                  />
                 </RechartsBarChart>
               </ResponsiveContainer>
             </div>
@@ -404,7 +477,10 @@ export default function AdminEmailDashboard() {
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1">
-              <label htmlFor="test-email" className="mb-1.5 block text-xs text-zinc-400">
+              <label
+                htmlFor="test-email"
+                className="mb-1.5 block text-xs text-zinc-400"
+              >
                 Recipient email
               </label>
               <input
@@ -482,7 +558,9 @@ export default function AdminEmailDashboard() {
             </div>
           ) : data && data.logs.length === 0 ? (
             <div className="py-16 text-center text-sm text-zinc-500">
-              {search ? "No logs match your search." : "No email logs yet. Emails will appear here once sent."}
+              {search
+                ? "No logs match your search."
+                : "No email logs yet. Emails will appear here once sent."}
             </div>
           ) : (
             <>
@@ -500,24 +578,37 @@ export default function AdminEmailDashboard() {
                   </thead>
                   <tbody>
                     {data?.logs.map((log) => (
-                      <tr key={log.id} className="border-b border-white/5 text-sm last:border-0 hover:bg-white/[0.02]">
+                      <tr
+                        key={log.id}
+                        className="border-b border-white/5 text-sm last:border-0 hover:bg-white/[0.02]"
+                      >
                         <td className="px-3 py-4">
                           <span
                             className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${
                               STATUS_BADGE[log.status] ?? ""
                             }`}
                           >
-                            {log.status === "SENT" && <CheckCircle2 className="mr-1 h-3 w-3" />}
-                            {log.status === "FAILED" && <XCircle className="mr-1 h-3 w-3" />}
-                            {log.status === "PENDING" && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+                            {log.status === "SENT" && (
+                              <CheckCircle2 className="mr-1 h-3 w-3" />
+                            )}
+                            {log.status === "FAILED" && (
+                              <XCircle className="mr-1 h-3 w-3" />
+                            )}
+                            {log.status === "PENDING" && (
+                              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                            )}
                             {log.status}
                           </span>
                         </td>
                         <td className="px-3 py-4 text-zinc-300">
                           {TYPE_LABELS[log.type] ?? log.type}
                         </td>
-                        <td className="px-3 py-4 text-zinc-300">{log.recipient}</td>
-                        <td className="max-w-xs truncate px-3 py-4 text-zinc-300">{log.subject}</td>
+                        <td className="px-3 py-4 text-zinc-300">
+                          {log.recipient}
+                        </td>
+                        <td className="max-w-xs truncate px-3 py-4 text-zinc-300">
+                          {log.subject}
+                        </td>
                         <td className="whitespace-nowrap px-3 py-4 text-zinc-400">
                           {new Date(log.createdAt).toLocaleString()}
                         </td>
@@ -545,7 +636,9 @@ export default function AdminEmailDashboard() {
                       Previous
                     </button>
                     <button
-                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                      onClick={() =>
+                        setPage((p) => Math.min(totalPages, p + 1))
+                      }
                       disabled={page >= totalPages}
                       className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/[0.08] disabled:opacity-50"
                     >

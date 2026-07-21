@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, MessageSquare, Check, ShieldCheck } from "lucide-react";
+import { MessageSquare, Check, ShieldCheck } from "lucide-react";
 import { saveDiscordWebhookUrl } from "@/app/dashboard/webhooks/actions";
 
 interface NotificationPanelProps {
@@ -12,7 +12,9 @@ export function WorkspaceNotificationPanel({
   initialSlackUrl = "",
 }: NotificationPanelProps) {
   const [webhookUrl, setWebhookUrl] = useState(initialSlackUrl || "");
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
+    "idle",
+  );
   const [errorMsg, setErrorMsg] = useState("");
 
   const handleSave = async (e: React.FormEvent) => {
@@ -26,7 +28,9 @@ export function WorkspaceNotificationPanel({
       setTimeout(() => setStatus("idle"), 3000);
     } catch (err) {
       setStatus("error");
-      setErrorMsg((err as Error).message || "Failed to save webhook configuration.");
+      setErrorMsg(
+        (err as Error).message || "Failed to save webhook configuration.",
+      );
     }
   };
 
@@ -68,7 +72,8 @@ export function WorkspaceNotificationPanel({
 
         <div className="flex items-center justify-between pt-2">
           <span className="text-[10px] text-zinc-500 flex items-center gap-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> SSRF Protected Endpoint
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> SSRF
+            Protected Endpoint
           </span>
 
           <button

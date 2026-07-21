@@ -33,7 +33,9 @@ export function CustomAvatarUpload() {
       await user.setProfileImage({ file });
     } catch (err: any) {
       console.error("Failed to upload image:", err);
-      setError(err.errors?.[0]?.message || "Failed to upload image. Please try again.");
+      setError(
+        err.errors?.[0]?.message || "Failed to upload image. Please try again.",
+      );
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) {
@@ -47,16 +49,17 @@ export function CustomAvatarUpload() {
       <div className="flex items-start gap-4">
         <div className="w-16 h-16 rounded-full overflow-hidden shrink-0 border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
           {user.hasImage ? (
-            <img 
-              src={user.imageUrl} 
-              alt={user.fullName || "User avatar"} 
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={user.imageUrl}
+              alt={user.fullName || "User avatar"}
               className="w-full h-full object-cover"
             />
           ) : (
             <ImageIcon className="w-6 h-6 text-zinc-400" />
           )}
         </div>
-        
+
         <div className="flex-1">
           <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-1">
             Profile Picture
@@ -64,7 +67,7 @@ export function CustomAvatarUpload() {
           <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
             Upload a custom avatar to personalize your profile.
           </p>
-          
+
           <div className="flex items-center gap-4">
             <input
               type="file"

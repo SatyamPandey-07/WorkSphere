@@ -17,11 +17,11 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
   }
 
   /**
-   * Round n up to the next multiple of 8 (ensures Float32Array / Float64Array
-   * alignment on 32-bit ARM Android Chrome — Issue #1039).
+   * Round n up to the next multiple of 16 (ensures 128-bit SIMD vector alignment
+   * on 64-bit ARM Android Chrome — Issue #1080).
    */
-  align8(n) {
-    return (n + 7) & ~7;
+  align16(n) {
+    return (n + 15) & ~15;
   }
 
   async handleMessage(event) {
@@ -43,14 +43,14 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
         break;
       case "getNoiseProfile":
         if (this.wasmExports) {
-          const ptr = this.wasmExports.malloc(513 * 4);
+          const ptr = this.wasmExports.malloc(this.align16(513 * 4));
           this.wasmExports.getNoiseProfile(ptr, 513);
           const profile = new Float32Array(
             this.wasmExports.memory.buffer,
             ptr,
             513,
           ).slice();
-          this.wasmExports.free(ptr, 513 * 4);
+          this.wasmExports.free(ptr, this.align16(513 * 4));
           this.port.postMessage({ type: "noiseProfile", profile });
         }
         break;
@@ -64,19 +64,18 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
 
       this.wasmExports = instance.exports;
 
-      // Use 8-byte-aligned allocation sizes (fix for Issue #1039).
-      // Previously `this.frameSize * 4` was passed without alignment, which
-      // could produce misaligned pointers on 32-bit ARM Android Chrome.
-      const alignedFrameBytes = this.align8(this.frameSize * 4);
+      // Use 16-byte-aligned allocation sizes (fix for Issue #1080).
+      // Required for WASM 128-bit SIMD vector operations on 64-bit ARM Android.
+      const alignedFrameBytes = this.align16(this.frameSize * 4);
       this.inputBufferPtr = this.wasmExports.malloc(alignedFrameBytes);
       this.outputBufferPtr = this.wasmExports.malloc(alignedFrameBytes);
 
-      // Verify 4-byte alignment before any typed-array views are created.
-      if (this.inputBufferPtr % 4 !== 0 || this.outputBufferPtr % 4 !== 0) {
+      // Verify 16-byte alignment before any SIMD vector ops or typed-array views are created.
+      if (this.inputBufferPtr % 16 !== 0 || this.outputBufferPtr % 16 !== 0) {
         throw new RangeError(
           `[AudioDSP] WASM malloc returned misaligned pointer: ` +
             `input=0x${this.inputBufferPtr.toString(16)} ` +
-            `output=0x${this.outputBufferPtr.toString(16)} (Issue #1039)`,
+            `output=0x${this.outputBufferPtr.toString(16)} (Issue #1080)`,
         );
       }
 

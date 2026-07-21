@@ -15,6 +15,20 @@ interface DSPManagerState {
   noiseProfileCallback: ((profile: Float32Array) => void) | null;
 }
 
+/**
+ * Round n up to the next multiple of 16 for 128-bit SIMD vector operations.
+ */
+export function align16(n: number): number {
+  return (n + 15) & ~15;
+}
+
+/**
+ * Check if a WASM memory byte offset is 16-byte aligned.
+ */
+export function is16ByteAligned(ptr: number): boolean {
+  return ptr % 16 === 0;
+}
+
 const state: DSPManagerState = {
   audioContext: null,
   workletNode: null,

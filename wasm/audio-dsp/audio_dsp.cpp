@@ -23,17 +23,17 @@
 #define NUM_BINS (HALF_FFT + 1)
 
 // FFT twiddle factors (precomputed)
-static float cos_table[HALF_FFT];
-static float sin_table[HALF_FFT];
+alignas(16) static float cos_table[HALF_FFT];
+alignas(16) static float sin_table[HALF_FFT];
 
 // Hann window coefficients
-static float hann_window[FFT_SIZE];
+alignas(16) static float hann_window[FFT_SIZE];
 
 // State buffers
-static float input_buffer[FFT_SIZE];
-static float output_buffer[FFT_SIZE];
-static float noise_estimate[NUM_BINS];
-static float phase_accumulator[NUM_BINS];
+alignas(16) static float input_buffer[FFT_SIZE];
+alignas(16) static float output_buffer[FFT_SIZE];
+alignas(16) static float noise_estimate[NUM_BINS];
+alignas(16) static float phase_accumulator[NUM_BINS];
 
 static int buffer_pos = 0;
 static int noise_frames_collected = 0;
@@ -95,7 +95,7 @@ float computeRMS(float* samples, int length) {
     }
 
     // Horizontal sum
-    float temp[4];
+    alignas(16) float temp[4];
     wasm_v128_store(temp, vsum);
     sum = temp[0] + temp[1] + temp[2] + temp[3];
 
@@ -123,7 +123,7 @@ float computePeak(float* samples, int length) {
         vpeak = wasm_f32x4_max(vpeak, abs_v);
     }
 
-    float temp[4];
+    alignas(16) float temp[4];
     wasm_v128_store(temp, vpeak);
     peak = fmaxf(fmaxf(temp[0], temp[1]), fmaxf(temp[2], temp[3]));
 
@@ -166,9 +166,9 @@ float processAudioFrame(float* input, int input_length, float* output, int outpu
 
     // Process when we have a full FFT frame
     if (buffer_pos >= FFT_SIZE) {
-        float real[FFT_SIZE];
-        float imag[FFT_SIZE];
-        float magnitude[NUM_BINS];
+        alignas(16) float real[FFT_SIZE];
+        alignas(16) float imag[FFT_SIZE];
+        alignas(16) float magnitude[NUM_BINS];
 
         // Copy and window
         memcpy(real, input_buffer, FFT_SIZE * sizeof(float));
@@ -271,10 +271,10 @@ void getLastSpectrum(float* out_real, float* out_imag, int length) {
  * Alignment formula:  aligned = (ptr + 15) & ~15
  */
 int malloc(int size) {
-    // Round size up to next 16-byte multiple to keep heap_ptr aligned
+    // Align returned pointer to 16 bytes for 128-bit SIMD operations
+    int ptr = (heap_ptr + 15) & ~15;
     int aligned_size = (size + 15) & ~15;
-    int ptr = heap_ptr;
-    heap_ptr += aligned_size;
+    heap_ptr = ptr + aligned_size;
     return ptr;
 }
 

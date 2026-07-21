@@ -7,10 +7,22 @@ export async function GET(req: NextRequest) {
     const forwarded = req.headers.get("x-forwarded-for");
     const ip = forwarded ? forwarded.split(",")[0] : "auto";
 
-    const response = await fetch(`https://ipapi.co/${ip === "auto" ? "" : ip + "/"}json/`);
+    const response = await fetch(
+      `https://ipapi.co/${ip === "auto" ? "" : ip + "/"}json/`,
+    );
 
     if (!response.ok) {
-      throw new Error("Failed to fetch location from IP");
+      console.warn(
+        `[Location API] Failed to fetch location from IP. Status: ${response.status}`,
+      );
+      return Response.json({
+        lat: 37.7749,
+        lng: -122.4194,
+        city: "San Francisco",
+        region: "California",
+        country: "US",
+        source: "default",
+      });
     }
 
     const data = await response.json();
@@ -37,7 +49,7 @@ export async function GET(req: NextRequest) {
       source: "ip-geolocation",
     });
   } catch (error) {
-    console.error("Location API error:", error);
+    console.warn("[Location API] Failed to determine location:", error.message);
 
     // Return default location on error
     return Response.json({

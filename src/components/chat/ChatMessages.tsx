@@ -68,6 +68,7 @@ export interface Venue {
   hasQuietZone?: boolean;
   hasAncHeadsetRental?: boolean;
   outletLocations?: string[];
+  openingHours?: string;
 }
 
 export interface Message {
@@ -255,6 +256,47 @@ export function VenueChatCard({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
+              {venue.openingHours &&
+                (() => {
+                  const match = venue.openingHours.match(
+                    /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/,
+                  );
+                  if (!match) return null;
+                  const now = new Date();
+                  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                  const [openH, openM] = match[1].split(":").map(Number);
+                  const [closeH, closeM] = match[2].split(":").map(Number);
+                  const openMinutes = openH * 60 + openM;
+                  const closeMinutes = closeH * 60 + closeM;
+                  let isOpen = false;
+                  if (closeMinutes < openMinutes) {
+                    isOpen =
+                      currentMinutes >= openMinutes ||
+                      currentMinutes <= closeMinutes;
+                  } else {
+                    isOpen =
+                      currentMinutes >= openMinutes &&
+                      currentMinutes < closeMinutes;
+                  }
+                  return (
+                    <div
+                      className={`flex items-center gap-1 px-1.5 py-0.5 rounded border ${
+                        isOpen
+                          ? "bg-green-500/10 border-green-500/20"
+                          : "bg-red-500/10 border-red-500/20"
+                      }`}
+                    >
+                      <Clock
+                        className={`w-3 h-3 ${isOpen ? "text-green-600" : "text-red-600"}`}
+                      />
+                      <span
+                        className={`text-[9px] font-bold uppercase ${isOpen ? "text-green-600" : "text-red-600"}`}
+                      >
+                        {isOpen ? "Open Now" : "Closed"}
+                      </span>
+                    </div>
+                  );
+                })()}
               {venue.wifi && (
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/20">
                   <Wifi className="w-3 h-3 text-green-600" />
@@ -441,6 +483,48 @@ export function VenueChatCard({
               )}
 
               <div className="flex flex-wrap items-center gap-2 mt-2">
+                {venue.openingHours &&
+                  (() => {
+                    const match = venue.openingHours.match(
+                      /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/,
+                    );
+                    if (!match) return null;
+                    const now = new Date();
+                    const currentMinutes =
+                      now.getHours() * 60 + now.getMinutes();
+                    const [openH, openM] = match[1].split(":").map(Number);
+                    const [closeH, closeM] = match[2].split(":").map(Number);
+                    const openMinutes = openH * 60 + openM;
+                    const closeMinutes = closeH * 60 + closeM;
+                    let isOpen = false;
+                    if (closeMinutes < openMinutes) {
+                      isOpen =
+                        currentMinutes >= openMinutes ||
+                        currentMinutes <= closeMinutes;
+                    } else {
+                      isOpen =
+                        currentMinutes >= openMinutes &&
+                        currentMinutes < closeMinutes;
+                    }
+                    return (
+                      <div
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded-md border ${
+                          isOpen
+                            ? "bg-green-500/10 border-green-500/20"
+                            : "bg-red-500/10 border-red-500/20"
+                        }`}
+                      >
+                        <Clock
+                          className={`w-3 h-3 ${isOpen ? "text-green-600" : "text-red-600"}`}
+                        />
+                        <span
+                          className={`text-[10px] font-bold uppercase ${isOpen ? "text-green-600" : "text-red-600"}`}
+                        >
+                          {isOpen ? "Open Now" : "Closed"}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 {venue.wifi && (
                   <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-green-500/10 border border-green-500/20">
                     <Wifi className="w-3 h-3 text-green-600" />

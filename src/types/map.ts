@@ -9,6 +9,7 @@ export interface MapMarker {
   rating?: number;
   score?: number;
   wifiQuality?: number;
+  openingHours?: string;
   hasOutlets?: boolean;
   powerTypes?: string[];
   petsAllowedIndoors?: boolean;

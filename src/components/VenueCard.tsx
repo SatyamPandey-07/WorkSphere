@@ -549,10 +549,49 @@ export function VenueCard({
         )}
 
         {/* Hours */}
-        {enrichData?.opening_hours && (
+        {(enrichData?.opening_hours || venue.openingHours) && (
           <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
             <Clock className="w-3 h-3 shrink-0" />
-            <span>{enrichData.opening_hours}</span>
+            <span>{enrichData?.opening_hours || venue.openingHours}</span>
+            {(() => {
+              const hoursStr = enrichData?.opening_hours || venue.openingHours;
+              if (!hoursStr) return null;
+              const match = hoursStr.match(
+                /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/,
+              );
+              if (!match) return null;
+
+              const now = new Date();
+              const currentMinutes = now.getHours() * 60 + now.getMinutes();
+              const [openH, openM] = match[1].split(":").map(Number);
+              const [closeH, closeM] = match[2].split(":").map(Number);
+
+              const openMinutes = openH * 60 + openM;
+              const closeMinutes = closeH * 60 + closeM;
+
+              let isOpen = false;
+              if (closeMinutes < openMinutes) {
+                isOpen =
+                  currentMinutes >= openMinutes ||
+                  currentMinutes <= closeMinutes;
+              } else {
+                isOpen =
+                  currentMinutes >= openMinutes &&
+                  currentMinutes < closeMinutes;
+              }
+
+              return (
+                <span
+                  className={`px-2 py-0.5 rounded-full font-semibold ${
+                    isOpen
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                  }`}
+                >
+                  {isOpen ? "Open Now" : "Closed"}
+                </span>
+              );
+            })()}
           </div>
         )}
 

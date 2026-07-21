@@ -57,10 +57,26 @@ export async function GET(req: NextRequest) {
       : 50;
     const skip = (page - 1) * limit;
 
-    // Fallback: If no coordinates are provided, return all venues
+    // Fallback: If no coordinates are provided, return all venues (or filtered by cities)
     if (!searchParams.get("lat") || !searchParams.get("lng")) {
-      const total = await prisma.venue.count();
+      const citiesParam = searchParams.get("cities");
+      const where: any = {};
+
+      if (citiesParam) {
+        const cityList = citiesParam
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean);
+        if (cityList.length > 0) {
+          where.OR = cityList.map((city) => ({
+            address: { contains: city, mode: "insensitive" },
+          }));
+        }
+      }
+
+      const total = await prisma.venue.count({ where });
       const venues = await prisma.venue.findMany({
+        where,
         skip,
         take: limit,
         include: {
@@ -110,6 +126,7 @@ export async function GET(req: NextRequest) {
       "oatAlmondMilk",
       "pourOverAvailable",
       "musicStyle",
+      "cities",
     ];
     for (const key of keys) {
       const val = searchParams.get(key);
@@ -268,6 +285,24 @@ export async function GET(req: NextRequest) {
 
     if (lighting) {
       where.lighting = lighting;
+    }
+
+    if (rawData.cities) {
+      const cityList = String(rawData.cities)
+        .split(",")
+        .map((c: string) => c.trim())
+        .filter(Boolean);
+      if (cityList.length > 0) {
+        const cityConditions = cityList.map((city: string) => ({
+          address: { contains: city, mode: "insensitive" },
+        }));
+        if (where.OR) {
+          where.AND = [{ OR: where.OR }, { OR: cityConditions }];
+          delete where.OR;
+        } else {
+          where.OR = cityConditions;
+        }
+      }
     }
 
     const total = await prisma.venue.count({ where });

@@ -53,6 +53,7 @@ export const venueSearchSchema = z.object({
   dogFriendly: z.coerce.boolean().optional(),
   catsAllowed: z.coerce.boolean().optional(),
   musicStyle: z.enum(["lofi", "classical_jazz", "no_music", "all"]).optional(),
+  cities: z.string().optional(),
 });
 
 export const venueCreateSchema = z.object({

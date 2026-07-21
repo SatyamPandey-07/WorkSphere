@@ -5,38 +5,7 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-/**
- * Sliding Window Rate Limiting Lua Script for Redis.
- *
- * Atomically removes expired entries from sorted set (zset), checks current requests
- * against limit, adds current timestamp, and appends EXPIRE key window_seconds to
- * prevent key/zset accumulation in Redis memory under high concurrency (300+ req/s).
- */
-export const SLIDING_WINDOW_LUA = `
-local key = KEYS[1]
-local now = tonumber(ARGV[1])
-local windowStart = tonumber(ARGV[2])
-local limit = tonumber(ARGV[3])
-local window_seconds = tonumber(ARGV[4])
-
--- Remove entries outside the sliding window
-redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
-
--- Get current request count in window
-local current_requests = redis.call('ZCARD', key)
-
-if current_requests < limit then
-    -- Add timestamp to sorted set
-    redis.call('ZADD', key, now, now)
-    -- Atomically append EXPIRE key window_seconds
-    redis.call('EXPIRE', key, window_seconds)
-    return 1
-else
-    -- Refresh key expiration even when limited
-    redis.call('EXPIRE', key, window_seconds)
-    return 0
-end
-`;
+// Lua script removed in favor of Redis pipeline transactions for atomic counter increments.
 
 let redisClient: any = null;
 
@@ -70,19 +39,18 @@ async function upstashRateLimit(
   if (!redis) return memRateLimit(identifier, limit);
 
   try {
-    const now = Date.now();
     const windowMs = 60_000;
     const windowSeconds = Math.ceil(windowMs / 1000);
-    const windowStart = now - windowMs;
-    const key = `worksphere:ratelimit:${identifier}`;
+    const windowMinute = Math.floor(Date.now() / windowMs);
+    const key = `worksphere:ratelimit:${identifier}:${windowMinute}`;
 
-    const allowed = await redis.eval(
-      SLIDING_WINDOW_LUA,
-      [key],
-      [now, windowStart, limit, windowSeconds],
-    );
+    const tx = redis.multi();
+    tx.incr(key);
+    tx.expire(key, windowSeconds);
+    const result = await tx.exec();
 
-    return Number(allowed) === 1;
+    const count = result[0] as number;
+    return count <= limit;
   } catch {
     return memRateLimit(identifier, limit);
   }

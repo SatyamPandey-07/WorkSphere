@@ -1,11 +1,13 @@
-const mockEval = jest.fn();
+const mockMultiExec = jest.fn();
+const mockMulti = {
+  incr: jest.fn().mockReturnThis(),
+  expire: jest.fn().mockReturnThis(),
+  exec: mockMultiExec,
+};
 
 jest.mock("@upstash/redis", () => ({
   Redis: jest.fn().mockImplementation(() => ({
-    eval: (...args: unknown[]) => mockEval(...args),
-    createScript: () => ({
-      eval: (...args: unknown[]) => mockEval(...args),
-    }),
+    multi: () => mockMulti,
   })),
 }));
 
@@ -21,7 +23,9 @@ describe("Rate Limiting", () => {
   beforeEach(() => {
     resetRateLimit();
     resetRedisScripts();
-    mockEval.mockReset();
+    mockMultiExec.mockReset();
+    mockMulti.incr.mockClear();
+    mockMulti.expire.mockClear();
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
   });
@@ -94,16 +98,7 @@ describe("Rate Limiting", () => {
     expect(info?.isLimited).toBe(true);
   });
 
-  it("includes atomic EXPIRE key window_seconds inside SLIDING_WINDOW_LUA script", async () => {
-    const { SLIDING_WINDOW_LUA } = await import("@/lib/rateLimit");
-
-    expect(SLIDING_WINDOW_LUA).toBeDefined();
-    // Verify ZREMRANGEBYSCORE and ZADD are used for sliding window
-    expect(SLIDING_WINDOW_LUA).toContain("ZREMRANGEBYSCORE");
-    expect(SLIDING_WINDOW_LUA).toContain("ZADD");
-    // Verify atomic EXPIRE key window_seconds is present
-    expect(SLIDING_WINDOW_LUA).toMatch(/EXPIRE.*key.*window_seconds/i);
-  });
+  // Lua script test removed in favor of pipeline transactions.
 });
 
 describe("microTimestampMember", () => {
@@ -122,9 +117,10 @@ describe("microTimestampMember", () => {
 
 describe("Redis sliding window path", () => {
   beforeEach(() => {
-    resetRateLimit();
     resetRedisScripts();
-    mockEval.mockReset();
+    mockMultiExec.mockReset();
+    mockMulti.incr.mockClear();
+    mockMulti.expire.mockClear();
     process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
     process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
   });
@@ -135,22 +131,22 @@ describe("Redis sliding window path", () => {
     resetRedisScripts();
   });
 
-  it("blocks after the Lua script returns 0", async () => {
+  it("blocks after the pipeline result count exceeds limit", async () => {
     let hits = 0;
-    mockEval.mockImplementation(async () => {
+    mockMultiExec.mockImplementation(async () => {
       hits += 1;
-      return hits <= 3 ? 1 : 0;
+      return [hits];
     });
 
     expect(await rateLimit("redis-ip", 3)).toBe(true);
     expect(await rateLimit("redis-ip", 3)).toBe(true);
     expect(await rateLimit("redis-ip", 3)).toBe(true);
     expect(await rateLimit("redis-ip", 3)).toBe(false);
-    expect(mockEval).toHaveBeenCalledTimes(4);
+    expect(mockMultiExec).toHaveBeenCalledTimes(4);
   });
 
-  it("passes a unique nonce on each same-ms call", async () => {
-    mockEval.mockResolvedValue(1);
+  it("uses the correct rate limit key format with pipeline", async () => {
+    mockMultiExec.mockResolvedValue([1]);
 
     await Promise.all([
       rateLimit("burst-ip", 10),
@@ -158,8 +154,14 @@ describe("Redis sliding window path", () => {
       rateLimit("burst-ip", 10),
     ]);
 
-    expect(mockEval).toHaveBeenCalledTimes(3);
-    const keys = mockEval.mock.calls.map((call) => call[1][0]);
-    expect(keys.every((k) => k === "worksphere:ratelimit:burst-ip")).toBe(true);
+    expect(mockMultiExec).toHaveBeenCalledTimes(3);
+    const keys = mockMulti.incr.mock.calls.map((call) => call[0]);
+    expect(
+      keys.every(
+        (k) =>
+          typeof k === "string" &&
+          k.startsWith("worksphere:ratelimit:burst-ip:"),
+      ),
+    ).toBe(true);
   });
 });

@@ -41,7 +41,7 @@ export function WebGLHeatmapLayer({
   const animFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!map || typeof window === "undefined") return;
+    if (!map || typeof window === "undefined" || !L || !L.DomUtil || typeof L.DomUtil.create !== "function") return;
 
     // Create canvas container overlay inside Leaflet overlayPane
     const canvas = L.DomUtil.create("canvas", "leaflet-webgl-heatmap-layer") as HTMLCanvasElement;

@@ -2,6 +2,7 @@ const mockEval = jest.fn();
 
 jest.mock("@upstash/redis", () => ({
   Redis: jest.fn().mockImplementation(() => ({
+    eval: (...args: unknown[]) => mockEval(...args),
     createScript: () => ({
       eval: (...args: unknown[]) => mockEval(...args),
     }),
@@ -158,7 +159,7 @@ describe("Redis sliding window path", () => {
     ]);
 
     expect(mockEval).toHaveBeenCalledTimes(3);
-    const nonces = mockEval.mock.calls.map((call) => (call[1] as string[])[2]);
-    expect(new Set(nonces).size).toBe(3);
+    const keys = mockEval.mock.calls.map((call) => call[1][0]);
+    expect(keys.every((k) => k === "worksphere:ratelimit:burst-ip")).toBe(true);
   });
 });

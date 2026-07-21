@@ -3,8 +3,10 @@
 import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { motion, AnimatePresence } from "framer-motion";
-import { EnhancedChatbot } from "@/components/EnhancedChatbot";
+const EnhancedChatbot = dynamic(
+  () => import("@/components/EnhancedChatbot").then((m) => m.EnhancedChatbot),
+  { ssr: false },
+);
 import { VenueRatingDialog } from "@/components/VenueRatingDialog";
 import {
   ChatErrorBoundary,

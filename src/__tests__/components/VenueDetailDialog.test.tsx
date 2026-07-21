@@ -145,7 +145,7 @@ describe("VenueDetailDialog Rating Distribution Integration", () => {
     await renderDialog();
 
     // Click the Noise card
-    const noiseButton = screen.getByRole("button", { name: /Noise/i });
+    const noiseButton = screen.getAllByRole("button", { name: /Noise/i })[0];
     fireEvent.click(noiseButton);
 
     expect(screen.getByText("Quietness Distribution")).toBeInTheDocument();
@@ -155,7 +155,7 @@ describe("VenueDetailDialog Rating Distribution Integration", () => {
   it("closes the distribution container when close button is clicked", async () => {
     await renderDialog();
 
-    const wifiButton = screen.getByRole("button", { name: /WiFi/i });
+    const wifiButton = screen.getAllByRole("button", { name: /WiFi/i })[0];
     fireEvent.click(wifiButton);
 
     expect(screen.getByText("WiFi Quality Distribution")).toBeInTheDocument();

@@ -47,6 +47,7 @@ describe("GET /api/venues - Search and Pagination", () => {
         _count: {
           select: { favorites: true, ratings: true },
         },
+        foodValidations: true,
       },
     });
   });
@@ -77,6 +78,7 @@ describe("GET /api/venues - Search and Pagination", () => {
         _count: {
           select: { favorites: true, ratings: true },
         },
+        foodValidations: true,
       },
     });
   });
@@ -100,6 +102,7 @@ describe("GET /api/venues - Search and Pagination", () => {
         _count: {
           select: { favorites: true, ratings: true },
         },
+        foodValidations: true,
       },
     });
   });

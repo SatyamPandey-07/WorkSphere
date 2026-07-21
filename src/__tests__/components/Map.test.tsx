@@ -545,7 +545,15 @@ describe("Map Component", () => {
 
   describe("Popup Header Clipping Prevention (#870)", () => {
     it("configures popup autoPanPaddingTopLeft to clear sticky navigation header", () => {
-      render(<Map {...defaultProps} />);
+      const mockMarkers: MapMarker[] = [
+        {
+          id: "marker-1",
+          name: "Test Venue",
+          position: { lat: 37.7749, lng: -122.4194 },
+          category: "cafe",
+        },
+      ];
+      render(<Map {...defaultProps} markers={mockMarkers} />);
       const popups = screen.getAllByTestId("popup");
       expect(popups.length).toBeGreaterThan(0);
       popups.forEach((popup) => {

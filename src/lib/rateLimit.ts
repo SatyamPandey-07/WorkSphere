@@ -214,3 +214,16 @@ export function resetRateLimit(identifier?: string): void {
     rateLimitInfoStore.clear();
   }
 }
+
+export function resetRedisScripts(): void {
+  redisClient = null;
+}
+
+export function microTimestampMember(
+  sec: number | string,
+  usec: number,
+  nonce: string,
+): string {
+  const padUsec = String(usec).padStart(6, "0");
+  return `${sec}${padUsec}:${nonce}`;
+}

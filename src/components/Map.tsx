@@ -958,7 +958,10 @@ const Map = ({
         
         /* Floating toggle position above canvas layers */
         .map-noise-toggle {
-        /* Position for existing noise toggle */
+          position: absolute;
+          top: 68px;
+          right: 20px;
+          z-index: 1000;
         }
         .map-forecast-controls {
           position: absolute;
@@ -977,11 +980,6 @@ const Map = ({
         .map-forecast-controls input[type="range"] {
           width: 120px;
         }
-  position: absolute;
-  top: 68px;
-  right: 20px;
-  z-index: 1000;
-}
   .leaflet-control-scale {
   background: transparent;
 }
@@ -1101,7 +1099,12 @@ const Map = ({
             keyboard={true}
             eventHandlers={markerEventHandlers}
           >
-            <Popup>You are here!</Popup>
+            <Popup
+              autoPanPaddingTopLeft={[20, 90]}
+              autoPanPaddingBottomRight={[20, 20]}
+            >
+              You are here!
+            </Popup>
           </Marker>
         )}
         <MapEvents onMouseMove={throttledBroadcast} />
@@ -1127,7 +1130,10 @@ const Map = ({
             keyboard={true}
             eventHandlers={markerEventHandlers}
           >
-            <Popup>
+            <Popup
+              autoPanPaddingTopLeft={[20, 90]}
+              autoPanPaddingBottomRight={[20, 20]}
+            >
               <div className="text-sm">
                 <div className="font-semibold text-white">{marker.name}</div>
                 {marker.category && (
@@ -1213,7 +1219,10 @@ const Map = ({
                 dashArray: travelProfile === "walking" ? "5, 10" : undefined, // Dotted path line if walking
               }}
             >
-              <Popup>
+              <Popup
+                autoPanPaddingTopLeft={[20, 90]}
+                autoPanPaddingBottomRight={[20, 20]}
+              >
                 <div className="text-sm text-white">
                   <div className="font-bold text-blue-400">
                     Optimized Hybrid Schedule

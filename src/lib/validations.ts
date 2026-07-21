@@ -163,6 +163,26 @@ export const updateFavoriteTagSchema = z.object({
     .optional(),
 });
 
+export const syncFavoriteTagsSchema = z.object({
+  updates: z
+    .array(
+      z
+        .object({
+          id: z.string().min(1),
+          name: z.string().min(1).max(50).trim().optional(),
+          color: z
+            .string()
+            .regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color")
+            .optional(),
+        })
+        .refine((u) => u.name !== undefined || u.color !== undefined, {
+          message: "Each update must include name and/or color",
+        }),
+    )
+    .min(1)
+    .max(200),
+});
+
 // Location schema
 export const locationSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -213,6 +233,7 @@ export type Favorite = z.infer<typeof favoriteSchema>;
 export type FavoriteNotes = z.infer<typeof favoriteNotesSchema>;
 export type CreateFavoriteTag = z.infer<typeof createFavoriteTagSchema>;
 export type UpdateFavoriteTag = z.infer<typeof updateFavoriteTagSchema>;
+export type SyncFavoriteTags = z.infer<typeof syncFavoriteTagsSchema>;
 export type Location = z.infer<typeof locationSchema>;
 export type CreateFolder = z.infer<typeof createFolderSchema>;
 export type UpdateFolder = z.infer<typeof updateFolderSchema>;

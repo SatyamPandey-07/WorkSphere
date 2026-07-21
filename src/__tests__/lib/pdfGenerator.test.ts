@@ -53,6 +53,23 @@ describe("PDF Generator", () => {
       expect(pdfBytes.length).toBeGreaterThan(0);
       expect(fs.promises.readFile).toHaveBeenCalledTimes(2);
     });
+
+    it("should render extended mathematical symbols and currency signs without PDF compiler errors (#277)", async () => {
+      const mathBooking = {
+        ...mockBooking,
+        projectBillingCode: "MATH-½-⅓-±10-≠5-≤100-≥0-√16-∞-π-∑-°C",
+        user: { firstName: "Albert", lastName: "Einstein ½" },
+        venue: {
+          name: "Quantum Cafe ±5% & Math Hub (½ + ¼ = ¾)",
+          category: "cafe",
+          address: "123 Formula St ≤ 50m",
+        },
+      };
+
+      const pdfBytes = await generateReceiptPdf(mathBooking);
+      expect(pdfBytes).toBeInstanceOf(Uint8Array);
+      expect(pdfBytes.length).toBeGreaterThan(0);
+    });
   });
 
   describe("generateTaxExportPdf", () => {

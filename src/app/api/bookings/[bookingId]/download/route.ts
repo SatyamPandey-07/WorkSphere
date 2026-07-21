@@ -15,6 +15,7 @@ import {
   rgb,
   breakTextIntoLines,
 } from "pdf-lib";
+import { sanitizeMathSymbols } from "@/lib/pdfUtils";
 export const dynamic = "force-dynamic";
 
 export async function GET(
@@ -35,11 +36,11 @@ export async function GET(
 
     const { bookingId } = await context.params;
 
-    // Fetch the booking (bookingId is a cuid string)
+    // Fetch booking with venue and user
     const booking = await (prisma as any).booking.findFirst({
       where: {
-        id: bookingId,
-        userId, // Ensure user owns this booking
+        OR: [{ id: bookingId }, { confirmationId: bookingId }],
+        userId,
       },
       include: {
         venue: true,
@@ -55,6 +56,8 @@ export async function GET(
     pdfDoc = await PDFDocument.create();
     pdfDoc.registerFontkit(fontkit);
     const page = pdfDoc.addPage([595, 842]);
+    const { width, height } = page.getSize();
+    let yPosition = height - 50;
 
     const regularFontPath = path.join(
       process.cwd(),
@@ -81,18 +84,11 @@ export async function GET(
 
       font = await pdfDoc.embedFont(regularFontBytes);
       boldFont = await pdfDoc.embedFont(boldFontBytes);
-    } catch (err) {
-      console.warn(
-        "Failed to load Noto Sans fonts, falling back to Helvetica.",
-        err,
-      );
-
+    } catch {
+      // Fallback to standard Helvetica if custom font loading fails
       font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     }
-
-    const { width, height } = page.getSize();
-    let yPosition = height - 50;
 
     const showTaxId = req.nextUrl.searchParams.get("showTaxId") === "true";
     const includeNotes =
@@ -106,15 +102,16 @@ export async function GET(
     // Helper to draw text with absolute safety against encoding crashes
 
     const drawSafeText = (text: string, options: PDFPageDrawTextOptions) => {
+      const sanitized = sanitizeMathSymbols(text);
       try {
-        page.drawText(text, options);
+        page.drawText(sanitized, options);
       } catch (err) {
         console.warn(
           "[PDF drawText warning]: Failed to draw text, retrying with strict sanitization",
           err,
         );
         try {
-          const strictText = text.replace(/[^\x20-\x7E]/g, "?");
+          const strictText = sanitized.replace(/[^\x20-\x7E]/g, "");
           page.drawText(strictText, options);
         } catch (fallbackErr) {
           console.error(

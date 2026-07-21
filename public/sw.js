@@ -399,13 +399,27 @@ async function syncConversations() {
 }
 
 // IndexedDB helpers
+let swDb = null;
 function openIndexedDB() {
+  if (swDb) return Promise.resolve(swDb);
   return new Promise((resolve, reject) => {
     try {
       const request = indexedDB.open("worksphere-offline", 4);
 
+      request.onblocked = () => {
+        console.warn("[SW] IndexedDB upgrade blocked");
+      };
+
       request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
+
+      request.onsuccess = () => {
+        swDb = request.result;
+        swDb.onversionchange = () => {
+          swDb.close();
+          swDb = null;
+        };
+        resolve(swDb);
+      };
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
@@ -542,7 +556,10 @@ self.addEventListener("notificationclick", (event) => {
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((windowClients) => {
         for (const client of windowClients) {
-          if (client.url.includes(new URL(fullUrl).pathname) && "focus" in client) {
+          if (
+            client.url.includes(new URL(fullUrl).pathname) &&
+            "focus" in client
+          ) {
             client.postMessage({
               type: "NAVIGATE_PUSH",
               url: fullUrl,

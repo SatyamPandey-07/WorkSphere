@@ -70,6 +70,17 @@ interface OfflineSearch {
 
 let db: IDBDatabase | null = null;
 
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "beforeunload",
+    () => {
+      db?.close();
+      db = null;
+    },
+    { once: true },
+  );
+}
+
 /**
  * Initialize IndexedDB
  */
@@ -89,6 +100,10 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
+      request.onblocked = () => {
+        console.warn("[OfflineDB] Database upgrade blocked");
+      };
+
       request.onerror = () => {
         console.error("[OfflineDB] Failed to open database");
         const err = request.error || new Error("Unknown IndexedDB error");
@@ -100,6 +115,10 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
 
       request.onsuccess = () => {
         db = request.result;
+        db.onversionchange = () => {
+          db?.close();
+          db = null;
+        };
         console.log("[OfflineDB] Database opened successfully");
         resolve(db);
       };

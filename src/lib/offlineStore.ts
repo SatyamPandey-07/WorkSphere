@@ -139,6 +139,10 @@ function getDB(): Promise<IDBDatabase> {
         }
       };
 
+      request.onblocked = () => {
+        console.warn("[OfflineStore] Database upgrade blocked");
+      };
+
       request.onsuccess = () => {
         const db = request.result;
 

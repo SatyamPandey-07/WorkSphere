@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -26,6 +26,7 @@ export default function CollectionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingPublic, setLoadingPublic] = useState(false);
   const [creating, setCreating] = useState(false);
+  const isCreatingRef = useRef(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderDesc, setNewFolderDesc] = useState("");
   const [newFolderPublic, setNewFolderPublic] = useState(false);
@@ -125,15 +126,18 @@ export default function CollectionsPage() {
 
   const createFolder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFolderName.trim()) return;
+    const trimmedName = newFolderName.trim();
+    if (!trimmedName || creating || isCreatingRef.current) return;
+
     try {
+      isCreatingRef.current = true;
       setCreating(true);
       const res = await fetch("/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: newFolderName,
-          description: newFolderDesc,
+          name: trimmedName,
+          description: newFolderDesc.trim(),
           isPublic: newFolderPublic,
         }),
       });
@@ -151,6 +155,7 @@ export default function CollectionsPage() {
       console.error(e);
     } finally {
       setCreating(false);
+      isCreatingRef.current = false;
     }
   };
 
@@ -260,6 +265,13 @@ export default function CollectionsPage() {
                   placeholder="Collection Name"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      if (!newFolderName.trim() || creating || isCreatingRef.current) {
+                        e.preventDefault();
+                      }
+                    }
+                  }}
                   className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-[var(--primary-accent)] transition-colors text-zinc-900 dark:text-white"
                   required
                 />

@@ -1,14 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import { z } from "zod";
+import { updateFolderSchema } from "@/lib/validations";
 import { deleteFolderWithRelations, hasFolderAccess } from "@/lib/folders";
-
-const updateFolderSchema = z.object({
-  name: z.string().min(1, "Folder name is required").max(100).optional(),
-  description: z.string().max(500).optional(),
-  isPublic: z.boolean().optional(),
-});
 
 // GET /api/folders/[id] - Get folder details
 export async function GET(

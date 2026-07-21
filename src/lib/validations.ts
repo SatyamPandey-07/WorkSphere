@@ -166,6 +166,28 @@ export const locationSchema = z.object({
   longitude: z.number().min(-180).max(180),
 });
 
+// Collection / Folder schemas
+export const createFolderSchema = z.object({
+  name: z
+    .string({ required_error: "Folder name is required" })
+    .trim()
+    .min(1, "Folder name is required")
+    .max(100, "Folder name must be 100 characters or less"),
+  description: z.string().trim().max(500, "Description must be 500 characters or less").optional(),
+  isPublic: z.boolean().optional(),
+});
+
+export const updateFolderSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Folder name is required")
+    .max(100, "Folder name must be 100 characters or less")
+    .optional(),
+  description: z.string().trim().max(500, "Description must be 500 characters or less").optional(),
+  isPublic: z.boolean().optional(),
+});
+
 // =========================================================================
 // TYPES & DYNAMIC VALIDATION PIPELINE INTERFACES
 // =========================================================================
@@ -181,6 +203,8 @@ export type FavoriteNotes = z.infer<typeof favoriteNotesSchema>;
 export type CreateFavoriteTag = z.infer<typeof createFavoriteTagSchema>;
 export type UpdateFavoriteTag = z.infer<typeof updateFavoriteTagSchema>;
 export type Location = z.infer<typeof locationSchema>;
+export type CreateFolder = z.infer<typeof createFolderSchema>;
+export type UpdateFolder = z.infer<typeof updateFolderSchema>;
 
 // Validation helper
 export function validateRequest<T>(

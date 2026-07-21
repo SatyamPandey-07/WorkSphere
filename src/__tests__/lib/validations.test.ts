@@ -1,4 +1,4 @@
-import { venueRatingSchema } from '@/lib/validations';
+import { venueRatingSchema, createFolderSchema, updateFolderSchema } from '@/lib/validations';
 
 describe('Validations - venueRatingSchema', () => {
   it('should validate venue rating with valid outletLocations array', () => {
@@ -45,6 +45,73 @@ describe('Validations - venueRatingSchema', () => {
     };
 
     const result = venueRatingSchema.safeParse(invalidData);
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('Validations - createFolderSchema & updateFolderSchema', () => {
+  it('should accept valid folder names and trim whitespace', () => {
+    const validData = {
+      name: '  My Workspace Collection  ',
+      description: '  A curated list of cafes  ',
+      isPublic: true,
+    };
+
+    const result = createFolderSchema.safeParse(validData);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.name).toBe('My Workspace Collection');
+      expect(result.data.description).toBe('A curated list of cafes');
+      expect(result.data.isPublic).toBe(true);
+    }
+  });
+
+  it('should fail validation when folder name is empty', () => {
+    const emptyNameData = {
+      name: '',
+    };
+
+    const result = createFolderSchema.safeParse(emptyNameData);
+    expect(result.success).toBe(false);
+  });
+
+  it('should fail validation when folder name is whitespace only (preventing empty folder creation)', () => {
+    const whitespaceNameData = {
+      name: '     \n\t  ',
+    };
+
+    const result = createFolderSchema.safeParse(whitespaceNameData);
+    expect(result.success).toBe(false);
+  });
+
+  it('should fail validation when folder name exceeds 100 characters', () => {
+    const longNameData = {
+      name: 'a'.repeat(101),
+    };
+
+    const result = createFolderSchema.safeParse(longNameData);
+    expect(result.success).toBe(false);
+  });
+
+  it('should validate updateFolderSchema with valid optional fields', () => {
+    const updateData = {
+      name: '   Updated Name   ',
+      isPublic: false,
+    };
+
+    const result = updateFolderSchema.safeParse(updateData);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.name).toBe('Updated Name');
+    }
+  });
+
+  it('should reject whitespace-only name updates in updateFolderSchema', () => {
+    const invalidUpdateData = {
+      name: '    ',
+    };
+
+    const result = updateFolderSchema.safeParse(invalidUpdateData);
     expect(result.success).toBe(false);
   });
 });

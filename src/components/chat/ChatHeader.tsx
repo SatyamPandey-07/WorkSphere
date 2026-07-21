@@ -185,6 +185,14 @@ export function ChatHeader({
 
         {/* Main Actions Area */}
         <div className="flex-1 flex items-center justify-end gap-2">
+          {/* Currency Dropdown for Issue 707 */}
+          <select className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-700 dark:text-zinc-300 px-3 py-2 cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all outline-none">
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="GBP">GBP (£)</option>
+            <option value="INR">INR (₹)</option>
+          </select>
+
           {/* Global Hubs Dropdown */}
           <div className="relative">
             <button

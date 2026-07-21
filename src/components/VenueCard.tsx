@@ -34,6 +34,7 @@ import Image from "next/image";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
+import { useCurrency } from "@/context/CurrencyContext";
 
 interface VenueEnrichData {
   found: boolean;
@@ -89,6 +90,29 @@ export function VenueCard({
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
+
+  const { currency } = useCurrency();
+
+  // Helper function to convert base USD price
+  const formatPrice = (basePriceUSD: number) => {
+    // Standard conversion rates (can be replaced with live API later)
+    const rates = {
+      USD: 1,
+      EUR: 0.92,
+      GBP: 0.79,
+      INR: 83.5,
+    };
+
+    const symbols = {
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      INR: "₹",
+    };
+
+    const convertedPrice = basePriceUSD * rates[currency];
+    return `${symbols[currency]}${convertedPrice.toFixed(2)}`;
+  };
 
   // =========================================================================
   // COMMUNITY VERIFICATION VOTE STATE TRACKING SYSTEM
@@ -1197,9 +1221,15 @@ export function VenueCard({
           {enrichData?.venueId && (
             <a
               href={`/reserve/${enrichData.venueId}`}
-              className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500"
+              className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 flex flex-col items-center leading-tight"
             >
-              Reserve desk
+              <span>Reserve</span>
+              <span className="text-[10px] opacity-80">
+                {enrichData.price
+                  ? formatPrice(enrichData.price)
+                  : formatPrice(15.0)}{" "}
+                / day
+              </span>
             </a>
           )}
         </div>

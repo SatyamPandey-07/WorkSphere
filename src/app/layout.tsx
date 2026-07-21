@@ -10,6 +10,7 @@ import { ThemeProvider } from "../components/ThemeProvider";
 import { SoundProvider } from "../components/SoundProvider";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
 import { CookieBanner } from "../components/CookieBanner";
+import { CurrencyProvider } from "@/context/CurrencyContext";
 
 const THEME_INIT_SCRIPT = `
 (function () {
@@ -136,7 +137,9 @@ export default async function RootLayout({
   const appContent = (
     <ThemeProvider initialTheme={theme} initialAccent={accent}>
       <SoundProvider>
-        <I18nProvider>{children}</I18nProvider>
+        <CurrencyProvider>
+          <I18nProvider>{children}</I18nProvider>
+        </CurrencyProvider>
       </SoundProvider>
     </ThemeProvider>
   );

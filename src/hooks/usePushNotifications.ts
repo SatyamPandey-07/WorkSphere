@@ -18,7 +18,8 @@ export function usePushNotifications() {
   const { getToken, userId } = useAuth();
   const [isSubscribed, setIsSubscribed] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
-  const [permission, setPermission] = useState<NotificationPermission>("default");
+  const [permission, setPermission] =
+    useState<NotificationPermission>("default");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -77,7 +78,9 @@ export function usePushNotifications() {
 
         subscription = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as BufferSource,
+          applicationServerKey: urlBase64ToUint8Array(
+            publicKey,
+          ) as unknown as BufferSource,
         });
       }
 

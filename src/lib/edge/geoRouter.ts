@@ -129,8 +129,7 @@ export function extractGeoFromHeaders(
     headers.get("x-country-code");
 
   const continent =
-    headers.get("cf-ipcontinent") ??
-    headers.get("x-vercel-ip-continent");
+    headers.get("cf-ipcontinent") ?? headers.get("x-vercel-ip-continent");
 
   if (!country) return null;
 

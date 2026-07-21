@@ -84,9 +84,7 @@ function MetricCard({
     <article className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/10 backdrop-blur-xl">
       <div className="mb-5 flex items-center justify-between">
         <span className="text-sm text-zinc-400">{label}</span>
-        <span
-          className={`rounded-2xl border p-2.5 ${accentMap[accent]}`}
-        >
+        <span className={`rounded-2xl border p-2.5 ${accentMap[accent]}`}>
           <Icon className="h-5 w-5" />
         </span>
       </div>
@@ -125,9 +123,7 @@ function EmptyState({ message }: { message: string }) {
 
 function Skeleton({ className = "" }: { className?: string }) {
   return (
-    <div
-      className={`animate-pulse rounded-2xl bg-white/[0.06] ${className}`}
-    />
+    <div className={`animate-pulse rounded-2xl bg-white/[0.06] ${className}`} />
   );
 }
 
@@ -260,9 +256,7 @@ export default function AdminPerformanceDashboard() {
                 value={formatMs(data?.overview.p95Ms ?? 0)}
                 detail="95th percentile response time"
                 icon={Activity}
-                accent={
-                  (data?.overview.p95Ms ?? 0) > 800 ? "red" : "emerald"
-                }
+                accent={(data?.overview.p95Ms ?? 0) > 800 ? "red" : "emerald"}
               />
               <MetricCard
                 label="Slow requests"
@@ -426,10 +420,7 @@ export default function AdminPerformanceDashboard() {
                   />
                   <Tooltip
                     contentStyle={tooltipStyle}
-                    formatter={(value: number) => [
-                      `${value} req`,
-                      "Requests",
-                    ]}
+                    formatter={(value: number) => [`${value} req`, "Requests"]}
                   />
                   <Bar dataKey="count" radius={[0, 6, 6, 0]} maxBarSize={18}>
                     {data.regionBreakdown.slice(0, 12).map((entry, i) => (
@@ -592,7 +583,10 @@ export default function AdminPerformanceDashboard() {
                 ))}
               </div>
             ) : data && data.routeBreakdown.length > 0 ? (
-              <div className="space-y-2 overflow-y-auto" style={{ maxHeight: 280 }}>
+              <div
+                className="space-y-2 overflow-y-auto"
+                style={{ maxHeight: 280 }}
+              >
                 {data.routeBreakdown.map((item) => (
                   <div
                     key={item.route}
@@ -702,7 +696,9 @@ export default function AdminPerformanceDashboard() {
 
         {/* ── Footer ─────────────────────────────────────────────────────── */}
         <footer className="mt-6 flex flex-col gap-2 text-xs text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
-          <span>Admin-only · First-party performance signals · No external SaaS</span>
+          <span>
+            Admin-only · First-party performance signals · No external SaaS
+          </span>
           <span>
             {data?.generatedAt
               ? `Updated ${new Date(data.generatedAt).toLocaleString()}`

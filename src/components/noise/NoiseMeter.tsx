@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Volume2 } from "lucide-react";
-import { processAudioFrame, resetNoiseProcessor } from "@/lib/wasm/noiseProcessor";
+import {
+  processAudioFrame,
+  resetNoiseProcessor,
+} from "@/lib/wasm/noiseProcessor";
 
 export type NoiseMeasurement = {
   averageDb: number;
@@ -149,7 +152,25 @@ export function NoiseMeter({ onMeasured }: Props) {
       setStatus("measuring");
       setRemaining(timer);
 
-      const tick = async () => {
+      // Delta time throttling to cap FFT polling and rendering to 60fps (1000/60 ~ 16.67ms)
+      // Prevents audio buffer overrun and crackling on 120Hz/144Hz ProMotion displays
+      let lastTickTime: number | null = null;
+      const targetFrameInterval = 1000 / 60;
+
+      const tick = async (timestamp?: number) => {
+        const now =
+          typeof timestamp === "number" ? timestamp : performance.now();
+
+        if (lastTickTime !== null) {
+          const delta = now - lastTickTime;
+          if (delta < targetFrameInterval) {
+            animationFrame = requestAnimationFrame(tick);
+            return;
+          }
+          lastTickTime = now - (delta % targetFrameInterval);
+        } else {
+          lastTickTime = now;
+        }
         analyser.getFloatTimeDomainData(samples);
 
         let db: number;

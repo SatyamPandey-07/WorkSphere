@@ -104,7 +104,11 @@ export async function decryptChunk(
   key: CryptoKey,
 ): Promise<Uint8Array> {
   const plainBuffer = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: encrypted.iv as unknown as BufferSource, tagLength: 128 },
+    {
+      name: "AES-GCM",
+      iv: encrypted.iv as unknown as BufferSource,
+      tagLength: 128,
+    },
     key,
     encrypted.ciphertext as unknown as BufferSource,
   );
@@ -115,7 +119,10 @@ export async function decryptChunk(
  * Compute SHA-256 checksum of a file for integrity verification.
  */
 export async function computeSHA256(data: Uint8Array): Promise<string> {
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data as unknown as BufferSource);
+  const hashBuffer = await crypto.subtle.digest(
+    "SHA-256",
+    data as unknown as BufferSource,
+  );
   const hashArray = new Uint8Array(hashBuffer);
   return Array.from(hashArray)
     .map((b) => b.toString(16).padStart(2, "0"))
@@ -128,7 +135,11 @@ export async function computeSHA256(data: Uint8Array): Promise<string> {
 export async function encryptFile(
   file: File,
   key: CryptoKey,
-): Promise<{ chunks: EncryptedChunk[]; checksum: string; totalChunks: number }> {
+): Promise<{
+  chunks: EncryptedChunk[];
+  checksum: string;
+  totalChunks: number;
+}> {
   const buffer = await file.arrayBuffer();
   const data = new Uint8Array(buffer);
   const checksum = await computeSHA256(data);

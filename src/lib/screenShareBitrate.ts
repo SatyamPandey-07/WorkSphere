@@ -28,9 +28,11 @@ export function pickBitrateTier(input: {
 }
 
 /** Read rough RTT / loss from an RTCPeerConnection stats report. */
-export function readNetworkHints(
-  report: RTCStatsReport,
-): { rttMs?: number; packetsLost?: number; packetsSent?: number } {
+export function readNetworkHints(report: RTCStatsReport): {
+  rttMs?: number;
+  packetsLost?: number;
+  packetsSent?: number;
+} {
   let rttMs: number | undefined;
   let packetsLost: number | undefined;
   let packetsSent: number | undefined;

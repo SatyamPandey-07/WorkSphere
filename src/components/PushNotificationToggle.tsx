@@ -4,8 +4,14 @@ import { Bell, BellOff } from "lucide-react";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 export function PushNotificationToggle() {
-  const { isSupported, isSubscribed, permission, isLoading, subscribe, unsubscribe } =
-    usePushNotifications();
+  const {
+    isSupported,
+    isSubscribed,
+    permission,
+    isLoading,
+    subscribe,
+    unsubscribe,
+  } = usePushNotifications();
 
   if (!isSupported || permission === "denied") return null;
 

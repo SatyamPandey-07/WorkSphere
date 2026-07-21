@@ -59,7 +59,9 @@ export default function ScreenSharePanel({
     <div className="mt-8 rounded-2xl border border-white/10 bg-black/25 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium text-zinc-200">Live presentation</h2>
+          <h2 className="text-sm font-medium text-zinc-200">
+            Live presentation
+          </h2>
           <p className="mt-1 text-xs text-zinc-500">
             {isHost
               ? "Share your screen with everyone in this session."

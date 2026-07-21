@@ -64,6 +64,15 @@ export function useSyncWorker() {
 }
 
 /**
+ * Global Sync Manager component to ensure outbox sync worker and listeners
+ * remain active across all pages in the application. (Issue #871)
+ */
+export function SyncManager() {
+  useSyncWorker();
+  return null;
+}
+
+/**
  * Hook to register service worker and manage PWA state
  */
 export function useServiceWorker() {
@@ -79,8 +88,8 @@ export function useServiceWorker() {
     setIsInstalled(window.matchMedia("(display-mode: standalone)").matches);
     setIsOnline(navigator.onLine);
 
-    // Register service worker
-    if ("serviceWorker" in navigator) {
+    // Register service worker in production mode only to prevent dev evaluation errors
+    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
       navigator.serviceWorker
         .register("/sw.js")
         .then((reg) => {
@@ -121,6 +130,18 @@ export function useServiceWorker() {
           window.location.reload();
         }
       });
+    } else if (
+      "serviceWorker" in navigator &&
+      process.env.NODE_ENV === "development"
+    ) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => {
+          for (const reg of registrations) {
+            reg.unregister().catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
 
     // Online/offline detection

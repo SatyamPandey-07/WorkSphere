@@ -28,11 +28,14 @@ export function useMultiRegion({ roomName, token }: UseMultiRegionOptions) {
   const [latency, setLatency] = useState<number>(0);
   const [isConnected, setIsConnected] = useState(false);
   const pingStartRef = useRef<number>(0);
-  const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const latencyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
 
   const socket = usePartySocket({
     host: process.env.NEXT_PUBLIC_PARTYKIT_HOST ?? "127.0.0.1:1999",
-    room: roomName,
+    room: roomName || "multi-region-room",
+    startClosed: !roomName,
     query: token ? { token } : undefined,
     onOpen() {
       setIsConnected(true);

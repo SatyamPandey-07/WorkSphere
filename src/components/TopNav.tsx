@@ -11,7 +11,7 @@ interface TopNavProps {
 }
 
 export function TopNav({ hideAuth = false }: TopNavProps) {
-  const { isSignedIn, isLoaded } = useUser();
+  const { isSignedIn } = useUser();
   console.log({
     hideAuth,
     isSignedIn,
@@ -36,7 +36,6 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
           </div>
 
           {!hideAuth && (
-
             <>
               <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-700 hidden sm:block" />
 
@@ -62,7 +61,11 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
                     className="sm:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
                   >
-                    {isMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+                    {isMenuOpen ? (
+                      <X className="w-5 h-5" />
+                    ) : (
+                      <Menu className="w-5 h-5" />
+                    )}
                   </button>
                 </>
               ) : (

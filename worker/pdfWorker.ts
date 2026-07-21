@@ -201,12 +201,12 @@ async function startWorker() {
       if (jobStr) {
         try {
           const timeoutPromise = new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Worker job timeout exceeded")), 30000)
+            setTimeout(
+              () => reject(new Error("Worker job timeout exceeded")),
+              30000,
+            ),
           );
-          await Promise.race([
-            processJob(jobStr as string),
-            timeoutPromise
-          ]);
+          await Promise.race([processJob(jobStr as string), timeoutPromise]);
         } finally {
           await redis.lrem("pdf:jobs:processing", 1, jobStr);
           // Message queue throttling

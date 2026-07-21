@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "@clerk/nextjs";
-import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import {
   MapPin,
   Star,
@@ -107,7 +106,7 @@ export default function AnalyticsDashboard() {
       if (!res.ok) {
         throw new Error("Failed to fetch receipt");
       }
-      
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

@@ -1,20 +1,19 @@
-import {
-  pickBitrateTier,
-  readNetworkHints,
-} from "@/lib/screenShareBitrate";
+import { pickBitrateTier, readNetworkHints } from "@/lib/screenShareBitrate";
 
 describe("pickBitrateTier", () => {
   it("stays high on a healthy link", () => {
-    expect(pickBitrateTier({ rttMs: 40, packetsLost: 0, packetsSent: 100 })).toEqual({
+    expect(
+      pickBitrateTier({ rttMs: 40, packetsLost: 0, packetsSent: 100 }),
+    ).toEqual({
       maxBitrate: 2_500_000,
       label: "high",
     });
   });
 
   it("drops to medium when rtt climbs", () => {
-    expect(pickBitrateTier({ rttMs: 150, packetsLost: 0, packetsSent: 100 }).label).toBe(
-      "medium",
-    );
+    expect(
+      pickBitrateTier({ rttMs: 150, packetsLost: 0, packetsSent: 100 }).label,
+    ).toBe("medium");
   });
 
   it("drops to low on packet loss", () => {

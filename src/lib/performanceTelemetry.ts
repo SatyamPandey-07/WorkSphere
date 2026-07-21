@@ -116,7 +116,10 @@ export function recordApiLatency(
 
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
-  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  const idx = Math.min(
+    sorted.length - 1,
+    Math.floor((p / 100) * sorted.length),
+  );
   return sorted[idx];
 }
 
@@ -286,7 +289,10 @@ export async function getPerformanceSummary(): Promise<PerformanceSummary> {
       { route: "prisma:Booking", durationMs: 32, region: "local" },
     ];
     for (const r of seedRoutes) {
-      memSamples.push({ ...r, timestamp: now - Math.floor(Math.random() * 3600000) });
+      memSamples.push({
+        ...r,
+        timestamp: now - Math.floor(Math.random() * 3600000),
+      });
     }
   }
 

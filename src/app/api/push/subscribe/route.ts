@@ -12,10 +12,7 @@ export async function POST(req: NextRequest) {
 
     const allowed = await rateLimit(`push-subscribe:${userId}`, 10);
     if (!allowed) {
-      return NextResponse.json(
-        { error: "Too many requests" },
-        { status: 429 },
-      );
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
     const body = await req.json();

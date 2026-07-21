@@ -166,7 +166,7 @@ When supported by the server:
 
 ```ts
 const wasm = await WebAssembly.instantiateStreaming(
-    fetch("/wasm/calculator.wasm")
+  fetch("/wasm/calculator.wasm"),
 );
 ```
 
@@ -196,21 +196,21 @@ Example worker:
 let wasmExports: any;
 
 async function initialize() {
-    const response = await fetch("/wasm/calculator.wasm");
+  const response = await fetch("/wasm/calculator.wasm");
 
-    const bytes = await response.arrayBuffer();
+  const bytes = await response.arrayBuffer();
 
-    const wasm = await WebAssembly.instantiate(bytes);
+  const wasm = await WebAssembly.instantiate(bytes);
 
-    wasmExports = wasm.instance.exports;
+  wasmExports = wasm.instance.exports;
 }
 
 initialize();
 
 self.onmessage = (event) => {
-    const result = wasmExports.add(event.data.a, event.data.b);
+  const result = wasmExports.add(event.data.a, event.data.b);
 
-    self.postMessage(result);
+  self.postMessage(result);
 };
 ```
 
@@ -224,10 +224,10 @@ Example:
 
 ```ts
 const worker = new Worker(
-    new URL("../workers/wasm.worker.ts", import.meta.url),
-    {
-        type: "module",
-    }
+  new URL("../workers/wasm.worker.ts", import.meta.url),
+  {
+    type: "module",
+  },
 );
 ```
 
@@ -235,8 +235,8 @@ Sending work:
 
 ```ts
 worker.postMessage({
-    a: 5,
-    b: 8,
+  a: 5,
+  b: 8,
 });
 ```
 
@@ -244,7 +244,7 @@ Receiving results:
 
 ```ts
 worker.onmessage = (event) => {
-    console.log(event.data);
+  console.log(event.data);
 };
 ```
 
@@ -262,47 +262,47 @@ Example:
 import { useEffect } from "react";
 
 export default function WasmDemo() {
-    useEffect(() => {
-        const worker = new Worker(
-            new URL("../workers/wasm.worker.ts", import.meta.url),
-            {
-                type: "module",
-            }
-        );
+  useEffect(() => {
+    const worker = new Worker(
+      new URL("../workers/wasm.worker.ts", import.meta.url),
+      {
+        type: "module",
+      },
+    );
 
-        worker.postMessage({
-            a: 4,
-            b: 9,
-        });
+    worker.postMessage({
+      a: 4,
+      b: 9,
+    });
 
-        worker.onmessage = (event) => {
-            console.log(event.data);
-        };
+    worker.onmessage = (event) => {
+      console.log(event.data);
+    };
 
-        return () => worker.terminate();
-    }, []);
+    return () => worker.terminate();
+  }, []);
 
-    return <div>Running WebAssembly...</div>;
+  return <div>Running WebAssembly...</div>;
 }
 ```
 
 This component can then be rendered from:
 
 ```tsx
-app/page.tsx
+app / page.tsx;
 ```
 
 ---
 
 # Client vs Server Components
 
-| Feature | Client Component | Server Component |
-|----------|------------------|------------------|
-| Web Worker | ✅ | ❌ |
-| Browser APIs | ✅ | ❌ |
-| DOM Access | ✅ | ❌ |
-| WASM via Worker | ✅ | ❌ |
-| Data Fetching | ✅ | ✅ |
+| Feature         | Client Component | Server Component |
+| --------------- | ---------------- | ---------------- |
+| Web Worker      | ✅               | ❌               |
+| Browser APIs    | ✅               | ❌               |
+| DOM Access      | ✅               | ❌               |
+| WASM via Worker | ✅               | ❌               |
+| Data Fetching   | ✅               | ✅               |
 
 Web Workers only exist in the browser, making Client Components the appropriate place to initialize them.
 
@@ -351,11 +351,11 @@ Wrap initialization in a `try/catch` block:
 
 ```ts
 try {
-    const wasm = await WebAssembly.instantiateStreaming(
-        fetch("/wasm/calculator.wasm")
-    );
+  const wasm = await WebAssembly.instantiateStreaming(
+    fetch("/wasm/calculator.wasm"),
+  );
 } catch (error) {
-    console.error("Failed to load WASM:", error);
+  console.error("Failed to load WASM:", error);
 }
 ```
 
@@ -385,11 +385,11 @@ Always validate incoming worker messages before invoking exported functions.
 
 # Browser Support
 
-| Feature | Chrome | Firefox | Safari | Edge |
-|----------|---------|----------|---------|------|
-| WebAssembly | ✅ | ✅ | ✅ | ✅ |
-| Web Workers | ✅ | ✅ | ✅ | ✅ |
-| instantiateStreaming | ✅ | ✅ | Partial | ✅ |
+| Feature              | Chrome | Firefox | Safari  | Edge |
+| -------------------- | ------ | ------- | ------- | ---- |
+| WebAssembly          | ✅     | ✅      | ✅      | ✅   |
+| Web Workers          | ✅     | ✅      | ✅      | ✅   |
+| instantiateStreaming | ✅     | ✅      | Partial | ✅   |
 
 ---
 

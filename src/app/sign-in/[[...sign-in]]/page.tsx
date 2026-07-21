@@ -83,7 +83,8 @@ export default function SignInPage() {
                 formFieldLabel: "text-zinc-300 font-medium",
                 formFieldInput:
                   "bg-zinc-800/80 border-zinc-700 text-white placeholder:text-zinc-500 rounded-xl focus:border-[var(--primary-accent,#2563eb)] focus:ring-[color-mix(in_srgb,var(--primary-accent,#2563eb),transparent_0.8)]",
-                footerActionLink: "accent-text font-medium text-blue-400 hover:text-blue-300",
+                footerActionLink:
+                  "accent-text font-medium text-blue-400 hover:text-blue-300",
                 formButtonPrimary:
                   "accent-bg hover:opacity-90 text-white rounded-xl shadow-lg shadow-[var(--primary-accent,#2563eb)]/20 transition-all",
                 footer: "hidden",
@@ -96,7 +97,10 @@ export default function SignInPage() {
 
           <p className="mt-6 text-center text-sm text-zinc-500">
             Don&apos;t have an account?{" "}
-            <Link href="/sign-up" className="accent-text font-medium hover:underline">
+            <Link
+              href="/sign-up"
+              className="accent-text font-medium hover:underline"
+            >
               Sign up free
             </Link>
           </p>

@@ -331,6 +331,132 @@ const Map = ({
 }) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
+  const { getToken } = useAuth();
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    getToken()
+      .then(setToken)
+      .catch(() => setToken(null));
+  }, [getToken]);
+
+  interface MapCursor {
+    lat: number;
+    lng: number;
+    name: string;
+    avatar: string;
+  }
+
+  const [mapCursors, setMapCursors] = useState<Record<string, MapCursor>>({});
+  const cursorLastSeen = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setMapCursors((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [userId, lastSeen] of Object.entries(
+          cursorLastSeen.current,
+        )) {
+          if (now - lastSeen > 3000) {
+            delete next[userId];
+            delete cursorLastSeen.current[userId];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const socket = usePartySocket({
+    host: "127.0.0.1:1999",
+    room: roomId || "default",
+    query: token ? { token } : undefined,
+    onMessage(event) {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "map-cursor") {
+          const userId = data.userId || data.name;
+          cursorLastSeen.current[userId] = Date.now();
+          setMapCursors((prev) => ({
+            ...prev,
+            [userId]: {
+              lat: data.lat,
+              lng: data.lng,
+              name: data.name,
+              avatar: data.avatar,
+            },
+          }));
+        } else if (data.type === "map-cursor-offline") {
+          const userId = data.userId || data.name;
+          delete cursorLastSeen.current[userId];
+          setMapCursors((prev) => {
+            if (!(userId in prev)) return prev;
+            const next = { ...prev };
+            delete next[userId];
+            return next;
+          });
+        }
+      } catch {
+        // Ignore
+      }
+    },
+  });
+
+  const userRef = useRef(clerkUser);
+  useEffect(() => {
+    userRef.current = clerkUser;
+  }, [clerkUser]);
+
+  const throttledBroadcastRef = useRef<((latlng: L.LatLng) => void) | null>(
+    null,
+  );
+
+  useEffect(() => {
+    throttledBroadcastRef.current = throttle((latlng: L.LatLng) => {
+      if (socket && socket.readyState === 1) {
+        const user = userRef.current.user;
+        socket.send(
+          JSON.stringify({
+            type: "map-cursor",
+            lat: latlng.lat,
+            lng: latlng.lng,
+            name: user?.firstName || "Anonymous",
+            avatar: user?.imageUrl || "default",
+            userId: user?.id || "anonymous",
+          }),
+        );
+      }
+    }, 50);
+  }, [socket]);
+
+  const throttledBroadcast = useCallback((latlng: L.LatLng) => {
+    if (throttledBroadcastRef.current) {
+      throttledBroadcastRef.current(latlng);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (socket && socket.readyState === 1) {
+        const user = userRef.current.user;
+        try {
+          socket.send(
+            JSON.stringify({
+              type: "map-cursor-offline",
+              name: user?.firstName || "Anonymous",
+              userId: user?.id || "anonymous",
+            }),
+          );
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [socket]);
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
   // Forecast selector state
@@ -978,6 +1104,19 @@ const Map = ({
             <Popup>You are here!</Popup>
           </Marker>
         )}
+        <MapEvents onMouseMove={throttledBroadcast} />
+        {Object.entries(mapCursors).map(([userId, cursor]) => {
+          const presenceIcon = createCursorIcon(cursor.avatar, cursor.name);
+          if (!presenceIcon) return null;
+          return (
+            <Marker
+              key={`presence-${userId}`}
+              position={[cursor.lat, cursor.lng]}
+              icon={presenceIcon}
+              interactive={false}
+            />
+          );
+        })}
         {spiderfiedMarkers.map((marker) => (
           <Marker
             key={marker.id}

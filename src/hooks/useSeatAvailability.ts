@@ -73,8 +73,9 @@ export function useSeatAvailability() {
   }, [getToken]);
 
   const socket = usePartySocket({
-    host: "127.0.0.1:1999",
-    room: SEAT_ROOM,
+    host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
+    room: isMounted ? SEAT_ROOM : "seat-availability",
+    startClosed: !isMounted,
     query: token ? { token } : undefined,
     onOpen() {
       setIsConnected(true);

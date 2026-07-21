@@ -8,12 +8,8 @@
 import {
   generateKeyPair,
   exportPublicKey,
-  importPublicKey,
-  deriveSharedKey,
   encryptFile,
-  decryptFile,
   type KeyPair,
-  type EncryptedChunk,
 } from "./encryption";
 
 export type PeerStatus = "connecting" | "connected" | "disconnected" | "failed";
@@ -32,7 +28,13 @@ export interface FileTransfer {
   fileSize: number;
   mimeType: string;
   progress: number;
-  status: "encrypting" | "sending" | "receiving" | "verifying" | "complete" | "failed";
+  status:
+    | "encrypting"
+    | "sending"
+    | "receiving"
+    | "verifying"
+    | "complete"
+    | "failed";
   checksum?: string;
 }
 
@@ -65,7 +67,7 @@ export class P2PManager {
 
   async initialize(): Promise<string> {
     this.keyPair = await generateKeyPair();
-    const publicKey = await exportPublicKey(this.keyPair.publicKey);
+    await exportPublicKey(this.keyPair.publicKey);
 
     return this.localPeerId;
   }
@@ -93,7 +95,9 @@ export class P2PManager {
     };
   }
 
-  private async handleSignalingMessage(message: Record<string, unknown>): Promise<void> {
+  private async handleSignalingMessage(
+    message: Record<string, unknown>,
+  ): Promise<void> {
     switch (message.type) {
       case "offer":
         if (message.targetPeerId === this.localPeerId) {

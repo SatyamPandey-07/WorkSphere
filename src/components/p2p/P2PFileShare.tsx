@@ -1,7 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Upload, CheckCircle, AlertCircle, Users, FileIcon } from "lucide-react";
+import {
+  Upload,
+  CheckCircle,
+  AlertCircle,
+  Users,
+  FileIcon,
+} from "lucide-react";
 import { useP2PFileSharing } from "@/hooks/useP2PFileSharing";
 
 interface P2PFileShareProps {

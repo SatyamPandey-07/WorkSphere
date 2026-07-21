@@ -112,17 +112,22 @@ export function useCanvasWhiteboard(
 
     const roomId = `canvas-${canvasId}`;
     const doc = new Y.Doc();
-    const newProvider = new YProvider(PARTYKIT_HOST, roomId, doc, {
-      params: token ? { token } : {},
-    });
+    let newProvider: YProvider | null = null;
+    try {
+      newProvider = new YProvider(PARTYKIT_HOST, roomId, doc, {
+        params: token ? { token } : {},
+      });
 
-    setYDoc(doc);
-    setProvider(newProvider);
-    providerRef.current = newProvider;
+      setYDoc(doc);
+      setProvider(newProvider);
+      providerRef.current = newProvider;
 
-    newProvider.on("sync", (synced: boolean) => {
-      setIsConnected(synced);
-    });
+      newProvider.on("sync", (synced: boolean) => {
+        setIsConnected(synced);
+      });
+    } catch (err) {
+      console.warn("YProvider connection initialization deferred:", err);
+    }
 
     const shapes = doc.getArray<Y.Map<unknown>>("shapes");
     shapesRef.current = shapes;

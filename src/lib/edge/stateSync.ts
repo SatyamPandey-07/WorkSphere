@@ -85,9 +85,7 @@ export class DurableStateSync {
     }
   }
 
-  getVenuePresence(
-    venueId: string,
-  ): Map<string, PresenceState> {
+  getVenuePresence(venueId: string): Map<string, PresenceState> {
     return this.state.venues.get(venueId)?.users ?? new Map();
   }
 
@@ -105,18 +103,12 @@ export class DurableStateSync {
 
       for (const [userId, remoteUser] of remoteVenue.users) {
         const localUser = localVenue.users.get(userId);
-        if (
-          !localUser ||
-          remoteUser.lastUpdate > localUser.lastUpdate
-        ) {
+        if (!localUser || remoteUser.lastUpdate > localUser.lastUpdate) {
           localVenue.users.set(userId, remoteUser);
         }
       }
 
-      localVenue.lastSync = Math.max(
-        localVenue.lastSync,
-        remoteVenue.lastSync,
-      );
+      localVenue.lastSync = Math.max(localVenue.lastSync, remoteVenue.lastSync);
     }
   }
 

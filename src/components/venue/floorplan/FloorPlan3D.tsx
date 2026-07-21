@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Maximize2, Minimize2, RotateCcw, ZoomIn, ZoomOut, Power, Volume2 } from "lucide-react";
+import {
+  Maximize2,
+  Minimize2,
+  RotateCcw,
+  ZoomIn,
+  ZoomOut,
+  Power,
+} from "lucide-react";
 import {
   WebGPUFloorPlanRenderer,
   type FloorPlanData,
@@ -12,16 +19,11 @@ interface FloorPlan3DProps {
   data: FloorPlanData;
 }
 
-export function FloorPlan3D({ venueId, data }: FloorPlan3DProps) {
+export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<WebGPUFloorPlanRenderer | null>(null);
   const [useWebGPU, setUseWebGPU] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [seatInfo, setSeatInfo] = useState<{
-    type: string;
-    hasPower: boolean;
-    isQuiet: boolean;
-  } | null>(null);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -43,25 +45,29 @@ export function FloorPlan3D({ venueId, data }: FloorPlan3DProps) {
     return () => {
       renderer.destroy();
     };
-  }, [data, venueId]);
+  }, [data]);
 
   const handleZoomIn = useCallback(() => {
     const r = rendererRef.current;
     if (r) {
-      (r as unknown as { camera: { distance: number } }).camera.distance = Math.max(
-        2,
-        (r as unknown as { camera: { distance: number } }).camera.distance - 1,
-      );
+      (r as unknown as { camera: { distance: number } }).camera.distance =
+        Math.max(
+          2,
+          (r as unknown as { camera: { distance: number } }).camera.distance -
+            1,
+        );
     }
   }, []);
 
   const handleZoomOut = useCallback(() => {
     const r = rendererRef.current;
     if (r) {
-      (r as unknown as { camera: { distance: number } }).camera.distance = Math.min(
-        20,
-        (r as unknown as { camera: { distance: number } }).camera.distance + 1,
-      );
+      (r as unknown as { camera: { distance: number } }).camera.distance =
+        Math.min(
+          20,
+          (r as unknown as { camera: { distance: number } }).camera.distance +
+            1,
+        );
     }
   }, []);
 
@@ -203,7 +209,9 @@ export function FloorPlan3D({ venueId, data }: FloorPlan3DProps) {
       <div className="p-3 text-center">
         <p className="text-[10px] text-zinc-400">
           Drag to rotate • Scroll to zoom •{" "}
-          {useWebGPU ? "Hardware-accelerated via WebGPU" : "WebGL 2.0 fallback mode"}
+          {useWebGPU
+            ? "Hardware-accelerated via WebGPU"
+            : "WebGL 2.0 fallback mode"}
         </p>
       </div>
     </div>
@@ -239,7 +247,11 @@ function renderWebGLFallback(
     }
   `;
 
-  function compileShader(glContext: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
+  function compileShader(
+    glContext: WebGL2RenderingContext,
+    type: number,
+    source: string,
+  ): WebGLShader | null {
     const shader = glContext.createShader(type);
     if (!shader) return null;
     glContext.shaderSource(shader, source);
@@ -321,17 +333,24 @@ function renderWebGLFallback(
   const f = 1 / Math.tan(fov / 2);
   const rangeInv = 1 / (near - far);
 
-  const dist = 8;
-  const eyeX = dist * Math.cos(-0.8) * Math.sin(0.5);
-  const eyeY = dist * Math.sin(0.8);
-  const eyeZ = dist * Math.cos(-0.8) * Math.cos(0.5);
-
   // Simple MVP (hardcoded view-projection for WebGL fallback)
   const mvp = new Float32Array([
-    f / aspect, 0, 0, 0,
-    0, f, 0, 0,
-    0, 0, (near + far) * rangeInv, -1,
-    0, 0, near * far * rangeInv * 2, 0,
+    f / aspect,
+    0,
+    0,
+    0,
+    0,
+    f,
+    0,
+    0,
+    0,
+    0,
+    (near + far) * rangeInv,
+    -1,
+    0,
+    0,
+    near * far * rangeInv * 2,
+    0,
   ]);
 
   const uMVP = gl.getUniformLocation(program, "uMVP");

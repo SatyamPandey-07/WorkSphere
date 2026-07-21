@@ -5,17 +5,10 @@ import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "partysocket/react";
 import { adaptVideoBitrate } from "@/lib/screenShareBitrate";
 
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: "stun:stun.l.google.com:19302" },
-];
+const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
 type SignalKind =
-  | "share-start"
-  | "share-stop"
-  | "viewer-ready"
-  | "offer"
-  | "answer"
-  | "ice";
+  "share-start" | "share-stop" | "viewer-ready" | "offer" | "answer" | "ice";
 
 type SignalMessage = {
   type: "webrtc-signal";
@@ -65,15 +58,18 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
     );
   }, []);
 
-  const sendSignal = useCallback((msg: Omit<SignalMessage, "type" | "from">) => {
-    if (!userId || !socketRef.current) return;
-    const payload: SignalMessage = {
-      type: "webrtc-signal",
-      from: userId,
-      ...msg,
-    };
-    socketRef.current.send(JSON.stringify(payload));
-  }, [userId]);
+  const sendSignal = useCallback(
+    (msg: Omit<SignalMessage, "type" | "from">) => {
+      if (!userId || !socketRef.current) return;
+      const payload: SignalMessage = {
+        type: "webrtc-signal",
+        from: userId,
+        ...msg,
+      };
+      socketRef.current.send(JSON.stringify(payload));
+    },
+    [userId],
+  );
 
   const cleanupPeer = useCallback((peerId: string) => {
     const pc = peersRef.current.get(peerId);
@@ -216,7 +212,8 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
 
   const socket = usePartySocket({
     host: partyHost(),
-    room: roomId,
+    room: roomId || "screen-share-room",
+    startClosed: !roomId,
     query: token ? { token } : undefined,
     onOpen() {
       // Late joiners: poke the host in case a share is already running.

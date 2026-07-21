@@ -12,7 +12,6 @@ import {
 import {
   initAudioDSP,
   startAudioProcessing,
-  stopAudioProcessing,
   setSensitivity,
   resetCalibration,
 } from "@/lib/wasm/audioDSPManager";
@@ -170,7 +169,11 @@ export function EnhancedNoiseMeter({ onMeasured }: Props) {
             }
           }
         },
-        { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
       );
 
       cleanupRef.current = cleanup;

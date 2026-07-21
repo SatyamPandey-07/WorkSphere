@@ -542,7 +542,10 @@ self.addEventListener("notificationclick", (event) => {
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((windowClients) => {
         for (const client of windowClients) {
-          if (client.url.includes(new URL(fullUrl).pathname) && "focus" in client) {
+          if (
+            client.url.includes(new URL(fullUrl).pathname) &&
+            "focus" in client
+          ) {
             client.postMessage({
               type: "NAVIGATE_PUSH",
               url: fullUrl,
@@ -620,6 +623,15 @@ async function syncFavoritesOutbox() {
           throw new Error(`Sync request failed with status ${response.status}`);
         } catch (error) {
           console.error("Failed to sync favorite:", error);
+
+          if (
+            typeof self !== "undefined" &&
+            self.navigator &&
+            !self.navigator.onLine
+          ) {
+            console.warn("[SW] Offline network error; preserving outbox item.");
+            break;
+          }
 
           const attempts = await incrementRetryCount(action.id);
 

@@ -15,7 +15,13 @@ const BufferUsage =
 const TextureUsage =
   typeof GPUTextureUsage !== "undefined"
     ? GPUTextureUsage
-    : { COPY_SRC: 0x01, COPY_DST: 0x02, TEXTURE_BINDING: 0x04, STORAGE_BINDING: 0x08, RENDER_ATTACHMENT: 0x10 };
+    : {
+        COPY_SRC: 0x01,
+        COPY_DST: 0x02,
+        TEXTURE_BINDING: 0x04,
+        STORAGE_BINDING: 0x08,
+        RENDER_ATTACHMENT: 0x10,
+      };
 
 export interface FloorPlanVertex {
   position: [number, number, number];
@@ -95,7 +101,12 @@ function createSeatMesh(
         [seat.x + w / 2, y + h, seat.z + d / 2],
         [seat.x - w / 2, y + h, seat.z + d / 2],
       ],
-      uvs: [[0, 0], [1, 0], [1, 1], [0, 1]],
+      uvs: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ],
     },
     // Back
     {
@@ -106,7 +117,12 @@ function createSeatMesh(
         [seat.x - w / 2, y + h, seat.z - d / 2],
         [seat.x + w / 2, y + h, seat.z - d / 2],
       ],
-      uvs: [[0, 0], [1, 0], [1, 1], [0, 1]],
+      uvs: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ],
     },
     // Left
     {
@@ -117,7 +133,12 @@ function createSeatMesh(
         [seat.x - w / 2, y + h, seat.z + d / 2],
         [seat.x - w / 2, y + h, seat.z - d / 2],
       ],
-      uvs: [[0, 0], [1, 0], [1, 1], [0, 1]],
+      uvs: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ],
     },
     // Right
     {
@@ -128,7 +149,12 @@ function createSeatMesh(
         [seat.x + w / 2, y + h, seat.z - d / 2],
         [seat.x + w / 2, y + h, seat.z + d / 2],
       ],
-      uvs: [[0, 0], [1, 0], [1, 1], [0, 1]],
+      uvs: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ],
     },
     // Top
     {
@@ -139,7 +165,12 @@ function createSeatMesh(
         [seat.x + w / 2, y + h, seat.z - d / 2],
         [seat.x - w / 2, y + h, seat.z - d / 2],
       ],
-      uvs: [[0, 0], [1, 0], [1, 1], [0, 1]],
+      uvs: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+        [0, 1],
+      ],
     },
   ];
 
@@ -208,9 +239,10 @@ function createSeatMesh(
   return { vertices, indices };
 }
 
-function createFloorMesh(
-  data: FloorPlanData,
-): { vertices: number[]; indices: number[] } {
+function createFloorMesh(data: FloorPlanData): {
+  vertices: number[];
+  indices: number[];
+} {
   const vertices: number[] = [];
   const indices: number[] = [];
   const floorColor: [number, number, number] = [0.15, 0.15, 0.18];
@@ -232,14 +264,7 @@ function createFloorMesh(
   ];
   const baseIdx = vertices.length / 10;
   for (let i = 0; i < 4; i++) {
-    vertices.push(
-      ...floorVerts[i],
-      0,
-      1,
-      0,
-      ...floorColor,
-      ...floorUVs[i],
-    );
+    vertices.push(...floorVerts[i], 0, 1, 0, ...floorColor, ...floorUVs[i]);
   }
   indices.push(baseIdx, baseIdx + 1, baseIdx + 2);
   indices.push(baseIdx, baseIdx + 2, baseIdx + 3);
@@ -247,9 +272,10 @@ function createFloorMesh(
   return { vertices, indices };
 }
 
-function createWallMesh(
-  wall: FloorPlanData["walls"][0],
-): { vertices: number[]; indices: number[] } {
+function createWallMesh(wall: FloorPlanData["walls"][0]): {
+  vertices: number[];
+  indices: number[];
+} {
   const vertices: number[] = [];
   const indices: number[] = [];
   const wallColor: [number, number, number] = [0.3, 0.3, 0.35];
@@ -327,10 +353,22 @@ function mat4Perspective(
   const f = 1.0 / Math.tan(fov / 2);
   const rangeInv = 1 / (near - far);
   return new Float32Array([
-    f / aspect, 0, 0, 0,
-    0, f, 0, 0,
-    0, 0, (near + far) * rangeInv, -1,
-    0, 0, near * far * rangeInv * 2, 0,
+    f / aspect,
+    0,
+    0,
+    0,
+    0,
+    f,
+    0,
+    0,
+    0,
+    0,
+    (near + far) * rangeInv,
+    -1,
+    0,
+    0,
+    near * far * rangeInv * 2,
+    0,
   ]);
 }
 
@@ -358,9 +396,18 @@ function mat4LookAt(
   ];
 
   return new Float32Array([
-    fx[0], fy[0], fz[0], 0,
-    fx[1], fy[1], fz[1], 0,
-    fx[2], fy[2], fz[2], 0,
+    fx[0],
+    fy[0],
+    fz[0],
+    0,
+    fx[1],
+    fy[1],
+    fz[1],
+    0,
+    fx[2],
+    fy[2],
+    fz[2],
+    0,
     -(fx[0] * eye[0] + fx[1] * eye[1] + fx[2] * eye[2]),
     -(fy[0] * eye[0] + fy[1] * eye[1] + fy[2] * eye[2]),
     -(fz[0] * eye[0] + fz[1] * eye[1] + fz[2] * eye[2]),
@@ -492,7 +539,9 @@ export class WebGPUFloorPlanRenderer {
       if (!adapter) return false;
 
       this.device = await adapter.requestDevice();
-      this.context = (this.canvas.getContext("webgpu") as unknown) as GPUCanvasContext | null;
+      this.context = this.canvas.getContext(
+        "webgpu",
+      ) as unknown as GPUCanvasContext | null;
       if (!this.context) return false;
 
       const format = navigator.gpu.getPreferredCanvasFormat();
@@ -547,9 +596,7 @@ export class WebGPUFloorPlanRenderer {
 
       this.bindGroup = this.device.createBindGroup({
         layout: this.pipeline!.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: this.uniformBuffer } },
-        ],
+        entries: [{ binding: 0, resource: { buffer: this.uniformBuffer } }],
       });
 
       return true;
@@ -582,7 +629,15 @@ export class WebGPUFloorPlanRenderer {
   }
 
   render(): void {
-    if (!this.device || !this.context || !this.pipeline || !this.vertexBuffer || !this.indexBuffer || !this.bindGroup) return;
+    if (
+      !this.device ||
+      !this.context ||
+      !this.pipeline ||
+      !this.vertexBuffer ||
+      !this.indexBuffer ||
+      !this.bindGroup
+    )
+      return;
 
     this.time += 0.016;
 
@@ -592,14 +647,18 @@ export class WebGPUFloorPlanRenderer {
     const eyeX =
       this.camera.target[0] +
       this.camera.panX +
-      this.camera.distance * Math.cos(this.camera.rotationX) * Math.sin(this.camera.rotationY);
+      this.camera.distance *
+        Math.cos(this.camera.rotationX) *
+        Math.sin(this.camera.rotationY);
     const eyeY =
       this.camera.target[1] +
       this.camera.panY +
       this.camera.distance * Math.sin(-this.camera.rotationX);
     const eyeZ =
       this.camera.target[2] +
-      this.camera.distance * Math.cos(this.camera.rotationX) * Math.cos(this.camera.rotationY);
+      this.camera.distance *
+        Math.cos(this.camera.rotationX) *
+        Math.cos(this.camera.rotationY);
 
     const view = mat4LookAt(
       [eyeX, eyeY, eyeZ],

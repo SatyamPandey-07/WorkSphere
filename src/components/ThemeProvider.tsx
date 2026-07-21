@@ -78,7 +78,8 @@ export function ThemeProvider({
     if (root.classList.contains("cyberpunk")) return "cyberpunk";
     if (root.classList.contains("dark")) return "dark";
     const saved = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
-    if (saved === "dark" || saved === "cyberpunk" || saved === "light") return saved;
+    if (saved === "dark" || saved === "cyberpunk" || saved === "light")
+      return saved;
     return initialTheme;
   });
 
@@ -88,7 +89,10 @@ export function ThemeProvider({
     return parseAccentColor(saved);
   });
 
-  const accentHex = useMemo(() => ACCENT_HEX_MAP[accent] || ACCENT_HEX_MAP[DEFAULT_ACCENT], [accent]);
+  const accentHex = useMemo(
+    () => ACCENT_HEX_MAP[accent] || ACCENT_HEX_MAP[DEFAULT_ACCENT],
+    [accent],
+  );
 
   useEffect(() => {
     applyTheme(theme);
@@ -129,7 +133,9 @@ export function ThemeProvider({
     const onStorage = (e: StorageEvent) => {
       if (
         e.key === STORAGE_KEY &&
-        (e.newValue === "light" || e.newValue === "dark" || e.newValue === "cyberpunk")
+        (e.newValue === "light" ||
+          e.newValue === "dark" ||
+          e.newValue === "cyberpunk")
       ) {
         setThemeState(e.newValue as Theme);
         applyTheme(e.newValue as Theme);

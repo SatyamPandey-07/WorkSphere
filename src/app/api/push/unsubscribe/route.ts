@@ -12,20 +12,14 @@ export async function POST(req: NextRequest) {
 
     const allowed = await rateLimit(`push-unsubscribe:${userId}`, 10);
     if (!allowed) {
-      return NextResponse.json(
-        { error: "Too many requests" },
-        { status: 429 },
-      );
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
     }
 
     const body = await req.json();
     const { endpoint } = body;
 
     if (!endpoint) {
-      return NextResponse.json(
-        { error: "Missing endpoint" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Missing endpoint" }, { status: 400 });
     }
 
     await prisma.pushSubscription.deleteMany({

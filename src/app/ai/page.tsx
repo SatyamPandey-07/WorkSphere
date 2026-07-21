@@ -30,6 +30,29 @@ import {
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { Venue } from "@/components/chat/ChatMessages";
 import { PartyKitPresenceWrapper } from "@/components/chat/PartyKitPresenceWrapper";
+
+// Dynamically import EnhancedChatbot to isolate WASM loading / client effects during streaming SSR and prevent hydration mismatches
+const EnhancedChatbot = dynamic(
+  () =>
+    import("@/components/EnhancedChatbot").then((mod) => mod.EnhancedChatbot),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="flex flex-1 h-full w-full items-center justify-center bg-white dark:bg-zinc-900"
+        role="status"
+        aria-live="polite"
+        aria-label="Loading chat assistant"
+      >
+        <Loader2
+          className="h-8 w-8 animate-spin text-blue-600"
+          aria-hidden="true"
+        />
+        <span className="sr-only">Loading chat assistant...</span>
+      </div>
+    ),
+  },
+);
 // Dynamically import OnboardingTour to prevent hydration issues with react-joyride
 const OnboardingTour = dynamic(
   () => import("@/components/OnboardingTour").then((mod) => mod.OnboardingTour),

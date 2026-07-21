@@ -37,7 +37,13 @@ declare global {
     createBindGroup(descriptor: any): any;
     createShaderModule(descriptor: any): any;
     queue: {
-      writeBuffer(buffer: any, bufferOffset: number, data: any, dataOffset?: number, size?: number): void;
+      writeBuffer(
+        buffer: any,
+        bufferOffset: number,
+        data: any,
+        dataOffset?: number,
+        size?: number,
+      ): void;
       submit(commandBuffers: any[]): void;
     };
     [key: string]: any;

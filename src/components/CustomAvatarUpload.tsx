@@ -15,9 +15,13 @@ async function convertHeicToJpeg(file: File): Promise<File> {
   const heic2any = (await import("heic2any")).default;
   const blob = await heic2any({ blob: file, toType: "image/jpeg" });
   const converted = blob instanceof Blob ? blob : blob[0];
-  return new File([converted], file.name.replace(/\.heic$/i, ".jpg").replace(/\.heif$/i, ".jpg"), {
-    type: "image/jpeg",
-  });
+  return new File(
+    [converted],
+    file.name.replace(/\.heic$/i, ".jpg").replace(/\.heif$/i, ".jpg"),
+    {
+      type: "image/jpeg",
+    },
+  );
 }
 
 export function CustomAvatarUpload() {
@@ -41,7 +45,9 @@ export function CustomAvatarUpload() {
       try {
         file = await convertHeicToJpeg(file);
       } catch {
-        setError("HEIC/HEIF format is not supported. Please convert to JPEG or PNG.");
+        setError(
+          "HEIC/HEIF format is not supported. Please convert to JPEG or PNG.",
+        );
         return;
       }
     }

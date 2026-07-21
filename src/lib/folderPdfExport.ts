@@ -108,8 +108,7 @@ export async function generateFolderSummaryPdf(options: {
     });
     y -= 16;
 
-    const wifi =
-      venue.wifiQuality != null ? `${venue.wifiQuality}/5` : "N/A";
+    const wifi = venue.wifiQuality != null ? `${venue.wifiQuality}/5` : "N/A";
     const outlets = venue.hasOutlets ? "Yes" : "No";
 
     drawSafeText(page, `WiFi: ${wifi}    Outlets: ${outlets}`, {

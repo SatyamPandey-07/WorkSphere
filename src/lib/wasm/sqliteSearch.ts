@@ -110,7 +110,10 @@ export class SQLiteFTS5SearchEngine {
       process.env.NODE_ENV !== "test"
     ) {
       try {
-        const baseUrl = typeof window !== "undefined" ? window.location?.href : "http://localhost";
+        const baseUrl =
+          typeof window !== "undefined"
+            ? window.location?.href
+            : "http://localhost";
         const workerUrl = new URL(
           "../../workers/sqlite-search.worker.ts",
           baseUrl,

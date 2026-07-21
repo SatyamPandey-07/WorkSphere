@@ -28,7 +28,10 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const validation = upvoteSchema.safeParse(body);
     if (!validation.success) {
-      return NextResponse.json({ error: validation.error.format() }, { status: 400 });
+      return NextResponse.json(
+        { error: validation.error.format() },
+        { status: 400 },
+      );
     }
 
     const { folderId } = validation.data;
@@ -78,10 +81,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, ...result });
   } catch (error: any) {
     if (error?.message === "NOT_FOUND") {
-      return NextResponse.json({ error: "Collection not found" }, { status: 404 });
+      return NextResponse.json(
+        { error: "Collection not found" },
+        { status: 404 },
+      );
     }
     if (error?.message === "NOT_PUBLIC") {
-      return NextResponse.json({ error: "Cannot vote on private collections" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Cannot vote on private collections" },
+        { status: 400 },
+      );
     }
     console.error("POST /api/collections/public/upvote error:", error);
     return NextResponse.json(

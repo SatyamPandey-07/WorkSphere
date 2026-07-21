@@ -32,8 +32,10 @@ function getRedisClient() {
 }
 
 /**
- * Sliding-window check via a single Redis pipeline of ZREMRANGEBYSCORE + ZCARD.
- * Avoids Upstash Lua `eval` timeouts under ~200 RPS (issue #1034).
+ * Sliding-window check in one MULTI/EXEC:
+ * ZREMRANGEBYSCORE → ZADD → ZCARD → EXPIRE.
+ * Avoids Lua `eval` timeouts under ~200 RPS while keeping prune+count+write atomic
+ * so concurrent bursts cannot all pass on a stale ZCARD (issue #1034).
  */
 async function upstashRateLimit(
   identifier: string,
@@ -53,21 +55,19 @@ async function upstashRateLimit(
       `${Math.random().toString(36).slice(2, 10)}`,
     );
 
-    // One pipeline round-trip: prune expired hits, then count the window.
-    const countPipe = redis.pipeline();
-    countPipe.zremrangebyscore(key, 0, windowStart);
-    countPipe.zcard(key);
-    const countResult = await countPipe.exec();
-    const count = Number(countResult?.[1] ?? 0);
+    const tx = redis.multi();
+    tx.zremrangebyscore(key, 0, windowStart);
+    tx.zadd(key, { score: now, member });
+    tx.zcard(key);
+    tx.expire(key, windowSeconds);
+    const result = await tx.exec();
 
-    if (count >= limit) {
+    // MULTI result order: rem, add, card, expire
+    const count = Number(result?.[2] ?? 0);
+    if (count > limit) {
+      await redis.zrem(key, member);
       return false;
     }
-
-    const writePipe = redis.pipeline();
-    writePipe.zadd(key, { score: now, member });
-    writePipe.expire(key, windowSeconds);
-    await writePipe.exec();
 
     return true;
   } catch {

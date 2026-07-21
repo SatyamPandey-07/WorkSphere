@@ -1,14 +1,17 @@
-const mockPipeline = {
+const mockMulti = {
   zremrangebyscore: jest.fn().mockReturnThis(),
-  zcard: jest.fn().mockReturnThis(),
   zadd: jest.fn().mockReturnThis(),
+  zcard: jest.fn().mockReturnThis(),
   expire: jest.fn().mockReturnThis(),
   exec: jest.fn(),
 };
 
+const mockZrem = jest.fn();
+
 jest.mock("@upstash/redis", () => ({
   Redis: jest.fn().mockImplementation(() => ({
-    pipeline: () => mockPipeline,
+    multi: () => mockMulti,
+    zrem: mockZrem,
   })),
 }));
 
@@ -24,11 +27,12 @@ describe("Rate Limiting", () => {
   beforeEach(() => {
     resetRateLimit();
     resetRedisScripts();
-    mockPipeline.exec.mockReset();
-    mockPipeline.zremrangebyscore.mockClear();
-    mockPipeline.zcard.mockClear();
-    mockPipeline.zadd.mockClear();
-    mockPipeline.expire.mockClear();
+    mockMulti.exec.mockReset();
+    mockMulti.zremrangebyscore.mockClear();
+    mockMulti.zadd.mockClear();
+    mockMulti.zcard.mockClear();
+    mockMulti.expire.mockClear();
+    mockZrem.mockReset();
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
   });
@@ -111,14 +115,15 @@ describe("microTimestampMember", () => {
   });
 });
 
-describe("Redis sliding window ZREMRANGEBYSCORE + ZCARD pipeline", () => {
+describe("Redis sliding window atomic MULTI (ZREMRANGEBYSCORE + ZCARD)", () => {
   beforeEach(() => {
     resetRedisScripts();
-    mockPipeline.exec.mockReset();
-    mockPipeline.zremrangebyscore.mockClear();
-    mockPipeline.zcard.mockClear();
-    mockPipeline.zadd.mockClear();
-    mockPipeline.expire.mockClear();
+    mockMulti.exec.mockReset();
+    mockMulti.zremrangebyscore.mockClear();
+    mockMulti.zadd.mockClear();
+    mockMulti.zcard.mockClear();
+    mockMulti.expire.mockClear();
+    mockZrem.mockReset();
     process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
     process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
   });
@@ -129,49 +134,45 @@ describe("Redis sliding window ZREMRANGEBYSCORE + ZCARD pipeline", () => {
     resetRedisScripts();
   });
 
-  it("pipelines zremrangebyscore then zcard before allowing a hit", async () => {
-    mockPipeline.exec
-      .mockResolvedValueOnce([0, 0])
-      .mockResolvedValueOnce([1, 1]);
+  it("runs prune, add, card, and expire in one multi transaction", async () => {
+    // rem, add, card, expire
+    mockMulti.exec.mockResolvedValueOnce([0, 1, 1, 1]);
 
     expect(await rateLimit("redis-ip", 3)).toBe(true);
 
-    expect(mockPipeline.zremrangebyscore).toHaveBeenCalledTimes(1);
-    expect(mockPipeline.zcard).toHaveBeenCalledTimes(1);
-    expect(mockPipeline.zadd).toHaveBeenCalledTimes(1);
-    expect(mockPipeline.expire).toHaveBeenCalledTimes(1);
-    expect(mockPipeline.exec).toHaveBeenCalledTimes(2);
+    expect(mockMulti.zremrangebyscore).toHaveBeenCalledTimes(1);
+    expect(mockMulti.zadd).toHaveBeenCalledTimes(1);
+    expect(mockMulti.zcard).toHaveBeenCalledTimes(1);
+    expect(mockMulti.expire).toHaveBeenCalledTimes(1);
+    expect(mockMulti.exec).toHaveBeenCalledTimes(1);
+    expect(mockZrem).not.toHaveBeenCalled();
 
-    const key = mockPipeline.zremrangebyscore.mock.calls[0][0];
+    const key = mockMulti.zremrangebyscore.mock.calls[0][0];
     expect(key).toBe("worksphere:ratelimit:redis-ip");
-    expect(mockPipeline.zcard.mock.calls[0][0]).toBe(key);
+    expect(mockMulti.zcard.mock.calls[0][0]).toBe(key);
   });
 
-  it("blocks when ZCARD is already at the limit without writing", async () => {
-    mockPipeline.exec.mockResolvedValueOnce([0, 3]);
+  it("rejects and removes the optimistic member when ZCARD exceeds the limit", async () => {
+    mockMulti.exec.mockResolvedValueOnce([0, 1, 4, 1]);
 
     expect(await rateLimit("full-ip", 3)).toBe(false);
-    expect(mockPipeline.zadd).not.toHaveBeenCalled();
-    expect(mockPipeline.exec).toHaveBeenCalledTimes(1);
+    expect(mockZrem).toHaveBeenCalledTimes(1);
+    expect(mockZrem.mock.calls[0][0]).toBe("worksphere:ratelimit:full-ip");
   });
 
-  it("allows until ZCARD reaches the limit across calls", async () => {
-    mockPipeline.exec
-      .mockResolvedValueOnce([0, 0])
-      .mockResolvedValueOnce([1, 1])
-      .mockResolvedValueOnce([0, 1])
-      .mockResolvedValueOnce([1, 1])
-      .mockResolvedValueOnce([0, 2])
-      .mockResolvedValueOnce([1, 1])
-      .mockResolvedValueOnce([0, 3]);
+  it("allows until ZCARD goes past the limit across calls", async () => {
+    mockMulti.exec
+      .mockResolvedValueOnce([0, 1, 1, 1])
+      .mockResolvedValueOnce([0, 1, 2, 1])
+      .mockResolvedValueOnce([0, 1, 3, 1])
+      .mockResolvedValueOnce([0, 1, 4, 1]);
 
     expect(await rateLimit("burst-ip", 3)).toBe(true);
     expect(await rateLimit("burst-ip", 3)).toBe(true);
     expect(await rateLimit("burst-ip", 3)).toBe(true);
     expect(await rateLimit("burst-ip", 3)).toBe(false);
 
-    expect(mockPipeline.zremrangebyscore).toHaveBeenCalledTimes(4);
-    expect(mockPipeline.zcard).toHaveBeenCalledTimes(4);
-    expect(mockPipeline.zadd).toHaveBeenCalledTimes(3);
+    expect(mockMulti.exec).toHaveBeenCalledTimes(4);
+    expect(mockZrem).toHaveBeenCalledTimes(1);
   });
 });

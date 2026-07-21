@@ -53,6 +53,8 @@ export function WebGLHeatmapLayer({
     const canvas = canvasRef.current;
     const renderer = rendererRef.current;
     if (!canvas || !renderer || !map) return;
+    canvas.style.display = visibleRef.current ? "" : "none";
+    if (!visibleRef.current) return;
 
     const size = map.getSize();
     const pixelRatio = window.devicePixelRatio || 1;

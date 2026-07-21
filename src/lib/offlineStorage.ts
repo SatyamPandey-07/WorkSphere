@@ -20,7 +20,7 @@ userDoc.on("update", async (update: Uint8Array) => {
 });
 
 const DB_NAME = "worksphere-offline";
-const DB_VERSION = 2;
+const DB_VERSION = 4;
 
 const IDB_STORAGE_LOCK = "worksphere-offline-storage-lock";
 

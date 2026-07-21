@@ -115,7 +115,16 @@ jest.mock("react-leaflet", () => ({
       </div>
     );
   }),
-  Popup: ({ children }: any) => <div data-testid="popup">{children}</div>,
+  Popup: ({ children, autoPanPaddingTopLeft }: any) => (
+    <div
+      data-testid="popup"
+      data-autopan-top={
+        autoPanPaddingTopLeft ? autoPanPaddingTopLeft[1] : undefined
+      }
+    >
+      {children}
+    </div>
+  ),
   Polyline: ({ children, positions, pathOptions }: any) => (
     <div
       data-testid="polyline"
@@ -531,6 +540,19 @@ describe("Map Component", () => {
 
       const mapContainer = screen.getByTestId("map-container");
       expect(mapContainer).toHaveStyle({ width: "95%", height: "95%" });
+    });
+  });
+
+  describe("Popup Header Clipping Prevention (#870)", () => {
+    it("configures popup autoPanPaddingTopLeft to clear sticky navigation header", () => {
+      render(<Map {...defaultProps} />);
+      const popups = screen.getAllByTestId("popup");
+      expect(popups.length).toBeGreaterThan(0);
+      popups.forEach((popup) => {
+        expect(
+          Number(popup.getAttribute("data-autopan-top")),
+        ).toBeGreaterThanOrEqual(72);
+      });
     });
   });
 });

@@ -6,6 +6,8 @@ const OFFLINE_URL = "/offline";
 
 // Cap image cache at 20MB so iOS Safari PWA (~50MB quota) doesn't get killed.
 const MAX_IMAGE_CACHE_BYTES = 20 * 1024 * 1024;
+// Cap entry count to prevent QuotaExceededError on storage-constrained mobile devices.
+const MAX_IMAGE_CACHE_ENTRIES = 50;
 // Fallback size for opaque cross-origin responses where Content-Length is hidden (approx 400KB).
 const OPAQUE_RESPONSE_SIZE_ESTIMATE = 400 * 1024;
 
@@ -135,26 +137,19 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       caches.open(IMAGE_CACHE_NAME).then((cache) => {
         return cache.match(event.request).then((cachedResponse) => {
-          // Agar cache mein mil gaya, toh turant return karo
           if (cachedResponse) {
-            // Asynchronously update the LRU timestamp for this hit
-            event.waitUntil(
-              touchLRURecord(event.request.url).catch(console.error),
-            );
+            event.waitUntil(touchLRURecord(event.request.url).catch(() => {}));
             return cachedResponse;
           }
 
-          // Agar cache mein nahi hai, toh network se fetch karo aur cache mein daalo
           return fetch(event.request)
             .then((networkResponse) => {
-              // Note: External requests sometimes return status 0 (opaque), we check response.status === 200 || response.status === 0
               if (
                 networkResponse.status === 200 ||
                 networkResponse.status === 0
               ) {
                 const responseToCache = networkResponse.clone();
 
-                // Calculate size for LRU tracking
                 let size = OPAQUE_RESPONSE_SIZE_ESTIMATE;
                 if (networkResponse.headers.has("content-length")) {
                   const length = parseInt(
@@ -164,34 +159,13 @@ self.addEventListener("fetch", (event) => {
                   if (!isNaN(length) && length > 0) size = length;
                 }
 
-                // Wrap cache.put and IDB updates in a promise chain for waitUntil
-                const cachePromise = cache
-                  .put(event.request, responseToCache)
-                  .then(async () => {
-                    await updateLRURecord(event.request.url, size);
-                    await enforceImageCacheQuota(cache);
-                  })
-                  .catch(async (err) => {
-                    if (err.name === "QuotaExceededError") {
-                      console.warn(
-                        "[SW] Quota exceeded. Evicting older images...",
-                      );
-                      await enforceImageCacheQuota(cache, true);
-
-                      try {
-                        await cache.put(event.request, responseToCache);
-                        await updateLRURecord(event.request.url, size);
-                      } catch (retryErr) {
-                        console.error(
-                          "[SW] Still out of quota after eviction:",
-                          retryErr,
-                        );
-                      }
-                    } else {
-                      console.error("[SW] Failed to cache asset:", err);
-                    }
-                  });
-
+                const cachePromise = putImageCacheWithLru(
+                  cache,
+                  event.request,
+                  responseToCache,
+                  event.request.url,
+                  size,
+                );
                 event.waitUntil(cachePromise);
               }
               return networkResponse;
@@ -727,55 +701,50 @@ self.addEventListener("notificationclick", (event) => {
   );
 });
 
-// Invalid import and duplicate syncFavoritesOutbox removed to fix SyntaxError
-
 /**
  * Updates or inserts a record for an image in the LRU IDB store.
  */
 async function updateLRURecord(url, size) {
-  try {
-    const db = await openIndexedDB();
-    const tx = db.transaction("imageCacheLRU", "readwrite");
-    const store = tx.objectStore("imageCacheLRU");
-    store.put({ url, size, lastAccessed: Date.now() });
-    return new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (err) {
-    console.error("[SW] Failed to update LRU record:", err);
-  }
+  const db = await openIndexedDB();
+  const tx = db.transaction("imageCacheLRU", "readwrite");
+  const store = tx.objectStore("imageCacheLRU");
+  store.put({ url, size, lastAccessed: Date.now() });
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
 /**
  * Touches an existing record to update its lastAccessed time (True LRU).
  */
 async function touchLRURecord(url) {
-  try {
-    const db = await openIndexedDB();
-    const tx = db.transaction("imageCacheLRU", "readwrite");
-    const store = tx.objectStore("imageCacheLRU");
-    const request = store.get(url);
+  const db = await openIndexedDB();
+  const tx = db.transaction("imageCacheLRU", "readwrite");
+  const store = tx.objectStore("imageCacheLRU");
+  const request = store.get(url);
 
-    request.onsuccess = () => {
-      const record = request.result;
-      if (record) {
-        record.lastAccessed = Date.now();
-        store.put(record);
-      }
-    };
-  } catch (err) {
-    console.error("[SW] Failed to touch LRU record:", err);
-  }
+  request.onsuccess = () => {
+    const record = request.result;
+    if (record) {
+      record.lastAccessed = Date.now();
+      store.put(record);
+    }
+  };
 }
 
 let isEnforcingQuota = false;
 
 /**
- * Helper to keep image cache strictly below quota (~20MB) using True LRU.
+ * Evicts oldest image cache entries until both byte-size and entry-count
+ * are within budget. Uses an IndexedDB-backed LRU store for accurate
+ * lastAccessed tracking across SW restarts.
+ *
+ * @param {Cache} cache - The Cache Storage instance for images.
+ * @param {boolean} aggressive - When true, targets 60% of MAX_IMAGE_CACHE_BYTES
+ *                               to recover from a QuotaExceededError.
  */
 async function enforceImageCacheQuota(cache, aggressive = false) {
-  // Wait if another sweep is concurrently running to avoid redundant IDB reads/writes
   while (isEnforcingQuota) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -796,14 +765,18 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
     const targetSize = aggressive
       ? MAX_IMAGE_CACHE_BYTES * 0.6
       : MAX_IMAGE_CACHE_BYTES;
+    const needsSizeEviction = totalSize > targetSize;
+    const needsCountEviction = records.length > MAX_IMAGE_CACHE_ENTRIES;
 
-    if (totalSize > targetSize) {
-      // Sort by oldest first
+    if (needsSizeEviction || needsCountEviction) {
       records.sort((a, b) => a.lastAccessed - b.lastAccessed);
 
       let evictedCount = 0;
       for (const record of records) {
-        if (totalSize <= targetSize) break;
+        const overSize = totalSize > targetSize;
+        const overCount =
+          records.length - evictedCount > MAX_IMAGE_CACHE_ENTRIES;
+        if (!overSize && !overCount) break;
 
         await cache.delete(record.url);
         store.delete(record.url);
@@ -811,13 +784,37 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
         totalSize -= record.size || 0;
         evictedCount++;
       }
-      console.log(
-        `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
-      );
     }
-  } catch (err) {
-    console.error("[SW] Failed to enforce image cache LRU quota:", err);
+  } catch {
+    // Eviction failure is non-fatal; the next cache.put may trigger
+    // QuotaExceededError, which will retry eviction in aggressive mode.
   } finally {
     isEnforcingQuota = false;
   }
+}
+
+/**
+ * Inserts an image into the cache with proactive LRU eviction.
+ * Evicts by entry count before put, then by byte size after put.
+ * On QuotaExceededError, runs aggressive eviction and retries once.
+ */
+async function putImageCacheWithLru(cache, request, response, url, size) {
+  try {
+    const existingKeys = await cache.keys();
+    if (existingKeys.length >= MAX_IMAGE_CACHE_ENTRIES) {
+      await enforceImageCacheQuota(cache);
+    }
+
+    await cache.put(request, response);
+  } catch (err) {
+    if (err.name === "QuotaExceededError") {
+      await enforceImageCacheQuota(cache, true);
+      await cache.put(request, response);
+    } else {
+      throw err;
+    }
+  }
+
+  await updateLRURecord(url, size);
+  await enforceImageCacheQuota(cache);
 }

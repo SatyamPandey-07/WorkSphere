@@ -17,78 +17,79 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            // Ensure this is an issue comment, not a PR comment
-            if (context.payload.issue.pull_request) return;
+            try {
+              // Ensure this is an issue comment, not a PR comment
+              if (context.payload.issue.pull_request) return;
 
-            const body = context.payload.comment.body || '';
-            // Match /claim anywhere in the comment (case-insensitive)
-            if (!body.toLowerCase().includes('/claim')) return;
+              const body = context.payload.comment.body || '';
+              // Match /claim anywhere in the comment (case-insensitive)
+              if (!body.toLowerCase().includes('/claim')) return;
 
-            const issueNumber = context.payload.issue.number;
-            const commenter = context.payload.comment.user.login;
-            const assignees = context.payload.issue.assignees || [];
-            
-            // Ignore bot comments
-            if (context.payload.comment.user.type === 'Bot') return;
-
-            // 1. Check if issue is already assigned to someone else
-            if (assignees.length > 0) {
-              const currentAssignees = assignees.map(a => `@${a.login}`).join(', ');
-              const alreadyAssignedMsg = `Hi @${commenter}, this issue is already assigned to ${currentAssignees}. Please feel free to check out other unassigned open issues on the repository! 🚀`;
+              const issueNumber = context.payload.issue.number;
+              const commenter = context.payload.comment.user.login;
+              const assignees = context.payload.issue.assignees || [];
               
+              // Ignore bot comments
+              if (context.payload.comment.user.type === 'Bot') return;
+
+              // 1. Check if issue is already assigned to someone else
+              if (assignees.length > 0) {
+                const currentAssignees = assignees.map(a => `@${a.login}`).join(', ');
+                const alreadyAssignedMsg = `Hi @${commenter}, this issue is already assigned to ${currentAssignees}. Please feel free to check out other unassigned open issues on the repository! 🚀`;
+                
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  body: alreadyAssignedMsg
+                }).catch(e => console.warn('Comment API warning:', e.message));
+                return;
+              }
+
+              // 2. Check active assigned issues for this contributor (max 10 limit with rate limit fallback)
+              let activeIssuesCount = 0;
+              try {
+                const userAssignedIssues = await github.rest.issues.listForRepo({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  assignee: commenter,
+                  state: 'open',
+                  per_page: 100
+                });
+                activeIssuesCount = userAssignedIssues.data.filter(item => !item.pull_request).length;
+              } catch (rateLimitErr) {
+                console.warn('API rate limit or query error encountered, proceeding with auto-assignment fallback:', rateLimitErr.message);
+              }
+
+              if (activeIssuesCount >= 10) {
+                const limitMsg = `Hi @${commenter}! You currently have **${activeIssuesCount}** active assigned issues, which reaches our limit of 10 active assigned issues per person. Please submit PRs or resolve your current assigned issues before claiming new ones! Thanks for your contributions! 🚀`;
+                
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issueNumber,
+                  body: limitMsg
+                }).catch(e => console.warn('Limit comment warning:', e.message));
+                return;
+              }
+
+              // 3. Assign the issue to commenter
+              await github.rest.issues.addAssignees({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                assignees: [commenter]
+              }).catch(e => console.warn('Add assignees warning:', e.message));
+
+              // 4. Post assignment confirmation message
+              const assignmentMsg = `Hey @${commenter}, awesome to have you on board for this! 🚀\n\nWe've officially assigned issue #${issueNumber} to you. Be sure to check out our [CONTRIBUTING.md](https://github.com/SatyamPandey-07/WorkSphere/blob/main/CONTRIBUTING.md) before starting, and keep your PR scoped to this issue for an easier review process.\n\n⏳ Try to open a PR within 6 days. If you need extra time, just drop a quick progress update here and you can keep going.\n\nCan't wait to see your work. Happy coding! ✨`;
+
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issueNumber,
-                body: alreadyAssignedMsg
-              });
-              return;
+                body: assignmentMsg
+              }).catch(e => console.warn('Confirmation comment warning:', e.message));
+            } catch (err) {
+              console.error('Unhandled claim workflow error (gracefully caught):', err.message);
             }
-
-            // 2. Check active assigned issues for this contributor (max 10 limit)
-            const userAssignedIssues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              assignee: commenter,
-              state: 'open',
-              per_page: 100
-            });
-
-            // Filter out PRs, keep only issues
-            const activeIssuesCount = userAssignedIssues.data.filter(item => !item.pull_request).length;
-
-            if (activeIssuesCount >= 10) {
-              const limitMsg = `Hi @${commenter}! You currently have **${activeIssuesCount}** active assigned issues, which reaches our limit of 10 active assigned issues per person. Please submit PRs or resolve your current assigned issues before claiming new ones! Thanks for your contributions! 🚀`;
-              
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issueNumber,
-                body: limitMsg
-              });
-              return;
-            }
-
-            // 3. Assign the issue to commenter
-            await github.rest.issues.addAssignees({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              assignees: [commenter]
-            });
-
-            // 4. Post assignment confirmation message
-            const assignmentMsg = `Hey @${commenter}, awesome to have you on board for this! 🚀
-
-            We've officially assigned issue #${issueNumber} to you. Be sure to check out our [CONTRIBUTING.md](https://github.com/SatyamPandey-07/WorkSphere/blob/main/CONTRIBUTING.md) before starting, and keep your PR scoped to this issue for an easier review process.
-
-            ⏳ Try to open a PR within 6 days. If you need extra time, just drop a quick progress update here and you can keep going.
-
-            Can't wait to see your work. Happy coding! ✨`;
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issueNumber,
-              body: assignmentMsg
-            });

@@ -5,6 +5,7 @@ import {
   PDFPageDrawTextOptions,
 } from "pdf-lib";
 import { safeText } from "./pdfHelpers";
+import { sanitizeMathSymbols } from "./pdfUtils";
 
 // Using the same drawSafeText as the export route, but we will duplicate the helper signature for local use here
 export async function generateTaxExportPdf(
@@ -30,10 +31,11 @@ export async function generateTaxExportPdf(
 
   // Local helper just for StandardFonts (as pdfHelpers uses custom interface)
   const drawText = (page: any, text: string, options: any) => {
+    const sanitized = sanitizeMathSymbols(text);
     try {
-      page.drawText(text, options);
+      page.drawText(sanitized, options);
     } catch {
-      const strictText = text.replace(/[^\x20-\x7E]/g, "?");
+      const strictText = sanitized.replace(/[^\x20-\x7E]/g, "");
       try {
         page.drawText(strictText, options);
       } catch {}
@@ -316,10 +318,11 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
     : "";
 
   const drawText = (text: string, options: PDFPageDrawTextOptions) => {
+    const sanitized = sanitizeMathSymbols(text);
     try {
-      page.drawText(text, options);
+      page.drawText(sanitized, options);
     } catch {
-      const strictText = text.replace(/[^\x20-\x7E]/g, "?");
+      const strictText = sanitized.replace(/[^\x20-\x7E]/g, "");
       try {
         page.drawText(strictText, options);
       } catch {}

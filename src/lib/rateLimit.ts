@@ -5,78 +5,86 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-const upstashLimiters = new Map<number, any>();
+/**
+ * Sliding Window Rate Limiting Lua Script for Redis.
+ *
+ * Atomically removes expired entries from sorted set (zset), checks current requests
+ * against limit, adds current timestamp, and appends EXPIRE key window_seconds to
+ * prevent key/zset accumulation in Redis memory under high concurrency (300+ req/s).
+ */
+export const SLIDING_WINDOW_LUA = `
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local windowStart = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+local window_seconds = tonumber(ARGV[4])
 
-function getUpstashRatelimit(limitPerMinute: number) {
+-- Remove entries outside the sliding window
+redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
+
+-- Get current request count in window
+local current_requests = redis.call('ZCARD', key)
+
+if current_requests < limit then
+    -- Add timestamp to sorted set
+    redis.call('ZADD', key, now, now)
+    -- Atomically append EXPIRE key window_seconds
+    redis.call('EXPIRE', key, window_seconds)
+    return 1
+else
+    -- Refresh key expiration even when limited
+    redis.call('EXPIRE', key, window_seconds)
+    return 0
+end
+`;
+
+let redisClient: any = null;
+
+function getRedisClient() {
   if (
     !process.env.UPSTASH_REDIS_REST_URL ||
     !process.env.UPSTASH_REDIS_REST_TOKEN
   ) {
     return null;
   }
+  if (redisClient) return redisClient;
 
   try {
-    // Dynamic require so the build doesn't fail if packages aren't present yet
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { Ratelimit } = require("@upstash/ratelimit");
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Redis } = require("@upstash/redis");
-
-    const redis = new Redis({
+    redisClient = new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
     });
-
-    return {
-      limit: async (identifier: string) => {
-        const key = `worksphere:ratelimit:${identifier}`;
-        const now = Date.now();
-        // Atomic Lua script for token bucket evaluation
-        const script = `
-          local key = KEYS[1]
-          local limit = tonumber(ARGV[1])
-          local now = tonumber(ARGV[2])
-
-          local state = redis.call("HMGET", key, "tokens", "last_refill")
-          local tokens = tonumber(state[1])
-          local last_refill = tonumber(state[2])
-
-          if not tokens then
-            tokens = limit
-            last_refill = now
-          else
-            local elapsed = math.max(0, now - last_refill)
-            local new_tokens = math.floor(elapsed * (limit / 60000))
-            if new_tokens > 0 then
-              tokens = math.min(limit, tokens + new_tokens)
-              last_refill = last_refill + (new_tokens * (60000 / limit))
-            end
-          end
-
-          if tokens > 0 then
-            redis.call("HMSET", key, "tokens", tokens - 1, "last_refill", last_refill)
-            redis.call("PEXPIRE", key, 60000)
-            return { 1, tokens - 1 }
-          else
-            return { 0, tokens }
-          end
-        `;
-        try {
-          const result = await redis.eval(script, [key], [limitPerMinute, now]);
-          return {
-            success: result[0] === 1,
-            remaining: result[1],
-            reset: now + 60000,
-          };
-        } catch (e) {
-          console.error("Redis ratelimit eval error", e);
-          // Fail open
-          return { success: true, remaining: 1, reset: now + 60000 };
-        }
-      }
-    };
+    return redisClient;
   } catch {
     return null;
+  }
+}
+
+async function upstashRateLimit(
+  identifier: string,
+  limit: number,
+): Promise<boolean> {
+  const redis = getRedisClient();
+  if (!redis) return memRateLimit(identifier, limit);
+
+  try {
+    const now = Date.now();
+    const windowMs = 60_000;
+    const windowSeconds = Math.ceil(windowMs / 1000);
+    const windowStart = now - windowMs;
+    const key = `worksphere:ratelimit:${identifier}`;
+
+    const allowed = await redis.eval(
+      SLIDING_WINDOW_LUA,
+      [key],
+      [now, windowStart, limit, windowSeconds],
+    );
+
+    return Number(allowed) === 1;
+  } catch {
+    return memRateLimit(identifier, limit);
   }
 }
 
@@ -96,7 +104,6 @@ interface RateLimitInfo {
 }
 const rateLimitInfoStore = new Map<string, RateLimitInfo>();
 
-// Run cleanup in the background instead of on the request path.
 const CLEANUP_INTERVAL_MS = 60_000;
 
 function cleanupExpiredEntries() {
@@ -115,7 +122,6 @@ function cleanupExpiredEntries() {
   }
 }
 
-// Start a single background cleanup task.
 const globalCleanup = globalThis as typeof globalThis & {
   __rateLimitCleanupTimer?: NodeJS.Timeout;
 };
@@ -176,17 +182,11 @@ export async function rateLimit(
   identifier: string,
   limit = 10,
 ): Promise<boolean> {
-  let rl = upstashLimiters.get(limit);
-  if (!rl) {
-    rl = getUpstashRatelimit(limit);
-    if (rl) {
-      upstashLimiters.set(limit, rl);
-    }
-  }
-
-  if (rl) {
-    const { success } = await rl.limit(identifier);
-    return success;
+  if (
+    process.env.UPSTASH_REDIS_REST_URL &&
+    process.env.UPSTASH_REDIS_REST_TOKEN
+  ) {
+    return upstashRateLimit(identifier, limit);
   }
 
   return memRateLimit(identifier, limit);

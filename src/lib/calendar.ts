@@ -3,6 +3,7 @@ const escapeIcsText = (text: string) =>
     .replace(/\\/g, "\\\\")
     .replace(/;/g, "\\;")
     .replace(/,/g, "\\,")
+    .replace(/\r/g, "")
     .replace(/\n/g, "\\n");
 
 export const formatDateTimeForCalendar = (

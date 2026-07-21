@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import * as Y from "yjs";
 import YProvider from "y-partykit/provider";
+import { FailoverSyncManager } from "@/lib/edge/failoverSync";
 
 export type ToolType = "pen" | "eraser" | "rect" | "circle" | "line";
 
@@ -112,17 +113,44 @@ export function useCanvasWhiteboard(
 
     const roomId = `canvas-${canvasId}`;
     const doc = new Y.Doc();
-    const newProvider = new YProvider(PARTYKIT_HOST, roomId, doc, {
-      params: token ? { token } : {},
-    });
+    let newProvider: YProvider | null = null;
+    try {
+      newProvider = new YProvider(PARTYKIT_HOST, roomId, doc, {
+        params: token ? { token } : {},
+      });
 
-    setYDoc(doc);
-    setProvider(newProvider);
-    providerRef.current = newProvider;
+      setYDoc(doc);
+      setProvider(newProvider);
+      providerRef.current = newProvider;
 
-    newProvider.on("sync", (synced: boolean) => {
-      setIsConnected(synced);
-    });
+      const failoverSync = new FailoverSyncManager<ShapeData>({
+        onStateChange: (syncState) => {
+          setIsConnected(syncState === "synced");
+        },
+      });
+
+      newProvider.on("status", ({ status }: { status: string }) => {
+        if (status === "disconnected") {
+          failoverSync.handleDisconnect();
+          setIsConnected(false);
+        } else if (status === "connected") {
+          const sendFn = (msg: string) => {
+            if (newProvider?.ws) {
+              newProvider.ws.send(msg);
+            }
+          };
+          failoverSync.handleConnect(sendFn, roomId);
+        }
+      });
+
+      newProvider.on("sync", (synced: boolean) => {
+        if (synced && failoverSync.getStatus() !== "syncing_snapshot") {
+          setIsConnected(true);
+        }
+      });
+    } catch (err) {
+      console.warn("YProvider connection initialization deferred:", err);
+    }
 
     const shapes = doc.getArray<Y.Map<unknown>>("shapes");
     shapesRef.current = shapes;

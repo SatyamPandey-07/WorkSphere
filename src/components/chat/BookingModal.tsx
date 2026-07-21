@@ -77,8 +77,6 @@ export function BookingModal({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
-  const [dateFilter, setDateFilter] = useState("all");
-
   const [guests, setGuests] = useState<GuestEntry[]>([]);
   const [guestInviteStatus, setGuestInviteStatus] = useState<
     "idle" | "sending" | "done"
@@ -89,6 +87,7 @@ export function BookingModal({
   const [showTaxId, setShowTaxId] = useState(false);
   const [includeNotes, setIncludeNotes] = useState(false);
   const [showLogo, setShowLogo] = useState(true);
+  const [dateFilter, setDateFilter] = useState("all");
 
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -280,7 +279,7 @@ export function BookingModal({
     setShowLogo(true);
   };
 
-  const confirmDownloadSingle = () => {
+  const confirmDownloadSingle = async () => {
     if (!receiptDialogBookingId) return;
     const params = new URLSearchParams();
     if (showTaxId) params.append("showTaxId", "true");
@@ -288,7 +287,23 @@ export function BookingModal({
     if (showLogo) params.append("showLogo", "true");
 
     const url = `/api/bookings/${receiptDialogBookingId}/download${params.toString() ? `?${params.toString()}` : ""}`;
-    window.open(url, "_blank");
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      try {
+        const { queueOfflineReceipt } = await import("@/lib/offlineStorage");
+        await queueOfflineReceipt(
+          receiptDialogBookingId,
+          `WorkSphere_Receipt_${receiptDialogBookingId.slice(-6).toUpperCase()}.pdf`,
+        );
+        alert(
+          "You are currently offline. Your receipt request has been queued for background sync and will download automatically when you reconnect.",
+        );
+      } catch (err) {
+        console.error("Failed to queue offline receipt:", err);
+      }
+    } else {
+      window.open(url, "_blank");
+    }
     setReceiptDialogBookingId(null);
   };
 
@@ -340,16 +355,20 @@ export function BookingModal({
       let currentDate = new Date(bookingDate);
       // To handle local timezone parsing correctly without offset shifts:
       const [yearStr, monthStr, dayStr] = bookingDate.split("-");
-      currentDate = new Date(parseInt(yearStr), parseInt(monthStr) - 1, parseInt(dayStr));
-      
+      currentDate = new Date(
+        parseInt(yearStr),
+        parseInt(monthStr) - 1,
+        parseInt(dayStr),
+      );
+
       const occurrences = isRecurring ? recurringOccurrences : 1;
-      
+
       for (let i = 0; i < occurrences; i++) {
         const y = currentDate.getFullYear();
         const m = String(currentDate.getMonth() + 1).padStart(2, "0");
         const d = String(currentDate.getDate()).padStart(2, "0");
         dates.push(`${y}-${m}-${d}`);
-        
+
         if (isRecurring) {
           if (recurringFrequency === "daily") {
             currentDate.setDate(currentDate.getDate() + 1);
@@ -751,7 +770,7 @@ export function BookingModal({
                   />
                   Recurring Booking
                 </label>
-                
+
                 {isRecurring && (
                   <div className="grid grid-cols-2 gap-6 pl-2">
                     <div className="space-y-2">
@@ -777,7 +796,9 @@ export function BookingModal({
                         min="2"
                         max="12"
                         value={recurringOccurrences}
-                        onChange={(e) => setRecurringOccurrences(parseInt(e.target.value) || 2)}
+                        onChange={(e) =>
+                          setRecurringOccurrences(parseInt(e.target.value) || 2)
+                        }
                         className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:accent-border outline-none transition-all"
                       />
                     </div>

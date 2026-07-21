@@ -157,13 +157,46 @@ export const createFavoriteTagSchema = z.object({
 
 export const updateFavoriteTagSchema = z.object({
   name: z.string().min(1).max(50).trim().optional(),
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color").optional(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color")
+    .optional(),
 });
 
 // Location schema
 export const locationSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
+});
+
+// Collection / Folder schemas
+export const createFolderSchema = z.object({
+  name: z
+    .string({ required_error: "Folder name is required" })
+    .trim()
+    .min(1, "Folder name is required")
+    .max(100, "Folder name must be 100 characters or less"),
+  description: z
+    .string()
+    .trim()
+    .max(500, "Description must be 500 characters or less")
+    .optional(),
+  isPublic: z.boolean().optional(),
+});
+
+export const updateFolderSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, "Folder name is required")
+    .max(100, "Folder name must be 100 characters or less")
+    .optional(),
+  description: z
+    .string()
+    .trim()
+    .max(500, "Description must be 500 characters or less")
+    .optional(),
+  isPublic: z.boolean().optional(),
 });
 
 // =========================================================================
@@ -181,6 +214,8 @@ export type FavoriteNotes = z.infer<typeof favoriteNotesSchema>;
 export type CreateFavoriteTag = z.infer<typeof createFavoriteTagSchema>;
 export type UpdateFavoriteTag = z.infer<typeof updateFavoriteTagSchema>;
 export type Location = z.infer<typeof locationSchema>;
+export type CreateFolder = z.infer<typeof createFolderSchema>;
+export type UpdateFolder = z.infer<typeof updateFolderSchema>;
 
 // Validation helper
 export function validateRequest<T>(

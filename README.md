@@ -32,7 +32,7 @@
 >
 > You will have **6 days** to complete it! 🚀
 
-### 🚀 Contributors (All 47 Active Rockstars)
+### 🚀 Contributors (All 50 Active Rockstars)
 
 Automated contributor tracking synced directly via the GitHub API:
 

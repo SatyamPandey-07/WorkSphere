@@ -29,7 +29,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { RefObject, useState, useEffect, useRef, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { BrainTerminal } from "./BrainTerminal";
 import { trackVenueInteraction } from "@/lib/analytics";
@@ -38,6 +38,11 @@ import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ComparisonDrawer } from "@/components/ComparisonDrawer";
 import { ChatMessageSkeleton } from "@/components/ui/skeleton";
+import {
+  VenueGrid,
+  LayoutBoundary,
+  SubgridCell,
+} from "@/components/ui/VenueGrid";
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
@@ -738,36 +743,56 @@ export function VenueListings({
           description="Try broadening your search criteria or adjusting your chat request."
         />
       ) : (
-        <div className={viewMode === "card" ? "space-y-3" : "space-y-2"}>
-          {venues.slice(0, visibleCount).map((venue, index) => (
-            <VenueChatCard
-              key={venue.id}
-              venue={venue}
-              isFavorited={favorites.has(venue.id)}
-              onGetDirections={onGetDirections}
-              onToggleFavorite={onToggleFavorite}
-              onRate={onRateVenue}
-              onOpenDetails={onOpenDetails}
-              onBook={onBook}
-              viewMode={viewMode}
-              tabIndex={0}
-              data-index={index}
-              onKeyDown={(e) => handleKeyDown(e, index, venue)}
-              isSelected={selectedVenues.some((v) => v.id === venue.id)}
-              compareDisabled={selectedVenues.length >= 3}
-              onToggleCompare={handleToggleCompare}
-            />
-          ))}
+        <LayoutGroup id="venue-listings">
+          <VenueGrid viewMode={viewMode}>
+            {venues.slice(0, visibleCount).map((venue, index) => (
+              <SubgridCell key={venue.id}>
+                {/* 
+                  Measurement Container Pattern for Issue #1037:
+                  LayoutBoundary (parent) is position: relative, preserving layout measurements during grid/subgrid resize.
+                  motion.div layoutId wrapper is positioned relative within the boundary so layout transitions stay stable
+                  when drawers open/close or column counts change.
+                */}
+                <LayoutBoundary>
+                  <motion.div
+                    layout
+                    layoutId={`venue-card-${venue.id}`}
+                    className="w-full min-w-0 [transform:translate3d(0,0,0)]"
+                    transition={{
+                      layout: { type: "spring", stiffness: 350, damping: 30 },
+                    }}
+                  >
+                    <VenueChatCard
+                      venue={venue}
+                      isFavorited={favorites.has(venue.id)}
+                      onGetDirections={onGetDirections}
+                      onToggleFavorite={onToggleFavorite}
+                      onRate={onRateVenue}
+                      onOpenDetails={onOpenDetails}
+                      onBook={onBook}
+                      viewMode={viewMode}
+                      tabIndex={0}
+                      data-index={index}
+                      onKeyDown={(e) => handleKeyDown(e, index, venue)}
+                      isSelected={selectedVenues.some((v) => v.id === venue.id)}
+                      compareDisabled={selectedVenues.length >= 3}
+                      onToggleCompare={handleToggleCompare}
+                    />
+                  </motion.div>
+                </LayoutBoundary>
+              </SubgridCell>
+            ))}
 
-          {/* Infinite Scroll Sentinel */}
-          {(visibleCount < venues.length || onLoadMore) && (
-            <div ref={observerTarget} className="py-4 flex justify-center">
-              {isFetchingNextPage && (
-                <Loader2 className="w-6 h-6 accent-text animate-spin" />
-              )}
-            </div>
-          )}
-        </div>
+            {/* Infinite Scroll Sentinel */}
+            {(visibleCount < venues.length || onLoadMore) && (
+              <div ref={observerTarget} className="py-4 flex justify-center">
+                {isFetchingNextPage && (
+                  <Loader2 className="w-6 h-6 text-blue-600 animate-spin" />
+                )}
+              </div>
+            )}
+          </VenueGrid>
+        </LayoutGroup>
       )}
 
       {/* Comparison Drawer Integration */}
@@ -1080,6 +1105,7 @@ export function ChatInput({
 
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [isFocused, setIsFocused] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
 
   useEffect(() => {
     const history = localStorage.getItem("ws-recent-searches");
@@ -1090,6 +1116,25 @@ export function ChatInput({
         console.error(e);
       }
     }
+  }, []);
+
+  // Keep the composer above the iOS soft keyboard / browser chrome.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const sync = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKeyboardInset(inset);
+    };
+
+    sync();
+    vv.addEventListener("resize", sync);
+    vv.addEventListener("scroll", sync);
+    return () => {
+      vv.removeEventListener("resize", sync);
+      vv.removeEventListener("scroll", sync);
+    };
   }, []);
 
   const saveToHistory = (term: string) => {
@@ -1203,7 +1248,16 @@ export function ChatInput({
       : "Start voice input";
 
   return (
-    <div className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800">
+    <div
+      className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 pb-[max(1rem,env(safe-area-inset-bottom))]"
+      style={
+        keyboardInset > 0
+          ? {
+              paddingBottom: `calc(${keyboardInset}px + env(safe-area-inset-bottom, 0px))`,
+            }
+          : undefined
+      }
+    >
       <AnimatePresence>
         {isFocused && recentSearches.length > 0 && (
           <motion.div

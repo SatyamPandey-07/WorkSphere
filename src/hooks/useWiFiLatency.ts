@@ -27,8 +27,9 @@ export function useWiFiLatency({
   eventImpact = 0.1,
   currentLoad = 0.4,
 }: UseWiFiLatencyOptions) {
-  const [predictions, setPredictions] =
-    useState<WiFiLatencyPrediction | null>(null);
+  const [predictions, setPredictions] = useState<WiFiLatencyPrediction | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
@@ -77,12 +78,16 @@ export function useWiFiLatency({
         historicalLatency: historicalLatency.length
           ? historicalLatency
           : Array.from({ length: 24 }, (_, i) =>
-              i >= 10 && i <= 16 ? 35 + Math.random() * 20 : 15 + Math.random() * 15,
+              i >= 10 && i <= 16
+                ? 35 + Math.random() * 20
+                : 15 + Math.random() * 15,
             ),
         historicalPacketLoss: historicalPacketLoss.length
           ? historicalPacketLoss
           : Array.from({ length: 24 }, (_, i) =>
-              i >= 10 && i <= 16 ? 2 + Math.random() * 5 : 0.5 + Math.random() * 2,
+              i >= 10 && i <= 16
+                ? 2 + Math.random() * 5
+                : 0.5 + Math.random() * 2,
             ),
         timeOfDay: now.getHours(),
         dayOfWeek: now.getDay(),

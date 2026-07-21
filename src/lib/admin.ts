@@ -9,6 +9,25 @@ export async function getAdminUser() {
     return null;
   }
 
+  // 1. Check env-configured admin emails (comma-separated: e.g. ADMIN_EMAILS="admin@example.com,you@domain.com")
+  const adminEmails = (
+    process.env.ADMIN_EMAILS ||
+    process.env.ADMIN_EMAIL ||
+    ""
+  )
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (adminEmails.length > 0) {
+    const userEmails =
+      user.emailAddresses?.map((e) => e.emailAddress.toLowerCase()) ?? [];
+    if (userEmails.some((email) => adminEmails.includes(email))) {
+      return user;
+    }
+  }
+
+  // 2. Check Clerk metadata role
   const publicRole =
     typeof user.publicMetadata?.role === "string"
       ? user.publicMetadata.role

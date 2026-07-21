@@ -1,7 +1,8 @@
 "use client";
 
-import { useUser } from "@clerk/nextjs";
+import { useUser, useAuth } from "@clerk/nextjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTheme } from "./ThemeProvider";
 import {
   MapContainer,
   TileLayer,
@@ -22,6 +23,21 @@ import {
   useSeatAvailability,
   type SeatStatus,
 } from "@/hooks/useSeatAvailability";
+import usePartySocket from "partysocket/react";
+
+function throttle<T extends (...args: any[]) => void>(
+  func: T,
+  limit: number,
+): T {
+  let inThrottle = false;
+  return function (this: any, ...args: any[]) {
+    if (!inThrottle) {
+      func.apply(this, args);
+      inThrottle = true;
+      setTimeout(() => (inThrottle = false), limit);
+    }
+  } as unknown as T;
+}
 
 // Seat-availability ring colours (#703): green = plenty of room, yellow =
 // filling up, red = at/over capacity.
@@ -70,7 +86,6 @@ if (typeof window !== "undefined") {
 
 function MapController({ mapView }: { mapView: MapView | null }) {
   const map = useMap();
-
   useEffect(() => {
     if (mapView && mapView.center && mapView.zoom) {
       if (mapView.animate) {
@@ -213,21 +228,242 @@ function ResizeWatcher({ delay = 150 }: { delay?: number }) {
 
   return null;
 }
+function MapEvents({
+  onMouseMove,
+}: {
+  onMouseMove: (latlng: L.LatLng) => void;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    const handleMouseMove = ({ latlng }: L.LeafletMouseEvent) => {
+      onMouseMove(latlng);
+    };
+    map.on("mousemove", handleMouseMove);
+    return () => {
+      map.off("mousemove", handleMouseMove);
+    };
+  }, [map, onMouseMove]);
+  return null;
+}
+
+const createCursorIcon = (avatarUrl: string, name: string) => {
+  if (typeof window === "undefined") return null;
+  let html: string;
+  if (avatarUrl && avatarUrl !== "default" && avatarUrl.startsWith("http")) {
+    html = `
+      <div class="map-cursor-container">
+        <div class="map-cursor-avatar" style="background-image: url(${avatarUrl})"></div>
+        <div class="map-cursor-label">${name}</div>
+      </div>
+    `;
+  } else {
+    html = `
+      <div class="map-cursor-container">
+        <div class="map-cursor-avatar-default"></div>
+        <div class="map-cursor-label">${name}</div>
+      </div>
+    `;
+  }
+  return L.divIcon({
+    className: "map-presence-marker",
+    html,
+    iconSize: [32, 48],
+    iconAnchor: [16, 16],
+  });
+};
+
+import { attachWebGLContextRecovery } from "@/lib/webgl/contextManager";
+
+function WebGLContextWatcher() {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || typeof map.getContainer !== "function") return;
+    const container = map.getContainer();
+    if (!container) return;
+    const cleanups: Array<() => void> = [];
+
+    const setupCanvases = () => {
+      const canvases = container.querySelectorAll("canvas");
+      canvases.forEach((canvas) => {
+        const cleanup = attachWebGLContextRecovery(
+          canvas as HTMLCanvasElement,
+          () => {
+            map.invalidateSize();
+          },
+        );
+        cleanups.push(cleanup);
+      });
+    };
+
+    setupCanvases();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setupCanvases();
+        map.invalidateSize();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cleanups.forEach((c) => c());
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [map]);
+
+  return null;
+}
 
 const Map = ({
   location,
   markers,
   routes,
   mapView,
+  roomId,
 }: {
   location: { latitude: number; longitude: number };
   markers: MapMarker[];
   routes: MapRoute[];
   mapView: MapView | null;
+  roomId?: string | null;
 }) => {
   const clerkUser = useUser();
+  const { theme } = useTheme();
+  const { getToken } = useAuth();
+  const [token, setToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    getToken()
+      .then(setToken)
+      .catch(() => setToken(null));
+  }, [getToken]);
+
+  interface MapCursor {
+    lat: number;
+    lng: number;
+    name: string;
+    avatar: string;
+  }
+
+  const [mapCursors, setMapCursors] = useState<Record<string, MapCursor>>({});
+  const cursorLastSeen = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setMapCursors((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [userId, lastSeen] of Object.entries(
+          cursorLastSeen.current,
+        )) {
+          if (now - lastSeen > 3000) {
+            delete next[userId];
+            delete cursorLastSeen.current[userId];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const socket = usePartySocket({
+    host: "127.0.0.1:1999",
+    room: roomId || "default",
+    query: token ? { token } : undefined,
+    onMessage(event) {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "map-cursor") {
+          const userId = data.userId || data.name;
+          cursorLastSeen.current[userId] = Date.now();
+          setMapCursors((prev) => ({
+            ...prev,
+            [userId]: {
+              lat: data.lat,
+              lng: data.lng,
+              name: data.name,
+              avatar: data.avatar,
+            },
+          }));
+        } else if (data.type === "map-cursor-offline") {
+          const userId = data.userId || data.name;
+          delete cursorLastSeen.current[userId];
+          setMapCursors((prev) => {
+            if (!(userId in prev)) return prev;
+            const next = { ...prev };
+            delete next[userId];
+            return next;
+          });
+        }
+      } catch {
+        // Ignore
+      }
+    },
+  });
+
+  const userRef = useRef(clerkUser);
+  useEffect(() => {
+    userRef.current = clerkUser;
+  }, [clerkUser]);
+
+  const throttledBroadcastRef = useRef<((latlng: L.LatLng) => void) | null>(
+    null,
+  );
+
+  useEffect(() => {
+    throttledBroadcastRef.current = throttle((latlng: L.LatLng) => {
+      if (socket && socket.readyState === 1) {
+        const user = userRef.current.user;
+        socket.send(
+          JSON.stringify({
+            type: "map-cursor",
+            lat: latlng.lat,
+            lng: latlng.lng,
+            name: user?.firstName || "Anonymous",
+            avatar: user?.imageUrl || "default",
+            userId: user?.id || "anonymous",
+          }),
+        );
+      }
+    }, 50);
+  }, [socket]);
+
+  const throttledBroadcast = useCallback((latlng: L.LatLng) => {
+    if (throttledBroadcastRef.current) {
+      throttledBroadcastRef.current(latlng);
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (socket && socket.readyState === 1) {
+        const user = userRef.current.user;
+        try {
+          socket.send(
+            JSON.stringify({
+              type: "map-cursor-offline",
+              name: user?.firstName || "Anonymous",
+              userId: user?.id || "anonymous",
+            }),
+          );
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [socket]);
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
+  // Forecast selector state
+  const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay()); // 0=Sun
+  const [selectedHour, setSelectedHour] = useState<number>(
+    new Date().getHours(),
+  );
 
   // Memoized event handlers for all interactive markers to prevent react-leaflet
   // from removing and re-adding event listeners on every render.
@@ -420,16 +656,24 @@ const Map = ({
   };
 
   // Async load data context when layer UI toggles active
+  // Fetch heatmap points for selected day and hour (forecast)
   useEffect(() => {
-    fetch("/api/map/heatmap")
-      .then((res) => res.json())
-      .then((resData) => {
-        if (resData.success) {
-          setHeatmapPoints(resData.data);
-        }
-      })
-      .catch((err) => console.error("Could not populate heatmap context", err));
-  }, []);
+    // Debounce fetch to avoid rapid requests when sliding time
+    const timer = setTimeout(() => {
+      const url = `/api/map/forecast-heatmap?day=${selectedDay}&hour=${selectedHour}`;
+      fetch(url)
+        .then((res) => res.json())
+        .then((resData) => {
+          if (resData.success) {
+            setHeatmapPoints(resData.data);
+          }
+        })
+        .catch((err) =>
+          console.error("Could not populate forecast heatmap", err),
+        );
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [selectedDay, selectedHour]);
 
   useEffect(() => {
     fetch("/api/map/noise-heatmap")
@@ -533,7 +777,12 @@ const Map = ({
   }, [iconUrl]);
 
   const center: [number, number] = [latitude, longitude];
-
+  const tileUrl =
+    theme === "light"
+      ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+      : theme === "cyberpunk"
+        ? "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
   return (
     <>
       <style
@@ -637,7 +886,46 @@ const Map = ({
           display: flex;
           align-items: center;
           justify-content: center;
+        /* Animated User Cursors Presence styles */
+        .map-presence-marker {
+          transition: transform 0.08s linear;
           will-change: transform;
+          z-index: 1000 !important;
+        }
+        .map-cursor-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          position: relative;
+        }
+        .map-cursor-avatar {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background-size: cover;
+          background-position: center;
+          border: 2px solid #ef4444; /* Vibrant Red border for presence indicators */
+          box-shadow: 0 0 8px rgba(239, 68, 68, 0.5), 0 1px 4px rgba(0, 0, 0, 0.3);
+        }
+        .map-cursor-avatar-default {
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          background-color: #ef4444;
+          border: 2px solid white;
+          box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+        }
+        .map-cursor-label {
+          background-color: rgba(239, 68, 68, 0.9);
+          color: white;
+          font-size: 9px;
+          font-weight: bold;
+          padding: 1px 6px;
+          border-radius: 4px;
+          margin-top: 2px;
+          white-space: nowrap;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+          pointer-events: none;
         }
 
         /* Disable animation on reduced motion/low performance mode */
@@ -670,11 +958,28 @@ const Map = ({
         
         /* Floating toggle position above canvas layers */
         .map-noise-toggle {
-  position: absolute;
-  top: 68px;
-  right: 20px;
-  z-index: 1000;
-}
+          position: absolute;
+          top: 68px;
+          right: 20px;
+          z-index: 1000;
+        }
+        .map-forecast-controls {
+          position: absolute;
+          top: 120px;
+          right: 20px;
+          z-index: 1000;
+          background: rgba(24,24,27,0.9);
+          padding: 8px 12px;
+          border-radius: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          color: #f4f4f5;
+        }
+        .map-forecast-controls select,
+        .map-forecast-controls input[type="range"] {
+          width: 120px;
+        }
   .leaflet-control-scale {
   background: transparent;
 }
@@ -691,6 +996,8 @@ const Map = ({
       <MapContainer
         center={center}
         zoom={13}
+        maxZoom={18}
+        preferCanvas={true}
         style={{
           width: "95%",
           height: "95%",
@@ -699,12 +1006,43 @@ const Map = ({
         }}
       >
         <ScaleControl position="bottomleft" metric={true} imperial={false} />
+        {/* Forecast selector UI */}
+        <div className="map-forecast-controls">
+          <label htmlFor="day-select">Day</label>
+          <select
+            id="day-select"
+            value={selectedDay}
+            onChange={(e) => setSelectedDay(parseInt(e.target.value))}
+          >
+            <option value={0}>Sunday</option>
+            <option value={1}>Monday</option>
+            <option value={2}>Tuesday</option>
+            <option value={3}>Wednesday</option>
+            <option value={4}>Thursday</option>
+            <option value={5}>Friday</option>
+            <option value={6}>Saturday</option>
+          </select>
+          <label htmlFor="hour-range">Hour</label>
+          <input
+            id="hour-range"
+            type="range"
+            min={0}
+            max={23}
+            value={selectedHour}
+            onChange={(e) => setSelectedHour(parseInt(e.target.value))}
+          />
+          <span>{selectedHour}:00</span>
+        </div>
         <LayersControl position="topright">
           <LayersControl.BaseLayer checked name="OpenStreetMap">
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-              url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+              url={tileUrl}
               className="map-tiles-dark"
+              maxZoom={18}
+              maxNativeZoom={18}
+              keepBuffer={4}
+              updateWhenIdle={true}
             />
           </LayersControl.BaseLayer>
 
@@ -750,6 +1088,7 @@ const Map = ({
           onZoomStart={handleZoomStart}
         />
         <ResizeWatcher />
+        <WebGLContextWatcher />
 
         {customIcon && (
           <Marker
@@ -760,9 +1099,27 @@ const Map = ({
             keyboard={true}
             eventHandlers={markerEventHandlers}
           >
-            <Popup>You are here!</Popup>
+            <Popup
+              autoPanPaddingTopLeft={[20, 90]}
+              autoPanPaddingBottomRight={[20, 20]}
+            >
+              You are here!
+            </Popup>
           </Marker>
         )}
+        <MapEvents onMouseMove={throttledBroadcast} />
+        {Object.entries(mapCursors).map(([userId, cursor]) => {
+          const presenceIcon = createCursorIcon(cursor.avatar, cursor.name);
+          if (!presenceIcon) return null;
+          return (
+            <Marker
+              key={`presence-${userId}`}
+              position={[cursor.lat, cursor.lng]}
+              icon={presenceIcon}
+              interactive={false}
+            />
+          );
+        })}
         {spiderfiedMarkers.map((marker) => (
           <Marker
             key={marker.id}
@@ -773,7 +1130,10 @@ const Map = ({
             keyboard={true}
             eventHandlers={markerEventHandlers}
           >
-            <Popup>
+            <Popup
+              autoPanPaddingTopLeft={[20, 90]}
+              autoPanPaddingBottomRight={[20, 20]}
+            >
               <div className="text-sm">
                 <div className="font-semibold text-white">{marker.name}</div>
                 {marker.category && (
@@ -859,7 +1219,10 @@ const Map = ({
                 dashArray: travelProfile === "walking" ? "5, 10" : undefined, // Dotted path line if walking
               }}
             >
-              <Popup>
+              <Popup
+                autoPanPaddingTopLeft={[20, 90]}
+                autoPanPaddingBottomRight={[20, 20]}
+              >
                 <div className="text-sm text-white">
                   <div className="font-bold text-blue-400">
                     Optimized Hybrid Schedule

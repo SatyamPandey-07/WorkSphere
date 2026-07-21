@@ -132,9 +132,7 @@ self.onmessage = async (e: MessageEvent) => {
 
       const tensor = new ort.Tensor("float32", inputArray, [1, 24, 6]);
       const outputMap = await session.run({ input: tensor });
-      const predictions = Array.from(
-        outputMap.latency.data as Float32Array,
-      );
+      const predictions = Array.from(outputMap.latency.data as Float32Array);
       const packetLossPred = Array.from(
         outputMap.packet_loss.data as Float32Array,
       );
@@ -163,7 +161,7 @@ self.onmessage = async (e: MessageEvent) => {
       predictions: result,
       success: true,
     });
-  } catch (error) {
+  } catch {
     self.postMessage({
       venueId,
       predictions: heuristicPredict(telemetry),

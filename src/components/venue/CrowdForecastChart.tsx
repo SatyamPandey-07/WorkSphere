@@ -21,13 +21,14 @@ export function CrowdForecastChart({
     setLoading(true);
 
     // Mock historical 24h baseline telemetry
-    const historicalTelemetry = Array.from({ length: 24 }, (_, i) =>
-      Math.sin((i / 24) * Math.PI * 2 - Math.PI / 2) * 0.4 + 0.5
+    const historicalTelemetry = Array.from(
+      { length: 24 },
+      (_, i) => Math.sin((i / 24) * Math.PI * 2 - Math.PI / 2) * 0.4 + 0.5,
     );
 
     const worker = new Worker(
       new URL("../../workers/forecasting.worker.ts", import.meta.url),
-      { type: "module" }
+      { type: "module" },
     );
 
     // Message queue throttling: Delay the postMessage to avoid concurrent rapid lockups
@@ -55,8 +56,11 @@ export function CrowdForecastChart({
         // Fallback calculation if model file is not placed in public folder yet
         setPredictions(
           historicalTelemetry.map((val) =>
-            Math.min(100, Math.max(10, Math.round((val + weatherScore * 0.2) * 100)))
-          )
+            Math.min(
+              100,
+              Math.max(10, Math.round((val + weatherScore * 0.2) * 100)),
+            ),
+          ),
         );
       }
       setLoading(false);
@@ -82,13 +86,16 @@ export function CrowdForecastChart({
               Predictive Foot-Traffic (24h)
             </h4>
             <p className="text-[10px] text-zinc-500 flex items-center gap-1">
-              <Cpu className="w-3 h-3 text-emerald-400" /> ONNX WebAssembly Model (Client-Side)
+              <Cpu className="w-3 h-3 text-emerald-400" /> ONNX WebAssembly
+              Model (Client-Side)
             </p>
           </div>
         </div>
         <div className="flex items-center gap-1.5 text-xs font-mono text-purple-300 bg-purple-500/10 px-2 py-1 rounded-md border border-purple-500/20">
           <Users className="w-3.5 h-3.5" />
-          <span>Peak: {predictions.length ? `${Math.max(...predictions)}%` : "--"}</span>
+          <span>
+            Peak: {predictions.length ? `${Math.max(...predictions)}%` : "--"}
+          </span>
         </div>
       </div>
 
@@ -99,7 +106,10 @@ export function CrowdForecastChart({
       ) : (
         <div className="h-28 flex items-end gap-1 pt-4 px-1 border-b border-white/10">
           {predictions.map((value, hr) => (
-            <div key={hr} className="flex-1 flex flex-col items-center gap-1 group relative">
+            <div
+              key={hr}
+              className="flex-1 flex flex-col items-center gap-1 group relative"
+            >
               <div
                 className="w-full rounded-t-sm transition-all duration-300 bg-gradient-to-t from-purple-600/40 to-purple-400 group-hover:from-purple-500 group-hover:to-pink-400"
                 style={{ height: `${value}%` }}

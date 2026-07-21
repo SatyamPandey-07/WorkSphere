@@ -121,7 +121,7 @@ export function resolveRegion(geo: GeoLocation): Region {
 }
 
 export function extractGeoFromHeaders(
-  headers: Headers,
+  headers: { get(name: string): string | null } | Headers,
 ): GeoLocation | null {
   const country =
     headers.get("cf-ipcountry") ??
@@ -129,8 +129,7 @@ export function extractGeoFromHeaders(
     headers.get("x-country-code");
 
   const continent =
-    headers.get("cf-ipcontinent") ??
-    headers.get("x-vercel-ip-continent");
+    headers.get("cf-ipcontinent") ?? headers.get("x-vercel-ip-continent");
 
   if (!country) return null;
 

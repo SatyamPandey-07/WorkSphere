@@ -213,6 +213,9 @@ self.addEventListener("sync", (event) => {
   if (event.tag === "sync-conversations") {
     event.waitUntil(syncConversations());
   }
+  if (event.tag === "receipt-export-sync") {
+    event.waitUntil(syncReceiptExports());
+  }
 });
 
 // Helper to convert Uint8Array to base64 for fetch
@@ -398,11 +401,126 @@ async function syncConversations() {
   }
 }
 
+let isSyncingReceipts = false;
+async function syncReceiptExports() {
+  if (isSyncingReceipts) return;
+  isSyncingReceipts = true;
+
+  try {
+    const db = await openIndexedDB();
+    const tx = db.transaction("receiptExports", "readonly");
+    const store = tx.objectStore("receiptExports");
+    const jobs = await new Promise((resolve, reject) => {
+      const req = store.getAll();
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result || []);
+    });
+
+    const pendingJobs = jobs.filter(
+      (j) => j.status === "pending" || j.status === "downloading",
+    );
+
+    for (const job of pendingJobs) {
+      try {
+        const downloadUrl = `/api/bookings/${job.bookingId}/download`;
+        const response = await fetch(downloadUrl);
+
+        if (response.ok) {
+          const pdfArrayBuffer = await response.arrayBuffer();
+
+          // Store PDF ArrayBuffer and mark status ready in IndexedDB
+          const writeTx = db.transaction("receiptExports", "readwrite");
+          const writeStore = writeTx.objectStore("receiptExports");
+          writeStore.put({
+            ...job,
+            status: "ready",
+            pdf: pdfArrayBuffer,
+            downloadedAt: Date.now(),
+          });
+
+          await new Promise((res, rej) => {
+            writeTx.oncomplete = res;
+            writeTx.onerror = () => rej(writeTx.error);
+          });
+
+          // Show Notification
+          if (self.registration && "showNotification" in self.registration) {
+            await self.registration.showNotification("Receipt ready", {
+              body: "Your booking receipt has been downloaded.",
+              icon: "/icons/icon.svg",
+              badge: "/icons/icon.svg",
+              tag: `receipt-ready-${job.bookingId}`,
+              data: {
+                url: `/api/bookings/${job.bookingId}/download`,
+                bookingId: job.bookingId,
+              },
+            });
+          }
+
+          // Notify all open window clients via postMessage to trigger automatic download/save
+          const windowClients = await self.clients.matchAll({
+            type: "window",
+            includeUncontrolled: true,
+          });
+
+          for (const client of windowClients) {
+            client.postMessage({
+              type: "RECEIPT_SYNC_READY",
+              bookingId: job.bookingId,
+              filename: job.filename,
+            });
+          }
+        } else {
+          throw new Error(
+            `Receipt fetch failed with status ${response.status}`,
+          );
+        }
+      } catch (err) {
+        console.error(`[SW] Failed to sync receipt for ${job.bookingId}:`, err);
+        const retryCount = (job.retryCount || 0) + 1;
+        const maxRetries = 3;
+        const newStatus = retryCount >= maxRetries ? "failed" : "pending";
+
+        const writeTx = db.transaction("receiptExports", "readwrite");
+        const writeStore = writeTx.objectStore("receiptExports");
+        writeStore.put({
+          ...job,
+          retryCount,
+          status: newStatus,
+        });
+
+        await new Promise((res) => {
+          writeTx.oncomplete = res;
+          writeTx.onerror = res;
+        });
+
+        if (newStatus === "failed") {
+          const windowClients = await self.clients.matchAll({
+            type: "window",
+            includeUncontrolled: true,
+          });
+          for (const client of windowClients) {
+            client.postMessage({
+              type: "RECEIPT_SYNC_FAILED",
+              bookingId: job.bookingId,
+              attempts: retryCount,
+            });
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("[SW] Sync receipt exports failed:", error);
+  } finally {
+    isSyncingReceipts = false;
+  }
+}
+
 // IndexedDB helpers
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
     try {
-      const request = indexedDB.open("worksphere-offline", 4);
+      const request = indexedDB.open("worksphere-offline", 5);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
@@ -457,6 +575,15 @@ function openIndexedDB() {
             unique: false,
           });
         }
+
+        // Receipt exports store for offline background sync (Issue #1069)
+        if (!db.objectStoreNames.contains("receiptExports")) {
+          const receiptStore = db.createObjectStore("receiptExports", {
+            keyPath: "bookingId",
+          });
+          receiptStore.createIndex("status", "status", { unique: false });
+          receiptStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
       };
     } catch (err) {
       reject(err);
@@ -497,14 +624,25 @@ function removePendingAction(db, typeOrId, id) {
 self.addEventListener("push", (event) => {
   if (!event.data) return;
 
-  const data = event.data.json();
+  let data;
+  try {
+    data = event.data.json();
+  } catch {
+    data = { title: "WorkSphere", body: event.data.text() };
+  }
+
+  const isAvailability = data.tag?.startsWith("venue-availability-");
   const options = {
     body: data.body || "New update from WorkSphere",
-    icon: "/icons/icon.svg",
-    badge: "/icons/icon.svg",
-    vibrate: [100, 50, 100],
+    icon: data.icon || "/icons/icon.svg",
+    badge: data.badge || "/icons/icon.svg",
+    vibrate: isAvailability ? [200, 100, 200, 100, 200] : [100, 50, 100],
+    tag: data.tag || "worksphere-notification",
+    renotify: true,
+    requireInteraction: isAvailability,
     data: {
       url: data.url || "/",
+      ...(data.data || {}),
     },
     actions: [
       { action: "open", title: "Open" },
@@ -517,27 +655,33 @@ self.addEventListener("push", (event) => {
   );
 });
 
-// Notification click handler
+// Notification click handler — navigate to the target venue page
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
   if (event.action === "dismiss") return;
 
-  const url = event.notification.data?.url || "/";
+  const targetUrl = event.notification.data?.url || "/";
+  const fullUrl = new URL(targetUrl, self.location.origin).href;
 
   event.waitUntil(
     clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((windowClients) => {
-        // Focus existing window if available
         for (const client of windowClients) {
-          if (client.url === url && "focus" in client) {
+          if (
+            client.url.includes(new URL(fullUrl).pathname) &&
+            "focus" in client
+          ) {
+            client.postMessage({
+              type: "NAVIGATE_PUSH",
+              url: fullUrl,
+            });
             return client.focus();
           }
         }
-        // Open new window
         if (clients.openWindow) {
-          return clients.openWindow(url);
+          return clients.openWindow(fullUrl);
         }
       }),
   );
@@ -606,6 +750,15 @@ async function syncFavoritesOutbox() {
           throw new Error(`Sync request failed with status ${response.status}`);
         } catch (error) {
           console.error("Failed to sync favorite:", error);
+
+          if (
+            typeof self !== "undefined" &&
+            self.navigator &&
+            !self.navigator.onLine
+          ) {
+            console.warn("[SW] Offline network error; preserving outbox item.");
+            break;
+          }
 
           const attempts = await incrementRetryCount(action.id);
 

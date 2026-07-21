@@ -1,8 +1,6 @@
 "use client";
 
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -11,10 +9,9 @@ import {
   ReferenceLine,
   Area,
   AreaChart,
-  Legend,
 } from "recharts";
 import { Wifi, Clock, TrendingUp, AlertTriangle } from "lucide-react";
-import { useWiFiLatency, type WiFiLatencyPrediction } from "@/hooks/useWiFiLatency";
+import { useWiFiLatency } from "@/hooks/useWiFiLatency";
 
 interface WiFiLatencyForecastProps {
   venueId: string;
@@ -30,12 +27,6 @@ function formatHour(hour: number): string {
   const h = hour % 12 || 12;
   const ampm = hour < 12 ? "a" : "p";
   return `${h}${ampm}`;
-}
-
-function getLatencyColor(latency: number): string {
-  if (latency < 25) return "#10b981";
-  if (latency < 50) return "#f59e0b";
-  return "#f43f5e";
 }
 
 function getLatencyQuality(latency: number): {
@@ -67,7 +58,9 @@ function CustomTooltip({
         <div key={i} className="flex items-center gap-2 text-xs">
           <span
             className="w-2 h-2 rounded-full"
-            style={{ backgroundColor: entry.name === "latency" ? "#3b82f6" : "#f59e0b" }}
+            style={{
+              backgroundColor: entry.name === "latency" ? "#3b82f6" : "#f59e0b",
+            }}
           />
           <span className="text-zinc-400 capitalize">{entry.name}:</span>
           <span className="font-bold text-white">
@@ -142,9 +135,7 @@ export function WiFiLatencyForecast({
           </p>
         </div>
         <div className="flex items-center gap-1.5">
-          <span
-            className={`text-xs font-black ${quality.color}`}
-          >
+          <span className={`text-xs font-black ${quality.color}`}>
             {quality.label}
           </span>
           <span className="text-[10px] text-zinc-400">

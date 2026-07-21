@@ -137,3 +137,50 @@ describe("ChatInput Recent Searches", () => {
     expect(screen.queryByText("Recent Searches")).not.toBeInTheDocument();
   });
 });
+
+describe("ChatInput keyboard inset", () => {
+  const listeners: Record<string, Array<() => void>> = {};
+
+  beforeEach(() => {
+    Object.keys(listeners).forEach((k) => delete listeners[k]);
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 800,
+    });
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: {
+        height: 500,
+        offsetTop: 0,
+        addEventListener: (type: string, cb: () => void) => {
+          listeners[type] = listeners[type] || [];
+          listeners[type].push(cb);
+        },
+        removeEventListener: (type: string, cb: () => void) => {
+          listeners[type] = (listeners[type] || []).filter((fn) => fn !== cb);
+        },
+      },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "visualViewport", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+
+  it("pads the composer when the visual viewport shrinks", () => {
+    const { container } = render(
+      <ChatInput
+        input=""
+        isLoading={false}
+        onInputChange={jest.fn()}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    const wrap = container.firstChild as HTMLElement;
+    expect(wrap.style.paddingBottom).toContain("300px");
+  });
+});

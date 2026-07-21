@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser as useClerkUser } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import {
   MapPin,
   Star,
@@ -20,28 +20,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-// Mock useUser for local development bypass if dummy keys are used
-const useUser = () => {
-  const isDummy =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ===
-    "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const clerkUser = !isDummy ? useClerkUser() : null;
-
-  if (isDummy) {
-    return {
-      isLoaded: true,
-      isSignedIn: true,
-      user: {
-        firstName: "Nomad",
-        lastName: "Scout",
-        imageUrl: undefined as string | undefined,
-        emailAddresses: [{ emailAddress: "nomad.scout@worksphere.dev" }],
-      },
-    };
-  }
-  return clerkUser || { isLoaded: false, isSignedIn: false, user: null };
-};
 
 interface Badge {
   id: string;
@@ -103,139 +81,6 @@ export default function AnalyticsDashboard() {
   const fetchUserStats = async () => {
     setLoading(true);
     try {
-      if (
-        process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ===
-        "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk"
-      ) {
-        const mockData: UserAnalytics = {
-          profile: {
-            id: "user_2test_dummy_id_12345",
-            email: "nomad.scout@worksphere.dev",
-            firstName: "Nomad",
-            lastName: "Scout",
-            joinedAt: new Date().toISOString(),
-          },
-          summary: {
-            totalResidencies: 8,
-            totalFavorites: 4,
-            totalRatings: 5,
-            totalConversations: 12,
-          },
-          history: {
-            bookings: [
-              {
-                id: "booking_1",
-                confirmationId: "WS-LEDGER-992A",
-                date: "2026-07-10",
-                time: "14:00 - 18:00",
-                status: "CONFIRMED",
-                venue: {
-                  name: "Cyber Cafe Oasis",
-                  category: "cafe",
-                  address: "128 Neon Blvd, Sector 7",
-                  latitude: 37.7749,
-                  longitude: -122.4194,
-                },
-              },
-              {
-                id: "booking_2",
-                confirmationId: "WS-LEDGER-881B",
-                date: "2026-07-09",
-                time: "09:00 - 17:00",
-                status: "CONFIRMED",
-                venue: {
-                  name: "Prism Coworking",
-                  category: "coworking",
-                  address: "456 Spectrum Way",
-                  latitude: 37.7858,
-                  longitude: -122.4008,
-                },
-              },
-            ],
-            favorites: [
-              {
-                id: "fav_1",
-                venue: {
-                  name: "Cyber Cafe Oasis",
-                  category: "cafe",
-                },
-              },
-              {
-                id: "fav_2",
-                venue: {
-                  name: "The Grid Library",
-                  category: "library",
-                },
-              },
-            ],
-            ratings: [
-              {
-                id: "rating_1",
-                venue: {
-                  name: "Cyber Cafe Oasis",
-                },
-                comment: "Great gigabit connection!",
-                wifiQuality: 5,
-                hasOutlets: true,
-                noiseLevel: "quiet",
-                createdAt: new Date().toISOString(),
-              },
-            ],
-          },
-          gamification: {
-            level: 3,
-            xp: 350,
-            xpInCurrentLevel: 50,
-            xpForNextLevel: 300,
-            progressPercent: 17,
-            xpBreakdown: {
-              reviewsXp: 150,
-              venuesXp: 100,
-              speedtestsXp: 100,
-            },
-            stats: {
-              reviewsCount: 3,
-              venuesAddedCount: 1,
-              speedtestsCount: 2,
-              uniqueCafesBooked: 2,
-              nightOwlReviewsCount: 1,
-            },
-            badges: [
-              {
-                id: "wifi_scout",
-                name: "WiFi Scout",
-                description: "Verified 3+ venue speedtests.",
-                earned: false,
-                progress: 2,
-                target: 3,
-                icon: "wifi",
-              },
-              {
-                id: "cafe_nomad",
-                name: "Cafe Nomad",
-                description: "Checked in/booked at 5 different cafes.",
-                earned: false,
-                progress: 2,
-                target: 5,
-                icon: "cafe",
-              },
-              {
-                id: "night_owl",
-                name: "Night Owl",
-                description: "Left reviews at venues after 9 PM.",
-                earned: true,
-                progress: 1,
-                target: 1,
-                icon: "moon",
-              },
-            ],
-          },
-        };
-        setData(mockData);
-        setLoading(false);
-        return;
-      }
-
       const res = await fetch("/api/analytics");
       const json = await res.json();
       setData(json);
@@ -261,7 +106,7 @@ export default function AnalyticsDashboard() {
       if (!res.ok) {
         throw new Error("Failed to fetch receipt");
       }
-      
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

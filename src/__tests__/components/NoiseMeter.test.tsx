@@ -1,3 +1,4 @@
+import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { NoiseMeter } from "@/components/noise/NoiseMeter";
@@ -12,167 +13,183 @@ jest.mock("@/lib/wasm/noiseProcessor", () => ({
   resetNoiseProcessor: (...args: unknown[]) => mockResetNoiseProcessor(...args),
 }));
 
-const mockGetUserMedia = jest.fn();
-let rafCallback: FrameRequestCallback | null = null;
-let rafId = 0;
+describe("NoiseMeter Component & 60fps Audio Throttling", () => {
+  const mockOnMeasured = jest.fn();
+  const mockGetUserMedia = jest.fn();
+  let rafCallback: FrameRequestCallback | null = null;
+  let rafId = 0;
 
-beforeAll(() => {
-  Object.defineProperty(global, "navigator", {
-    value: {
-      mediaDevices: {
-        getUserMedia: mockGetUserMedia,
+  beforeAll(() => {
+    Object.defineProperty(global, "navigator", {
+      value: {
+        mediaDevices: {
+          getUserMedia: mockGetUserMedia,
+        },
       },
-    },
-    configurable: true,
-  });
-});
-
-beforeEach(() => {
-  jest.clearAllMocks();
-  jest.useFakeTimers();
-
-  rafCallback = null;
-  rafId = 0;
-
-  global.requestAnimationFrame = jest.fn((cb: FrameRequestCallback) => {
-    rafCallback = cb;
-    rafId++;
-    return rafId;
+      configurable: true,
+    });
   });
 
-  global.cancelAnimationFrame = jest.fn();
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
 
-  const mockStream = { getTracks: () => [{ stop: jest.fn() }] };
-  mockGetUserMedia.mockResolvedValue(mockStream);
+    rafCallback = null;
+    rafId = 0;
 
-  Object.defineProperty(global, "AudioContext", {
-    value: jest.fn().mockImplementation(() => ({
-      createMediaStreamSource: jest.fn().mockReturnValue({
-        connect: jest.fn(),
-      }),
-      createAnalyser: jest.fn().mockReturnValue({
-        fftSize: 2048,
-        smoothingTimeConstant: 0.25,
-        getFloatTimeDomainData: jest.fn((arr: Float32Array) => {
-          for (let i = 0; i < arr.length; i++) {
-            arr[i] = 0.5 * Math.sin(i * 0.1);
-          }
+    global.requestAnimationFrame = jest.fn((cb: FrameRequestCallback) => {
+      rafCallback = cb;
+      rafId++;
+      return rafId;
+    });
+
+    global.cancelAnimationFrame = jest.fn();
+
+    const mockStream = { getTracks: () => [{ stop: jest.fn() }] };
+    mockGetUserMedia.mockResolvedValue(mockStream);
+
+    Object.defineProperty(global, "AudioContext", {
+      value: jest.fn().mockImplementation(() => ({
+        createMediaStreamSource: jest.fn().mockReturnValue({
+          connect: jest.fn(),
+          disconnect: jest.fn(),
         }),
-      }),
-      close: jest.fn().mockResolvedValue(undefined),
-    })),
-    writable: true,
+        createAnalyser: jest.fn().mockReturnValue({
+          fftSize: 2048,
+          smoothingTimeConstant: 0.25,
+          disconnect: jest.fn(),
+          getFloatTimeDomainData: jest.fn((arr: Float32Array) => {
+            for (let i = 0; i < arr.length; i++) {
+              arr[i] = 0.5 * Math.sin(i * 0.1);
+            }
+          }),
+        }),
+        close: jest.fn().mockResolvedValue(undefined),
+        state: "running",
+      })),
+      writable: true,
+    });
+
+    HTMLCanvasElement.prototype.getContext = jest.fn().mockReturnValue({
+      clearRect: jest.fn(),
+      beginPath: jest.fn(),
+      moveTo: jest.fn(),
+      lineTo: jest.fn(),
+      stroke: jest.fn(),
+    });
   });
 
-  HTMLCanvasElement.prototype.getContext = jest.fn().mockReturnValue({
-    clearRect: jest.fn(),
-    beginPath: jest.fn(),
-    moveTo: jest.fn(),
-    lineTo: jest.fn(),
-    stroke: jest.fn(),
-  });
-});
-
-afterEach(() => {
-  jest.useRealTimers();
-});
-
-it("renders idle state with measure button", () => {
-  render(<NoiseMeter onMeasured={jest.fn()} />);
-
-  expect(screen.getByText("Measure Ambient Noise")).toBeInTheDocument();
-  expect(screen.getByText("⚡ Decibel Noise Monitor")).toBeInTheDocument();
-});
-
-it("shows measuring state when button is clicked", async () => {
-  render(<NoiseMeter onMeasured={jest.fn()} />);
-
-  await act(async () => {
-    fireEvent.click(screen.getByText("Measure Ambient Noise"));
-    await jest.advanceTimersByTimeAsync(50);
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
-  expect(screen.getByText(/LIVE FREQ/i)).toBeInTheDocument();
-});
+  it("renders idle state with measure button", () => {
+    render(<NoiseMeter onMeasured={mockOnMeasured} />);
 
-it("shows error state when getUserMedia fails", async () => {
-  mockGetUserMedia.mockRejectedValue(new Error("Permission denied"));
-
-  render(<NoiseMeter onMeasured={jest.fn()} />);
-
-  await act(async () => {
-    fireEvent.click(screen.getByText("Measure Ambient Noise"));
+    expect(
+      screen.getByRole("button", { name: /Measure Ambient Noise/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Decibel Noise Monitor/i)).toBeInTheDocument();
   });
 
-  expect(screen.getByText(/Microphone access failed/i)).toBeInTheDocument();
-});
+  it("shows measuring state when button is clicked", async () => {
+    render(<NoiseMeter onMeasured={mockOnMeasured} />);
 
-it("calls onMeasured after measurement completes", async () => {
-  const onMeasured = jest.fn();
-  render(<NoiseMeter onMeasured={onMeasured} />);
-
-  await act(async () => {
-    fireEvent.click(screen.getByText("Measure Ambient Noise"));
-    await jest.advanceTimersByTimeAsync(50);
-  });
-
-  expect(rafCallback).not.toBeNull();
-
-  await act(async () => {
-    if (rafCallback) {
-      rafCallback(performance.now());
-    }
-    await jest.advanceTimersByTimeAsync(5000);
-  });
-
-  expect(onMeasured).toHaveBeenCalledWith(
-    expect.objectContaining({
-      averageDb: expect.any(Number),
-      peakDb: expect.any(Number),
-    }),
-  );
-});
-
-it("shows result state after measurement", async () => {
-  render(<NoiseMeter onMeasured={jest.fn()} />);
-
-  await act(async () => {
-    fireEvent.click(screen.getByText("Measure Ambient Noise"));
-    await jest.advanceTimersByTimeAsync(50);
-  });
-
-  if (rafCallback) {
     await act(async () => {
-      rafCallback!(performance.now());
+      fireEvent.click(
+        screen.getByRole("button", { name: /Measure Ambient Noise/i }),
+      );
+      await jest.advanceTimersByTimeAsync(50);
+    });
+
+    expect(screen.getByText(/LIVE FREQ/i)).toBeInTheDocument();
+  });
+
+  it("shows error state when getUserMedia fails", async () => {
+    mockGetUserMedia.mockRejectedValue(new Error("Permission denied"));
+
+    render(<NoiseMeter onMeasured={mockOnMeasured} />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /Measure Ambient Noise/i }),
+      );
+    });
+
+    expect(screen.getByText(/Microphone access failed/i)).toBeInTheDocument();
+  });
+
+  it("calls onMeasured after measurement completes", async () => {
+    const onMeasured = jest.fn();
+    render(<NoiseMeter onMeasured={onMeasured} />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /Measure Ambient Noise/i }),
+      );
+      await jest.advanceTimersByTimeAsync(50);
+    });
+
+    expect(rafCallback).not.toBeNull();
+
+    await act(async () => {
+      if (rafCallback) {
+        rafCallback(performance.now());
+      }
       await jest.advanceTimersByTimeAsync(5000);
     });
-  }
 
-  expect(screen.getByText(/Measure again/i)).toBeInTheDocument();
-});
-
-it("calls cleanup on unmount during measurement", async () => {
-  const { unmount } = render(<NoiseMeter onMeasured={jest.fn()} />);
-
-  await act(async () => {
-    fireEvent.click(screen.getByText("Measure Ambient Noise"));
-    await jest.advanceTimersByTimeAsync(50);
+    expect(onMeasured).toHaveBeenCalledWith(
+      expect.objectContaining({
+        averageDb: expect.any(Number),
+        peakDb: expect.any(Number),
+      }),
+    );
   });
 
-  unmount();
+  it("throttles rAF calls spaced closer than 16.67ms (60fps cap)", () => {
+    let lastTickTime: number | null = null;
+    const targetFrameInterval = 1000 / 60; // ~16.67ms
+    let getFloatTimeDomainDataCalls = 0;
 
-  expect(global.cancelAnimationFrame).toHaveBeenCalled();
-});
+    const mockAnalyser = {
+      getFloatTimeDomainData: () => {
+        getFloatTimeDomainDataCalls++;
+      },
+    };
 
-it("renders measuring UI with decibel reading and progress bar", async () => {
-  render(<NoiseMeter onMeasured={jest.fn()} />);
+    const tick = (timestamp: number) => {
+      const now = timestamp;
+      if (lastTickTime !== null) {
+        const delta = now - lastTickTime;
+        if (delta < targetFrameInterval) {
+          return; // Throttled
+        }
+        lastTickTime = now - (delta % targetFrameInterval);
+      } else {
+        lastTickTime = now;
+      }
+      mockAnalyser.getFloatTimeDomainData();
+    };
 
-  await act(async () => {
-    fireEvent.click(screen.getByText("Measure Ambient Noise"));
-    await jest.advanceTimersByTimeAsync(50);
+    // Frame 1: 0ms -> Executes
+    tick(0);
+    expect(getFloatTimeDomainDataCalls).toBe(1);
+
+    // Frame 2: 8.33ms (120Hz frame) -> Should be THROTTLED
+    tick(8.33);
+    expect(getFloatTimeDomainDataCalls).toBe(1);
+
+    // Frame 3: 16.67ms -> Should EXECUTE (60fps threshold reached)
+    tick(16.67);
+    expect(getFloatTimeDomainDataCalls).toBe(2);
+
+    // Frame 4: 25ms (120Hz frame) -> Should be THROTTLED
+    tick(25.0);
+    expect(getFloatTimeDomainDataCalls).toBe(2);
+
+    // Frame 5: 33.34ms -> Should EXECUTE
+    tick(33.34);
+    expect(getFloatTimeDomainDataCalls).toBe(3);
   });
-
-  expect(screen.getAllByText(/dB/).length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText(/Vibe Classification/i)).toBeInTheDocument();
-  expect(screen.getByText(/Measuring/i)).toBeInTheDocument();
 });

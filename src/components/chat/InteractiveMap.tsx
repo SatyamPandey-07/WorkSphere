@@ -126,7 +126,10 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
             keyboard={true}
             eventHandlers={markerEventHandlers}
           >
-            <Popup>
+            <Popup
+              autoPanPaddingTopLeft={[20, 90]}
+              autoPanPaddingBottomRight={[20, 20]}
+            >
               <div className="font-bold text-sm">{marker.name}</div>
               <div className="text-xs text-gray-500 capitalize">
                 {marker.category?.replace("_", " ")}

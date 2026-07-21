@@ -20,7 +20,32 @@ userDoc.on("update", async (update: Uint8Array) => {
 });
 
 const DB_NAME = "worksphere-offline";
-const DB_VERSION = 2;
+const DB_VERSION = 4;
+
+const IDB_STORAGE_LOCK = "worksphere-offline-storage-lock";
+
+/**
+ * Web Locks API wrapper to serialize IndexedDB transactions across concurrent tabs (#910)
+ */
+export async function withWebLock<T>(
+  callback: () => Promise<T>,
+  lockName = IDB_STORAGE_LOCK,
+): Promise<T> {
+  if (
+    typeof navigator !== "undefined" &&
+    "locks" in navigator &&
+    navigator.locks?.request
+  ) {
+    try {
+      return await navigator.locks.request(lockName, async () => {
+        return callback();
+      });
+    } catch {
+      return callback();
+    }
+  }
+  return callback();
+}
 
 export interface OfflineVenue {
   id: string;
@@ -117,6 +142,15 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
           });
         }
 
+        // Receipt exports store for offline background sync (Issue #1069)
+        if (!database.objectStoreNames.contains("receiptExports")) {
+          const receiptStore = database.createObjectStore("receiptExports", {
+            keyPath: "bookingId",
+          });
+          receiptStore.createIndex("status", "status", { unique: false });
+          receiptStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
         console.log("[OfflineDB] Database schema created");
       };
     } catch (err: any) {
@@ -133,19 +167,21 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
  * Save venue to offline storage
  */
 export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["venues"], "readwrite");
-    const store = transaction.objectStore("venues");
+    return new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["venues"], "readwrite");
+      const store = transaction.objectStore("venues");
 
-    const request = store.put({
-      ...venue,
-      savedAt: Date.now(),
+      const request = store.put({
+        ...venue,
+        savedAt: Date.now(),
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
     });
-
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
   });
 }
 
@@ -189,23 +225,25 @@ export async function getAllVenuesOffline(): Promise<OfflineVenue[]> {
  * Save favorite to offline storage
  */
 export async function saveFavoriteOffline(venue: OfflineVenue): Promise<void> {
-  // 1. Update CRDT state (triggers userDoc.on('update') automatically)
-  yFavorites.set(venue.id, venue);
+  return withWebLock(async () => {
+    // 1. Update CRDT state (triggers userDoc.on('update') automatically)
+    yFavorites.set(venue.id, venue);
 
-  // 2. Update local IndexedDB for immediate UI reads
-  const database = await initOfflineDB();
+    // 2. Update local IndexedDB for immediate UI reads
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["favorites"], "readwrite");
-    const store = transaction.objectStore("favorites");
+    return new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["favorites"], "readwrite");
+      const store = transaction.objectStore("favorites");
 
-    const request = store.put({
-      ...venue,
-      savedAt: Date.now(),
+      const request = store.put({
+        ...venue,
+        savedAt: Date.now(),
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
     });
-
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
   });
 }
 
@@ -213,20 +251,22 @@ export async function saveFavoriteOffline(venue: OfflineVenue): Promise<void> {
  * Remove favorite from offline storage
  */
 export async function removeFavoriteOffline(id: string): Promise<void> {
-  // 1. Update CRDT state
-  yFavorites.delete(id);
+  return withWebLock(async () => {
+    // 1. Update CRDT state
+    yFavorites.delete(id);
 
-  // 2. Update local IndexedDB
-  const database = await initOfflineDB();
+    // 2. Update local IndexedDB
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["favorites"], "readwrite");
-    const store = transaction.objectStore("favorites");
+    return new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["favorites"], "readwrite");
+      const store = transaction.objectStore("favorites");
 
-    const request = store.delete(id);
+      const request = store.delete(id);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
   });
 }
 
@@ -697,4 +737,110 @@ export async function cleanupOldData(
       cursor.continue();
     }
   };
+}
+
+/**
+ * Offline Receipt Sync Queue & Storage Helpers (Issue #1069)
+ */
+
+export interface QueuedReceiptJob {
+  bookingId: string;
+  filename: string;
+  createdAt: number;
+  retryCount: number;
+  status: "pending" | "downloading" | "ready" | "failed";
+  pdf?: ArrayBuffer;
+}
+
+export async function queueOfflineReceipt(
+  bookingId: string,
+  filename?: string,
+): Promise<void> {
+  const database = await initOfflineDB();
+  const name =
+    filename || `WorkSphere_Receipt_${bookingId.slice(-6).toUpperCase()}.pdf`;
+
+  await new Promise<void>((resolve, reject) => {
+    const tx = database.transaction(["receiptExports"], "readwrite");
+    const store = tx.objectStore("receiptExports");
+
+    const getReq = store.get(bookingId);
+    getReq.onsuccess = () => {
+      const existing = getReq.result as QueuedReceiptJob | undefined;
+      const job: QueuedReceiptJob = {
+        bookingId,
+        filename: name,
+        createdAt: existing?.createdAt || Date.now(),
+        retryCount: existing?.retryCount || 0,
+        status: existing?.status === "ready" ? "ready" : "pending",
+        pdf: existing?.pdf,
+      };
+
+      const putReq = store.put(job);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+
+  // Register background sync if Service Worker is available
+  if ("serviceWorker" in navigator && "SyncManager" in window) {
+    try {
+      const swRegistration = await navigator.serviceWorker.ready;
+      await (swRegistration as any).sync.register("receipt-export-sync");
+    } catch (err) {
+      console.error("Background Sync registration failed for receipt:", err);
+    }
+  }
+}
+
+export async function getQueuedReceiptJobs(): Promise<QueuedReceiptJob[]> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(["receiptExports"], "readonly");
+    const store = tx.objectStore("receiptExports");
+    const req = store.getAll();
+
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function updateReceiptJob(
+  job: Partial<QueuedReceiptJob> & { bookingId: string },
+): Promise<void> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(["receiptExports"], "readwrite");
+    const store = tx.objectStore("receiptExports");
+
+    const getReq = store.get(job.bookingId);
+    getReq.onsuccess = () => {
+      const existing = getReq.result as QueuedReceiptJob | undefined;
+      if (!existing) {
+        resolve();
+        return;
+      }
+      const updated: QueuedReceiptJob = { ...existing, ...job };
+      const putReq = store.put(updated);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+export async function removeReceiptJob(bookingId: string): Promise<void> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const tx = database.transaction(["receiptExports"], "readwrite");
+    const store = tx.objectStore("receiptExports");
+    const req = store.delete(bookingId);
+
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
 }

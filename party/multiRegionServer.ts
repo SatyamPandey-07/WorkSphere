@@ -239,6 +239,24 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
       }
 
       if (
+        parsed.type === "request_room_snapshot" ||
+        parsed.type === "request_snapshot"
+      ) {
+        const snapshotId = parsed.snapshotId || `snap-${Date.now()}`;
+        sender.send(
+          JSON.stringify({
+            type: "room_snapshot_response",
+            roomId: this.room.id,
+            snapshotId,
+            timestamp: Date.now(),
+            seats: this.seatSummary(),
+            presence: this.stateSync.serializeState(),
+          }),
+        );
+        return;
+      }
+
+      if (
         parsed.type === "seat_checkin" &&
         typeof parsed.venueId === "string"
       ) {

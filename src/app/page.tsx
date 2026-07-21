@@ -20,7 +20,7 @@ import {
   BarChart3,
   ArrowUp,
 } from "lucide-react";
-import { Show } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/site-footer";
 import { TopNav } from "@/components/TopNav";
@@ -29,6 +29,8 @@ import FAQAccordion from "@/components/ui/FAQAccordion";
 export default function Home() {
   const [isVisible, setIsVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
+
+  const { isSignedIn } = useUser();
 
   useEffect(() => {
     setIsVisible(true);
@@ -59,8 +61,7 @@ export default function Home() {
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:60px_60px]" />
       </div>
       {/* doubling up in production  */}
-      <TopNav/>
-
+      <TopNav />
 
       {/* Hero */}
       <main className="container mx-auto px-4">
@@ -113,23 +114,27 @@ export default function Home() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Show when="signed-out">
-              <Link
-                href="/sign-up"
-                className="group px-8 py-4 rounded-2xl accent-bg text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
-              >
-                Start for Free
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </Link>
-              <a
-                href="#features"
-                className="px-8 py-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-zinc-800 dark:text-white/80 font-semibold text-base hover:bg-zinc-50 hover:border-zinc-300 dark:hover:bg-white/10 dark:hover:border-white/20 transition-all backdrop-blur-sm shadow-sm dark:shadow-none"
-              >
-                See Features
-              </a>
-            </Show>
-
-            <Show when="signed-in">
+            {!isSignedIn ? (
+              <>
+                <Link
+                  href="/sign-up"
+                  className="group px-8 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(to right, #2563eb, #7c3aed)",
+                  }}
+                >
+                  Start for Free
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </Link>
+                <a
+                  href="#features"
+                  className="px-8 py-4 rounded-2xl border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-zinc-800 dark:text-white/80 font-semibold text-base hover:bg-zinc-50 hover:border-zinc-300 dark:hover:bg-white/10 dark:hover:border-white/20 transition-all backdrop-blur-sm shadow-sm dark:shadow-none"
+                >
+                  See Features
+                </a>
+              </>
+            ) : (
               <Link
                 href="/ai"
                 className="group px-8 py-4 rounded-2xl accent-bg text-white font-semibold text-base hover:shadow-2xl hover:shadow-blue-500/30 transition-all hover:scale-105 flex items-center justify-center gap-2"
@@ -137,7 +142,7 @@ export default function Home() {
                 Open Dashboard
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Link>
-            </Show>
+            )}
           </div>
 
           <p className="mt-6 text-xs text-zinc-500 dark:text-white/30 md:hidden flex items-center justify-center gap-1.5">

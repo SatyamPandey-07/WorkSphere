@@ -1,8 +1,28 @@
-import { rateLimit, getRateLimitInfo, resetRateLimit } from "@/lib/rateLimit";
+const mockEval = jest.fn();
+
+jest.mock("@upstash/redis", () => ({
+  Redis: jest.fn().mockImplementation(() => ({
+    createScript: () => ({
+      eval: (...args: unknown[]) => mockEval(...args),
+    }),
+  })),
+}));
+
+import {
+  rateLimit,
+  getRateLimitInfo,
+  resetRateLimit,
+  resetRedisScripts,
+  microTimestampMember,
+} from "@/lib/rateLimit";
 
 describe("Rate Limiting", () => {
   beforeEach(() => {
     resetRateLimit();
+    resetRedisScripts();
+    mockEval.mockReset();
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
   });
 
   it("should allow requests under the limit", async () => {
@@ -71,5 +91,74 @@ describe("Rate Limiting", () => {
     expect(info?.count).toBe(5);
     expect(info?.remaining).toBe(0);
     expect(info?.isLimited).toBe(true);
+  });
+
+  it("includes atomic EXPIRE key window_seconds inside SLIDING_WINDOW_LUA script", async () => {
+    const { SLIDING_WINDOW_LUA } = await import("@/lib/rateLimit");
+
+    expect(SLIDING_WINDOW_LUA).toBeDefined();
+    // Verify ZREMRANGEBYSCORE and ZADD are used for sliding window
+    expect(SLIDING_WINDOW_LUA).toContain("ZREMRANGEBYSCORE");
+    expect(SLIDING_WINDOW_LUA).toContain("ZADD");
+    // Verify atomic EXPIRE key window_seconds is present
+    expect(SLIDING_WINDOW_LUA).toMatch(/EXPIRE.*key.*window_seconds/i);
+  });
+});
+
+describe("microTimestampMember", () => {
+  it("stringifies sec+usec so same-ms hits stay unique", () => {
+    const a = microTimestampMember(1700000000, 12, "a");
+    const b = microTimestampMember(1700000000, 13, "a");
+    expect(a).toBe("1700000000000012:a");
+    expect(b).toBe("1700000000000013:a");
+    expect(a).not.toBe(b);
+  });
+
+  it("pads usec to 6 digits", () => {
+    expect(microTimestampMember("100", 5, "x")).toBe("100000005:x");
+  });
+});
+
+describe("Redis sliding window path", () => {
+  beforeEach(() => {
+    resetRateLimit();
+    resetRedisScripts();
+    mockEval.mockReset();
+    process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
+  });
+
+  afterEach(() => {
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    resetRedisScripts();
+  });
+
+  it("blocks after the Lua script returns 0", async () => {
+    let hits = 0;
+    mockEval.mockImplementation(async () => {
+      hits += 1;
+      return hits <= 3 ? 1 : 0;
+    });
+
+    expect(await rateLimit("redis-ip", 3)).toBe(true);
+    expect(await rateLimit("redis-ip", 3)).toBe(true);
+    expect(await rateLimit("redis-ip", 3)).toBe(true);
+    expect(await rateLimit("redis-ip", 3)).toBe(false);
+    expect(mockEval).toHaveBeenCalledTimes(4);
+  });
+
+  it("passes a unique nonce on each same-ms call", async () => {
+    mockEval.mockResolvedValue(1);
+
+    await Promise.all([
+      rateLimit("burst-ip", 10),
+      rateLimit("burst-ip", 10),
+      rateLimit("burst-ip", 10),
+    ]);
+
+    expect(mockEval).toHaveBeenCalledTimes(3);
+    const nonces = mockEval.mock.calls.map((call) => (call[1] as string[])[2]);
+    expect(new Set(nonces).size).toBe(3);
   });
 });

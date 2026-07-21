@@ -148,6 +148,14 @@ export default class WorkspaceServer implements Party.Server {
         return;
       }
 
+      // Spatial audio listener position updates are high-frequency ephemeral state,
+      // allowed for all viewers/editors, but `userId` must match verified connection state.
+      if (parsed.type === "spatial_listener_update") {
+        if (!state.userId || parsed.userId !== state.userId) return;
+        this.room.broadcast(message, [sender.id]);
+        return;
+      }
+
       // Seat availability check-in/checkout (#703). This is presence data,
       // not a document edit, so VIEWERS are allowed to use it too — it
       // deliberately skips the role gate below.

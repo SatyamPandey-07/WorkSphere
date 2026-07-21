@@ -28,6 +28,7 @@ export interface AppEvents {
   "checkin:confirmed": {
     userId: string;
     userName: string;
+    telegramWebhookUrl: string | null;
     venue: {
       id: string;
       name: string;

@@ -1,3 +1,13 @@
+const mockEval = jest.fn();
+
+jest.mock("@upstash/redis", () => ({
+  Redis: jest.fn().mockImplementation(() => ({
+    createScript: () => ({
+      eval: (...args: unknown[]) => mockEval(...args),
+    }),
+  })),
+}));
+
 import {
   rateLimit,
   getRateLimitInfo,
@@ -6,21 +16,11 @@ import {
   microTimestampMember,
 } from "@/lib/rateLimit";
 
-const evalMock = jest.fn();
-
-jest.mock("@upstash/redis", () => ({
-  Redis: jest.fn().mockImplementation(() => ({
-    createScript: () => ({
-      eval: (...args: unknown[]) => evalMock(...args),
-    }),
-  })),
-}));
-
 describe("Rate Limiting", () => {
   beforeEach(() => {
     resetRateLimit();
     resetRedisScripts();
-    evalMock.mockReset();
+    mockEval.mockReset();
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
   });
@@ -112,7 +112,7 @@ describe("Redis sliding window path", () => {
   beforeEach(() => {
     resetRateLimit();
     resetRedisScripts();
-    evalMock.mockReset();
+    mockEval.mockReset();
     process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
     process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
   });
@@ -125,7 +125,7 @@ describe("Redis sliding window path", () => {
 
   it("blocks after the Lua script returns 0", async () => {
     let hits = 0;
-    evalMock.mockImplementation(async () => {
+    mockEval.mockImplementation(async () => {
       hits += 1;
       return hits <= 3 ? 1 : 0;
     });
@@ -134,11 +134,11 @@ describe("Redis sliding window path", () => {
     expect(await rateLimit("redis-ip", 3)).toBe(true);
     expect(await rateLimit("redis-ip", 3)).toBe(true);
     expect(await rateLimit("redis-ip", 3)).toBe(false);
-    expect(evalMock).toHaveBeenCalledTimes(4);
+    expect(mockEval).toHaveBeenCalledTimes(4);
   });
 
   it("passes a unique nonce on each same-ms call", async () => {
-    evalMock.mockResolvedValue(1);
+    mockEval.mockResolvedValue(1);
 
     await Promise.all([
       rateLimit("burst-ip", 10),
@@ -146,8 +146,8 @@ describe("Redis sliding window path", () => {
       rateLimit("burst-ip", 10),
     ]);
 
-    expect(evalMock).toHaveBeenCalledTimes(3);
-    const nonces = evalMock.mock.calls.map((call) => (call[1] as string[])[2]);
+    expect(mockEval).toHaveBeenCalledTimes(3);
+    const nonces = mockEval.mock.calls.map((call) => (call[1] as string[])[2]);
     expect(new Set(nonces).size).toBe(3);
   });
 });

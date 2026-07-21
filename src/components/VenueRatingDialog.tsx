@@ -50,7 +50,6 @@ export function VenueRatingDialog({
   const [outletDensity, setOutletDensity] = useState<
     "every_table" | "some_tables" | "wall_seats" | "none"
   >("none");
-  const [wifiSpeed, setWifiSpeed] = useState("");
   const [speedtestPhoto, setSpeedtestPhoto] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -59,6 +58,9 @@ export function VenueRatingDialog({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const parseOptionalInteger = (value: string) =>
+    value === "" ? undefined : Number(value);
 
   const compressImage = (file: File): Promise<Blob> => {
     return new Promise((resolve) => {
@@ -147,9 +149,9 @@ export function VenueRatingDialog({
         comment: comment.trim() || undefined,
         hasErgonomic,
         outletDensity,
-        downloadSpeed: downloadSpeed ? parseInt(downloadSpeed, 10) : undefined,
-        uploadSpeed: uploadSpeed ? parseInt(uploadSpeed, 10) : undefined,
-        ping: ping ? parseInt(ping, 10) : undefined,
+        downloadSpeed: parseOptionalInteger(downloadSpeed),
+        uploadSpeed: parseOptionalInteger(uploadSpeed),
+        ping: parseOptionalInteger(ping),
         speedtestPhoto: speedtestPhoto || undefined,
       });
 
@@ -162,7 +164,6 @@ export function VenueRatingDialog({
       setComment("");
       setHasErgonomic(false);
       setOutletDensity("none");
-      setWifiSpeed("");
       setSpeedtestPhoto(null);
       onClose();
     } catch (error) {
@@ -285,20 +286,6 @@ export function VenueRatingDialog({
 
           <NoiseMeter onMeasured={setMeasurement} />
 
-          <section>
-            <label className="mb-2 block text-sm font-medium">
-              Verified Wi-Fi Speed (Mbps - Optional)
-            </label>
-
-            <input
-              type="number"
-              value={wifiSpeed}
-              onChange={(event) => setWifiSpeed(event.target.value)}
-              placeholder="e.g. 80"
-              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
-            />
-          </section>
-
           {/* Speedtest Photo Upload */}
           <section>
             <label className="mb-2 block text-sm font-medium">
@@ -392,6 +379,7 @@ export function VenueRatingDialog({
                 <input
                   type="number"
                   min="0"
+                  step="1"
                   value={downloadSpeed}
                   onChange={(event) => setDownloadSpeed(event.target.value)}
                   placeholder="e.g. 120"
@@ -406,6 +394,7 @@ export function VenueRatingDialog({
                 <input
                   type="number"
                   min="0"
+                  step="1"
                   value={uploadSpeed}
                   onChange={(event) => setUploadSpeed(event.target.value)}
                   placeholder="e.g. 40"
@@ -420,6 +409,7 @@ export function VenueRatingDialog({
                 <input
                   type="number"
                   min="0"
+                  step="1"
                   value={ping}
                   onChange={(event) => setPing(event.target.value)}
                   placeholder="e.g. 18"
@@ -427,6 +417,19 @@ export function VenueRatingDialog({
                 />
               </div>
             </div>
+          </section>
+
+          <section>
+            <label className="mb-2 block text-sm font-medium">
+              Comments (Optional)
+            </label>
+            <textarea
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              placeholder="Share your experience at this venue..."
+              rows={3}
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-700 dark:bg-zinc-800"
+            />
           </section>
 
           <div className="flex gap-2">

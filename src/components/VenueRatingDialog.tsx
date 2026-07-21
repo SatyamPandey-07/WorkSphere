@@ -379,6 +379,7 @@ export function VenueRatingDialog({
                 <input
                   type="number"
                   min="0"
+                  max="10000"
                   step="1"
                   value={downloadSpeed}
                   onChange={(event) => setDownloadSpeed(event.target.value)}
@@ -394,6 +395,7 @@ export function VenueRatingDialog({
                 <input
                   type="number"
                   min="0"
+                  max="10000"
                   step="1"
                   value={uploadSpeed}
                   onChange={(event) => setUploadSpeed(event.target.value)}
@@ -409,6 +411,7 @@ export function VenueRatingDialog({
                 <input
                   type="number"
                   min="0"
+                  max="9999"
                   step="1"
                   value={ping}
                   onChange={(event) => setPing(event.target.value)}

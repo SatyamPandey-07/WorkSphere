@@ -3,6 +3,26 @@
 import { useState, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { Upload, Loader2, Image as ImageIcon } from "lucide-react";
+import Image from "next/image";
+
+const HEIC_EXTENSIONS = [".heic", ".heif"];
+const isHeicFile = (file: File) =>
+  HEIC_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext)) ||
+  file.type === "image/heic" ||
+  file.type === "image/heif";
+
+async function convertHeicToJpeg(file: File): Promise<File> {
+  const heic2any = (await import("heic2any")).default;
+  const blob = await heic2any({ blob: file, toType: "image/jpeg" });
+  const converted = blob instanceof Blob ? blob : blob[0];
+  return new File(
+    [converted],
+    file.name.replace(/\.heic$/i, ".jpg").replace(/\.heif$/i, ".jpg"),
+    {
+      type: "image/jpeg",
+    },
+  );
+}
 
 export function CustomAvatarUpload() {
   const { user, isLoaded } = useUser();
@@ -13,16 +33,27 @@ export function CustomAvatarUpload() {
   if (!isLoaded || !user) return null;
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    let file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate file type and size
-    if (!file.type.startsWith("image/")) {
-      setError("Please select an image file.");
-      return;
-    }
     if (file.size > 5 * 1024 * 1024) {
       setError("Image must be smaller than 5MB.");
+      return;
+    }
+
+    if (isHeicFile(file)) {
+      try {
+        file = await convertHeicToJpeg(file);
+      } catch {
+        setError(
+          "HEIC/HEIF format is not supported. Please convert to JPEG or PNG.",
+        );
+        return;
+      }
+    }
+
+    if (!file.type.startsWith("image/")) {
+      setError("Please select an image file.");
       return;
     }
 
@@ -49,11 +80,13 @@ export function CustomAvatarUpload() {
       <div className="flex items-start gap-4">
         <div className="w-16 h-16 rounded-full overflow-hidden shrink-0 border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
           {user.hasImage ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
+            <Image
               src={user.imageUrl}
               alt={user.fullName || "User avatar"}
+              width={64}
+              height={64}
               className="w-full h-full object-cover"
+              unoptimized
             />
           ) : (
             <ImageIcon className="w-6 h-6 text-zinc-400" />

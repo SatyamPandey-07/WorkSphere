@@ -56,6 +56,12 @@ export function useSeatAvailability() {
   >({});
   const [isConnected, setIsConnected] = useState(false);
   const [checkedInVenueId, setCheckedInVenueId] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Mirrors checkedInVenueId in a ref so send handlers stay stable across
   // renders without needing checkedInVenueId itself as a dependency.
   const checkedInVenueRef = useRef<string | null>(null);
@@ -68,7 +74,7 @@ export function useSeatAvailability() {
 
   const socket = usePartySocket({
     host: "127.0.0.1:1999",
-    room: SEAT_ROOM,
+    room: isMounted ? SEAT_ROOM : undefined,
     query: token ? { token } : undefined,
     onOpen() {
       setIsConnected(true);
@@ -117,7 +123,7 @@ export function useSeatAvailability() {
         queueOfflineCheckIn(venueId).catch(console.error);
         toast("You are offline. Check-in queued for sync.", "success");
       } else {
-        socket.send(
+        socket?.send(
           JSON.stringify({ type: "seat_checkin", venueId, capacity }),
         );
       }
@@ -192,7 +198,7 @@ export function useSeatAvailability() {
   const checkOut = useCallback(() => {
     checkedInVenueRef.current = null;
     setCheckedInVenueId(null);
-    socket.send(JSON.stringify({ type: "seat_checkout" }));
+    socket?.send(JSON.stringify({ type: "seat_checkout" }));
   }, [socket]);
 
   // Best-effort checkout if the component unmounts while checked in, so we
@@ -201,14 +207,13 @@ export function useSeatAvailability() {
     return () => {
       if (checkedInVenueRef.current) {
         try {
-          socket.send(JSON.stringify({ type: "seat_checkout" }));
+          socket?.send(JSON.stringify({ type: "seat_checkout" }));
         } catch {
           // Socket may already be closed on unmount — nothing to do.
         }
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [socket]);
 
   const getAvailability = useCallback(
     (venueId: string): SeatAvailability => {
@@ -230,6 +235,6 @@ export function useSeatAvailability() {
     checkIn,
     checkOut,
     checkedInVenueId,
-    isConnected,
+    isConnected: isMounted && isConnected,
   };
 }

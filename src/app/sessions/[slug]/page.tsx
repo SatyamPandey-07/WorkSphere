@@ -44,6 +44,7 @@ export default async function SessionPage({
       venue: true,
       host: {
         select: {
+          id: true,
           firstName: true,
           lastName: true,
         },
@@ -55,6 +56,7 @@ export default async function SessionPage({
               id: true,
               firstName: true,
               lastName: true,
+              imageUrl: true,
             },
           },
         },
@@ -65,9 +67,5 @@ export default async function SessionPage({
 
   if (!session) notFound();
 
-  return (
-    <SessionDetailClient
-      session={JSON.parse(JSON.stringify(session))}
-    />
-  );
+  return <SessionDetailClient session={JSON.parse(JSON.stringify(session))} />;
 }

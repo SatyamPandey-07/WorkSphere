@@ -37,11 +37,17 @@ export default function FolderDetailsPage({
   const [sendingInvite, setSendingInvite] = useState(false);
   const [updatingPublic, setUpdatingPublic] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [filters, setFilters] = useState({
     hasOutlets: false,
     wifiQualityMin: false,
     quietOnly: false,
   });
+
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   const handleExportBilling = async () => {
     try {
@@ -63,6 +69,29 @@ export default function FolderDetailsPage({
       alert("Failed to export billing codes. Please try again.");
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    try {
+      setExportingPdf(true);
+      const response = await fetch(`/api/folders/${id}/export-pdf`);
+      if (!response.ok) throw new Error("PDF export failed");
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `collection-${folder.name.toLowerCase().replace(/\s+/g, "-")}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("PDF export error:", error);
+      alert("Failed to export PDF. Please try again.");
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -115,7 +144,7 @@ export default function FolderDetailsPage({
   // Real-time synchronization
   usePartySocket({
     host: "127.0.0.1:1999",
-    room: `folder-${id}`,
+    room: isMounted ? `folder-${id}` : undefined,
     onMessage(event) {
       try {
         const data = JSON.parse(event.data);
@@ -341,6 +370,29 @@ export default function FolderDetailsPage({
                   Quiet Only
                 </label>
               </div>
+            </div>
+
+            {/* PDF Export */}
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-white flex items-center gap-2 mb-4">
+                <FileDown className="w-5 h-5 text-blue-500" /> Export Report
+              </h2>
+              <p className="text-xs text-zinc-500 mb-4">
+                Download a PDF summary of venues in this collection for team
+                sharing.
+              </p>
+              <button
+                onClick={handleExportPdf}
+                disabled={exportingPdf}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-sm transition-all disabled:opacity-50 shadow-lg shadow-blue-500/20 active:scale-[0.98]"
+              >
+                {exportingPdf ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileDown className="w-4 h-4" />
+                )}
+                Export to PDF
+              </button>
             </div>
 
             {/* Billing Export Section */}

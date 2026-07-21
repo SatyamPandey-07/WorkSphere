@@ -44,6 +44,8 @@ model User {
   folderUpvotes      FolderUpvote[]
   sentFolderInvites  FolderInvite[]      @relation("FolderInviteSender")
   workStyleProfile   String?
+  pushSubscriptions  PushSubscription[]
+  pushNotificationLogs PushNotificationLog[]
   checkIns           CheckIn[]
   // ── Activity streak ────────────────────────────────────────────────────────
   // currentStreak:    consecutive days with at least one check-in
@@ -53,6 +55,7 @@ model User {
   currentStreak    Int      @default(0)
   longestStreak    Int      @default(0)
   lastCheckInDate  String?  // stored as "YYYY-MM-DD" UTC
+  passkeys         PasskeyCredential[]
 }
 
 model Venue {
@@ -597,34 +600,58 @@ model CheckIn {
   @@index([expiresAt])
 }
 
-enum EmailStatus {
-  SENT
-  FAILED
-  PENDING
+model PasskeyCredential {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId String   @unique
+  publicKey    Bytes
+  counter      BigInt   @default(0)
+  transports   String[] @default([])
+  deviceType   String   @default("singleDevice")
+  backedUp     Boolean  @default(false)
+  name         String
+  aaguid       String?
+  createdAt    DateTime @default(now())
+  lastUsedAt   DateTime @default(now())
+
+  @@index([userId])
 }
 
-enum EmailType {
-  VERIFICATION_CODE
-  OTP
-  PASSWORD_RESET
-  GUEST_INVITE
-  NEWSLETTER
-  COLLECTION_INVITE
-  TEST
+model PasskeyChallenge {
+  id        String   @id @default(cuid())
+  userId    String?
+  challenge String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([challenge])
 }
 
-model EmailLog {
-  id        String      @id @default(cuid())
-  type      EmailType
-  recipient String
-  subject   String
-  status    EmailStatus @default(PENDING)
+model PushSubscription {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([userId])
+}
+
+model PushNotificationLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId   String?
+  title     String
+  body      String
+  status    String
   error     String?
-  metadata  Json?
-  createdAt DateTime    @default(now())
+  createdAt DateTime @default(now())
 
-  @@index([createdAt])
-  @@index([status])
-  @@index([type])
-  @@index([recipient])
+  @@index([userId])
 }

@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Volume2 } from "lucide-react";
-import { processAudioFrame, resetNoiseProcessor } from "@/lib/wasm/noiseProcessor";
+import {
+  processAudioFrame,
+  resetNoiseProcessor,
+} from "@/lib/wasm/noiseProcessor";
 
 export type NoiseMeasurement = {
   averageDb: number;
@@ -115,11 +118,35 @@ export function NoiseMeter({ onMeasured }: Props) {
       let timer = 5;
 
       const cleanup = () => {
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange,
+        );
         cancelAnimationFrame(animationFrame);
+        try {
+          source.disconnect();
+        } catch {}
+        try {
+          analyser.disconnect();
+        } catch {}
         stream.getTracks().forEach((track) => track.stop());
+        if (audioContext.state !== "closed") {
+          audioContext.close().catch(() => {});
+        }
+      };
+
+      const handleVisibilityChange = () => {
+        if (document.hidden) {
+          window.clearInterval(countdown);
+          cleanup();
+          cleanupRef.current = null;
+          setStatus("error");
+        }
         audioContext.close().catch(() => {});
         resetNoiseProcessor();
       };
+
+      document.addEventListener("visibilitychange", handleVisibilityChange);
 
       cleanupRef.current = cleanup;
       setStatus("measuring");

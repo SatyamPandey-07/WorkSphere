@@ -2,6 +2,7 @@ import { UserProfile } from "@clerk/nextjs";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { CustomAvatarUpload } from "@/components/CustomAvatarUpload";
+import { PasskeyManager } from "@/components/auth/PasskeyManager";
 import { AccentPicker } from "@/components/AccentPicker";
 
 export default function UserProfilePage() {
@@ -18,18 +19,17 @@ export default function UserProfilePage() {
           </Link>
         </div>
 
-        <div className="mb-8 max-w-[880px] mx-auto w-full">
+        <div className="mb-8 max-w-[880px] mx-auto w-full space-y-8">
           <CustomAvatarUpload />
-        </div>
+          <PasskeyManager />
 
-        <div className="mb-8 max-w-[880px] mx-auto w-full">
           <div className="glass-card rounded-2xl p-6">
             <AccentPicker />
           </div>
-        </div>
 
-        <div className="flex justify-center">
-          <UserProfile path="/user-profile" routing="path" />
+          <div className="flex justify-center">
+            <UserProfile path="/user-profile" routing="path" />
+          </div>
         </div>
       </div>
     </div>

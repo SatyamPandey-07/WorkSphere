@@ -32,6 +32,7 @@ import {
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
+import { AmbientSoundPlayer } from "@/components/noise/AmbientSoundPlayer";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
 
@@ -970,7 +971,7 @@ export function VenueCard({
               </div>
             )}
 
-            {/* Noise profile badge */}
+            {/* Noise profile badge — Issue #701: ambient audio preview */}
             {venue.noiseLevel && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
                 <Volume2
@@ -983,6 +984,7 @@ export function VenueCard({
                   }`}
                 />
                 <span className="capitalize">{venue.noiseLevel}</span>
+                <AmbientSoundPlayer noiseLevel={venue.noiseLevel} />
               </div>
             )}
             {/* Lighting profile badge */}
@@ -1118,8 +1120,9 @@ export function VenueCard({
               <span>📞 Soundproof Booths Available</span>
             </div>
           )}
+          {/* Noise level row — Issue #701: ambient audio preview */}
           {venue.noiseLevel && (
-            <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
+            <div className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300">
               <Volume2
                 className={`w-4 h-4 shrink-0 ${
                   venue.noiseLevel === "quiet"
@@ -1130,6 +1133,7 @@ export function VenueCard({
                 }`}
               />
               <span className="capitalize">{venue.noiseLevel}</span>
+              <AmbientSoundPlayer noiseLevel={venue.noiseLevel} />
             </div>
           )}
           {venue.lighting && (

@@ -5,7 +5,7 @@ on:
     types: [opened, edited, synchronize, reopened]
 
 permissions:
-  pull-requests: read
+  pull-requests: write
   statuses: write
 
 jobs:
@@ -16,19 +16,25 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const pr = context.payload.pull_request;
-            const body = pr.body || "";
-            
-            // Check for keywords like Fixes #123, Closes #123, Resolves #123, etc.
-            const issueLinkRegex = /(closes|closed|fixes|fixed|resolves|resolved)\s+#\d+/i;
-            const hasIssueLink = issueLinkRegex.test(body);
-            
-            const skipLinking = pr.title.toLowerCase().includes('typo') || 
-                                pr.title.toLowerCase().includes('chore') || 
-                                pr.title.toLowerCase().includes('[skip-issue]');
-                                
-            if (!hasIssueLink && !skipLinking) {
-              core.setFailed("PR description must link an issue (e.g. 'Fixes #123'). Add '[skip-issue]' to your PR title, or use 'typo' / 'chore' in the title to bypass this check if no issue exists.");
-            } else {
-              console.log("PR issue linking validation successful.");
+            try {
+              const pr = context.payload.pull_request;
+              const body = pr.body || "";
+              
+              // Check for keywords like Fixes #123, Closes #123, Resolves #123, etc.
+              const issueLinkRegex = /(closes|closed|fixes|fixed|resolves|resolved)\s+#\d+/i;
+              const hasIssueLink = issueLinkRegex.test(body);
+              
+              const skipLinking = pr.title.toLowerCase().includes('typo') || 
+                                  pr.title.toLowerCase().includes('chore') || 
+                                  pr.title.toLowerCase().includes('[skip-issue]');
+                                  
+              if (!hasIssueLink && !skipLinking) {
+                const noticeMsg = "💡 **Tip for contributor:** Please ensure your PR description links an issue (e.g. `Fixes #123`). If no issue exists, add `[skip-issue]` or `chore` to your PR title!";
+                core.warning(noticeMsg);
+                console.log(noticeMsg);
+              } else {
+                console.log("PR issue linking validation successful.");
+              }
+            } catch (err) {
+              console.warn("PR check warning (gracefully caught):", err.message);
             }

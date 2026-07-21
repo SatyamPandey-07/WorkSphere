@@ -8,6 +8,7 @@ import {
   BarChart3,
   Bot,
   CalendarDays,
+  Gauge,
   RefreshCw,
   Search,
   Sparkles,
@@ -92,7 +93,9 @@ function MetricCard({
           <Icon className="h-5 w-5" />
         </span>
       </div>
-      <p className="text-3xl font-semibold tracking-tight text-white">{value}</p>
+      <p className="text-3xl font-semibold tracking-tight text-white">
+        {value}
+      </p>
       <p className="mt-2 text-xs text-zinc-500">{detail}</p>
     </article>
   );
@@ -201,7 +204,9 @@ export default function AdminAnalyticsDashboard() {
               className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-zinc-300 transition hover:bg-white/[0.08] disabled:opacity-50"
               aria-label="Refresh analytics"
             >
-              <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-5 w-5 ${loading ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
         </header>
@@ -211,6 +216,27 @@ export default function AdminAnalyticsDashboard() {
             {error}
           </div>
         )}
+
+        {/* ── Quick navigation to sub-dashboards ─────────────────────── */}
+        <nav
+          aria-label="Admin sub-dashboards"
+          className="mb-6 flex flex-wrap gap-3"
+        >
+          <Link
+            href="/admin/system"
+            className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-white/[0.08] hover:text-white"
+          >
+            <Gauge className="h-4 w-4 text-violet-400" />
+            System Health
+          </Link>
+          <Link
+            href="/admin/performance"
+            className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-400/5 px-4 py-2.5 text-sm text-cyan-300 transition hover:bg-cyan-400/10 hover:text-white"
+          >
+            <Activity className="h-4 w-4" />
+            Performance Telemetry
+          </Link>
+        </nav>
 
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <MetricCard
@@ -264,8 +290,18 @@ export default function AdminAnalyticsDashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={data?.bookingTrend ?? []}>
                   <defs>
-                    <linearGradient id="bookingFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.45} />
+                    <linearGradient
+                      id="bookingFill"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="5%"
+                        stopColor="#8b5cf6"
+                        stopOpacity={0.45}
+                      />
                       <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
                     </linearGradient>
                   </defs>
@@ -413,9 +449,12 @@ export default function AdminAnalyticsDashboard() {
 
         <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
           <div className="mb-6">
-            <h2 className="text-lg font-semibold">Venue popularity leaderboard</h2>
+            <h2 className="text-lg font-semibold">
+              Venue popularity leaderboard
+            </h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Composite ranking based on views, non-cancelled bookings, and ratings
+              Composite ranking based on views, non-cancelled bookings, and
+              ratings
             </p>
           </div>
 
@@ -447,7 +486,9 @@ export default function AdminAnalyticsDashboard() {
                       </p>
                     </td>
                     <td className="px-3 py-4 text-zinc-300">{venue.views}</td>
-                    <td className="px-3 py-4 text-zinc-300">{venue.bookings}</td>
+                    <td className="px-3 py-4 text-zinc-300">
+                      {venue.bookings}
+                    </td>
                     <td className="px-3 py-4">
                       <span className="inline-flex items-center gap-1 text-amber-300">
                         <Star className="h-4 w-4 fill-current" />
@@ -465,7 +506,9 @@ export default function AdminAnalyticsDashboard() {
         </section>
 
         <footer className="mt-6 flex flex-col gap-2 text-xs text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
-          <span>Admin-only · First-party analytics · No third-party tracking</span>
+          <span>
+            Admin-only · First-party analytics · No third-party tracking
+          </span>
           <span>
             {data?.generatedAt
               ? `Updated ${new Date(data.generatedAt).toLocaleString()}`

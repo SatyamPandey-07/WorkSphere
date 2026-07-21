@@ -67,6 +67,9 @@ export function BookingModal({
   };
   const [bookingDate, setBookingDate] = useState("");
   const [bookingTime, setBookingTime] = useState("");
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState("weekly");
+  const [recurringOccurrences, setRecurringOccurrences] = useState(2);
   const [confirmationId, setConfirmationId] = useState("");
   const [email, setEmail] = useState("");
   const [billingCode, setBillingCode] = useState("");
@@ -333,12 +336,41 @@ export function BookingModal({
     });
 
     try {
+      const dates: string[] = [];
+      let currentDate = new Date(bookingDate);
+      // To handle local timezone parsing correctly without offset shifts:
+      const [yearStr, monthStr, dayStr] = bookingDate.split("-");
+      currentDate = new Date(
+        parseInt(yearStr),
+        parseInt(monthStr) - 1,
+        parseInt(dayStr),
+      );
+
+      const occurrences = isRecurring ? recurringOccurrences : 1;
+
+      for (let i = 0; i < occurrences; i++) {
+        const y = currentDate.getFullYear();
+        const m = String(currentDate.getMonth() + 1).padStart(2, "0");
+        const d = String(currentDate.getDate()).padStart(2, "0");
+        dates.push(`${y}-${m}-${d}`);
+
+        if (isRecurring) {
+          if (recurringFrequency === "daily") {
+            currentDate.setDate(currentDate.getDate() + 1);
+          } else if (recurringFrequency === "weekly") {
+            currentDate.setDate(currentDate.getDate() + 7);
+          } else if (recurringFrequency === "monthly") {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+          }
+        }
+      }
+
       const response = await fetch("/api/bookings/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           venue,
-          date: bookingDate,
+          dates,
           time: bookingTime,
           customerEmail: email,
           customerPhone: null,
@@ -709,6 +741,54 @@ export function BookingModal({
                     />
                   </div>
                 </div>
+              </div>
+
+              {/* Recurring UI */}
+              <div className="space-y-4">
+                <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 cursor-pointer select-none ml-2">
+                  <input
+                    type="checkbox"
+                    checked={isRecurring}
+                    onChange={(e) => setIsRecurring(e.target.checked)}
+                    className="w-4 h-4 cursor-pointer"
+                    style={{ accentColor: "var(--primary-accent)" }}
+                  />
+                  Recurring Booking
+                </label>
+
+                {isRecurring && (
+                  <div className="grid grid-cols-2 gap-6 pl-2">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                        Frequency
+                      </label>
+                      <select
+                        value={recurringFrequency}
+                        onChange={(e) => setRecurringFrequency(e.target.value)}
+                        className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:accent-border outline-none transition-all"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                        Occurrences
+                      </label>
+                      <input
+                        type="number"
+                        min="2"
+                        max="12"
+                        value={recurringOccurrences}
+                        onChange={(e) =>
+                          setRecurringOccurrences(parseInt(e.target.value) || 2)
+                        }
+                        className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:accent-border outline-none transition-all"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="space-y-4">

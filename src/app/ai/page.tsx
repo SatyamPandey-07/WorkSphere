@@ -26,6 +26,7 @@ import {
 } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { Venue } from "@/components/chat/ChatMessages";
+import { PartyKitPresenceWrapper } from "@/components/chat/PartyKitPresenceWrapper";
 // Dynamically import OnboardingTour to prevent hydration issues with react-joyride
 const OnboardingTour = dynamic(
   () => import("@/components/OnboardingTour").then((mod) => mod.OnboardingTour),
@@ -667,7 +668,7 @@ function AppPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-50 dark:bg-black overflow-hidden">
+    <div className="flex flex-col h-dvh bg-zinc-50 dark:bg-black overflow-hidden">
       <OnboardingTour />
       {/* Offline Banner */}
       {!isOnline && (
@@ -678,10 +679,12 @@ function AppPage() {
         </div>
       )}
 
-      {/* Real-time connection status (debug) */}
-      {isConnected && venueIds.length > 0 && (
-        <div className="hidden" data-realtime="connected" />
-      )}
+      {/* Real-time connection status (debug) wrapped in client-only isolation */}
+      <PartyKitPresenceWrapper>
+        {isConnected && venueIds.length > 0 && (
+          <div className="hidden" data-realtime="connected" />
+        )}
+      </PartyKitPresenceWrapper>
 
       {/* Mobile Navigation Toggle */}
       <div className="lg:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">

@@ -7,7 +7,7 @@ import crypto from "crypto";
 import { isValidDiscordWebhookUrl } from "@/lib/discord";
 import { isValidTelegramWebhookUrl } from "@/lib/telegram";
 import { ensureUserExists } from "@/lib/auth";
-import { validateWebhookUrl } from "@/lib/security/validateWebhookUrl";
+import { isSafeWebhookUrl } from "@/lib/ssrfValidation";
 
 export async function createWebhookEndpoint(data: {
   url: string;
@@ -16,24 +16,25 @@ export async function createWebhookEndpoint(data: {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  // Validate destination against SSRF
-  const validation = await validateWebhookUrl(data.url);
-  if (!validation.valid) {
-    throw new Error(`Invalid Webhook URL: ${validation.reason}`);
-  }
-
   // Ensure user exists in Prisma
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) {
+    // Basic user creation fallback if they don't exist yet
     await prisma.user.create({
-      data: { id: userId, email: `${userId}@example.com` },
+      data: { id: userId, email: userId + "@example.com" },
     });
   }
 
   // Generate a random secret for HMAC
   const secret = "whsec_" + crypto.randomBytes(24).toString("base64");
 
-  const endpoint = await prisma.webhookEndpoint.create({
+  // SSRF Protection
+  const safetyCheck = await isSafeWebhookUrl(data.url);
+  if (!safetyCheck.isSafe) {
+    throw new Error(`Invalid webhook URL: ${safetyCheck.reason}`);
+  }
+
+  await prisma.webhookEndpoint.create({
     data: {
       userId,
       url: data.url,
@@ -43,7 +44,6 @@ export async function createWebhookEndpoint(data: {
   });
 
   revalidatePath("/dashboard/webhooks");
-  return endpoint;
 }
 
 export async function getWebhookEndpoints() {
@@ -83,7 +83,6 @@ export async function deleteWebhookEndpoint(endpointId: string) {
 
   revalidatePath("/dashboard/webhooks");
 }
-
 export async function saveDiscordWebhookUrl(url: string) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
@@ -102,7 +101,6 @@ export async function saveDiscordWebhookUrl(url: string) {
 
   revalidatePath("/dashboard/webhooks");
 }
-
 export async function getDiscordWebhookUrl() {
   const { userId } = await auth();
   if (!userId) return null;

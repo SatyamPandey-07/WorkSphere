@@ -3,6 +3,8 @@ const CACHE_NAME = "worksphere-v3";
 const IMAGE_CACHE_NAME = "worksphere-images-v4";
 const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
 const OFFLINE_URL = "/offline";
+const AVAILABILITY_SYNC_TAG = "availability-sync";
+const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
 
 // Cap image cache at 20MB so iOS Safari PWA (~50MB quota) doesn't get killed.
 const MAX_IMAGE_CACHE_BYTES = 20 * 1024 * 1024;
@@ -241,6 +243,16 @@ self.addEventListener("sync", (event) => {
   }
   if (event.tag === "receipt-export-sync") {
     event.waitUntil(syncReceiptExports());
+  }
+  if (event.tag === AVAILABILITY_SYNC_TAG) {
+    event.waitUntil(syncAvailability());
+  }
+});
+
+// Periodic Background Sync for workspace availability (Issue #1126)
+self.addEventListener("periodicsync", (event) => {
+  if (event.tag === PERIODIC_AVAILABILITY_TAG) {
+    event.waitUntil(syncAvailability());
   }
 });
 
@@ -542,13 +554,97 @@ async function syncReceiptExports() {
   }
 }
 
+// Periodic Background Sync: fetch seat availability for saved venues,
+// diff against last-known state, and show a notification when seats open up.
+let isSyncingAvailability = false;
+async function syncAvailability() {
+  if (isSyncingAvailability) return;
+  isSyncingAvailability = true;
+
+  try {
+    const response = await fetch("/api/availability/delta", {
+      credentials: "include",
+    });
+
+    if (!response.ok) return;
+
+    const { venues } = await response.json();
+    if (!Array.isArray(venues) || venues.length === 0) return;
+
+    const db = await openIndexedDB();
+    const tx = db.transaction("availabilityDeltas", "readwrite");
+    const store = tx.objectStore("availabilityDeltas");
+
+    const notifications = [];
+
+    for (const venue of venues) {
+      const prev = await new Promise((resolve, reject) => {
+        const req = store.get(venue.venueId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+
+      const openedUp =
+        prev &&
+        (venue.count < prev.currentCount ||
+          (prev.currentStatus === "red" && venue.status !== "red") ||
+          (prev.currentStatus === "yellow" && venue.status === "green"));
+
+      store.put({
+        venueId: venue.venueId,
+        venueName: venue.venueName,
+        currentCount: venue.count,
+        currentCapacity: venue.capacity,
+        currentStatus: venue.status,
+        timestamp: Date.now(),
+      });
+
+      if (openedUp) {
+        notifications.push({
+          venueId: venue.venueId,
+          venueName: venue.venueName || "Workspace",
+          availableSeats: venue.capacity - venue.count,
+        });
+      }
+    }
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+
+    for (const n of notifications) {
+      if (self.registration && "showNotification" in self.registration) {
+        await self.registration.showNotification("Seat Available!", {
+          body: `${n.venueName} now has ${n.availableSeats} seat${n.availableSeats !== 1 ? "s" : ""} available.`,
+          icon: "/icons/icon.svg",
+          badge: "/icons/icon.svg",
+          vibrate: [200, 100, 200, 100, 200],
+          tag: `venue-availability-${n.venueId}`,
+          renotify: true,
+          requireInteraction: true,
+          data: { url: `/venues/${n.venueId}`, venueId: n.venueId },
+          actions: [
+            { action: "open", title: "Open" },
+            { action: "dismiss", title: "Dismiss" },
+          ],
+        });
+      }
+    }
+  } catch (error) {
+    console.error("[SW] Availability sync failed:", error);
+  } finally {
+    isSyncingAvailability = false;
+  }
+}
+
 // IndexedDB helpers
 let swDb = null;
 function openIndexedDB() {
   if (swDb) return Promise.resolve(swDb);
   return new Promise((resolve, reject) => {
     try {
-      const request = indexedDB.open("worksphere-offline", 5);
+      const request = indexedDB.open("worksphere-offline", 6);
 
       request.onblocked = () => {
         console.warn("[SW] IndexedDB upgrade blocked");
@@ -623,6 +719,14 @@ function openIndexedDB() {
           });
           receiptStore.createIndex("status", "status", { unique: false });
           receiptStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
+        // Availability deltas store for periodic background sync (Issue #1126)
+        if (!db.objectStoreNames.contains("availabilityDeltas")) {
+          const deltaStore = db.createObjectStore("availabilityDeltas", {
+            keyPath: "venueId",
+          });
+          deltaStore.createIndex("timestamp", "timestamp", { unique: false });
         }
       };
     } catch (err) {

@@ -41,11 +41,15 @@ interface SeatUpdateMessage {
   count: number;
   capacity: number;
   status: SeatStatus;
+  epoch?: number;
+  sequenceId?: number;
 }
 
 interface SeatSnapshotMessage {
   type: "seat_snapshot";
-  venues: Array<Omit<SeatUpdateMessage, "type">>;
+  venues: Array<Omit<SeatUpdateMessage, "type" | "epoch" | "sequenceId">>;
+  epoch?: number;
+  sequenceId?: number;
 }
 
 export function useSeatAvailability() {
@@ -57,6 +61,9 @@ export function useSeatAvailability() {
   const [isConnected, setIsConnected] = useState(false);
   const [checkedInVenueId, setCheckedInVenueId] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+
+  const epochRef = useRef<number>(0);
+  const sequenceRef = useRef<number>(0);
 
   useEffect(() => {
     setIsMounted(true);
@@ -87,6 +94,21 @@ export function useSeatAvailability() {
       try {
         const data = JSON.parse(event.data) as
           SeatUpdateMessage | SeatSnapshotMessage;
+
+        if (data.type !== "seat_update" && data.type !== "seat_snapshot") {
+          return;
+        }
+
+        const msgEpoch = data.epoch ?? 0;
+        const msgSeq = data.sequenceId ?? 0;
+
+        if (msgEpoch < epochRef.current) return;
+        if (msgEpoch === epochRef.current && msgSeq <= sequenceRef.current) {
+          return;
+        }
+
+        epochRef.current = msgEpoch;
+        sequenceRef.current = msgSeq;
 
         if (data.type === "seat_update") {
           setAvailability((prev) => ({

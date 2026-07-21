@@ -11,7 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
-import usePartySocket from "partysocket/react";
+import usePartySocket from "@/hooks/usePartySocketReconnect";
 import { useToast } from "@/components/ui/Toast";
 import {
   queueOfflineCheckIn,

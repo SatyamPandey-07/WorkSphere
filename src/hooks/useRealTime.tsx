@@ -8,7 +8,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
-import usePartySocket from "partysocket/react";
+import usePartySocket from "@/hooks/usePartySocketReconnect";
 import YProvider from "y-partykit/provider";
 import * as Y from "yjs";
 

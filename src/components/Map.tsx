@@ -24,7 +24,7 @@ import {
   useSeatAvailability,
   type SeatStatus,
 } from "@/hooks/useSeatAvailability";
-import usePartySocket from "partysocket/react";
+import usePartySocket from "@/hooks/usePartySocketReconnect";
 
 function throttle<T extends (...args: any[]) => void>(
   func: T,

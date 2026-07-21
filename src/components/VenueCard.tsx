@@ -1225,7 +1225,7 @@ export function VenueCard({
             >
               <span>Reserve</span>
               <span className="text-[10px] opacity-80">
-                {enrichData.price
+                {typeof enrichData.price === "number"
                   ? formatPrice(enrichData.price)
                   : formatPrice(15.0)}{" "}
                 / day

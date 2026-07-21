@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
           _count: {
             select: { favorites: true, ratings: true },
           },
+          foodValidations: true,
         },
       });
       return NextResponse.json({
@@ -276,6 +277,7 @@ export async function GET(req: NextRequest) {
         _count: {
           select: { favorites: true, ratings: true },
         },
+        foodValidations: true,
       },
       skip,
       take: limit,

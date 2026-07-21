@@ -42,7 +42,7 @@ model User {
   notificationEnd    String?
   timezone           String?            @default("UTC")
   folderUpvotes      FolderUpvote[]
-  sentFolderInvites  FolderInvite[]      @relation("FolderInviteSender")
+  sentFolderInvites  FolderInvite[]     @relation("FolderInviteSender")
   workStyleProfile   String?
   checkIns           CheckIn[]
   // ── Activity streak ────────────────────────────────────────────────────────
@@ -50,98 +50,102 @@ model User {
   // longestStreak:    all-time best streak for profile display
   // lastCheckInDate:  UTC date string (YYYY-MM-DD) used to detect same-day
   //                   duplicates and next-day increments
-  currentStreak    Int      @default(0)
-  longestStreak    Int      @default(0)
-  lastCheckInDate  String?  // stored as "YYYY-MM-DD" UTC
+  currentStreak      Int                @default(0)
+  longestStreak      Int                @default(0)
+  lastCheckInDate    String? // stored as "YYYY-MM-DD" UTC
 }
 
 model Venue {
-  id                 String              @id @default(cuid())
-  placeId            String              @unique
-  name               String
-  latitude           Float
-  longitude          Float
-  category           String // cafe, coworking, library
-  address            String?
-  rating             Float?
-  wifiQuality        Int? // 1-5 scale
-  hasOutlets         Boolean             @default(false)
-  singleOriginBeans  Boolean             @default(false)
-  specialtyEspresso  Boolean             @default(false)
-  oatAlmondMilk      Boolean             @default(false)
-  pourOverAvailable  Boolean             @default(false)
-  noiseLevel         String? // quiet, moderate, loud
-  hasErgonomic       Boolean             @default(false)
-  hasPhoneBooths     Boolean             @default(false)
-  hasNoMusic         Boolean             @default(false)
-  hasQuietZone       Boolean             @default(false)
+  id                  String              @id @default(cuid())
+  placeId             String              @unique
+  name                String
+  latitude            Float
+  longitude           Float
+  category            String // cafe, coworking, library
+  address             String?
+  rating              Float?
+  wifiQuality         Int? // 1-5 scale
+  hasOutlets          Boolean             @default(false)
+  singleOriginBeans   Boolean             @default(false)
+  specialtyEspresso   Boolean             @default(false)
+  oatAlmondMilk       Boolean             @default(false)
+  pourOverAvailable   Boolean             @default(false)
+  noiseLevel          String? // quiet, moderate, loud
+  hasErgonomic        Boolean             @default(false)
+  hasPhoneBooths      Boolean             @default(false)
+  hasNoMusic          Boolean             @default(false)
+  hasQuietZone        Boolean             @default(false)
   hasAncHeadsetRental Boolean             @default(false)
-  petsAllowedIndoors Boolean             @default(false)
-  patioOnly          Boolean             @default(false)
-  waterBowlsProvided Boolean             @default(false)
-  dogFriendly        Boolean             @default(false)
-  catsAllowed        Boolean             @default(false)
-  outletDensity      String? // every_table, some_tables, wall_seats, none
-  powerTypes         String[]            @default([])
-  outletLocations    String[]            @default([])
-  wifiSpeed          Int? // in Mbps
-  crowdsourced       Boolean             @default(false)
-  requiresReview     Boolean             @default(false)
-  imageUrl           String?
-  googlePlaceId      String? // Cached Google place_id (for photo lookup)
-  photoReference     String? // Cached Google Places photo_reference
-  menuPhotos         String[]            @default([])
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  lighting           String?
-  musicStyle         String?
-  ratings            VenueRating[]
-  favorites          Favorite[]
-  bookings           Booking[]
-  creatorId          String?
-  creator            User?               @relation("VenueCreator", fields: [creatorId], references: [id])
-  workStatuses       WorkBuddyStatus[]
-  sessions           CoworkingSession[]
-  seats              VenueSeat[]
-  wifiTelemetry      WifiTelemetry[]
-  validations        AmenityValidation[]
-  folderVenues       FolderVenue[]
-  currentOccupancy Int          @default(0)
-  maxCapacity      Int          @default(50) 
-  checkIns         CheckIn[]
+  petsAllowedIndoors  Boolean             @default(false)
+  patioOnly           Boolean             @default(false)
+  waterBowlsProvided  Boolean             @default(false)
+  dogFriendly         Boolean             @default(false)
+  catsAllowed         Boolean             @default(false)
+  outletDensity       String? // every_table, some_tables, wall_seats, none
+  powerTypes          String[]            @default([])
+  outletLocations     String[]            @default([])
+  wifiSpeed           Int? // in Mbps
+  crowdsourced        Boolean             @default(false)
+  requiresReview      Boolean             @default(false)
+  imageUrl            String?
+  googlePlaceId       String? // Cached Google place_id (for photo lookup)
+  photoReference      String? // Cached Google Places photo_reference
+  menuPhotos          String[]            @default([])
+  foodTags            String[]            @default([])
+  mealPrice           String?
+  lunchDealSchedule   String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  lighting            String?
+  musicStyle          String?
+  ratings             VenueRating[]
+  favorites           Favorite[]
+  bookings            Booking[]
+  creatorId           String?
+  creator             User?               @relation("VenueCreator", fields: [creatorId], references: [id])
+  workStatuses        WorkBuddyStatus[]
+  sessions            CoworkingSession[]
+  seats               VenueSeat[]
+  wifiTelemetry       WifiTelemetry[]
+  validations         AmenityValidation[]
+  foodValidations     FoodValidation[]
+  folderVenues        FolderVenue[]
+  currentOccupancy    Int                 @default(0)
+  maxCapacity         Int                 @default(50)
+  checkIns            CheckIn[]
 
   @@index([latitude, longitude])
   @@index([category])
 }
 
 model VenueRating {
-  id                String   @id @default(cuid())
-  userId            String
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  venueId           String
-  venue             Venue    @relation(fields: [venueId], references: [id])
-  wifiQuality       Int // 1-5
-  hasOutlets        Boolean
-  singleOriginBeans Boolean  @default(false)
-  specialtyEspresso Boolean  @default(false)
-  oatAlmondMilk     Boolean  @default(false)
-  pourOverAvailable Boolean  @default(false)
-  noiseLevel        String // quiet, moderate, loud
-  hasErgonomic      Boolean  @default(false)
-  hasPhoneBooths    Boolean  @default(false)
-  hasNoMusic        Boolean  @default(false)
-  hasQuietZone      Boolean  @default(false)
-  outletDensity     String? // every_table, some_tables, wall_seats, none
-  powerTypes        String[] // usb_c, ac_wall, wireless
-  outletLocations   String[] // under_tables, wall_mounted, center_island, bar_counter
-  wifiSpeed         Int? // in Mbps
-  comment           String?
-  speedtestPhoto    String?
-  createdAt         DateTime @default(now())
-  avgDecibels       Float?
-  peakDecibels      Float?
-  lighting          String?
-  musicStyle        String?
+  id                 String   @id @default(cuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId            String
+  venue              Venue    @relation(fields: [venueId], references: [id])
+  wifiQuality        Int // 1-5
+  hasOutlets         Boolean
+  singleOriginBeans  Boolean  @default(false)
+  specialtyEspresso  Boolean  @default(false)
+  oatAlmondMilk      Boolean  @default(false)
+  pourOverAvailable  Boolean  @default(false)
+  noiseLevel         String // quiet, moderate, loud
+  hasErgonomic       Boolean  @default(false)
+  hasPhoneBooths     Boolean  @default(false)
+  hasNoMusic         Boolean  @default(false)
+  hasQuietZone       Boolean  @default(false)
+  outletDensity      String? // every_table, some_tables, wall_seats, none
+  powerTypes         String[] // usb_c, ac_wall, wireless
+  outletLocations    String[] // under_tables, wall_mounted, center_island, bar_counter
+  wifiSpeed          Int? // in Mbps
+  comment            String?
+  speedtestPhoto     String?
+  createdAt          DateTime @default(now())
+  avgDecibels        Float?
+  peakDecibels       Float?
+  lighting           String?
+  musicStyle         String?
   petsAllowedIndoors Boolean  @default(false)
   patioOnly          Boolean  @default(false)
   waterBowlsProvided Boolean  @default(false)
@@ -154,14 +158,14 @@ model VenueRating {
 }
 
 model Favorite {
-  id        String    @id @default(cuid())
+  id        String        @id @default(cuid())
   userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String
-  venue     Venue     @relation(fields: [venueId], references: [id])
+  venue     Venue         @relation(fields: [venueId], references: [id])
   notes     String?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
   tags      FavoriteTag[]
 
   @@unique([userId, venueId])
@@ -206,24 +210,24 @@ model Message {
 }
 
 model Booking {
-  id                 String        @id @default(cuid())
+  id                 String         @id @default(cuid())
   userId             String
-  user               User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId            String
-  venue              Venue         @relation(fields: [venueId], references: [id])
+  venue              Venue          @relation(fields: [venueId], references: [id])
   date               String
   time               String
   customerEmail      String
   customerPhone      String?
-  status             BookingStatus @default(CONFIRMED)
-  confirmationId     String        @unique
-  createdAt          DateTime      @default(now())
+  status             BookingStatus  @default(CONFIRMED)
+  confirmationId     String         @unique
+  createdAt          DateTime       @default(now())
   projectBillingCode String?
   seatId             String?
   seatNumber         String?
   duration           Int?
-  amenitiesNeeded    String[]      @default([])
-  seat               VenueSeat?    @relation(fields: [seatId], references: [id])
+  amenitiesNeeded    String[]       @default([])
+  seat               VenueSeat?     @relation(fields: [seatId], references: [id])
   guests             BookingGuest[]
 
   @@index([userId])
@@ -373,17 +377,17 @@ enum SeatType {
 }
 
 model VenueSeat {
-  id      String   @id @default(cuid())
+  id      String @id @default(cuid())
   venueId String
-  venue   Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
 
   seatNumber String
   type       SeatType @default(HOT_DESK)
 
   x      Int
   y      Int
-  width  Int      @default(72)
-  height Int      @default(48)
+  width  Int @default(72)
+  height Int @default(48)
 
   amenities String[] @default([])
   isEnabled Boolean  @default(true)
@@ -452,21 +456,21 @@ model AdminAuditLog {
 }
 
 model Folder {
-  id          String         @id @default(cuid())
+  id          String   @id @default(cuid())
   name        String
   description String?
   ownerId     String
-  owner       User           @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  inviteToken String?        @unique
-  isPublic    Boolean        @default(false)
-  upvotes     Int            @default(0)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  owner       User     @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  inviteToken String?  @unique
+  isPublic    Boolean  @default(false)
+  upvotes     Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   venues     FolderVenue[]
   members    FolderMember[]
   upvoteRefs FolderUpvote[]
-  invites     FolderInvite[]
+  invites    FolderInvite[]
 
   @@index([ownerId])
 }
@@ -544,7 +548,6 @@ model WebhookDeliveryLog {
   @@index([endpointId, createdAt])
 }
 
-
 model FolderInvite {
   id        String             @id @default(cuid())
   folderId  String
@@ -583,6 +586,7 @@ model FolderUpvote {
   @@index([folderId])
   @@index([userId])
 }
+
 model CheckIn {
   id        String   @id @default(cuid())
   userId    String
@@ -627,4 +631,31 @@ model EmailLog {
   @@index([status])
   @@index([type])
   @@index([recipient])
+}
+
+model FoodValidation {
+  id      String @id @default(cuid())
+  venueId String
+  venue   Venue  @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  foodItem  String
+  upvotes   Int    @default(0)
+  downvotes Int    @default(0)
+
+  votes FoodVote[]
+
+  @@unique([venueId, foodItem])
+}
+
+model FoodVote {
+  id           String         @id @default(cuid())
+  validationId String
+  validation   FoodValidation @relation(fields: [validationId], references: [id], onDelete: Cascade)
+
+  userId      String
+  isAvailable Boolean
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, validationId])
 }

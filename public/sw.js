@@ -25,15 +25,20 @@ self.addEventListener("install", (event) => {
         return cache.addAll(PRECACHE_ASSETS);
       })
       .then(() => {
-        // Once assets are added, we can skip waiting immediately
-        return self.skipWaiting();
+        // DO NOT skip waiting automatically to prevent infinite loaders
+        // Wait for the client to trigger it via SKIP_WAITING message
       })
       .catch((err) => {
         console.error("[SW] Install failed:", err);
-        // Even if install fails, we skip waiting to avoid getting stuck in 'installing' state
-        return self.skipWaiting();
       }),
   );
+});
+
+// Allow client to trigger skipWaiting
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 // Activate event - clean up old caches and move temp assets

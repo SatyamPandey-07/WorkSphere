@@ -31,7 +31,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "../ThemeToggle";
 import { EmptyState } from "../ui/EmptyState";
-
+import usePartySocket from "partysocket/react";
 interface Conversation {
   id: string;
   title: string;
@@ -110,6 +110,47 @@ export function ChatHeader({
   const [renameValue, setRenameValue] = useState("");
   const filtersBtnRef = useRef<HTMLButtonElement>(null);
   const filtersPanelRef = useRef<HTMLDivElement>(null);
+
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "reconnecting" | "offline"
+  >("offline");
+
+  const socket = usePartySocket({
+    host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
+    room: _roomId || "default",
+  });
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const updateStatus = () => {
+      switch (socket.readyState) {
+        case 0: // CONNECTING
+          setConnectionStatus("reconnecting");
+          break;
+        case 1: // OPEN
+          setConnectionStatus("connected");
+          break;
+        case 2: // CLOSING
+        case 3: // CLOSED
+        default:
+          setConnectionStatus("offline");
+          break;
+      }
+    };
+
+    updateStatus();
+
+    socket.addEventListener("open", updateStatus);
+    socket.addEventListener("close", updateStatus);
+    socket.addEventListener("error", updateStatus);
+
+    return () => {
+      socket.removeEventListener("open", updateStatus);
+      socket.removeEventListener("close", updateStatus);
+      socket.removeEventListener("error", updateStatus);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (!showFilters) return;
@@ -677,11 +718,47 @@ export function ChatHeader({
       {/* Connection Indicator Bar */}
       <div className="mt-4 flex items-center justify-between px-1">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-              NEURAL LINK ACTIVE
-            </span>
+          <div
+            className="flex items-center gap-1.5"
+            role="status"
+            aria-live="polite"
+          >
+            {connectionStatus === "connected" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-green-700 dark:text-green-400">
+                  Connected
+                </span>
+                <span className="sr-only">PartyKit connection is stable</span>
+              </>
+            )}
+            {connectionStatus === "reconnecting" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-yellow-700 dark:text-yellow-400">
+                  Reconnecting
+                </span>
+                <span className="sr-only">PartyKit is reconnecting</span>
+              </>
+            )}
+            {connectionStatus === "offline" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-red-500"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-red-700 dark:text-red-400">
+                  Offline
+                </span>
+                <span className="sr-only">PartyKit is offline</span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_5px_rgba(59,130,246,0.8)]" />

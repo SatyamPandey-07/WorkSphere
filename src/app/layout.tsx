@@ -11,6 +11,8 @@ import { SoundProvider } from "../components/SoundProvider";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
 import { CookieBanner } from "../components/CookieBanner";
 import { SyncManager } from "../hooks/usePWA";
+import { ToastProvider } from "../components/ui/Toast";
+import { PWAUpdateListener } from "../components/PWAUpdateListener";
 
 const THEME_INIT_SCRIPT = `
 (function () {
@@ -146,7 +148,10 @@ export default async function RootLayout({
   const appContent = (
     <ThemeProvider initialTheme={theme} initialAccent={accent}>
       <SoundProvider>
-        <I18nProvider>{children}</I18nProvider>
+        <ToastProvider>
+          <PWAUpdateListener />
+          <I18nProvider>{children}</I18nProvider>
+        </ToastProvider>
       </SoundProvider>
     </ThemeProvider>
   );

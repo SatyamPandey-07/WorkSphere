@@ -98,6 +98,13 @@ export function useServiceWorker() {
           console.log("[PWA] Service worker registered");
           setRegistration(reg);
 
+          // Check if there's already a waiting worker
+          if (reg.waiting) {
+            window.dispatchEvent(
+              new CustomEvent("pwa-update-available", { detail: reg.waiting }),
+            );
+          }
+
           // Check for updates on every page load
           reg.update();
 
@@ -110,7 +117,11 @@ export function useServiceWorker() {
                   if (navigator.serviceWorker.controller) {
                     // New content is available; please refresh.
                     console.log("[PWA] New content available, please refresh.");
-                    // Optional: Show a toast or notification to the user
+                    window.dispatchEvent(
+                      new CustomEvent("pwa-update-available", {
+                        detail: installingWorker,
+                      }),
+                    );
                   } else {
                     // Content is cached for offline use.
                     console.log("[PWA] Content is cached for offline use.");

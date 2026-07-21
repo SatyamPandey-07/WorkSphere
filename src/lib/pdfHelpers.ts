@@ -1,22 +1,24 @@
 import { PDFPage, PDFFont } from "pdf-lib";
+import { sanitizeMathSymbols } from "@/lib/pdfUtils";
 
 export const safeText = (text: string) =>
-  text ? text.replace(/[^\x00-\x7F]/g, "?") : "";
+  text ? sanitizeMathSymbols(text) : "";
 
 export function drawSafeText(
   page: PDFPage,
   text: string,
   options: { x: number; y: number; size: number; font: PDFFont; color?: any },
 ) {
+  const sanitized = sanitizeMathSymbols(text);
   try {
-    page.drawText(text, options);
+    page.drawText(sanitized, options);
   } catch (err) {
     console.warn(
       "[PDF drawText warning]: Failed to draw text, retrying with strict sanitization",
       err,
     );
     try {
-      const strictText = text.replace(/[^\x20-\x7E]/g, "?");
+      const strictText = sanitized.replace(/[^\x20-\x7E]/g, "");
       page.drawText(strictText, options);
     } catch (fallbackErr) {
       console.error(

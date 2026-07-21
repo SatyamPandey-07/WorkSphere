@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  allowedDevOrigins: [
+    "*.lhr.life",
+    "*.loca.lt",
+    "*.ngrok-free.app",
+    "*.pinggy.io",
+  ],
   typescript: {
     ignoreBuildErrors: true,
   },

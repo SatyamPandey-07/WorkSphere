@@ -15,7 +15,7 @@ import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 // that legitimate traffic almost immediately, so this endpoint uses a much higher,
 // burst-tolerant ceiling — generous enough for fast typing, still low enough to stop
 // scripted abuse. See #717.
-const VENUE_SEARCH_RATE_LIMIT = 120;
+const VENUE_SEARCH_RATE_LIMIT = 60;
 
 // GET /api/venues - Search venues
 export async function GET(req: NextRequest) {
@@ -67,6 +67,7 @@ export async function GET(req: NextRequest) {
           _count: {
             select: { favorites: true, ratings: true },
           },
+          foodValidations: true,
         },
       });
       return NextResponse.json({
@@ -276,6 +277,7 @@ export async function GET(req: NextRequest) {
         _count: {
           select: { favorites: true, ratings: true },
         },
+        foodValidations: true,
       },
       skip,
       take: limit,

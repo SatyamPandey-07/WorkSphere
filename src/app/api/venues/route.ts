@@ -74,9 +74,12 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const total = await prisma.venue.count({ where });
+      const hasWhere = Object.keys(where).length > 0;
+      const total = hasWhere
+        ? await prisma.venue.count({ where })
+        : await prisma.venue.count();
       const venues = await prisma.venue.findMany({
-        where,
+        ...(hasWhere && { where }),
         skip,
         take: limit,
         include: {

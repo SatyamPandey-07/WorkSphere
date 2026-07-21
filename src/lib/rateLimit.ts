@@ -5,100 +5,86 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-const WINDOW_MS = 60_000;
-
-// ZSET sliding window. Member = stringified microsecond stamp so concurrent
-// hits in the same ms don't collide / get dropped under load.
-const SLIDING_WINDOW_LUA = `
+/**
+ * Sliding Window Rate Limiting Lua Script for Redis.
+ *
+ * Atomically removes expired entries from sorted set (zset), checks current requests
+ * against limit, adds current timestamp, and appends EXPIRE key window_seconds to
+ * prevent key/zset accumulation in Redis memory under high concurrency (300+ req/s).
+ */
+export const SLIDING_WINDOW_LUA = `
 local key = KEYS[1]
-local limit = tonumber(ARGV[1])
-local windowMs = tonumber(ARGV[2])
-local nonce = ARGV[3]
+local now = tonumber(ARGV[1])
+local windowStart = tonumber(ARGV[2])
+local limit = tonumber(ARGV[3])
+local window_seconds = tonumber(ARGV[4])
 
-local t = redis.call("TIME")
-local sec = t[1]
-local usec = t[2]
-local nowMs = tonumber(sec) * 1000 + math.floor(tonumber(usec) / 1000)
-local member = sec .. string.format("%06d", tonumber(usec)) .. ":" .. nonce
+-- Remove entries outside the sliding window
+redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
 
-redis.call("ZREMRANGEBYSCORE", key, "-inf", nowMs - windowMs)
-local count = redis.call("ZCARD", key)
-if count >= limit then
-  return 0
+-- Get current request count in window
+local current_requests = redis.call('ZCARD', key)
+
+if current_requests < limit then
+    -- Add timestamp to sorted set
+    redis.call('ZADD', key, now, now)
+    -- Atomically append EXPIRE key window_seconds
+    redis.call('EXPIRE', key, window_seconds)
+    return 1
+else
+    -- Refresh key expiration even when limited
+    redis.call('EXPIRE', key, window_seconds)
+    return 0
 end
-
-redis.call("ZADD", key, nowMs, member)
-redis.call("PEXPIRE", key, windowMs)
-return 1
 `;
 
-/** ZSET member id used by the Lua script (exported for tests). */
-export function microTimestampMember(
-  sec: string | number,
-  usec: string | number,
-  nonce: string,
-): string {
-  const u = String(usec).padStart(6, "0");
-  return `${sec}${u}:${nonce}`;
-}
+let redisClient: any = null;
 
-type RedisScript = {
-  eval: (keys: string[], args: string[]) => Promise<unknown>;
-};
-
-type RedisClient = {
-  createScript: (script: string) => RedisScript;
-};
-
-const scriptByLimit = new Map<number, RedisScript>();
-
-function getRedisScript(limitPerMinute: number): RedisScript | null {
+function getRedisClient() {
   if (
     !process.env.UPSTASH_REDIS_REST_URL ||
     !process.env.UPSTASH_REDIS_REST_TOKEN
   ) {
     return null;
   }
-
-  const cached = scriptByLimit.get(limitPerMinute);
-  if (cached) return cached;
+  if (redisClient) return redisClient;
 
   try {
-    // Dynamic require so jest doesn't pull in @upstash/redis ESM
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Redis } = require("@upstash/redis");
-
-    const redis = new Redis({
+    redisClient = new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN,
-    }) as RedisClient;
-
-    const script = redis.createScript(SLIDING_WINDOW_LUA);
-    scriptByLimit.set(limitPerMinute, script);
-    return script;
+    });
+    return redisClient;
   } catch {
     return null;
   }
 }
 
-async function redisSlidingWindow(
+async function upstashRateLimit(
   identifier: string,
   limit: number,
-): Promise<boolean | null> {
-  const script = getRedisScript(limit);
-  if (!script) return null;
+): Promise<boolean> {
+  const redis = getRedisClient();
+  if (!redis) return memRateLimit(identifier, limit);
 
   try {
-    const key = `worksphere:ratelimit:${limit}:${identifier}`;
-    const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-    const result = await script.eval(
+    const now = Date.now();
+    const windowMs = 60_000;
+    const windowSeconds = Math.ceil(windowMs / 1000);
+    const windowStart = now - windowMs;
+    const key = `worksphere:ratelimit:${identifier}`;
+
+    const allowed = await redis.eval(
+      SLIDING_WINDOW_LUA,
       [key],
-      [String(limit), String(WINDOW_MS), nonce],
+      [now, windowStart, limit, windowSeconds],
     );
-    return Number(result) === 1;
-  } catch (err) {
-    console.error("[rateLimit] redis eval failed, falling back to memory", err);
-    return null;
+
+    return Number(allowed) === 1;
+  } catch {
+    return memRateLimit(identifier, limit);
   }
 }
 
@@ -108,6 +94,7 @@ interface MemEntry {
   resetTime: number;
 }
 const memStore = new Map<string, MemEntry>();
+const WINDOW_MS = 60_000;
 
 interface RateLimitInfo {
   count: number;
@@ -195,9 +182,11 @@ export async function rateLimit(
   identifier: string,
   limit = 10,
 ): Promise<boolean> {
-  const redisResult = await redisSlidingWindow(identifier, limit);
-  if (redisResult !== null) {
-    return redisResult;
+  if (
+    process.env.UPSTASH_REDIS_REST_URL &&
+    process.env.UPSTASH_REDIS_REST_TOKEN
+  ) {
+    return upstashRateLimit(identifier, limit);
   }
 
   return memRateLimit(identifier, limit);
@@ -224,9 +213,4 @@ export function resetRateLimit(identifier?: string): void {
     memStore.clear();
     rateLimitInfoStore.clear();
   }
-}
-
-/** Clear cached Redis scripts (tests). */
-export function resetRedisScripts(): void {
-  scriptByLimit.clear();
 }

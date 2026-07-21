@@ -92,6 +92,17 @@ describe("Rate Limiting", () => {
     expect(info?.remaining).toBe(0);
     expect(info?.isLimited).toBe(true);
   });
+
+  it("includes atomic EXPIRE key window_seconds inside SLIDING_WINDOW_LUA script", async () => {
+    const { SLIDING_WINDOW_LUA } = await import("@/lib/rateLimit");
+
+    expect(SLIDING_WINDOW_LUA).toBeDefined();
+    // Verify ZREMRANGEBYSCORE and ZADD are used for sliding window
+    expect(SLIDING_WINDOW_LUA).toContain("ZREMRANGEBYSCORE");
+    expect(SLIDING_WINDOW_LUA).toContain("ZADD");
+    // Verify atomic EXPIRE key window_seconds is present
+    expect(SLIDING_WINDOW_LUA).toMatch(/EXPIRE.*key.*window_seconds/i);
+  });
 });
 
 describe("microTimestampMember", () => {

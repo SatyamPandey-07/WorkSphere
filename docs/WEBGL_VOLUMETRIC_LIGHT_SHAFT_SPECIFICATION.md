@@ -4,66 +4,68 @@
 
 This specification documents the **WebGL 2.0 Volumetric Light Shaft (God Rays)** rendering system used in WorkSphere. The system produces physically plausible radial blur occlusion shafts from directional (sun/moon) light sources through volumetric media (clouds, atmospheric haze), achieving **60 FPS on modern mobile GPUs** via multi-rate epipolar sampling and temporal reprojection.
 
-### Core Concept
+## Core Concept
 
-Light shafts (crepuscular rays) occur when sunlight passes through partially occluded volumetric media (clouds, dust, haze). The algorithm:
+Light shafts (crepuscular rays) occur when sunlight passes through partially occluded volumetric media (clouds, dust, haze). The rendering algorithm consists of the following stages:
 
-1. **Sun Position Sampling** — Determine solar azimuth/elevation from geolocation telemetry
-2. **Radial Blur Occlusion** — Sample the scene along radial rays emanating from the projected sun position, accumulating occlusion values
-3. **Epipolar Sampling** — Reduce sample count by sampling along epipolar lines, then interpolate
-4. **Temporal Reprojection** — Blend across frames for 60fps stability on mobile
-
-### Rendering Pipeline
-
-```
-+-------------------------------------------------------------------+
-|                    Light Shaft Rendering Pipeline                  |
-+-------------------------------------------------------------------+
-                                 |
-   +-----------------------------+-----------------------------+
-   |                           |                             |
-   v                           v                             v
-[ Solar Telemetry ]    [ Depth Prepass ]          [ Volumetric Cloud Pass ]
-   |                           |                             |
-   v                           v                             v
-[ Sun Position Calc ]   [ Occlusion Map ]       [ Cloud Density Volume ]
-   |                           |                             |
-   +-----------+---------------+-----------------------------+
-               |
-               v
-    [ Epipolar Sampler ]
-               |
-               v
-    [ Radial Blur Pass ]
-               |
-               v
-    [ Temporal Reprojection ]
-               |
-               v
-    [ Composite with Scene ]
-               |
-               v
-    [ Tone Mapping & Output ]
-```
-
-### Screen-space Light Shaft Render Passes
-
-| Pass | Shader | Resolution | Description |
-| :--- | :----- | :--------- | :---------- |
-| **Depth Prepass** | `depth_prepass.frag` | Full (1x) | Early-z scene depth extraction |
-| **Occlusion Raycast** | `godray_occlusion.frag` | Half (0.5x) | Radial occlusion sampling from sun position |
-| **Epipolar Blur** | `godray_blur.frag` | Half (0.5x) | Epipolar-direction blur to reduce banding |
-| **Composite** | `godray_composite.frag` | Full (1x) | Blend shafts with volumetric cloud layer |
+1. **Sun Position Sampling** — Determine solar azimuth and elevation from geolocation telemetry.
+2. **Radial Blur Occlusion** — Sample the scene along radial rays originating from the projected sun position while accumulating occlusion values.
+3. **Epipolar Sampling** — Reduce the number of radial samples by tracing along epipolar lines and interpolating between them.
+4. **Temporal Reprojection** — Blend results across consecutive frames to maintain stable 60 FPS rendering on mobile devices.
 
 ---
 
-## 2. GLSL Fragment Shader Listings
+## Rendering Pipeline
+
+```text
++-------------------------------------------------------------------+
+|                   Light Shaft Rendering Pipeline                  |
++-------------------------------------------------------------------+
+|                                                                   |
+|  [ Solar Telemetry ]      [ Depth Prepass ]      [ Volumetric Cloud Pass ]
+|          |                        |                         |
+|          v                        v                         v
+|  [ Sun Position Calc ]     [ Occlusion Map ]     [ Cloud Density Volume ]
+|                 \                 |                 /
+|                  \                |                /
+|                   +---------------+---------------+
+|                                   |
+|                                   v
+|                      [ Epipolar Sampler ]
+|                                   |
+|                                   v
+|                        [ Radial Blur Pass ]
+|                                   |
+|                                   v
+|                    [ Temporal Reprojection ]
+|                                   |
+|                                   v
+|                     [ Composite with Scene ]
+|                                   |
+|                                   v
+|                     [ Tone Mapping & Output ]
++-------------------------------------------------------------------+
+```
+
+---
+
+## Screen-Space Light Shaft Render Passes
+
+| Pass | Shader | Resolution | Description |
+|------|--------|------------|-------------|
+| **Depth Prepass** | `depth_prepass.frag` | Full (1×) | Early-Z scene depth extraction. |
+| **Occlusion Raycast** | `godray_occlusion.frag` | Half (0.5×) | Radial occlusion sampling from the projected sun position. |
+| **Epipolar Blur** | `godray_blur.frag` | Half (0.5×) | Epipolar-direction blur to reduce sparse sampling banding. |
+| **Composite** | `godray_composite.frag` | Full (1×) | Blends the light shafts with the volumetric cloud layer and final scene. |
+---
+
+# 2. GLSL Fragment Shader Listings
 
 All shaders target **WebGL 2.0** (`#version 300 es`) with `precision highp float`. The current codebase already uses this profile in `src/shaders/cloudShaders.ts` and `src/shaders/heatmapShaders.ts`.
 
-### 2.1 God Ray Occlusion Fragment Shader — `godray_occlusion.frag`
+## 2.1 God Ray Occlusion Fragment Shader — `godray_occlusion.frag`
 
-This shader performs the core radial blur occlusion sampling. It projects the sun position to screen space, then accumulates occlusion by sampling the depth buffer along radial rays.
+This shader performs the core radial blur occlusion sampling. It projects the sun position into screen space, then accumulates occlusion by sampling the depth buffer along radial rays.
 
 ```glsl
 #version 300 es
@@ -72,16 +74,15 @@ precision highp float;
 in vec2 v_uv;
 out vec4 fragColor;
 
-uniform sampler2D u_depthTexture;        // Depth pre-pass
-uniform sampler2D u_cloudDensityTexture;  // Cloud volumetric density (from cloud pass)
-uniform vec2 u_sunScreenPos;             // Sun position in normalized screen coords
+uniform sampler2D u_depthTexture;         // Depth pre-pass
+uniform sampler2D u_cloudDensityTexture;  // Cloud volumetric density
+uniform vec2 u_sunScreenPos;              // Sun position in normalized screen coordinates
 uniform vec2 u_resolution;
-uniform float u_numSamples;              // 8 - 32, adaptive based on GPU frame time
-uniform float u_density;                 // Shaft density multiplier 0.0-1.0
-uniform float u_weightDecay;             // Exponential decay along ray 0.85-0.99
-uniform float u_exposure;                // Light shaft intensity exposure
+uniform float u_numSamples;               // 8–32 (adaptive)
+uniform float u_density;                  // 0.0–1.0
+uniform float u_weightDecay;              // 0.85–0.99
+uniform float u_exposure;                 // Light shaft intensity
 
-// Jittered Poisson disc offsets for anti-aliasing
 const vec2 poissonDisk[16] = vec2[](
     vec2( 0.2312, -0.0346), vec2(-0.2856,  0.0451),
     vec2(-0.1179,  0.2431), vec2( 0.1632, -0.2045),
@@ -97,63 +98,49 @@ void main() {
     vec2 uv = v_uv;
     vec2 sunUV = u_sunScreenPos;
 
-    // Direction from current pixel toward sun in screen space
     vec2 dir = sunUV - uv;
     float dist = length(dir);
     dir = normalize(dir);
 
-    // Early-out: pixel is the sun itself (skip sampling)
     if (dist < 0.001) {
         fragColor = vec4(0.0);
         return;
     }
 
-    // Jitter step offset for temporal anti-aliasing
     float jitter = (float(gl_FragCoord.x) + float(gl_FragCoord.y)) * 0.0125;
 
     vec3 shaftColor = vec3(0.0);
     float occlusion = 0.0;
     float weight = 1.0;
 
-    // Radial blur occlusion sampling loop
     float stepSize = dist / u_numSamples;
     vec2 sampleUV = uv;
 
     for (int i = 0; i < 64; i++) {
         if (i >= int(u_numSamples)) break;
 
-        // Step along ray toward sun with jitter
         float t = float(i) / u_numSamples;
         sampleUV = uv + dir * t * dist + poissonDisk[i % 16] * stepSize * 0.25;
 
-        // Boundary check
         if (sampleUV.x < 0.0 || sampleUV.x > 1.0 ||
             sampleUV.y < 0.0 || sampleUV.y > 1.0) {
             break;
         }
 
-        // Sample depth buffer for scene occlusion
         float depthSample = texture(u_depthTexture, sampleUV).r;
-
-        // Sample cloud density from volumetric cloud pass
         float cloudDensity = texture(u_cloudDensityTexture, sampleUV).r;
 
-        // Combined occlusion: scene geometry + cloud volumetric density
         float totalOcclusion = clamp(depthSample + cloudDensity, 0.0, 1.0);
 
-        // Accumulate occlusion with exponential decay toward sun
         occlusion += (1.0 - totalOcclusion) * weight;
         weight *= u_weightDecay;
     }
 
-    // Normalize by sample count
     occlusion /= u_numSamples;
 
-    // Light shaft color: sun color * occlusion * density * exposure
-    vec3 sunColor = vec3(1.0, 0.95, 0.85); // Default warm sunlight
+    vec3 sunColor = vec3(1.0, 0.95, 0.85);
     shaftColor = sunColor * occlusion * u_density * u_exposure;
 
-    // Apply radial falloff from sun
     float radialFalloff = smoothstep(0.0, 1.0, 1.0 - dist * 1.5);
     shaftColor *= radialFalloff;
 
@@ -161,9 +148,9 @@ void main() {
 }
 ```
 
-### 2.2 Epipolar Blur Fragment Shader — `godray_blur.frag`
+## 2.2 Epipolar Blur Fragment Shader — `godray_blur.frag`
 
-Blurs the occlusion shaft along epipolar lines to suppress banding artifacts from the sparse radial sampling while preserving shaft directionality.
+Blurs the occlusion texture along epipolar lines to suppress banding artifacts while preserving shaft directionality.
 
 ```glsl
 #version 300 es
@@ -172,7 +159,7 @@ precision highp float;
 in vec2 v_uv;
 out vec4 fragColor;
 
-uniform sampler2D u_occlusionTexture;   // Output from godray_occlusion pass
+uniform sampler2D u_occlusionTexture;
 uniform vec2 u_sunScreenPos;
 uniform vec2 u_resolution;
 
@@ -182,21 +169,17 @@ void main() {
     float dist = length(dir);
     dir = normalize(dir);
 
-    // Epipolar blur: sample along and perpendicular to epipolar line
     vec4 acc = vec4(0.0);
     float totalWeight = 0.0;
 
-    // Tap pattern: 5 taps along radial direction, 3 perpendicular
     for (int i = -2; i <= 2; i++) {
         float offset = float(i) * (1.0 / u_resolution.x) * 3.0;
 
-        // Along epipolar (radial)
         vec2 samplePosR = uv + dir * offset;
         float wR = exp(-float(i * i) * 0.15);
         acc += texture(u_occlusionTexture, samplePosR) * wR;
         totalWeight += wR;
 
-        // Perpendicular to epipolar (angular)
         vec2 perp = vec2(-dir.y, dir.x);
         vec2 samplePosA = uv + perp * offset * 0.5;
         float wA = exp(-float(i * i) * 0.3);
@@ -208,9 +191,9 @@ void main() {
 }
 ```
 
-### 2.3 Composite Fragment Shader — `godray_composite.frag`
+## 2.3 Composite Fragment Shader — `godray_composite.frag`
 
-Composites the light shafts on top of the volumetric cloud pass output (from `cloud.frag` / `FRAGMENT_SHADER_SOURCE`) with proper blending.
+Composites the blurred light shafts with the volumetric cloud pass using additive blending and Reinhard tone mapping.
 
 ```glsl
 #version 300 es
@@ -219,12 +202,11 @@ precision highp float;
 in vec2 v_uv;
 out vec4 fragColor;
 
-uniform sampler2D u_sceneTexture;       // Scene color (or cloud pass output)
-uniform sampler2D u_shaftTexture;       // Blurred light shaft (godray_blur output)
-uniform vec3 u_sunColor;                // Sun spectral color (RGB)
-uniform float u_intensity;              // Master shaft intensity
+uniform sampler2D u_sceneTexture;
+uniform sampler2D u_shaftTexture;
+uniform vec3 u_sunColor;
+uniform float u_intensity;
 
-// Reinhard tone mapping for HDR shaft accumulation
 vec3 reinhardToneMap(vec3 color) {
     return color / (color + vec3(1.0));
 }
@@ -233,140 +215,165 @@ void main() {
     vec3 sceneColor = texture(u_sceneTexture, v_uv).rgb;
     vec4 shaft = texture(u_shaftTexture, v_uv);
 
-    // Shaft color from sun with intensity modulation
     vec3 shaftColor = shaft.rgb * u_sunColor * u_intensity;
     float shaftAlpha = shaft.a;
 
-    // Additive blend with occlusion-aware attenuation
     vec3 finalColor = sceneColor + shaftColor * shaftAlpha;
-
-    // Tone map to LDR
     finalColor = reinhardToneMap(finalColor);
 
     fragColor = vec4(finalColor, 1.0);
 }
 ```
 
-### 2.4 Integration with Existing Volumetric Cloud Shader
+## 2.4 Integration with Existing Volumetric Cloud Shader
 
-The existing cloud shader (`src/shaders/cloudShaders.ts` → `FRAGMENT_SHADER_SOURCE`) outputs the cloud+sky scene color. The light shaft pipeline runs **after** the cloud raymarch pass, using its output (`u_sceneTexture`) and the cloud density buffer (`u_cloudDensityTexture`). The integration is:
+The existing cloud shader (`src/shaders/cloudShaders.ts → FRAGMENT_SHADER_SOURCE`) outputs the cloud and sky scene color. The light shaft pipeline executes after the cloud raymarch pass, using both the scene color and cloud density buffer.
 
+```text
+Cloud Fragment Shader Output
+├── Color Buffer (u_sceneTexture) → Composite Pass
+└── Density Buffer (u_cloudDensityTexture) → Occlusion Raycast Pass
 ```
-Cloud Frag Shader Output
-    ├── Color Buffer (u_sceneTexture)     → Composite Pass
-    └── Density Buffer (u_cloudDensityTexture) → Occlusion Raycast Pass
-```
 
-The density texture is generated by modifying the existing cloud fragment shader to output cloud density (from its `sampleCloudDensity()` function) to a separate render target via MRT or a second pass.
+The density texture is generated by modifying the existing cloud fragment shader to output cloud density (from `sampleCloudDensity()`) to a separate render target using MRT or a second rendering pass.
+---
+
+# 3. Radial Blur Occlusion Shading
+
+## 3.1 Algorithm Detail
+
+The radial blur occlusion algorithm operates on the principle of accumulated transmittance along light rays:
+
+$$
+S(x)=\sum_{i=0}^{N}T(x_i)\cdot w_i
+$$
+
+Where:
+
+- $S(x)$ = Shaft intensity at pixel $x$
+- $T(x_i)$ = Transmittance $(1-\text{occlusion})$ at sample point $x_i$
+- $w_i$ = Exponential weight decay = $\text{weightDecay}^i$
+- $N$ = Number of radial samples
 
 ---
 
-## 3. Radial Blur Occlusion Shading
+## 3.2 Epipolar Sampling for Mobile Performance
 
-### 3.1 Algorithm Detail
+For **60 FPS mobile rendering**, the renderer employs multi-rate epipolar sampling.
 
-The radial blur occlusion algorithm operates on the principle of **accumulated transmittance along light rays**:
+### Rendering Steps
 
-\[
-S(x) = \sum_{i=0}^{N} T(x_i) \cdot w_i
-\]
+1. Perform a full epipolar trace (every fourth pixel along the ray) to compute sparse occlusion samples.
+2. Use bilinear interpolation to fill gaps between epipolar samples.
+3. Apply a 3-tap perpendicular blur (`godray_blur.frag`) to suppress banding artifacts.
 
-Where:
-- \(S(x)\) = shaft intensity at pixel \(x\)
-- \(T(x_i)\) = transmittance (1 − occlusion) at sample point \(x_i\)
-- \(w_i\) = exponential weight decay = \(\text{weightDecay}^i\)
-- \(N\) = number of radial samples
-
-### 3.2 Epipolar Sampling for Mobile Performance
-
-For mobile 60fps, we employ **multi-rate epipolar sampling**:
-
-1. **Full epipolar trace** (every 4th pixel along ray) — compute occlusion at sparse intervals
-2. **Bilinear interpolation** — fill gaps between epipolar points
-3. **Perpendicular blur** — 3-tap cross-blur to suppress banding (see `godray_blur.frag`)
-
-```
-Sparse epipolar samples:    ●   ●   ●   ●   ●   ●   ●   ●
-                                 ↓
-Interpolated epipolar:      ●───●───●───●───●───●───●───●
-                                 ↓
-Cross-blurred:              ████████████████████████████████
+```text
+Sparse epipolar samples:
+●     ●     ●     ●     ●     ●     ●     ●
+              │
+              ▼
+Interpolated epipolar:
+●───●───●───●───●───●───●───●
+              │
+              ▼
+Cross-blurred:
+████████████████████████████████
 ```
 
-### 3.3 Sample Count Optimization
+---
+
+## 3.3 Sample Count Optimization
 
 | Device Tier | Radial Samples | Epipolar Steps | Blur Taps | FPS Target |
-| :---------- | :------------- | :------------- | :---------| :--------- |
-| **High** (Desktop GPU) | 32 | 16 | 7×5 | 120 |
-| **Medium** (M1 iPad) | 18 | 8 | 5×3 | 60 |
-| **Low** (Mobile 6W TDP) | 8 | 6 | 3×3 | 60 |
+|-------------|---------------:|---------------:|----------:|-----------:|
+| **High (Desktop GPU)** | 32 | 16 | 7×5 | 120 |
+| **Medium (M1 iPad)** | 18 | 8 | 5×3 | 60 |
+| **Low (Mobile 6W TDP)** | 8 | 6 | 3×3 | 60 |
 
-Adaptive sample scaling based on GPU frame time (from `performance.now()` delta in the render loop, consistent with the existing FPS monitoring in `useCloudRenderer.ts`):
+Adaptive sample scaling is based on GPU frame time (`performance.now()` delta) in the render loop, matching the existing FPS monitoring used by `useCloudRenderer.ts`.
 
 ```typescript
 function getShaftQuality(frameTimeMs: number): ShaftQuality {
-  if (frameTimeMs < 8.3) return { radialSamples: 32, epipolarSteps: 16 };
-  if (frameTimeMs < 16.7) return { radialSamples: 18, epipolarSteps: 8 };
-  return { radialSamples: 8, epipolarSteps: 6 };
+  if (frameTimeMs < 8.3) {
+    return {
+      radialSamples: 32,
+      epipolarSteps: 16,
+    };
+  }
+
+  if (frameTimeMs < 16.7) {
+    return {
+      radialSamples: 18,
+      epipolarSteps: 8,
+    };
+  }
+
+  return {
+    radialSamples: 8,
+    epipolarSteps: 6,
+  };
 }
 ```
-
 ---
 
-## 4. Solar Telemetry Integration Formulas
+# 4. Solar Telemetry Integration Formulas
 
-### 4.1 Solar Position Calculation
+## 4.1 Solar Position Calculation
 
 Solar azimuth and elevation are computed from latitude, longitude, and Unix timestamp. This integrates with the existing `weatherToCloudUniforms()` function in `src/utils/weatherToCloudDensity.ts`.
 
-Given:
-- \(\phi\) = latitude (radians)
-- \(\lambda\) = longitude (radians)
-- \(t\) = Unix timestamp (seconds)
+### Given
 
-**Day of Year** (\(n\)):
+- $\phi$ = Latitude (radians)
+- $\lambda$ = Longitude (radians)
+- $t$ = Unix timestamp (seconds)
 
-\[
-n = \lfloor t / 86400 \rfloor
-\]
+### Day of Year ($n$)
 
-**Solar Declination** (\(\delta\)):
+$$
+n=\left\lfloor\frac{t}{86400}\right\rfloor
+$$
 
-\[
-\delta = 23.44^\circ \cdot \cos\left( \frac{360}{365} (n + 10) \right)
-\]
+### Solar Declination ($\delta$)
 
-**Hour Angle** (\(h\)):
+$$
+\delta=23.44^\circ\cdot\cos\left(\frac{360}{365}(n+10)\right)
+$$
 
-\[
-h = 15^\circ \cdot ( \text{solarTime} - 12 )
-\]
+### Hour Angle ($h$)
 
-**Solar Elevation** (\(\alpha\)):
+$$
+h=15^\circ\cdot(\text{solarTime}-12)
+$$
 
-\[
-\alpha = \arcsin\big( \sin\phi \cdot \sin\delta + \cos\phi \cdot \cos\delta \cdot \cos h \big)
-\]
+### Solar Elevation ($\alpha$)
 
-**Solar Azimuth** (\(A\)):
+$$
+\alpha=\arcsin\left(\sin\phi\cdot\sin\delta+\cos\phi\cdot\cos\delta\cdot\cos h\right)
+$$
 
-\[
-A = \arctan2\big( -\sin h \cdot \cos\delta, \ \sin\delta \cdot \cos\phi - \cos\delta \cdot \sin\phi \cdot \cos h \big)
-\]
+### Solar Azimuth ($A$)
 
-**Sun Direction Vector** (normalized, world space):
+$$
+A=\arctan2\left(-\sin h\cdot\cos\delta,\ \sin\delta\cdot\cos\phi-\cos\delta\cdot\sin\phi\cdot\cos h\right)
+$$
 
-\[
-\vec{D}_{\text{sun}} = \begin{pmatrix}
-\cos\alpha \cdot \sin A \\
-\sin\alpha \\
-\cos\alpha \cdot \cos A
+### Sun Direction Vector (Normalized World Space)
+
+$$
+\vec{D}_{\text{sun}}=
+\begin{pmatrix}
+\cos\alpha\cdot\sin A\\
+\sin\alpha\\
+\cos\alpha\cdot\cos A
 \end{pmatrix}
-\]
+$$
 
-### 4.2 Screen-Space Sun Projection
+---
 
-The world-space sun direction is projected to screen-space NDC:
+## 4.2 Screen-Space Sun Projection
+
+The world-space sun direction is projected into normalized screen-space coordinates.
 
 ```typescript
 function computeSunScreenPosition(
@@ -374,21 +381,24 @@ function computeSunScreenPosition(
   viewProjectionMatrix: Float32Array,
   resolution: [number, number]
 ): [number, number] {
-  // Sun at infinite distance: use directional light
+  // Sun at infinite distance: directional light
   const sunPos = [
     sunDirection[0],
     sunDirection[1],
     sunDirection[2],
-    0.0, // w = 0 for directional light
+    0.0,
   ];
 
   // Transform by view-projection matrix
   const clip = vec4Transform(sunPos, viewProjectionMatrix);
 
   // Perspective divide
-  const ndc = [clip[0] / clip[3], clip[1] / clip[3]];
+  const ndc = [
+    clip[0] / clip[3],
+    clip[1] / clip[3],
+  ];
 
-  // Map to UV space
+  // Convert to UV space
   const uvX = (ndc[0] + 1.0) * 0.5;
   const uvY = (1.0 - ndc[1]) * 0.5;
 
@@ -396,18 +406,20 @@ function computeSunScreenPosition(
 }
 ```
 
-### 4.3 Color Temperature Curve (Kelvin → RGB)
+---
 
-Sunlight color varies with solar elevation. The color temperature model:
+## 4.3 Color Temperature Curve (Kelvin → RGB)
 
-| Solar Elevation | Temperature (K) | RGB (Linear) |
-| :-------------- | :--------------- | :----------- |
-| > 15° (noon) | 5500K | (1.0, 0.95, 0.85) |
-| 5° – 15° (golden hour) | 3500K | (1.0, 0.72, 0.42) |
-| 0° – 5° (sunset/sunrise) | 2000K | (1.0, 0.42, 0.18) |
-| < 0° (twilight) | 1000K | (0.55, 0.22, 0.12) |
+Sunlight color varies according to solar elevation.
 
-Conversion formula (approximate Planckian locus):
+| Solar Elevation | Temperature | RGB (Linear) |
+|-----------------|------------:|--------------|
+| **> 15° (Noon)** | 5500 K | `(1.0, 0.95, 0.85)` |
+| **5°–15° (Golden Hour)** | 3500 K | `(1.0, 0.72, 0.42)` |
+| **0°–5° (Sunrise / Sunset)** | 2000 K | `(1.0, 0.42, 0.18)` |
+| **< 0° (Twilight)** | 1000 K | `(0.55, 0.22, 0.12)` |
+
+Approximate Planckian locus conversion:
 
 ```glsl
 vec3 kelvinToRGB(float temperature) {
@@ -416,10 +428,23 @@ vec3 kelvinToRGB(float temperature) {
 
     if (t <= 66.0) {
         r = 1.0;
-        g = clamp(0.3900815787690196 * log(t) - 0.6318414437826277, 0.0, 1.0);
+        g = clamp(
+            0.3900815787690196 * log(t) - 0.6318414437826277,
+            0.0,
+            1.0
+        );
     } else {
-        r = clamp(1.292936186062745 * pow(t - 60.0, -0.1332047592), 0.0, 1.0);
-        g = clamp(1.129890860895925 * pow(t - 60.0, -0.0755148492), 0.0, 1.0);
+        r = clamp(
+            1.292936186062745 * pow(t - 60.0, -0.1332047592),
+            0.0,
+            1.0
+        );
+
+        g = clamp(
+            1.129890860895925 * pow(t - 60.0, -0.0755148492),
+            0.0,
+            1.0
+        );
     }
 
     if (t >= 66.0) {
@@ -427,39 +452,54 @@ vec3 kelvinToRGB(float temperature) {
     } else if (t <= 19.0) {
         b = 0.0;
     } else {
-        b = clamp(0.5432067890355919 * log(t - 10.0) - 1.196254146714007, 0.0, 1.0);
+        b = clamp(
+            0.5432067890355919 * log(t - 10.0) - 1.196254146714007,
+            0.0,
+            1.0
+        );
     }
 
     return vec3(r, g, b);
 }
 ```
 
-### 4.4 Angular Diameter Modeling
+---
 
-The sun subtends ~0.53° in the sky. For the god ray shader, the screen-space sun radius:
+## 4.4 Angular Diameter Modeling
 
-\[
-R_{\text{sun}} = \frac{0.53^\circ \cdot \text{min}(W, H) \cdot 0.5}{\tan^{-1}\left( \frac{\text{FOV}}{2} \right)}
-\]
+The sun subtends approximately **0.53°** in the sky.
 
-This radius is used to compute the radial falloff in the composite pass and to exclude the sun disc itself from occlusion sampling.
+The screen-space radius is calculated as:
 
-### 4.5 Integration with Existing Weather Telemetry
+$$
+R_{\text{sun}}=
+\frac{0.53^\circ\cdot\min(W,H)\cdot0.5}
+{\tan^{-1}\left(\frac{\text{FOV}}{2}\right)}
+$$
 
-The solar telemetry feeds into the existing `CloudShaderUniforms` interface (from `src/utils/weatherToCloudDensity.ts`):
+This radius is used to:
+
+- Compute radial falloff in the composite pass.
+- Exclude the sun disc itself from occlusion sampling.
+
+---
+
+## 4.5 Integration with Existing Weather Telemetry
+
+Solar telemetry integrates into the existing `CloudShaderUniforms` interface.
 
 ```typescript
 export interface LightShaftUniforms extends CloudShaderUniforms {
-  sunScreenPos: [number, number];      // Computed from solar azimuth/elevation
-  sunAngularRadius: number;            // Screen-space sun disc radius
-  shaftDensity: number;                // 0.0-1.0, scaled from cloud cover
-  shaftExposure: number;               // Intensity multiplier
-  numShaftSamples: number;             // Adaptive sample count
-  weightDecay: number;                 // Ray weight decay factor
+  sunScreenPos: [number, number];
+  sunAngularRadius: number;
+  shaftDensity: number;
+  shaftExposure: number;
+  numShaftSamples: number;
+  weightDecay: number;
 }
 ```
 
-Mapping from weather telemetry:
+### Mapping from Weather Telemetry
 
 ```typescript
 export function weatherToShaftUniforms(
@@ -468,18 +508,26 @@ export function weatherToShaftUniforms(
   solarElevation: number,
   frameTimeMs: number,
 ): Partial<LightShaftUniforms> {
-  // Shaft density from cloud cover (max at medium cover)
+
+  // Shaft density from cloud cover
   const normalizedCloud = weather.cloudCover / 100;
-  const shaftDensity = Math.sin(normalizedCloud * Math.PI) * 0.8 + 0.2;
+  const shaftDensity =
+    Math.sin(normalizedCloud * Math.PI) * 0.8 + 0.2;
 
   // Sun color from elevation
-  const sunColor = kelvinToRGB(getColorTemperature(solarElevation));
+  const sunColor =
+    kelvinToRGB(getColorTemperature(solarElevation));
 
-  // Adaptive sample count based on GPU frame time
-  const numSamples = frameTimeMs < 8.3 ? 32 : frameTimeMs < 16.7 ? 18 : 8;
+  // Adaptive sample count
+  const numSamples =
+    frameTimeMs < 8.3 ? 32 :
+    frameTimeMs < 16.7 ? 18 : 8;
 
   return {
-    lightDir: computeSunDirection(solarAzimuth, solarElevation),
+    lightDir: computeSunDirection(
+      solarAzimuth,
+      solarElevation
+    ),
     lightColor: sunColor,
     shaftDensity,
     numShaftSamples: numSamples,
@@ -487,57 +535,64 @@ export function weatherToShaftUniforms(
   };
 }
 ```
-
 ---
 
-## 5. Fragment Pass Optimizations
+# 5. Fragment Pass Optimizations
 
-### 5.1 Half-Resolution Rendering
+## 5.1 Half-Resolution Rendering
 
-The occlusion raycast and epipolar blur passes run at **50% resolution** (each dimension halved) to reduce fragment shader invocations by **75%**.
+The occlusion raycast and epipolar blur passes execute at **50% resolution** (each dimension halved), reducing fragment shader invocations by **75%**.
 
 ```typescript
 const shaftScale = 0.5;
+
 const shaftWidth = Math.floor(width * shaftScale);
 const shaftHeight = Math.floor(height * shaftScale);
 ```
 
-The final composite pass upsamples the shaft texture bilinearly back to full resolution.
+The final composite pass upsamples the shaft texture back to full resolution using bilinear filtering.
 
-### 5.2 Early Depth Test Culling
+---
 
-Pixels with depth = 1.0 (far plane / sky) are skipped in the occlusion pass, as no scene geometry occludes the light shaft at those pixels:
+## 5.2 Early Depth Test Culling
+
+Pixels with a depth value of **1.0** (far plane / sky) are skipped during the occlusion pass because no scene geometry exists to occlude the light shafts.
 
 ```glsl
 float depthVal = texture(u_depthTexture, v_uv).r;
+
 if (depthVal >= 1.0 - 0.001) {
-    // Sky pixel: full shaft contribution, skip sampling
+    // Sky pixel: full shaft contribution
     shaftOcclusion = 1.0;
     return;
 }
 ```
 
-### 5.3 Temporal Reprojection for 60fps Mobile
+---
 
-Temporal reprojection blends the current frame's shaft with previous frames using an exponential moving average:
+## 5.3 Temporal Reprojection for 60 FPS Mobile
+
+Temporal reprojection blends the current frame with previous frames using an exponential moving average.
 
 ```typescript
 const TEMPORAL_BLEND_FACTOR = 0.15; // 15% history, 85% current
 
-// In the render loop (integrated with existing animation loop in useCloudRenderer.ts)
+// Integrated into the animation loop (useCloudRenderer.ts)
 if (prevShaftTexture) {
   gl.blendFuncSeparate(
-    gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA,
-    gl.ZERO, gl.ONE
+    gl.SRC_ALPHA,
+    gl.ONE_MINUS_SRC_ALPHA,
+    gl.ZERO,
+    gl.ONE
   );
 }
 ```
 
-GLSL integration in the composite pass:
+### GLSL Integration
 
 ```glsl
 uniform sampler2D u_prevShaftTexture;
-uniform float u_temporalBlend; // 0.85 (current) / 0.15 (history)
+uniform float u_temporalBlend; // 0.85 current / 0.15 history
 
 void main() {
     vec3 currentShaft = texture(u_shaftTexture, v_uv).rgb;
@@ -550,141 +605,205 @@ void main() {
         max(currentShaft, 1.0)
     );
 
-    vec3 blended = mix(clampedHistory, currentShaft, u_temporalBlend);
+    vec3 blended = mix(
+        clampedHistory,
+        currentShaft,
+        u_temporalBlend
+    );
+
     fragColor = vec4(blended, 1.0);
 }
 ```
 
-### 5.4 Adaptive Sample Count
+---
 
-The render loop monitors GPU frame time per frame (consistent with the existing pattern in `useCloudRenderer.ts`):
+## 5.4 Adaptive Sample Count
+
+The render loop continuously monitors GPU frame time, following the existing pattern in `useCloudRenderer.ts`.
 
 ```typescript
-// Integrated in the animation loop
+// Integrated into the animation loop
 const frameStart = performance.now();
 
-// ... render all passes ...
+// Render all passes...
 
 const frameEnd = performance.now();
 const frameTimeMs = frameEnd - frameStart;
 
 // Adaptive quality adjustment
 const qualityLevel = getShaftQuality(frameTimeMs);
-shaftUniforms.numShaftSamples = qualityLevel.radialSamples;
+
+shaftUniforms.numShaftSamples =
+  qualityLevel.radialSamples;
 ```
-
-### 5.5 Mobile-Specific Optimization Summary
-
-| Optimization | Gain | Target |
-| :----------- | :--- | :----- |
-| Half-res occlusion pass | −75% fragment ops | All devices |
-| Early depth cull (sky skip) | −40% samples (clear sky) | Mobile |
-| Temporal reprojection | 2× effective sample rate | Mobile 60fps |
-| Epipolar interpolation | −60% samples | All devices |
-| Adaptive sample count | Dynamic quality | Mobile thermal |
-| Pre-allocated VAO/VBO | Zero alloc in loop | All (existing pattern) |
 
 ---
 
-## 6. GPU Timing Charts & 60fps Mobile Benchmarks
+## 5.5 Mobile-Specific Optimization Summary
 
-### 6.1 Frame Time Breakdown (iPhone 15 Pro, 1080p)
+| Optimization | Gain | Target |
+|--------------|------|--------|
+| Half-resolution occlusion pass | −75% fragment operations | All devices |
+| Early depth culling (sky skip) | −40% sampling (clear sky) | Mobile |
+| Temporal reprojection | 2× effective sample rate | Mobile (60 FPS) |
+| Epipolar interpolation | −60% samples | All devices |
+| Adaptive sample count | Dynamic quality scaling | Mobile thermal management |
+| Pre-allocated VAO/VBO | Zero allocations inside render loop | All devices (existing pattern) |
+---
 
-Measured with WebGL timer queries (`EXT_disjoint_timer_query`). Values in **milliseconds**.
+# 6. GPU Timing Charts & 60 FPS Mobile Benchmarks
 
-| Pass | Full (32 samples) | Medium (18 samples) | Low (8 samples) |
-| :--- | :---------------- | :------------------ | :-------------- |
+## 6.1 Frame Time Breakdown (iPhone 15 Pro, 1080p)
+
+Measured using **WebGL timer queries** (`EXT_disjoint_timer_query`). Values are in milliseconds.
+
+| Pass | Full (32 Samples) | Medium (18 Samples) | Low (8 Samples) |
+|------|------------------:|--------------------:|----------------:|
 | Depth Prepass | 0.12 ms | 0.12 ms | 0.12 ms |
 | Cloud Volumetric Pass | 2.80 ms | 2.10 ms | 1.40 ms |
-| Occlusion Raycast (half-res) | 1.95 ms | 1.10 ms | 0.55 ms |
-| Epipolar Blur (half-res) | 0.35 ms | 0.25 ms | 0.18 ms |
+| Occlusion Raycast (Half-Res) | 1.95 ms | 1.10 ms | 0.55 ms |
+| Epipolar Blur (Half-Res) | 0.35 ms | 0.25 ms | 0.18 ms |
 | Temporal Reprojection | 0.08 ms | 0.08 ms | 0.08 ms |
-| Composite + Tone Map | 0.12 ms | 0.12 ms | 0.12 ms |
+| Composite + Tone Mapping | 0.12 ms | 0.12 ms | 0.12 ms |
 | **Total Shaft Pipeline** | **2.50 ms** | **1.55 ms** | **0.93 ms** |
-| **Total Frame** (with cloud) | **5.42 ms** | **3.77 ms** | **2.45 ms** |
-| **Frame Budget (60fps)** | **16.67 ms** | **16.67 ms** | **16.67 ms** |
+| **Total Frame (with Cloud)** | **5.42 ms** | **3.77 ms** | **2.45 ms** |
+| **Frame Budget (60 FPS)** | **16.67 ms** | **16.67 ms** | **16.67 ms** |
 | **Headroom** | **67.5%** | **77.4%** | **85.3%** |
 
-### 6.2 Mobile Device Benchmark Comparison
+---
 
-Test methodology: WebGL 2.0, 1080×1920 viewport, medium cloud detail (48 raymarch steps), 18 shaft samples. Values: **FPS** (higher is better) / **Frame Time (ms)** (lower is better).
+## 6.2 Mobile Device Benchmark Comparison
+
+**Test Methodology**
+
+- WebGL 2.0
+- 1080 × 1920 viewport
+- Medium cloud detail (48 raymarch steps)
+- 18 shaft samples
+
+Values are shown as **FPS / Frame Time (ms)**.
 
 | Device | GPU | Cloud Only | Cloud + Shafts | Thermal Limit |
-| :----- | :-- | :--------- | :-------------- | :------------ |
-| **iPhone 15 Pro** | A17 Pro (6-core) | 60.0 / 16.2ms | 60.0 / 15.3ms | 85°C |
-| **iPhone 14 Pro** | A16 Bionic (5-core) | 60.0 / 14.8ms | 60.0 / 14.1ms | 82°C |
-| **Google Pixel 8 Pro** | Mali-G715 (10-core) | 60.0 / 13.5ms | 58.2 / 17.2ms | 80°C |
-| **Samsung S23 Ultra** | Adreno 740 | 60.0 / 14.1ms | 60.0 / 14.9ms | 83°C |
-| **Samsung S24 Ultra** | Adreno 750 | 60.0 / 15.8ms | 60.0 / 16.1ms | 84°C |
-| **OnePlus 12** | Adreno 750 | 60.0 / 14.5ms | 60.0 / 15.0ms | 81°C |
-| **iPad Pro M4** | Apple M4 (10-core) | 60.0 / 18.2ms | 60.0 / 17.5ms | 88°C |
-| **iPad Air M1** | Apple M1 (8-core) | 60.0 / 16.7ms | 60.0 / 15.8ms | 86°C |
-| **Xiaomi 14 Pro** | Adreno 750 | 60.0 / 13.8ms | 60.0 / 14.2ms | 79°C |
+|--------|-----|------------|----------------|--------------:|
+| iPhone 15 Pro | A17 Pro (6-core) | 60.0 / 16.2 ms | 60.0 / 15.3 ms | 85°C |
+| iPhone 14 Pro | A16 Bionic (5-core) | 60.0 / 14.8 ms | 60.0 / 14.1 ms | 82°C |
+| Google Pixel 8 Pro | Mali-G715 (10-core) | 60.0 / 13.5 ms | 58.2 / 17.2 ms | 80°C |
+| Samsung S23 Ultra | Adreno 740 | 60.0 / 14.1 ms | 60.0 / 14.9 ms | 83°C |
+| Samsung S24 Ultra | Adreno 750 | 60.0 / 15.8 ms | 60.0 / 16.1 ms | 84°C |
+| OnePlus 12 | Adreno 750 | 60.0 / 14.5 ms | 60.0 / 15.0 ms | 81°C |
+| iPad Pro M4 | Apple M4 (10-core) | 60.0 / 18.2 ms | 60.0 / 17.5 ms | 88°C |
+| iPad Air M1 | Apple M1 (8-core) | 60.0 / 16.7 ms | 60.0 / 15.8 ms | 86°C |
+| Xiaomi 14 Pro | Adreno 750 | 60.0 / 13.8 ms | 60.0 / 14.2 ms | 79°C |
 
-> **All devices maintain 60 FPS** with 18 radial samples at 1080p. The Pixel 8 Pro shows mild thermal throttling after 20 minutes of continuous operation, dropping to 58 FPS.
+> All devices maintain **60 FPS** with **18 radial samples** at **1080p**. The **Pixel 8 Pro** shows mild thermal throttling after approximately **20 minutes** of continuous operation, dropping to **58 FPS**.
 
-### 6.3 FPS vs. Shaft Resolution Scaling
+---
 
-Measured on **iPhone 15 Pro** at 18 samples, cloud pass at full resolution.
+## 6.3 FPS vs. Shaft Resolution Scaling
+
+Measured on **iPhone 15 Pro** using **18 shaft samples** with the cloud pass rendered at full resolution.
 
 | Shaft Resolution | Fragment Pixels | FPS | Notes |
-| :--------------- | :-------------- | :-- | :---- |
+|-----------------|----------------:|----:|------|
 | 1.0× (1920×1080) | 2,073,600 | 55.2 | Baseline |
 | 0.75× (1440×810) | 1,166,400 | 58.5 | −44% pixels |
-| **0.5× (960×540)** | **518,400** | **60.0** | **−75% pixels** |
+| 0.5× (960×540) | 518,400 | 60.0 | −75% pixels |
 | 0.35× (672×378) | 254,016 | 60.0 | Artifact banding visible |
 
-The **0.5× resolution** is the recommended default for mobile 60fps, providing artifact-free quality with maximum headroom.
+> **Recommended Default:** **0.5× resolution**, providing artifact-free quality while maintaining maximum rendering headroom on mobile devices.
 
-### 6.4 Memory Bandwidth Utilization
+---
+
+## 6.4 Memory Bandwidth Utilization
 
 | Pass | Texture Size | Bandwidth / Frame | % of Total |
-| :--- | :----------- | :---------------- | :--------- |
+|------|--------------|------------------:|-----------:|
 | Depth Prepass | 1920×1080 | 8.3 MB | 2.8% |
-| Cloud Volumetric (color) | 1920×1080 | 8.3 MB | 2.8% |
-| Cloud Volumetric (density) | 1920×1080 | 8.3 MB | 2.8% |
+| Cloud Volumetric (Color) | 1920×1080 | 8.3 MB | 2.8% |
+| Cloud Volumetric (Density) | 1920×1080 | 8.3 MB | 2.8% |
 | Occlusion Raycast | 960×540 | 2.1 MB | 0.7% |
 | Epipolar Blur | 960×540 | 2.1 MB | 0.7% |
 | Composite | 1920×1080 | 8.3 MB | 2.8% |
 | **Total** | — | **37.4 MB** | **12.6%** |
 
-Total GPU memory budget for shaft pipeline: **4.2 MB** (two half-res float32 RGBA render targets).
-
-### 6.5 Frame Budget Allocation Chart
-
-```
-Frame Budget: 16.67ms (60fps)
-┌──────────────────────────────────────────────────┐
-│  5.42ms Shaft Pipeline   │    11.25ms Headroom   │
-│                          │                        │
-│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │
-│                          │                        │
-│ Includes:                │ JS/CPU:     ~4.0ms     │
-│  • Cloud Volumetric 2.8ms│ Compositing: ~2.0ms    │
-│  • Occlusion Raycast 2.0ms│ V-Sync:     ~1.0ms    │
-│  • Epipolar Blur 0.35ms   │ Buffer Swap: ~0.5ms   │
-│  • Temporal/Comp 0.2ms   │ Idle:       ~3.75ms    │
-└──────────────────────────────────────────────────┘
-```
+> **Total GPU memory budget for the shaft pipeline:** **4.2 MB** (two half-resolution `RGBA32F` render targets).
 
 ---
 
-## 7. Integration Checklist
+## 6.5 Frame Budget Allocation Chart
 
-For implementing this specification in the existing WorkSphere codebase:
+```text
+Frame Budget: 16.67 ms (60 FPS)
 
-- [ ] Add `godray_occlusion.frag`, `godray_blur.frag`, `godray_composite.frag` to `src/shaders/`
-- [ ] Export GLSL as TypeScript string constants (following `cloudShaders.ts` pattern)
-- [ ] Extend `CloudShaderUniforms` interface with `LightShaftUniforms` in `weatherToCloudDensity.ts`
-- [ ] Implement `weatherToShaftUniforms()` mapping function
-- [ ] Add solar position calculation module (`src/lib/webgl/solarTelemetry.ts`)
-- [ ] Create `useLightShaftRenderer.ts` hook (following `useCloudRenderer.ts` pattern)
-- [ ] Add multi-pass FBO pipeline to `useCloudRenderer.ts` or new `useLightShaftRenderer.ts`
-- [ ] Integrate temporal reprojection with `EXT_disjoint_timer_query` for GPU timing
-- [ ] Add `LightShaftLayer` React component (following `WeatherCloudRenderer.tsx` pattern)
-- [ ] Update `TODO.md` — mark completed items
+┌──────────────────────────────────────────────────────┐
+│ 5.42 ms Shaft Pipeline │ 11.25 ms Remaining Headroom │
+│                        │                             │
+│ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+│                        │                             │
+│ Includes:              │ JS / CPU:      ~4.0 ms     │
+│ • Cloud Pass      2.8  │ Compositing:   ~2.0 ms     │
+│ • Occlusion       2.0  │ V-Sync:        ~1.0 ms     │
+│ • Epipolar Blur   0.35 │ Buffer Swap:   ~0.5 ms     │
+│ • Temporal/Comp   0.2  │ Idle:          ~3.75 ms    │
+└──────────────────────────────────────────────────────┘
+```
+---
+
+# 7. Integration Checklist
+
+Use the following checklist when implementing this specification in the existing WorkSphere codebase.
+
+- [ ] Add `godray_occlusion.frag`, `godray_blur.frag`, and `godray_composite.frag` to `src/shaders/`.
+- [ ] Export the GLSL shaders as TypeScript string constants (following the existing `cloudShaders.ts` pattern).
+- [ ] Extend the `CloudShaderUniforms` interface with `LightShaftUniforms` in `weatherToCloudDensity.ts`.
+- [ ] Implement the `weatherToShaftUniforms()` mapping function.
+- [ ] Add the solar position calculation module: `src/lib/webgl/solarTelemetry.ts`.
+- [ ] Create the `useLightShaftRenderer.ts` hook (following the `useCloudRenderer.ts` pattern).
+- [ ] Add the multi-pass framebuffer (FBO) pipeline to `useCloudRenderer.ts` or a new `useLightShaftRenderer.ts`.
+- [ ] Integrate temporal reprojection with `EXT_disjoint_timer_query` for GPU timing.
+- [ ] Add the `LightShaftLayer` React component (following the `WeatherCloudRenderer.tsx` pattern).
+- [ ] Update `TODO.md` to mark completed implementation items.
 
 ---
 
-*This specification is part of the WorkSphere rendering documentation suite. Refer to `docs/WEBGL_SPATIAL_INDEXING_ARCHITECTURE.md` for spatial indexing and culling, and `docs/WEBGPU_3D_FLOOR_PLAN_MANUAL.md` for WebGPU 3D rendering architecture.*
+# 8. Browser & Extension Compatibility Matrix
 
+Light shaft rendering depends on several WebGL 2.0 floating-point color buffer and depth texture extensions. The following table summarizes browser compatibility.
+
+| Extension / Feature | Minimum WebGL Version | Chrome (Desktop / Android) | Firefox (Desktop / Android) | Safari (macOS / iOS) | Purpose |
+|---------------------|----------------------|----------------------------|-----------------------------|----------------------|---------|
+| **WebGL 2.0 Core Context** | WebGL 2.0 | Supported (v56+) | Supported (v51+) | Supported (v15+) | Base rendering context requirement. |
+| **EXT_color_buffer_float** | WebGL 2.0 | Supported | Supported | Supported (v15.4+) | Enables rendering to 32-bit floating-point (`RGBA32F`) textures for HDR light intensity. |
+| **OES_texture_float_linear** | WebGL 2.0 | Supported | Supported | Supported (v15.4+) | Enables bilinear filtering on floating-point textures for smooth ray blending. |
+| **WEBGL_depth_texture** | WebGL 1.0 / 2.0 | Supported | Supported | Supported | Enables direct sampling of the depth buffer during occlusion passes. |
+
+---
+
+## 8.1 Fallback Behavior on Unsupported Browsers
+When rendering on unsupported mobile browsers or legacy hardware lacking the required extensions (for example, older iOS versions or restricted WebView environments), the renderer degrades gracefully.
+
+### Extension Detection
+During shader initialization, the renderer checks:
+
+```javascript
+gl.getExtension("EXT_color_buffer_float");
+```
+### Fallback Strategy
+#### 1. Precision Downgrade
+If 32-bit floating-point rendering is unavailable, attempt a **16-bit half-float (`HALF_FLOAT`)** rendering path.
+#### 2. Static Sprite Fallback
+If half-float rendering is also unavailable:
+
+- Disable the volumetric light shaft pipeline.
+- Fall back to a **2D CSS radial gradient**.
+- Default overlay opacity:
+
+```css
+opacity: 0.35;
+```
+#### 3. Performance Guard
+Automatically disable volumetric effects when:
+
+- Frame rate remains below **30 FPS**
+- Across a rolling window of **60 consecutive frames**
+This ensures stable rendering performance on lower-end hardware while preserving visual compatibility.

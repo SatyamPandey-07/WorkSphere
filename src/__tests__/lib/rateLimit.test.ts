@@ -1,13 +1,29 @@
-const mockMultiExec = jest.fn();
 const mockMulti = {
-  incr: jest.fn().mockReturnThis(),
+  zremrangebyscore: jest.fn().mockReturnThis(),
+  zadd: jest.fn().mockReturnThis(),
+  zcard: jest.fn().mockReturnThis(),
   expire: jest.fn().mockReturnThis(),
-  exec: mockMultiExec,
+  exec: jest.fn(),
 };
+
+const mockZrem = jest.fn();
+
+const WINDOW_MS = 60_000;
+const WINDOW_SECONDS = 60;
+
+function resetMocks() {
+  mockMulti.exec.mockReset();
+  mockMulti.zremrangebyscore.mockClear();
+  mockMulti.zadd.mockClear();
+  mockMulti.zcard.mockClear();
+  mockMulti.expire.mockClear();
+  mockZrem.mockReset();
+}
 
 jest.mock("@upstash/redis", () => ({
   Redis: jest.fn().mockImplementation(() => ({
     multi: () => mockMulti,
+    zrem: mockZrem,
   })),
 }));
 
@@ -23,9 +39,7 @@ describe("Rate Limiting", () => {
   beforeEach(() => {
     resetRateLimit();
     resetRedisScripts();
-    mockMultiExec.mockReset();
-    mockMulti.incr.mockClear();
-    mockMulti.expire.mockClear();
+    resetMocks();
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
   });
@@ -41,12 +55,10 @@ describe("Rate Limiting", () => {
   it("should block requests over the limit", async () => {
     const ip = "192.168.1.2";
 
-    // Make 10 requests (default limit)
     for (let i = 0; i < 10; i++) {
       await rateLimit(ip);
     }
 
-    // 11th request should be blocked
     expect(await rateLimit(ip)).toBe(false);
   });
 
@@ -54,19 +66,16 @@ describe("Rate Limiting", () => {
     const ip1 = "192.168.1.3";
     const ip2 = "192.168.1.4";
 
-    // Exhaust limit for ip1
     for (let i = 0; i < 10; i++) {
       await rateLimit(ip1);
     }
 
-    // ip2 should still be allowed
     expect(await rateLimit(ip2)).toBe(true);
   });
 
   it("should respect custom limits", async () => {
     const ip = "192.168.1.5";
 
-    // Custom limit of 5
     for (let i = 0; i < 5; i++) {
       expect(await rateLimit(ip, 5)).toBe(true);
     }
@@ -97,8 +106,6 @@ describe("Rate Limiting", () => {
     expect(info?.remaining).toBe(0);
     expect(info?.isLimited).toBe(true);
   });
-
-  // Lua script test removed in favor of pipeline transactions.
 });
 
 describe("microTimestampMember", () => {
@@ -115,53 +122,93 @@ describe("microTimestampMember", () => {
   });
 });
 
-describe("Redis sliding window path", () => {
+describe("Redis sliding window atomic MULTI (ZREMRANGEBYSCORE + ZCARD)", () => {
   beforeEach(() => {
     resetRedisScripts();
-    mockMultiExec.mockReset();
-    mockMulti.incr.mockClear();
-    mockMulti.expire.mockClear();
+    resetMocks();
     process.env.UPSTASH_REDIS_REST_URL = "https://example.upstash.io";
     process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
   });
 
   afterEach(() => {
+    jest.restoreAllMocks();
     delete process.env.UPSTASH_REDIS_REST_URL;
     delete process.env.UPSTASH_REDIS_REST_TOKEN;
     resetRedisScripts();
   });
 
-  it("blocks after the pipeline result count exceeds limit", async () => {
-    let hits = 0;
-    mockMultiExec.mockImplementation(async () => {
-      hits += 1;
-      return [hits];
-    });
+  it("runs prune, add, card, and expire in one multi transaction", async () => {
+    const now = 1_700_000_000_000;
+    jest.spyOn(Date, "now").mockReturnValue(now);
+    mockMulti.exec.mockResolvedValueOnce([0, 1, 1, 1]);
 
     expect(await rateLimit("redis-ip", 3)).toBe(true);
-    expect(await rateLimit("redis-ip", 3)).toBe(true);
-    expect(await rateLimit("redis-ip", 3)).toBe(true);
-    expect(await rateLimit("redis-ip", 3)).toBe(false);
-    expect(mockMultiExec).toHaveBeenCalledTimes(4);
+
+    const key = "worksphere:ratelimit:redis-ip";
+    expect(mockMulti.zremrangebyscore).toHaveBeenCalledWith(
+      key,
+      0,
+      now - WINDOW_MS,
+    );
+    expect(mockMulti.zadd).toHaveBeenCalledTimes(1);
+    expect(mockMulti.zcard).toHaveBeenCalledWith(key);
+    expect(mockMulti.expire).toHaveBeenCalledWith(key, WINDOW_SECONDS);
+    expect(mockMulti.exec).toHaveBeenCalledTimes(1);
+    expect(mockZrem).not.toHaveBeenCalled();
   });
 
-  it("uses the correct rate limit key format with pipeline", async () => {
-    mockMultiExec.mockResolvedValue([1]);
+  it("rejects and removes the optimistic member when ZCARD exceeds the limit", async () => {
+    const now = 1_700_000_000_000;
+    jest.spyOn(Date, "now").mockReturnValue(now);
+    mockMulti.exec.mockResolvedValueOnce([0, 1, 4, 1]);
 
-    await Promise.all([
-      rateLimit("burst-ip", 10),
-      rateLimit("burst-ip", 10),
-      rateLimit("burst-ip", 10),
-    ]);
+    expect(await rateLimit("full-ip", 3)).toBe(false);
 
-    expect(mockMultiExec).toHaveBeenCalledTimes(3);
-    const keys = mockMulti.incr.mock.calls.map((call) => call[0]);
-    expect(
-      keys.every(
-        (k) =>
-          typeof k === "string" &&
-          k.startsWith("worksphere:ratelimit:burst-ip:"),
-      ),
-    ).toBe(true);
+    const key = "worksphere:ratelimit:full-ip";
+    const [, zaddPayload] = mockMulti.zadd.mock.calls[0] as [
+      string,
+      { score: number; member: string },
+    ];
+    const member = zaddPayload.member;
+
+    expect(mockMulti.zremrangebyscore).toHaveBeenCalledWith(
+      key,
+      0,
+      now - WINDOW_MS,
+    );
+    expect(mockMulti.expire).toHaveBeenCalledWith(key, WINDOW_SECONDS);
+    expect(mockZrem).toHaveBeenCalledTimes(1);
+    expect(mockZrem).toHaveBeenCalledWith(key, member);
+  });
+
+  it("allows until ZCARD goes past the limit across calls", async () => {
+    const now = 1_700_000_000_000;
+    jest.spyOn(Date, "now").mockReturnValue(now);
+    mockMulti.exec
+      .mockResolvedValueOnce([0, 1, 1, 1])
+      .mockResolvedValueOnce([0, 1, 2, 1])
+      .mockResolvedValueOnce([0, 1, 3, 1])
+      .mockResolvedValueOnce([0, 1, 4, 1]);
+
+    expect(await rateLimit("burst-ip", 3)).toBe(true);
+    expect(await rateLimit("burst-ip", 3)).toBe(true);
+    expect(await rateLimit("burst-ip", 3)).toBe(true);
+    expect(await rateLimit("burst-ip", 3)).toBe(false);
+
+    const key = "worksphere:ratelimit:burst-ip";
+    expect(mockMulti.exec).toHaveBeenCalledTimes(4);
+    expect(mockMulti.zremrangebyscore).toHaveBeenCalledWith(
+      key,
+      0,
+      now - WINDOW_MS,
+    );
+    expect(mockMulti.expire).toHaveBeenCalledWith(key, WINDOW_SECONDS);
+    expect(mockZrem).toHaveBeenCalledTimes(1);
+
+    const rejectedZadd = mockMulti.zadd.mock.calls[3] as [
+      string,
+      { score: number; member: string },
+    ];
+    expect(mockZrem).toHaveBeenCalledWith(key, rejectedZadd[1].member);
   });
 });

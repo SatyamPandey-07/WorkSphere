@@ -73,3 +73,30 @@ export async function cachePutWithLruLimit(
   await cache.put(request, response);
   await trimCacheToMaxBytes(cache, maxBytes, maxEntries);
 }
+
+/**
+ * Checks navigator.storage.estimate() to determine if sufficient storage quota is available
+ * before performing CacheStorage writes (e.g. pre-fetching venue video tours or large media).
+ * Prevents QuotaExceededError crashes on mobile browsers (e.g. Android Chrome).
+ */
+export async function hasSufficientStorageQuota(
+  requiredBytes: number = 0,
+): Promise<boolean> {
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.storage &&
+    typeof navigator.storage.estimate === "function"
+  ) {
+    try {
+      const estimate = await navigator.storage.estimate();
+      if (estimate.quota !== undefined && estimate.usage !== undefined) {
+        const availableBytes = estimate.quota - estimate.usage;
+        const minRequiredBuffer = Math.max(requiredBytes, 5 * 1024 * 1024);
+        return availableBytes >= minRequiredBuffer;
+      }
+    } catch (err) {
+      console.warn("[SW] Failed to estimate storage quota:", err);
+    }
+  }
+  return true;
+}

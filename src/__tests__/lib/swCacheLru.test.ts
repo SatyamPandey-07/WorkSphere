@@ -50,7 +50,7 @@ describe("swCacheLru", () => {
   });
 
   it("evicts oldest entries until under the byte limit", async () => {
-    const { cache, order } = makeMockCache();
+    const { cache, order, store } = makeMockCache();
 
     await cache.put(
       new Request("https://img/a.jpg"),
@@ -68,6 +68,7 @@ describe("swCacheLru", () => {
     await trimCacheToMaxBytes(cache, 25);
 
     expect(order).toEqual(["https://img/b.jpg", "https://img/c.jpg"]);
+    expect(store.has("https://img/a.jpg")).toBe(false);
   });
 
   it("evicts oldest entries when count exceeds maxEntries", async () => {
@@ -149,5 +150,67 @@ describe("swCacheLru", () => {
       "https://img/d.jpg",
     ]);
     expect(store.has("https://img/a.jpg")).toBe(false);
+  });
+
+  describe("hasSufficientStorageQuota", () => {
+    const originalStorage = navigator.storage;
+
+    afterEach(() => {
+      Object.defineProperty(navigator, "storage", {
+        value: originalStorage,
+        configurable: true,
+        writable: true,
+      });
+    });
+
+    it("returns true when remaining quota exceeds required buffer", async () => {
+      const mockEstimate = jest.fn().mockResolvedValue({
+        quota: 100 * 1024 * 1024,
+        usage: 20 * 1024 * 1024,
+      });
+
+      Object.defineProperty(navigator, "storage", {
+        value: { estimate: mockEstimate },
+        configurable: true,
+        writable: true,
+      });
+
+      const { hasSufficientStorageQuota } = await import("@/lib/swCacheLru");
+      const result = await hasSufficientStorageQuota(10 * 1024 * 1024);
+      expect(result).toBe(true);
+    });
+
+    it("returns false when remaining quota is below required buffer", async () => {
+      const mockEstimate = jest.fn().mockResolvedValue({
+        quota: 100 * 1024 * 1024,
+        usage: 98 * 1024 * 1024, // Only 2MB remaining (< 5MB buffer)
+      });
+
+      Object.defineProperty(navigator, "storage", {
+        value: { estimate: mockEstimate },
+        configurable: true,
+        writable: true,
+      });
+
+      const { hasSufficientStorageQuota } = await import("@/lib/swCacheLru");
+      const result = await hasSufficientStorageQuota(10 * 1024 * 1024);
+      expect(result).toBe(false);
+    });
+
+    it("falls back to true gracefully if navigator.storage.estimate fails", async () => {
+      const mockEstimate = jest
+        .fn()
+        .mockRejectedValue(new Error("Storage API error"));
+
+      Object.defineProperty(navigator, "storage", {
+        value: { estimate: mockEstimate },
+        configurable: true,
+        writable: true,
+      });
+
+      const { hasSufficientStorageQuota } = await import("@/lib/swCacheLru");
+      const result = await hasSufficientStorageQuota(10 * 1024 * 1024);
+      expect(result).toBe(true);
+    });
   });
 });

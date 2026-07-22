@@ -14,7 +14,7 @@ import {
   FileDown,
 } from "lucide-react";
 
-import usePartySocket from "partysocket/react";
+import usePartySocket from "@/hooks/usePartySocketReconnect";
 import Image from "next/image";
 import { ComparisonTool } from "@/components/collections/ComparisonTool";
 import { EmptyState } from "@/components/ui/EmptyState";

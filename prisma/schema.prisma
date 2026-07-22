@@ -47,6 +47,7 @@ model User {
   pushSubscriptions  PushSubscription[]
   pushNotificationLogs PushNotificationLog[]
   checkIns           CheckIn[]
+  xrAnchors          XRAnchor[]
   // ── Activity streak ────────────────────────────────────────────────────────
   // currentStreak:    consecutive days with at least one check-in
   // longestStreak:    all-time best streak for profile display
@@ -116,6 +117,7 @@ model Venue {
   currentOccupancy    Int                 @default(0)
   maxCapacity         Int                 @default(50)
   checkIns            CheckIn[]
+  xrAnchors           XRAnchor[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -402,9 +404,36 @@ model VenueSeat {
   updatedAt DateTime @updatedAt
 
   bookings Booking[]
+  xrAnchors XRAnchor[]
 
   @@unique([venueId, seatNumber])
   @@index([venueId])
+}
+
+
+model XRAnchor {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  seatId    String?
+  seat      VenueSeat? @relation(fields: [seatId], references: [id], onDelete: SetNull)
+  bookingId String?
+
+  anchorPersistId String  @unique
+  matrix          Float[]
+  label           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastTrackedAt   DateTime @default(now())
+
+  @@index([venueId])
+  @@index([userId])
+  @@index([seatId])
+  @@index([bookingId])
+  @@index([anchorPersistId])
 }
 
 model WifiTelemetry {
@@ -608,19 +637,21 @@ model CheckIn {
 }
 
 model PasskeyCredential {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  credentialId String   @unique
-  publicKey    Bytes
-  counter      BigInt   @default(0)
-  transports   String[] @default([])
-  deviceType   String   @default("singleDevice")
-  backedUp     Boolean  @default(false)
-  name         String
-  aaguid       String?
-  createdAt    DateTime @default(now())
-  lastUsedAt   DateTime @default(now())
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId      String   @unique
+  publicKey         Bytes
+  counter           BigInt   @default(0)
+  transports        String[] @default([])
+  deviceType        String   @default("singleDevice")
+  backedUp          Boolean  @default(false)
+  name              String
+  aaguid            String?
+  attestationFormat String?
+  createdAt         DateTime @default(now())
+  lastUsedAt        DateTime @default(now())
+  expiresAt         DateTime
 
   @@index([userId])
 }

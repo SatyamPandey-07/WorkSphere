@@ -970,7 +970,11 @@ export function MessageList({
   }, [scrollToBottomIfNeeded]);
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div
+      ref={containerRef}
+      className="flex-1 overflow-y-auto p-4 space-y-4"
+      style={{ scrollbarGutter: "stable" }}
+    >
       {messages.length === 0 && (
         <div className="text-center py-8">
           <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />

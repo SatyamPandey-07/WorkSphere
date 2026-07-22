@@ -64,6 +64,17 @@ export function useSyncWorker() {
 }
 
 /**
+ * Global Sync Manager component to ensure outbox sync worker and listeners
+ * remain active across all pages in the application. (Issue #871)
+ * Also registers periodic background sync for workspace availability. (Issue #1126)
+ */
+export function SyncManager() {
+  useSyncWorker();
+  usePeriodicAvailabilitySync();
+  return null;
+}
+
+/**
  * Hook to register service worker and manage PWA state
  */
 export function useServiceWorker() {
@@ -79,13 +90,20 @@ export function useServiceWorker() {
     setIsInstalled(window.matchMedia("(display-mode: standalone)").matches);
     setIsOnline(navigator.onLine);
 
-    // Register service worker
-    if ("serviceWorker" in navigator) {
+    // Register service worker in production mode only to prevent dev evaluation errors
+    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
       navigator.serviceWorker
         .register("/sw.js")
         .then((reg) => {
           console.log("[PWA] Service worker registered");
           setRegistration(reg);
+
+          // Check if there's already a waiting worker
+          if (reg.waiting) {
+            window.dispatchEvent(
+              new CustomEvent("pwa-update-available", { detail: reg.waiting }),
+            );
+          }
 
           // Check for updates on every page load
           reg.update();
@@ -99,7 +117,11 @@ export function useServiceWorker() {
                   if (navigator.serviceWorker.controller) {
                     // New content is available; please refresh.
                     console.log("[PWA] New content available, please refresh.");
-                    // Optional: Show a toast or notification to the user
+                    window.dispatchEvent(
+                      new CustomEvent("pwa-update-available", {
+                        detail: installingWorker,
+                      }),
+                    );
                   } else {
                     // Content is cached for offline use.
                     console.log("[PWA] Content is cached for offline use.");
@@ -121,6 +143,18 @@ export function useServiceWorker() {
           window.location.reload();
         }
       });
+    } else if (
+      "serviceWorker" in navigator &&
+      process.env.NODE_ENV === "development"
+    ) {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((registrations) => {
+          for (const reg of registrations) {
+            reg.unregister().catch(() => {});
+          }
+        })
+        .catch(() => {});
     }
 
     // Online/offline detection
@@ -221,6 +255,11 @@ interface OfflineSyncFailureMessage {
   attempts: number;
 }
 
+interface PushNavigateMessage {
+  type: "NAVIGATE_PUSH";
+  url: string;
+}
+
 function isOfflineSyncFailureMessage(
   data: unknown,
 ): data is OfflineSyncFailureMessage {
@@ -228,6 +267,14 @@ function isOfflineSyncFailureMessage(
     typeof data === "object" &&
     data !== null &&
     (data as { type?: unknown }).type === "OFFLINE_SYNC_FAILED"
+  );
+}
+
+function isPushNavigateMessage(data: unknown): data is PushNavigateMessage {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    (data as { type?: unknown }).type === "NAVIGATE_PUSH"
   );
 }
 
@@ -247,6 +294,25 @@ function useOfflineSyncNotice() {
       if (isOfflineSyncFailureMessage(event.data)) {
         setNotice(event.data);
         setTimeout(() => setNotice(null), 4000);
+      }
+      if (isPushNavigateMessage(event.data)) {
+        window.location.href = event.data.url;
+      }
+      if (
+        typeof event.data === "object" &&
+        event.data !== null &&
+        event.data.type === "RECEIPT_SYNC_READY"
+      ) {
+        const { bookingId, filename } = event.data;
+        // Trigger download from client when receipt background sync completes
+        const downloadUrl = `/api/bookings/${bookingId}/download`;
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download =
+          filename || `WorkSphere_Receipt_${bookingId.slice(-6)}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
       }
     };
 
@@ -355,7 +421,7 @@ export function InstallAppButton() {
     <>
       <button
         onClick={handleInstallClick}
-        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        className="flex items-center gap-2 px-4 py-2 bg-[var(--primary-accent)] text-white rounded-lg hover:opacity-90 transition-colors"
       >
         <svg
           className="w-5 h-5"
@@ -395,7 +461,7 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
       >
         <div className="flex justify-between items-start mb-4">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500 animate-pulse">
+            <div className="p-2 rounded-xl bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.9)] text-[var(--primary-accent)] animate-pulse">
               <Download className="w-5 h-5" />
             </div>
             <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-white">
@@ -428,7 +494,7 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
                 Look for
                 <span className="inline-flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded border border-zinc-200 dark:border-zinc-700">
                   <svg
-                    className="w-3.5 h-3.5 text-blue-500"
+                    className="w-3.5 h-3.5 text-[var(--primary-accent)]"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -475,7 +541,7 @@ export function IOSInstallOverlay({ onClose }: { onClose: () => void }) {
 
         <button
           onClick={onClose}
-          className="w-full mt-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-blue-500/25"
+          className="w-full mt-6 py-2.5 bg-[var(--primary-accent)] hover:opacity-90 active:scale-[0.98] text-white text-xs font-black uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-[color-mix(in_srgb,var(--primary-accent),transparent_0.75)]"
         >
           Got it
         </button>
@@ -519,7 +585,7 @@ export function PWABanner() {
       <div className="fixed bottom-20 left-4 right-4 md:bottom-6 md:right-6 md:left-auto md:w-96 z-50 animate-in slide-in-from-bottom duration-300">
         <div className="relative overflow-hidden bg-zinc-900/90 dark:bg-black/90 backdrop-blur-xl border border-white/10 rounded-2xl p-5 shadow-2xl text-white">
           {/* Subtle colored background glow */}
-          <div className="absolute -top-10 -right-10 w-24 h-24 bg-blue-500/10 rounded-full blur-xl pointer-events-none" />
+          <div className="absolute -top-10 -right-10 w-24 h-24 bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.9)] rounded-full blur-xl pointer-events-none" />
 
           <button
             onClick={handleDismiss}
@@ -529,13 +595,13 @@ export function PWABanner() {
           </button>
 
           <div className="flex gap-3">
-            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white">
+            <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-[var(--primary-accent)] flex items-center justify-center text-white">
               <Download className="w-4 h-4" />
             </div>
             <div className="flex-1 pr-4">
               <h4 className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
                 Install WorkSphere
-                <Sparkles className="w-3.5 h-3.5 text-blue-400 animate-pulse" />
+                <Sparkles className="w-3.5 h-3.5 text-[color-mix(in_srgb,var(--primary-accent),white_0.7)] animate-pulse" />
               </h4>
               <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed font-medium">
                 Install as a lightweight app for faster load times, seamless
@@ -545,7 +611,7 @@ export function PWABanner() {
               <div className="mt-4 flex gap-2">
                 <button
                   onClick={handleInstallClick}
-                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 cursor-pointer active:scale-95 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md shadow-blue-500/20"
+                  className="px-3.5 py-1.5 bg-[var(--primary-accent)] hover:opacity-90 cursor-pointer active:scale-95 text-[10px] font-black uppercase tracking-wider rounded-lg transition-all shadow-md shadow-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)]"
                 >
                   Install Now
                 </button>
@@ -566,4 +632,97 @@ export function PWABanner() {
       )}
     </>
   );
+}
+
+const AVAILABILITY_SYNC_TAG = "availability-sync";
+const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
+const SYNC_INTERVAL_MS = 30 * 60 * 1000;
+
+/**
+ * Registers Periodic Background Sync for workspace seat availability
+ * (Issue #1126). Falls back to one-shot Background Sync when the
+ * Periodic Sync API is unavailable (Firefox, Safari).
+ */
+export function usePeriodicAvailabilitySync() {
+  const { registration } = useServiceWorker();
+
+  useEffect(() => {
+    if (!registration) return;
+
+    async function registerPeriodicSync() {
+      try {
+        const reg = registration as ServiceWorkerRegistration & {
+          periodicSync?: {
+            register: (
+              tag: string,
+              options?: { minInterval?: number },
+            ) => Promise<void>;
+          };
+        };
+
+        if (reg.periodicSync) {
+          const status = await navigator.permissions.query({
+            name: "periodic-background-sync" as PermissionName,
+          });
+          if (status.state === "granted") {
+            await reg.periodicSync.register(PERIODIC_AVAILABILITY_TAG, {
+              minInterval: SYNC_INTERVAL_MS,
+            });
+            console.log("[PWA] Periodic availability sync registered");
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn(
+          "[PWA] Periodic sync registration failed, falling back to one-shot:",
+          error,
+        );
+      }
+
+      registerOneShotFallback();
+    }
+
+    function registerOneShotFallback() {
+      if (!("SyncManager" in window)) return;
+
+      const onVisibilityChange = () => {
+        if (document.visibilityState === "visible" && navigator.onLine) {
+          navigator.serviceWorker.ready.then((readyReg) => {
+            const syncReg = readyReg as ServiceWorkerRegistration & {
+              sync?: { register: (tag: string) => Promise<void> };
+            };
+            syncReg.sync?.register(AVAILABILITY_SYNC_TAG);
+          });
+        }
+      };
+
+      const onOnline = () => {
+        navigator.serviceWorker.ready.then((readyReg) => {
+          const syncReg = readyReg as ServiceWorkerRegistration & {
+            sync?: { register: (tag: string) => Promise<void> };
+          };
+          syncReg.sync?.register(AVAILABILITY_SYNC_TAG);
+        });
+      };
+
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      window.addEventListener("online", onOnline);
+
+      onVisibilityChange();
+
+      return () => {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        window.removeEventListener("online", onOnline);
+      };
+    }
+
+    let cleanup: (() => void) | undefined;
+    registerPeriodicSync().then(() => {
+      cleanup = registerOneShotFallback();
+    });
+
+    return () => {
+      cleanup?.();
+    };
+  }, [registration]);
 }

@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
-import { ArrowLeft, Scale, Lock, ShieldAlert, CheckCircle, Mail, MapPin } from "lucide-react";
+import {
+  ArrowLeft,
+  Scale,
+  Lock,
+  ShieldAlert,
+  CheckCircle,
+  Mail,
+  MapPin,
+} from "lucide-react";
 import SiteFooter from "@/components/site-footer";
 
 const sections = [
@@ -111,9 +119,16 @@ export default function TermsOfServicePage() {
                     onClick={() => scrollToSection(section.id)}
                     className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
                       activeSection === section.id
-                        ? "bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-md shadow-blue-500/10"
+                        ? "text-white shadow-md shadow-[var(--primary-accent)]/10"
                         : "text-white/60 hover:text-white hover:bg-white/5"
                     }`}
+                    style={
+                      activeSection === section.id
+                        ? {
+                            background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 70%, #7c3aed))`,
+                          }
+                        : undefined
+                    }
                   >
                     {section.label}
                   </button>
@@ -132,10 +147,16 @@ export default function TermsOfServicePage() {
               </h2>
               <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
                 <p>
-                  By accessing or using the WorkSphere application, web platform, and related services, you agree to be bound by these Terms of Service. These Terms constitute a binding legal agreement between you and WorkSphere.
+                  By accessing or using the WorkSphere application, web
+                  platform, and related services, you agree to be bound by these
+                  Terms of Service. These Terms constitute a binding legal
+                  agreement between you and WorkSphere.
                 </p>
                 <p>
-                  If you are entering into these terms on behalf of a company or other legal entity, you represent that you have the authority to bind such entity. If you do not agree to these terms, do not access or use our services.
+                  If you are entering into these terms on behalf of a company or
+                  other legal entity, you represent that you have the authority
+                  to bind such entity. If you do not agree to these terms, do
+                  not access or use our services.
                 </p>
               </div>
             </section>
@@ -148,10 +169,16 @@ export default function TermsOfServicePage() {
               </h2>
               <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
                 <p>
-                  WorkSphere provides an AI-powered workspace discovery and booking directory. We help remote workers find suitable cafes, coworking hubs, libraries, and other spaces by matching user requirements with physical amenities (such as WiFi, outlets, and noise levels).
+                  WorkSphere provides an AI-powered workspace discovery and
+                  booking directory. We help remote workers find suitable cafes,
+                  coworking hubs, libraries, and other spaces by matching user
+                  requirements with physical amenities (such as WiFi, outlets,
+                  and noise levels).
                 </p>
                 <p>
-                  WorkSphere reserves the right to modify, suspend, or discontinue any aspect of the service at any time without prior notice or liability.
+                  WorkSphere reserves the right to modify, suspend, or
+                  discontinue any aspect of the service at any time without
+                  prior notice or liability.
                 </p>
               </div>
             </section>
@@ -166,11 +193,17 @@ export default function TermsOfServicePage() {
                 <p className="flex items-start gap-3">
                   <Lock className="w-4 h-4 text-amber-400 mt-1 shrink-0" />
                   <span>
-                    To access advanced features (like marking favorites, rating venues, and making reservations), you must authenticate via Clerk. You are responsible for keeping your login credentials secure.
+                    To access advanced features (like marking favorites, rating
+                    venues, and making reservations), you must authenticate via
+                    Clerk. You are responsible for keeping your login
+                    credentials secure.
                   </span>
                 </p>
                 <p>
-                  You agree to notify us immediately of any unauthorized use of your account. WorkSphere will not be liable for any loss or damage arising from your failure to protect your login information.
+                  You agree to notify us immediately of any unauthorized use of
+                  your account. WorkSphere will not be liable for any loss or
+                  damage arising from your failure to protect your login
+                  information.
                 </p>
               </div>
             </section>
@@ -182,23 +215,38 @@ export default function TermsOfServicePage() {
                 User Conduct & Booking Rules
               </h2>
               <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
-                <p>When using WorkSphere, you agree to adhere to the following rules of conduct:</p>
+                <p>
+                  When using WorkSphere, you agree to adhere to the following
+                  rules of conduct:
+                </p>
                 <ul className="space-y-3.5 list-none pl-0">
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
-                    <span>Provide accurate, complete booking information (valid email and optional phone details).</span>
+                    <span>
+                      Provide accurate, complete booking information (valid
+                      email and optional phone details).
+                    </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
-                    <span>Do not create fraudulent bookings or reservations you do not intend to honor.</span>
+                    <span>
+                      Do not create fraudulent bookings or reservations you do
+                      not intend to honor.
+                    </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
-                    <span>Do not submit false, misleading, or abusive venue reviews/ratings.</span>
+                    <span>
+                      Do not submit false, misleading, or abusive venue
+                      reviews/ratings.
+                    </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <CheckCircle className="w-4 h-4 text-emerald-400 mt-1 shrink-0" />
-                    <span>Do not deploy automated bots, scrapers, or scripts that overload or abuse our API endpoints.</span>
+                    <span>
+                      Do not deploy automated bots, scrapers, or scripts that
+                      overload or abuse our API endpoints.
+                    </span>
                   </li>
                 </ul>
               </div>
@@ -212,10 +260,16 @@ export default function TermsOfServicePage() {
               </h2>
               <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
                 <p>
-                  All content, branding logos, user interface assets, illustrations, database records, and software code on WorkSphere are the exclusive property of WorkSphere and its contributors. 
+                  All content, branding logos, user interface assets,
+                  illustrations, database records, and software code on
+                  WorkSphere are the exclusive property of WorkSphere and its
+                  contributors.
                 </p>
                 <p>
-                  You are granted a limited, revocable, non-transferable license to access our platform for personal, non-commercial use. Any unauthorized reproduction, scraping, or redistribution of our data is strictly prohibited.
+                  You are granted a limited, revocable, non-transferable license
+                  to access our platform for personal, non-commercial use. Any
+                  unauthorized reproduction, scraping, or redistribution of our
+                  data is strictly prohibited.
                 </p>
               </div>
             </section>
@@ -230,11 +284,18 @@ export default function TermsOfServicePage() {
                 <p className="flex items-start gap-3">
                   <ShieldAlert className="w-4 h-4 text-amber-500 mt-1 shrink-0 animate-pulse" />
                   <span>
-                    WorkSphere acts solely as a discovery directory. We do not own, manage, or operate any of the listed workspaces or cafes. We provide data "as is" and make no warranties regarding WiFi speed, outlet availability, or overall workspace quality.
+                    WorkSphere acts solely as a discovery directory. We do not
+                    own, manage, or operate any of the listed workspaces or
+                    cafes. We provide data "as is" and make no warranties
+                    regarding WiFi speed, outlet availability, or overall
+                    workspace quality.
                   </span>
                 </p>
                 <p>
-                  WorkSphere shall not be liable for any indirect, incidental, special, or consequential damages resulting from your use of, or inability to use, our workspace search and booking features.
+                  WorkSphere shall not be liable for any indirect, incidental,
+                  special, or consequential damages resulting from your use of,
+                  or inability to use, our workspace search and booking
+                  features.
                 </p>
               </div>
             </section>
@@ -247,14 +308,26 @@ export default function TermsOfServicePage() {
               </h2>
               <div className="backdrop-blur-md bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
                 <p>
-                  We reserve the right to terminate or suspend access to our application immediately, without prior notice, if you breach any provision of these Terms of Service.
+                  We reserve the right to terminate or suspend access to our
+                  application immediately, without prior notice, if you breach
+                  any provision of these Terms of Service.
                 </p>
                 <p>
-                  These Terms shall be governed by and construed in accordance with the laws of your jurisdiction, without regard to conflict of law principles.
+                  These Terms shall be governed by and construed in accordance
+                  with the laws of your jurisdiction, without regard to conflict
+                  of law principles.
                 </p>
                 <p className="flex items-center gap-2 text-white/50 text-sm mt-4">
-                  <Mail className="w-4 h-4 text-blue-400" />
-                  <span>Have questions regarding these Terms? Support: <a href="mailto:support@worksphere.io" className="text-blue-400 hover:underline">support@worksphere.io</a></span>
+                  <Mail className="w-4 h-4 accent-text" />
+                  <span>
+                    Have questions regarding these Terms? Support:{" "}
+                    <a
+                      href="mailto:support@worksphere.io"
+                      className="accent-text hover:underline"
+                    >
+                      support@worksphere.io
+                    </a>
+                  </span>
                 </p>
               </div>
             </section>

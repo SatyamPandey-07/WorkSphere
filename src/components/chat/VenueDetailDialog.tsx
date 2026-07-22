@@ -48,6 +48,7 @@ import { useTranslation } from "react-i18next";
 
 import { Venue } from "./ChatMessages";
 import { RatingDistribution } from "./RatingDistribution";
+import { NoiseReportingWidget } from "@/components/noise/NoiseReportingWidget";
 
 interface VenueDetailDialogProps {
   venue: Venue | null;
@@ -911,14 +912,14 @@ export function VenueDetailDialog({
             <button
               onClick={handleQuickSave}
               disabled={quickSaveLoading}
-              className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90 flex items-center justify-center disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90 flex items-center justify-center disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-2"
               title="Quick Save"
               aria-label="Quick Save"
             >
               {quickSaveLoading ? (
-                <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                <Loader2 className="w-6 h-6 animate-spin accent-text" />
               ) : (
-                <Bookmark className="w-6 h-6 text-blue-400" />
+                <Bookmark className="w-6 h-6 accent-text" />
               )}
             </button>
             <button
@@ -931,7 +932,7 @@ export function VenueDetailDialog({
 
           <div className="absolute bottom-6 left-6 right-6 pointer-events-none">
             <div className="flex items-center gap-2 mb-2">
-              <span className="flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-black bg-blue-500/80 backdrop-blur-md border border-blue-400/50 text-white px-2.5 py-1 rounded shadow-lg pointer-events-auto">
+              <span className="flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-black accent-bg-80 backdrop-blur-md accent-border-50 text-white px-2.5 py-1 rounded shadow-lg pointer-events-auto">
                 <CategoryIcon className="w-3.5 h-3.5" />
                 {venue.category?.replace("_", " ")}
               </span>
@@ -964,7 +965,7 @@ export function VenueDetailDialog({
               onClick={() => setActiveTab(tab.id as any)}
               className={`pb-1 text-xs font-black uppercase tracking-wider border-b-2 transition-all ${
                 activeTab === tab.id
-                  ? "border-blue-500 text-blue-400"
+                  ? "accent-border accent-text"
                   : "border-transparent text-zinc-400 hover:text-zinc-200"
               }`}
             >
@@ -989,7 +990,7 @@ export function VenueDetailDialog({
                       <button
                         key={index}
                         onClick={() => setLightboxIndex(index)}
-                        className="relative w-20 h-20 rounded-2xl overflow-hidden border border-white/10 hover:border-blue-500 dark:hover:border-blue-500 transition-all shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500 active:scale-95 shadow-sm"
+                        className="relative w-20 h-20 rounded-2xl overflow-hidden border border-white/10 hover:accent-border dark:hover:accent-border transition-all shrink-0 focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] active:scale-95 shadow-sm"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
@@ -1017,12 +1018,12 @@ export function VenueDetailDialog({
                   }
                   className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
                     activeDistribution === "wifi"
-                      ? "bg-blue-500/20 border-blue-500 shadow-md ring-2 ring-blue-500/20 scale-95"
+                      ? "accent-bg-20 accent-border shadow-md ring-2 ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] scale-95"
                       : "bg-black/20 border-white/5 hover:bg-black/40 hover:border-white/10 hover:scale-[1.02] cursor-pointer"
                   }`}
                 >
-                  <div className="p-3 rounded-xl bg-blue-500/20 mb-3">
-                    <Wifi className="w-6 h-6 text-blue-400" />
+                  <div className="p-3 rounded-xl accent-bg-20 mb-3">
+                    <Wifi className="w-6 h-6 accent-text" />
                   </div>
                   <span className="text-[10px] font-black text-zinc-400 tracking-widest uppercase mb-1">
                     WiFi
@@ -1114,6 +1115,13 @@ export function VenueDetailDialog({
                   />
                 </div>
               )}
+
+              <div className="mb-6">
+                <NoiseReportingWidget
+                  venueId={venue.id}
+                  venueName={venue.name}
+                />
+              </div>
 
               {wifiPredictions.length > 0 && (
                 <div className="mb-6 bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">
@@ -1395,8 +1403,8 @@ export function VenueDetailDialog({
               )}
 
               <div className="space-y-6 mt-6">
-                <div className="bg-blue-500/10 p-5 rounded-2xl border border-blue-500/30">
-                  <h3 className="text-xs font-black uppercase tracking-widest text-blue-400 mb-2 flex items-center gap-2">
+                <div className="accent-bg-10 p-5 rounded-2xl border accent-border-30">
+                  <h3 className="text-xs font-black uppercase tracking-widest accent-text mb-2 flex items-center gap-2">
                     <Info className="w-4 h-4" />
                     Intelligence Brief
                   </h3>
@@ -1621,7 +1629,7 @@ export function VenueDetailDialog({
               <div className="flex flex-col gap-3 pt-6 border-t border-white/10 mt-6">
                 <button
                   onClick={() => onGetDirections(venue)}
-                  className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-blue-500/20 active:scale-[0.98]"
+                  className="w-full flex items-center justify-center gap-2 bg-[var(--primary-accent)] hover:opacity-90 text-white font-black uppercase tracking-widest py-4 px-8 rounded-2xl transition-all shadow-xl shadow-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] active:scale-[0.98]"
                 >
                   <Navigation className="w-5 h-5" />
                   Navigate
@@ -1726,7 +1734,7 @@ export function VenueDetailDialog({
                         </div>
                       </div>
                       {review.wifiSpeed && (
-                        <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-[9px] font-black tracking-wider border border-blue-500/30">
+                        <span className="px-2 py-0.5 accent-bg-20 accent-text rounded text-[9px] font-black tracking-wider border accent-border-30">
                           {review.wifiSpeed} MBPS
                         </span>
                       )}
@@ -1740,7 +1748,7 @@ export function VenueDetailDialog({
                           <button
                             onClick={() => handleTranslate(review)}
                             disabled={translatingReviewId === review.id}
-                            className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold accent-text hover:opacity-80 transition-colors disabled:opacity-50"
                           >
                             <Globe2 className="w-3 h-3" />
                             {translatingReviewId === review.id
@@ -1753,7 +1761,7 @@ export function VenueDetailDialog({
                     {review.speedtestPhoto && (
                       <button
                         onClick={() => setPreviewPhoto(review.speedtestPhoto)}
-                        className="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-1.5 rounded-lg border border-blue-500/20 transition-all active:scale-95"
+                        className="inline-flex items-center gap-2 text-[9px] font-black uppercase tracking-widest accent-text accent-bg-10 hover:accent-bg-20 px-3 py-1.5 rounded-lg border accent-border-20 transition-all active:scale-95"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         {t("venue.viewSpeedtest")}
@@ -1770,7 +1778,7 @@ export function VenueDetailDialog({
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 bg-black/20 hover:border-white/20 cursor-pointer transition-all">
                 {uploadingMenu ? (
                   <div className="flex flex-col items-center gap-2 py-2">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 accent-border" />
                     <span className="text-[10px] text-zinc-400 uppercase tracking-widest font-black">
                       Uploading...
                     </span>
@@ -1886,8 +1894,8 @@ export function VenueDetailDialog({
             {/* Status messages and translation result */}
             <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 w-11/12 max-w-lg pointer-events-none">
               {(isExtracting || isTranslating) && (
-                <div className="bg-zinc-900/95 backdrop-blur-md border border-blue-500/30 rounded-xl p-4 shadow-2xl animate-in slide-in-from-top-4 flex items-center justify-center gap-3">
-                  <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                <div className="bg-zinc-900/95 backdrop-blur-md border accent-border-30 rounded-xl p-4 shadow-2xl animate-in slide-in-from-top-4 flex items-center justify-center gap-3">
+                  <Loader2 className="w-5 h-5 animate-spin accent-text" />
                   <p className="text-sm font-medium text-zinc-200">
                     {isExtracting
                       ? "Extracting menu text..."

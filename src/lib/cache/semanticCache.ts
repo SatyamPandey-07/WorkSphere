@@ -1,28 +1,28 @@
-import { prisma } from '@/lib/prisma';
+import { prisma } from "@/lib/prisma";
 
 // Generate Cohere embedding
 export async function generateEmbedding(text: string): Promise<number[]> {
   if (!process.env.COHERE_API_KEY) {
     throw new Error("COHERE_API_KEY is not configured");
   }
-    const embedRes = await fetch('https://api.cohere.ai/v1/embed', {
-    method: 'POST',
+  const embedRes = await fetch("https://api.cohere.ai/v1/embed", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${process.env.COHERE_API_KEY}`,
-      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.COHERE_API_KEY}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       texts: [text],
-      model: 'embed-english-v3.0',
-      input_type: 'search_document',
+      model: "embed-english-v3.0",
+      input_type: "search_document",
     }),
   });
 
   if (!embedRes.ok) {
-  throw new Error(
-    `Cohere API error (${embedRes.status}): ${embedRes.statusText}`,
-  );
-}
+    throw new Error(
+      `Cohere API error (${embedRes.status}): ${embedRes.statusText}`,
+    );
+  }
 
   const embedData = await embedRes.json();
   return embedData.embeddings[0];
@@ -30,41 +30,51 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 // Generate CUID for Postgres INSERT
 function cuid() {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let id = 'c';
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let id = "c";
   for (let i = 0; i < 24; i++) {
     id += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return id;
 }
 
-export async function checkSemanticCache(query: string, locationStr: string | null) {
+export async function checkSemanticCache(
+  query: string,
+  locationStr: string | null,
+) {
   try {
     const embedding = await generateEmbedding(query);
-    const embeddingString = `[${embedding.join(',')}]`;
+    const embeddingString = `[${embedding.join(",")}]`;
 
     // Perform vector similarity search. We use cosine distance (<=>).
     // Similarity = 1 - distance. We want similarity > 0.85 -> distance < 0.15
     let results: any[];
-    
+
     if (locationStr) {
-      results = await prisma.$queryRaw`
-        SELECT "response", 1 - ("embedding" <=> ${embeddingString}::vector) as similarity
+      results = await prisma.$queryRawUnsafe(
+        `
+        SELECT "response", 1 - ("embedding" <=> $1::vector) as similarity
         FROM "SemanticCache"
-        WHERE "location" = ${locationStr} 
-          AND 1 - ("embedding" <=> ${embeddingString}::vector) > 0.85
+        WHERE "location" = $2 
+          AND 1 - ("embedding" <=> $1::vector) > 0.85
         ORDER BY similarity DESC
         LIMIT 1
-      `;
+        `,
+        embeddingString,
+        locationStr,
+      );
     } else {
-      results = await prisma.$queryRaw`
-        SELECT "response", 1 - ("embedding" <=> ${embeddingString}::vector) as similarity
+      results = await prisma.$queryRawUnsafe(
+        `
+        SELECT "response", 1 - ("embedding" <=> $1::vector) as similarity
         FROM "SemanticCache"
         WHERE "location" IS NULL 
-          AND 1 - ("embedding" <=> ${embeddingString}::vector) > 0.85
+          AND 1 - ("embedding" <=> $1::vector) > 0.85
         ORDER BY similarity DESC
         LIMIT 1
-      `;
+        `,
+        embeddingString,
+      );
     }
 
     if (results && results.length > 0) {
@@ -78,17 +88,28 @@ export async function checkSemanticCache(query: string, locationStr: string | nu
   }
 }
 
-export async function setSemanticCache(query: string, locationStr: string | null, responseObj: any) {
+export async function setSemanticCache(
+  query: string,
+  locationStr: string | null,
+  responseObj: any,
+) {
   try {
     const embedding = await generateEmbedding(query);
-    const embeddingString = `[${embedding.join(',')}]`;
+    const embeddingString = `[${embedding.join(",")}]`;
     const responseJson = JSON.stringify(responseObj);
     const id = cuid();
 
-    await prisma.$executeRaw`
+    await prisma.$executeRawUnsafe(
+      `
       INSERT INTO "SemanticCache" ("id", "query", "location", "response", "embedding", "createdAt")
-      VALUES (${id}, ${query}, ${locationStr}, ${responseJson}, ${embeddingString}::vector, NOW())
-    `;
+      VALUES ($1, $2, $3, $4, $5::vector, NOW())
+      `,
+      id,
+      query,
+      locationStr,
+      responseJson,
+      embeddingString,
+    );
   } catch (error) {
     console.error("Error setting semantic cache:", error);
   }

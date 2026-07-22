@@ -20,8 +20,7 @@ interface ISpeechRecognition extends EventTarget {
   onstart: ((this: ISpeechRecognition, ev: Event) => void) | null;
   onend: ((this: ISpeechRecognition, ev: Event) => void) | null;
   onresult:
-    | ((this: ISpeechRecognition, ev: ISpeechRecognitionEvent) => void)
-    | null;
+    ((this: ISpeechRecognition, ev: ISpeechRecognitionEvent) => void) | null;
   onerror:
     | ((this: ISpeechRecognition, ev: ISpeechRecognitionErrorEvent) => void)
     | null;
@@ -59,11 +58,7 @@ type SpeechRecognitionConstructor = new () => ISpeechRecognition;
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type SpeechRecognitionStatus =
-  | "idle"
-  | "listening"
-  | "processing"
-  | "unsupported"
-  | "error";
+  "idle" | "listening" | "processing" | "unsupported" | "error";
 
 export interface UseSpeechRecognitionReturn {
   /** Whether the Web Speech API is available in this browser */
@@ -95,12 +90,18 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructor | null 
 
   // Standard (Chrome 33+, Edge 79+)
   if ("SpeechRecognition" in window) {
-    return (window as unknown as { SpeechRecognition: SpeechRecognitionConstructor }).SpeechRecognition;
+    return (
+      window as unknown as { SpeechRecognition: SpeechRecognitionConstructor }
+    ).SpeechRecognition;
   }
 
   // Webkit-prefixed (Chrome, Edge, Safari TP)
   if ("webkitSpeechRecognition" in window) {
-    return (window as unknown as { webkitSpeechRecognition: SpeechRecognitionConstructor }).webkitSpeechRecognition;
+    return (
+      window as unknown as {
+        webkitSpeechRecognition: SpeechRecognitionConstructor;
+      }
+    ).webkitSpeechRecognition;
   }
 
   // Firefox does not expose SpeechRecognition by default. In Firefox Nightly
@@ -127,11 +128,22 @@ export function useSpeechRecognition(
 ): UseSpeechRecognitionReturn {
   const RecognitionCtor = useRef<SpeechRecognitionConstructor | null>(null);
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
+  // Keep the mic MediaStream around so we can call track.stop() when
+  // dictation ends — otherwise repeated start/stop leaves tracks alive and
+  // the browser tab keeps showing the recording indicator.
+  const mediaStreamRef = useRef<MediaStream | null>(null);
 
   const [isSupported, setIsSupported] = useState(false);
   const [status, setStatus] = useState<SpeechRecognitionStatus>("idle");
   const [transcript, setTranscript] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const releaseMediaTracks = useCallback(() => {
+    const stream = mediaStreamRef.current;
+    if (!stream) return;
+    stream.getTracks().forEach((track) => track.stop());
+    mediaStreamRef.current = null;
+  }, []);
 
   // Run support check once on the client (avoids SSR mismatch)
   useEffect(() => {
@@ -145,7 +157,7 @@ export function useSpeechRecognition(
     }
   }, []);
 
-  const startListening = useCallback(() => {
+  const startListening = useCallback(async () => {
     if (!isSupported || !RecognitionCtor.current) {
       // Surface a message so callers can display it even if they call this
       // without checking isSupported first.
@@ -156,9 +168,22 @@ export function useSpeechRecognition(
       return;
     }
 
-    // Clean up any existing instance before starting a new one
+    // Clean up any existing instance + tracks before starting a new one
     if (recognitionRef.current) {
       recognitionRef.current.abort();
+    }
+    releaseMediaTracks();
+
+    try {
+      mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+      });
+    } catch {
+      setErrorMessage(
+        "Microphone access was denied. Please allow microphone permissions in your browser settings.",
+      );
+      setStatus("error");
+      return;
     }
 
     const recognition = new RecognitionCtor.current();
@@ -207,11 +232,13 @@ export function useSpeechRecognition(
           message = `Voice recognition error: ${event.error}. Please try again.`;
       }
 
+      releaseMediaTracks();
       setErrorMessage(message);
       setStatus("error");
     };
 
     recognition.onend = () => {
+      releaseMediaTracks();
       // Only revert to idle if we weren't already in an error or processing state
       setStatus((prev) =>
         prev === "listening" || prev === "processing" ? "idle" : prev,
@@ -223,31 +250,45 @@ export function useSpeechRecognition(
 
     try {
       recognition.start();
-    } catch (err) {
+    } catch {
       // Some browsers throw synchronously (e.g. when already listening)
+      releaseMediaTracks();
       setErrorMessage(
         "Could not start voice recognition. Please refresh and try again.",
       );
       setStatus("error");
     }
-  }, [isSupported, onTranscript]);
+  }, [isSupported, onTranscript, releaseMediaTracks]);
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
+    releaseMediaTracks();
     setStatus("idle");
-  }, []);
+  }, [releaseMediaTracks]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount and visibilitychange
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden && recognitionRef.current) {
+        recognitionRef.current.abort();
+        // We do not call setStatus("idle") here because abort() triggers onend
+        // which will handle the status update naturally.
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       if (recognitionRef.current) {
         recognitionRef.current.abort();
       }
+      releaseMediaTracks();
     };
-  }, []);
+  }, [releaseMediaTracks]);
 
   return {
     isSupported,

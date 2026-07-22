@@ -1,19 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import { z } from "zod";
-import { hasFolderAccess } from "@/lib/folders";
-
-const updateFolderSchema = z.object({
-  name: z.string().min(1, "Folder name is required").max(100).optional(),
-  description: z.string().max(500).optional(),
-  isPublic: z.boolean().optional(),
-});
+import { updateFolderSchema } from "@/lib/validations";
+import { deleteFolderWithRelations, hasFolderAccess } from "@/lib/folders";
 
 // GET /api/folders/[id] - Get folder details
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -39,22 +33,32 @@ export async function GET(
           include: {
             venue: true,
             addedBy: {
-              select: { id: true, firstName: true, lastName: true, imageUrl: true }
-            }
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                imageUrl: true,
+              },
+            },
           },
-          orderBy: { createdAt: 'desc' }
+          orderBy: { createdAt: "desc" },
         },
         members: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, imageUrl: true }
-            }
-          }
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                imageUrl: true,
+              },
+            },
+          },
         },
         owner: {
-          select: { id: true, firstName: true, lastName: true, imageUrl: true }
-        }
-      }
+          select: { id: true, firstName: true, lastName: true, imageUrl: true },
+        },
+      },
     });
 
     return NextResponse.json({ folder: folderDetails, role });
@@ -62,7 +66,7 @@ export async function GET(
     console.error(`GET /api/folders/id error:`, error);
     return NextResponse.json(
       { error: "Failed to fetch folder" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -70,7 +74,7 @@ export async function GET(
 // PUT /api/folders/[id] - Update folder
 export async function PUT(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -90,9 +94,12 @@ export async function PUT(
 
     const body = await req.json();
     const validation = updateFolderSchema.safeParse(body);
-    
+
     if (!validation.success) {
-      return NextResponse.json({ error: validation.error.format() }, { status: 400 });
+      return NextResponse.json(
+        { error: validation.error.format() },
+        { status: 400 },
+      );
     }
 
     const { name, description, isPublic } = validation.data;
@@ -103,7 +110,7 @@ export async function PUT(
         ...(name && { name }),
         ...(description !== undefined && { description }),
         ...(isPublic !== undefined && { isPublic }),
-      }
+      },
     });
 
     return NextResponse.json({ folder: updatedFolder });
@@ -111,7 +118,7 @@ export async function PUT(
     console.error(`PUT /api/folders/id error:`, error);
     return NextResponse.json(
       { error: "Failed to update folder" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -119,7 +126,7 @@ export async function PUT(
 // DELETE /api/folders/[id] - Delete folder
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -138,16 +145,14 @@ export async function DELETE(
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    await prisma.folder.delete({
-      where: { id }
-    });
+    await deleteFolderWithRelations(id);
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error(`DELETE /api/folders/id error:`, error);
     return NextResponse.json(
       { error: "Failed to delete folder" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

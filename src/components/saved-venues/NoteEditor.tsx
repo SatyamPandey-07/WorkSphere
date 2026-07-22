@@ -29,22 +29,25 @@ export function NoteEditor({ initialNotes, onSave }: NoteEditorProps) {
     setNotes(initialNotes || "");
   }, [initialNotes]);
 
-  const performSave = useCallback(async (value: string) => {
-    if (savingRef.current) return;
-    savingRef.current = true;
-    setIsSaving(true);
-    setError(null);
-    try {
-      await onSave(value.trim() || "");
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setIsSaving(false);
-      savingRef.current = false;
-    }
-  }, [onSave]);
+  const performSave = useCallback(
+    async (value: string) => {
+      if (savingRef.current) return;
+      savingRef.current = true;
+      setIsSaving(true);
+      setError(null);
+      try {
+        await onSave(value.trim() || "");
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to save");
+      } finally {
+        setIsSaving(false);
+        savingRef.current = false;
+      }
+    },
+    [onSave],
+  );
 
   useEffect(() => {
     if (!isEditing) return;
@@ -87,7 +90,7 @@ export function NoteEditor({ initialNotes, onSave }: NoteEditorProps) {
             setIsEditing(true);
             setTimeout(() => textareaRef.current?.focus(), 50);
           }}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500 hover:border-blue-500 hover:text-blue-500 transition-colors text-sm text-left"
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500 hover:accent-border accent-text-hover transition-colors text-sm text-left"
           aria-label="Add a private note"
         >
           <FileText className="w-4 h-4 shrink-0" />
@@ -107,7 +110,7 @@ export function NoteEditor({ initialNotes, onSave }: NoteEditorProps) {
               }}
               placeholder="Write your private notes here..."
               rows={2}
-              className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-blue-500 transition-colors text-zinc-900 dark:text-white placeholder:text-zinc-400 resize-none"
+              className="w-full px-3 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-[var(--primary-accent)] transition-colors text-zinc-900 dark:text-white placeholder:text-zinc-400 resize-none"
               aria-label="Private notes"
               aria-describedby="notes-char-count"
               autoFocus
@@ -129,12 +132,18 @@ export function NoteEditor({ initialNotes, onSave }: NoteEditorProps) {
 
             <div className="flex items-center gap-2">
               {saved && (
-                <span className="text-xs text-green-600 dark:text-green-400" role="status">
+                <span
+                  className="text-xs text-green-600 dark:text-green-400"
+                  role="status"
+                >
                   Saved!
                 </span>
               )}
               {error && (
-                <span className="text-xs text-red-600 dark:text-red-400" role="alert">
+                <span
+                  className="text-xs text-red-600 dark:text-red-400"
+                  role="alert"
+                >
                   {error}
                 </span>
               )}
@@ -153,7 +162,7 @@ export function NoteEditor({ initialNotes, onSave }: NoteEditorProps) {
                 type="button"
                 onClick={handleSave}
                 disabled={!hasChanges || isSaving}
-                className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium accent-bg accent-bg-hover text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 aria-label="Save notes"
               >
                 {isSaving ? (
@@ -173,7 +182,7 @@ export function NoteEditor({ initialNotes, onSave }: NoteEditorProps) {
             setIsEditing(true);
             setTimeout(() => textareaRef.current?.focus(), 50);
           }}
-          className="w-full text-left px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-blue-500/50 transition-colors group"
+          className="w-full text-left px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:accent-border-50 transition-colors group"
           aria-label="Edit note"
         >
           <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap line-clamp-3">

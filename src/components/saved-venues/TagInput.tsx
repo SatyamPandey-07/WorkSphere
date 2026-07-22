@@ -71,7 +71,7 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
           setIsOpen(true);
           setTimeout(() => nameInputRef.current?.focus(), 50);
         }}
-        className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:border-blue-500 hover:text-blue-500 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900"
+        className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium border border-dashed border-zinc-300 dark:border-zinc-700 text-zinc-500 dark:text-zinc-400 hover:accent-border accent-text-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900"
         aria-label="Add new tag"
       >
         <Plus className="w-3.5 h-3.5" />
@@ -98,16 +98,18 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
           }}
           placeholder="Tag name..."
           maxLength={50}
-          className="flex-1 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 dark:focus:ring-offset-zinc-900 transition-colors text-zinc-900 dark:text-white placeholder:text-zinc-400"
+          className="flex-1 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-sm outline-none focus:border-[var(--primary-accent)] focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-1 dark:focus:ring-offset-zinc-900 transition-colors text-zinc-900 dark:text-white placeholder:text-zinc-400"
           aria-label="Tag name"
           aria-invalid={duplicate || !!error}
-          aria-describedby={duplicate ? "tag-duplicate-error" : error ? "tag-error" : undefined}
+          aria-describedby={
+            duplicate ? "tag-duplicate-error" : error ? "tag-error" : undefined
+          }
         />
         <button
           type="button"
           onClick={handleSubmit}
           disabled={!name.trim() || duplicate || isSubmitting}
-          className="shrink-0 p-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900"
+          className="shrink-0 p-1.5 rounded-lg accent-bg accent-bg-hover text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900"
           aria-label="Confirm add tag"
         >
           {isSubmitting ? (
@@ -123,34 +125,57 @@ export function TagInput({ onAdd, existingNames = [] }: TagInputProps) {
             setName("");
             setError(null);
           }}
-          className="shrink-0 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900"
+          className="shrink-0 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900"
           aria-label="Cancel"
         >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
-            <path d="M10.5 3.5L3.5 10.5M3.5 3.5l7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path
+              d="M10.5 3.5L3.5 10.5M3.5 3.5l7 7"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+            />
           </svg>
         </button>
       </div>
 
       {duplicate && (
-        <p id="tag-duplicate-error" className="text-xs text-amber-600 dark:text-amber-400 mb-2" role="alert">
+        <p
+          id="tag-duplicate-error"
+          className="text-xs text-amber-600 dark:text-amber-400 mb-2"
+          role="alert"
+        >
           Tag already exists
         </p>
       )}
       {error && !duplicate && (
-        <p id="tag-error" className="text-xs text-red-600 dark:text-red-400 mb-2" role="alert">
+        <p
+          id="tag-error"
+          className="text-xs text-red-600 dark:text-red-400 mb-2"
+          role="alert"
+        >
           {error}
         </p>
       )}
 
-      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Tag color">
+      <div
+        className="flex flex-wrap gap-1.5"
+        role="radiogroup"
+        aria-label="Tag color"
+      >
         {TAG_COLORS.map((c) => (
           <button
             key={c.value}
             type="button"
             onClick={() => setSelectedColor(c.value)}
             className={cn(
-              "w-6 h-6 rounded-full transition-all flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900",
+              "w-6 h-6 rounded-full transition-all flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-900",
               selectedColor === c.value
                 ? "ring-2 ring-offset-2 ring-offset-white dark:ring-offset-zinc-900 scale-110"
                 : "hover:scale-110",

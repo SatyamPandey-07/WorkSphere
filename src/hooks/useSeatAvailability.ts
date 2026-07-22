@@ -11,7 +11,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
-import usePartySocket from "partysocket/react";
+import usePartySocket from "@/hooks/usePartySocketReconnect";
+import { useToast } from "@/components/ui/Toast";
+import {
+  queueOfflineCheckIn,
+  getQueuedCheckIns,
+  dequeueOfflineCheckIn,
+  incrementCheckInRetryCount,
+} from "@/lib/offlineStore";
 
 export type SeatStatus = "green" | "yellow" | "red";
 
@@ -34,11 +41,15 @@ interface SeatUpdateMessage {
   count: number;
   capacity: number;
   status: SeatStatus;
+  epoch?: number;
+  sequenceId?: number;
 }
 
 interface SeatSnapshotMessage {
   type: "seat_snapshot";
-  venues: Array<Omit<SeatUpdateMessage, "type">>;
+  venues: Array<Omit<SeatUpdateMessage, "type" | "epoch" | "sequenceId">>;
+  epoch?: number;
+  sequenceId?: number;
 }
 
 export function useSeatAvailability() {
@@ -48,9 +59,16 @@ export function useSeatAvailability() {
     Record<string, SeatAvailability>
   >({});
   const [isConnected, setIsConnected] = useState(false);
-  const [checkedInVenueId, setCheckedInVenueId] = useState<string | null>(
-    null,
-  );
+  const [checkedInVenueId, setCheckedInVenueId] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  const epochRef = useRef<number>(0);
+  const sequenceRef = useRef<number>(0);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   // Mirrors checkedInVenueId in a ref so send handlers stay stable across
   // renders without needing checkedInVenueId itself as a dependency.
   const checkedInVenueRef = useRef<string | null>(null);
@@ -62,8 +80,9 @@ export function useSeatAvailability() {
   }, [getToken]);
 
   const socket = usePartySocket({
-    host: "127.0.0.1:1999",
-    room: SEAT_ROOM,
+    host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
+    room: isMounted ? SEAT_ROOM : "seat-availability",
+    startClosed: !isMounted,
     query: token ? { token } : undefined,
     onOpen() {
       setIsConnected(true);
@@ -74,8 +93,22 @@ export function useSeatAvailability() {
     onMessage(event) {
       try {
         const data = JSON.parse(event.data) as
-          | SeatUpdateMessage
-          | SeatSnapshotMessage;
+          SeatUpdateMessage | SeatSnapshotMessage;
+
+        if (data.type !== "seat_update" && data.type !== "seat_snapshot") {
+          return;
+        }
+
+        const msgEpoch = data.epoch ?? 0;
+        const msgSeq = data.sequenceId ?? 0;
+
+        if (msgEpoch < epochRef.current) return;
+        if (msgEpoch === epochRef.current && msgSeq <= sequenceRef.current) {
+          return;
+        }
+
+        epochRef.current = msgEpoch;
+        sequenceRef.current = msgSeq;
 
         if (data.type === "seat_update") {
           setAvailability((prev) => ({
@@ -102,19 +135,93 @@ export function useSeatAvailability() {
     },
   });
 
+  const { toast } = useToast();
+
   const checkIn = useCallback(
     (venueId: string, capacity: number = DEFAULT_SEAT_CAPACITY) => {
       checkedInVenueRef.current = venueId;
       setCheckedInVenueId(venueId);
-      socket.send(JSON.stringify({ type: "seat_checkin", venueId, capacity }));
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        queueOfflineCheckIn(venueId).catch(console.error);
+        toast("You are offline. Check-in queued for sync.", "success");
+      } else {
+        socket?.send(
+          JSON.stringify({ type: "seat_checkin", venueId, capacity }),
+        );
+      }
     },
-    [socket],
+    [socket, toast],
   );
+
+  useEffect(() => {
+    let isSyncing = false;
+
+    const handleOnline = async () => {
+      if (isSyncing) return;
+
+      const checkIns = await getQueuedCheckIns();
+      if (!checkIns || checkIns.length === 0) return;
+
+      isSyncing = true;
+      toast("Sync started", "success");
+
+      let hasFailures = false;
+
+      for (const item of checkIns) {
+        try {
+          const response = await fetch("/api/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ checkIns: [item] }),
+          });
+
+          if (response.ok) {
+            await dequeueOfflineCheckIn(item.id!);
+            // Also notify partykit so other users see the seat update
+            if (socket && socket.readyState === WebSocket.OPEN) {
+              socket.send(
+                JSON.stringify({
+                  type: "seat_checkin",
+                  venueId: item.venueId,
+                  capacity: DEFAULT_SEAT_CAPACITY,
+                }),
+              );
+            }
+          } else {
+            hasFailures = true;
+            await incrementCheckInRetryCount(item.id!);
+          }
+        } catch {
+          hasFailures = true;
+          await incrementCheckInRetryCount(item.id!);
+        }
+      }
+
+      if (hasFailures) {
+        toast("Sync failed", "error");
+      } else {
+        toast("Sync completed", "success");
+      }
+
+      isSyncing = false;
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", handleOnline);
+    }
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("online", handleOnline);
+      }
+    };
+  }, [toast, socket]);
 
   const checkOut = useCallback(() => {
     checkedInVenueRef.current = null;
     setCheckedInVenueId(null);
-    socket.send(JSON.stringify({ type: "seat_checkout" }));
+    socket?.send(JSON.stringify({ type: "seat_checkout" }));
   }, [socket]);
 
   // Best-effort checkout if the component unmounts while checked in, so we
@@ -123,14 +230,13 @@ export function useSeatAvailability() {
     return () => {
       if (checkedInVenueRef.current) {
         try {
-          socket.send(JSON.stringify({ type: "seat_checkout" }));
+          socket?.send(JSON.stringify({ type: "seat_checkout" }));
         } catch {
           // Socket may already be closed on unmount — nothing to do.
         }
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [socket]);
 
   const getAvailability = useCallback(
     (venueId: string): SeatAvailability => {
@@ -152,6 +258,6 @@ export function useSeatAvailability() {
     checkIn,
     checkOut,
     checkedInVenueId,
-    isConnected,
+    isConnected: isMounted && isConnected,
   };
 }

@@ -27,6 +27,8 @@ export default class WorkspaceServer implements Party.Server {
   // keyed by connection id so we can always find & clear a user's previous
   // check-in on check-in/checkout/disconnect without scanning every venue.
   private seatCheckins = new Map<string, SeatCheckin>();
+  private serverEpoch = Date.now();
+  private sequenceId = 0;
 
   constructor(readonly room: Party.Room) {}
 
@@ -35,50 +37,66 @@ export default class WorkspaceServer implements Party.Server {
     const token = url.searchParams.get("token");
 
     let isViewer = false;
+    let verifiedUserId: string | undefined;
 
     if (token) {
       try {
         const secretKey = process.env.CLERK_SECRET_KEY;
         const verifiedToken = await verifyToken(token, { secretKey });
         const userId = verifiedToken.sub;
+        verifiedUserId = userId;
 
-        // Extract folder ID if room is named "folder-{id}"
-        let folderId = this.room.id;
-        if (folderId.startsWith("folder-")) {
-          folderId = folderId.replace("folder-", "");
-        }
+        // Canvas whiteboard rooms: any authenticated user can edit
+        if (this.room.id.startsWith("canvas-")) {
+          isViewer = false;
+        } else {
+          // Extract folder ID if room is named "folder-{id}"
+          let folderId = this.room.id;
+          if (folderId.startsWith("folder-")) {
+            folderId = folderId.replace("folder-", "");
+          }
 
-        // Fetch user's role in the folder via Next.js internal API to avoid Edge Prisma errors
-        const NEXT_PUBLIC_APP_URL =
-          process.env.NEXT_PUBLIC_APP_URL || "http://127.0.0.1:3000";
-        const authRes = await fetch(
-          `${NEXT_PUBLIC_APP_URL}/api/partykit/auth?userId=${userId}&folderId=${folderId}`,
-        );
+          // Fetch user's role in the folder via Next.js internal API to avoid Edge Prisma errors
+          const NEXT_PUBLIC_APP_URL =
+            process.env.NEXT_PUBLIC_APP_URL || "http://127.0.0.1:3000";
+          const authRes = await fetch(
+            `${NEXT_PUBLIC_APP_URL}/api/partykit/auth?userId=${userId}&folderId=${folderId}`,
+          );
 
-        if (authRes.ok) {
-          const authData = await authRes.json();
-          if (authData.role === "MEMBER" || authData.role === "VIEWER") {
+          if (authRes.ok) {
+            const authData = await authRes.json();
+            if (authData.role === "MEMBER" || authData.role === "VIEWER") {
+              isViewer = true;
+            }
+          } else {
             isViewer = true;
           }
-        } else {
-          isViewer = true;
         }
       } catch (err) {
         console.error("Token verification or DB fetch failed:", err);
-        // Fail-safe: if token invalid or DB fails, default to read-only
         isViewer = true;
       }
     } else {
-      // Unauthenticated connections are read-only
       isViewer = true;
     }
 
-    conn.setState({ role: isViewer ? "VIEWER" : "EDITOR" });
+    conn.setState({
+      role: isViewer ? "VIEWER" : "EDITOR",
+      userId: verifiedUserId,
+    });
 
     // Bring newly connected clients up to speed on current seat availability
     // (#703) so rings render correctly before any new check-in event fires.
     if (this.seatCheckins.size > 0) {
-      conn.send(JSON.stringify({ type: "seat_snapshot", venues: this.seatSummary() }));
+      this.sequenceId++;
+      conn.send(
+        JSON.stringify({
+          type: "seat_snapshot",
+          venues: this.seatSummary(),
+          epoch: this.serverEpoch,
+          sequenceId: this.sequenceId,
+        }),
+      );
     }
 
     // Yjs connection for shared state (messages, markers)
@@ -103,13 +121,45 @@ export default class WorkspaceServer implements Party.Server {
   }
 
   onMessage(message: string, sender: Party.Connection) {
-    const state = sender.state as { role?: string };
+    const state = sender.state as { role?: string; userId?: string };
 
     try {
       const parsed = JSON.parse(message);
 
-      // If it's a typing indicator, broadcast it safely
       if (parsed.type === "typing") {
+        this.room.broadcast(message, [sender.id]);
+        return;
+      }
+
+      if (
+        parsed.type === "request_room_snapshot" ||
+        parsed.type === "request_snapshot"
+      ) {
+        const snapshotId = parsed.snapshotId || `snap-${Date.now()}`;
+        sender.send(
+          JSON.stringify({
+            type: "room_snapshot_response",
+            roomId: this.room.id,
+            snapshotId,
+            timestamp: Date.now(),
+            seats: this.seatSummary(),
+          }),
+        );
+        return;
+      }
+
+      // WebRTC signaling is allowed for VIEWERS, but `from` must match the
+      // Clerk userId we verified on connect — never trust the client field alone.
+      if (parsed.type === "webrtc-signal") {
+        if (!state.userId || parsed.from !== state.userId) return;
+        this.room.broadcast(message, [sender.id]);
+        return;
+      }
+
+      // Spatial audio listener position updates are high-frequency ephemeral state,
+      // allowed for all viewers/editors, but `userId` must match verified connection state.
+      if (parsed.type === "spatial_listener_update") {
+        if (!state.userId || parsed.userId !== state.userId) return;
         this.room.broadcast(message, [sender.id]);
         return;
       }
@@ -117,7 +167,10 @@ export default class WorkspaceServer implements Party.Server {
       // Seat availability check-in/checkout (#703). This is presence data,
       // not a document edit, so VIEWERS are allowed to use it too — it
       // deliberately skips the role gate below.
-      if (parsed.type === "seat_checkin" && typeof parsed.venueId === "string") {
+      if (
+        parsed.type === "seat_checkin" &&
+        typeof parsed.venueId === "string"
+      ) {
         this.handleSeatCheckin(sender, parsed.venueId, parsed.capacity);
         return;
       }
@@ -197,6 +250,7 @@ export default class WorkspaceServer implements Party.Server {
   private broadcastSeatUpdate(venueId: string) {
     const count = this.countForVenue(venueId);
     const capacity = this.capacityForVenue(venueId);
+    this.sequenceId++;
     this.room.broadcast(
       JSON.stringify({
         type: "seat_update",
@@ -204,6 +258,8 @@ export default class WorkspaceServer implements Party.Server {
         count,
         capacity,
         status: seatStatusFor(count, capacity),
+        epoch: this.serverEpoch,
+        sequenceId: this.sequenceId,
       }),
     );
   }
@@ -215,7 +271,12 @@ export default class WorkspaceServer implements Party.Server {
     }
     return Array.from(counts.entries()).map(([venueId, count]) => {
       const capacity = this.capacityForVenue(venueId);
-      return { venueId, count, capacity, status: seatStatusFor(count, capacity) };
+      return {
+        venueId,
+        count,
+        capacity,
+        status: seatStatusFor(count, capacity),
+      };
     });
   }
 }

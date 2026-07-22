@@ -1,33 +1,41 @@
 @import "tailwindcss";
-@import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer utilities {
   .glass-card {
+    @apply bg-white border border-zinc-200 shadow-xl;
     @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl;
   }
 
-  .glow-blue {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+  .glow-accent {
+    box-shadow: 0 0 20px
+      color-mix(in srgb, var(--primary-accent) 30%, transparent);
   }
 
-  .text-glow {
-    text-shadow: none;
+  .dark .glass-card {
+    @apply bg-zinc-900 border-zinc-800;
   }
 }
 
+/* ─── Accent Color System ─────────────────────────────────────────── */
 :root {
   --background: #ffffff;
-
   --foreground: #171717;
-
+  --primary-accent: #3b82f6;
+  --primary-accent-rgb: 59, 130, 246;
   color-scheme: light dark;
+}
+
+.cyberpunk {
+  --background: #090014;
+  --foreground: #f4f4ff;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary-accent: var(--primary-accent);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -37,9 +45,13 @@
   --foreground: #ededed;
 }
 
+/* ─── Base Styles ─────────────────────────────────────────────────── */
 html {
   background: var(--background);
   color: var(--foreground);
+  scroll-behavior: smooth;
+  scrollbar-color: var(--color-zinc-300) transparent;
+  scrollbar-width: thin;
 }
 
 body {
@@ -61,13 +73,20 @@ html {
   scrollbar-width: thin;
 }
 
+.leaflet-layer {
+  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3)
+    brightness(0.7);
+}
+
 /* Gradient animation */
+
+/* ─── Animations ──────────────────────────────────────────────────── */
+
 @keyframes gradient {
   0%,
   100% {
     background-position: 0% 50%;
   }
-
   50% {
     background-position: 100% 50%;
   }
@@ -77,13 +96,11 @@ html {
   animation: gradient 6s ease infinite;
 }
 
-/* Fade in animation */
 @keyframes fadeInUp {
   from {
     opacity: 0;
     transform: translateY(20px);
   }
-
   to {
     opacity: 1;
     transform: translateY(0);
@@ -94,15 +111,15 @@ html {
   animation: fadeInUp 0.6s ease-out forwards;
 }
 
-/* Pulse glow effect */
 @keyframes pulseGlow {
   0%,
   100% {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+    box-shadow: 0 0 20px
+      color-mix(in srgb, var(--primary-accent) 30%, transparent);
   }
-
   50% {
-    box-shadow: 0 0 40px rgba(59, 130, 246, 0.5);
+    box-shadow: 0 0 40px
+      color-mix(in srgb, var(--primary-accent) 50%, transparent);
   }
 }
 
@@ -110,12 +127,10 @@ html {
   animation: pulseGlow 2s ease-in-out infinite;
 }
 
-/* Loading shimmer */
 @keyframes shimmer {
   0% {
     background-position: -200% 0;
   }
-
   100% {
     background-position: 200% 0;
   }
@@ -132,7 +147,7 @@ html {
   animation: shimmer 1.5s infinite;
 }
 
-/* Custom scrollbar */
+/* ─── Scrollbar ───────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -163,147 +178,239 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   background: var(--color-zinc-600);
 }
 
-/* Focus styles */
+/* ─── Global Focus & Selection ────────────────────────────────────── */
 *:focus-visible {
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--primary-accent);
   outline-offset: 2px;
 }
 
-/* Selection color */
 ::selection {
-  background: rgba(59, 130, 246, 0.3);
+  background: color-mix(in srgb, var(--primary-accent) 30%, transparent);
 }
 
-/* ------------------------------------------------------------------
-   Fallback for older Android WebView engines that do not support the
-   CSS color-mix() function, which Tailwind v4 uses internally to
-   generate opacity-modifier utilities (e.g. bg-blue-700/10). Without
-   this fallback, unsupported color-mix() values fail and the affected
-   elements render as flat black instead of the intended translucent
-   neon gradient/border colors.
+/* ─── Accent CSS Utility Classes ──────────────────────────────────── */
+.accent-bg {
+  background-color: var(--primary-accent);
+}
+.accent-bg-hover:hover {
+  background-color: var(--primary-accent);
+}
+.accent-text {
+  color: var(--primary-accent);
+}
+.accent-text-hover:hover {
+  color: var(--primary-accent);
+}
+.accent-border {
+  border-color: var(--primary-accent);
+}
+.accent-ring:focus-visible {
+  --tw-ring-color: var(--primary-accent);
+}
+.accent-underline {
+  text-decoration-color: var(--primary-accent);
+}
 
-   Scope: the "neon blur blob" backgrounds and glowing card borders
-   described in issue #153. Modern browsers are unaffected and keep
-   using Tailwind's normal color-mix()-based output, since this block
-   only applies inside @supports not (...).
-   ------------------------------------------------------------------ */
+/* Accent with opacity variants via color-mix */
+.accent-bg-10 {
+  background-color: color-mix(in srgb, var(--primary-accent) 10%, transparent);
+}
+.accent-bg-20 {
+  background-color: color-mix(in srgb, var(--primary-accent) 20%, transparent);
+}
+.accent-bg-50 {
+  background-color: color-mix(in srgb, var(--primary-accent) 50%, transparent);
+}
+.accent-bg-80 {
+  background-color: color-mix(in srgb, var(--primary-accent) 80%, transparent);
+}
+.accent-text-60 {
+  color: color-mix(in srgb, var(--primary-accent) 60%, transparent);
+}
+.accent-text-80 {
+  color: color-mix(in srgb, var(--primary-accent) 80%, transparent);
+}
+.accent-border-20 {
+  border-color: color-mix(in srgb, var(--primary-accent) 20%, transparent);
+}
+.accent-border-30 {
+  border-color: color-mix(in srgb, var(--primary-accent) 30%, transparent);
+}
+.accent-border-50 {
+  border-color: color-mix(in srgb, var(--primary-accent) 50%, transparent);
+}
+.accent-ring-20 {
+  --tw-ring-color: color-mix(in srgb, var(--primary-accent) 20%, transparent);
+}
+.accent-shadow-sm {
+  box-shadow: 0 1px 3px
+    color-mix(in srgb, var(--primary-accent) 10%, transparent);
+}
+.accent-shadow-md {
+  box-shadow: 0 4px 12px
+    color-mix(in srgb, var(--primary-accent) 20%, transparent);
+}
+.accent-shadow-lg {
+  box-shadow: 0 8px 24px
+    color-mix(in srgb, var(--primary-accent) 25%, transparent);
+}
+.accent-gradient {
+  background: linear-gradient(
+    to right,
+    var(--primary-accent),
+    color-mix(in srgb, var(--primary-accent) 70%, black)
+  );
+}
+
+/* Dark mode accent variants */
+.dark .accent-bg-dark-hover:hover {
+  background-color: color-mix(in srgb, var(--primary-accent) 80%, transparent);
+}
+.dark .accent-bg-dark-10 {
+  background-color: color-mix(in srgb, var(--primary-accent) 10%, transparent);
+}
+.dark .accent-bg-dark-20 {
+  background-color: color-mix(in srgb, var(--primary-accent) 20%, transparent);
+}
+.dark .accent-bg-dark-30 {
+  background-color: color-mix(in srgb, var(--primary-accent) 30%, transparent);
+}
+.dark .accent-text-dark-40 {
+  color: color-mix(in srgb, var(--primary-accent) 80%, transparent);
+}
+.dark .accent-text-dark-hover:hover {
+  color: color-mix(in srgb, var(--primary-accent) 80%, transparent);
+}
+.dark .accent-border-dark-20 {
+  border-color: color-mix(in srgb, var(--primary-accent) 20%, transparent);
+}
+.dark .accent-border-dark-30 {
+  border-color: color-mix(in srgb, var(--primary-accent) 30%, transparent);
+}
+.dark .accent-border-dark-50 {
+  border-color: color-mix(in srgb, var(--primary-accent) 50%, transparent);
+}
+
+/* ─── Legacy Browser Fallback ─────────────────────────────────────── */
 @supports not (background: color-mix(in oklab, red, red)) {
-  /* Neon blur blobs - background/error/marketing pages */
   .bg-blue-700\/10 {
     background-color: rgba(29, 78, 216, 0.1);
   }
+
   .bg-blue-700\/20 {
     background-color: rgba(29, 78, 216, 0.2);
   }
+
   .bg-purple-700\/10 {
     background-color: rgba(126, 34, 206, 0.1);
   }
+
   .bg-purple-700\/15 {
     background-color: rgba(126, 34, 206, 0.15);
   }
+
   .bg-red-700\/10 {
     background-color: rgba(185, 28, 28, 0.1);
   }
+
   .bg-orange-700\/10 {
     background-color: rgba(194, 65, 12, 0.1);
   }
+
   .bg-cyan-700\/10 {
     background-color: rgba(14, 116, 144, 0.1);
   }
+
   .bg-violet-700\/15 {
     background-color: rgba(109, 40, 217, 0.15);
   }
+
   .bg-violet-700\/20 {
     background-color: rgba(109, 40, 217, 0.2);
   }
+
   .bg-amber-500\/10 {
     background-color: rgba(245, 158, 11, 0.1);
   }
+
   .bg-amber-500\/20 {
     background-color: rgba(245, 158, 11, 0.2);
   }
+
   .bg-red-500\/10 {
     background-color: rgba(239, 68, 68, 0.1);
   }
+
   .bg-red-500\/20 {
     background-color: rgba(239, 68, 68, 0.2);
   }
 
-  /* Glowing card borders */
   .border-amber-500\/30 {
     border-color: rgba(245, 158, 11, 0.3);
   }
+
   .border-red-500\/30 {
     border-color: rgba(239, 68, 68, 0.3);
   }
+
   .border-blue-500\/30 {
     border-color: rgba(59, 130, 246, 0.3);
   }
+
   .border-purple-500\/30 {
     border-color: rgba(168, 85, 247, 0.3);
   }
+
   .border-violet-400\/20 {
     border-color: rgba(167, 139, 250, 0.2);
   }
+
   .border-emerald-400\/20 {
     border-color: rgba(52, 211, 153, 0.2);
   }
-  /* Legacy Firefox fallback for additional Tailwind opacity utilities */
 
   .bg-zinc-950\/95 {
     background-color: rgba(9, 9, 11, 0.95);
   }
-
   .bg-zinc-900\/50 {
     background-color: rgba(24, 24, 27, 0.5);
   }
-
   .bg-zinc-800\/20 {
     background-color: rgba(39, 39, 42, 0.2);
   }
-
   .bg-zinc-800\/10 {
     background-color: rgba(39, 39, 42, 0.1);
   }
-
   .bg-zinc-50\/50 {
     background-color: rgba(250, 250, 250, 0.5);
   }
-
   .bg-blue-900\/10 {
     background-color: rgba(30, 58, 138, 0.1);
   }
-
   .bg-blue-900\/30 {
     background-color: rgba(30, 58, 138, 0.3);
   }
-
   .bg-black\/90 {
     background-color: rgba(0, 0, 0, 0.9);
   }
-
   .bg-black\/60 {
     background-color: rgba(0, 0, 0, 0.6);
   }
-
   .bg-black\/40 {
     background-color: rgba(0, 0, 0, 0.4);
   }
-
   .border-amber-500\/20 {
     border-color: rgba(245, 158, 11, 0.2);
   }
-
   .border-blue-500\/20 {
     border-color: rgba(59, 130, 246, 0.2);
   }
-
   .border-blue-900\/30 {
     border-color: rgba(30, 58, 138, 0.3);
   }
 }
 
-/* Legacy browser fallback to hide placeholder text when input is focused or active */
+/* ─── Misc ────────────────────────────────────────────────────────── */
 input:focus::placeholder,
 textarea:focus::placeholder {
   color: transparent !important;
@@ -323,4 +430,3 @@ textarea:focus::placeholder {
     transition-delay: 0s !important;
   }
 }
-

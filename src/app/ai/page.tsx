@@ -3,8 +3,14 @@
 import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
-import { EnhancedChatbot } from "@/components/EnhancedChatbot";
-import { VenueRatingDialog } from "@/components/VenueRatingDialog";
+import { motion, AnimatePresence } from "framer-motion";
+const VenueRatingDialog = dynamic(
+  () =>
+    import("@/components/VenueRatingDialog").then(
+      (mod) => mod.VenueRatingDialog,
+    ),
+  { ssr: false },
+);
 import {
   ChatErrorBoundary,
   MapErrorBoundary,
@@ -16,6 +22,8 @@ import {
   MessageCircle,
   WifiOff,
   X,
+  ChevronRight,
+  ChevronLeft,
 } from "lucide-react";
 import { OfflineIndicator, PWABanner, OfflineSyncNotice } from "@/hooks/usePWA";
 import { useRealTimeUpdates } from "@/hooks/useRealTime";
@@ -26,6 +34,30 @@ import {
 } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { Venue } from "@/components/chat/ChatMessages";
+import { PartyKitPresenceWrapper } from "@/components/chat/PartyKitPresenceWrapper";
+
+// Dynamically import EnhancedChatbot to isolate WASM loading / client effects during streaming SSR and prevent hydration mismatches
+const EnhancedChatbot = dynamic(
+  () =>
+    import("@/components/EnhancedChatbot").then((mod) => mod.EnhancedChatbot),
+  {
+    ssr: false,
+    loading: () => (
+      <div
+        className="flex flex-1 h-full w-full items-center justify-center bg-white dark:bg-zinc-900"
+        role="status"
+        aria-live="polite"
+        aria-label="Loading chat assistant"
+      >
+        <Loader2
+          className="h-8 w-8 animate-spin text-blue-600"
+          aria-hidden="true"
+        />
+        <span className="sr-only">Loading chat assistant...</span>
+      </div>
+    ),
+  },
+);
 // Dynamically import OnboardingTour to prevent hydration issues with react-joyride
 const OnboardingTour = dynamic(
   () => import("@/components/OnboardingTour").then((mod) => mod.OnboardingTour),
@@ -43,7 +75,7 @@ const Map = dynamic(() => import("@/components/Map"), {
       aria-label="Loading interactive map"
     >
       <Loader2
-        className="h-8 w-8 animate-spin text-blue-600"
+        className="h-8 w-8 animate-spin accent-text"
         aria-hidden="true"
       />
       <span className="sr-only">Loading interactive map...</span>
@@ -81,6 +113,9 @@ function AppPage() {
 
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get("session") || null;
+
+  // Sidebar toggle state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
   // Mobile view state - show map or chat
   const [mobileView, setMobileView] = useState<"map" | "chat">("chat");
@@ -646,7 +681,7 @@ function AppPage() {
             <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 animate-pulse flex items-center justify-center">
               <Loader2 className="w-10 h-10 animate-spin text-white" />
             </div>
-            <div className="absolute inset-0 w-20 h-20 rounded-full bg-blue-500/20 animate-ping" />
+            <div className="absolute inset-0 w-20 h-20 rounded-full accent-bg-20 animate-ping" />
           </div>
           <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">
             Finding Your Location
@@ -667,7 +702,7 @@ function AppPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-zinc-50 dark:bg-black overflow-hidden">
+    <div className="flex flex-col h-dvh bg-zinc-50 dark:bg-black overflow-hidden">
       <OnboardingTour />
       {/* Offline Banner */}
       {!isOnline && (
@@ -678,18 +713,20 @@ function AppPage() {
         </div>
       )}
 
-      {/* Real-time connection status (debug) */}
-      {isConnected && venueIds.length > 0 && (
-        <div className="hidden" data-realtime="connected" />
-      )}
+      {/* Real-time connection status (debug) wrapped in client-only isolation */}
+      <PartyKitPresenceWrapper>
+        {isConnected && venueIds.length > 0 && (
+          <div className="hidden" data-realtime="connected" />
+        )}
+      </PartyKitPresenceWrapper>
 
       {/* Mobile Navigation Toggle */}
-      <div className="md:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+      <div className="lg:hidden flex border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <button
           onClick={() => setMobileView("chat")}
           className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
             mobileView === "chat"
-              ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
+              ? "accent-text accent-bg-10 accent-bg-dark-20 border-b-2 accent-border"
               : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
           }`}
         >
@@ -700,14 +737,19 @@ function AppPage() {
           onClick={() => setMobileView("map")}
           className={`flex-1 flex items-center justify-center gap-2 py-4 text-sm font-semibold transition-all ${
             mobileView === "map"
-              ? "text-blue-600 bg-gradient-to-t from-blue-50 dark:from-blue-950/50 border-b-2 border-blue-600"
+              ? "accent-text accent-bg-10 accent-bg-dark-20 border-b-2 accent-border"
               : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
           }`}
         >
           <MapIcon className="w-5 h-5" />
           Map
           {markers.length > 0 && (
-            <span className="px-2 py-0.5 text-xs bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full font-bold shadow-sm">
+            <span
+              className="px-2 py-0.5 text-xs text-white rounded-full font-bold shadow-sm"
+              style={{
+                background: `linear-gradient(to right, var(--primary-accent), color-mix(in srgb, var(--primary-accent) 70%, #7c3aed))`,
+              }}
+            >
               {markers.length}
             </span>
           )}
@@ -715,13 +757,13 @@ function AppPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex flex-1 md:flex-row overflow-hidden">
+      <div className="flex flex-1 lg:flex-row overflow-hidden relative">
         {/* Map Section - Hidden on mobile when chat is active */}
         <div
           className={`
           joyride-map
           ${mobileView === "map" ? "flex" : "hidden"} 
-          md:flex flex-1 md:flex-[7] relative
+          lg:flex flex-1 lg:flex-[7] relative
         `}
         >
           <MapErrorBoundary>
@@ -730,132 +772,174 @@ function AppPage() {
               markers={markers}
               routes={routes}
               mapView={mapView}
+              roomId={sessionId}
             />
           </MapErrorBoundary>
         </div>
 
         {/* Divider - Desktop only */}
-        <div className="hidden md:block w-px bg-gradient-to-b from-zinc-200 via-zinc-300 to-zinc-200 dark:from-zinc-800 dark:via-zinc-700 dark:to-zinc-800" />
+        <div className="hidden lg:block w-px bg-gradient-to-b from-zinc-200 via-zinc-300 to-zinc-200 dark:from-zinc-800 dark:via-zinc-700 dark:to-zinc-800 z-10" />
 
-        {/* Chat Section - Hidden on mobile when map is active */}
-        <div
-          className={`
-          joyride-chat
-          ${mobileView === "chat" ? "flex" : "hidden"} 
-          md:flex flex-1 md:flex-[3] flex-col min-h-0 bg-white dark:bg-zinc-900
-        `}
-        >
-          {/* Route Profile Toggle Widget */}
-          {routes.length > 0 && (
-            <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                  Route Profile
-                </span>
-                {routes[0].duration && (
-                  <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
-                    {Math.round(routes[0].duration / 60)} mins •{" "}
-                    {(routes[0].distance! / 1000).toFixed(1)} km
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {(["walking", "cycling", "driving"] as const).map((profile) => (
-                  <button
-                    key={profile}
-                    onClick={async () => {
-                      setRouteProfile(profile);
-                      // Re-calculate route with new profile
-                      if (routes.length > 0 && location) {
-                        const { getRoute } = await import("@/lib/routing");
-                        const lastRoute = routes[0];
-                        // We need the original destination. For now, we take the last point of the path.
-                        const destination =
-                          lastRoute.path[lastRoute.path.length - 1];
-                        const routeData = await getRoute(
-                          { lat: location.latitude, lng: location.longitude },
-                          destination,
-                          profile,
-                        );
-                        if (routeData) {
-                          setRoutes([
-                            {
-                              ...lastRoute,
-                              path: routeData.path,
-                              distance: routeData.distance,
-                              duration: routeData.duration,
-                            },
-                          ]);
-                        }
-                      }
-                    }}
-                    className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${
-                      routeProfile === profile
-                        ? "bg-blue-600 text-white shadow-lg shadow-blue-500/20"
-                        : "bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-750"
-                    }`}
-                  >
-                    {profile === "walking"
-                      ? "🚶‍♂️"
-                      : profile === "cycling"
-                        ? "🚴‍♂️"
-                        : "🚗"}
-                    <span className="capitalize">{profile}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+        {/* Chat Section with Framer Motion */}
+        <AnimatePresence initial={false}>
+          {isSidebarOpen && (
+            <motion.div
+              initial={{ maxWidth: 0, opacity: 0 }}
+              animate={{ maxWidth: 1200, opacity: 1 }}
+              exit={{ maxWidth: 0, opacity: 0 }}
+              transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+              onUpdate={() => window.dispatchEvent(new Event("resize"))}
+              className={`
+                joyride-chat
+                ${mobileView === "chat" ? "flex" : "hidden"} 
+                lg:flex flex-1 lg:flex-[3] flex-col min-h-0 relative
+                backdrop-blur-md bg-white/5 border-l border-white/10 dark:bg-black/40
+              `}
+            >
+              {/* Sidebar Toggle Button - Attached to the left edge of the sidebar */}
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="hidden lg:flex absolute left-0 top-1/2 -translate-y-1/2 -ml-8 z-50 items-center justify-center w-8 h-16 bg-zinc-900 hover:bg-zinc-800 border border-r-0 border-zinc-700 rounded-l-xl text-white transition-all shadow-lg pl-1"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+              {/* Route Profile Toggle Widget */}
+              {routes.length > 0 && (
+                <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                      Route Profile
+                    </span>
+                    {routes[0].duration && (
+                      <span className="text-xs font-medium accent-text accent-text-60">
+                        {Math.round(routes[0].duration / 60)} mins •{" "}
+                        {(routes[0].distance! / 1000).toFixed(1)} km
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["walking", "cycling", "driving"] as const).map(
+                      (profile) => (
+                        <button
+                          key={profile}
+                          onClick={async () => {
+                            setRouteProfile(profile);
+                            // Re-calculate route with new profile
+                            if (routes.length > 0 && location) {
+                              const { getRoute } =
+                                await import("@/lib/routing");
+                              const lastRoute = routes[0];
+                              // We need the original destination. For now, we take the last point of the path.
+                              const destination =
+                                lastRoute.path[lastRoute.path.length - 1];
+                              const routeData = await getRoute(
+                                {
+                                  lat: location.latitude,
+                                  lng: location.longitude,
+                                },
+                                destination,
+                                profile,
+                              );
+                              if (routeData) {
+                                setRoutes([
+                                  {
+                                    ...lastRoute,
+                                    path: routeData.path,
+                                    distance: routeData.distance,
+                                    duration: routeData.duration,
+                                  },
+                                ]);
+                              }
+                            }
+                          }}
+                          className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${
+                            routeProfile === profile
+                              ? "accent-bg text-white shadow-lg shadow-[var(--primary-accent)]/20"
+                              : "bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-750"
+                          }`}
+                        >
+                          {profile === "walking"
+                            ? "🚶‍♂️"
+                            : profile === "cycling"
+                              ? "🚴‍♂️"
+                              : "🚗"}
+                          <span className="capitalize">{profile}</span>
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </div>
+              )}
+              <ChatErrorBoundary>
+                <EnhancedChatbot
+                  roomId={sessionId}
+
+                  onShowToast={(msg) =>
+                    setToast({ message: msg, type: "warning" })
+                  }
+
+                  onMapUpdate={(update) => {
+                    handleMapUpdate(update as MapUpdateData);
+                    // Auto-switch to map on mobile when markers are added
+                    if (
+                      update.type === "markers" &&
+                      update.markers &&
+                      update.markers.length > 0
+                    ) {
+                      // Small delay so user sees the results loading
+                      setTimeout(() => setMobileView("map"), 500);
+                    }
+                  }}
+                  onOpenDetails={(v) => {
+                    // Map the Venue type from chat to the MapMarker type used here
+                    setSelectedVenue({
+                      id: v.id,
+                      name: v.name,
+                      position: { lat: v.lat, lng: v.lng },
+                      category: v.category || "cafe",
+                      address: v.address,
+                      amenities: {
+                        wifi: v.wifi,
+                        outlets: v.hasOutlets,
+                        quiet: v.noiseLevel === "quiet",
+                        hasErgonomic: v.hasErgonomic,
+                        outletDensity: v.outletDensity,
+                        wifiSpeed: v.wifiSpeed,
+                      },
+                      score: v.score,
+                    });
+                  }}
+
+                  onBook={(v) => {
+                    console.log("[Booking] Initiated for:", v.name);
+                    // Handled internally by EnhancedChatbot now
+                  }}
+                  userLocation={
+                    location
+                      ? { lat: location.latitude, lng: location.longitude }
+                      : undefined
+                  }
+                />
+              </ChatErrorBoundary>
+            </motion.div>
           )}
-          <ChatErrorBoundary>
-            <EnhancedChatbot
-              roomId={sessionId}
+        </AnimatePresence>
 
-              onShowToast={(msg) => setToast({ message: msg, type: "warning" })}
-
-              onMapUpdate={(update) => {
-                handleMapUpdate(update as MapUpdateData);
-                // Auto-switch to map on mobile when markers are added
-                if (
-                  update.type === "markers" &&
-                  update.markers &&
-                  update.markers.length > 0
-                ) {
-                  // Small delay so user sees the results loading
-                  setTimeout(() => setMobileView("map"), 500);
-                }
-              }}
-              onOpenDetails={(v) => {
-                // Map the Venue type from chat to the MapMarker type used here
-                setSelectedVenue({
-                  id: v.id,
-                  name: v.name,
-                  position: { lat: v.lat, lng: v.lng },
-                  category: v.category || "cafe",
-                  address: v.address,
-                  amenities: {
-                    wifi: v.wifi,
-                    outlets: v.hasOutlets,
-                    quiet: v.noiseLevel === "quiet",
-                    hasErgonomic: v.hasErgonomic,
-                    outletDensity: v.outletDensity,
-                    wifiSpeed: v.wifiSpeed,
-                  },
-                  score: v.score,
-                });
-              }}
-
-              onBook={(v) => {
-                console.log("[Booking] Initiated for:", v.name);
-                // Handled internally by EnhancedChatbot now
-              }}
-              userLocation={
-                location
-                  ? { lat: location.latitude, lng: location.longitude }
-                  : undefined
-              }
-            />
-          </ChatErrorBoundary>
-        </div>
+        {/* Floating Open Button (visible only when sidebar is closed) */}
+        <AnimatePresence>
+          {!isSidebarOpen && (
+            <motion.button
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 100, opacity: 0 }}
+              transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+              onClick={() => setIsSidebarOpen(true)}
+              className="hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-50 items-center justify-center w-8 h-16 bg-zinc-900 hover:bg-zinc-800 border border-r-0 border-zinc-700 rounded-l-xl text-white shadow-lg pl-1"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Venue Detail Dialog - Root level to avoid clipping */}
@@ -956,7 +1040,7 @@ export default function AppPageWrapper() {
     <Suspense
       fallback={
         <div className="flex items-center justify-center h-screen bg-zinc-50">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <Loader2 className="w-8 h-8 animate-spin accent-text" />
         </div>
       }
     >

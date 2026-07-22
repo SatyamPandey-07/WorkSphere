@@ -167,6 +167,7 @@ export function VenueRatingDialog({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (isSubmitting) return;
 
     if (hasOutlets === null) {
       alert("Please indicate if outlets are available");
@@ -274,9 +275,9 @@ export function VenueRatingDialog({
                   key={rating}
                   type="button"
                   onClick={() => setWifiQuality(rating)}
-                  className={`rounded-lg p-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2  ${
+                  className={`rounded-lg p-2 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] focus-visible:ring-offset-2  ${
                     rating <= wifiQuality
-                      ? "bg-blue-100 text-blue-600 dark:bg-blue-900/30"
+                      ? "accent-bg-20 accent-text accent-bg-dark-30"
                       : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"
                   }`}
                 >
@@ -339,7 +340,7 @@ export function VenueRatingDialog({
                       key={type.id}
                       className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition ${
                         powerTypes.includes(type.id)
-                          ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"
+                          ? "accent-bg-10 accent-border-20 accent-bg-dark-20 accent-border-dark-20"
                           : "bg-white border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700"
                       }`}
                     >
@@ -355,7 +356,7 @@ export function VenueRatingDialog({
                             );
                           }
                         }}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="h-4 w-4 rounded border-gray-300 accent-text focus:ring-[var(--primary-accent)]"
                       />
                       <span className="text-sm">{type.label}</span>
                     </label>
@@ -379,7 +380,7 @@ export function VenueRatingDialog({
                       key={loc.id}
                       className={`flex items-center gap-2 rounded-lg border px-3 py-2 cursor-pointer transition ${
                         outletLocations.includes(loc.id)
-                          ? "bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800"
+                          ? "accent-bg-10 accent-border-20 accent-bg-dark-20 accent-border-dark-20"
                           : "bg-white border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700"
                       }`}
                     >
@@ -395,7 +396,7 @@ export function VenueRatingDialog({
                             );
                           }
                         }}
-                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        className="h-4 w-4 rounded border-gray-300 accent-text focus:ring-[var(--primary-accent)]"
                       />
                       <span className="text-sm">{loc.label}</span>
                     </label>
@@ -512,7 +513,7 @@ export function VenueRatingDialog({
             <div className="flex flex-col items-center justify-center border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl p-4 bg-zinc-50 dark:bg-zinc-800/20 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all">
               {uploadingPhoto ? (
                 <div className="flex flex-col items-center gap-2 py-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 accent-border"></div>
                   <span className="text-xs text-zinc-500">
                     Processing & uploading image...
                   </span>
@@ -635,7 +636,7 @@ export function VenueRatingDialog({
                   onClick={() => setMusicStyle(option.value)}
                   className={`rounded-lg px-4 py-2 text-xs font-semibold text-center border transition-all ${
                     musicStyle === option.value
-                      ? "bg-blue-600 border-blue-600 text-white shadow-sm"
+                      ? "accent-bg accent-border text-white shadow-sm"
                       : "bg-zinc-50 border-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 hover:bg-zinc-100"
                   }`}
                 >
@@ -762,7 +763,7 @@ export function VenueRatingDialog({
             <button
               type="submit"
               disabled={isSubmitting || hasOutlets === null}
-              className="flex-1 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="flex-1 rounded-lg accent-bg px-4 py-2 font-medium text-white accent-bg-hover disabled:opacity-50"
             >
               {isSubmitting ? "Submitting..." : "Submit Rating"}
             </button>

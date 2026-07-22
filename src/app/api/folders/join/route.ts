@@ -19,7 +19,18 @@ export async function POST(request: NextRequest) {
     }
 
     await ensureUserExists(userId);
-    const parsed = joinSchema.safeParse(await request.json());
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid invitation token" },
+        { status: 400 },
+      );
+    }
+
+    const parsed = joinSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json(
         { error: "Invalid invitation token" },
@@ -39,19 +50,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (
-      invite.status !== "PENDING" ||
-      isCollectionInviteExpired(invite.expiresAt)
-    ) {
-      if (
-        invite.status === "PENDING" &&
-        isCollectionInviteExpired(invite.expiresAt)
-      ) {
-        await prisma.folderInvite.update({
-          where: { id: invite.id },
-          data: { status: "EXPIRED" },
-        });
+    const expired =
+      invite.status === "EXPIRED" ||
+      isCollectionInviteExpired(invite.expiresAt);
+
+    if (expired) {
+      // Best-effort status flip — never turn an expired invite into a 500
+      if (invite.status === "PENDING") {
+        try {
+          await prisma.folderInvite.update({
+            where: { id: invite.id },
+            data: { status: "EXPIRED" },
+          });
+        } catch (err) {
+          console.error("Failed to mark invitation expired:", err);
+        }
       }
+
+      return NextResponse.json(
+        {
+          error:
+            "This invitation has expired. Ask the collection owner for a new invite link.",
+        },
+        { status: 410 },
+      );
+    }
+
+    if (invite.status !== "PENDING") {
       return NextResponse.json(
         { error: "This invitation is no longer valid" },
         { status: 410 },

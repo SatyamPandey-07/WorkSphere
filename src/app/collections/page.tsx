@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -26,6 +26,7 @@ export default function CollectionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingPublic, setLoadingPublic] = useState(false);
   const [creating, setCreating] = useState(false);
+  const isCreatingRef = useRef(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderDesc, setNewFolderDesc] = useState("");
   const [newFolderPublic, setNewFolderPublic] = useState(false);
@@ -125,15 +126,18 @@ export default function CollectionsPage() {
 
   const createFolder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFolderName.trim()) return;
+    const trimmedName = newFolderName.trim();
+    if (!trimmedName || creating || isCreatingRef.current) return;
+
     try {
+      isCreatingRef.current = true;
       setCreating(true);
       const res = await fetch("/api/folders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: newFolderName,
-          description: newFolderDesc,
+          name: trimmedName,
+          description: newFolderDesc.trim(),
           isPublic: newFolderPublic,
         }),
       });
@@ -151,6 +155,7 @@ export default function CollectionsPage() {
       console.error(e);
     } finally {
       setCreating(false);
+      isCreatingRef.current = false;
     }
   };
 
@@ -260,14 +265,25 @@ export default function CollectionsPage() {
                   placeholder="Collection Name"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
-                  className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-blue-500 transition-colors text-zinc-900 dark:text-white"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      if (
+                        !newFolderName.trim() ||
+                        creating ||
+                        isCreatingRef.current
+                      ) {
+                        e.preventDefault();
+                      }
+                    }
+                  }}
+                  className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-[var(--primary-accent)] transition-colors text-zinc-900 dark:text-white"
                   required
                 />
                 <textarea
                   placeholder="Description (Optional)"
                   value={newFolderDesc}
                   onChange={(e) => setNewFolderDesc(e.target.value)}
-                  className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-blue-500 transition-colors text-zinc-900 dark:text-white resize-none h-20"
+                  className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-[var(--primary-accent)] transition-colors text-zinc-900 dark:text-white resize-none h-20"
                 />
                 <div className="flex items-center justify-between px-1 py-1">
                   <span className="text-xs text-zinc-500">
@@ -278,7 +294,7 @@ export default function CollectionsPage() {
                     onClick={() => setNewFolderPublic(!newFolderPublic)}
                     className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
                       newFolderPublic
-                        ? "bg-blue-600"
+                        ? "accent-bg"
                         : "bg-zinc-200 dark:bg-zinc-800"
                     }`}
                   >
@@ -292,7 +308,7 @@ export default function CollectionsPage() {
                 <button
                   type="submit"
                   disabled={creating || !newFolderName.trim()}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 accent-bg hover:opacity-90 text-white font-medium rounded-xl text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {creating ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -330,17 +346,17 @@ export default function CollectionsPage() {
                       }}
                       onDragOver={(e) => handleDragOver(e, index)}
                       onDrop={(e) => handleDrop(e, index)}
-                      className={`group bg-white dark:bg-zinc-900 border rounded-2xl p-5 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/5 transition-all cursor-pointer h-full flex flex-col justify-between ${
+                      className={`group bg-white dark:bg-zinc-900 border rounded-2xl p-5 hover:accent-border-50 hover:shadow-lg hover:shadow-[var(--primary-accent)]/5 transition-all cursor-pointer h-full flex flex-col justify-between ${
                         draggedIndex === index
                           ? "opacity-30 border-dashed border-zinc-300 dark:border-zinc-700 scale-95"
                           : dragOverIndex === index
-                            ? "border-blue-500 bg-blue-50/10 dark:bg-blue-950/10 scale-102"
+                            ? "accent-border accent-bg-10 accent-bg-dark-10 scale-102"
                             : "border-zinc-200 dark:border-zinc-800"
                       }`}
                     >
                       <div>
                         <div className="flex items-start justify-between mb-4">
-                          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                          <div className="w-10 h-10 rounded-xl accent-bg-10 accent-bg-dark-20 accent-text flex items-center justify-center">
                             <Folder className="w-5 h-5" />
                           </div>
                           <div className="flex items-center gap-1.5">
@@ -352,11 +368,11 @@ export default function CollectionsPage() {
                             >
                               <GripVertical className="w-4 h-4" />
                             </div>
-                            <ChevronRight className="w-5 h-5 text-zinc-300 dark:text-zinc-700 group-hover:text-blue-500 transition-colors" />
+                            <ChevronRight className="w-5 h-5 text-zinc-300 dark:text-zinc-700 group-hover:accent-text transition-colors" />
                           </div>
                         </div>
 
-                        <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:text-blue-500 transition-colors line-clamp-1">
+                        <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:accent-text transition-colors line-clamp-1">
                           {folder.name}
                         </h3>
                         {folder.description && (
@@ -368,7 +384,7 @@ export default function CollectionsPage() {
 
                       <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center gap-4 text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                         <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
-                          <MapPin className="w-3.5 h-3.5 text-blue-500" />
+                          <MapPin className="w-3.5 h-3.5 accent-text" />
                           {folder._count?.venues || 0} Places
                         </span>
                         <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
@@ -398,7 +414,7 @@ export default function CollectionsPage() {
                     href={`/collections/${pubFolder.id}`}
                     key={pubFolder.id}
                   >
-                    <div className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/5 transition-all cursor-pointer h-full flex flex-col justify-between">
+                    <div className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 hover:accent-border-50 hover:shadow-lg hover:shadow-[var(--primary-accent)]/5 transition-all cursor-pointer h-full flex flex-col justify-between">
                       <div>
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center gap-2">
@@ -421,8 +437,8 @@ export default function CollectionsPage() {
                             onClick={(e) => toggleUpvote(pubFolder.id, e)}
                             className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${
                               pubFolder.hasUpvoted
-                                ? "bg-blue-600 border-blue-600 text-white shadow-sm shadow-blue-500/20 scale-105"
-                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-blue-500/40 hover:text-blue-500"
+                                ? "accent-bg accent-border text-white shadow-sm shadow-[var(--primary-accent)]/20 scale-105"
+                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:accent-border-50 hover:accent-text"
                             }`}
                           >
                             <ThumbsUp
@@ -432,7 +448,7 @@ export default function CollectionsPage() {
                           </button>
                         </div>
 
-                        <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:text-blue-500 transition-colors line-clamp-1">
+                        <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:accent-text transition-colors line-clamp-1">
                           {pubFolder.name}
                         </h3>
                         {pubFolder.description && (
@@ -444,7 +460,7 @@ export default function CollectionsPage() {
 
                       <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center gap-4 text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                         <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
-                          <MapPin className="w-3.5 h-3.5 text-blue-500" />
+                          <MapPin className="w-3.5 h-3.5 accent-text" />
                           {pubFolder._count?.venues || 0} Places
                         </span>
                         <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">

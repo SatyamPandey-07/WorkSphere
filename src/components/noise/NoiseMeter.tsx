@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Volume2 } from "lucide-react";
+import {
+  processAudioFrame,
+  resetNoiseProcessor,
+} from "@/lib/wasm/noiseProcessor";
 
 export type NoiseMeasurement = {
   averageDb: number;
@@ -80,7 +84,7 @@ export function NoiseMeter({ onMeasured }: Props) {
     setResult(null);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      let stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: false,
           noiseSuppression: false,
@@ -101,7 +105,7 @@ export function NoiseMeter({ onMeasured }: Props) {
       }
 
       const audioContext = new AudioContextClass();
-      const source = audioContext.createMediaStreamSource(stream);
+      let source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
 
       analyser.fftSize = 2048;
@@ -114,30 +118,121 @@ export function NoiseMeter({ onMeasured }: Props) {
       let timer = 5;
 
       const cleanup = () => {
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange,
+        );
+        navigator.mediaDevices.removeEventListener(
+          "devicechange",
+          handleDeviceChange,
+        );
         cancelAnimationFrame(animationFrame);
+        try {
+          source.disconnect();
+        } catch {}
+        try {
+          analyser.disconnect();
+        } catch {}
         stream.getTracks().forEach((track) => track.stop());
-        audioContext.close().catch(() => {});
+        if (audioContext.state !== "closed") {
+          audioContext.close().catch(() => {});
+        }
       };
+
+      const handleDeviceChange = async () => {
+        if (!audioContext || audioContext.state === "closed") return;
+
+        try {
+          if (audioContext.state !== "running") {
+            await audioContext.resume();
+          }
+
+          const track = stream.getAudioTracks()[0];
+          if (track && track.readyState === "ended") {
+            const newStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+              },
+            });
+
+            try {
+              source.disconnect();
+            } catch {}
+
+            stream = newStream;
+            source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+          }
+        } catch (error) {
+          console.error(
+            "Failed to recover audio context after device change:",
+            error,
+          );
+        }
+      };
+
+      navigator.mediaDevices.addEventListener(
+        "devicechange",
+        handleDeviceChange,
+      );
+
+      const handleVisibilityChange = () => {
+        if (document.hidden) {
+          window.clearInterval(countdown);
+          cleanup();
+          cleanupRef.current = null;
+          setStatus("error");
+        }
+        audioContext.close().catch(() => {});
+        resetNoiseProcessor();
+      };
+
+      document.addEventListener("visibilitychange", handleVisibilityChange);
 
       cleanupRef.current = cleanup;
       setStatus("measuring");
       setRemaining(timer);
 
-      const tick = () => {
+      // Delta time throttling to cap FFT polling and rendering to 60fps (1000/60 ~ 16.67ms)
+      // Prevents audio buffer overrun and crackling on 120Hz/144Hz ProMotion displays
+      let lastTickTime: number | null = null;
+      const targetFrameInterval = 1000 / 60;
+
+      const tick = async (timestamp?: number) => {
+        const now =
+          typeof timestamp === "number" ? timestamp : performance.now();
+
+        if (lastTickTime !== null) {
+          const delta = now - lastTickTime;
+          if (delta < targetFrameInterval) {
+            animationFrame = requestAnimationFrame(tick);
+            return;
+          }
+          lastTickTime = now - (delta % targetFrameInterval);
+        } else {
+          lastTickTime = now;
+        }
         analyser.getFloatTimeDomainData(samples);
 
-        let sumSquares = 0;
-        for (let i = 0; i < samples.length; i += 1) {
-          sumSquares += samples[i] * samples[i];
-        }
+        let db: number;
 
-        const rms = Math.sqrt(sumSquares / samples.length);
-        const db = rmsToApproxDb(rms);
+        try {
+          const result = await processAudioFrame(samples);
+          db = result.db;
+        } catch {
+          let sumSquares = 0;
+          for (let i = 0; i < samples.length; i += 1) {
+            sumSquares += samples[i] * samples[i];
+          }
+          const rms = Math.sqrt(sumSquares / samples.length);
+          db = rmsToApproxDb(rms);
+        }
 
         values.push(db);
         setLiveDb(db);
 
-        // Waveform canvas rendering
         const canvas = canvasRef.current;
         if (canvas) {
           const ctx = canvas.getContext("2d");
@@ -146,7 +241,6 @@ export function NoiseMeter({ onMeasured }: Props) {
             const height = canvas.height;
             ctx.clearRect(0, 0, width, height);
 
-            // Draw center baseline grid
             ctx.strokeStyle = "rgba(63, 63, 70, 0.2)";
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -154,12 +248,11 @@ export function NoiseMeter({ onMeasured }: Props) {
             ctx.lineTo(width, height / 2);
             ctx.stroke();
 
-            // Dynamic color determination based on decibel level
-            let strokeColor = "#10b981"; // Quiet
+            let strokeColor = "#10b981";
             if (db >= 70) {
-              strokeColor = "#f43f5e"; // Loud
+              strokeColor = "#f43f5e";
             } else if (db >= 50) {
-              strokeColor = "#f59e0b"; // Moderate
+              strokeColor = "#f59e0b";
             }
 
             ctx.strokeStyle = strokeColor;
@@ -171,7 +264,7 @@ export function NoiseMeter({ onMeasured }: Props) {
             let x = 0;
 
             for (let i = 0; i < samples.length; i++) {
-              const v = samples[i] * 2.0; // gain amplifier factor
+              const v = samples[i] * 2.0;
               const y = (v * height) / 2 + height / 2;
 
               if (i === 0) {
@@ -191,7 +284,6 @@ export function NoiseMeter({ onMeasured }: Props) {
         animationFrame = requestAnimationFrame(tick);
       };
 
-      // Small delay to ensure browser rendering context resolves canvasRef
       setTimeout(() => {
         tick();
       }, 50);
@@ -372,7 +464,7 @@ export function NoiseMeter({ onMeasured }: Props) {
         type="button"
         onClick={measure}
         disabled={status === "requesting" || status === "measuring"}
-        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-black uppercase tracking-tight text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] shadow-md shadow-blue-500/10"
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl accent-bg px-4 py-2.5 text-sm font-black uppercase tracking-tight text-white transition accent-bg-hover disabled:cursor-not-allowed disabled:opacity-50 active:scale-[0.98] shadow-md accent-shadow-sm"
       >
         {status === "measuring" ? (
           <>

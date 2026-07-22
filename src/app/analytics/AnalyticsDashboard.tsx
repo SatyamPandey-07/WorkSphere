@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { ReceiptVerificationModal } from "@/components/receipt/ReceiptVerificationModal";
 
 interface Badge {
   id: string;
@@ -77,6 +78,7 @@ export default function AnalyticsDashboard() {
   const [data, setData] = useState<UserAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [verifyModalOpen, setVerifyModalOpen] = useState(false);
 
   const fetchUserStats = async () => {
     setLoading(true);
@@ -451,6 +453,13 @@ export default function AnalyticsDashboard() {
                         )}
                       </button>
                       <button
+                        onClick={() => setVerifyModalOpen(true)}
+                        className="p-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-2xl hover:scale-110 transition-transform shadow-sm"
+                        title="Verify Signature"
+                      >
+                        <ShieldCheck className="w-5 h-5" />
+                      </button>
+                      <button
                         onClick={() => handleViewVenue(booking.venue)}
                         className="p-4 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-2xl hover:scale-110 transition-transform shadow-lg"
                         title="View on Map"
@@ -676,6 +685,10 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
       </div>
+      <ReceiptVerificationModal
+        open={verifyModalOpen}
+        onClose={() => setVerifyModalOpen(false)}
+      />
     </div>
   );
 }

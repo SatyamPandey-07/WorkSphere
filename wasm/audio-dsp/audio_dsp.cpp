@@ -10,6 +10,7 @@
  * - Wiener filter for noise reduction
  * - AudioWorkletProcessor-compatible buffer passing
  * - Sub-2ms processing latency at 48kHz
+ * - Scalar fallback for ARM32 / non-SIMD targets (#1140)
  */
 
 #include <cmath>
@@ -39,24 +40,35 @@ static int buffer_pos = 0;
 static int noise_frames_collected = 0;
 static int noise_calibration_frames = 10;
 
-// Spectral gate parameters
 static float noise_gate_threshold = 0.02f;
 static float wiener_alpha = 0.98f;
 static float spectral_floor = 0.05f;
 
-// Heap allocator state.
-// Starts beyond the static buffers.  Always kept 16-byte aligned so that
-// wasm_v128_load / wasm_v128_store (which require 16-byte alignment on
-// 32-bit ARM Android Chrome) never produce unaligned-access traps (#1039).
-static int heap_ptr = (FFT_SIZE * 4 * 8 + 15) & ~15;  // 16-byte aligned start
+// 16-byte aligned heap start (#1039).
+static int heap_ptr = (FFT_SIZE * 4 * 8 + 15) & ~15;
 
-// Forward declarations
-static void compute_fft(float* real, float* imag, int n);
-static void compute_ifft(float* real, float* imag, int n);
+// Runtime SIMD dispatch.  The JS worklet probes hardware SIMD and calls
+// setSIMDEnabled(0) on ARM32 targets where wasm_v128_load/store crash (#1140).
+static int simd_enabled = 1;
+
+// Forward declarations — SIMD implementations
+static void apply_hann_window_simd(float* signal);
+static void compute_magnitude_spectrum_simd(const float* real, const float* imag, float* magnitude);
+static void spectral_gate_simd(float* real, float* imag, const float* magnitude);
+static void compute_fft_simd(float* real, float* imag, int n);
+static void compute_ifft_simd(float* real, float* imag, int n);
+
+// Forward declarations — scalar fallbacks
+static void apply_hann_window_scalar(float* signal);
+static void compute_magnitude_spectrum_scalar(const float* real, const float* imag, float* magnitude);
+static void spectral_gate_scalar(float* real, float* imag, const float* magnitude);
+static void compute_ifft_scalar(float* real, float* imag, int n);
+
+// Forward declarations — dispatch wrappers
 static void apply_hann_window(float* signal);
 static void compute_magnitude_spectrum(const float* real, const float* imag, float* magnitude);
 static void spectral_gate(float* real, float* imag, const float* magnitude);
-static void compute_fft_simd(float* real, float* imag, int n);
+static void compute_ifft(float* real, float* imag, int n);
 
 __attribute__((constructor))
 static void init_tables() {
@@ -78,16 +90,44 @@ static void init_tables() {
 
 extern "C" {
 
-/**
- * Compute RMS level of a float32 audio buffer (SIMD-accelerated).
- */
+// ─── SIMD runtime dispatch ────────────────────────────────────────────────────
+
+int isSIMDSupported() {
+    return simd_enabled;
+}
+
+void setSIMDEnabled(int enabled) {
+    simd_enabled = enabled ? 1 : 0;
+}
+
+// ─── Scalar fallbacks for public API ──────────────────────────────────────────
+
+static float computeRMS_scalar(float* samples, int length) {
+    float sum = 0.0f;
+    for (int i = 0; i < length; i++) {
+        sum += samples[i] * samples[i];
+    }
+    return sqrtf(sum / (float)length);
+}
+
+static float computePeak_scalar(float* samples, int length) {
+    float peak = 0.0f;
+    for (int i = 0; i < length; i++) {
+        float abs_val = fabsf(samples[i]);
+        if (abs_val > peak) peak = abs_val;
+    }
+    return peak;
+}
+
+// ─── Public API (dispatch between SIMD and scalar) ────────────────────────────
+
 float computeRMS(float* samples, int length) {
+    if (!simd_enabled) return computeRMS_scalar(samples, length);
+
     float sum = 0.0f;
     int i = 0;
-
-    // SIMD accumulation (4 floats at a time)
     v128_t vsum = wasm_f32x4_splat(0.0f);
-    int simd_len = length & ~3;  // Round down to multiple of 4
+    int simd_len = length & ~3;
 
     for (; i < simd_len; i += 4) {
         v128_t v = wasm_v128_load(&samples[i]);
@@ -99,7 +139,6 @@ float computeRMS(float* samples, int length) {
     wasm_v128_store(temp, vsum);
     sum = temp[0] + temp[1] + temp[2] + temp[3];
 
-    // Handle remaining samples
     for (; i < length; i++) {
         sum += samples[i] * samples[i];
     }
@@ -107,13 +146,11 @@ float computeRMS(float* samples, int length) {
     return sqrtf(sum / (float)length);
 }
 
-/**
- * Compute peak absolute value of a float32 audio buffer (SIMD-accelerated).
- */
 float computePeak(float* samples, int length) {
+    if (!simd_enabled) return computePeak_scalar(samples, length);
+
     float peak = 0.0f;
     int i = 0;
-
     v128_t vpeak = wasm_f32x4_splat(0.0f);
     int simd_len = length & ~3;
 
@@ -135,9 +172,6 @@ float computePeak(float* samples, int length) {
     return peak;
 }
 
-/**
- * Convert RMS to approximate dB scale (20-120 dB range).
- */
 float rmsToDb(float rms) {
     if (rms <= 0.00001f) return 20.0f;
     float dbfs = 20.0f * log10f(rms);
@@ -147,41 +181,28 @@ float rmsToDb(float rms) {
     return roundf(db * 10.0f) / 10.0f;
 }
 
-/**
- * Process a 256-sample audio frame through the noise suppression pipeline.
- * Input: 256 float32 samples
- * Output: 256 denoised float32 samples written to output_ptr
- * Returns: RMS level of output
- */
 float processAudioFrame(float* input, int input_length, float* output, int output_length) {
-    // Copy input into ring buffer
     int copy_len = input_length < HOP_SIZE ? input_length : HOP_SIZE;
     memcpy(input_buffer + buffer_pos, input, copy_len * sizeof(float));
 
-    // Apply hop: shift output buffer
     memmove(output_buffer, output_buffer + HOP_SIZE, (FFT_SIZE - HOP_SIZE) * sizeof(float));
     memset(output_buffer + FFT_SIZE - HOP_SIZE, 0, HOP_SIZE * sizeof(float));
 
     buffer_pos += copy_len;
 
-    // Process when we have a full FFT frame
     if (buffer_pos >= FFT_SIZE) {
         alignas(16) float real[FFT_SIZE];
         alignas(16) float imag[FFT_SIZE];
         alignas(16) float magnitude[NUM_BINS];
 
-        // Copy and window
         memcpy(real, input_buffer, FFT_SIZE * sizeof(float));
         apply_hann_window(real);
         memset(imag, 0, FFT_SIZE * sizeof(float));
 
-        // Forward FFT
         compute_fft_simd(real, imag, FFT_SIZE);
 
-        // Compute magnitude spectrum
         compute_magnitude_spectrum(real, imag, magnitude);
 
-        // Collect noise profile during calibration
         if (noise_frames_collected < noise_calibration_frames) {
             for (int i = 0; i < NUM_BINS; i++) {
                 noise_estimate[i] = noise_estimate[i] * (float)noise_frames_collected + magnitude[i];
@@ -189,19 +210,15 @@ float processAudioFrame(float* input, int input_length, float* output, int outpu
             }
             noise_frames_collected++;
         } else {
-            // Apply spectral gate + Wiener filter
             spectral_gate(real, imag, magnitude);
 
-            // Update noise estimate (exponential moving average)
             for (int i = 0; i < NUM_BINS; i++) {
                 noise_estimate[i] = wiener_alpha * noise_estimate[i] + (1.0f - wiener_alpha) * magnitude[i];
             }
         }
 
-        // Inverse FFT
         compute_ifft(real, imag, FFT_SIZE);
 
-        // Overlap-add into output buffer
         for (int i = 0; i < FFT_SIZE; i++) {
             output_buffer[i] += real[i] * hann_window[i];
         }
@@ -209,7 +226,6 @@ float processAudioFrame(float* input, int input_length, float* output, int outpu
         buffer_pos = 0;
     }
 
-    // Extract the latest HOP_SIZE samples from the output buffer
     int out_start = FFT_SIZE - HOP_SIZE;
     if (output_length < HOP_SIZE) copy_len = output_length;
     else copy_len = HOP_SIZE;
@@ -219,9 +235,6 @@ float processAudioFrame(float* input, int input_length, float* output, int outpu
     return computeRMS(output, copy_len);
 }
 
-/**
- * Reset noise calibration — call when starting a new measurement session.
- */
 void resetNoiseCalibration() {
     noise_frames_collected = 0;
     memset(noise_estimate, 0, sizeof(noise_estimate));
@@ -230,9 +243,6 @@ void resetNoiseCalibration() {
     memset(output_buffer, 0, sizeof(output_buffer));
 }
 
-/**
- * Set noise gate sensitivity (0.0 = very aggressive, 1.0 = minimal filtering).
- */
 void setNoiseGateSensitivity(float sensitivity) {
     if (sensitivity < 0.0f) sensitivity = 0.0f;
     if (sensitivity > 1.0f) sensitivity = 1.0f;
@@ -241,35 +251,17 @@ void setNoiseGateSensitivity(float sensitivity) {
     wiener_alpha = 0.9f + sensitivity * 0.09f;
 }
 
-/**
- * Get the current noise profile (for visualization).
- */
 void getNoiseProfile(float* out, int length) {
     int len = length < NUM_BINS ? length : NUM_BINS;
     memcpy(out, noise_estimate, len * sizeof(float));
 }
 
-/**
- * Get the frequency spectrum of the last processed frame (for visualization).
- */
 void getLastSpectrum(float* out_real, float* out_imag, int length) {
-    // This would require caching the last FFT output — simplified for now
     int len = length < NUM_BINS ? length : NUM_BINS;
     memset(out_real, 0, len * sizeof(float));
     memset(out_imag, 0, len * sizeof(float));
 }
 
-/**
- * Malloc for WASM memory management.
- *
- * Bug fix (Issue #1039): Aligns every allocation to 16 bytes.
- * The wasm_v128_load / wasm_v128_store SIMD intrinsics used in computeRMS,
- * compute_magnitude_spectrum, spectral_gate, and compute_ifft all require
- * 16-byte alignment on 32-bit ARM Android Chrome.  Without this, the browser
- * runtime raises RuntimeError: memory access out of bounds.
- *
- * Alignment formula:  aligned = (ptr + 15) & ~15
- */
 int malloc(int size) {
     // Align returned pointer to 16 bytes for 128-bit SIMD operations
     int ptr = (heap_ptr + 15) & ~15;
@@ -278,63 +270,46 @@ int malloc(int size) {
     return ptr;
 }
 
-/**
- * Free (no-op bump allocator).
- */
 void free(int ptr) {
     (void)ptr;
 }
 
-/**
- * Reset heap pointer back to the 16-byte-aligned initial position.
- */
 void resetHeap() {
     heap_ptr = (FFT_SIZE * 4 * 8 + 15) & ~15;
 }
 
 }  // extern "C"
 
-// ─── Internal FFT implementation ──────────────────────────────────────────────
+// ─── SIMD implementations ─────────────────────────────────────────────────────
 
-static void apply_hann_window(float* signal) {
+static void apply_hann_window_simd(float* signal) {
     int i = 0;
-    v128_t one = wasm_f32x4_splat(1.0f);
-    v128_t half = wasm_f32x4_splat(0.5f);
-
     int simd_len = FFT_SIZE & ~3;
     for (; i < simd_len; i += 4) {
         v128_t w = wasm_v128_load(&hann_window[i]);
         v128_t s = wasm_v128_load(&signal[i]);
-        v128_t result = wasm_f32x4_mul(s, w);
-        wasm_v128_store(&signal[i], result);
+        wasm_v128_store(&signal[i], wasm_f32x4_mul(s, w));
     }
-
     for (; i < FFT_SIZE; i++) {
         signal[i] *= hann_window[i];
     }
 }
 
-static void compute_magnitude_spectrum(const float* real, const float* imag, float* magnitude) {
+static void compute_magnitude_spectrum_simd(const float* real, const float* imag, float* magnitude) {
     int i = 0;
     int simd_len = NUM_BINS & ~3;
-
     for (; i < simd_len; i += 4) {
         v128_t re = wasm_v128_load(&real[i]);
         v128_t im = wasm_v128_load(&imag[i]);
         v128_t mag_sq = wasm_f32x4_add(wasm_f32x4_mul(re, re), wasm_f32x4_mul(im, im));
-        // Approximate sqrt using rsqrt for speed (good enough for spectral gate)
-        v128_t inv_mag = wasm_f32x4_div(wasm_f32x4_splat(1.0f), wasm_f32x4_sqrt(mag_sq));
-        // Actually use proper sqrt since rsqrt approximation may be too rough
-        v128_t result = wasm_f32x4_sqrt(mag_sq);
-        wasm_v128_store(&magnitude[i], result);
+        wasm_v128_store(&magnitude[i], wasm_f32x4_sqrt(mag_sq));
     }
-
     for (; i < NUM_BINS; i++) {
         magnitude[i] = sqrtf(real[i] * real[i] + imag[i] * imag[i]);
     }
 }
 
-static void spectral_gate(float* real, float* imag, const float* magnitude) {
+static void spectral_gate_simd(float* real, float* imag, const float* magnitude) {
     int i = 0;
     int simd_len = NUM_BINS & ~3;
 
@@ -344,17 +319,14 @@ static void spectral_gate(float* real, float* imag, const float* magnitude) {
         v128_t threshold = wasm_f32x4_splat(noise_gate_threshold);
         v128_t floor_val = wasm_f32x4_splat(spectral_floor);
 
-        // Wiener filter gain: max(spectral_floor, 1 - noise/mag)
         v128_t safe_mag = wasm_f32x4_max(mag, wasm_f32x4_splat(0.0001f));
         v128_t ratio = wasm_f32x4_div(noise, safe_mag);
         v128_t gain = wasm_f32x4_max(floor_val, wasm_f32x4_sub(wasm_f32x4_splat(1.0f), ratio));
 
-        // Apply gate: if magnitude < noise * threshold, zero out
         v128_t gate_threshold = wasm_f32x4_mul(noise, threshold);
         v128_t gate_open = wasm_f32x4_gt(mag, gate_threshold);
         gain = wasm_v128_and(gain, gate_open);
 
-        // Apply gain to real and imaginary parts
         v128_t re = wasm_v128_load(&real[i]);
         v128_t im = wasm_v128_load(&imag[i]);
         wasm_v128_store(&real[i], wasm_f32x4_mul(re, gain));
@@ -362,23 +334,19 @@ static void spectral_gate(float* real, float* imag, const float* magnitude) {
     }
 
     for (; i < NUM_BINS; i++) {
-        float gate_threshold_val = noise[i] * noise_gate_threshold;
+        float gate_threshold_val = noise_estimate[i] * noise_gate_threshold;
         if (magnitude[i] < gate_threshold_val) {
             real[i] = 0.0f;
             imag[i] = 0.0f;
         } else {
-            float gain = fmaxf(spectral_floor, 1.0f - noise[i] / fmaxf(magnitude[i], 0.0001f));
+            float gain = fmaxf(spectral_floor, 1.0f - noise_estimate[i] / fmaxf(magnitude[i], 0.0001f));
             real[i] *= gain;
             imag[i] *= gain;
         }
     }
 }
 
-/**
- * In-place Cooley-Tukey radix-2 FFT (SIMD-accelerated butterfly).
- */
 static void compute_fft_simd(float* real, float* imag, int n) {
-    // Bit-reversal permutation
     int log_n = 0;
     for (int t = n; t > 1; t >>= 1) log_n++;
 
@@ -395,7 +363,6 @@ static void compute_fft_simd(float* real, float* imag, int n) {
         }
     }
 
-    // Butterfly stages
     for (int stage = 0; stage < log_n; stage++) {
         int m = 1 << (stage + 1);
         int half_m = m >> 1;
@@ -420,23 +387,13 @@ static void compute_fft_simd(float* real, float* imag, int n) {
     }
 }
 
-static void compute_fft(float* real, float* imag, int n) {
-    compute_fft_simd(real, imag, n);
-}
-
-/**
- * Inverse FFT using the same butterfly structure with conjugated twiddle factors.
- */
-static void compute_ifft(float* real, float* imag, int n) {
-    // Conjugate the input
+static void compute_ifft_simd(float* real, float* imag, int n) {
     for (int i = 0; i < n; i++) {
         imag[i] = -imag[i];
     }
 
-    // Forward FFT
     compute_fft_simd(real, imag, n);
 
-    // Conjugate and scale
     float inv_n = 1.0f / (float)n;
     int i = 0;
     int simd_len = n & ~3;
@@ -452,5 +409,81 @@ static void compute_ifft(float* real, float* imag, int n) {
     for (; i < n; i++) {
         real[i] *= inv_n;
         imag[i] = -imag[i] * inv_n;
+    }
+}
+
+// ─── Scalar fallback implementations ──────────────────────────────────────────
+
+static void apply_hann_window_scalar(float* signal) {
+    for (int i = 0; i < FFT_SIZE; i++) {
+        signal[i] *= hann_window[i];
+    }
+}
+
+static void compute_magnitude_spectrum_scalar(const float* real, const float* imag, float* magnitude) {
+    for (int i = 0; i < NUM_BINS; i++) {
+        magnitude[i] = sqrtf(real[i] * real[i] + imag[i] * imag[i]);
+    }
+}
+
+static void spectral_gate_scalar(float* real, float* imag, const float* magnitude) {
+    for (int i = 0; i < NUM_BINS; i++) {
+        float gate_threshold_val = noise_estimate[i] * noise_gate_threshold;
+        if (magnitude[i] < gate_threshold_val) {
+            real[i] = 0.0f;
+            imag[i] = 0.0f;
+        } else {
+            float gain = fmaxf(spectral_floor, 1.0f - noise_estimate[i] / fmaxf(magnitude[i], 0.0001f));
+            real[i] *= gain;
+            imag[i] *= gain;
+        }
+    }
+}
+
+static void compute_ifft_scalar(float* real, float* imag, int n) {
+    for (int i = 0; i < n; i++) {
+        imag[i] = -imag[i];
+    }
+
+    compute_fft_simd(real, imag, n);
+
+    float inv_n = 1.0f / (float)n;
+    for (int i = 0; i < n; i++) {
+        real[i] *= inv_n;
+        imag[i] = -imag[i] * inv_n;
+    }
+}
+
+// ─── Dispatch wrappers ────────────────────────────────────────────────────────
+
+static void apply_hann_window(float* signal) {
+    if (simd_enabled) {
+        apply_hann_window_simd(signal);
+    } else {
+        apply_hann_window_scalar(signal);
+    }
+}
+
+static void compute_magnitude_spectrum(const float* real, const float* imag, float* magnitude) {
+    if (simd_enabled) {
+        compute_magnitude_spectrum_simd(real, imag, magnitude);
+    } else {
+        compute_magnitude_spectrum_scalar(real, imag, magnitude);
+    }
+}
+
+static void spectral_gate(float* real, float* imag, const float* magnitude) {
+    if (simd_enabled) {
+        spectral_gate_simd(real, imag, magnitude);
+    } else {
+        spectral_gate_scalar(real, imag, magnitude);
+    }
+}
+
+static void compute_ifft(float* real, float* imag, int n) {
+    if (simd_enabled) {
+        compute_ifft_simd(real, imag, n);
+    } else {
+        compute_ifft_scalar(real, imag, n);
     }
 }

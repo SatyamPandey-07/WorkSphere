@@ -66,7 +66,9 @@ describe("Collection Folders API & Schema Validation", () => {
       const result = createFolderSchema.safeParse(payload);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues[0].message).toBe("Folder name must be 100 characters or less");
+        expect(result.error.issues[0].message).toBe(
+          "Folder name must be 100 characters or less",
+        );
       }
     });
   });

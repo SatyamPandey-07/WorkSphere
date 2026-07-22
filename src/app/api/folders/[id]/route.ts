@@ -7,7 +7,7 @@ import { deleteFolderWithRelations, hasFolderAccess } from "@/lib/folders";
 // GET /api/folders/[id] - Get folder details
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -33,22 +33,32 @@ export async function GET(
           include: {
             venue: true,
             addedBy: {
-              select: { id: true, firstName: true, lastName: true, imageUrl: true }
-            }
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                imageUrl: true,
+              },
+            },
           },
-          orderBy: { createdAt: 'desc' }
+          orderBy: { createdAt: "desc" },
         },
         members: {
           include: {
             user: {
-              select: { id: true, firstName: true, lastName: true, imageUrl: true }
-            }
-          }
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                imageUrl: true,
+              },
+            },
+          },
         },
         owner: {
-          select: { id: true, firstName: true, lastName: true, imageUrl: true }
-        }
-      }
+          select: { id: true, firstName: true, lastName: true, imageUrl: true },
+        },
+      },
     });
 
     return NextResponse.json({ folder: folderDetails, role });
@@ -56,7 +66,7 @@ export async function GET(
     console.error(`GET /api/folders/id error:`, error);
     return NextResponse.json(
       { error: "Failed to fetch folder" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -64,7 +74,7 @@ export async function GET(
 // PUT /api/folders/[id] - Update folder
 export async function PUT(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -84,9 +94,12 @@ export async function PUT(
 
     const body = await req.json();
     const validation = updateFolderSchema.safeParse(body);
-    
+
     if (!validation.success) {
-      return NextResponse.json({ error: validation.error.format() }, { status: 400 });
+      return NextResponse.json(
+        { error: validation.error.format() },
+        { status: 400 },
+      );
     }
 
     const { name, description, isPublic } = validation.data;
@@ -97,7 +110,7 @@ export async function PUT(
         ...(name && { name }),
         ...(description !== undefined && { description }),
         ...(isPublic !== undefined && { isPublic }),
-      }
+      },
     });
 
     return NextResponse.json({ folder: updatedFolder });
@@ -105,7 +118,7 @@ export async function PUT(
     console.error(`PUT /api/folders/id error:`, error);
     return NextResponse.json(
       { error: "Failed to update folder" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -113,7 +126,7 @@ export async function PUT(
 // DELETE /api/folders/[id] - Delete folder
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { userId } = await auth();
@@ -139,7 +152,7 @@ export async function DELETE(
     console.error(`DELETE /api/folders/id error:`, error);
     return NextResponse.json(
       { error: "Failed to delete folder" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

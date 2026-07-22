@@ -19,11 +19,12 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
+import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import {
   useSeatAvailability,
   type SeatStatus,
 } from "@/hooks/useSeatAvailability";
-import usePartySocket from "partysocket/react";
+import usePartySocket from "@/hooks/usePartySocketReconnect";
 
 function throttle<T extends (...args: any[]) => void>(
   func: T,
@@ -333,6 +334,11 @@ const Map = ({
   const { theme } = useTheme();
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     getToken()
@@ -373,7 +379,8 @@ const Map = ({
 
   const socket = usePartySocket({
     host: "127.0.0.1:1999",
-    room: roomId || "default",
+    room: isMounted && roomId ? roomId : "placeholder",
+    startClosed: !isMounted,
     query: token ? { token } : undefined,
     onMessage(event) {
       try {
@@ -688,6 +695,27 @@ const Map = ({
       );
   }, []);
 
+  // Compute WebGL GPU Heatmap Telemetry Points (combining forecast telemetry & markers)
+  const webglTelemetryPoints = useMemo(() => {
+    if (heatmapPoints && heatmapPoints.length > 0) {
+      return heatmapPoints.map((pt: any) => ({
+        lat: Number(pt[0]),
+        lng: Number(pt[1]),
+        intensity: pt[2] != null ? Number(pt[2]) : 0.75,
+        radius: 32,
+      }));
+    }
+    // Fallback: map venue markers to telemetry point data
+    return markers
+      .filter((m) => m.position?.lat != null && m.position?.lng != null)
+      .map((m) => ({
+        lat: Number(m.position.lat),
+        lng: Number(m.position.lng),
+        intensity: 0.85,
+        radius: 36,
+      }));
+  }, [heatmapPoints, markers]);
+
   // Group and spiderfy overlapping markers
   const spiderfiedMarkers = useMemo(() => {
     const groups: { [key: string]: any[] } = {};
@@ -835,6 +863,14 @@ const Map = ({
           mix-blend-mode: screen;
           filter: none !important; /* Forces the browser to keep full color saturation */
         }
+
+        /* WebGL GPU Heatmap Canvas Overlay (#818) */
+        .leaflet-webgl-heatmap-layer {
+          z-index: 401 !important;
+          mix-blend-mode: screen;
+          filter: none !important;
+          pointer-events: none;
+        }
         
         /* GPU-accelerated pulsing keyframes */
         @keyframes markerPulse {
@@ -958,7 +994,10 @@ const Map = ({
         
         /* Floating toggle position above canvas layers */
         .map-noise-toggle {
-        /* Position for existing noise toggle */
+          position: absolute;
+          top: 68px;
+          right: 20px;
+          z-index: 1000;
         }
         .map-forecast-controls {
           position: absolute;
@@ -977,11 +1016,6 @@ const Map = ({
         .map-forecast-controls input[type="range"] {
           width: 120px;
         }
-  position: absolute;
-  top: 68px;
-  right: 20px;
-  z-index: 1000;
-}
   .leaflet-control-scale {
   background: transparent;
 }
@@ -1048,6 +1082,12 @@ const Map = ({
             />
           </LayersControl.BaseLayer>
 
+          <LayersControl.Overlay checked name="GPU WebGL Heatmap (60 FPS)">
+            <LayerGroup>
+              <WebGLHeatmapLayer points={webglTelemetryPoints} opacity={0.85} blur={1.0} />
+            </LayerGroup>
+          </LayersControl.Overlay>
+
           <LayersControl.Overlay name="Live Crowd Heatmap">
             <HeatmapOverlay points={heatmapPoints} />
           </LayersControl.Overlay>
@@ -1101,7 +1141,12 @@ const Map = ({
             keyboard={true}
             eventHandlers={markerEventHandlers}
           >
-            <Popup>You are here!</Popup>
+            <Popup
+              autoPanPaddingTopLeft={[20, 90]}
+              autoPanPaddingBottomRight={[20, 20]}
+            >
+              You are here!
+            </Popup>
           </Marker>
         )}
         <MapEvents onMouseMove={throttledBroadcast} />
@@ -1127,7 +1172,10 @@ const Map = ({
             keyboard={true}
             eventHandlers={markerEventHandlers}
           >
-            <Popup>
+            <Popup
+              autoPanPaddingTopLeft={[20, 90]}
+              autoPanPaddingBottomRight={[20, 20]}
+            >
               <div className="text-sm">
                 <div className="font-semibold text-white">{marker.name}</div>
                 {marker.category && (
@@ -1213,7 +1261,10 @@ const Map = ({
                 dashArray: travelProfile === "walking" ? "5, 10" : undefined, // Dotted path line if walking
               }}
             >
-              <Popup>
+              <Popup
+                autoPanPaddingTopLeft={[20, 90]}
+                autoPanPaddingBottomRight={[20, 20]}
+              >
                 <div className="text-sm text-white">
                   <div className="font-bold text-blue-400">
                     Optimized Hybrid Schedule

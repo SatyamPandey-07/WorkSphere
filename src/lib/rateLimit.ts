@@ -5,38 +5,7 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-/**
- * Sliding Window Rate Limiting Lua Script for Redis.
- *
- * Atomically removes expired entries from sorted set (zset), checks current requests
- * against limit, adds current timestamp, and appends EXPIRE key window_seconds to
- * prevent key/zset accumulation in Redis memory under high concurrency (300+ req/s).
- */
-export const SLIDING_WINDOW_LUA = `
-local key = KEYS[1]
-local now = tonumber(ARGV[1])
-local windowStart = tonumber(ARGV[2])
-local limit = tonumber(ARGV[3])
-local window_seconds = tonumber(ARGV[4])
-
--- Remove entries outside the sliding window
-redis.call('ZREMRANGEBYSCORE', key, '-inf', windowStart)
-
--- Get current request count in window
-local current_requests = redis.call('ZCARD', key)
-
-if current_requests < limit then
-    -- Add timestamp to sorted set
-    redis.call('ZADD', key, now, now)
-    -- Atomically append EXPIRE key window_seconds
-    redis.call('EXPIRE', key, window_seconds)
-    return 1
-else
-    -- Refresh key expiration even when limited
-    redis.call('EXPIRE', key, window_seconds)
-    return 0
-end
-`;
+const WINDOW_MS = 60_000;
 
 let redisClient: any = null;
 
@@ -62,6 +31,12 @@ function getRedisClient() {
   }
 }
 
+/**
+ * Sliding-window check in one MULTI/EXEC:
+ * ZREMRANGEBYSCORE → ZADD → ZCARD → EXPIRE.
+ * Avoids Lua `eval` timeouts under ~200 RPS while keeping prune+count+write atomic
+ * so concurrent bursts cannot all pass on a stale ZCARD (issue #1034).
+ */
 async function upstashRateLimit(
   identifier: string,
   limit: number,
@@ -71,18 +46,30 @@ async function upstashRateLimit(
 
   try {
     const now = Date.now();
-    const windowMs = 60_000;
-    const windowSeconds = Math.ceil(windowMs / 1000);
-    const windowStart = now - windowMs;
+    const windowStart = now - WINDOW_MS;
+    const windowSeconds = Math.ceil(WINDOW_MS / 1000);
     const key = `worksphere:ratelimit:${identifier}`;
-
-    const allowed = await redis.eval(
-      SLIDING_WINDOW_LUA,
-      [key],
-      [now, windowStart, limit, windowSeconds],
+    const member = microTimestampMember(
+      Math.floor(now / 1000),
+      (now % 1000) * 1000,
+      `${Math.random().toString(36).slice(2, 10)}`,
     );
 
-    return Number(allowed) === 1;
+    const tx = redis.multi();
+    tx.zremrangebyscore(key, 0, windowStart);
+    tx.zadd(key, { score: now, member });
+    tx.zcard(key);
+    tx.expire(key, windowSeconds);
+    const result = await tx.exec();
+
+    // MULTI result order: rem, add, card, expire
+    const count = Number(result?.[2] ?? 0);
+    if (count > limit) {
+      await redis.zrem(key, member);
+      return false;
+    }
+
+    return true;
   } catch {
     return memRateLimit(identifier, limit);
   }
@@ -94,7 +81,6 @@ interface MemEntry {
   resetTime: number;
 }
 const memStore = new Map<string, MemEntry>();
-const WINDOW_MS = 60_000;
 
 interface RateLimitInfo {
   count: number;
@@ -213,4 +199,17 @@ export function resetRateLimit(identifier?: string): void {
     memStore.clear();
     rateLimitInfoStore.clear();
   }
+}
+
+export function resetRedisScripts(): void {
+  redisClient = null;
+}
+
+export function microTimestampMember(
+  sec: number | string,
+  usec: number,
+  nonce: string,
+): string {
+  const padUsec = String(usec).padStart(6, "0");
+  return `${sec}${padUsec}:${nonce}`;
 }

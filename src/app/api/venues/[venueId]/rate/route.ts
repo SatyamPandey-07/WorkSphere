@@ -11,11 +11,12 @@ export async function POST(
   context: { params: Promise<{ venueId: string }> },
 ) {
   try {
-    const { userId } = await auth();
+    const { userId: rawUserId } = await auth();
 
-    if (!userId) {
+    if (!rawUserId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    const userId: string = rawUserId;
 
     // Ensure Identity 💎
     await ensureUserExists(userId);

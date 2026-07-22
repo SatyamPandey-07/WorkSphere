@@ -267,7 +267,11 @@ export default function CollectionsPage() {
                   onChange={(e) => setNewFolderName(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
-                      if (!newFolderName.trim() || creating || isCreatingRef.current) {
+                      if (
+                        !newFolderName.trim() ||
+                        creating ||
+                        isCreatingRef.current
+                      ) {
                         e.preventDefault();
                       }
                     }

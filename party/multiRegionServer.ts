@@ -96,6 +96,8 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
   private seatCheckins = new Map<string, SeatCheckin>();
   private stateSync: DurableStateSync;
   private connRegions = new Map<string, Region>();
+  private serverEpoch = Date.now();
+  private sequenceId = 0;
 
   constructor(readonly room: Party.Room) {
     const region = (process.env.PARTYKIT_REGION as Region) ?? "us-east";
@@ -175,8 +177,14 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
 
     // Bring newly connected clients up to speed
     if (this.seatCheckins.size > 0) {
+      this.sequenceId++;
       conn.send(
-        JSON.stringify({ type: "seat_snapshot", venues: this.seatSummary() }),
+        JSON.stringify({
+          type: "seat_snapshot",
+          venues: this.seatSummary(),
+          epoch: this.serverEpoch,
+          sequenceId: this.sequenceId,
+        }),
       );
     }
 
@@ -235,6 +243,24 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
 
       if (parsed.type === "typing") {
         this.room.broadcast(message, [sender.id]);
+        return;
+      }
+
+      if (
+        parsed.type === "request_room_snapshot" ||
+        parsed.type === "request_snapshot"
+      ) {
+        const snapshotId = parsed.snapshotId || `snap-${Date.now()}`;
+        sender.send(
+          JSON.stringify({
+            type: "room_snapshot_response",
+            roomId: this.room.id,
+            snapshotId,
+            timestamp: Date.now(),
+            seats: this.seatSummary(),
+            presence: this.stateSync.serializeState(),
+          }),
+        );
         return;
       }
 
@@ -319,6 +345,7 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
   private broadcastSeatUpdate(venueId: string) {
     const count = this.countForVenue(venueId);
     const capacity = this.capacityForVenue(venueId);
+    this.sequenceId++;
     this.room.broadcast(
       JSON.stringify({
         type: "seat_update",
@@ -326,6 +353,8 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
         count,
         capacity,
         status: seatStatusFor(count, capacity),
+        epoch: this.serverEpoch,
+        sequenceId: this.sequenceId,
       }),
     );
   }

@@ -7,7 +7,9 @@ describe("Next.js App Router - /ai Page WebAssembly & Client Dynamic Import Guar
     const content = fs.readFileSync(filePath, "utf-8");
 
     // Verify static import is not used for EnhancedChatbot
-    expect(content).not.toMatch(/^import\s+\{\s*EnhancedChatbot\s*\}\s+from\s+["']@\/components\/EnhancedChatbot["']/m);
+    expect(content).not.toMatch(
+      /^import\s+\{\s*EnhancedChatbot\s*\}\s+from\s+["']@\/components\/EnhancedChatbot["']/m,
+    );
 
     // Verify dynamic import with ssr: false is present for EnhancedChatbot
     expect(content).toMatch(/const\s+EnhancedChatbot\s*=\s*dynamic\s*\(/);

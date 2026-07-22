@@ -66,9 +66,11 @@ export function useSyncWorker() {
 /**
  * Global Sync Manager component to ensure outbox sync worker and listeners
  * remain active across all pages in the application. (Issue #871)
+ * Also registers periodic background sync for workspace availability. (Issue #1126)
  */
 export function SyncManager() {
   useSyncWorker();
+  usePeriodicAvailabilitySync();
   return null;
 }
 
@@ -96,6 +98,13 @@ export function useServiceWorker() {
           console.log("[PWA] Service worker registered");
           setRegistration(reg);
 
+          // Check if there's already a waiting worker
+          if (reg.waiting) {
+            window.dispatchEvent(
+              new CustomEvent("pwa-update-available", { detail: reg.waiting }),
+            );
+          }
+
           // Check for updates on every page load
           reg.update();
 
@@ -108,7 +117,11 @@ export function useServiceWorker() {
                   if (navigator.serviceWorker.controller) {
                     // New content is available; please refresh.
                     console.log("[PWA] New content available, please refresh.");
-                    // Optional: Show a toast or notification to the user
+                    window.dispatchEvent(
+                      new CustomEvent("pwa-update-available", {
+                        detail: installingWorker,
+                      }),
+                    );
                   } else {
                     // Content is cached for offline use.
                     console.log("[PWA] Content is cached for offline use.");
@@ -284,6 +297,22 @@ function useOfflineSyncNotice() {
       }
       if (isPushNavigateMessage(event.data)) {
         window.location.href = event.data.url;
+      }
+      if (
+        typeof event.data === "object" &&
+        event.data !== null &&
+        event.data.type === "RECEIPT_SYNC_READY"
+      ) {
+        const { bookingId, filename } = event.data;
+        // Trigger download from client when receipt background sync completes
+        const downloadUrl = `/api/bookings/${bookingId}/download`;
+        const a = document.createElement("a");
+        a.href = downloadUrl;
+        a.download =
+          filename || `WorkSphere_Receipt_${bookingId.slice(-6)}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
       }
     };
 
@@ -603,4 +632,97 @@ export function PWABanner() {
       )}
     </>
   );
+}
+
+const AVAILABILITY_SYNC_TAG = "availability-sync";
+const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
+const SYNC_INTERVAL_MS = 30 * 60 * 1000;
+
+/**
+ * Registers Periodic Background Sync for workspace seat availability
+ * (Issue #1126). Falls back to one-shot Background Sync when the
+ * Periodic Sync API is unavailable (Firefox, Safari).
+ */
+export function usePeriodicAvailabilitySync() {
+  const { registration } = useServiceWorker();
+
+  useEffect(() => {
+    if (!registration) return;
+
+    async function registerPeriodicSync() {
+      try {
+        const reg = registration as ServiceWorkerRegistration & {
+          periodicSync?: {
+            register: (
+              tag: string,
+              options?: { minInterval?: number },
+            ) => Promise<void>;
+          };
+        };
+
+        if (reg.periodicSync) {
+          const status = await navigator.permissions.query({
+            name: "periodic-background-sync" as PermissionName,
+          });
+          if (status.state === "granted") {
+            await reg.periodicSync.register(PERIODIC_AVAILABILITY_TAG, {
+              minInterval: SYNC_INTERVAL_MS,
+            });
+            console.log("[PWA] Periodic availability sync registered");
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn(
+          "[PWA] Periodic sync registration failed, falling back to one-shot:",
+          error,
+        );
+      }
+
+      registerOneShotFallback();
+    }
+
+    function registerOneShotFallback() {
+      if (!("SyncManager" in window)) return;
+
+      const onVisibilityChange = () => {
+        if (document.visibilityState === "visible" && navigator.onLine) {
+          navigator.serviceWorker.ready.then((readyReg) => {
+            const syncReg = readyReg as ServiceWorkerRegistration & {
+              sync?: { register: (tag: string) => Promise<void> };
+            };
+            syncReg.sync?.register(AVAILABILITY_SYNC_TAG);
+          });
+        }
+      };
+
+      const onOnline = () => {
+        navigator.serviceWorker.ready.then((readyReg) => {
+          const syncReg = readyReg as ServiceWorkerRegistration & {
+            sync?: { register: (tag: string) => Promise<void> };
+          };
+          syncReg.sync?.register(AVAILABILITY_SYNC_TAG);
+        });
+      };
+
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      window.addEventListener("online", onOnline);
+
+      onVisibilityChange();
+
+      return () => {
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        window.removeEventListener("online", onOnline);
+      };
+    }
+
+    let cleanup: (() => void) | undefined;
+    registerPeriodicSync().then(() => {
+      cleanup = registerOneShotFallback();
+    });
+
+    return () => {
+      cleanup?.();
+    };
+  }, [registration]);
 }

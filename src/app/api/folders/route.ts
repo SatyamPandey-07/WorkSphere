@@ -13,17 +13,14 @@ export async function GET(_req: NextRequest) {
 
     const folders = await prisma.folder.findMany({
       where: {
-        OR: [
-          { ownerId: userId },
-          { members: { some: { userId } } },
-        ],
+        OR: [{ ownerId: userId }, { members: { some: { userId } } }],
       },
       include: {
         _count: {
           select: { venues: true, members: true },
         },
       },
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { updatedAt: "desc" },
     });
 
     return NextResponse.json({ folders });
@@ -31,7 +28,7 @@ export async function GET(_req: NextRequest) {
     console.error("GET /api/folders error:", error);
     return NextResponse.json(
       { error: "Failed to fetch folders" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -46,9 +43,12 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const validation = createFolderSchema.safeParse(body);
-    
+
     if (!validation.success) {
-      return NextResponse.json({ error: validation.error.format() }, { status: 400 });
+      return NextResponse.json(
+        { error: validation.error.format() },
+        { status: 400 },
+      );
     }
 
     const { name, description, isPublic } = validation.data;
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
         _count: {
           select: { venues: true, members: true },
         },
-      }
+      },
     });
 
     return NextResponse.json({ folder }, { status: 201 });
@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
     console.error("POST /api/folders error:", error);
     return NextResponse.json(
       { error: "Failed to create folder" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

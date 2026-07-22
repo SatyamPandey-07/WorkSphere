@@ -327,8 +327,8 @@ export default function AdminPerformanceDashboard() {
                 />
                 <Tooltip
                   contentStyle={tooltipStyle}
-                  formatter={(value: number, name: string) => [
-                    formatMs(value),
+                  formatter={(value: any, name: any) => [
+                    formatMs(Number(value) || 0),
                     name === "avgMs" ? "Avg" : "p95",
                   ]}
                   labelFormatter={(label) => `Hour: ${formatHour(label)}`}
@@ -420,7 +420,7 @@ export default function AdminPerformanceDashboard() {
                   />
                   <Tooltip
                     contentStyle={tooltipStyle}
-                    formatter={(value: number) => [`${value} req`, "Requests"]}
+                    formatter={(value: any) => [`${value} req`, "Requests"]}
                   />
                   <Bar dataKey="count" radius={[0, 6, 6, 0]} maxBarSize={18}>
                     {data.regionBreakdown.slice(0, 12).map((entry, i) => (
@@ -544,8 +544,8 @@ export default function AdminPerformanceDashboard() {
                   />
                   <Tooltip
                     contentStyle={tooltipStyle}
-                    formatter={(value: number, name: string) => [
-                      formatMs(value),
+                    formatter={(value: any, name: any) => [
+                      formatMs(Number(value) || 0),
                       name === "avgMs" ? "Avg" : "p95",
                     ]}
                   />

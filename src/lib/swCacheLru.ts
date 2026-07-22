@@ -1,10 +1,9 @@
 /**
- * Helpers mirroring the Service Worker image-cache quota (20 MB / 50 entries).
+ * Helpers mirroring the Service Worker image-cache quota (20MB LRU).
  * Unit-tested here; enforced in public/sw.js via IndexedDB LRU + Cache Storage.
  */
 
-export const MAX_CACHE_BYTES = 20 * 1024 * 1024;
-export const MAX_CACHE_ENTRIES = 50;
+export const MAX_CACHE_BYTES = 20 * 1024 * 1024; // 20MB — under iOS Safari ~50MB PWA quota
 
 export async function estimateResponseSize(
   response: Response,
@@ -29,15 +28,10 @@ type CacheLike = {
   put: (request: Request, response: Response) => Promise<void>;
 };
 
-/**
- * Drop oldest entries (insertion-ordered) until total size AND count are
- * within budget.  Cache#keys is insertion-ordered in all major browsers,
- * so the first entries are the least-recently-used.
- */
+/** Drop oldest entries until total estimated size fits under maxBytes. */
 export async function trimCacheToMaxBytes(
   cache: CacheLike,
   maxBytes: number = MAX_CACHE_BYTES,
-  maxEntries: number = MAX_CACHE_ENTRIES,
 ): Promise<void> {
   const keys = await cache.keys();
   const entries: { request: Request; size: number }[] = [];
@@ -51,12 +45,9 @@ export async function trimCacheToMaxBytes(
     total += size;
   }
 
+  // Cache#keys is insertion-ordered in major browsers; oldest first.
   let i = 0;
-  while (i < entries.length) {
-    const overSize = total > maxBytes;
-    const overCount = entries.length - i > maxEntries;
-    if (!overSize && !overCount) break;
-
+  while (total > maxBytes && i < entries.length) {
     const entry = entries[i++];
     await cache.delete(entry.request);
     total -= entry.size;
@@ -68,10 +59,9 @@ export async function cachePutWithLruLimit(
   request: Request,
   response: Response,
   maxBytes: number = MAX_CACHE_BYTES,
-  maxEntries: number = MAX_CACHE_ENTRIES,
 ): Promise<void> {
   await cache.put(request, response);
-  await trimCacheToMaxBytes(cache, maxBytes, maxEntries);
+  await trimCacheToMaxBytes(cache, maxBytes);
 }
 
 /**

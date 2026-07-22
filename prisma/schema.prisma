@@ -608,19 +608,21 @@ model CheckIn {
 }
 
 model PasskeyCredential {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  credentialId String   @unique
-  publicKey    Bytes
-  counter      BigInt   @default(0)
-  transports   String[] @default([])
-  deviceType   String   @default("singleDevice")
-  backedUp     Boolean  @default(false)
-  name         String
-  aaguid       String?
-  createdAt    DateTime @default(now())
-  lastUsedAt   DateTime @default(now())
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId      String   @unique
+  publicKey         Bytes
+  counter           BigInt   @default(0)
+  transports        String[] @default([])
+  deviceType        String   @default("singleDevice")
+  backedUp          Boolean  @default(false)
+  name              String
+  aaguid            String?
+  attestationFormat String?
+  createdAt         DateTime @default(now())
+  lastUsedAt        DateTime @default(now())
+  expiresAt         DateTime
 
   @@index([userId])
 }

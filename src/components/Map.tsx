@@ -24,7 +24,7 @@ import {
   useSeatAvailability,
   type SeatStatus,
 } from "@/hooks/useSeatAvailability";
-import usePartySocket from "partysocket/react";
+import usePartySocket from "@/hooks/usePartySocketReconnect";
 
 function throttle<T extends (...args: any[]) => void>(
   func: T,
@@ -334,6 +334,11 @@ const Map = ({
   const { theme } = useTheme();
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     getToken()
@@ -374,7 +379,8 @@ const Map = ({
 
   const socket = usePartySocket({
     host: "127.0.0.1:1999",
-    room: roomId || "default",
+    room: isMounted && roomId ? roomId : "placeholder",
+    startClosed: !isMounted,
     query: token ? { token } : undefined,
     onMessage(event) {
       try {

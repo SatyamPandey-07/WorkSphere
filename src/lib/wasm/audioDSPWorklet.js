@@ -16,12 +16,30 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
     this.port.onmessage = this.handleMessage.bind(this);
   }
 
-  /**
-   * Round n up to the next multiple of 8 (ensures Float32Array / Float64Array
-   * alignment on 32-bit ARM Android Chrome — Issue #1039).
-   */
   align8(n) {
     return (n + 7) & ~7;
+  }
+
+  /**
+   * Probe hardware SIMD by compiling + executing a minimal WASM module
+   * containing v128.const.  Returns true if 128-bit SIMD works (#1140).
+   */
+  static async probeSIMDSupport() {
+    try {
+      const testBytes = new Uint8Array([
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60,
+        0x00, 0x01, 0x7b, 0x03, 0x02, 0x01, 0x00, 0x07, 0x08, 0x01, 0x04, 0x74,
+        0x65, 0x73, 0x74, 0x00, 0x00, 0x0a, 0x16, 0x01, 0x14, 0x00, 0xfd, 0x0c,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x0b,
+      ]);
+      const mod = await WebAssembly.compile(testBytes);
+      const inst = await WebAssembly.instantiate(mod);
+      inst.exports.test();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async handleMessage(event) {
@@ -60,18 +78,25 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
   async initWasm(wasmBinary) {
     try {
       const wasmModule = await WebAssembly.compile(wasmBinary);
+
+      const simdAvailable = await AudioDSPProcessor.probeSIMDSupport();
+
       const instance = await WebAssembly.instantiate(wasmModule);
 
       this.wasmExports = instance.exports;
 
-      // Use 8-byte-aligned allocation sizes (fix for Issue #1039).
-      // Previously `this.frameSize * 4` was passed without alignment, which
-      // could produce misaligned pointers on 32-bit ARM Android Chrome.
+      if (typeof this.wasmExports.setSIMDEnabled === "function") {
+        this.wasmExports.setSIMDEnabled(simdAvailable ? 1 : 0);
+      }
+
+      console.log(
+        `[AudioDSP] SIMD ${simdAvailable ? "enabled" : "disabled (scalar fallback)"}`,
+      );
+
       const alignedFrameBytes = this.align8(this.frameSize * 4);
       this.inputBufferPtr = this.wasmExports.malloc(alignedFrameBytes);
       this.outputBufferPtr = this.wasmExports.malloc(alignedFrameBytes);
 
-      // Verify 4-byte alignment before any typed-array views are created.
       if (this.inputBufferPtr % 4 !== 0 || this.outputBufferPtr % 4 !== 0) {
         throw new RangeError(
           `[AudioDSP] WASM malloc returned misaligned pointer: ` +
@@ -99,7 +124,6 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
     const outputChannel = output[0];
 
     if (!this.wasmReady || !inputChannel || !outputChannel) {
-      // Pass through if WASM not ready
       if (outputChannel && inputChannel) {
         outputChannel.set(inputChannel);
       }
@@ -114,10 +138,6 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
     }
 
     try {
-      // Use the byte-offset Float32Array constructor — NOT the element-index
-      // shortcut (ptr / 4).  The byte-offset form validates alignment at
-      // construction time, giving a clear RangeError instead of a silent
-      // out-of-bounds crash on 32-bit ARM Android Chrome (Issue #1039).
       const inputView = new Float32Array(
         this.wasmExports.memory.buffer,
         this.inputBufferPtr,
@@ -125,7 +145,6 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
       );
       inputView.set(inputChannel);
 
-      // Process through WASM DSP pipeline
       const rms = this.wasmExports.processAudioFrame(
         this.inputBufferPtr,
         channelLength,
@@ -133,7 +152,6 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
         channelLength,
       );
 
-      // Read output using byte-offset constructor (same alignment guarantee)
       const outputView = new Float32Array(
         this.wasmExports.memory.buffer,
         this.outputBufferPtr,
@@ -141,10 +159,8 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
       );
       outputChannel.set(outputView);
 
-      // Send RMS level to main thread for visualization
       this.port.postMessage({ type: "rms", rms });
     } catch (err) {
-      // Safe passthrough on alignment or bounds error — never drop audio
       outputChannel.set(inputChannel);
       this.port.postMessage({ type: "error", error: err.message });
     }

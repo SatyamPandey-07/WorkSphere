@@ -1,13 +1,113 @@
 // Service Worker for WorkSphere PWA
+async function withIdbLock(callback) {
+  if ("locks" in self.navigator) {
+    try {
+      return await self.navigator.locks.request(
+        "worksphere-offline-storage-lock",
+        async () => callback(),
+      );
+    } catch {
+      return callback();
+    }
+  }
+  return callback();
+}
+
 const CACHE_NAME = "worksphere-v3";
 const IMAGE_CACHE_NAME = "worksphere-images-v4";
 const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
+const VIDEO_CACHE_NAME = "worksphere-video-tours-v1";
 const OFFLINE_URL = "/offline";
+const AVAILABILITY_SYNC_TAG = "availability-sync";
+const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
 
 // Cap image cache at 20MB so iOS Safari PWA (~50MB quota) doesn't get killed.
 const MAX_IMAGE_CACHE_BYTES = 20 * 1024 * 1024;
 // Fallback size for opaque cross-origin responses where Content-Length is hidden (approx 400KB).
 const OPAQUE_RESPONSE_SIZE_ESTIMATE = 400 * 1024;
+
+/**
+ * Checks navigator.storage.estimate() before CacheStorage writes (e.g. pre-fetching venue video tours).
+ * Prevents QuotaExceededError crashes on mobile Chrome/Android.
+ */
+async function hasSufficientStorageQuota(requiredBytes = 0) {
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.storage &&
+    typeof navigator.storage.estimate === "function"
+  ) {
+    try {
+      const estimate = await navigator.storage.estimate();
+      if (estimate.quota !== undefined && estimate.usage !== undefined) {
+        const availableBytes = estimate.quota - estimate.usage;
+        const minRequiredBuffer = Math.max(requiredBytes, 5 * 1024 * 1024);
+        return availableBytes >= minRequiredBuffer;
+      }
+    } catch (err) {
+      console.warn("[SW] Failed to estimate storage quota:", err);
+    }
+  }
+  return true;
+}
+
+/**
+ * Pre-fetches venue video tour URLs after checking navigator.storage.estimate().
+ * Halts safely if remaining storage quota is low to avoid QuotaExceededError crashes.
+ */
+async function prefetchVideoTours(urls) {
+  if (!Array.isArray(urls) || urls.length === 0) return;
+
+  const hasQuota = await hasSufficientStorageQuota(10 * 1024 * 1024);
+  if (!hasQuota) {
+    console.warn(
+      "[SW] Insufficient storage quota before pre-fetching video tours. Skipping batch.",
+    );
+    return;
+  }
+
+  try {
+    const cache = await caches.open(VIDEO_CACHE_NAME);
+    for (const url of urls) {
+      const canFit = await hasSufficientStorageQuota(5 * 1024 * 1024);
+      if (!canFit) {
+        console.warn(
+          `[SW] Stopping video tour pre-fetch for ${url}: low storage quota remaining.`,
+        );
+        break;
+      }
+
+      try {
+        const response = await fetch(url);
+        if (response.ok) {
+          const contentLength = response.headers.get("content-length");
+          const size = contentLength
+            ? parseInt(contentLength, 10)
+            : 5 * 1024 * 1024;
+
+          const exactQuotaCheck = await hasSufficientStorageQuota(size);
+          if (!exactQuotaCheck) {
+            console.warn(
+              `[SW] Skipping video tour cache write for ${url}: required ${size} bytes exceeds quota.`,
+            );
+            continue;
+          }
+
+          await cache.put(url, response.clone());
+        }
+      } catch (err) {
+        if (err.name === "QuotaExceededError") {
+          console.warn(
+            "[SW] QuotaExceededError caught during video tour pre-fetch. Halting pre-fetch queue.",
+          );
+          break;
+        }
+        console.error("[SW] Error pre-fetching video tour:", url, err);
+      }
+    }
+  } catch (err) {
+    console.error("[SW] Failed to open video tour cache:", err);
+  }
+}
 
 // Assets to cache on install
 const PRECACHE_ASSETS = ["/", "/offline", "/icons/icon.svg", "/manifest.json"];
@@ -23,15 +123,20 @@ self.addEventListener("install", (event) => {
         return cache.addAll(PRECACHE_ASSETS);
       })
       .then(() => {
-        // Once assets are added, we can skip waiting immediately
-        return self.skipWaiting();
+        // DO NOT skip waiting automatically to prevent infinite loaders
+        // Wait for the client to trigger it via SKIP_WAITING message
       })
       .catch((err) => {
         console.error("[SW] Install failed:", err);
-        // Even if install fails, we skip waiting to avoid getting stuck in 'installing' state
-        return self.skipWaiting();
       }),
   );
+});
+
+// Allow client to trigger skipWaiting
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
 // Activate event - clean up old caches and move temp assets
@@ -47,6 +152,7 @@ self.addEventListener("activate", (event) => {
                 name !== CACHE_NAME &&
                 name !== IMAGE_CACHE_NAME &&
                 name !== MAP_TILE_CACHE_NAME &&
+                name !== VIDEO_CACHE_NAME &&
                 !name.endsWith("-installing"),
             )
             .map((name) => caches.delete(name)),
@@ -242,6 +348,16 @@ self.addEventListener("sync", (event) => {
   if (event.tag === "receipt-export-sync") {
     event.waitUntil(syncReceiptExports());
   }
+  if (event.tag === AVAILABILITY_SYNC_TAG) {
+    event.waitUntil(syncAvailability());
+  }
+});
+
+// Periodic Background Sync for workspace availability (Issue #1126)
+self.addEventListener("periodicsync", (event) => {
+  if (event.tag === PERIODIC_AVAILABILITY_TAG) {
+    event.waitUntil(syncAvailability());
+  }
 });
 
 // Helper to convert Uint8Array to base64 for fetch
@@ -260,26 +376,28 @@ async function syncCrdt() {
   if (isSyncingCrdt) return;
   isSyncingCrdt = true;
   try {
-    const db = await openIndexedDB();
-    const pendingActions = await getPendingActions(db, "crdt-sync");
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      const pendingActions = await getPendingActions(db, "crdt-sync");
 
-    if (pendingActions.length === 0) return;
+      if (pendingActions.length === 0) return;
 
-    const updates = pendingActions.map((action) =>
-      arrayBufferToBase64(action.data),
-    );
+      const updates = pendingActions.map((action) =>
+        arrayBufferToBase64(action.data),
+      );
 
-    const response = await fetch("/api/sync", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ updates }),
-    });
+      const response = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      });
 
-    if (response.ok) {
-      for (const action of pendingActions) {
-        await removePendingAction(db, action.id);
+      if (response.ok) {
+        for (const action of pendingActions) {
+          await removePendingAction(db, action.id);
+        }
       }
-    }
+    });
   } catch (error) {
     console.error("Sync CRDT failed:", error);
   } finally {
@@ -293,41 +411,43 @@ async function syncFavorites() {
   if (isSyncingFavorites) return;
   isSyncingFavorites = true;
   try {
-    const db = await openIndexedDB();
-    const pendingFavorites = await getPendingActions(db, [
-      "favorite",
-      "unfavorite",
-      "favorites",
-    ]);
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      const pendingFavorites = await getPendingActions(db, [
+        "favorite",
+        "unfavorite",
+        "favorites",
+      ]);
 
-    for (const action of pendingFavorites) {
-      try {
-        const url =
-          action.type === "unfavorite"
-            ? `/api/favorites?venueId=${action.venueId}`
-            : "/api/favorites";
-        const method =
-          action.type === "unfavorite" ? "DELETE" : action.method || "POST";
-        const body =
-          action.type === "favorite"
-            ? JSON.stringify(action.data)
-            : action.data
+      for (const action of pendingFavorites) {
+        try {
+          const url =
+            action.type === "unfavorite"
+              ? `/api/favorites?venueId=${action.venueId}`
+              : "/api/favorites";
+          const method =
+            action.type === "unfavorite" ? "DELETE" : action.method || "POST";
+          const body =
+            action.type === "favorite"
               ? JSON.stringify(action.data)
-              : undefined;
+              : action.data
+                ? JSON.stringify(action.data)
+                : undefined;
 
-        const response = await fetch(url, {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body,
-        });
+          const response = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
 
-        if (response.ok) {
-          await removePendingAction(db, action.id);
+          if (response.ok) {
+            await removePendingAction(db, action.id);
+          }
+        } catch (error) {
+          console.error("Failed to sync favorite:", error);
         }
-      } catch (error) {
-        console.error("Failed to sync favorite:", error);
       }
-    }
+    });
   } catch (error) {
     console.error("Sync favorites failed:", error);
   } finally {
@@ -341,24 +461,26 @@ async function syncRatings() {
   if (isSyncingRatings) return;
   isSyncingRatings = true;
   try {
-    const db = await openIndexedDB();
-    const pendingRatings = await getPendingActions(db, ["ratings", "rate"]);
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      const pendingRatings = await getPendingActions(db, ["ratings", "rate"]);
 
-    for (const action of pendingRatings) {
-      try {
-        const response = await fetch(`/api/venues/${action.venueId}/rate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(action.data),
-        });
+      for (const action of pendingRatings) {
+        try {
+          const response = await fetch(`/api/venues/${action.venueId}/rate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(action.data),
+          });
 
-        if (response.ok) {
-          await removePendingAction(db, action.id);
+          if (response.ok) {
+            await removePendingAction(db, action.id);
+          }
+        } catch (error) {
+          console.error("Failed to sync rating:", error);
         }
-      } catch (error) {
-        console.error("Failed to sync rating:", error);
       }
-    }
+    });
   } catch (error) {
     console.error("Sync ratings failed:", error);
   } finally {
@@ -369,59 +491,62 @@ async function syncRatings() {
 // Sync queued conversation renames/deletes when back online (issue #266)
 async function syncConversations() {
   try {
-    const db = await openIndexedDB();
-    const tx = db.transaction("pendingActions", "readonly");
-    const store = tx.objectStore("pendingActions");
-    const allActions = await new Promise((resolve, reject) => {
-      const request = store.getAll();
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result);
-    });
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      const tx = db.transaction("pendingActions", "readonly");
+      const store = tx.objectStore("pendingActions");
+      const allActions = await new Promise((resolve, reject) => {
+        const request = store.getAll();
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+      });
 
-    const pending = allActions
-      .filter(
-        (a) =>
-          a.type === "conversation-rename" || a.type === "conversation-delete",
-      )
-      .sort((a, b) => a.timestamp - b.timestamp);
+      const pending = allActions
+        .filter(
+          (a) =>
+            a.type === "conversation-rename" ||
+            a.type === "conversation-delete",
+        )
+        .sort((a, b) => a.timestamp - b.timestamp);
 
-    // Defensive de-dupe in case a rename and a later delete for the same
-    // conversation both slipped into the queue (client-side queuing already
-    // guards against this, but the service worker reads independently).
-    const deletedIds = new Set(
-      pending
-        .filter((a) => a.type === "conversation-delete")
-        .map((a) => a.conversationId),
-    );
+      // Defensive de-dupe in case a rename and a later delete for the same
+      // conversation both slipped into the queue (client-side queuing already
+      // guards against this, but the service worker reads independently).
+      const deletedIds = new Set(
+        pending
+          .filter((a) => a.type === "conversation-delete")
+          .map((a) => a.conversationId),
+      );
 
-    for (const action of pending) {
-      if (
-        action.type === "conversation-rename" &&
-        deletedIds.has(action.conversationId)
-      ) {
-        await removePendingAction(db, action.id);
-        continue;
-      }
-
-      try {
-        const response =
-          action.type === "conversation-delete"
-            ? await fetch(`/api/conversations/${action.conversationId}`, {
-                method: "DELETE",
-              })
-            : await fetch(`/api/conversations/${action.conversationId}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ title: action.title }),
-              });
-
-        if (response.ok) {
+      for (const action of pending) {
+        if (
+          action.type === "conversation-rename" &&
+          deletedIds.has(action.conversationId)
+        ) {
           await removePendingAction(db, action.id);
+          continue;
         }
-      } catch (error) {
-        console.error("Failed to sync conversation edit:", error);
+
+        try {
+          const response =
+            action.type === "conversation-delete"
+              ? await fetch(`/api/conversations/${action.conversationId}`, {
+                  method: "DELETE",
+                })
+              : await fetch(`/api/conversations/${action.conversationId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ title: action.title }),
+                });
+
+          if (response.ok) {
+            await removePendingAction(db, action.id);
+          }
+        } catch (error) {
+          console.error("Failed to sync conversation edit:", error);
+        }
       }
-    }
+    });
   } catch (error) {
     console.error("Sync conversations failed:", error);
   }
@@ -433,112 +558,201 @@ async function syncReceiptExports() {
   isSyncingReceipts = true;
 
   try {
-    const db = await openIndexedDB();
-    const tx = db.transaction("receiptExports", "readonly");
-    const store = tx.objectStore("receiptExports");
-    const jobs = await new Promise((resolve, reject) => {
-      const req = store.getAll();
-      req.onerror = () => reject(req.error);
-      req.onsuccess = () => resolve(req.result || []);
-    });
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      const tx = db.transaction("receiptExports", "readonly");
+      const store = tx.objectStore("receiptExports");
+      const jobs = await new Promise((resolve, reject) => {
+        const req = store.getAll();
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => resolve(req.result || []);
+      });
 
-    const pendingJobs = jobs.filter(
-      (j) => j.status === "pending" || j.status === "downloading",
-    );
+      const pendingJobs = jobs.filter(
+        (j) => j.status === "pending" || j.status === "downloading",
+      );
 
-    for (const job of pendingJobs) {
-      try {
-        const downloadUrl = `/api/bookings/${job.bookingId}/download`;
-        const response = await fetch(downloadUrl);
+      for (const job of pendingJobs) {
+        try {
+          const downloadUrl = `/api/bookings/${job.bookingId}/download`;
+          const response = await fetch(downloadUrl);
 
-        if (response.ok) {
-          const pdfArrayBuffer = await response.arrayBuffer();
+          if (response.ok) {
+            const pdfArrayBuffer = await response.arrayBuffer();
 
-          // Store PDF ArrayBuffer and mark status ready in IndexedDB
+            // Store PDF ArrayBuffer and mark status ready in IndexedDB
+            const writeTx = db.transaction("receiptExports", "readwrite");
+            const writeStore = writeTx.objectStore("receiptExports");
+            writeStore.put({
+              ...job,
+              status: "ready",
+              pdf: pdfArrayBuffer,
+              downloadedAt: Date.now(),
+            });
+
+            await new Promise((res, rej) => {
+              writeTx.oncomplete = res;
+              writeTx.onerror = () => rej(writeTx.error);
+            });
+
+            // Show Notification
+            if (self.registration && "showNotification" in self.registration) {
+              await self.registration.showNotification("Receipt ready", {
+                body: "Your booking receipt has been downloaded.",
+                icon: "/icons/icon.svg",
+                badge: "/icons/icon.svg",
+                tag: `receipt-ready-${job.bookingId}`,
+                data: {
+                  url: `/api/bookings/${job.bookingId}/download`,
+                  bookingId: job.bookingId,
+                },
+              });
+            }
+
+            // Notify all open window clients via postMessage to trigger automatic download/save
+            const windowClients = await self.clients.matchAll({
+              type: "window",
+              includeUncontrolled: true,
+            });
+
+            for (const client of windowClients) {
+              client.postMessage({
+                type: "RECEIPT_SYNC_READY",
+                bookingId: job.bookingId,
+                filename: job.filename,
+              });
+            }
+          } else {
+            throw new Error(
+              `Receipt fetch failed with status ${response.status}`,
+            );
+          }
+        } catch (err) {
+          console.error(
+            `[SW] Failed to sync receipt for ${job.bookingId}:`,
+            err,
+          );
+          const retryCount = (job.retryCount || 0) + 1;
+          const maxRetries = 3;
+          const newStatus = retryCount >= maxRetries ? "failed" : "pending";
+
           const writeTx = db.transaction("receiptExports", "readwrite");
           const writeStore = writeTx.objectStore("receiptExports");
           writeStore.put({
             ...job,
-            status: "ready",
-            pdf: pdfArrayBuffer,
-            downloadedAt: Date.now(),
+            retryCount,
+            status: newStatus,
           });
 
-          await new Promise((res, rej) => {
+          await new Promise((res) => {
             writeTx.oncomplete = res;
-            writeTx.onerror = () => rej(writeTx.error);
+            writeTx.onerror = res;
           });
 
-          // Show Notification
-          if (self.registration && "showNotification" in self.registration) {
-            await self.registration.showNotification("Receipt ready", {
-              body: "Your booking receipt has been downloaded.",
-              icon: "/icons/icon.svg",
-              badge: "/icons/icon.svg",
-              tag: `receipt-ready-${job.bookingId}`,
-              data: {
-                url: `/api/bookings/${job.bookingId}/download`,
+          if (newStatus === "failed") {
+            const windowClients = await self.clients.matchAll({
+              type: "window",
+              includeUncontrolled: true,
+            });
+            for (const client of windowClients) {
+              client.postMessage({
+                type: "RECEIPT_SYNC_FAILED",
                 bookingId: job.bookingId,
-              },
-            });
-          }
-
-          // Notify all open window clients via postMessage to trigger automatic download/save
-          const windowClients = await self.clients.matchAll({
-            type: "window",
-            includeUncontrolled: true,
-          });
-
-          for (const client of windowClients) {
-            client.postMessage({
-              type: "RECEIPT_SYNC_READY",
-              bookingId: job.bookingId,
-              filename: job.filename,
-            });
-          }
-        } else {
-          throw new Error(
-            `Receipt fetch failed with status ${response.status}`,
-          );
-        }
-      } catch (err) {
-        console.error(`[SW] Failed to sync receipt for ${job.bookingId}:`, err);
-        const retryCount = (job.retryCount || 0) + 1;
-        const maxRetries = 3;
-        const newStatus = retryCount >= maxRetries ? "failed" : "pending";
-
-        const writeTx = db.transaction("receiptExports", "readwrite");
-        const writeStore = writeTx.objectStore("receiptExports");
-        writeStore.put({
-          ...job,
-          retryCount,
-          status: newStatus,
-        });
-
-        await new Promise((res) => {
-          writeTx.oncomplete = res;
-          writeTx.onerror = res;
-        });
-
-        if (newStatus === "failed") {
-          const windowClients = await self.clients.matchAll({
-            type: "window",
-            includeUncontrolled: true,
-          });
-          for (const client of windowClients) {
-            client.postMessage({
-              type: "RECEIPT_SYNC_FAILED",
-              bookingId: job.bookingId,
-              attempts: retryCount,
-            });
+                attempts: retryCount,
+              });
+            }
           }
         }
       }
-    }
+    });
   } catch (error) {
     console.error("[SW] Sync receipt exports failed:", error);
   } finally {
     isSyncingReceipts = false;
+  }
+}
+
+// Periodic Background Sync: fetch seat availability for saved venues,
+// diff against last-known state, and show a notification when seats open up.
+let isSyncingAvailability = false;
+async function syncAvailability() {
+  if (isSyncingAvailability) return;
+  isSyncingAvailability = true;
+
+  try {
+    const response = await fetch("/api/availability/delta", {
+      credentials: "include",
+    });
+
+    if (!response.ok) return;
+
+    const { venues } = await response.json();
+    if (!Array.isArray(venues) || venues.length === 0) return;
+
+    const db = await openIndexedDB();
+    const tx = db.transaction("availabilityDeltas", "readwrite");
+    const store = tx.objectStore("availabilityDeltas");
+
+    const notifications = [];
+
+    for (const venue of venues) {
+      const prev = await new Promise((resolve, reject) => {
+        const req = store.get(venue.venueId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+      });
+
+      const openedUp =
+        prev &&
+        (venue.count < prev.currentCount ||
+          (prev.currentStatus === "red" && venue.status !== "red") ||
+          (prev.currentStatus === "yellow" && venue.status === "green"));
+
+      store.put({
+        venueId: venue.venueId,
+        venueName: venue.venueName,
+        currentCount: venue.count,
+        currentCapacity: venue.capacity,
+        currentStatus: venue.status,
+        timestamp: Date.now(),
+      });
+
+      if (openedUp) {
+        notifications.push({
+          venueId: venue.venueId,
+          venueName: venue.venueName || "Workspace",
+          availableSeats: venue.capacity - venue.count,
+        });
+      }
+    }
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+
+    for (const n of notifications) {
+      if (self.registration && "showNotification" in self.registration) {
+        await self.registration.showNotification("Seat Available!", {
+          body: `${n.venueName} now has ${n.availableSeats} seat${n.availableSeats !== 1 ? "s" : ""} available.`,
+          icon: "/icons/icon.svg",
+          badge: "/icons/icon.svg",
+          vibrate: [200, 100, 200, 100, 200],
+          tag: `venue-availability-${n.venueId}`,
+          renotify: true,
+          requireInteraction: true,
+          data: { url: `/venues/${n.venueId}`, venueId: n.venueId },
+          actions: [
+            { action: "open", title: "Open" },
+            { action: "dismiss", title: "Dismiss" },
+          ],
+        });
+      }
+    }
+  } catch (error) {
+    console.error("[SW] Availability sync failed:", error);
+  } finally {
+    isSyncingAvailability = false;
   }
 }
 
@@ -548,7 +762,7 @@ function openIndexedDB() {
   if (swDb) return Promise.resolve(swDb);
   return new Promise((resolve, reject) => {
     try {
-      const request = indexedDB.open("worksphere-offline", 5);
+      const request = indexedDB.open("worksphere-offline", 6);
 
       request.onblocked = () => {
         console.warn("[SW] IndexedDB upgrade blocked");
@@ -624,6 +838,14 @@ function openIndexedDB() {
           receiptStore.createIndex("status", "status", { unique: false });
           receiptStore.createIndex("createdAt", "createdAt", { unique: false });
         }
+
+        // Availability deltas store for periodic background sync (Issue #1126)
+        if (!db.objectStoreNames.contains("availabilityDeltas")) {
+          const deltaStore = db.createObjectStore("availabilityDeltas", {
+            keyPath: "venueId",
+          });
+          deltaStore.createIndex("timestamp", "timestamp", { unique: false });
+        }
       };
     } catch (err) {
       reject(err);
@@ -659,6 +881,23 @@ function removePendingAction(db, typeOrId, id) {
     request.onsuccess = () => resolve();
   });
 }
+
+// Service Worker Client Messages (e.g. pre-fetching venue video tours, skip waiting)
+self.addEventListener("message", (event) => {
+  if (!event.data) return;
+
+  if (event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+
+  if (
+    event.data.type === "PREFETCH_VIDEO_TOURS" ||
+    event.data.type === "PREFETCH_VIDEOS"
+  ) {
+    const urls = event.data.urls || (event.data.url ? [event.data.url] : []);
+    event.waitUntil(prefetchVideoTours(urls));
+  }
+});
 
 // Push notifications
 self.addEventListener("push", (event) => {

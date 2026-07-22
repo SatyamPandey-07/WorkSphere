@@ -57,6 +57,7 @@ model User {
   longestStreak      Int                @default(0)
   lastCheckInDate    String? // stored as "YYYY-MM-DD" UTC
   passkeys           PasskeyCredential[]
+  isVerifiedStudent  Boolean            @default(false)
 }
 
 model Venue {

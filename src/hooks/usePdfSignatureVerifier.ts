@@ -29,12 +29,16 @@ let workerReady = false;
 let initPromise: Promise<void> | null = null;
 
 function getWorker(): Worker | null {
-  if (typeof window === "undefined" || typeof Worker === "undefined") return null;
+  if (typeof window === "undefined" || typeof Worker === "undefined")
+    return null;
   if (!workerInstance) {
     try {
-      const baseUrl = typeof document !== "undefined" ? document.baseURI : "http://localhost/";
+      const baseUrl =
+        typeof document !== "undefined"
+          ? document.baseURI
+          : "http://localhost/";
       workerInstance = new Worker(
-        new URL("/workers/pdfVerify.worker.ts", baseUrl),
+        new URL("/workers/pdfVerify.worker.js", baseUrl),
         { type: "module" },
       );
     } catch {

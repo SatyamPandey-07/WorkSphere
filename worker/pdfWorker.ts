@@ -23,6 +23,14 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+const JOB_TIMEOUT_MS = 30_000;
+const POLL_INTERVAL_MS = 2_000;
+const THROTTLE_MS = 500;
+const RECOVERY_INTERVAL_MS = 60_000;
+
+let activeJobId: string | null = null;
+let activeJobStartTime = 0;
+
 async function uploadToCloudinary(
   buffer: Uint8Array,
   filename: string,
@@ -49,7 +57,7 @@ async function processJob(jobStr: string) {
 
     let pdfBytes: Uint8Array;
     let filename: string;
-    let userEmail: string = "user@example.com"; // Default/Fallback
+    let userEmail: string = "user@example.com";
 
     const user = await (prisma as any).user.findUnique({
       where: { id: userId },
@@ -99,10 +107,8 @@ async function processJob(jobStr: string) {
       throw new Error(`Unknown job type: ${type}`);
     }
 
-    // Upload
     const url = await uploadToCloudinary(pdfBytes, filename);
 
-    // Notify
     await transporter.sendMail({
       from: process.env.EMAIL_FROM || "noreply@worksphere.app",
       to: userEmail,
@@ -127,7 +133,7 @@ async function recoverStaleJobs() {
       `[Watchdog] Checking ${processingJobs.length} processing jobs for stale state...`,
     );
     const now = Date.now();
-    const STALE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+    const STALE_TIMEOUT_MS = 5 * 60 * 1000;
 
     for (const jobStr of processingJobs) {
       if (!jobStr) continue;
@@ -175,21 +181,33 @@ async function recoverStaleJobs() {
 }
 
 let lastRecoveryTime = 0;
-const RECOVERY_INTERVAL_MS = 60 * 1000; // 60 seconds
 
 async function startWorker() {
   console.log("Starting PDF Worker...");
 
-  // Run recovery once on startup
   await recoverStaleJobs();
   lastRecoveryTime = Date.now();
 
   while (true) {
     try {
-      // Periodically run recovery
       if (Date.now() - lastRecoveryTime > RECOVERY_INTERVAL_MS) {
         await recoverStaleJobs();
         lastRecoveryTime = Date.now();
+      }
+
+      // If a job is active, check if it has timed out
+      if (activeJobId !== null) {
+        const elapsed = Date.now() - activeJobStartTime;
+        if (elapsed > JOB_TIMEOUT_MS) {
+          console.warn(
+            `[Worker] Job ${activeJobId} timed out after ${elapsed}ms. Abandoning and moving on.`,
+          );
+          activeJobId = null;
+          activeJobStartTime = 0;
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+          continue;
+        }
       }
 
       const jobStr = await redis.lmove(
@@ -199,17 +217,37 @@ async function startWorker() {
         "left",
       );
       if (jobStr) {
+        const job = JSON.parse(jobStr);
+        activeJobId = job.id;
+        activeJobStartTime = Date.now();
+
         try {
-          await processJob(jobStr as string);
+          const timeoutPromise = new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Worker job timeout exceeded")),
+              JOB_TIMEOUT_MS,
+            ),
+          );
+          await Promise.race([processJob(jobStr as string), timeoutPromise]);
+        } catch (err: any) {
+          const failedId = activeJobId;
+          if (failedId) {
+            console.error(`[Worker] Job ${failedId} failed:`, err.message);
+            await updateJobStatus(failedId, { status: "FAILED", error: err.message });
+          }
         } finally {
           await redis.lrem("pdf:jobs:processing", 1, jobStr);
+          activeJobId = null;
+          activeJobStartTime = 0;
+          await new Promise((resolve) => setTimeout(resolve, THROTTLE_MS));
         }
       } else {
-        // Sleep if no jobs
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
       }
     } catch (err) {
-      console.error("Worker poll error:", err);
+      console.error("[Worker] Poll error:", err);
+      activeJobId = null;
+      activeJobStartTime = 0;
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }

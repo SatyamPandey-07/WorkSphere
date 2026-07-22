@@ -1,6 +1,7 @@
 "use client";
 
 import { X, Check } from "lucide-react";
+import { RadarChart } from "./ui/RadarChart";
 
 // Assuming these match your venue data structure
 interface Venue {
@@ -9,6 +10,8 @@ interface Venue {
   wifiQuality: number; // e.g., 1-5
   hasOutlets: boolean;
   noiseLevel: "quiet" | "moderate" | "loud";
+  seating?: number;
+  coffee?: number;
 }
 
 interface ComparisonDrawerProps {
@@ -43,6 +46,57 @@ export function ComparisonDrawer({
           <h3 className="font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-100 text-sm">
             Comparing {selectedVenues.length} / 3 Venues
           </h3>
+        </div>
+
+        {/* Comparison Radar Chart */}
+        <div className="flex flex-col md:flex-row items-center justify-center gap-8 p-4 border-b border-zinc-200 dark:border-zinc-800">
+          <RadarChart
+            data={selectedVenues.map((venue, i) => {
+              const noiseScore =
+                venue.noiseLevel === "quiet"
+                  ? 100
+                  : venue.noiseLevel === "moderate"
+                    ? 60
+                    : 20;
+              const seatingScore = venue.seating
+                ? venue.seating * 20
+                : 60 + (venue.id.charCodeAt(0) % 40);
+              const coffeeScore = venue.coffee
+                ? venue.coffee * 20
+                : 50 + (venue.id.charCodeAt(venue.id.length - 1) % 50);
+              const colors = ["#3b82f6", "#10b981", "#f59e0b"];
+
+              return {
+                name: venue.name,
+                color: colors[i % colors.length],
+                values: [
+                  (venue.wifiQuality || 0) * 20,
+                  noiseScore,
+                  venue.hasOutlets ? 100 : 20,
+                  seatingScore,
+                  coffeeScore,
+                ],
+              };
+            })}
+            labels={["WiFi", "Quietness", "Outlets", "Seating", "Coffee"]}
+            size={250}
+          />
+          <div className="flex flex-col gap-3">
+            {selectedVenues.map((venue, i) => {
+              const colors = ["#3b82f6", "#10b981", "#f59e0b"];
+              return (
+                <div key={venue.id} className="flex items-center gap-2">
+                  <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: colors[i % colors.length] }}
+                  />
+                  <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                    {venue.name}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Comparison Table */}
@@ -85,7 +139,9 @@ export function ComparisonDrawer({
                       key={venue.id}
                       className={`p-3 text-sm font-bold ${isWinner ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded-lg" : "text-zinc-800 dark:text-zinc-200"}`}
                     >
-                      {venue.wifiQuality} / 5
+                      {venue.wifiQuality != null
+                        ? `${venue.wifiQuality} / 5`
+                        : "N/A"}
                     </td>
                   );
                 })}

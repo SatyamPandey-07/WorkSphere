@@ -48,6 +48,7 @@ import { useTranslation } from "react-i18next";
 
 import { Venue } from "./ChatMessages";
 import { RatingDistribution } from "./RatingDistribution";
+import { NoiseReportingWidget } from "@/components/noise/NoiseReportingWidget";
 
 interface VenueDetailDialogProps {
   venue: Venue | null;
@@ -1114,6 +1115,13 @@ export function VenueDetailDialog({
                   />
                 </div>
               )}
+
+              <div className="mb-6">
+                <NoiseReportingWidget
+                  venueId={venue.id}
+                  venueName={venue.name}
+                />
+              </div>
 
               {wifiPredictions.length > 0 && (
                 <div className="mb-6 bg-black/20 p-5 rounded-2xl border border-white/5 shadow-sm">

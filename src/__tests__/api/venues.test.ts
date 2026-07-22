@@ -47,6 +47,7 @@ describe("GET /api/venues - Search and Pagination", () => {
         _count: {
           select: { favorites: true, ratings: true },
         },
+        foodValidations: true,
       },
     });
   });
@@ -77,6 +78,7 @@ describe("GET /api/venues - Search and Pagination", () => {
         _count: {
           select: { favorites: true, ratings: true },
         },
+        foodValidations: true,
       },
     });
   });
@@ -100,6 +102,7 @@ describe("GET /api/venues - Search and Pagination", () => {
         _count: {
           select: { favorites: true, ratings: true },
         },
+        foodValidations: true,
       },
     });
   });
@@ -159,7 +162,7 @@ describe("GET /api/venues - Rate limiting (#717)", () => {
 
   it("returns 429 with a retryAfter once the caller exceeds the limit", async () => {
     let lastRes;
-    for (let i = 0; i < 121; i++) {
+    for (let i = 0; i < 61; i++) {
       const req = new NextRequest(`http://localhost/api/venues?limit=5`);
       lastRes = await GET(req);
     }
@@ -172,7 +175,7 @@ describe("GET /api/venues - Rate limiting (#717)", () => {
   });
 
   it("does not touch the database once a request is rate limited", async () => {
-    for (let i = 0; i < 121; i++) {
+    for (let i = 0; i < 61; i++) {
       const req = new NextRequest(`http://localhost/api/venues?limit=5`);
       await GET(req);
     }

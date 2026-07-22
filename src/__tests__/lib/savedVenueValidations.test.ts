@@ -2,6 +2,7 @@ import {
   favoriteNotesSchema,
   createFavoriteTagSchema,
   updateFavoriteTagSchema,
+  syncFavoriteTagsSchema,
   validateRequest,
 } from "@/lib/validations";
 
@@ -119,6 +120,30 @@ describe("Validations - updateFavoriteTagSchema", () => {
 
   it("should reject invalid color format", () => {
     const result = updateFavoriteTagSchema.safeParse({ color: "blue" });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("Validations - syncFavoriteTagsSchema", () => {
+  it("should accept a batch of tag updates", () => {
+    const result = syncFavoriteTagsSchema.safeParse({
+      updates: [
+        { id: "tag-1", name: "Quiet" },
+        { id: "tag-2", color: "#22c55e" },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("should reject an update with neither name nor color", () => {
+    const result = syncFavoriteTagsSchema.safeParse({
+      updates: [{ id: "tag-1" }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("should reject an empty updates array", () => {
+    const result = syncFavoriteTagsSchema.safeParse({ updates: [] });
     expect(result.success).toBe(false);
   });
 });

@@ -32,6 +32,7 @@ import Link from "next/link";
 import { ThemeToggle } from "../ThemeToggle";
 import { EmptyState } from "../ui/EmptyState";
 import { useCurrency } from "@/context/CurrencyContext";
+import usePartySocket from "partysocket/react";
 
 interface Conversation {
   id: string;
@@ -101,9 +102,7 @@ export function ChatHeader({
   onDeleteConversation,
   onRenameConversation,
   onShowBookings,
-
   roomId: _roomId,
-
   onShareSession,
 }: ChatHeaderProps) {
   const [isHubOpen, setIsHubOpen] = useState(false);
@@ -113,6 +112,47 @@ export function ChatHeader({
   const filtersPanelRef = useRef<HTMLDivElement>(null);
 
   const { currency, setCurrency } = useCurrency();
+
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "reconnecting" | "offline"
+  >("offline");
+
+  const socket = usePartySocket({
+    host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
+    room: _roomId || "default",
+  });
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const updateStatus = () => {
+      switch (socket.readyState) {
+        case 0: // CONNECTING
+          setConnectionStatus("reconnecting");
+          break;
+        case 1: // OPEN
+          setConnectionStatus("connected");
+          break;
+        case 2: // CLOSING
+        case 3: // CLOSED
+        default:
+          setConnectionStatus("offline");
+          break;
+      }
+    };
+
+    updateStatus();
+
+    socket.addEventListener("open", updateStatus);
+    socket.addEventListener("close", updateStatus);
+    socket.addEventListener("error", updateStatus);
+
+    return () => {
+      socket.removeEventListener("open", updateStatus);
+      socket.removeEventListener("close", updateStatus);
+      socket.removeEventListener("error", updateStatus);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (!showFilters) return;
@@ -571,6 +611,612 @@ export function ChatHeader({
               <div className="flex flex-wrap gap-2">
                 {[
                   { label: "Any Style", value: "all" },
+                  { label: "Lo-Fi / Chill Beats", value: "lofiHere is the 100% correct, fully merged code for `src/components/chat/ChatHeader.tsx`. 
+
+I have cleanly combined your `useCurrency` hook with the new `usePartySocket` functionality that was added to the `main` branch, ensuring both your currency toggle and the real-time connections work perfectly together.
+
+Copy this entire block and paste it into your `src/components/chat/ChatHeader.tsx` file, replacing everything inside:
+
+```tsx
+"use client";
+
+import {
+  PlusCircle,
+  MapPin,
+  Terminal,
+  Activity,
+  ChevronDown,
+  ShieldCheck,
+  Zap,
+  LayoutGrid,
+  History,
+  RotateCcw,
+  Filter,
+  Globe,
+  Trash2,
+  ChevronRight,
+  Wifi,
+  Zap as Outlets,
+  Volume2,
+  Headphones,
+  BarChart3,
+  Inbox,
+  Share2,
+  Pencil,
+  Check,
+  X,
+} from "lucide-react";
+import { UserButton } from "@clerk/nextjs";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { ThemeToggle } from "../ThemeToggle";
+import { EmptyState } from "../ui/EmptyState";
+import { useCurrency } from "@/context/CurrencyContext";
+import usePartySocket from "partysocket/react";
+
+interface Conversation {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+interface ChatHeaderProps {
+  onOpenVenueSubmission: () => void;
+  userLocation?: { lat: number; lng: number };
+  onLocationChange: (lat: number, lng: number) => void;
+  filters: {
+    wifi?: boolean;
+    outlets?: boolean;
+    quiet?: boolean;
+    ergonomic?: boolean;
+    outletDensity?: "every_table" | "some_tables" | "wall_seats" | "none";
+    wifiSpeedBand?: "basic" | "fast" | "ultra" | "all";
+    hasPhoneBooths?: boolean;
+    hasNoMusic?: boolean;
+    hasQuietZone?: boolean;
+    hasAncHeadsetRental?: boolean;
+    singleOriginBeans?: boolean;
+    specialtyEspresso?: boolean;
+    oatAlmondMilk?: boolean;
+    pourOverAvailable?: boolean;
+    musicStyle?: "all" | "lofi" | "classical_jazz" | "no_music";
+  };
+  showFilters: boolean;
+  setShowFilters: (show: boolean) => void;
+  onToggleFilter: (filter: string) => void;
+  onSetFilter?: (key: string, value: any) => void;
+  showHistory: boolean;
+  setShowHistory: (show: boolean) => void;
+  onNewChat: () => void;
+  conversations: Conversation[];
+  onLoadConversation: (id: string) => void;
+  onDeleteConversation: (id: string) => void;
+  onRenameConversation: (id: string, title: string) => void;
+  onShowBookings: () => void;
+  roomId?: string | null;
+  onShareSession?: () => void;
+}
+
+const GLOBAL_HUBS = [
+  { name: "Current Location", lat: 0, lng: 0, icon: MapPin },
+  { name: "London, UK", lat: 51.5074, lng: -0.1278, icon: Globe },
+  { name: "Tokyo, Japan", lat: 35.6762, lng: 139.6503, icon: Globe },
+  { name: "New York, NY", lat: 40.7128, lng: -74.006, icon: Globe },
+  { name: "San Francisco", lat: 37.7749, lng: -122.4194, icon: Globe },
+];
+
+export function ChatHeader({
+  onOpenVenueSubmission,
+  userLocation,
+  onLocationChange,
+  filters,
+  showFilters,
+  setShowFilters,
+  onToggleFilter,
+  onSetFilter,
+  showHistory,
+  setShowHistory,
+  onNewChat,
+  conversations,
+  onLoadConversation,
+  onDeleteConversation,
+  onRenameConversation,
+  onShowBookings,
+  roomId: _roomId,
+  onShareSession,
+}: ChatHeaderProps) {
+  const [isHubOpen, setIsHubOpen] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const filtersBtnRef = useRef<HTMLButtonElement>(null);
+  const filtersPanelRef = useRef<HTMLDivElement>(null);
+
+  const { currency, setCurrency } = useCurrency();
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "reconnecting" | "offline"
+  >("offline");
+
+  const socket = usePartySocket({
+    host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
+    room: _roomId || "default",
+  });
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const updateStatus = () => {
+      switch (socket.readyState) {
+        case 0: // CONNECTING
+          setConnectionStatus("reconnecting");
+          break;
+        case 1: // OPEN
+          setConnectionStatus("connected");
+          break;
+        case 2: // CLOSING
+        case 3: // CLOSED
+        default:
+          setConnectionStatus("offline");
+          break;
+      }
+    };
+
+    updateStatus();
+
+    socket.addEventListener("open", updateStatus);
+    socket.addEventListener("close", updateStatus);
+    socket.addEventListener("error", updateStatus);
+
+    return () => {
+      socket.removeEventListener("open", updateStatus);
+      socket.removeEventListener("close", updateStatus);
+      socket.removeEventListener("error", updateStatus);
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    if (!showFilters) return;
+
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (filtersBtnRef.current?.contains(target)) return;
+      if (filtersPanelRef.current?.contains(target)) return;
+      setShowFilters(false);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [showFilters, setShowFilters]);
+
+  const startRenaming = (conv: Conversation) => {
+    setRenamingId(conv.id);
+    setRenameValue(conv.title);
+  };
+
+  const commitRename = (id: string) => {
+    const trimmed = renameValue.trim();
+    if (trimmed) {
+      onRenameConversation(id, trimmed);
+    }
+    setRenamingId(null);
+  };
+
+  const getActiveHubName = () => {
+    if (!userLocation) return "Global Hubs";
+    const matchingHub = GLOBAL_HUBS.find(
+      (hub) =>
+        hub.lat !== 0 &&
+        Math.abs(hub.lat - userLocation.lat) < 0.001 &&
+        Math.abs(hub.lng - userLocation.lng) < 0.001,
+    );
+    return matchingHub ? matchingHub.name : "Current Location";
+  };
+
+  return (
+    <div className="bg-white dark:bg-zinc-950 sticky top-0 z-50 p-4 border-b border-zinc-200 dark:border-zinc-800 shadow-sm transition-all">
+      <div className="flex items-center justify-between gap-4">
+        {/* Brand & Stats */}
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center p-2 shadow-lg shadow-blue-500/20">
+              <Zap className="w-6 h-6 text-white"/>
+            </div>
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-zinc-950 animate-pulse" />
+          </div>
+          <div className="hidden sm:block">
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-base font-black uppercase tracking-tighter text-zinc-900 dark:text-zinc-50 leading-none">
+                WorkSphere
+              </h1>
+              <span className="flex items-center gap-1 text-[8px] font-black tracking-widest uppercase bg-zinc-100 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-700">
+                AI CORE
+              </span>
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="flex items-center gap-1 text-[9px] font-bold accent-text">
+                <ShieldCheck className="w-2.5 h-2.5"/>
+                SECURE
+              </span>
+              <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+              <span className="flex items-center gap-1 text-[9px] font-bold text-zinc-500">
+                <Activity className="w-2.5 h-2.5"/>
+                V2.4.0
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Actions Area */}
+        <div className="flex-1 flex items-center justify-end gap-2">
+          {/* Currency Dropdown for Issue 707 */}
+          <select
+            value={currency}
+            onChange={(e) =>
+              setCurrency(e.target.value as "USD" | "EUR" | "GBP" | "INR")
+            }
+            aria-label="Currency"
+            className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-700 dark:text-zinc-300 px-3 py-2 cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all outline-none"
+          >
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="GBP">GBP (£)</option>
+            <option value="INR">INR (₹)</option>
+          </select>
+
+          {/* Global Hubs Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setIsHubOpen(!isHubOpen)}
+              className="flex items-center gap-2 px-3 py-2 cursor-pointer bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all active:scale-95"
+            >
+              <Globe className="w-3.5 h-3.5 text-blue-500"/>
+              <span className="hidden md:inline">{getActiveHubName()}</span>
+              <ChevronDown ""}`} "rotate-180" ${isHubOpen : ? className="{`w-3" h-3 transition-transform/>
+            </button>
+
+            {isHubOpen && (
+              <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl z-[60] overflow-hidden">
+                {GLOBAL_HUBS.map((hub) => (
+                  <button
+                    key={hub.name}
+                    onClick={() => {
+                      onLocationChange(hub.lat, hub.lng);
+                      setIsHubOpen(false);
+                    }}
+                    className="w-full cursor-pointer flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-[10px] font-bold uppercase tracking-widest text-zinc-600 dark:text-zinc-400 border-b border-zinc-100 dark:border-zinc-800 last:border-0 transition-colors"
+                  >
+                    <hub.icon className="w-3.5 h-3.5 text-blue-500" />
+                    {hub.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* New Chat */}
+          <button
+            onClick={onNewChat}
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95"
+            title="New Chat"
+          >
+            <RotateCcw className="w-4 h-4"/>
+          </button>
+
+          {/* Share Session */}
+          {onShareSession && (
+            <button
+              onClick={onShareSession}
+              className="p-2 bg-zinc-100  cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
+              title="Share Session"
+            >
+              <Share2 className="w-4 h-4"/>
+            </button>
+          )}
+
+          {/* My Bookings History */}
+          <button
+            onClick={onShowBookings}
+            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
+            title="My Residencies"
+          >
+            <Inbox className="w-4 h-4"/>
+          </button>
+
+          {/* Collections */}
+          <Link className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex" href="/collections" title="Collections">
+            <LayoutGrid className="w-4 h-4"/>
+          </Link>
+
+          {/* History */}
+          <button
+            onClick={() => {
+              setShowHistory(!showHistory);
+              setShowFilters(false);
+            }}
+            className={`p-2 border cursor-pointer rounded-xl transition-all active:scale-95 ${
+              showHistory
+                ? "bg-purple-600 border-purple-400 text-white shadow-lg shadow-purple-500/20"
+                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white"
+            }`}
+            title="Chat History"
+          >
+            <History className="w-4 h-4"/>
+          </button>
+
+          {/* Filters */}
+          <button
+            ref={filtersBtnRef}
+            type="button"
+            onClick={() => {
+              setShowFilters(!showFilters);
+              setShowHistory(false);
+            }}
+            className={`p-2 border cursor-pointer rounded-xl transition-all active:scale-95 ${
+              showFilters
+                ? "bg-orange-600 border-orange-400 text-white shadow-lg shadow-orange-500/20"
+                : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white"
+            }`}
+            title="Filters"
+            aria-expanded={showFilters}
+          >
+            <Filter className="w-4 h-4"/>
+          </button>
+
+          {/* Analytics Link */}
+          <Link className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden lg:flex" href="/analytics" title="Intelligence Dashboard">
+            <BarChart3 className="w-4 h-4"/>
+          </Link>
+
+          {/* Theme Toggle */}
+          <ThemeToggle/>
+
+          <div className="w-px h-8 cursor-pointer bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
+
+          {/* Add Venue Suggestion Button - High Contrast */}
+          <button
+            onClick={onOpenVenueSubmission}
+            className="items-center gap-2 cursor-pointer px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-green-500/20 transition-all border border-green-400/30 active:scale-95 group hidden sm:flex"
+            title="Suggest a new workspace"
+          >
+            <PlusCircle className="w-4 h-4 group-hover:rotate-90 transition-transform"/>
+            <span className="hidden sm:inline">ADD</span>
+          </button>
+
+          <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
+
+          {/* User Profile */}
+          <div className="flex items-center gap-2 p-1 pl-3 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">
+            <div className="hidden lg:block text-right">
+              <div className="text-[10px] font-black text-zinc-400 leading-none uppercase tracking-widest mb-0.5">
+                MEMBER
+              </div>
+              <div className="text-[11px] font-bold text-zinc-900 dark:text-zinc-50 leading-none">
+                PROFILE
+              </div>
+            </div>
+            <UserButton userProfileMode="navigation" userProfileUrl="/user-profile"/>
+          </div>
+        </div>
+      </div>
+
+      {/* Expansions Area */}
+      <div className="relative">
+        {/* Filter Overlay Area - Solid High Contrast */}
+        {showFilters && (
+          <div
+            ref={filtersPanelRef}
+            className="mt-4 p-3.5 sm:p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-4 sm:gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* Section 1: Standard Toggles */}
+            <div>
+              <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
+                Amenity Toggles
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.wifi ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.wifi}
+                    onChange={() => onToggleFilter("wifi")}
+                    className="sr-only"
+                  />
+                  <Wifi className="w-3.5 h-3.5"/>
+                  High-Speed WiFi
+                </label>
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.outlets ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.outlets}
+                    onChange={() => onToggleFilter("outlets")}
+                    className="sr-only"
+                  />
+                  <Outlets className="w-3.5 h-3.5"/>
+                  Has Outlets
+                </label>
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.quiet ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.quiet}
+                    onChange={() => onToggleFilter("quiet")}
+                    className="sr-only"
+                  />
+                  <Volume2 className="w-3.5 h-3.5"/>
+                  Low Noise
+                </label>
+                <label
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all cursor-pointer ${filters.ergonomic ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!filters.ergonomic}
+                    onChange={() => onToggleFilter("ergonomic")}
+                    className="sr-only"
+                  />
+                  <Activity className="w-3.5 h-3.5"/>
+                  Ergonomic Setup
+                </label>
+              </div>
+            </div>
+            {/* Section: Coffee Quality */}
+            <div>
+              <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
+                Coffee Quality
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => onToggleFilter("singleOriginBeans")}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
+                    filters.singleOriginBeans
+                      ? "bg-orange-600 text-white shadow-md"
+                      : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                  }`}
+                >
+                  ☕ Single-Origin Beans
+                </button>
+
+                <button
+                  onClick={() => onToggleFilter("specialtyEspresso")}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
+                    filters.specialtyEspresso
+                      ? "bg-orange-600 text-white shadow-md"
+                      : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                  }`}
+                >
+                  ☕ Specialty Espresso
+                </button>
+
+                <button
+                  onClick={() => onToggleFilter("oatAlmondMilk")}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
+                    filters.oatAlmondMilk
+                      ? "bg-orange-600 text-white shadow-md"
+                      : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                  }`}
+                >
+                  🥛 Oat / Almond Milk
+                </button>
+
+                <button
+                  onClick={() => onToggleFilter("pourOverAvailable")}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
+                    filters.pourOverAvailable
+                      ? "bg-orange-600 text-white shadow-md"
+                      : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                  }`}
+                >
+                  ☕ Pour-Over
+                </button>
+              </div>
+            </div>
+            {/* Section: Acoustic Environment */}
+            <div>
+              <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
+                Acoustic Environment
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => onToggleFilter("hasPhoneBooths")}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.hasPhoneBooths ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                >
+                  Phone Booths Available
+                </button>
+                <button
+                  onClick={() => onToggleFilter("hasNoMusic")}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.hasNoMusic ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                >
+                  No Background Music
+                </button>
+                <button
+                  onClick={() => onToggleFilter("hasQuietZone")}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.hasQuietZone ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                >
+                  Strict Silence Zones
+                </button>
+                <button
+                  onClick={() => onToggleFilter("hasAncHeadsetRental")}
+                  aria-pressed={Boolean(filters.hasAncHeadsetRental)}
+                  className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.hasAncHeadsetRental ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
+                  title="Show venues that rent active noise-cancelling headsets"
+                >
+                  <Headphones className="w-3.5 h-3.5"/>
+                  ANC Headset Rental
+                </button>
+              </div>
+            </div>
+
+            {/* Section 2: Outlet Density Segment */}
+            <div>
+              <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
+                Power Outlet Density
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "All / Any", value: "none" },
+                  { label: "Every Table", value: "every_table" },
+                  { label: "Some Tables", value: "some_tables" },
+                  { label: "Wall Seats Only", value: "wall_seats" },
+                ].map((density) => (
+                  <button
+                    key={density.value}
+                    onClick={() =>
+                      onSetFilter && onSetFilter("outletDensity", density.value)
+                    }
+                    className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
+                      (filters.outletDensity || "none") === density.value
+                        ? "bg-orange-600 text-white shadow-md"
+                        : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                    }`}
+                  >
+                    {density.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Section 3: Wi-Fi Speed Bands Segment */}
+            <div>
+              <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
+                Verified Wi-Fi Speed
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "Any Speed", value: "all" },
+                  { label: "Basic (>10 Mbps)", value: "basic" },
+                  { label: "Fast (>50 Mbps)", value: "fast" },
+                  { label: "Ultra (>100 Mbps)", value: "ultra" },
+                ].map((band) => (
+                  <button
+                    key={band.value}
+                    onClick={() =>
+                      onSetFilter && onSetFilter("wifiSpeedBand", band.value)
+                    }
+                    className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${
+                      (filters.wifiSpeedBand || "all") === band.value
+                        ? "bg-orange-600 text-white shadow-md"
+                        : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                    }`}
+                  >
+                    {band.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Section 4: Background Music Style Segment */}
+            <div>
+              <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
+                Background Music Style
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "Any Style", value: "all" },
                   { label: "Lo-Fi / Chill Beats", value: "lofi" },
                   { label: "Classical / Jazz", value: "classical_jazz" },
                   { label: "No Music Played", value: "no_music" },
@@ -604,11 +1250,7 @@ export function ChatHeader({
             </div>
             {conversations.length === 0 ? (
               <div className="p-4">
-                <EmptyState
-                  illustration="chat"
-                  message="No history found"
-                  description="Your recent AI chat sessions will appear here once you start searching."
-                />
+                <EmptyState description="Your recent AI chat sessions will appear here once you start searching." illustration="chat" message="No history found"/>
               </div>
             ) : (
               <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -637,7 +1279,7 @@ export function ChatHeader({
                           }}
                           className="p-1.5 rounded-md text-zinc-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20"
                         >
-                          <Check className="w-3.5 h-3.5" />
+                          <Check className="w-3.5 h-3.5"/>
                         </button>
                         <button
                           onMouseDown={(e) => {
@@ -646,7 +1288,7 @@ export function ChatHeader({
                           }}
                           className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-3.5 h-3.5"/>
                         </button>
                       </div>
                     ) : (
@@ -667,19 +1309,19 @@ export function ChatHeader({
                             onClick={() => startRenaming(conv)}
                             className="p-1.5 rounded-md text-zinc-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20"
                           >
-                            <Pencil className="w-3.5 h-3.5" />
+                            <Pencil className="w-3.5 h-3.5"/>
                           </button>
                           <button
                             onClick={() => onDeleteConversation(conv.id)}
                             className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5"/>
                           </button>
                           <button
                             onClick={() => onLoadConversation(conv.id)}
                             className="p-1.5 rounded-md text-zinc-400 hover:text-[var(--primary-accent)] hover:bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.1)] dark:hover:bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)]"
                           >
-                            <ChevronRight className="w-3.5 h-3.5" />
+                            <ChevronRight className="w-3.5 h-3.5"/>
                           </button>
                         </div>
                       </>
@@ -695,11 +1337,47 @@ export function ChatHeader({
       {/* Connection Indicator Bar */}
       <div className="mt-4 flex items-center justify-between px-1">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-              NEURAL LINK ACTIVE
-            </span>
+          <div
+            className="flex items-center gap-1.5"
+            role="status"
+            aria-live="polite"
+          >
+            {connectionStatus === "connected" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-green-700 dark:text-green-400">
+                  Connected
+                </span>
+                <span className="sr-only">PartyKit connection is stable</span>
+              </>
+            )}
+            {connectionStatus === "reconnecting" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-yellow-700 dark:text-yellow-400">
+                  Reconnecting
+                </span>
+                <span className="sr-only">PartyKit is reconnecting</span>
+              </>
+            )}
+            {connectionStatus === "offline" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-red-500"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-red-700 dark:text-red-400">
+                  Offline
+                </span>
+                <span className="sr-only">PartyKit is offline</span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_5px_rgba(59,130,246,0.8)]" />
@@ -707,11 +1385,8 @@ export function ChatHeader({
               LATENCY: 14MS
             </span>
           </div>
-          <Link
-            href="/analytics"
-            className="hidden lg:flex items-center gap-1.5 hover:opacity-70 transition-opacity"
-          >
-            <Activity className="w-3 h-3 text-zinc-400" />
+          <Link className="hidden lg:flex items-center gap-1.5 hover:opacity-70 transition-opacity" href="/analytics">
+            <Activity className="w-3 h-3 text-zinc-400"/>
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
               ANALYTICS
             </span>
@@ -719,8 +1394,8 @@ export function ChatHeader({
         </div>
 
         <div className="flex items-center gap-3">
-          <LayoutGrid className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors" />
-          <Terminal className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors" />
+          <LayoutGrid className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors"/>
+          <Terminal className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors"/>
         </div>
       </div>
     </div>

@@ -17,9 +17,9 @@ import {
   parseAccentColor,
 } from "@/lib/constants/theme";
 
-type Theme = "light" | "dark";
+export type Theme = "light" | "dark" | "cyberpunk";
 
-interface ThemeContextValue {
+export interface ThemeContextValue {
   theme: Theme;
   setTheme: (theme: Theme) => void;
   toggleTheme: () => void;
@@ -33,14 +33,24 @@ const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 const STORAGE_KEY = "worksphere-theme";
 
 function applyTheme(theme: Theme) {
+  if (typeof document === "undefined") return;
   const root = document.documentElement;
-  root.classList.toggle("dark", theme === "dark");
-  root.style.colorScheme = theme;
+
+  root.classList.remove("dark", "cyberpunk");
+
+  if (theme === "dark") {
+    root.classList.add("dark");
+  } else if (theme === "cyberpunk") {
+    root.classList.add("cyberpunk");
+  }
+
+  root.style.colorScheme = theme === "light" ? "light" : "dark";
 }
 
 function applyAccent(accent: AccentColor) {
+  if (typeof document === "undefined") return;
   const root = document.documentElement;
-  const hex = ACCENT_HEX_MAP[accent];
+  const hex = ACCENT_HEX_MAP[accent] || ACCENT_HEX_MAP[DEFAULT_ACCENT];
   root.style.setProperty("--primary-accent", hex);
   root.style.setProperty("--primary-accent-rgb", hexToRgb(hex));
 }
@@ -62,10 +72,27 @@ export function ThemeProvider({
   initialTheme = "light",
   initialAccent = DEFAULT_ACCENT,
 }: ThemeProviderProps) {
-  const [theme, setThemeState] = useState<Theme>(initialTheme);
-  const [accent, setAccentState] = useState<AccentColor>(initialAccent);
+  const [theme, setThemeState] = useState<Theme>(() => {
+    if (typeof document === "undefined") return initialTheme;
+    const root = document.documentElement;
+    if (root.classList.contains("cyberpunk")) return "cyberpunk";
+    if (root.classList.contains("dark")) return "dark";
+    const saved = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
+    if (saved === "dark" || saved === "cyberpunk" || saved === "light")
+      return saved;
+    return initialTheme;
+  });
 
-  const accentHex = useMemo(() => ACCENT_HEX_MAP[accent], [accent]);
+  const [accent, setAccentState] = useState<AccentColor>(() => {
+    if (typeof window === "undefined") return initialAccent;
+    const saved = window.localStorage.getItem(ACCENT_STORAGE_KEY);
+    return parseAccentColor(saved);
+  });
+
+  const accentHex = useMemo(
+    () => ACCENT_HEX_MAP[accent] || ACCENT_HEX_MAP[DEFAULT_ACCENT],
+    [accent],
+  );
 
   useEffect(() => {
     applyTheme(theme);
@@ -84,7 +111,11 @@ export function ThemeProvider({
 
   const toggleTheme = useCallback(() => {
     setThemeState((prev) => {
-      const next = prev === "dark" ? "light" : "dark";
+      let next: Theme = "dark";
+      if (prev === "light") next = "dark";
+      else if (prev === "dark") next = "cyberpunk";
+      else next = "light";
+
       window.localStorage.setItem(STORAGE_KEY, next);
       document.cookie = `${STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
       applyTheme(next);
@@ -102,11 +133,12 @@ export function ThemeProvider({
     const onStorage = (e: StorageEvent) => {
       if (
         e.key === STORAGE_KEY &&
-        (e.newValue === "light" || e.newValue === "dark")
+        (e.newValue === "light" ||
+          e.newValue === "dark" ||
+          e.newValue === "cyberpunk")
       ) {
-        setThemeState(e.newValue);
-        document.cookie = `${STORAGE_KEY}=${e.newValue}; path=/; max-age=31536000; SameSite=Lax`;
-        applyTheme(e.newValue);
+        setThemeState(e.newValue as Theme);
+        applyTheme(e.newValue as Theme);
       }
       if (e.key === ACCENT_STORAGE_KEY) {
         const parsedAccent = parseAccentColor(e.newValue);
@@ -131,7 +163,14 @@ export function ThemeProvider({
 export function useTheme() {
   const ctx = useContext(ThemeContext);
   if (!ctx) {
-    throw new Error("useTheme must be used within a ThemeProvider");
+    return {
+      theme: "light" as Theme,
+      setTheme: () => {},
+      toggleTheme: () => {},
+      accent: DEFAULT_ACCENT,
+      accentHex: ACCENT_HEX_MAP[DEFAULT_ACCENT],
+      setAccent: () => {},
+    };
   }
   return ctx;
 }

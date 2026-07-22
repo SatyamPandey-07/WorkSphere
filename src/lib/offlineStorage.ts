@@ -20,7 +20,32 @@ userDoc.on("update", async (update: Uint8Array) => {
 });
 
 const DB_NAME = "worksphere-offline";
-const DB_VERSION = 2;
+const DB_VERSION = 4;
+
+const IDB_STORAGE_LOCK = "worksphere-offline-storage-lock";
+
+/**
+ * Web Locks API wrapper to serialize IndexedDB transactions across concurrent tabs (#910)
+ */
+export async function withWebLock<T>(
+  callback: () => Promise<T>,
+  lockName = IDB_STORAGE_LOCK,
+): Promise<T> {
+  if (
+    typeof navigator !== "undefined" &&
+    "locks" in navigator &&
+    navigator.locks?.request
+  ) {
+    try {
+      return await navigator.locks.request(lockName, async () => {
+        return callback();
+      });
+    } catch {
+      return callback();
+    }
+  }
+  return callback();
+}
 
 export interface OfflineVenue {
   id: string;
@@ -45,6 +70,17 @@ interface OfflineSearch {
 
 let db: IDBDatabase | null = null;
 
+if (typeof window !== "undefined") {
+  window.addEventListener(
+    "beforeunload",
+    () => {
+      db?.close();
+      db = null;
+    },
+    { once: true },
+  );
+}
+
 /**
  * Initialize IndexedDB
  */
@@ -64,6 +100,10 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
+      request.onblocked = () => {
+        console.warn("[OfflineDB] Database upgrade blocked");
+      };
+
       request.onerror = () => {
         console.error("[OfflineDB] Failed to open database");
         const err = request.error || new Error("Unknown IndexedDB error");
@@ -75,6 +115,10 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
 
       request.onsuccess = () => {
         db = request.result;
+        db.onversionchange = () => {
+          db?.close();
+          db = null;
+        };
         console.log("[OfflineDB] Database opened successfully");
         resolve(db);
       };
@@ -117,6 +161,15 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
           });
         }
 
+        // Receipt exports store for offline background sync (Issue #1069)
+        if (!database.objectStoreNames.contains("receiptExports")) {
+          const receiptStore = database.createObjectStore("receiptExports", {
+            keyPath: "bookingId",
+          });
+          receiptStore.createIndex("status", "status", { unique: false });
+          receiptStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
         console.log("[OfflineDB] Database schema created");
       };
     } catch (err: any) {
@@ -133,19 +186,21 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
  * Save venue to offline storage
  */
 export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["venues"], "readwrite");
-    const store = transaction.objectStore("venues");
+    return new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["venues"], "readwrite");
+      const store = transaction.objectStore("venues");
 
-    const request = store.put({
-      ...venue,
-      savedAt: Date.now(),
+      const request = store.put({
+        ...venue,
+        savedAt: Date.now(),
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
     });
-
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
   });
 }
 
@@ -155,16 +210,18 @@ export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
 export async function getVenueOffline(
   id: string,
 ): Promise<OfflineVenue | null> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["venues"], "readonly");
-    const store = transaction.objectStore("venues");
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(["venues"], "readonly");
+      const store = transaction.objectStore("venues");
 
-    const request = store.get(id);
+      const request = store.get(id);
 
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
   });
 }
 
@@ -172,16 +229,18 @@ export async function getVenueOffline(
  * Get all offline venues
  */
 export async function getAllVenuesOffline(): Promise<OfflineVenue[]> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["venues"], "readonly");
-    const store = transaction.objectStore("venues");
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(["venues"], "readonly");
+      const store = transaction.objectStore("venues");
 
-    const request = store.getAll();
+      const request = store.getAll();
 
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
   });
 }
 
@@ -189,23 +248,25 @@ export async function getAllVenuesOffline(): Promise<OfflineVenue[]> {
  * Save favorite to offline storage
  */
 export async function saveFavoriteOffline(venue: OfflineVenue): Promise<void> {
-  // 1. Update CRDT state (triggers userDoc.on('update') automatically)
-  yFavorites.set(venue.id, venue);
+  return withWebLock(async () => {
+    // 1. Update CRDT state (triggers userDoc.on('update') automatically)
+    yFavorites.set(venue.id, venue);
 
-  // 2. Update local IndexedDB for immediate UI reads
-  const database = await initOfflineDB();
+    // 2. Update local IndexedDB for immediate UI reads
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["favorites"], "readwrite");
-    const store = transaction.objectStore("favorites");
+    return new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["favorites"], "readwrite");
+      const store = transaction.objectStore("favorites");
 
-    const request = store.put({
-      ...venue,
-      savedAt: Date.now(),
+      const request = store.put({
+        ...venue,
+        savedAt: Date.now(),
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
     });
-
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
   });
 }
 
@@ -213,20 +274,22 @@ export async function saveFavoriteOffline(venue: OfflineVenue): Promise<void> {
  * Remove favorite from offline storage
  */
 export async function removeFavoriteOffline(id: string): Promise<void> {
-  // 1. Update CRDT state
-  yFavorites.delete(id);
+  return withWebLock(async () => {
+    // 1. Update CRDT state
+    yFavorites.delete(id);
 
-  // 2. Update local IndexedDB
-  const database = await initOfflineDB();
+    // 2. Update local IndexedDB
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["favorites"], "readwrite");
-    const store = transaction.objectStore("favorites");
+    return new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["favorites"], "readwrite");
+      const store = transaction.objectStore("favorites");
 
-    const request = store.delete(id);
+      const request = store.delete(id);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
   });
 }
 
@@ -234,16 +297,18 @@ export async function removeFavoriteOffline(id: string): Promise<void> {
  * Get all offline favorites
  */
 export async function getFavoritesOffline(): Promise<OfflineVenue[]> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["favorites"], "readonly");
-    const store = transaction.objectStore("favorites");
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(["favorites"], "readonly");
+      const store = transaction.objectStore("favorites");
 
-    const request = store.getAll();
+      const request = store.getAll();
 
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
   });
 }
 
@@ -256,23 +321,25 @@ export async function saveSearchOffline(
   query: string,
   results: OfflineVenue[],
 ): Promise<void> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(["searches"], "readwrite");
-    const store = transaction.objectStore("searches");
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["searches"], "readwrite");
+      const store = transaction.objectStore("searches");
 
-    const request = store.put({
-      query: query.toLowerCase().trim(),
-      results,
-      timestamp: Date.now(),
+      const request = store.put({
+        query: query.toLowerCase().trim(),
+        results,
+        timestamp: Date.now(),
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
     });
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+    await trimSearchHistory();
   });
-
-  await trimSearchHistory();
 }
 
 /**
@@ -305,20 +372,22 @@ async function trimSearchHistory(): Promise<void> {
  * Get all cached searches, most recent first
  */
 export async function getAllSearchesOffline(): Promise<OfflineSearch[]> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["searches"], "readonly");
-    const store = transaction.objectStore("searches");
-    const index = store.index("timestamp");
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(["searches"], "readonly");
+      const store = transaction.objectStore("searches");
+      const index = store.index("timestamp");
 
-    const request = index.getAll();
+      const request = index.getAll();
 
-    request.onsuccess = () => {
-      const results = (request.result || []) as OfflineSearch[];
-      resolve(results.reverse());
-    };
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const results = (request.result || []) as OfflineSearch[];
+        resolve(results.reverse());
+      };
+      request.onerror = () => reject(request.error);
+    });
   });
 }
 
@@ -328,24 +397,26 @@ export async function getAllSearchesOffline(): Promise<OfflineSearch[]> {
 export async function getSearchOffline(
   query: string,
 ): Promise<OfflineSearch | null> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["searches"], "readonly");
-    const store = transaction.objectStore("searches");
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(["searches"], "readonly");
+      const store = transaction.objectStore("searches");
 
-    const request = store.get(query.toLowerCase().trim());
+      const request = store.get(query.toLowerCase().trim());
 
-    request.onsuccess = () => {
-      const result = request.result;
-      // Return cached results if less than 24 hours old
-      if (result && Date.now() - result.timestamp < 24 * 60 * 60 * 1000) {
-        resolve(result);
-      } else {
-        resolve(null);
-      }
-    };
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const result = request.result;
+        // Return cached results if less than 24 hours old
+        if (result && Date.now() - result.timestamp < 24 * 60 * 60 * 1000) {
+          resolve(result);
+        } else {
+          resolve(null);
+        }
+      };
+      request.onerror = () => reject(request.error);
+    });
   });
 }
 
@@ -359,32 +430,34 @@ export async function queuePendingAction(action: {
   venueId: string;
   data?: Record<string, unknown>;
 }): Promise<void> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const checkTx = database.transaction(["pendingActions"], "readonly");
-    const checkStore = checkTx.objectStore("pendingActions");
-    const getAll = checkStore.getAll();
+    return new Promise((resolve, reject) => {
+      const checkTx = database.transaction(["pendingActions"], "readonly");
+      const checkStore = checkTx.objectStore("pendingActions");
+      const getAll = checkStore.getAll();
 
-    getAll.onsuccess = () => {
-      const existing = (
-        getAll.result as Array<{ type: string; venueId: string; id: number }>
-      ).find((a) => a.type === action.type && a.venueId === action.venueId);
-      if (existing) {
-        resolve();
-        return;
-      }
+      getAll.onsuccess = () => {
+        const existing = (
+          getAll.result as Array<{ type: string; venueId: string; id: number }>
+        ).find((a) => a.type === action.type && a.venueId === action.venueId);
+        if (existing) {
+          resolve();
+          return;
+        }
 
-      const addTx = database.transaction(["pendingActions"], "readwrite");
-      const addStore = addTx.objectStore("pendingActions");
-      addStore.add({
-        ...action,
-        timestamp: Date.now(),
-      });
-      addTx.oncomplete = () => resolve();
-      addTx.onerror = () => reject(addTx.error);
-    };
-    getAll.onerror = () => reject(getAll.error);
+        const addTx = database.transaction(["pendingActions"], "readwrite");
+        const addStore = addTx.objectStore("pendingActions");
+        addStore.add({
+          ...action,
+          timestamp: Date.now(),
+        });
+        addTx.oncomplete = () => resolve();
+        addTx.onerror = () => reject(addTx.error);
+      };
+      getAll.onerror = () => reject(getAll.error);
+    });
   });
 }
 
@@ -392,33 +465,35 @@ export async function queuePendingAction(action: {
  * Queue a CRDT update payload
  */
 export async function queueCrdtUpdate(update: Uint8Array): Promise<void> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["pendingActions"], "readwrite");
-    const store = transaction.objectStore("pendingActions");
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(["pendingActions"], "readwrite");
+      const store = transaction.objectStore("pendingActions");
 
-    const request = store.add({
-      type: "crdt-sync",
-      data: update,
-      timestamp: Date.now(),
+      const request = store.add({
+        type: "crdt-sync",
+        data: update,
+        timestamp: Date.now(),
+      });
+
+      request.onsuccess = () => {
+        // Attempt to register background sync if Service Worker is available
+        if ("serviceWorker" in navigator && "SyncManager" in window) {
+          navigator.serviceWorker.ready.then((swRegistration) => {
+            // Type casting since TS doesn't fully support sync interface yet
+            (swRegistration as any).sync
+              .register("sync-crdt")
+              .catch((err: any) => {
+                console.error("Background Sync registration failed:", err);
+              });
+          });
+        }
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
     });
-
-    request.onsuccess = () => {
-      // Attempt to register background sync if Service Worker is available
-      if ("serviceWorker" in navigator && "SyncManager" in window) {
-        navigator.serviceWorker.ready.then((swRegistration) => {
-          // Type casting since TS doesn't fully support sync interface yet
-          (swRegistration as any).sync
-            .register("sync-crdt")
-            .catch((err: any) => {
-              console.error("Background Sync registration failed:", err);
-            });
-        });
-      }
-      resolve();
-    };
-    request.onerror = () => reject(request.error);
   });
 }
 
@@ -432,18 +507,20 @@ export async function processPendingActions(): Promise<
     data?: Record<string, unknown>;
   }>
 > {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["pendingActions"], "readonly");
-    const store = transaction.objectStore("pendingActions");
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(["pendingActions"], "readonly");
+      const store = transaction.objectStore("pendingActions");
 
-    const getRequest = store.getAll();
+      const getRequest = store.getAll();
 
-    getRequest.onsuccess = () => {
-      resolve(getRequest.result);
-    };
-    getRequest.onerror = () => reject(getRequest.error);
+      getRequest.onsuccess = () => {
+        resolve(getRequest.result);
+      };
+      getRequest.onerror = () => reject(getRequest.error);
+    });
   });
 }
 
@@ -475,35 +552,37 @@ export async function queueConversationRename(
   conversationId: string,
   title: string,
 ): Promise<void> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(["pendingActions"], "readwrite");
-    const store = transaction.objectStore("pendingActions");
-    const request = store.getAll();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["pendingActions"], "readwrite");
+      const store = transaction.objectStore("pendingActions");
+      const request = store.getAll();
 
-    request.onsuccess = () => {
-      const existing = (request.result as ConversationEditAction[]).filter(
-        (a) =>
-          a.type === "conversation-rename" &&
-          a.conversationId === conversationId,
-      );
-      existing.forEach((a) => store.delete(a.id));
+      request.onsuccess = () => {
+        const existing = (request.result as ConversationEditAction[]).filter(
+          (a) =>
+            a.type === "conversation-rename" &&
+            a.conversationId === conversationId,
+        );
+        existing.forEach((a) => store.delete(a.id));
 
-      store.add({
-        type: "conversation-rename",
-        conversationId,
-        title,
-        timestamp: Date.now(),
-      });
-    };
-    request.onerror = () => reject(request.error);
+        store.add({
+          type: "conversation-rename",
+          conversationId,
+          title,
+          timestamp: Date.now(),
+        });
+      };
+      request.onerror = () => reject(request.error);
 
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+
+    await registerConversationSync();
   });
-
-  await registerConversationSync();
 }
 
 /**
@@ -514,34 +593,38 @@ export async function queueConversationRename(
 export async function queueConversationDelete(
   conversationId: string,
 ): Promise<void> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  await new Promise<void>((resolve, reject) => {
-    const transaction = database.transaction(["pendingActions"], "readwrite");
-    const store = transaction.objectStore("pendingActions");
-    const request = store.getAll();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["pendingActions"], "readwrite");
+      const store = transaction.objectStore("pendingActions");
+      const request = store.getAll();
 
-    request.onsuccess = () => {
-      const staleRenames = (request.result as ConversationEditAction[]).filter(
-        (a) =>
-          a.type === "conversation-rename" &&
-          a.conversationId === conversationId,
-      );
-      staleRenames.forEach((a) => store.delete(a.id));
+      request.onsuccess = () => {
+        const staleRenames = (
+          request.result as ConversationEditAction[]
+        ).filter(
+          (a) =>
+            a.type === "conversation-rename" &&
+            a.conversationId === conversationId,
+        );
+        staleRenames.forEach((a) => store.delete(a.id));
 
-      store.add({
-        type: "conversation-delete",
-        conversationId,
-        timestamp: Date.now(),
-      });
-    };
-    request.onerror = () => reject(request.error);
+        store.add({
+          type: "conversation-delete",
+          conversationId,
+          timestamp: Date.now(),
+        });
+      };
+      request.onerror = () => reject(request.error);
 
-    transaction.oncomplete = () => resolve();
-    transaction.onerror = () => reject(transaction.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+
+    await registerConversationSync();
   });
-
-  await registerConversationSync();
 }
 
 async function registerConversationSync(): Promise<void> {
@@ -561,24 +644,26 @@ async function registerConversationSync(): Promise<void> {
 export async function getPendingConversationEdits(): Promise<
   ConversationEditAction[]
 > {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["pendingActions"], "readonly");
-    const store = transaction.objectStore("pendingActions");
-    const request = store.getAll();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(["pendingActions"], "readonly");
+      const store = transaction.objectStore("pendingActions");
+      const request = store.getAll();
 
-    request.onsuccess = () => {
-      const actions = (request.result as ConversationEditAction[])
-        .filter(
-          (a) =>
-            a.type === "conversation-rename" ||
-            a.type === "conversation-delete",
-        )
-        .sort((a, b) => a.timestamp - b.timestamp);
-      resolve(actions);
-    };
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const actions = (request.result as ConversationEditAction[])
+          .filter(
+            (a) =>
+              a.type === "conversation-rename" ||
+              a.type === "conversation-delete",
+          )
+          .sort((a, b) => a.timestamp - b.timestamp);
+        resolve(actions);
+      };
+      request.onerror = () => reject(request.error);
+    });
   });
 }
 
@@ -613,15 +698,17 @@ export function applyPendingConversationEdits<
 }
 
 async function removePendingActionById(id: number): Promise<void> {
-  const database = await initOfflineDB();
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(["pendingActions"], "readwrite");
-    const store = transaction.objectStore("pendingActions");
-    const request = store.delete(id);
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(["pendingActions"], "readwrite");
+      const store = transaction.objectStore("pendingActions");
+      const request = store.delete(id);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
   });
 }
 
@@ -665,36 +752,152 @@ export async function flushConversationEditQueue(): Promise<void> {
 export async function cleanupOldData(
   maxAge: number = 7 * 24 * 60 * 60 * 1000,
 ): Promise<void> {
-  const database = await initOfflineDB();
-  const cutoff = Date.now() - maxAge;
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
+    const cutoff = Date.now() - maxAge;
 
-  // Clean old venues
-  const venuesTx = database.transaction(["venues"], "readwrite");
-  const venuesStore = venuesTx.objectStore("venues");
-  const venuesIndex = venuesStore.index("savedAt");
+    // Clean old venues
+    const venuesTx = database.transaction(["venues"], "readwrite");
+    const venuesStore = venuesTx.objectStore("venues");
+    const venuesIndex = venuesStore.index("savedAt");
 
-  const venuesCursor = venuesIndex.openCursor(IDBKeyRange.upperBound(cutoff));
-  venuesCursor.onsuccess = (event) => {
-    const cursor = (event.target as IDBRequest).result;
-    if (cursor) {
-      cursor.delete();
-      cursor.continue();
+    const venuesCursor = venuesIndex.openCursor(IDBKeyRange.upperBound(cutoff));
+    venuesCursor.onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest).result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
+
+    // Clean old searches
+    const searchesTx = database.transaction(["searches"], "readwrite");
+    const searchesStore = searchesTx.objectStore("searches");
+    const searchesIndex = searchesStore.index("timestamp");
+
+    const searchesCursor = searchesIndex.openCursor(
+      IDBKeyRange.upperBound(cutoff),
+    );
+    searchesCursor.onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest).result;
+      if (cursor) {
+        cursor.delete();
+        cursor.continue();
+      }
+    };
+  });
+}
+
+/**
+ * Offline Receipt Sync Queue & Storage Helpers (Issue #1069)
+ */
+
+export interface QueuedReceiptJob {
+  bookingId: string;
+  filename: string;
+  createdAt: number;
+  retryCount: number;
+  status: "pending" | "downloading" | "ready" | "failed";
+  pdf?: ArrayBuffer;
+}
+
+export async function queueOfflineReceipt(
+  bookingId: string,
+  filename?: string,
+): Promise<void> {
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
+    const name =
+      filename || `WorkSphere_Receipt_${bookingId.slice(-6).toUpperCase()}.pdf`;
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = database.transaction(["receiptExports"], "readwrite");
+      const store = tx.objectStore("receiptExports");
+
+      const getReq = store.get(bookingId);
+      getReq.onsuccess = () => {
+        const existing = getReq.result as QueuedReceiptJob | undefined;
+        const job: QueuedReceiptJob = {
+          bookingId,
+          filename: name,
+          createdAt: existing?.createdAt || Date.now(),
+          retryCount: existing?.retryCount || 0,
+          status: existing?.status === "ready" ? "ready" : "pending",
+          pdf: existing?.pdf,
+        };
+
+        const putReq = store.put(job);
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+      };
+      getReq.onerror = () => reject(getReq.error);
+    });
+
+    // Register background sync if Service Worker is available
+    if ("serviceWorker" in navigator && "SyncManager" in window) {
+      try {
+        const swRegistration = await navigator.serviceWorker.ready;
+        await (swRegistration as any).sync.register("receipt-export-sync");
+      } catch (err) {
+        console.error("Background Sync registration failed for receipt:", err);
+      }
     }
-  };
+  });
+}
 
-  // Clean old searches
-  const searchesTx = database.transaction(["searches"], "readwrite");
-  const searchesStore = searchesTx.objectStore("searches");
-  const searchesIndex = searchesStore.index("timestamp");
+export async function getQueuedReceiptJobs(): Promise<QueuedReceiptJob[]> {
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
 
-  const searchesCursor = searchesIndex.openCursor(
-    IDBKeyRange.upperBound(cutoff),
-  );
-  searchesCursor.onsuccess = (event) => {
-    const cursor = (event.target as IDBRequest).result;
-    if (cursor) {
-      cursor.delete();
-      cursor.continue();
-    }
-  };
+    return new Promise((resolve, reject) => {
+      const tx = database.transaction(["receiptExports"], "readonly");
+      const store = tx.objectStore("receiptExports");
+      const req = store.getAll();
+
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function updateReceiptJob(
+  job: Partial<QueuedReceiptJob> & { bookingId: string },
+): Promise<void> {
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
+
+    return new Promise((resolve, reject) => {
+      const tx = database.transaction(["receiptExports"], "readwrite");
+      const store = tx.objectStore("receiptExports");
+
+      const getReq = store.get(job.bookingId);
+      getReq.onsuccess = () => {
+        const existing = getReq.result as QueuedReceiptJob | undefined;
+        if (!existing) {
+          resolve();
+          return;
+        }
+        const updated: QueuedReceiptJob = { ...existing, ...job };
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+      };
+      getReq.onerror = () => reject(getReq.error);
+    });
+  });
+}
+
+export async function removeReceiptJob(bookingId: string): Promise<void> {
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
+
+    return new Promise((resolve, reject) => {
+      const tx = database.transaction(["receiptExports"], "readwrite");
+      const store = tx.objectStore("receiptExports");
+      const req = store.delete(bookingId);
+
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
 }

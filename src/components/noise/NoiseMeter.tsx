@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Volume2 } from "lucide-react";
-import { processAudioFrame, resetNoiseProcessor } from "@/lib/wasm/noiseProcessor";
+import {
+  processAudioFrame,
+  resetNoiseProcessor,
+} from "@/lib/wasm/noiseProcessor";
 
 export type NoiseMeasurement = {
   averageDb: number;
@@ -81,7 +84,7 @@ export function NoiseMeter({ onMeasured }: Props) {
     setResult(null);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      let stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: false,
           noiseSuppression: false,
@@ -102,7 +105,7 @@ export function NoiseMeter({ onMeasured }: Props) {
       }
 
       const audioContext = new AudioContextClass();
-      const source = audioContext.createMediaStreamSource(stream);
+      let source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
 
       analyser.fftSize = 2048;
@@ -115,17 +118,102 @@ export function NoiseMeter({ onMeasured }: Props) {
       let timer = 5;
 
       const cleanup = () => {
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange,
+        );
+        navigator.mediaDevices.removeEventListener(
+          "devicechange",
+          handleDeviceChange,
+        );
         cancelAnimationFrame(animationFrame);
+        try {
+          source.disconnect();
+        } catch {}
+        try {
+          analyser.disconnect();
+        } catch {}
         stream.getTracks().forEach((track) => track.stop());
+        if (audioContext.state !== "closed") {
+          audioContext.close().catch(() => {});
+        }
+      };
+
+      const handleDeviceChange = async () => {
+        if (!audioContext || audioContext.state === "closed") return;
+
+        try {
+          if (audioContext.state !== "running") {
+            await audioContext.resume();
+          }
+
+          const track = stream.getAudioTracks()[0];
+          if (track && track.readyState === "ended") {
+            const newStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+              },
+            });
+
+            try {
+              source.disconnect();
+            } catch {}
+
+            stream = newStream;
+            source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+          }
+        } catch (error) {
+          console.error(
+            "Failed to recover audio context after device change:",
+            error,
+          );
+        }
+      };
+
+      navigator.mediaDevices.addEventListener(
+        "devicechange",
+        handleDeviceChange,
+      );
+
+      const handleVisibilityChange = () => {
+        if (document.hidden) {
+          window.clearInterval(countdown);
+          cleanup();
+          cleanupRef.current = null;
+          setStatus("error");
+        }
         audioContext.close().catch(() => {});
         resetNoiseProcessor();
       };
+
+      document.addEventListener("visibilitychange", handleVisibilityChange);
 
       cleanupRef.current = cleanup;
       setStatus("measuring");
       setRemaining(timer);
 
-      const tick = async () => {
+      // Delta time throttling to cap FFT polling and rendering to 60fps (1000/60 ~ 16.67ms)
+      // Prevents audio buffer overrun and crackling on 120Hz/144Hz ProMotion displays
+      let lastTickTime: number | null = null;
+      const targetFrameInterval = 1000 / 60;
+
+      const tick = async (timestamp?: number) => {
+        const now =
+          typeof timestamp === "number" ? timestamp : performance.now();
+
+        if (lastTickTime !== null) {
+          const delta = now - lastTickTime;
+          if (delta < targetFrameInterval) {
+            animationFrame = requestAnimationFrame(tick);
+            return;
+          }
+          lastTickTime = now - (delta % targetFrameInterval);
+        } else {
+          lastTickTime = now;
+        }
         analyser.getFloatTimeDomainData(samples);
 
         let db: number;

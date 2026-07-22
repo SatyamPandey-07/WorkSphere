@@ -4,6 +4,7 @@
 
 @layer utilities {
   .glass-card {
+    @apply bg-white border border-zinc-200 shadow-xl;
     @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl;
   }
 
@@ -12,8 +13,8 @@
       color-mix(in srgb, var(--primary-accent) 30%, transparent);
   }
 
-  .text-glow {
-    text-shadow: none;
+  .dark .glass-card {
+    @apply bg-zinc-900 border-zinc-800;
   }
 }
 
@@ -24,6 +25,11 @@
   --primary-accent: #3b82f6;
   --primary-accent-rgb: 59, 130, 246;
   color-scheme: light dark;
+}
+
+.cyberpunk {
+  --background: #090014;
+  --foreground: #f4f4ff;
 }
 
 @theme inline {
@@ -54,7 +60,28 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+  scrollbar-color: var(--color-zinc-300) transparent;
+  scrollbar-width: thin;
+}
+
+.leaflet-layer {
+  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3)
+    brightness(0.7);
+}
+
+/* Gradient animation */
+
 /* ─── Animations ──────────────────────────────────────────────────── */
+
 @keyframes gradient {
   0%,
   100% {
@@ -269,39 +296,51 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   .bg-blue-700\/10 {
     background-color: rgba(29, 78, 216, 0.1);
   }
+
   .bg-blue-700\/20 {
     background-color: rgba(29, 78, 216, 0.2);
   }
+
   .bg-purple-700\/10 {
     background-color: rgba(126, 34, 206, 0.1);
   }
+
   .bg-purple-700\/15 {
     background-color: rgba(126, 34, 206, 0.15);
   }
+
   .bg-red-700\/10 {
     background-color: rgba(185, 28, 28, 0.1);
   }
+
   .bg-orange-700\/10 {
     background-color: rgba(194, 65, 12, 0.1);
   }
+
   .bg-cyan-700\/10 {
     background-color: rgba(14, 116, 144, 0.1);
   }
+
   .bg-violet-700\/15 {
     background-color: rgba(109, 40, 217, 0.15);
   }
+
   .bg-violet-700\/20 {
     background-color: rgba(109, 40, 217, 0.2);
   }
+
   .bg-amber-500\/10 {
     background-color: rgba(245, 158, 11, 0.1);
   }
+
   .bg-amber-500\/20 {
     background-color: rgba(245, 158, 11, 0.2);
   }
+
   .bg-red-500\/10 {
     background-color: rgba(239, 68, 68, 0.1);
   }
+
   .bg-red-500\/20 {
     background-color: rgba(239, 68, 68, 0.2);
   }
@@ -309,18 +348,23 @@ html.dark ::-webkit-scrollbar-thumb:hover {
   .border-amber-500\/30 {
     border-color: rgba(245, 158, 11, 0.3);
   }
+
   .border-red-500\/30 {
     border-color: rgba(239, 68, 68, 0.3);
   }
+
   .border-blue-500\/30 {
     border-color: rgba(59, 130, 246, 0.3);
   }
+
   .border-purple-500\/30 {
     border-color: rgba(168, 85, 247, 0.3);
   }
+
   .border-violet-400\/20 {
     border-color: rgba(167, 139, 250, 0.2);
   }
+
   .border-emerald-400\/20 {
     border-color: rgba(52, 211, 153, 0.2);
   }

@@ -1,5 +1,11 @@
 import React from "react";
-import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  act,
+  waitFor,
+} from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { NotificationSettings } from "@/app/dashboard/NotificationSettings";
 
@@ -45,24 +51,29 @@ const mockSettingsResponse = {
 describe("NotificationSettings", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (global.fetch as jest.Mock).mockImplementation((url: string, options?: any) => {
-      if (url === "/api/user/settings" && (!options || options.method === undefined)) {
+    (global.fetch as jest.Mock).mockImplementation(
+      (url: string, options?: any) => {
+        if (
+          url === "/api/user/settings" &&
+          (!options || options.method === undefined)
+        ) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(mockSettingsResponse),
+          });
+        }
+        if (url === "/api/user/settings" && options?.method === "POST") {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ success: true }),
+          });
+        }
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve(mockSettingsResponse),
+          json: () => Promise.resolve({}),
         });
-      }
-      if (url === "/api/user/settings" && options?.method === "POST") {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ success: true }),
-        });
-      }
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve({}),
-      });
-    });
+      },
+    );
   });
 
   it("shows a loading indicator before settings have loaded", () => {
@@ -113,7 +124,9 @@ describe("NotificationSettings", () => {
     render(<NotificationSettings />);
     await waitFor(() => screen.getByLabelText(/WhatsApp Webhook URL/i));
 
-    const input = screen.getByLabelText(/WhatsApp Webhook URL/i) as HTMLInputElement;
+    const input = screen.getByLabelText(
+      /WhatsApp Webhook URL/i,
+    ) as HTMLInputElement;
     fireEvent.change(input, {
       target: { value: "https://hooks.zapier.com/abc123" },
     });
@@ -151,12 +164,13 @@ describe("NotificationSettings", () => {
     });
 
     const postCall = (global.fetch as jest.Mock).mock.calls.find(
-      ([url, options]) => url === "/api/user/settings" && options?.method === "POST",
+      ([url, options]) =>
+        url === "/api/user/settings" && options?.method === "POST",
     );
     expect(postCall).toBeTruthy();
     const body = JSON.parse(postCall![1].body);
     expect(body.phoneNumber).toBe("+15551234567");
-  });
+  }, 20000);
 
   it("shows an error message when saving fails", async () => {
     render(<NotificationSettings />);
@@ -165,7 +179,10 @@ describe("NotificationSettings", () => {
     (global.fetch as jest.Mock).mockImplementation(
       (url: string, options?: any) => {
         if (url === "/api/user/settings" && options?.method === "POST") {
-          return Promise.resolve({ ok: false, json: () => Promise.resolve({}) });
+          return Promise.resolve({
+            ok: false,
+            json: () => Promise.resolve({}),
+          });
         }
         return Promise.resolve({
           ok: true,

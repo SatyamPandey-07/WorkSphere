@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 
 import "./globals.css";
 
@@ -12,6 +12,8 @@ import { ScrollProgress } from "../components/ui/ScrollProgress";
 import { CookieBanner } from "../components/CookieBanner";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { SyncManager } from "../hooks/usePWA";
+import { ToastProvider } from "../components/ui/Toast";
+import { PWAUpdateListener } from "../components/PWAUpdateListener";
 
 const THEME_INIT_SCRIPT = `
 (function () {
@@ -63,6 +65,7 @@ const THEME_INIT_SCRIPT = `
       }
     });
   } catch {}
+
 })();
 `;
 
@@ -115,15 +118,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const headersList = await headers();
-  const pathname = headersList.get("x-pathname") ?? "";
-  const isAnalyticsPage = pathname.startsWith("/analytics");
-
-  const publishableKey =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ??
-    "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
-
-  const isDummyKey = publishableKey === "pk_test_ZXhhbXBsZS5hY2NvdW50cy5kZXYk";
+  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
   const cookieStore = await cookies();
   const storedTheme = cookieStore.get("worksphere-theme")?.value;
@@ -146,31 +141,31 @@ export default async function RootLayout({
   const appContent = (
     <ThemeProvider initialTheme={theme as any} initialAccent={accent}>
       <SoundProvider>
-        <CurrencyProvider>
-          <I18nProvider>{children}</I18nProvider>
-        </CurrencyProvider>
+        <ToastProvider>
+          <CurrencyProvider>
+            <PWAUpdateListener />
+            <I18nProvider>{children}</I18nProvider>
+          </CurrencyProvider>
+        </ToastProvider>
       </SoundProvider>
       <SyncManager />
     </ThemeProvider>
   );
 
-  const bodyContent =
-    isDummyKey && isAnalyticsPage ? (
-      appContent
-    ) : (
-      <ClerkProvider
-        afterSignOutUrl="/"
-        publishableKey={publishableKey}
-        appearance={{
-          elements: {
-            formButtonPrimary: "accent-bg hover:opacity-90",
-            card: "shadow-xl",
-          },
-        }}
-      >
-        {appContent}
-      </ClerkProvider>
-    );
+  const bodyContent = (
+    <ClerkProvider
+      afterSignOutUrl="/"
+      publishableKey={publishableKey}
+      appearance={{
+        elements: {
+          formButtonPrimary: "accent-bg hover:opacity-90",
+          card: "shadow-xl",
+        },
+      }}
+    >
+      {appContent}
+    </ClerkProvider>
+  );
 
   return (
     <html
@@ -184,7 +179,10 @@ export default async function RootLayout({
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script
+          id="theme-init"
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
       </head>
 
       <body
@@ -192,6 +190,7 @@ export default async function RootLayout({
         suppressHydrationWarning
       >
         <ScrollProgress />
+        <SyncManager />
         {bodyContent}
         <CookieBanner />
       </body>

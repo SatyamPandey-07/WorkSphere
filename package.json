@@ -91,7 +91,8 @@
     "prettier": "^3.9.5",
     "tailwindcss": "^4",
     "ts-jest": "^29.2.5",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "wabt": "^1.0.39"
   },
   "optionalDependencies": {
     "@next/swc-linux-x64-gnu": "16.2.10",

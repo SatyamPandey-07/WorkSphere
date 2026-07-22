@@ -680,75 +680,77 @@ async function syncAvailability() {
   isSyncingAvailability = true;
 
   try {
-    const response = await fetch("/api/availability/delta", {
-      credentials: "include",
-    });
-
-    if (!response.ok) return;
-
-    const { venues } = await response.json();
-    if (!Array.isArray(venues) || venues.length === 0) return;
-
-    const db = await openIndexedDB();
-    const tx = db.transaction("availabilityDeltas", "readwrite");
-    const store = tx.objectStore("availabilityDeltas");
-
-    const notifications = [];
-
-    for (const venue of venues) {
-      const prev = await new Promise((resolve, reject) => {
-        const req = store.get(venue.venueId);
-        req.onsuccess = () => resolve(req.result || null);
-        req.onerror = () => reject(req.error);
+    await withIdbLock(async () => {
+      const response = await fetch("/api/availability/delta", {
+        credentials: "include",
       });
 
-      const openedUp =
-        prev &&
-        (venue.count < prev.currentCount ||
-          (prev.currentStatus === "red" && venue.status !== "red") ||
-          (prev.currentStatus === "yellow" && venue.status === "green"));
+      if (!response.ok) return;
 
-      store.put({
-        venueId: venue.venueId,
-        venueName: venue.venueName,
-        currentCount: venue.count,
-        currentCapacity: venue.capacity,
-        currentStatus: venue.status,
-        timestamp: Date.now(),
-      });
+      const { venues } = await response.json();
+      if (!Array.isArray(venues) || venues.length === 0) return;
 
-      if (openedUp) {
-        notifications.push({
+      const db = await openIndexedDB();
+      const tx = db.transaction("availabilityDeltas", "readwrite");
+      const store = tx.objectStore("availabilityDeltas");
+
+      const notifications = [];
+
+      for (const venue of venues) {
+        const prev = await new Promise((resolve, reject) => {
+          const req = store.get(venue.venueId);
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => reject(req.error);
+        });
+
+        const openedUp =
+          prev &&
+          (venue.count < prev.currentCount ||
+            (prev.currentStatus === "red" && venue.status !== "red") ||
+            (prev.currentStatus === "yellow" && venue.status === "green"));
+
+        store.put({
           venueId: venue.venueId,
-          venueName: venue.venueName || "Workspace",
-          availableSeats: venue.capacity - venue.count,
+          venueName: venue.venueName,
+          currentCount: venue.count,
+          currentCapacity: venue.capacity,
+          currentStatus: venue.status,
+          timestamp: Date.now(),
         });
-      }
-    }
 
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
+        if (openedUp) {
+          notifications.push({
+            venueId: venue.venueId,
+            venueName: venue.venueName || "Workspace",
+            availableSeats: venue.capacity - venue.count,
+          });
+        }
+      }
+
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+
+      for (const n of notifications) {
+        if (self.registration && "showNotification" in self.registration) {
+          await self.registration.showNotification("Seat Available!", {
+            body: `${n.venueName} now has ${n.availableSeats} seat${n.availableSeats !== 1 ? "s" : ""} available.`,
+            icon: "/icons/icon.svg",
+            badge: "/icons/icon.svg",
+            vibrate: [200, 100, 200, 100, 200],
+            tag: `venue-availability-${n.venueId}`,
+            renotify: true,
+            requireInteraction: true,
+            data: { url: `/venues/${n.venueId}`, venueId: n.venueId },
+            actions: [
+              { action: "open", title: "Open" },
+              { action: "dismiss", title: "Dismiss" },
+            ],
+          });
+        }
+      }
     });
-
-    for (const n of notifications) {
-      if (self.registration && "showNotification" in self.registration) {
-        await self.registration.showNotification("Seat Available!", {
-          body: `${n.venueName} now has ${n.availableSeats} seat${n.availableSeats !== 1 ? "s" : ""} available.`,
-          icon: "/icons/icon.svg",
-          badge: "/icons/icon.svg",
-          vibrate: [200, 100, 200, 100, 200],
-          tag: `venue-availability-${n.venueId}`,
-          renotify: true,
-          requireInteraction: true,
-          data: { url: `/venues/${n.venueId}`, venueId: n.venueId },
-          actions: [
-            { action: "open", title: "Open" },
-            { action: "dismiss", title: "Dismiss" },
-          ],
-        });
-      }
-    }
   } catch (error) {
     console.error("[SW] Availability sync failed:", error);
   } finally {
@@ -973,13 +975,15 @@ self.addEventListener("notificationclick", (event) => {
  */
 async function updateLRURecord(url, size) {
   try {
-    const db = await openIndexedDB();
-    const tx = db.transaction("imageCacheLRU", "readwrite");
-    const store = tx.objectStore("imageCacheLRU");
-    store.put({ url, size, lastAccessed: Date.now() });
-    return new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      const tx = db.transaction("imageCacheLRU", "readwrite");
+      const store = tx.objectStore("imageCacheLRU");
+      store.put({ url, size, lastAccessed: Date.now() });
+      return new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
     });
   } catch (err) {
     console.error("[SW] Failed to update LRU record:", err);
@@ -992,18 +996,20 @@ async function updateLRURecord(url, size) {
  */
 async function touchLRURecord(url) {
   try {
-    const db = await openIndexedDB();
-    const tx = db.transaction("imageCacheLRU", "readwrite");
-    const store = tx.objectStore("imageCacheLRU");
-    const request = store.get(url);
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      const tx = db.transaction("imageCacheLRU", "readwrite");
+      const store = tx.objectStore("imageCacheLRU");
+      const request = store.get(url);
 
-    request.onsuccess = () => {
-      const record = request.result;
-      if (record) {
-        record.lastAccessed = Date.now();
-        store.put(record);
-      }
-    };
+      request.onsuccess = () => {
+        const record = request.result;
+        if (record) {
+          record.lastAccessed = Date.now();
+          store.put(record);
+        }
+      };
+    });
   } catch (err) {
     console.error("[SW] Failed to touch LRU record:", err);
   }
@@ -1022,46 +1028,51 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
   isEnforcingQuota = true;
 
   try {
-    const db = await openIndexedDB();
-    const tx = db.transaction("imageCacheLRU", "readwrite");
-    const store = tx.objectStore("imageCacheLRU");
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      const tx = db.transaction("imageCacheLRU", "readwrite");
+      const store = tx.objectStore("imageCacheLRU");
 
-    const request = store.getAll();
-    const records = await new Promise((resolve, reject) => {
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-
-    let totalSize = records.reduce((acc, r) => acc + (r.size || 0), 0);
-    const targetSize = aggressive
-      ? MAX_IMAGE_CACHE_BYTES * 0.6
-      : MAX_IMAGE_CACHE_BYTES;
-
-    if (totalSize > targetSize) {
-      // Sort by oldest first
-      records.sort((a, b) => a.lastAccessed - b.lastAccessed);
-
-      const toEvict = [];
-      for (const record of records) {
-        if (totalSize <= targetSize) break;
-
-      // Queue all IDB deletes while the transaction is still active
-      for (const record of toEvict) {
-        store.delete(record.url);
-      }
-      await new Promise((resolve, reject) => {
-        tx.oncomplete = resolve;
-        tx.onerror = () => reject(tx.error);
+      const request = store.getAll();
+      const records = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
       });
 
-      // Now remove from Cache Storage after IDB transaction completes
-      for (const record of toEvict) {
-        await cache.delete(record.url);
+      let totalSize = records.reduce((acc, r) => acc + (r.size || 0), 0);
+      const targetSize = aggressive
+        ? MAX_IMAGE_CACHE_BYTES * 0.6
+        : MAX_IMAGE_CACHE_BYTES;
+
+      if (totalSize > targetSize) {
+        // Sort by oldest first
+        records.sort((a, b) => a.lastAccessed - b.lastAccessed);
+
+        const toEvict = [];
+        for (const record of records) {
+          if (totalSize <= targetSize) break;
+          totalSize -= record.size;
+          toEvict.push(record);
+        }
+
+        // Queue all IDB deletes while the transaction is still active
+        for (const record of toEvict) {
+          store.delete(record.url);
+        }
+        await new Promise((resolve, reject) => {
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error);
+        });
+
+        // Now remove from Cache Storage after IDB transaction completes
+        for (const record of toEvict) {
+          await cache.delete(record.url);
+        }
+        console.log(
+          `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
+        );
       }
-      console.log(
-        `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
-      );
-    }
+    });
   } catch (err) {
     console.error("[SW] Failed to enforce image cache LRU quota:", err);
   } finally {

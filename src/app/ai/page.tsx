@@ -30,6 +30,7 @@ import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import {
   saveVenueOffline,
   getAllVenuesOffline,
+  withLeaderLock,
   OfflineVenue,
 } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
@@ -160,22 +161,28 @@ function AppPage() {
     };
   }, []);
 
-  // Save venues to offline storage when markers update
+  // Save venues to offline storage when markers update.
+  // Uses leader-election (#1072) so only ONE tab across all open windows
+  // persists venues — the IndexedDB data is shared per-origin.
   useEffect(() => {
     if (markers.length > 0 && isOnline) {
-      markers.forEach(async (marker) => {
-        try {
-          await saveVenueOffline({
-            id: marker.id,
-            name: marker.name,
-            latitude: marker.position.lat,
-            longitude: marker.position.lng,
-            category: marker.category,
-            address: marker.address,
-          });
-        } catch (err) {
-          console.error("[Offline] Failed to save venue:", err);
-        }
+      withLeaderLock("worksphere-venue-cache-leader", async () => {
+        await Promise.all(
+          markers.map(async (marker) => {
+            try {
+              await saveVenueOffline({
+                id: marker.id,
+                name: marker.name,
+                latitude: marker.position.lat,
+                longitude: marker.position.lng,
+                category: marker.category,
+                address: marker.address,
+              });
+            } catch (err) {
+              console.error("[Offline] Failed to save venue:", err);
+            }
+          }),
+        );
       });
     }
   }, [markers, isOnline]);

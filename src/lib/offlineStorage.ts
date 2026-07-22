@@ -47,6 +47,39 @@ export async function withWebLock<T>(
   return callback();
 }
 
+/**
+ * Leader-election Web Lock: only ONE tab across all open windows runs the callback.
+ * Other tabs skip (non-blocking) because the IndexedDB data is shared — the leader's
+ * writes are visible to all tabs on the same origin (#1072).
+ *
+ * Returns `true` if this tab won the election and the callback ran; `false` if
+ * another tab already holds the lock and work was skipped.
+ */
+export async function withLeaderLock<T>(
+  lockName: string,
+  callback: () => Promise<T>,
+): Promise<{ acquired: boolean; result?: T }> {
+  if (
+    typeof navigator !== "undefined" &&
+    "locks" in navigator &&
+    navigator.locks?.request
+  ) {
+    try {
+      return await navigator.locks.request(
+        lockName,
+        { ifAvailable: true },
+        async (lock) => {
+          if (!lock) return { acquired: false };
+          return { acquired: true, result: await callback() };
+        },
+      );
+    } catch {
+      return { acquired: false, result: await callback() };
+    }
+  }
+  return { acquired: true, result: await callback() };
+}
+
 export interface OfflineVenue {
   id: string;
   name: string;
@@ -321,25 +354,37 @@ export async function saveSearchOffline(
   query: string,
   results: OfflineVenue[],
 ): Promise<void> {
-  return withWebLock(async () => {
-    const database = await initOfflineDB();
+  // Leader-election: if another tab is already caching results for this same
+  // query, skip this write — the IndexedDB data is shared per-origin (#1072).
+  const { acquired } = await withLeaderLock(
+    `worksphere-search-cache-${query.trim().toLowerCase().slice(0, 64)}`,
+    async () => {
+      return withWebLock(async () => {
+        const database = await initOfflineDB();
 
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(["searches"], "readwrite");
-      const store = transaction.objectStore("searches");
+        await new Promise<void>((resolve, reject) => {
+          const transaction = database.transaction(["searches"], "readwrite");
+          const store = transaction.objectStore("searches");
 
-      const request = store.put({
-        query: query.toLowerCase().trim(),
-        results,
-        timestamp: Date.now(),
+          const request = store.put({
+            query: query.toLowerCase().trim(),
+            results,
+            timestamp: Date.now(),
+          });
+
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+
+        await trimSearchHistory();
       });
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-
-    await trimSearchHistory();
-  });
+    },
+  );
+  if (!acquired) {
+    console.log(
+      `[Offline] Skipping search cache write for "${query}" — another tab is already indexing`,
+    );
+  }
 }
 
 /**

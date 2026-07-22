@@ -26,6 +26,9 @@ import SiteFooter from "@/components/site-footer";
 import { TopNav } from "@/components/TopNav";
 import FAQAccordion from "@/components/ui/FAQAccordion";
 
+// 1. IMPORT YOUR NEW TEST COMPONENT HERE
+import SpatialAudioTest from "@/components/SpatialAudioTest";
+
 export default function Home() {
   const [isVisible, setIsVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
@@ -68,6 +71,11 @@ export default function Home() {
         <div
           className={`text-center max-w-5xl mx-auto pt-20 pb-16 transition-all duration-1000 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
         >
+          {/* 2. ADD YOUR TEST COMPONENT TO THE SCREEN HERE */}
+          <div className="flex justify-center mb-10 relative z-50">
+             <SpatialAudioTest />
+          </div>
+
           {/* Live badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm text-zinc-700 dark:text-white/70 mb-8 backdrop-blur-sm shadow-sm dark:shadow-none">
             <span className="relative flex h-2 w-2">

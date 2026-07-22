@@ -2,6 +2,7 @@
 const CACHE_NAME = "worksphere-v3";
 const IMAGE_CACHE_NAME = "worksphere-images-v4";
 const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
+const VIDEO_CACHE_NAME = "worksphere-video-tours-v1";
 const OFFLINE_URL = "/offline";
 const AVAILABILITY_SYNC_TAG = "availability-sync";
 const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
@@ -10,6 +11,89 @@ const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
 const MAX_IMAGE_CACHE_BYTES = 20 * 1024 * 1024;
 // Fallback size for opaque cross-origin responses where Content-Length is hidden (approx 400KB).
 const OPAQUE_RESPONSE_SIZE_ESTIMATE = 400 * 1024;
+
+/**
+ * Checks navigator.storage.estimate() before CacheStorage writes (e.g. pre-fetching venue video tours).
+ * Prevents QuotaExceededError crashes on mobile Chrome/Android.
+ */
+async function hasSufficientStorageQuota(requiredBytes = 0) {
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.storage &&
+    typeof navigator.storage.estimate === "function"
+  ) {
+    try {
+      const estimate = await navigator.storage.estimate();
+      if (estimate.quota !== undefined && estimate.usage !== undefined) {
+        const availableBytes = estimate.quota - estimate.usage;
+        const minRequiredBuffer = Math.max(requiredBytes, 5 * 1024 * 1024);
+        return availableBytes >= minRequiredBuffer;
+      }
+    } catch (err) {
+      console.warn("[SW] Failed to estimate storage quota:", err);
+    }
+  }
+  return true;
+}
+
+/**
+ * Pre-fetches venue video tour URLs after checking navigator.storage.estimate().
+ * Halts safely if remaining storage quota is low to avoid QuotaExceededError crashes.
+ */
+async function prefetchVideoTours(urls) {
+  if (!Array.isArray(urls) || urls.length === 0) return;
+
+  const hasQuota = await hasSufficientStorageQuota(10 * 1024 * 1024);
+  if (!hasQuota) {
+    console.warn(
+      "[SW] Insufficient storage quota before pre-fetching video tours. Skipping batch.",
+    );
+    return;
+  }
+
+  try {
+    const cache = await caches.open(VIDEO_CACHE_NAME);
+    for (const url of urls) {
+      const canFit = await hasSufficientStorageQuota(5 * 1024 * 1024);
+      if (!canFit) {
+        console.warn(
+          `[SW] Stopping video tour pre-fetch for ${url}: low storage quota remaining.`,
+        );
+        break;
+      }
+
+      try {
+        const response = await fetch(url);
+        if (response.ok) {
+          const contentLength = response.headers.get("content-length");
+          const size = contentLength
+            ? parseInt(contentLength, 10)
+            : 5 * 1024 * 1024;
+
+          const exactQuotaCheck = await hasSufficientStorageQuota(size);
+          if (!exactQuotaCheck) {
+            console.warn(
+              `[SW] Skipping video tour cache write for ${url}: required ${size} bytes exceeds quota.`,
+            );
+            continue;
+          }
+
+          await cache.put(url, response.clone());
+        }
+      } catch (err) {
+        if (err.name === "QuotaExceededError") {
+          console.warn(
+            "[SW] QuotaExceededError caught during video tour pre-fetch. Halting pre-fetch queue.",
+          );
+          break;
+        }
+        console.error("[SW] Error pre-fetching video tour:", url, err);
+      }
+    }
+  } catch (err) {
+    console.error("[SW] Failed to open video tour cache:", err);
+  }
+}
 
 // Assets to cache on install
 const PRECACHE_ASSETS = ["/", "/offline", "/icons/icon.svg", "/manifest.json"];
@@ -54,6 +138,7 @@ self.addEventListener("activate", (event) => {
                 name !== CACHE_NAME &&
                 name !== IMAGE_CACHE_NAME &&
                 name !== MAP_TILE_CACHE_NAME &&
+                name !== VIDEO_CACHE_NAME &&
                 !name.endsWith("-installing"),
             )
             .map((name) => caches.delete(name)),
@@ -768,6 +853,23 @@ function removePendingAction(db, typeOrId, id) {
     request.onsuccess = () => resolve();
   });
 }
+
+// Service Worker Client Messages (e.g. pre-fetching venue video tours, skip waiting)
+self.addEventListener("message", (event) => {
+  if (!event.data) return;
+
+  if (event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+
+  if (
+    event.data.type === "PREFETCH_VIDEO_TOURS" ||
+    event.data.type === "PREFETCH_VIDEOS"
+  ) {
+    const urls = event.data.urls || (event.data.url ? [event.data.url] : []);
+    event.waitUntil(prefetchVideoTours(urls));
+  }
+});
 
 // Push notifications
 self.addEventListener("push", (event) => {

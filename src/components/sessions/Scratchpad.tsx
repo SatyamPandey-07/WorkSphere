@@ -5,7 +5,8 @@ import * as Y from "yjs";
 import usePartySocket from "partysocket/react";
 import { CryptoManager, bufferToBase64, base64ToBuffer } from "@/lib/e2ee/CryptoManager";
 import { KeyStore } from "@/lib/e2ee/KeyStore";
-import { Lock, Unlock, Key, Loader2 } from "lucide-react";
+import { Lock, Unlock, Key, Loader2, Share2 } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
 import {
   generateKeyPair,
   exportPublicKey,
@@ -24,6 +25,7 @@ export default function Scratchpad({ sessionId }: Props) {
   const [hasKey, setHasKey] = useState(false);
   const [isNegotiating, setIsNegotiating] = useState(false);
   const [text, setText] = useState("");
+  const { toast } = useToast();
   
   const clientId = useRef(crypto.randomUUID());
   const ecdhKeyPair = useRef<KeyPair | null>(null);
@@ -183,6 +185,15 @@ export default function Scratchpad({ sessionId }: Props) {
       doc.off("update", handleUpdate);
     };
   }, [socket, hasKey]);
+  const handleShare = async () => {
+  try {
+    await navigator.clipboard.writeText(window.location.href);
+    toast("Scratchpad link copied to clipboard!", "success");
+  } catch (error) {
+    console.error("Failed to copy scratchpad link", error);
+    toast("Failed to copy scratchpad link.", "error");
+  }
+};
 
 
 
@@ -248,13 +259,24 @@ export default function Scratchpad({ sessionId }: Props) {
           <Unlock className="h-4 w-4" />
           <span className="text-sm font-medium">E2EE Scratchpad</span>
         </div>
-        <button
-          onClick={handleClearKey}
-          className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
-        >
-          <Key className="h-3 w-3" />
-          Clear Key
-        </button>
+        <div className="flex items-center gap-2">
+  <button
+    onClick={handleShare}
+    className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
+  >
+    <Share2 className="h-3 w-3" />
+    Share
+  </button>
+
+  <button
+    onClick={handleClearKey}
+    className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
+  >
+    <Key className="h-3 w-3" />
+    Clear Key
+  </button>
+</div>
+        
       </div>
       <div className="flex-1 p-4">
         <textarea

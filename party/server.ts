@@ -27,6 +27,8 @@ export default class WorkspaceServer implements Party.Server {
   // keyed by connection id so we can always find & clear a user's previous
   // check-in on check-in/checkout/disconnect without scanning every venue.
   private seatCheckins = new Map<string, SeatCheckin>();
+  private serverEpoch = Date.now();
+  private sequenceId = 0;
 
   constructor(readonly room: Party.Room) {}
 
@@ -86,8 +88,14 @@ export default class WorkspaceServer implements Party.Server {
     // Bring newly connected clients up to speed on current seat availability
     // (#703) so rings render correctly before any new check-in event fires.
     if (this.seatCheckins.size > 0) {
+      this.sequenceId++;
       conn.send(
-        JSON.stringify({ type: "seat_snapshot", venues: this.seatSummary() }),
+        JSON.stringify({
+          type: "seat_snapshot",
+          venues: this.seatSummary(),
+          epoch: this.serverEpoch,
+          sequenceId: this.sequenceId,
+        }),
       );
     }
 
@@ -144,6 +152,14 @@ export default class WorkspaceServer implements Party.Server {
       // Clerk userId we verified on connect — never trust the client field alone.
       if (parsed.type === "webrtc-signal") {
         if (!state.userId || parsed.from !== state.userId) return;
+        this.room.broadcast(message, [sender.id]);
+        return;
+      }
+
+      // Spatial audio listener position updates are high-frequency ephemeral state,
+      // allowed for all viewers/editors, but `userId` must match verified connection state.
+      if (parsed.type === "spatial_listener_update") {
+        if (!state.userId || parsed.userId !== state.userId) return;
         this.room.broadcast(message, [sender.id]);
         return;
       }
@@ -234,6 +250,7 @@ export default class WorkspaceServer implements Party.Server {
   private broadcastSeatUpdate(venueId: string) {
     const count = this.countForVenue(venueId);
     const capacity = this.capacityForVenue(venueId);
+    this.sequenceId++;
     this.room.broadcast(
       JSON.stringify({
         type: "seat_update",
@@ -241,6 +258,8 @@ export default class WorkspaceServer implements Party.Server {
         count,
         capacity,
         status: seatStatusFor(count, capacity),
+        epoch: this.serverEpoch,
+        sequenceId: this.sequenceId,
       }),
     );
   }

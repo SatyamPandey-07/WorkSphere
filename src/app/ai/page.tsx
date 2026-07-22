@@ -4,8 +4,13 @@ import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
-import { EnhancedChatbot } from "@/components/EnhancedChatbot";
-import { VenueRatingDialog } from "@/components/VenueRatingDialog";
+const VenueRatingDialog = dynamic(
+  () =>
+    import("@/components/VenueRatingDialog").then(
+      (mod) => mod.VenueRatingDialog,
+    ),
+  { ssr: false },
+);
 import {
   ChatErrorBoundary,
   MapErrorBoundary,

@@ -174,11 +174,11 @@ export function useCanvasWhiteboard(
     um.on("stack-item-popped", updateUndoState);
     updateUndoState();
 
-    const awareness = newProvider.awareness;
+    const awareness = newProvider?.awareness;
     const userName = options?.userName ?? "Anonymous";
     const userColor = options?.userColor ?? getDefaultColor(0);
 
-    awareness.setLocalState({
+    awareness?.setLocalState({
       x: 0,
       y: 0,
       name: userName,
@@ -186,6 +186,7 @@ export function useCanvasWhiteboard(
     });
 
     const handleAwarenessChange = () => {
+      if (!awareness) return;
       const states = Array.from(awareness.getStates().entries());
       const cursors: RemoteCursor[] = [];
       for (const [clientId, state] of states) {
@@ -203,13 +204,13 @@ export function useCanvasWhiteboard(
       }
       setRemoteCursors(cursors);
     };
-    awareness.on("change", handleAwarenessChange);
+    awareness?.on("change", handleAwarenessChange);
 
     return () => {
       shapes.unobserve(updateSnapshots);
-      awareness.off("change", handleAwarenessChange);
+      awareness?.off("change", handleAwarenessChange);
       um.destroy();
-      newProvider.disconnect();
+      newProvider?.disconnect();
       doc.destroy();
       shapesRef.current = null;
       undoManagerRef.current = null;

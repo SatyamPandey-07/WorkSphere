@@ -8,7 +8,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@clerk/nextjs";
-import usePartySocket from "partysocket/react";
+import usePartySocket from "@/hooks/usePartySocketReconnect";
 import YProvider from "y-partykit/provider";
 import * as Y from "yjs";
 
@@ -248,6 +248,11 @@ export function useMultiplayerSession(roomId: string | null) {
   const [yDoc, setYDoc] = useState<Y.Doc | null>(null);
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     getToken().then(setToken).catch(console.error);
@@ -276,9 +281,11 @@ export function useMultiplayerSession(roomId: string | null) {
   }, [roomId, token]);
 
   // Use standard websocket for simple presence broadcast
+  // startClosed prevents WebSocket connection during SSR before hydration
   const socket = usePartySocket({
     host: "127.0.0.1:1999",
-    room: roomId || "default",
+    room: isMounted && roomId ? roomId : "placeholder",
+    startClosed: !isMounted,
     query: token ? { token } : undefined,
     onMessage() {
       // handled in component

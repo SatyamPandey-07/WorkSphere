@@ -282,7 +282,7 @@ Required
 
 ## Confirm Workspace Booking
 
-Create a workspace reservation, persist it in the database, generate a receipt PDF, and email it to the customer.
+Create a seat/desk reservation at a selected venue, persist it in the database ledger, generate a secure receipt PDF, and dispatch it to the customer's email.
 
 ### Endpoint
 
@@ -299,7 +299,278 @@ Required
 ```json
 {
   "venue": {
-    // Continue adding your booking schema here...
+    "id": "cldh1x89z000008j0g2z1g2p4",
+    "name": "Central Library Hub",
+    "address": "476 5th Ave, New York, NY 10018",
+    "category": "library",
+    "latitude": 40.7128,
+    "longitude": -74.006,
+    "placeId": "ChIJN1t_tDeuEmsRUsoyG83VSY4"
+  },
+  "date": "2026-07-15",
+  "time": "14:00 - 18:00",
+  "customerEmail": "user@example.com",
+  "customerPhone": "+15550199"
+}
+```
+
+### Success Response (200 OK)
+
+```json
+{
+  "success": true,
+  "bookingId": "cldh3b89z000008j0g4z7t9p0",
+  "confirmationId": "WS-#258394"
+}
+```
+
+### Side Effects
+
+Booking confirmation automatically performs the following actions:
+
+- Creates or updates the venue record if it does not already exist.
+- Creates a booking transaction associated with the authenticated user.
+- Generates an A4 PDF receipt using **pdf-lib**.
+- Sends the receipt as an email attachment using **nodemailer** with Gmail SMTP.
+
+---
+
+## Fetch Booking History
+
+Retrieve a chronological list of past and upcoming bookings made by the authenticated user.
+
+### Endpoint
+
+```http
+GET /api/bookings/history
+```
+
+### Authentication
+
+Required
+
+### Success Response (200 OK)
+
+```json
+{
+  "bookings": [
+    {
+      "id": "cldh3b89z000008j0g4z7t9p0",
+      "userId": "user_2NxF9...",
+      "venueId": "cldh1x89z000008j0g2z1g2p4",
+      "date": "2026-07-15",
+      "time": "14:00 - 18:00",
+      "customerEmail": "user@example.com",
+      "customerPhone": "+15550199",
+      "status": "CONFIRMED",
+      "confirmationId": "WS-#258394",
+      "createdAt": "2026-07-10T11:00:00.000Z",
+      "venue": {
+        "name": "Central Library Hub",
+        "category": "library",
+        "address": "476 5th Ave, New York, NY 10018"
+      }
+    }
+  ]
+}
+```
+
+---
+
+## Export Receipt Raw Transaction Metadata (JSON)
+
+Export and download the raw booking transaction payload directly from the receipt preview modal.
+
+### Endpoint
+
+```http
+GET /api/receipts/{bookingId}
+```
+
+> Alternatively, this may be triggered through the Receipt Modal Client Export.
+
+### Authentication
+
+Required
+
+### Export Format
+
+| Property | Value |
+|----------|-------|
+| Payload | Pretty-printed JSON (`JSON.stringify(transactionPayload, null, 2)`) |
+| MIME Type | `application/json` |
+| Filename | `receipt-{bookingId}.json` |
+
+Example:
+
+```
+receipt-cldh3b89z000008j0g4z7t9p0.json
+```
+
+### Success Response (200 OK)
+
+```json
+{
+  "receiptId": "cldh3b89z000008j0g4z7t9p0",
+  "confirmationId": "WS-#258394",
+  "status": "CONFIRMED",
+  "date": "2026-07-15",
+  "time": "14:00 - 18:00",
+  "customer": {
+    "email": "user@example.com",
+    "phone": "+15550199"
+  },
+  "venue": {
+    "id": "cldh1x89z000008j0g2z1g2p4",
+    "name": "Central Library Hub",
+    "address": "476 5th Ave, New York, NY 10018",
+    "category": "library"
+  },
+  "exportedAt": "2026-07-22T06:18:10.000Z"
+}
+```
+
+---
+
+# 4. Real-Time Server-Sent Events (SSE) Streams
+
+WorkSphere supports real-time updates using **Server-Sent Events (SSE)** over HTTP.
+
+This enables lightweight, one-way event streaming that works well on serverless platforms where WebSockets are unavailable.
+
+---
+
+## Listen to Live Updates
+
+Open a persistent HTTP connection to receive live broadcasts of venue reviews, edits, and ratings.
+
+### Endpoint
+
+```http
+GET /api/venues/updates
+```
+
+### Response Headers
+
+```http
+Content-Type: text/event-stream
+Cache-Control: no-cache
+Connection: keep-alive
+```
+
+### Query Parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `venueId` | Filter updates for one or more venues. Multiple `venueId` parameters are allowed. |
+
+Example:
+
+```text
+/api/venues/updates?venueId=id1&venueId=id2
+```
+
+---
+
+## Event Types
+
+### 1. Connection Established
+
+Sent immediately after a successful SSE connection.
+
+```text
+data: {
+  "type": "connected",
+  "timestamp": 1783634400000
+}
+```
+
+---
+
+### 2. Heartbeat Event
+
+Sent every **30 seconds** to keep the connection alive and prevent proxies or load balancers from closing idle connections.
+
+```text
+data: {
+  "type": "heartbeat",
+  "count": 1,
+  "venueIds": [
+    "cldh1x89z000008j0g2z1g2p4"
+  ],
+  "timestamp": 1783634430000
+}
+```
+
+---
+
+### 3. Venue Update Event
+
+Triggered whenever a venue is rated, edited, or updated.
+
+```text
+data: {
+  "type": "rating_updated",
+  "venueId": "cldh1x89z000008j0g2z1g2p4",
+  "data": {
+    "wifiQuality": 5,
+    "noiseLevel": "quiet"
+  },
+  "timestamp": 1783634450000
+}
+```
+
+---
+
+## Broadcast Venue Update
+
+Broadcast an update to all connected SSE clients.
+
+Typically invoked internally after venue updates or webhook events.
+
+### Endpoint
+
+```http
+POST /api/venues/updates
+```
+
+### Authentication
+
+Public
+
+### Request Body
+
+```json
+{
+  "type": "rating_updated",
+  "venueId": "cldh1x89z000008j0g2z1g2p4",
+  "data": {
+    "wifiQuality": 5,
+    "hasOutlets": true,
+    "noiseLevel": "quiet"
   }
 }
 ```
+
+### Success Response (200 OK)
+
+```json
+{
+  "success": true,
+  "message": "Update broadcasted",
+  "update": {
+    "type": "rating_updated",
+    "venueId": "cldh1x89z000008j0g2z1g2p4",
+    "data": {
+      "wifiQuality": 5,
+      "hasOutlets": true,
+      "noiseLevel": "quiet"
+    },
+    "timestamp": 1783634480000
+  }
+}
+```
+
+---
+
+# End of API Reference

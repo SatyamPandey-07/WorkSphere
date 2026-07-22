@@ -56,3 +56,84 @@ export function attachJitteredBackoff<T extends object>(socket: T): T {
   s.__worksphereJitter = true;
   return socket;
 }
+
+export interface RegionProbeConfig {
+  regions: string[];
+  pingTimeoutMs?: number;
+}
+
+export class PartySocketReconnectManager {
+  private retryCount = 0;
+  private config: PartyReconnectOptions & RegionProbeConfig;
+  public currentRegion: string | null = null;
+
+  constructor(config: Partial<PartyReconnectOptions> & RegionProbeConfig) {
+    this.config = {
+      ...PARTY_SOCKET_RECONNECT_OPTIONS,
+      ...config,
+      pingTimeoutMs: config.pingTimeoutMs ?? 3000,
+    };
+  }
+
+  async probeRegion(region: string): Promise<number> {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      this.config.pingTimeoutMs,
+    );
+    const start = Date.now();
+    try {
+      const url = region.startsWith("http") ? region : `https://${region}`;
+      await fetch(url, {
+        method: "HEAD",
+        signal: controller.signal,
+        mode: "no-cors",
+      });
+      return Date.now() - start;
+    } catch {
+      return Infinity;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async getBestRegion(): Promise<string | null> {
+    if (this.config.regions.length === 0) return null;
+    if (this.config.regions.length === 1) return this.config.regions[0];
+
+    const latencies = await Promise.all(
+      this.config.regions.map(async (r) => {
+        const lat = await this.probeRegion(r);
+        return { region: r, lat };
+      }),
+    );
+
+    const healthy = latencies.filter((l) => l.lat < Infinity);
+    if (healthy.length === 0) return null;
+
+    healthy.sort((a, b) => a.lat - b.lat);
+    return healthy[0].region;
+  }
+
+  async onDisconnect(): Promise<string | null> {
+    this.retryCount++;
+    if (this.retryCount > this.config.maxRetries) {
+      return null;
+    }
+
+    const delay = jitteredReconnectDelay(this.retryCount, this.config);
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    const bestRegion = await this.getBestRegion();
+    if (bestRegion) {
+      this.currentRegion = bestRegion;
+    }
+    return bestRegion;
+  }
+
+  onConnect(): void {
+    this.retryCount = 0;
+  }
+}

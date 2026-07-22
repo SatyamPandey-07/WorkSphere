@@ -4,6 +4,7 @@ import { useState, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { Upload, Loader2, Image as ImageIcon } from "lucide-react";
 import Image from "next/image";
+import { notifyAvatarUpdated } from "@/lib/avatar-events";
 
 const HEIC_EXTENSIONS = [".heic", ".heif"];
 const isHeicFile = (file: File) =>
@@ -28,6 +29,7 @@ export function CustomAvatarUpload() {
   const { user, isLoaded } = useUser();
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isLoaded || !user) return null;
@@ -58,10 +60,17 @@ export function CustomAvatarUpload() {
     }
 
     setError(null);
+    setSuccess(null);
     setIsUploading(true);
 
     try {
       await user.setProfileImage({ file });
+
+      // Reload Clerk's active user resource so every useUser() consumer receives
+      // the new image URL immediately instead of waiting for a hard refresh.
+      await user.reload();
+      notifyAvatarUpdated();
+      setSuccess("Profile picture updated.");
     } catch (err: any) {
       console.error("Failed to upload image:", err);
       setError(
@@ -128,6 +137,11 @@ export function CustomAvatarUpload() {
               )}
             </button>
             {error && <span className="text-sm text-red-500">{error}</span>}
+            {success && (
+              <span className="text-sm text-emerald-600 dark:text-emerald-400">
+                {success}
+              </span>
+            )}
           </div>
         </div>
       </div>

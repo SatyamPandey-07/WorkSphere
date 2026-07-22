@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useUser, UserButton } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
+import { ReactiveUserButton } from "@/components/ReactiveUserButton";
 import { Coffee, LayoutGrid, MapPin, Menu, Shield, X } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -107,7 +108,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                     Admin
                   </Link>
                   <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
-                    <UserButton
+                    <ReactiveUserButton
                       userProfileMode="navigation"
                       userProfileUrl="/user-profile"
                     />

@@ -988,6 +988,7 @@ async function updateLRURecord(url, size) {
 
 /**
  * Touches an existing record to update its lastAccessed time (True LRU).
+ * Returns a promise that resolves when the IndexedDB transaction completes.
  */
 async function touchLRURecord(url) {
   try {
@@ -1040,15 +1041,22 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
       // Sort by oldest first
       records.sort((a, b) => a.lastAccessed - b.lastAccessed);
 
-      let evictedCount = 0;
+      const toEvict = [];
       for (const record of records) {
         if (totalSize <= targetSize) break;
 
-        await cache.delete(record.url);
+      // Queue all IDB deletes while the transaction is still active
+      for (const record of toEvict) {
         store.delete(record.url);
+      }
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
 
-        totalSize -= record.size || 0;
-        evictedCount++;
+      // Now remove from Cache Storage after IDB transaction completes
+      for (const record of toEvict) {
+        await cache.delete(record.url);
       }
       console.log(
         `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,

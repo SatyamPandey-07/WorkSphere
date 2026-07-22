@@ -285,7 +285,7 @@ self.addEventListener("fetch", (event) => {
                       await enforceImageCacheQuota(cache, true);
 
                       try {
-                        await cache.put(event.request, networkResponse.clone());
+                        await cache.put(event.request, responseToCache);
                         await updateLRURecord(event.request.url, size);
                       } catch (retryErr) {
                         console.error(
@@ -997,22 +997,13 @@ async function touchLRURecord(url) {
     const store = tx.objectStore("imageCacheLRU");
     const request = store.get(url);
 
-    await new Promise((resolve, reject) => {
-      request.onsuccess = () => {
-        const record = request.result;
-        if (record) {
-          record.lastAccessed = Date.now();
-          store.put(record);
-        }
-        resolve();
-      };
-      request.onerror = () => reject(request.error);
-    });
-
-    await new Promise((resolve, reject) => {
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
+    request.onsuccess = () => {
+      const record = request.result;
+      if (record) {
+        record.lastAccessed = Date.now();
+        store.put(record);
+      }
+    };
   } catch (err) {
     console.error("[SW] Failed to touch LRU record:", err);
   }
@@ -1053,9 +1044,6 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
       const toEvict = [];
       for (const record of records) {
         if (totalSize <= targetSize) break;
-        toEvict.push(record);
-        totalSize -= record.size || 0;
-      }
 
       // Queue all IDB deletes while the transaction is still active
       for (const record of toEvict) {
@@ -1070,9 +1058,8 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
       for (const record of toEvict) {
         await cache.delete(record.url);
       }
-
       console.log(
-        `[SW] True LRU: Evicted ${toEvict.length} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
+        `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
       );
     }
   } catch (err) {

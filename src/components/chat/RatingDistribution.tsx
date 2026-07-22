@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Star, Wifi, Zap, Volume2, X } from "lucide-react";
 
 interface Review {
@@ -32,6 +32,12 @@ function MetricChart({
   data: ChartDataPoint[];
   total: number;
 }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setMounted(true), 50);
+    return () => clearTimeout(timer);
+  }, []);
+
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
 
@@ -66,6 +72,10 @@ function MetricChart({
           {chartItems.map((item, i) => {
             if (item.value === 0) return null;
 
+            const dasharray = mounted
+              ? `${item.strokeLength} ${circumference - item.strokeLength}`
+              : `0 ${circumference}`;
+
             return (
               <circle
                 key={i}
@@ -75,8 +85,9 @@ function MetricChart({
                 fill="transparent"
                 stroke={item.color}
                 strokeWidth="12"
-                strokeDasharray={`${item.strokeLength} ${circumference - item.strokeLength}`}
+                strokeDasharray={dasharray}
                 strokeDashoffset={-item.offset}
+                className="transition-all duration-1000 ease-out"
               />
             );
           })}
@@ -100,29 +111,18 @@ function MetricChart({
         {data.map((item, i) => {
           const pct = total === 0 ? 0 : Math.round((item.value / total) * 100);
           return (
-            <div key={i} className="flex items-center justify-between">
-              <div className="flex items-center gap-2 min-w-0">
+            <div key={i} className="flex items-center justify-between group">
+              <div className="flex items-center gap-2">
                 <div
-                  className="w-3 h-3 rounded-full shrink-0"
+                  className="w-3 h-3 rounded-full shadow-sm transition-transform group-hover:scale-110"
                   style={{ backgroundColor: item.color }}
                 />
                 <span className="text-xs font-bold text-zinc-600 dark:text-zinc-300 flex items-center gap-1">
                   {item.label} {item.icon}
                 </span>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <div className="w-20 h-2 bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full rounded-full origin-left"
-                    style={{
-                      backgroundColor: item.color,
-                      transform: `scaleX(${pct / 100})`,
-                    }}
-                  />
-                </div>
-                <div className="w-16 text-right text-xs font-black text-zinc-500">
-                  {pct}% ({item.value})
-                </div>
+              <div className="text-xs font-black text-zinc-500">
+                {pct}% ({item.value})
               </div>
             </div>
           );
@@ -178,12 +178,12 @@ export function RatingDistribution({
   });
 
   return (
-    <div className="bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800 rounded-2xl p-5 mt-4">
+    <div className="bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800 rounded-2xl p-5 mt-4 animate-in fade-in slide-in-from-top-4 duration-300">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-2">
           {activeMetric === "wifi" && (
             <>
-              <Wifi className="w-5 h-5 text-blue-500" />
+              <Wifi className="w-5 h-5 text-blue-500 animate-pulse" />
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
                 WiFi Quality Distribution
               </h3>
@@ -191,7 +191,7 @@ export function RatingDistribution({
           )}
           {activeMetric === "outlets" && (
             <>
-              <Zap className="w-5 h-5 text-orange-500" />
+              <Zap className="w-5 h-5 text-orange-500 animate-pulse" />
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
                 Power Outlet Distribution
               </h3>
@@ -199,7 +199,7 @@ export function RatingDistribution({
           )}
           {activeMetric === "noise" && (
             <>
-              <Volume2 className="w-5 h-5 text-pink-500" />
+              <Volume2 className="w-5 h-5 text-pink-500 animate-pulse" />
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
                 Quietness Distribution
               </h3>

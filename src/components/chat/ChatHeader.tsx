@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { ReactiveUserButton } from "@/components/ReactiveUserButton";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "../ThemeToggle";
@@ -372,6 +373,8 @@ export function ChatHeader({
           </button>
 
           <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
+
+          <NotificationBell />
 
           {/* User Profile */}
           <div className="flex items-center gap-2 p-1 pl-3 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">

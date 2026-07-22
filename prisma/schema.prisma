@@ -689,6 +689,7 @@ model PushNotificationLog {
   body      String
   status    String
   error     String?
+  read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
   @@index([createdAt])

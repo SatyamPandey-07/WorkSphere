@@ -6,6 +6,7 @@ import { useUser } from "@clerk/nextjs";
 import { ReactiveUserButton } from "@/components/ReactiveUserButton";
 import { Coffee, LayoutGrid, MapPin, Menu, Shield, X } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { NotificationBell } from "@/components/NotificationBell";
 
 interface TopNavProps {
   hideAuth?: boolean;
@@ -107,6 +108,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                     <Shield className="w-4 h-4" />
                     Admin
                   </Link>
+                  <NotificationBell />
                   <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
                     <ReactiveUserButton
                       userProfileMode="navigation"

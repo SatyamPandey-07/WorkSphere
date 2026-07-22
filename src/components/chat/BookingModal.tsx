@@ -24,6 +24,7 @@ import { useState, useEffect, useRef } from "react";
 import confetti from "canvas-confetti";
 import { Venue } from "./ChatMessages";
 import { trackEvent } from "@/lib/analytics";
+import { ReceiptVerificationModal } from "@/components/receipt/ReceiptVerificationModal";
 
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
@@ -88,6 +89,7 @@ export function BookingModal({
   const [includeNotes, setIncludeNotes] = useState(false);
   const [showLogo, setShowLogo] = useState(true);
   const [dateFilter, setDateFilter] = useState("all");
+  const [verifyModalOpen, setVerifyModalOpen] = useState(false);
 
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -1108,6 +1110,15 @@ export function BookingModal({
                   Cancel
                 </button>
                 <button
+                  onClick={() => {
+                    confirmDownloadSingle();
+                    setVerifyModalOpen(true);
+                  }}
+                  className="py-3 px-4 border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
+                >
+                  Verify
+                </button>
+                <button
                   onClick={confirmDownloadSingle}
                   className="flex-1 py-3 bg-[var(--primary-accent)] hover:opacity-90 text-white rounded-xl text-xs font-black uppercase tracking-widest transition-colors"
                 >
@@ -1118,6 +1129,10 @@ export function BookingModal({
           </div>
         )}
       </div>
+      <ReceiptVerificationModal
+        open={verifyModalOpen}
+        onClose={() => setVerifyModalOpen(false)}
+      />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import ScreenSharePanel from "@/components/sessions/ScreenSharePanel";
+import Scratchpad from "@/components/sessions/Scratchpad";
 
 type Props = {
   session: {
@@ -174,6 +175,10 @@ export default function SessionDetailClient({ session }: Props) {
               hostId={session.host.id}
               currentUserId={user?.id}
             />
+
+            <div className="mt-8">
+              <Scratchpad sessionId={session.slug} />
+            </div>
           </section>
 
           <aside className="space-y-6">

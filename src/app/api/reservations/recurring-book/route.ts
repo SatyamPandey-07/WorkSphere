@@ -209,8 +209,6 @@ export async function POST(request: NextRequest) {
           typeof body.customerPhone === "string" ? body.customerPhone : null,
         confirmationId,
         status: "CONFIRMED",
-        recurringGroupId,
-        frequency,
       },
     });
 

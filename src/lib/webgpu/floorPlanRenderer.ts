@@ -659,13 +659,13 @@ export class WebGPUFloorPlanRenderer {
       size: mesh.vertices.byteLength,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.vertexBuffer, 0, mesh.vertices);
+    this.device.queue.writeBuffer(this.vertexBuffer!, 0, mesh.vertices as unknown as BufferSource);
 
     this.indexBuffer = this.device.createBuffer({
       size: mesh.indices.byteLength,
       usage: BufferUsage.INDEX | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.indexBuffer, 0, mesh.indices);
+    this.device.queue.writeBuffer(this.indexBuffer!, 0, mesh.indices as unknown as BufferSource);
   }
 
   render(): void {

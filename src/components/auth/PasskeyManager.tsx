@@ -17,6 +17,8 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle2,
+  RefreshCw,
+  Clock,
 } from "lucide-react";
 import { useCsrfToken } from "@/hooks/useCsrfToken";
 
@@ -27,15 +29,32 @@ export interface PasskeyItem {
   deviceType: string;
   backedUp: boolean;
   transports: string[];
+  attestationFormat?: string;
   createdAt: string;
   lastUsedAt: string;
+  expiresAt: string;
+}
+
+export interface RotationStatus {
+  credentialId: string;
+  name: string;
+  expiresAt: string;
+  isExpired: boolean;
+  daysUntilExpiry: number;
+  needsRotation: boolean;
+  lastUsedAt: string;
+  createdAt: string;
 }
 
 export function PasskeyManager() {
   useCsrfToken();
   const [passkeys, setPasskeys] = useState<PasskeyItem[]>([]);
+  const [rotationStatuses, setRotationStatuses] = useState<RotationStatus[]>(
+    [],
+  );
   const [loading, setLoading] = useState(true);
   const [registering, setRegistering] = useState(false);
+  const [cleaningUp, setCleaningUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isWebAuthnSupported, setIsWebAuthnSupported] = useState(false);
@@ -51,10 +70,19 @@ export function PasskeyManager() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/auth/passkey/credentials");
-      if (!res.ok) throw new Error("Failed to load passkeys");
-      const data = await res.json();
-      setPasskeys(data.credentials || []);
+      const [credRes, rotRes] = await Promise.all([
+        fetch("/api/auth/passkey/credentials"),
+        fetch("/api/auth/passkey/rotation"),
+      ]);
+
+      if (!credRes.ok) throw new Error("Failed to load passkeys");
+      const credData = await credRes.json();
+      setPasskeys(credData.credentials || []);
+
+      if (rotRes.ok) {
+        const rotData = await rotRes.json();
+        setRotationStatuses(rotData.credentials || []);
+      }
     } catch (err: unknown) {
       console.error(err);
       setError("Could not load your registered passkeys.");
@@ -161,6 +189,34 @@ export function PasskeyManager() {
     }
   };
 
+  const handleCleanupExpired = async () => {
+    try {
+      setCleaningUp(true);
+      setError(null);
+      const res = await fetch("/api/auth/passkey/rotation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cleanup" }),
+      });
+      if (!res.ok) throw new Error("Failed to cleanup expired passkeys");
+      const data = await res.json();
+      setSuccess(
+        data.deletedCount > 0
+          ? `Removed ${data.deletedCount} expired passkey(s).`
+          : "No expired passkeys found.",
+      );
+      await fetchPasskeys();
+    } catch (err: unknown) {
+      console.error(err);
+      setError("Failed to cleanup expired passkeys.");
+    } finally {
+      setCleaningUp(false);
+    }
+  };
+
+  const getRotationInfo = (credentialId: string) =>
+    rotationStatuses.find((r) => r.credentialId === credentialId);
+
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 p-6 shadow-sm">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-zinc-200 dark:border-zinc-800">
@@ -228,6 +284,30 @@ export function PasskeyManager() {
         />
       </div>
 
+      {/* Rotation status banner */}
+      {rotationStatuses.some((r) => r.needsRotation) && (
+        <div className="mt-4 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-between gap-3 text-sm">
+          <div className="flex items-center gap-3">
+            <Clock className="h-5 w-5 shrink-0" />
+            <span>
+              Some passkeys are due for rotation (90-day security policy).
+            </span>
+          </div>
+          <button
+            onClick={handleCleanupExpired}
+            disabled={cleaningUp}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-700 dark:text-amber-300 font-medium text-xs transition-colors disabled:opacity-50"
+          >
+            {cleaningUp ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3" />
+            )}
+            Cleanup Expired
+          </button>
+        </div>
+      )}
+
       {/* List of Passkeys */}
       <div className="mt-6">
         {loading ? (
@@ -292,11 +372,39 @@ export function PasskeyManager() {
                             <ShieldCheck className="h-3 w-3" /> Synced Passkey
                           </span>
                         )}
+                        {(() => {
+                          const rot = getRotationInfo(pk.id);
+                          if (!rot) return null;
+                          if (rot.isExpired) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+                                Expired
+                              </span>
+                            );
+                          }
+                          if (rot.needsRotation) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                <Clock className="h-3 w-3" />
+                                {rot.daysUntilExpiry}d left
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                              {rot.daysUntilExpiry}d left
+                            </span>
+                          );
+                        })()}
                       </div>
                     )}
                     <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
                       Added on {new Date(pk.createdAt).toLocaleDateString()} •
                       Last used {new Date(pk.lastUsedAt).toLocaleDateString()}
+                      {pk.attestationFormat &&
+                        pk.attestationFormat !== "none" && (
+                          <> • Attestation: {pk.attestationFormat}</>
+                        )}
                     </p>
                   </div>
                 </div>

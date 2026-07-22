@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { ReceiptVerificationModal } from "@/components/receipt/ReceiptVerificationModal";
 
 interface Badge {
   id: string;
@@ -77,6 +78,7 @@ export default function AnalyticsDashboard() {
   const [data, setData] = useState<UserAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [verifyModalOpen, setVerifyModalOpen] = useState(false);
 
   const fetchUserStats = async () => {
     setLoading(true);
@@ -91,7 +93,7 @@ export default function AnalyticsDashboard() {
     }
   };
 
-  const handleDownloadReceipt = (booking: {
+  const handleDownloadReceipt = async (booking: {
     id: string;
     confirmationId: string;
     date: string;
@@ -100,42 +102,28 @@ export default function AnalyticsDashboard() {
     venue: { name: string; category: string; address?: string };
   }) => {
     setDownloadingId(booking.id);
-
-    const downloadUrl = `/api/bookings/${booking.id}/download`;
-    const filename = `WorkSphere_Receipt_${booking.confirmationId || booking.id}.pdf`;
-
-    const worker = new Worker(
-      new URL("@/workers/receiptDownload.worker.ts", import.meta.url),
-    );
-
-    worker.onmessage = (event: MessageEvent) => {
-      const { type, blobUrl, error } = event.data;
-
-      if (type === "done") {
-        const a = document.createElement("a");
-        a.href = blobUrl;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
-      } else {
-        console.error("[PDF Worker Error]:", error);
-        alert("Failed to generate receipt. Please try again.");
+    try {
+      // Fetch the receipt from the server instead of generating on the main thread
+      const res = await fetch(`/api/bookings/${booking.id}/download`);
+      if (!res.ok) {
+        throw new Error("Failed to fetch receipt");
       }
 
-      setDownloadingId(null);
-      worker.terminate();
-    };
-
-    worker.onerror = (err) => {
-      console.error("[PDF Worker Error]:", err);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `WorkSphere_Receipt_${booking.confirmationId || booking.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("[PDF Client Error]:", err);
       alert("Failed to generate receipt. Please try again.");
+    } finally {
       setDownloadingId(null);
-      worker.terminate();
-    };
-
-    worker.postMessage({ url: downloadUrl, filename });
+    }
   };
 
   const handleViewVenue = (venue: {
@@ -465,6 +453,13 @@ export default function AnalyticsDashboard() {
                         )}
                       </button>
                       <button
+                        onClick={() => setVerifyModalOpen(true)}
+                        className="p-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-2xl hover:scale-110 transition-transform shadow-sm"
+                        title="Verify Signature"
+                      >
+                        <ShieldCheck className="w-5 h-5" />
+                      </button>
+                      <button
                         onClick={() => handleViewVenue(booking.venue)}
                         className="p-4 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-2xl hover:scale-110 transition-transform shadow-lg"
                         title="View on Map"
@@ -690,6 +685,10 @@ export default function AnalyticsDashboard() {
           </div>
         </div>
       </div>
+      <ReceiptVerificationModal
+        open={verifyModalOpen}
+        onClose={() => setVerifyModalOpen(false)}
+      />
     </div>
   );
 }

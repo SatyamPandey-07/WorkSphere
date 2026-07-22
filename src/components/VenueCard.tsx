@@ -34,8 +34,8 @@ import Image from "next/image";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
 import { AmbientSoundPlayer } from "@/components/noise/AmbientSoundPlayer";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
-import { FolderPlus, Cloud } from "lucide-react";
-import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
+import { FolderPlus } from "lucide-react";
+import { useCurrency } from "@/context/CurrencyContext";
 
 interface VenueEnrichData {
   found: boolean;
@@ -91,7 +91,29 @@ export function VenueCard({
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
-  const [showWeather3D, setShowWeather3D] = useState(false);
+
+  const { currency } = useCurrency();
+
+  // Helper function to convert base USD price
+  const formatPrice = (basePriceUSD: number) => {
+    // Standard conversion rates (can be replaced with live API later)
+    const rates = {
+      USD: 1,
+      EUR: 0.92,
+      GBP: 0.79,
+      INR: 83.5,
+    };
+
+    const symbols = {
+      USD: "$",
+      EUR: "€",
+      GBP: "£",
+      INR: "₹",
+    };
+
+    const convertedPrice = basePriceUSD * rates[currency];
+    return `${symbols[currency]}${convertedPrice.toFixed(2)}`;
+  };
 
   // =========================================================================
   // COMMUNITY VERIFICATION VOTE STATE TRACKING SYSTEM
@@ -511,7 +533,7 @@ export function VenueCard({
 
         {/* OpenStreetMap Base Feature List */}
         {amenities && (
-          <div className="flex flex-wrap items-center gap-3 mb-3">
+          <div className="flex items-center gap-3 mb-3">
             {amenities.wifi && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <Wifi className="w-3 h-3 shrink-0" />
@@ -530,26 +552,6 @@ export function VenueCard({
                 <span>Accessible</span>
               </div>
             )}
-            <button
-              onClick={() => setShowWeather3D((prev) => !prev)}
-              className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors"
-              title="Toggle WebGL 3D Weather Clouds"
-            >
-              <Cloud className="w-3 h-3" />
-              <span>{showWeather3D ? "Hide 3D Weather" : "3D Weather"}</span>
-            </button>
-          </div>
-        )}
-
-        {/* 3D Volumetric Cloud Visualizer */}
-        {showWeather3D && (
-          <div className="mb-4 animate-in fade-in duration-300">
-            <WeatherCloudRenderer
-              lat={venue.position.lat}
-              lng={venue.position.lng}
-              height="200px"
-              interactive={true}
-            />
           </div>
         )}
 
@@ -1267,9 +1269,15 @@ export function VenueCard({
           {enrichData?.venueId && (
             <a
               href={`/reserve/${enrichData.venueId}`}
-              className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500"
+              className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-500 flex flex-col items-center leading-tight"
             >
-              Reserve desk
+              <span>Reserve</span>
+              <span className="text-[10px] opacity-80">
+                {typeof enrichData.price === "number"
+                  ? formatPrice(enrichData.price)
+                  : formatPrice(15.0)}{" "}
+                / day
+              </span>
             </a>
           )}
         </div>

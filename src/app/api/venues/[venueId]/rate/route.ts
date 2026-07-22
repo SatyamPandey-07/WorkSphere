@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { venueRatingSchema, validateRequest } from "@/lib/validations";
 import { updateUserPreferencesSummary } from "@/lib/agents/MemoryAgent";
+import { enqueueTelemetry } from "@/lib/telemetryQueue";
 
 // POST /api/venues/[venueId]/rate - Add rating
 export async function POST(
@@ -209,14 +210,13 @@ export async function POST(
 
     // Create WifiTelemetry entry if all speed/latency/crowd data is provided
     if (downloadSpeed && uploadSpeed && latency && crowdLevel) {
-      await prisma.wifiTelemetry.create({
-        data: {
-          venueId: finalVenueId,
-          download: downloadSpeed,
-          upload: uploadSpeed,
-          latency: latency,
-          crowdLevel: crowdLevel,
-        },
+      await enqueueTelemetry({
+        venueId: finalVenueId,
+        download: downloadSpeed,
+        upload: uploadSpeed,
+        latency: latency,
+        crowdLevel: crowdLevel,
+        timestamp: new Date().toISOString(),
       });
     }
 

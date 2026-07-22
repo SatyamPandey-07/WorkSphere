@@ -15,7 +15,8 @@ eventBus.on("booking:confirmed", async (payload) => {
     if (!telegramWebhookUrl) return;
 
     const userName = dbBooking?.user
-      ? `${dbBooking.user.firstName || ""} ${dbBooking.user.lastName || ""}`.trim() || "Someone"
+      ? `${dbBooking.user.firstName || ""} ${dbBooking.user.lastName || ""}`.trim() ||
+        "Someone"
       : "Someone";
 
     const { text, inlineKeyboard } = buildTelegramVenueAlert({
@@ -29,20 +30,17 @@ eventBus.on("booking:confirmed", async (payload) => {
 
     await sendTelegramAlert(telegramWebhookUrl, text, inlineKeyboard);
   } catch (error) {
-    console.error("[BookingConfirmedEvent] Error sending Telegram notification:", error);
+    console.error(
+      "[BookingConfirmedEvent] Error sending Telegram notification:",
+      error,
+    );
   }
 });
 
 eventBus.on("checkin:confirmed", async (payload) => {
-  const { userId, userName, venue } = payload;
+  const { userName, telegramWebhookUrl, venue } = payload;
 
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { telegramWebhookUrl: true },
-    });
-
-    const telegramWebhookUrl = user?.telegramWebhookUrl;
     if (!telegramWebhookUrl) return;
 
     const { text, inlineKeyboard } = buildTelegramVenueAlert({
@@ -56,6 +54,9 @@ eventBus.on("checkin:confirmed", async (payload) => {
 
     await sendTelegramAlert(telegramWebhookUrl, text, inlineKeyboard);
   } catch (error) {
-    console.error("[CheckinConfirmedEvent] Error sending Telegram notification:", error);
+    console.error(
+      "[CheckinConfirmedEvent] Error sending Telegram notification:",
+      error,
+    );
   }
 });

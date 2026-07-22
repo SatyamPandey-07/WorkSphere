@@ -31,6 +31,8 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "../ThemeToggle";
 import { EmptyState } from "../ui/EmptyState";
+import { useCurrency } from "@/context/CurrencyContext";
+import usePartySocket from "partysocket/react";
 
 interface Conversation {
   id: string;
@@ -100,9 +102,7 @@ export function ChatHeader({
   onDeleteConversation,
   onRenameConversation,
   onShowBookings,
-
   roomId: _roomId,
-
   onShareSession,
 }: ChatHeaderProps) {
   const [isHubOpen, setIsHubOpen] = useState(false);
@@ -110,6 +110,48 @@ export function ChatHeader({
   const [renameValue, setRenameValue] = useState("");
   const filtersBtnRef = useRef<HTMLButtonElement>(null);
   const filtersPanelRef = useRef<HTMLDivElement>(null);
+
+  const { currency, setCurrency } = useCurrency();
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "reconnecting" | "offline"
+  >("offline");
+
+  const socket = usePartySocket({
+    host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
+    room: _roomId || "default",
+  });
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const updateStatus = () => {
+      switch (socket.readyState) {
+        case 0: // CONNECTING
+          setConnectionStatus("reconnecting");
+          break;
+        case 1: // OPEN
+          setConnectionStatus("connected");
+          break;
+        case 2: // CLOSING
+        case 3: // CLOSED
+        default:
+          setConnectionStatus("offline");
+          break;
+      }
+    };
+
+    updateStatus();
+
+    socket.addEventListener("open", updateStatus);
+    socket.addEventListener("close", updateStatus);
+    socket.addEventListener("error", updateStatus);
+
+    return () => {
+      socket.removeEventListener("open", updateStatus);
+      socket.removeEventListener("close", updateStatus);
+      socket.removeEventListener("error", updateStatus);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (!showFilters) return;
@@ -156,7 +198,7 @@ export function ChatHeader({
         <div className="flex items-center gap-3">
           <div className="relative">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center p-2 shadow-lg shadow-blue-500/20">
-              <Zap className="w-6 h-6 text-white" />
+              <Zap className="w-6 h-6 text-white"/>
             </div>
             <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white dark:border-zinc-950 animate-pulse" />
           </div>
@@ -171,12 +213,12 @@ export function ChatHeader({
             </div>
             <div className="flex items-center gap-2 mt-1">
               <span className="flex items-center gap-1 text-[9px] font-bold accent-text">
-                <ShieldCheck className="w-2.5 h-2.5" />
+                <ShieldCheck className="w-2.5 h-2.5"/>
                 SECURE
               </span>
               <span className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-700" />
               <span className="flex items-center gap-1 text-[9px] font-bold text-zinc-500">
-                <Activity className="w-2.5 h-2.5" />
+                <Activity className="w-2.5 h-2.5"/>
                 V2.4.0
               </span>
             </div>
@@ -185,6 +227,21 @@ export function ChatHeader({
 
         {/* Main Actions Area */}
         <div className="flex-1 flex items-center justify-end gap-2">
+          {/* Currency Dropdown for Issue 707 */}
+          <select
+            value={currency}
+            onChange={(e) =>
+              setCurrency(e.target.value as "USD" | "EUR" | "GBP" | "INR")
+            }
+            aria-label="Currency"
+            className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-700 dark:text-zinc-300 px-3 py-2 cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all outline-none"
+          >
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="GBP">GBP (£)</option>
+            <option value="INR">INR (₹)</option>
+          </select>
+
           {/* Global Hubs Dropdown */}
           <div className="relative">
             <button
@@ -223,7 +280,7 @@ export function ChatHeader({
             className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95"
             title="New Chat"
           >
-            <RotateCcw className="w-4 h-4" />
+            <RotateCcw className="w-4 h-4"/>
           </button>
 
           {/* Share Session */}
@@ -233,7 +290,7 @@ export function ChatHeader({
               className="p-2 bg-zinc-100  cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
               title="Share Session"
             >
-              <Share2 className="w-4 h-4" />
+              <Share2 className="w-4 h-4"/>
             </button>
           )}
 
@@ -243,16 +300,12 @@ export function ChatHeader({
             className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
             title="My Residencies"
           >
-            <Inbox className="w-4 h-4" />
+            <Inbox className="w-4 h-4"/>
           </button>
 
           {/* Collections */}
-          <Link
-            href="/collections"
-            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
-            title="Collections"
-          >
-            <LayoutGrid className="w-4 h-4" />
+          <Link className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex" href="/collections" title="Collections">
+            <LayoutGrid className="w-4 h-4"/>
           </Link>
 
           {/* History */}
@@ -268,7 +321,7 @@ export function ChatHeader({
             }`}
             title="Chat History"
           >
-            <History className="w-4 h-4" />
+            <History className="w-4 h-4"/>
           </button>
 
           {/* Filters */}
@@ -287,20 +340,16 @@ export function ChatHeader({
             title="Filters"
             aria-expanded={showFilters}
           >
-            <Filter className="w-4 h-4" />
+            <Filter className="w-4 h-4"/>
           </button>
 
           {/* Analytics Link */}
-          <Link
-            href="/analytics"
-            className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden lg:flex"
-            title="Intelligence Dashboard"
-          >
-            <BarChart3 className="w-4 h-4" />
+          <Link className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden lg:flex" href="/analytics" title="Intelligence Dashboard">
+            <BarChart3 className="w-4 h-4"/>
           </Link>
 
           {/* Theme Toggle */}
-          <ThemeToggle />
+          <ThemeToggle/>
 
           <div className="w-px h-8 cursor-pointer bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
 
@@ -310,7 +359,7 @@ export function ChatHeader({
             className="items-center gap-2 cursor-pointer px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-green-500/20 transition-all border border-green-400/30 active:scale-95 group hidden sm:flex"
             title="Suggest a new workspace"
           >
-            <PlusCircle className="w-4 h-4 group-hover:rotate-90 transition-transform" />
+            <PlusCircle className="w-4 h-4 group-hover:rotate-90 transition-transform"/>
             <span className="hidden sm:inline">ADD</span>
           </button>
 
@@ -326,10 +375,7 @@ export function ChatHeader({
                 PROFILE
               </div>
             </div>
-            <UserButton
-              userProfileMode="navigation"
-              userProfileUrl="/user-profile"
-            />
+            <UserButton userProfileMode="navigation" userProfileUrl="/user-profile"/>
           </div>
         </div>
       </div>
@@ -358,7 +404,7 @@ export function ChatHeader({
                     onChange={() => onToggleFilter("wifi")}
                     className="sr-only"
                   />
-                  <Wifi className="w-3.5 h-3.5" />
+                  <Wifi className="w-3.5 h-3.5"/>
                   High-Speed WiFi
                 </label>
                 <label
@@ -370,7 +416,7 @@ export function ChatHeader({
                     onChange={() => onToggleFilter("outlets")}
                     className="sr-only"
                   />
-                  <Outlets className="w-3.5 h-3.5" />
+                  <Outlets className="w-3.5 h-3.5"/>
                   Has Outlets
                 </label>
                 <label
@@ -382,7 +428,7 @@ export function ChatHeader({
                     onChange={() => onToggleFilter("quiet")}
                     className="sr-only"
                   />
-                  <Volume2 className="w-3.5 h-3.5" />
+                  <Volume2 className="w-3.5 h-3.5"/>
                   Low Noise
                 </label>
                 <label
@@ -394,7 +440,7 @@ export function ChatHeader({
                     onChange={() => onToggleFilter("ergonomic")}
                     className="sr-only"
                   />
-                  <Activity className="w-3.5 h-3.5" />
+                  <Activity className="w-3.5 h-3.5"/>
                   Ergonomic Setup
                 </label>
               </div>
@@ -481,7 +527,7 @@ export function ChatHeader({
                   className={`flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all ${filters.hasAncHeadsetRental ? "bg-orange-600 text-white shadow-md" : "bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"}`}
                   title="Show venues that rent active noise-cancelling headsets"
                 >
-                  <Headphones className="w-3.5 h-3.5" />
+                  <Headphones className="w-3.5 h-3.5"/>
                   ANC Headset Rental
                 </button>
               </div>
@@ -586,11 +632,7 @@ export function ChatHeader({
             </div>
             {conversations.length === 0 ? (
               <div className="p-4">
-                <EmptyState
-                  illustration="chat"
-                  message="No history found"
-                  description="Your recent AI chat sessions will appear here once you start searching."
-                />
+                <EmptyState description="Your recent AI chat sessions will appear here once you start searching." illustration="chat" message="No history found"/>
               </div>
             ) : (
               <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -619,7 +661,7 @@ export function ChatHeader({
                           }}
                           className="p-1.5 rounded-md text-zinc-400 hover:text-green-500 hover:bg-green-50 dark:hover:bg-green-900/20"
                         >
-                          <Check className="w-3.5 h-3.5" />
+                          <Check className="w-3.5 h-3.5"/>
                         </button>
                         <button
                           onMouseDown={(e) => {
@@ -628,7 +670,7 @@ export function ChatHeader({
                           }}
                           className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
                         >
-                          <X className="w-3.5 h-3.5" />
+                          <X className="w-3.5 h-3.5"/>
                         </button>
                       </div>
                     ) : (
@@ -649,19 +691,19 @@ export function ChatHeader({
                             onClick={() => startRenaming(conv)}
                             className="p-1.5 rounded-md text-zinc-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20"
                           >
-                            <Pencil className="w-3.5 h-3.5" />
+                            <Pencil className="w-3.5 h-3.5"/>
                           </button>
                           <button
                             onClick={() => onDeleteConversation(conv.id)}
                             className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5"/>
                           </button>
                           <button
                             onClick={() => onLoadConversation(conv.id)}
                             className="p-1.5 rounded-md text-zinc-400 hover:text-[var(--primary-accent)] hover:bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.1)] dark:hover:bg-[color-mix(in_srgb,var(--primary-accent),transparent_0.2)]"
                           >
-                            <ChevronRight className="w-3.5 h-3.5" />
+                            <ChevronRight className="w-3.5 h-3.5"/>
                           </button>
                         </div>
                       </>
@@ -677,11 +719,47 @@ export function ChatHeader({
       {/* Connection Indicator Bar */}
       <div className="mt-4 flex items-center justify-between px-1">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-              NEURAL LINK ACTIVE
-            </span>
+          <div
+            className="flex items-center gap-1.5"
+            role="status"
+            aria-live="polite"
+          >
+            {connectionStatus === "connected" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-green-700 dark:text-green-400">
+                  Connected
+                </span>
+                <span className="sr-only">PartyKit connection is stable</span>
+              </>
+            )}
+            {connectionStatus === "reconnecting" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-yellow-700 dark:text-yellow-400">
+                  Reconnecting
+                </span>
+                <span className="sr-only">PartyKit is reconnecting</span>
+              </>
+            )}
+            {connectionStatus === "offline" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-red-500"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-red-700 dark:text-red-400">
+                  Offline
+                </span>
+                <span className="sr-only">PartyKit is offline</span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_5px_rgba(59,130,246,0.8)]" />
@@ -689,11 +767,8 @@ export function ChatHeader({
               LATENCY: 14MS
             </span>
           </div>
-          <Link
-            href="/analytics"
-            className="hidden lg:flex items-center gap-1.5 hover:opacity-70 transition-opacity"
-          >
-            <Activity className="w-3 h-3 text-zinc-400" />
+          <Link className="hidden lg:flex items-center gap-1.5 hover:opacity-70 transition-opacity" href="/analytics">
+            <Activity className="w-3 h-3 text-zinc-400"/>
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
               ANALYTICS
             </span>
@@ -701,10 +776,10 @@ export function ChatHeader({
         </div>
 
         <div className="flex items-center gap-3">
-          <LayoutGrid className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors" />
-          <Terminal className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors" />
+          <LayoutGrid className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors"/>
+          <Terminal className="w-4 h-4 text-zinc-300 dark:text-zinc-700 hover:text-[var(--primary-accent)] cursor-pointer transition-colors"/>
         </div>
       </div>
     </div>
   );
-}
+}

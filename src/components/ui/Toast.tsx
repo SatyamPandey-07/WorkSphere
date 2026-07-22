@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, createContext, useContext } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  createContext,
+  useContext,
+} from "react";
 import { X, CheckCircle2, AlertCircle, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -10,10 +16,18 @@ interface Toast {
   id: string;
   message: string;
   type: ToastType;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 interface ToastContextValue {
-  toast: (message: string, type?: ToastType) => void;
+  toast: (
+    message: string,
+    type?: ToastType,
+    action?: { label: string; onClick: () => void },
+  ) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -31,10 +45,17 @@ export function useToast(): ToastContextValue {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const addToast = useCallback((message: string, type: ToastType = "success") => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setToasts((prev) => [...prev, { id, message, type }]);
-  }, []);
+  const addToast = useCallback(
+    (
+      message: string,
+      type: ToastType = "success",
+      action?: { label: string; onClick: () => void },
+    ) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      setToasts((prev) => [...prev, { id, message, type, action }]);
+    },
+    [],
+  );
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -82,8 +103,18 @@ function ToastItem({
     return () => clearTimeout(timer);
   }, [toast.id, onRemove]);
 
-  const Icon = toast.type === "success" ? CheckCircle2 : toast.type === "error" ? AlertCircle : AlertTriangle;
-  const iconColor = toast.type === "success" ? "text-green-500" : toast.type === "error" ? "text-red-500" : "text-amber-500";
+  const Icon =
+    toast.type === "success"
+      ? CheckCircle2
+      : toast.type === "error"
+        ? AlertCircle
+        : AlertTriangle;
+  const iconColor =
+    toast.type === "success"
+      ? "text-green-500"
+      : toast.type === "error"
+        ? "text-red-500"
+        : "text-amber-500";
 
   return (
     <div
@@ -95,9 +126,21 @@ function ToastItem({
       )}
     >
       <Icon className={cn("w-4 h-4 shrink-0", iconColor)} aria-hidden="true" />
-      <span className="flex-1 text-sm text-zinc-700 dark:text-zinc-300">
-        {toast.message}
-      </span>
+      <div className="flex-1 flex flex-col items-start text-sm text-zinc-700 dark:text-zinc-300">
+        <span className="font-medium">{toast.message}</span>
+        {toast.action && (
+          <button
+            type="button"
+            onClick={() => {
+              toast.action!.onClick();
+              onRemove(toast.id);
+            }}
+            className="mt-1.5 px-3 py-1 bg-[var(--primary-accent)] hover:opacity-90 active:scale-95 text-white rounded-md text-[11px] font-bold uppercase tracking-wider transition-all"
+          >
+            {toast.action.label}
+          </button>
+        )}
+      </div>
       <button
         type="button"
         onClick={() => onRemove(toast.id)}

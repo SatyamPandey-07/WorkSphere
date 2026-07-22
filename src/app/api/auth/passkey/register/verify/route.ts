@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import { prisma } from "@/lib/prisma";
 import { parseClientDataJSON } from "@/lib/webauthn";
+import { getRpId, getExpectedOrigin } from "@/lib/passkey";
 import type { RegistrationResponseJSON } from "@simplewebauthn/browser";
 
 export async function POST(req: Request) {
@@ -81,6 +82,7 @@ export async function POST(req: Request) {
         backedUp: credentialBackedUp,
         name: name?.trim() || "Passkey Credential",
         aaguid: aaguid || null,
+        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
       },
     });
 

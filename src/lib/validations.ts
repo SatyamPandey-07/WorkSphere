@@ -217,6 +217,29 @@ export type Location = z.infer<typeof locationSchema>;
 export type CreateFolder = z.infer<typeof createFolderSchema>;
 export type UpdateFolder = z.infer<typeof updateFolderSchema>;
 
+// XR Anchor schemas
+export const xrAnchorCreateSchema = z.object({
+  venueId: z.string().min(1),
+  seatId: z.string().optional().nullable(),
+  bookingId: z.string().optional().nullable(),
+  anchorPersistId: z.string().uuid(),
+  matrix: z.array(z.number()).length(16),
+  label: z.string().max(200).optional(),
+});
+
+export const xrAnchorUpdateSchema = z.object({
+  matrix: z.array(z.number()).length(16).optional(),
+  label: z.string().max(200).optional().nullable(),
+});
+
+export const xrAnchorQuerySchema = z.object({
+  venueId: z.string().min(1),
+});
+
+export type XRAnchorCreate = z.infer<typeof xrAnchorCreateSchema>;
+export type XRAnchorUpdate = z.infer<typeof xrAnchorUpdateSchema>;
+export type XRAnchorQuery = z.infer<typeof xrAnchorQuerySchema>;
+
 // Validation helper
 export function validateRequest<T>(
   schema: z.ZodSchema<T>,

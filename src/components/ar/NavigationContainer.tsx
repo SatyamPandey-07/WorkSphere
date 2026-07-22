@@ -1,15 +1,115 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWebXR } from "@/hooks/useWebXR";
 import ARNavigation from "./ARNavigation";
 import CompassFallback from "./CompassFallback";
 import { View } from "lucide-react";
 
-export default function NavigationContainer() {
+interface SeatData {
+  id: string;
+  seatNumber: string;
+  type: string;
+  x: number;
+  y: number;
+}
+
+interface AnchorData {
+  id: string;
+  anchorPersistId: string;
+  seatId: string | null;
+  bookingId: string | null;
+  matrix: number[];
+  label: string | null;
+  seat: { id: string; seatNumber: string; type: string } | null;
+}
+
+interface NavigationContainerProps {
+  venueId: string;
+}
+
+export default function NavigationContainer({
+  venueId,
+}: NavigationContainerProps) {
   const { isSupported, requestSession } = useWebXR();
   const [session, setSession] = useState<XRSession | null>(null);
   const [useFallback, setUseFallback] = useState(false);
+  const [seats, setSeats] = useState<SeatData[]>([]);
+  const [anchors, setAnchors] = useState<AnchorData[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchData() {
+      try {
+        const now = new Date();
+        const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+        const dateStr = now.toISOString().slice(0, 10);
+        const [seatsRes, anchorsRes] = await Promise.all([
+          fetch(
+            `/api/reservations/availability?venueId=${venueId}&date=${dateStr}&time=${timeStr}&duration=60`,
+          ),
+          fetch(`/api/ar/anchors?venueId=${venueId}`),
+        ]);
+
+        if (!cancelled && seatsRes.ok) {
+          const seatsData = await seatsRes.json();
+          setSeats(seatsData.seats ?? []);
+        }
+
+        if (!cancelled && anchorsRes.ok) {
+          const anchorsData = await anchorsRes.json();
+          setAnchors(anchorsData.data ?? []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch venue data for AR:", err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    fetchData();
+    return () => {
+      cancelled = true;
+    };
+  }, [venueId]);
+
+  const handleSaveAnchor = useCallback(
+    async (data: {
+      anchorPersistId: string;
+      seatId: string | null;
+      bookingId: string | null;
+      matrix: number[];
+      label: string | null;
+    }) => {
+      try {
+        const res = await fetch("/api/ar/anchors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ venueId, ...data }),
+        });
+        if (res.ok) {
+          const { data: anchor } = await res.json();
+          setAnchors((prev) => [anchor, ...prev]);
+        }
+      } catch (err) {
+        console.error("Failed to save anchor:", err);
+      }
+    },
+    [venueId],
+  );
+
+  const handleDeleteAnchor = useCallback(async (anchorDbId: string) => {
+    try {
+      const res = await fetch(`/api/ar/anchors/${anchorDbId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setAnchors((prev) => prev.filter((a) => a.id !== anchorDbId));
+      }
+    } catch (err) {
+      console.error("Failed to delete anchor:", err);
+    }
+  }, []);
 
   const startAR = async () => {
     const newSession = await requestSession();
@@ -19,14 +119,21 @@ export default function NavigationContainer() {
       });
       setSession(newSession);
     } else {
-      // Fallback if request fails
       setUseFallback(true);
     }
   };
 
   if (session) {
     return (
-      <ARNavigation session={session} onEndSession={() => session.end()} />
+      <ARNavigation
+        session={session}
+        onEndSession={() => session.end()}
+        venueId={venueId}
+        seats={seats}
+        anchors={anchors}
+        onSaveAnchor={handleSaveAnchor}
+        onDeleteAnchor={handleDeleteAnchor}
+      />
     );
   }
 
@@ -40,15 +147,17 @@ export default function NavigationContainer() {
         <View className="w-12 h-12 text-blue-400" />
       </div>
 
-      <h2 className="text-2xl font-bold mb-3">AR Navigation</h2>
+      <h2 className="text-2xl font-bold mb-3">AR Desk Finder</h2>
       <p className="text-slate-400 text-center max-w-md mb-8">
-        Navigate indoors using your camera. We will place 3D directional arrows
-        in the real world to guide you to your destination.
+        View reserved desks anchored in real space. Tap any desk to pin a
+        persistent marker that survives across sessions.
       </p>
 
-      {isSupported === null ? (
+      {isSupported === null || loading ? (
         <div className="animate-pulse text-slate-500">
-          Checking device compatibility...
+          {loading
+            ? "Loading venue data..."
+            : "Checking device compatibility..."}
         </div>
       ) : (
         <div className="flex flex-col sm:flex-row gap-4">
@@ -64,6 +173,13 @@ export default function NavigationContainer() {
           >
             Use 2D Map
           </button>
+        </div>
+      )}
+
+      {anchors.length > 0 && (
+        <div className="mt-6 text-sm text-slate-500">
+          {anchors.length} anchor{anchors.length !== 1 ? "s" : ""} saved for
+          this venue
         </div>
       )}
     </div>

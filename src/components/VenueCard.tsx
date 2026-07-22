@@ -36,6 +36,7 @@ import { AmbientSoundPlayer } from "@/components/noise/AmbientSoundPlayer";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
 import { useCurrency } from "@/context/CurrencyContext";
+import { useHoverPredictor } from "@/hooks/useHoverPredictor";
 
 interface VenueEnrichData {
   found: boolean;
@@ -93,6 +94,22 @@ export function VenueCard({
   const [enableTransition, setEnableTransition] = useState(false);
 
   const { currency } = useCurrency();
+
+  const hoverPredictorRef = useHoverPredictor({
+    onPredict: () => {
+      if (typeof navigator !== "undefined" && navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: "PREFETCH_VENUE",
+          payload: {
+            venueId: venue.id,
+            position: venue.position,
+          },
+        });
+      }
+    },
+    velocityThreshold: 0.5,
+    hoverTimeThreshold: 300,
+  });
 
   // Helper function to convert base USD price
   const formatPrice = (basePriceUSD: number) => {
@@ -349,7 +366,10 @@ export function VenueCard({
   const scannerLowConfidence = isLibrary && voteMetrics.scanner.hidden;
 
   return (
-    <div className="antialiased bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative">
+    <div 
+      ref={hoverPredictorRef}
+      className="antialiased bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative"
+    >
       {wifiLowConfidence && (
         <div className="flex items-center gap-2 bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-[10px] text-amber-600 dark:text-amber-400 font-bold">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />

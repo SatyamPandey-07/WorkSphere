@@ -17,6 +17,7 @@ const CACHE_NAME = "worksphere-v3";
 const IMAGE_CACHE_NAME = "worksphere-images-v4";
 const MAP_TILE_CACHE_NAME = "worksphere-maptiles-v1";
 const VIDEO_CACHE_NAME = "worksphere-video-tours-v1";
+const PREFETCH_CACHE_NAME = "worksphere-prefetch-v1";
 const OFFLINE_URL = "/offline";
 const AVAILABILITY_SYNC_TAG = "availability-sync";
 const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
@@ -153,6 +154,7 @@ self.addEventListener("activate", (event) => {
                 name !== IMAGE_CACHE_NAME &&
                 name !== MAP_TILE_CACHE_NAME &&
                 name !== VIDEO_CACHE_NAME &&
+                name !== PREFETCH_CACHE_NAME &&
                 !name.endsWith("-installing"),
             )
             .map((name) => caches.delete(name)),
@@ -177,159 +179,114 @@ self.addEventListener("activate", (event) => {
 
 // Handle Cache-First for maps and images, Network-First for everything else
 self.addEventListener("fetch", (event) => {
-  // Bypass caching and worker interception for non-GET requests (like POST/PUT/DELETE)
   if (event.request.method !== "GET") {
     return;
   }
-
-  // Bypass service worker interception for download endpoints to prevent binary stream locking
   if (event.request.url.includes("/download")) {
     return;
   }
 
-  const isVenuesApi = event.request.url.includes("/api/venues");
-  const isMapTile =
-    event.request.url.includes("tile.openstreetmap.org") ||
-    event.request.url.includes("basemaps.cartocdn.com");
+  event.respondWith(
+    caches.open(PREFETCH_CACHE_NAME).then((prefetchCache) => {
+      return prefetchCache.match(event.request).then((prefetchedResponse) => {
+        if (prefetchedResponse) {
+          return prefetchedResponse;
+        }
+        return handleFetch(event.request, event);
+      });
+    })
+  );
+});
 
-  const isExternalAsset = event.request.url.includes("images.unsplash.com");
+async function handleFetch(request, event) {
+  const isVenuesApi = request.url.includes("/api/venues");
+  const isMapTile =
+    request.url.includes("tile.openstreetmap.org") ||
+    request.url.includes("basemaps.cartocdn.com");
+  const isExternalAsset = request.url.includes("images.unsplash.com");
 
   if (isVenuesApi) {
-    // Network-First strategy for /api/venues
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const responseClone = response.clone();
-            event.waitUntil(
-              caches.open(CACHE_NAME).then((cache) => {
-                return cache.put(event.request, responseClone);
-              }),
-            );
-          }
-          return response;
-        })
-        .catch(async () => {
-          const cachedResponse = await caches.match(event.request);
-          if (cachedResponse) return cachedResponse;
-          return new Response("Offline", { status: 503 });
-        }),
-    );
+    try {
+      const response = await fetch(request);
+      if (response.ok) {
+        const cache = await caches.open(CACHE_NAME);
+        cache.put(request, response.clone());
+      }
+      return response;
+    } catch (error) {
+      const cached = await caches.match(request);
+      return cached || new Response("Offline", { status: 503 });
+    }
   } else if (isMapTile) {
-    // Cache map tiles in a dedicated bucket
-    event.respondWith(
-      caches.open(MAP_TILE_CACHE_NAME).then((cache) => {
-        return cache.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          return fetch(event.request)
-            .then((networkResponse) => {
-              if (
-                networkResponse.status === 200 ||
-                networkResponse.status === 0
-              ) {
-                cache.put(event.request, networkResponse.clone());
-              }
-              return networkResponse;
-            })
-            .catch(() => new Response("Map Tile Offline", { status: 503 }));
-        });
-      }),
-    );
+    const cache = await caches.open(MAP_TILE_CACHE_NAME);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    try {
+      const networkResponse = await fetch(request);
+      if (networkResponse.status === 200 || networkResponse.status === 0) {
+        cache.put(request, networkResponse.clone());
+      }
+      return networkResponse;
+    } catch {
+      return new Response("Map Tile Offline", { status: 503 });
+    }
   } else if (isExternalAsset) {
-    event.respondWith(
-      caches.open(IMAGE_CACHE_NAME).then((cache) => {
-        return cache.match(event.request).then((cachedResponse) => {
-          // Agar cache mein mil gaya, toh turant return karo
-          if (cachedResponse) {
-            // Asynchronously update the LRU timestamp for this hit
-            event.waitUntil(
-              touchLRURecord(event.request.url).catch(console.error),
-            );
-            return cachedResponse;
-          }
+    const cache = await caches.open(IMAGE_CACHE_NAME);
+    const cached = await cache.match(request);
+    if (cached) {
+      event.waitUntil(touchLRURecord(request.url).catch(console.error));
+      return cached;
+    }
+    try {
+      const networkResponse = await fetch(request);
+      if (networkResponse.status === 200 || networkResponse.status === 0) {
+        const responseToCache = networkResponse.clone();
+        
+        let size = OPAQUE_RESPONSE_SIZE_ESTIMATE;
+        if (networkResponse.headers.has("content-length")) {
+          const length = parseInt(networkResponse.headers.get("content-length") || "0", 10);
+          if (!isNaN(length) && length > 0) size = length;
+        }
 
-          // Agar cache mein nahi hai, toh network se fetch karo aur cache mein daalo
-          return fetch(event.request)
-            .then((networkResponse) => {
-              // Note: External requests sometimes return status 0 (opaque), we check response.status === 200 || response.status === 0
-              if (
-                networkResponse.status === 200 ||
-                networkResponse.status === 0
-              ) {
-                const responseToCache = networkResponse.clone();
-
-                // Calculate size for LRU tracking
-                let size = OPAQUE_RESPONSE_SIZE_ESTIMATE;
-                if (networkResponse.headers.has("content-length")) {
-                  const length = parseInt(
-                    networkResponse.headers.get("content-length") || "0",
-                    10,
-                  );
-                  if (!isNaN(length) && length > 0) size = length;
-                }
-
-                // Wrap cache.put and IDB updates in a promise chain for waitUntil
-                const cachePromise = cache
-                  .put(event.request, responseToCache)
-                  .then(async () => {
-                    await updateLRURecord(event.request.url, size);
-                    await enforceImageCacheQuota(cache);
-                  })
-                  .catch(async (err) => {
-                    if (err.name === "QuotaExceededError") {
-                      console.warn(
-                        "[SW] Quota exceeded. Evicting older images...",
-                      );
-                      await enforceImageCacheQuota(cache, true);
-
-                      try {
-                        await cache.put(event.request, responseToCache);
-                        await updateLRURecord(event.request.url, size);
-                      } catch (retryErr) {
-                        console.error(
-                          "[SW] Still out of quota after eviction:",
-                          retryErr,
-                        );
-                      }
-                    } else {
-                      console.error("[SW] Failed to cache asset:", err);
-                    }
-                  });
-
-                event.waitUntil(cachePromise);
-              }
-              return networkResponse;
-            })
-            .catch(() => new Response("Asset Offline", { status: 503 }));
-        });
-      }),
-    );
+        const cachePromise = cache.put(request, responseToCache)
+          .then(async () => {
+            await updateLRURecord(request.url, size);
+            await enforceImageCacheQuota(cache);
+          })
+          .catch(async (err) => {
+            if (err.name === "QuotaExceededError") {
+              await enforceImageCacheQuota(cache, true);
+              try {
+                await cache.put(request, responseToCache);
+                await updateLRURecord(request.url, size);
+              } catch (retryErr) {}
+            }
+          });
+        event.waitUntil(cachePromise);
+      }
+      return networkResponse;
+    } catch {
+      return new Response("Asset Offline", { status: 503 });
+    }
   } else {
     // Existing Network-First logic for local assets
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const responseClone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, responseClone);
-            });
-          }
-          return response;
-        })
-        .catch(async () => {
-          const cachedResponse = await caches.match(event.request);
-          if (cachedResponse) return cachedResponse;
-          if (event.request.mode === "navigate") {
-            return caches.match(OFFLINE_URL);
-          }
-          return new Response("Offline", { status: 503 });
-        }),
-    );
+    try {
+      const response = await fetch(request);
+      if (response.ok && request.url.startsWith("http")) {
+        const cache = await caches.open(CACHE_NAME);
+        cache.put(request, response.clone());
+      }
+      return response;
+    } catch {
+      const cached = await caches.match(request);
+      if (cached) return cached;
+      if (request.mode === "navigate") {
+        return caches.match(OFFLINE_URL);
+      }
+      return new Response("Offline", { status: 503 });
+    }
   }
-});
+}
 // Background Sync for offline actions
 self.addEventListener("sync", (event) => {
   if (event.tag === "sync-crdt") {
@@ -897,7 +854,51 @@ self.addEventListener("message", (event) => {
     const urls = event.data.urls || (event.data.url ? [event.data.url] : []);
     event.waitUntil(prefetchVideoTours(urls));
   }
+
+  if (event.data.type === "PREFETCH_VENUE") {
+    const { venueId, position } = event.data.payload;
+    event.waitUntil(prefetchVenueData(venueId, position));
+  }
 });
+
+async function prefetchVenueData(venueId, position) {
+  try {
+    const cache = await caches.open(PREFETCH_CACHE_NAME);
+    
+    // 1. Prefetch venue page (RSC payload heuristics for Next.js)
+    const venueApiUrl = `/api/venues/enrich?venueId=${venueId}`;
+    
+    const fetches = [
+      fetch(venueApiUrl).then(res => res.ok ? cache.put(venueApiUrl, res) : null).catch(() => null)
+    ];
+
+    // 2. Prefetch map tiles (Zoom 15)
+    if (position && position.length === 2) {
+      const [lat, lng] = position;
+      const zoom = 15;
+      const x = Math.floor((lng + 180) / 360 * Math.pow(2, zoom));
+      const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+      
+      const mapCache = await caches.open(MAP_TILE_CACHE_NAME);
+      
+      // Fetch a 3x3 grid around the center tile
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          const tileUrl = `https://tile.openstreetmap.org/${zoom}/${x + dx}/${y + dy}.png`;
+          fetches.push(
+            fetch(tileUrl, { mode: 'cors' })
+              .then(res => res.ok ? mapCache.put(tileUrl, res) : null)
+              .catch(() => null)
+          );
+        }
+      }
+    }
+    
+    await Promise.allSettled(fetches);
+  } catch (err) {
+    console.error("[SW] Failed to prefetch venue data:", err);
+  }
+}
 
 // Push notifications
 self.addEventListener("push", (event) => {
@@ -1044,6 +1045,7 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
       const toEvict = [];
       for (const record of records) {
         if (totalSize <= targetSize) break;
+      }
 
       // Queue all IDB deletes while the transaction is still active
       for (const record of toEvict) {

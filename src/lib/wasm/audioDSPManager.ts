@@ -178,6 +178,7 @@ export function stopAudioProcessing(): void {
   }
 
   if (state.workletNode) {
+    state.workletNode.port.postMessage({ type: "destroy" });
     state.workletNode.disconnect();
   }
 

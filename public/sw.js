@@ -285,7 +285,7 @@ self.addEventListener("fetch", (event) => {
                       await enforceImageCacheQuota(cache, true);
 
                       try {
-                        await cache.put(event.request, responseToCache);
+                        await cache.put(event.request, networkResponse.clone());
                         await updateLRURecord(event.request.url, size);
                       } catch (retryErr) {
                         console.error(
@@ -988,6 +988,7 @@ async function updateLRURecord(url, size) {
 
 /**
  * Touches an existing record to update its lastAccessed time (True LRU).
+ * Returns a promise that resolves when the IndexedDB transaction completes.
  */
 async function touchLRURecord(url) {
   try {
@@ -996,13 +997,22 @@ async function touchLRURecord(url) {
     const store = tx.objectStore("imageCacheLRU");
     const request = store.get(url);
 
-    request.onsuccess = () => {
-      const record = request.result;
-      if (record) {
-        record.lastAccessed = Date.now();
-        store.put(record);
-      }
-    };
+    await new Promise((resolve, reject) => {
+      request.onsuccess = () => {
+        const record = request.result;
+        if (record) {
+          record.lastAccessed = Date.now();
+          store.put(record);
+        }
+        resolve();
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
   } catch (err) {
     console.error("[SW] Failed to touch LRU record:", err);
   }
@@ -1040,18 +1050,29 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
       // Sort by oldest first
       records.sort((a, b) => a.lastAccessed - b.lastAccessed);
 
-      let evictedCount = 0;
+      const toEvict = [];
       for (const record of records) {
         if (totalSize <= targetSize) break;
-
-        await cache.delete(record.url);
-        store.delete(record.url);
-
+        toEvict.push(record);
         totalSize -= record.size || 0;
-        evictedCount++;
       }
+
+      // Queue all IDB deletes while the transaction is still active
+      for (const record of toEvict) {
+        store.delete(record.url);
+      }
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+
+      // Now remove from Cache Storage after IDB transaction completes
+      for (const record of toEvict) {
+        await cache.delete(record.url);
+      }
+
       console.log(
-        `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
+        `[SW] True LRU: Evicted ${toEvict.length} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
       );
     }
   } catch (err) {

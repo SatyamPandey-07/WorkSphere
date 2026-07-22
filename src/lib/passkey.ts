@@ -35,12 +35,21 @@ export function getExpectedOrigin(
   const defaultOrigin = getOrigin(req);
   const userAgent = req.headers.get("user-agent");
 
+  const expectedOrigins = new Set<string>([defaultOrigin]);
+
   if (isMobileWebview(userAgent) && clientDataOrigin) {
-    if (clientDataOrigin === defaultOrigin) {
-      return defaultOrigin;
-    }
-    return [defaultOrigin, clientDataOrigin];
+    expectedOrigins.add(clientDataOrigin);
   }
 
-  return defaultOrigin;
+  const allowedEmbedOrigins = (process.env.ALLOWED_EMBED_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (clientDataOrigin && allowedEmbedOrigins.includes(clientDataOrigin)) {
+    expectedOrigins.add(clientDataOrigin);
+  }
+
+  const origins = Array.from(expectedOrigins);
+  return origins.length === 1 ? origins[0] : origins;
 }

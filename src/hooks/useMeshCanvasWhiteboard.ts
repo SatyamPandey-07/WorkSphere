@@ -5,48 +5,13 @@ import { useAuth } from "@clerk/nextjs";
 import * as Y from "yjs";
 import YProvider from "y-partykit/provider";
 import { FailoverSyncManager } from "@/lib/edge/failoverSync";
-
-export type ToolType = "pen" | "eraser" | "rect" | "circle" | "line";
-
-export interface ShapeData {
-  id: string;
-  type: ToolType;
-  points: number[];
-  color: string;
-  width: number;
-  opacity: number;
-  userId: string;
-}
-
-export interface RemoteCursor {
-  userId: string;
-  x: number;
-  y: number;
-  name: string;
-  color: string;
-}
-
-export interface CanvasWhiteboardState {
-  addShape: (shape: ShapeData) => void;
-  updateShape: (id: string, updates: Partial<ShapeData>) => void;
-  shapeSnapshots: ShapeData[];
-  remoteCursors: RemoteCursor[];
-  tool: ToolType;
-  color: string;
-  strokeWidth: number;
-  isConnected: boolean;
-  provider: YProvider | null;
-  yDoc: Y.Doc | null;
-  setTool: (tool: ToolType) => void;
-  setColor: (color: string) => void;
-  setStrokeWidth: (width: number) => void;
-  undo: () => void;
-  redo: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  clearCanvas: () => void;
-  updateCursor: (x: number, y: number) => void;
-}
+import { useMeshDataChannels } from "@/hooks/useMeshDataChannels";
+import type {
+  ToolType,
+  ShapeData,
+  RemoteCursor,
+  CanvasWhiteboardState,
+} from "@/hooks/useCanvasWhiteboard";
 
 const PARTYKIT_HOST = process.env.NEXT_PUBLIC_PARTYKIT_URL ?? "127.0.0.1:1999";
 
@@ -77,7 +42,7 @@ function shapeMapToData(map: Y.Map<unknown>): ShapeData {
   };
 }
 
-export function useCanvasWhiteboard(
+export function useMeshCanvasWhiteboard(
   canvasId: string | null,
   options?: { userName?: string; userColor?: string; userId?: string },
 ): CanvasWhiteboardState {
@@ -91,6 +56,7 @@ export function useCanvasWhiteboard(
   const docRef = useRef<Y.Doc | null>(null);
   const undoManagerRef = useRef<Y.UndoManager | null>(null);
   const providerRef = useRef<YProvider | null>(null);
+  const unsubDocUpdateRef = useRef<(() => void) | null>(null);
 
   const [shapeSnapshots, setShapeSnapshots] = useState<ShapeData[]>([]);
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
@@ -101,7 +67,27 @@ export function useCanvasWhiteboard(
   const [color, setColor] = useState("#ffffff");
   const [strokeWidth, setStrokeWidth] = useState(3);
 
+  const userName = options?.userName ?? "Anonymous";
+  const userColor = options?.userColor ?? getDefaultColor(0);
   const localUserId = options?.userId ?? "anonymous";
+
+  const meshRoomId = canvasId ? `canvas-${canvasId}` : "canvas-none";
+
+  const onMeshData = useCallback((peerId: string, data: ArrayBuffer) => {
+    const doc = docRef.current;
+    if (!doc) return;
+    try {
+      Y.applyUpdate(doc, new Uint8Array(data), "mesh");
+    } catch (err) {
+      console.warn("Failed to apply mesh update from", peerId, err);
+    }
+  }, []);
+
+  const mesh = useMeshDataChannels({
+    roomId: meshRoomId,
+    userId: localUserId !== "anonymous" ? localUserId : null,
+    onData: onMeshData,
+  });
 
   useEffect(() => {
     if (!canvasId) return;
@@ -179,10 +165,17 @@ export function useCanvasWhiteboard(
     um.on("stack-item-popped", updateUndoState);
     updateUndoState();
 
-    const awareness = newProvider?.awareness;
-    const userName = options?.userName ?? "Anonymous";
-    const userColor = options?.userColor ?? getDefaultColor(0);
+    const sendToAll = mesh.sendToAll;
+    const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+      if (origin === "mesh") return;
+      sendToAll(update.buffer as ArrayBuffer);
+    };
+    doc.on("update", handleDocUpdate);
+    unsubDocUpdateRef.current = () => {
+      doc.off("update", handleDocUpdate);
+    };
 
+    const awareness = newProvider?.awareness;
     awareness?.setLocalState({
       x: 0,
       y: 0,
@@ -214,6 +207,7 @@ export function useCanvasWhiteboard(
     return () => {
       shapes.unobserve(updateSnapshots);
       awareness?.off("change", handleAwarenessChange);
+      unsubDocUpdateRef.current?.();
       um.destroy();
       newProvider?.disconnect();
       doc.destroy();
@@ -221,8 +215,9 @@ export function useCanvasWhiteboard(
       docRef.current = null;
       undoManagerRef.current = null;
       providerRef.current = null;
+      unsubDocUpdateRef.current = null;
     };
-  }, [canvasId, token, options?.userName, options?.userColor, localUserId]);
+  }, [canvasId, token, userName, userColor, localUserId, mesh.sendToAll]);
 
   const addShape = useCallback(
     (data: ShapeData) => {
@@ -307,7 +302,7 @@ export function useCanvasWhiteboard(
     tool,
     color,
     strokeWidth,
-    isConnected,
+    isConnected: isConnected || mesh.isConnected,
     provider,
     yDoc,
     setTool,

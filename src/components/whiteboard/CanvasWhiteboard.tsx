@@ -2,7 +2,7 @@
 
 import { useCallback } from "react";
 import { useUser } from "@clerk/nextjs";
-import { useCanvasWhiteboard } from "@/hooks/useCanvasWhiteboard";
+import { useMeshCanvasWhiteboard } from "@/hooks/useMeshCanvasWhiteboard";
 import { CanvasToolbar } from "@/components/whiteboard/CanvasToolbar";
 import { DrawingCanvas } from "@/components/whiteboard/DrawingCanvas";
 import { RemoteCursors } from "@/components/whiteboard/RemoteCursors";
@@ -37,7 +37,7 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
     addShape,
     updateShape,
     updateCursor,
-  } = useCanvasWhiteboard(canvasId, { userName, userColor });
+  } = useMeshCanvasWhiteboard(canvasId, { userName, userColor, userId });
 
   const handleAddShape = useCallback(
     (shape: Parameters<typeof addShape>[0]) => addShape(shape),

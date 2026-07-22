@@ -1,3 +1,5 @@
+/// <reference types="@webgpu/types" />
+
 export {};
 
 declare global {
@@ -45,6 +47,12 @@ declare global {
         size?: number,
       ): void;
       submit(commandBuffers: any[]): void;
+      writeTexture(
+        destination: any,
+        data: any,
+        dataLayout: any,
+        size: any,
+      ): void;
     };
     [key: string]: any;
   }

@@ -1,0 +1,1168 @@
+
+> worksphere@0.1.0 test
+> jest
+
+PASS src/__tests__/api/advancedFilters.test.ts
+PASS src/__tests__/lib/streak.test.ts
+PASS src/__tests__/components/Map.test.tsx
+PASS src/__tests__/lib/offlineStore.test.ts
+  ● Console
+
+    console.error
+      Failed to queue offline action: Error [SecurityError]: SecurityError: access blocked
+          at FDBFactory.<anonymous> (/home/runner/work/WorkSphere/WorkSphere/src/__tests__/lib/offlineStore.test.ts:108:21)
+          at /home/runner/work/WorkSphere/WorkSphere/node_modules/@jest/environment-jsdom-abstract/node_modules/jest-mock/build/index.js:305:39
+          at FDBFactory.<anonymous> (/home/runner/work/WorkSphere/WorkSphere/node_modules/@jest/environment-jsdom-abstract/node_modules/jest-mock/build/index.js:312:13)
+          at FDBFactory.mockConstructor [as open] (/home/runner/work/WorkSphere/WorkSphere/node_modules/@jest/environment-jsdom-abstract/node_modules/jest-mock/build/index.js:102:19)
+          at open (/home/runner/work/WorkSphere/WorkSphere/src/lib/offlineStore.ts:98:33)
+          at new Promise (<anonymous>)
+          at getDB (/home/runner/work/WorkSphere/WorkSphere/src/lib/offlineStore.ts:96:15)
+          at getDB (/home/runner/work/WorkSphere/WorkSphere/src/lib/offlineStore.ts:174:22)
+          at Object.localQueueOfflineFavorite (/home/runner/work/WorkSphere/WorkSphere/src/__tests__/lib/offlineStore.test.ts:114:9)
+          at Promise.then.completed (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/utils.js:298:28)
+          at new Promise (<anonymous>)
+          at callAsyncCircusFn (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/utils.js:231:10)
+          at _callCircusTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:316:40)
+          at runNextTicks (node:internal/process/task_queues:60:5)
+          at processImmediate (node:internal/timers:454:9)
+          at _runTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:252:3)
+          at _runTestsForDescribeBlock (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:126:9)
+          at _runTestsForDescribeBlock (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:121:9)
+          at _runTestsForDescribeBlock (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:121:9)
+          at run (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:71:3)
+          at runAndTransformResultsToJestFormat (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+          at jestAdapter (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+          at runTestInternal (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/runTest.js:367:16)
+          at runTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/runTest.js:444:34)
+          at Object.worker (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/testWorker.js:106:12)
+
+    [0m [90m 205 |[39m     })[33m;[39m
+     [90m 206 |[39m   } [36mcatch[39m (err) {
+    [31m[1m>[22m[39m[90m 207 |[39m     console[33m.[39merror([32m"Failed to queue offline action:"[39m[33m,[39m err)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 208 |[39m   }
+     [90m 209 |[39m }
+     [90m 210 |[39m[0m
+
+      at error (src/lib/offlineStore.ts:207:13)
+      at Object.<anonymous> (src/__tests__/lib/offlineStore.test.ts:113:7)
+
+    console.error
+      Failed to queue offline action: Error [SecurityError]: SecurityError: access blocked
+          at FDBFactory.<anonymous> (/home/runner/work/WorkSphere/WorkSphere/src/__tests__/lib/offlineStore.test.ts:108:21)
+          at /home/runner/work/WorkSphere/WorkSphere/node_modules/@jest/environment-jsdom-abstract/node_modules/jest-mock/build/index.js:305:39
+          at FDBFactory.<anonymous> (/home/runner/work/WorkSphere/WorkSphere/node_modules/@jest/environment-jsdom-abstract/node_modules/jest-mock/build/index.js:312:13)
+          at FDBFactory.mockConstructor [as open] (/home/runner/work/WorkSphere/WorkSphere/node_modules/@jest/environment-jsdom-abstract/node_modules/jest-mock/build/index.js:102:19)
+          at open (/home/runner/work/WorkSphere/WorkSphere/src/lib/offlineStore.ts:98:33)
+          at new Promise (<anonymous>)
+          at getDB (/home/runner/work/WorkSphere/WorkSphere/src/lib/offlineStore.ts:96:15)
+          at getDB (/home/runner/work/WorkSphere/WorkSphere/src/lib/offlineStore.ts:174:22)
+          at Object.localQueueOfflineFavorite (/home/runner/work/WorkSphere/WorkSphere/src/__tests__/lib/offlineStore.test.ts:114:9)
+          at Promise.then.completed (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/utils.js:298:28)
+          at new Promise (<anonymous>)
+          at callAsyncCircusFn (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/utils.js:231:10)
+          at _callCircusTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:316:40)
+          at runNextTicks (node:internal/process/task_queues:60:5)
+          at processImmediate (node:internal/timers:454:9)
+          at _runTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:252:3)
+          at _runTestsForDescribeBlock (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:126:9)
+          at _runTestsForDescribeBlock (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:121:9)
+          at _runTestsForDescribeBlock (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:121:9)
+          at run (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:71:3)
+          at runAndTransformResultsToJestFormat (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+          at jestAdapter (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+          at runTestInternal (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/runTest.js:367:16)
+          at runTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/runTest.js:444:34)
+          at Object.worker (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/testWorker.js:106:12)
+
+    [0m [90m 205 |[39m     })[33m;[39m
+     [90m 206 |[39m   } [36mcatch[39m (err) {
+    [31m[1m>[22m[39m[90m 207 |[39m     console[33m.[39merror([32m"Failed to queue offline action:"[39m[33m,[39m err)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 208 |[39m   }
+     [90m 209 |[39m }
+     [90m 210 |[39m[0m
+
+      at error (src/lib/offlineStore.ts:207:13)
+      at Object.<anonymous> (src/__tests__/lib/offlineStore.test.ts:119:7)
+
+PASS src/__tests__/hooks/useSavedVenues.test.ts
+PASS src/__tests__/lib/dbTelemetry.test.ts
+PASS src/__tests__/components/CanvasWhiteboard.test.tsx
+PASS src/__tests__/lib/whatsapp.test.ts
+  ● Console
+
+    console.log
+      [WhatsApp] Webhook delivered to https://example.com/webhook
+
+      at log (src/lib/whatsapp.ts:333:25)
+          at async Promise.allSettled (index 1)
+
+PASS src/__tests__/api/chat.test.ts
+PASS src/__tests__/api/venues.test.ts
+PASS src/__tests__/components/NoiseMeter.test.tsx
+  ● Console
+
+    console.error
+      Noise measurement failed: Error: Permission denied
+          at Object.<anonymous> (/home/runner/work/WorkSphere/WorkSphere/src/__tests__/components/NoiseMeter.test.tsx:99:38)
+          at Promise.then.completed (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/utils.js:298:28)
+          at new Promise (<anonymous>)
+          at callAsyncCircusFn (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/utils.js:231:10)
+          at _callCircusTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:316:40)
+          at _runTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:252:3)
+          at _runTestsForDescribeBlock (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:126:9)
+          at run (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:71:3)
+          at runAndTransformResultsToJestFormat (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+          at jestAdapter (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+          at runTestInternal (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/runTest.js:367:16)
+          at runTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/runTest.js:444:34)
+          at Object.worker (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/testWorker.js:106:12)
+
+    [0m [90m 233 |[39m       }[33m,[39m [35m5000[39m)[33m;[39m
+     [90m 234 |[39m     } [36mcatch[39m (error) {
+    [31m[1m>[22m[39m[90m 235 |[39m       console[33m.[39merror([32m"Noise measurement failed:"[39m[33m,[39m error)[33m;[39m
+     [90m     |[39m               [31m[1m^[22m[39m
+     [90m 236 |[39m       setStatus([32m"error"[39m)[33m;[39m
+     [90m 237 |[39m     }
+     [90m 238 |[39m   }[0m
+
+      at error (src/components/noise/NoiseMeter.tsx:235:15)
+
+PASS src/__tests__/api/upload.test.ts
+PASS src/__tests__/api/webhook.test.ts
+  ● Console
+
+    console.log
+      User created in database: user_123
+
+      at log (src/app/api/webhook/route.ts:90:15)
+
+    console.log
+      User created in database: user_crashed
+
+      at log (src/app/api/webhook/route.ts:90:15)
+
+    console.log
+      User updated in database: user_123
+
+      at log (src/app/api/webhook/route.ts:135:15)
+
+    console.log
+      User deleted from database: user_123
+
+      at log (src/app/api/webhook/route.ts:149:15)
+
+PASS src/__tests__/components/NotificationSettings.test.tsx
+PASS src/__tests__/hooks/useCanvasWhiteboard.test.ts
+  ● Console
+
+    console.error
+      An update to TestComponent inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+    [0m [90m 104 |[39m
+     [90m 105 |[39m     getToken()
+    [31m[1m>[22m[39m[90m 106 |[39m       [33m.[39mthen((t) [33m=>[39m setToken(t [33m?[39m[33m?[39m [36mnull[39m))
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 107 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setToken([36mnull[39m))[33m;[39m
+     [90m 108 |[39m   }[33m,[39m [canvasId[33m,[39m getToken])[33m;[39m
+     [90m 109 |[39m[0m
+
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18758:19
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom-client.development.js:18757:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:16409:11)
+      at dispatchSetStateInternal (node_modules/react-dom/cjs/react-dom-client.development.js:9170:13)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom-client.development.js:9127:7)
+      at setToken (src/hooks/useCanvasWhiteboard.ts:106:20)
+
+    console.error
+      An update to TestComponent inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+    [0m [90m 104 |[39m
+     [90m 105 |[39m     getToken()
+    [31m[1m>[22m[39m[90m 106 |[39m       [33m.[39mthen((t) [33m=>[39m setToken(t [33m?[39m[33m?[39m [36mnull[39m))
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 107 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setToken([36mnull[39m))[33m;[39m
+     [90m 108 |[39m   }[33m,[39m [canvasId[33m,[39m getToken])[33m;[39m
+     [90m 109 |[39m[0m
+
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18758:19
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom-client.development.js:18757:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:16409:11)
+      at dispatchSetStateInternal (node_modules/react-dom/cjs/react-dom-client.development.js:9170:13)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom-client.development.js:9127:7)
+      at setToken (src/hooks/useCanvasWhiteboard.ts:106:20)
+
+    console.error
+      An update to TestComponent inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+    [0m [90m 104 |[39m
+     [90m 105 |[39m     getToken()
+    [31m[1m>[22m[39m[90m 106 |[39m       [33m.[39mthen((t) [33m=>[39m setToken(t [33m?[39m[33m?[39m [36mnull[39m))
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 107 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setToken([36mnull[39m))[33m;[39m
+     [90m 108 |[39m   }[33m,[39m [canvasId[33m,[39m getToken])[33m;[39m
+     [90m 109 |[39m[0m
+
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18758:19
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom-client.development.js:18757:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:16409:11)
+      at dispatchSetStateInternal (node_modules/react-dom/cjs/react-dom-client.development.js:9170:13)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom-client.development.js:9127:7)
+      at setToken (src/hooks/useCanvasWhiteboard.ts:106:20)
+
+    console.error
+      An update to TestComponent inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+    [0m [90m 104 |[39m
+     [90m 105 |[39m     getToken()
+    [31m[1m>[22m[39m[90m 106 |[39m       [33m.[39mthen((t) [33m=>[39m setToken(t [33m?[39m[33m?[39m [36mnull[39m))
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 107 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setToken([36mnull[39m))[33m;[39m
+     [90m 108 |[39m   }[33m,[39m [canvasId[33m,[39m getToken])[33m;[39m
+     [90m 109 |[39m[0m
+
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18758:19
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom-client.development.js:18757:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:16409:11)
+      at dispatchSetStateInternal (node_modules/react-dom/cjs/react-dom-client.development.js:9170:13)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom-client.development.js:9127:7)
+      at setToken (src/hooks/useCanvasWhiteboard.ts:106:20)
+
+    console.error
+      An update to TestComponent inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+    [0m [90m 104 |[39m
+     [90m 105 |[39m     getToken()
+    [31m[1m>[22m[39m[90m 106 |[39m       [33m.[39mthen((t) [33m=>[39m setToken(t [33m?[39m[33m?[39m [36mnull[39m))
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 107 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setToken([36mnull[39m))[33m;[39m
+     [90m 108 |[39m   }[33m,[39m [canvasId[33m,[39m getToken])[33m;[39m
+     [90m 109 |[39m[0m
+
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18758:19
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom-client.development.js:18757:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:16409:11)
+      at dispatchSetStateInternal (node_modules/react-dom/cjs/react-dom-client.development.js:9170:13)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom-client.development.js:9127:7)
+      at setToken (src/hooks/useCanvasWhiteboard.ts:106:20)
+
+    console.error
+      An update to TestComponent inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+    [0m [90m 104 |[39m
+     [90m 105 |[39m     getToken()
+    [31m[1m>[22m[39m[90m 106 |[39m       [33m.[39mthen((t) [33m=>[39m setToken(t [33m?[39m[33m?[39m [36mnull[39m))
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 107 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setToken([36mnull[39m))[33m;[39m
+     [90m 108 |[39m   }[33m,[39m [canvasId[33m,[39m getToken])[33m;[39m
+     [90m 109 |[39m[0m
+
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18758:19
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom-client.development.js:18757:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:16409:11)
+      at dispatchSetStateInternal (node_modules/react-dom/cjs/react-dom-client.development.js:9170:13)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom-client.development.js:9127:7)
+      at setToken (src/hooks/useCanvasWhiteboard.ts:106:20)
+
+    console.error
+      An update to TestComponent inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+    [0m [90m 104 |[39m
+     [90m 105 |[39m     getToken()
+    [31m[1m>[22m[39m[90m 106 |[39m       [33m.[39mthen((t) [33m=>[39m setToken(t [33m?[39m[33m?[39m [36mnull[39m))
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 107 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setToken([36mnull[39m))[33m;[39m
+     [90m 108 |[39m   }[33m,[39m [canvasId[33m,[39m getToken])[33m;[39m
+     [90m 109 |[39m[0m
+
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18758:19
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom-client.development.js:18757:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:16409:11)
+      at dispatchSetStateInternal (node_modules/react-dom/cjs/react-dom-client.development.js:9170:13)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom-client.development.js:9127:7)
+      at setToken (src/hooks/useCanvasWhiteboard.ts:106:20)
+
+    console.error
+      An update to TestComponent inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+    [0m [90m 104 |[39m
+     [90m 105 |[39m     getToken()
+    [31m[1m>[22m[39m[90m 106 |[39m       [33m.[39mthen((t) [33m=>[39m setToken(t [33m?[39m[33m?[39m [36mnull[39m))
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 107 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setToken([36mnull[39m))[33m;[39m
+     [90m 108 |[39m   }[33m,[39m [canvasId[33m,[39m getToken])[33m;[39m
+     [90m 109 |[39m[0m
+
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18758:19
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom-client.development.js:18757:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:16409:11)
+      at dispatchSetStateInternal (node_modules/react-dom/cjs/react-dom-client.development.js:9170:13)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom-client.development.js:9127:7)
+      at setToken (src/hooks/useCanvasWhiteboard.ts:106:20)
+
+    console.error
+      An update to TestComponent inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+    [0m [90m 104 |[39m
+     [90m 105 |[39m     getToken()
+    [31m[1m>[22m[39m[90m 106 |[39m       [33m.[39mthen((t) [33m=>[39m setToken(t [33m?[39m[33m?[39m [36mnull[39m))
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 107 |[39m       [33m.[39m[36mcatch[39m(() [33m=>[39m setToken([36mnull[39m))[33m;[39m
+     [90m 108 |[39m   }[33m,[39m [canvasId[33m,[39m getToken])[33m;[39m
+     [90m 109 |[39m[0m
+
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18758:19
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom-client.development.js:18757:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:16409:11)
+      at dispatchSetStateInternal (node_modules/react-dom/cjs/react-dom-client.development.js:9170:13)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom-client.development.js:9127:7)
+      at setToken (src/hooks/useCanvasWhiteboard.ts:106:20)
+
+PASS src/__tests__/lib/savedVenueValidations.test.ts
+PASS src/__tests__/lib/adminAnalytics.test.ts
+FAIL src/__tests__/components/OnboardingTour.test.tsx
+  ● OnboardingTour › starts the tour for first-time users (no localStorage flag)
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:39:11)
+
+  ● OnboardingTour › does NOT start the tour when onboarding is already completed
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:56:11)
+
+  ● OnboardingTour › defines exactly 3 tour steps targeting map, chat, and booking
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:70:11)
+
+  ● OnboardingTour › includes a skip button in the options
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:84:11)
+
+  ● OnboardingTour › saves completion to localStorage when tour finishes
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:94:11)
+
+  ● OnboardingTour › saves completion to localStorage when tour is skipped
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:110:11)
+
+  ● OnboardingTour › does NOT save to localStorage for non-end events
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:125:11)
+
+  ● OnboardingTour › each step has a title and content
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:138:11)
+
+PASS src/__tests__/components/VenueDetailDialog.test.tsx
+  ● Console
+
+    console.warn
+      react-i18next:: useTranslation: You will need to pass in an i18next instance by using initReactI18next or by passing it via props or context. In monorepo setups, make sure there is only one instance of react-i18next. { code: 'NO_I18NEXT_INSTANCE' }
+
+    [0m [90m 89 |[39m   [36mconst[39m [touchStartX[33m,[39m setTouchStartX] [33m=[39m useState[33m<[39m[33mnumber[39m [33m|[39m [36mnull[39m[33m>[39m([36mnull[39m)[33m;[39m
+     [90m 90 |[39m   [36mconst[39m [enableTransition[33m,[39m setEnableTransition] [33m=[39m useState([36mfalse[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 91 |[39m   [36mconst[39m { t } [33m=[39m useTranslation()[33m;[39m
+     [90m    |[39m                               [31m[1m^[22m[39m
+     [90m 92 |[39m   [36mconst[39m [translatingReviewId[33m,[39m setTranslatingReviewId] [33m=[39m useState[33m<[39m[33mstring[39m [33m|[39m [36mnull[39m[33m>[39m(
+     [90m 93 |[39m     [36mnull[39m[33m,[39m
+     [90m 94 |[39m   )[33m;[39m[0m
+
+      at warn (node_modules/react-i18next/dist/commonjs/utils.js:19:13)
+      at warnOnce (node_modules/react-i18next/dist/commonjs/utils.js:27:3)
+      at useTranslation (node_modules/react-i18next/dist/commonjs/useTranslation.js:37:25)
+      at VenueDetailDialog (src/components/chat/VenueDetailDialog.tsx:91:31)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16504:11)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at renderDialog (src/__tests__/components/VenueDetailDialog.test.tsx:96:25)
+      at Object.renderDialog (src/__tests__/components/VenueDetailDialog.test.tsx:114:11)
+
+    console.log
+      [SSE] Connecting to live stream for venue: venue-1
+
+      at log (src/components/chat/VenueDetailDialog.tsx:608:15)
+
+    console.log
+      [SSE] Terminating active stream for venue: venue-1
+
+      at log (src/components/chat/VenueDetailDialog.tsx:642:15)
+          at Array.forEach (<anonymous>)
+
+    console.log
+      [SSE] Connecting to live stream for venue: venue-1
+
+      at log (src/components/chat/VenueDetailDialog.tsx:608:15)
+
+    console.log
+      [SSE] Terminating active stream for venue: venue-1
+
+      at log (src/components/chat/VenueDetailDialog.tsx:642:15)
+          at Array.forEach (<anonymous>)
+
+    console.log
+      [SSE] Connecting to live stream for venue: venue-1
+
+      at log (src/components/chat/VenueDetailDialog.tsx:608:15)
+
+    console.log
+      [SSE] Terminating active stream for venue: venue-1
+
+      at log (src/components/chat/VenueDetailDialog.tsx:642:15)
+          at Array.forEach (<anonymous>)
+
+    console.log
+      [SSE] Connecting to live stream for venue: venue-1
+
+      at log (src/components/chat/VenueDetailDialog.tsx:608:15)
+
+    console.log
+      [SSE] Terminating active stream for venue: venue-1
+
+      at log (src/components/chat/VenueDetailDialog.tsx:642:15)
+          at Array.forEach (<anonymous>)
+
+    console.log
+      [SSE] Connecting to live stream for venue: venue-1
+
+      at log (src/components/chat/VenueDetailDialog.tsx:608:15)
+
+    console.log
+      [SSE] Terminating active stream for venue: venue-1
+
+      at log (src/components/chat/VenueDetailDialog.tsx:642:15)
+          at Array.forEach (<anonymous>)
+
+PASS src/__tests__/api/notifications.test.ts
+PASS src/__tests__/lib/webauthn.test.ts
+PASS src/__tests__/components/VenueListings.test.tsx
+PASS src/__tests__/components/NoteEditor.test.tsx
+PASS src/__tests__/lib/offlineConversationSync.test.ts
+  ● Console
+
+    console.log
+      [OfflineDB] Database schema created
+
+      at FDBOpenDBRequest.log [as onupgradeneeded] (src/lib/offlineStorage.ts:120:17)
+
+    console.log
+      [OfflineDB] Database opened successfully
+
+      at FDBOpenDBRequest.log [as onsuccess] (src/lib/offlineStorage.ts:78:17)
+
+PASS src/__tests__/lib/wasm/noiseProcessor.test.ts
+PASS src/__tests__/components/ChatInput.test.tsx
+PASS src/__tests__/lib/eventBus.test.ts
+  ● Console
+
+    console.log
+      [EventBus] Emitted event booking:confirmed to queue.
+
+      at Object.log [as emit] (src/lib/events/bus.ts:25:15)
+
+    console.log
+      [EventBus] Webhook event e-stale is stale (age: 600s). Re-queuing...
+
+      at Object.log [as recoverStaleEvents] (src/lib/events/bus.ts:93:21)
+
+PASS src/__tests__/lib/swCacheLru.test.ts
+PASS src/__tests__/lib/telegram.test.ts
+PASS src/__tests__/events.test.ts
+PASS src/__tests__/lib/useCsrfToken.test.tsx
+PASS src/__tests__/components/VenueCard.test.tsx
+  ● Console
+
+    console.error
+      An update to VenueCard inside a test was not wrapped in act(...).
+      
+      When testing, code that causes React state updates should be wrapped into act(...):
+      
+      act(() => {
+        /* fire events that update state */
+      });
+      /* assert on the output */
+      
+      This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+    [0m [90m 298 |[39m       console[33m.[39merror([32m"Failed to save favorite:"[39m[33m,[39m err)[33m;[39m
+     [90m 299 |[39m     } [36mfinally[39m {
+    [31m[1m>[22m[39m[90m 300 |[39m       setIsSavingFavorite([36mfalse[39m)[33m;[39m
+     [90m     |[39m       [31m[1m^[22m[39m
+     [90m 301 |[39m     }
+     [90m 302 |[39m   }[33m;[39m
+     [90m 303 |[39m[0m
+
+      at node_modules/react-dom/cjs/react-dom-client.development.js:18758:19
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at warnIfUpdatesNotWrappedWithActDEV (node_modules/react-dom/cjs/react-dom-client.development.js:18757:9)
+      at scheduleUpdateOnFiber (node_modules/react-dom/cjs/react-dom-client.development.js:16409:11)
+      at dispatchSetStateInternal (node_modules/react-dom/cjs/react-dom-client.development.js:9170:13)
+      at dispatchSetState (node_modules/react-dom/cjs/react-dom-client.development.js:9127:7)
+      at setIsSavingFavorite (src/components/VenueCard.tsx:300:7)
+
+PASS src/__tests__/api/download.test.ts
+  ● Console
+
+    console.warn
+      Failed to load Noto Sans fonts, falling back to Helvetica. TypeError: `font` must be of type `string` or `Uint8Array` or `ArrayBuffer`, but was actually of type `NaN`
+          at Object.<anonymous>.exports.assertIs (/home/runner/work/WorkSphere/WorkSphere/node_modules/pdf-lib/src/utils/validators.ts:156:9)
+          at PDFDocument.<anonymous> (/home/runner/work/WorkSphere/WorkSphere/node_modules/pdf-lib/src/api/PDFDocument.ts:944:5)
+          at step (/home/runner/work/WorkSphere/WorkSphere/node_modules/pdf-lib/node_modules/tslib/tslib.js:141:27)
+          at Object.next (/home/runner/work/WorkSphere/WorkSphere/node_modules/pdf-lib/node_modules/tslib/tslib.js:122:57)
+          at /home/runner/work/WorkSphere/WorkSphere/node_modules/pdf-lib/node_modules/tslib/tslib.js:115:75
+          at new Promise (<anonymous>)
+          at Object.__awaiter (/home/runner/work/WorkSphere/WorkSphere/node_modules/pdf-lib/node_modules/tslib/tslib.js:111:16)
+          at PDFDocument.Object.<anonymous>.PDFDocument.embedFont (/home/runner/work/WorkSphere/WorkSphere/node_modules/pdf-lib/cjs/api/PDFDocument.js:863:24)
+          at embedFont (/home/runner/work/WorkSphere/WorkSphere/src/app/api/bookings/[bookingId]/download/route.ts:82:27)
+          at processTicksAndRejections (node:internal/process/task_queues:95:5)
+          at Object.<anonymous> (/home/runner/work/WorkSphere/WorkSphere/src/__tests__/api/download.test.ts:98:17)
+
+    [0m [90m 83 |[39m       boldFont [33m=[39m [36mawait[39m pdfDoc[33m.[39membedFont(boldFontBytes)[33m;[39m
+     [90m 84 |[39m     } [36mcatch[39m (err) {
+    [31m[1m>[22m[39m[90m 85 |[39m       console[33m.[39mwarn(
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 86 |[39m         [32m"Failed to load Noto Sans fonts, falling back to Helvetica."[39m[33m,[39m
+     [90m 87 |[39m         err[33m,[39m
+     [90m 88 |[39m       )[33m;[39m[0m
+
+      at warn (src/app/api/bookings/[bookingId]/download/route.ts:85:15)
+      at Object.<anonymous> (src/__tests__/api/download.test.ts:98:17)
+
+PASS src/__tests__/cache.test.ts
+PASS src/__tests__/api/folders-join.test.ts
+  ● Console
+
+    console.error
+      Failed to mark invitation expired: Error: db write failed
+          at Object.<anonymous> (/home/runner/work/WorkSphere/WorkSphere/src/__tests__/api/folders-join.test.ts:80:34)
+          at Promise.then.completed (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/utils.js:298:28)
+          at new Promise (<anonymous>)
+          at callAsyncCircusFn (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/utils.js:231:10)
+          at _callCircusTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:316:40)
+          at processTicksAndRejections (node:internal/process/task_queues:95:5)
+          at _runTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:252:3)
+          at _runTestsForDescribeBlock (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:126:9)
+          at _runTestsForDescribeBlock (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:121:9)
+          at run (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/run.js:71:3)
+          at runAndTransformResultsToJestFormat (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+          at jestAdapter (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+          at runTestInternal (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/runTest.js:367:16)
+          at runTest (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/runTest.js:444:34)
+          at Object.worker (/home/runner/work/WorkSphere/WorkSphere/node_modules/jest-runner/build/testWorker.js:106:12)
+
+    [0m [90m 64 |[39m           })[33m;[39m
+     [90m 65 |[39m         } [36mcatch[39m (err) {
+    [31m[1m>[22m[39m[90m 66 |[39m           console[33m.[39merror([32m"Failed to mark invitation expired:"[39m[33m,[39m err)[33m;[39m
+     [90m    |[39m                   [31m[1m^[22m[39m
+     [90m 67 |[39m         }
+     [90m 68 |[39m       }
+     [90m 69 |[39m[0m
+
+      at error (src/app/api/folders/join/route.ts:66:19)
+      at Object.<anonymous> (src/__tests__/api/folders-join.test.ts:88:17)
+
+PASS src/__tests__/components/TagChip.test.tsx
+PASS src/__tests__/lib/pdfGenerator.test.ts
+PASS src/__tests__/lib/notificationWindow.test.ts
+PASS src/__tests__/lib/analytics.test.ts
+PASS src/__tests__/api/analytics.test.ts
+PASS src/__tests__/lib/agents/MemoryAgent.test.ts
+PASS src/__tests__/lib/folders.test.ts
+PASS src/__tests__/components/CookieBanner.test.tsx
+PASS src/__tests__/components/ChatHeader.test.tsx
+PASS src/__tests__/lib/taxExport.test.ts
+PASS src/__tests__/lib/calendar.test.ts
+PASS src/__tests__/lib/rateLimit.test.ts
+PASS src/__tests__/api/resend-otp.test.ts
+PASS src/__tests__/hooks/useSpeechRecognition.test.tsx
+PASS src/__tests__/components/BookingModal.test.tsx
+PASS src/__tests__/lib/csrf.test.ts
+PASS src/__tests__/components/ShortcutsModal.test.tsx
+PASS src/__tests__/components/EmptyState.test.tsx
+PASS src/__tests__/lib/validations.test.ts
+PASS src/__tests__/api/zkp-access.test.ts
+PASS src/__tests__/components/EnhancedChatbot.test.tsx
+PASS src/__tests__/hooks/useDebounce.test.ts
+PASS src/__tests__/lib/cache.test.ts
+PASS src/__tests__/lib/collectionInvite.test.ts
+PASS src/__tests__/lib/utils.test.ts
+PASS src/__tests__/components/skeleton.test.tsx
+PASS src/__tests__/components/RatingDistribution.test.tsx
+PASS src/__tests__/lib/ancHeadsetRental.test.ts
+PASS src/__tests__/components/ThemeToggle.test.tsx
+PASS src/__tests__/lib/zkp.test.ts
+
+Summary of all failing tests
+FAIL src/__tests__/components/OnboardingTour.test.tsx
+  ● OnboardingTour › starts the tour for first-time users (no localStorage flag)
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:39:11)
+
+  ● OnboardingTour › does NOT start the tour when onboarding is already completed
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:56:11)
+
+  ● OnboardingTour › defines exactly 3 tour steps targeting map, chat, and booking
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:70:11)
+
+  ● OnboardingTour › includes a skip button in the options
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:84:11)
+
+  ● OnboardingTour › saves completion to localStorage when tour finishes
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:94:11)
+
+  ● OnboardingTour › saves completion to localStorage when tour is skipped
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:110:11)
+
+  ● OnboardingTour › does NOT save to localStorage for non-end events
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:125:11)
+
+  ● OnboardingTour › each step has a title and content
+
+    useTheme must be used within a ThemeProvider
+
+    [0m [90m 132 |[39m   [36mconst[39m ctx [33m=[39m useContext([33mThemeContext[39m)[33m;[39m
+     [90m 133 |[39m   [36mif[39m ([33m![39mctx) {
+    [31m[1m>[22m[39m[90m 134 |[39m     [36mthrow[39m [36mnew[39m [33mError[39m([32m"useTheme must be used within a ThemeProvider"[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 135 |[39m   }
+     [90m 136 |[39m   [36mreturn[39m ctx[33m;[39m
+     [90m 137 |[39m }[0m
+
+      at useTheme (src/components/ThemeProvider.tsx:134:11)
+      at OnboardingTour (src/components/OnboardingTour.tsx:10:33)
+      at Object.react_stack_bottom_frame (node_modules/react-dom/cjs/react-dom-client.development.js:25904:20)
+      at renderWithHooks (node_modules/react-dom/cjs/react-dom-client.development.js:7662:22)
+      at updateFunctionComponent (node_modules/react-dom/cjs/react-dom-client.development.js:10166:19)
+      at beginWork (node_modules/react-dom/cjs/react-dom-client.development.js:11778:18)
+      at runWithFiberInDEV (node_modules/react-dom/cjs/react-dom-client.development.js:874:13)
+      at performUnitOfWork (node_modules/react-dom/cjs/react-dom-client.development.js:17641:22)
+      at workLoopSync (node_modules/react-dom/cjs/react-dom-client.development.js:17469:41)
+      at renderRootSync (node_modules/react-dom/cjs/react-dom-client.development.js:17450:11)
+      at performWorkOnRoot (node_modules/react-dom/cjs/react-dom-client.development.js:16583:35)
+      at performWorkOnRootViaSchedulerTask (node_modules/react-dom/cjs/react-dom-client.development.js:18957:7)
+      at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+      at Object.<anonymous>.process.env.NODE_ENV.exports.act (node_modules/react/cjs/react.development.js:884:10)
+      at node_modules/@testing-library/react/dist/act-compat.js:46:25
+      at renderRoot (node_modules/@testing-library/react/dist/pure.js:189:26)
+      at render (node_modules/@testing-library/react/dist/pure.js:291:10)
+      at Object.<anonymous> (src/__tests__/components/OnboardingTour.test.tsx:138:11)
+
+
+Test Suites: 1 failed, 64 passed, 65 total
+Tests:       8 failed, 392 passed, 400 total
+Snapshots:   0 total
+Time:        10.573 s
+Ran all test suites.

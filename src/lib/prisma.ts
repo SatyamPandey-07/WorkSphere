@@ -9,7 +9,14 @@ const globalForPrisma = globalThis as unknown as {
 
 // Prisma 7 requires a driver adapter for PostgreSQL
 function createPrismaClient() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 20,
+    min: 2,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 5_000,
+    statement_timeout: 10_000,
+  });
   const adapter = new PrismaPg(pool);
 
   // Client extension (Prisma 7 replacement for the old $use middleware)

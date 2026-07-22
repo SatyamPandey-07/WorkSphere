@@ -5,7 +5,7 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-// Lua script removed in favor of Redis pipeline transactions for atomic counter increments.
+const WINDOW_MS = 60_000;
 
 let redisClient: any = null;
 
@@ -31,6 +31,12 @@ function getRedisClient() {
   }
 }
 
+/**
+ * Sliding-window check in one MULTI/EXEC:
+ * ZREMRANGEBYSCORE → ZADD → ZCARD → EXPIRE.
+ * Avoids Lua `eval` timeouts under ~200 RPS while keeping prune+count+write atomic
+ * so concurrent bursts cannot all pass on a stale ZCARD (issue #1034).
+ */
 async function upstashRateLimit(
   identifier: string,
   limit: number,
@@ -39,18 +45,31 @@ async function upstashRateLimit(
   if (!redis) return memRateLimit(identifier, limit);
 
   try {
-    const windowMs = 60_000;
-    const windowSeconds = Math.ceil(windowMs / 1000);
-    const windowMinute = Math.floor(Date.now() / windowMs);
-    const key = `worksphere:ratelimit:${identifier}:${windowMinute}`;
+    const now = Date.now();
+    const windowStart = now - WINDOW_MS;
+    const windowSeconds = Math.ceil(WINDOW_MS / 1000);
+    const key = `worksphere:ratelimit:${identifier}`;
+    const member = microTimestampMember(
+      Math.floor(now / 1000),
+      (now % 1000) * 1000,
+      `${Math.random().toString(36).slice(2, 10)}`,
+    );
 
     const tx = redis.multi();
-    tx.incr(key);
+    tx.zremrangebyscore(key, 0, windowStart);
+    tx.zadd(key, { score: now, member });
+    tx.zcard(key);
     tx.expire(key, windowSeconds);
     const result = await tx.exec();
 
-    const count = result[0] as number;
-    return count <= limit;
+    // MULTI result order: rem, add, card, expire
+    const count = Number(result?.[2] ?? 0);
+    if (count > limit) {
+      await redis.zrem(key, member);
+      return false;
+    }
+
+    return true;
   } catch {
     return memRateLimit(identifier, limit);
   }
@@ -62,7 +81,6 @@ interface MemEntry {
   resetTime: number;
 }
 const memStore = new Map<string, MemEntry>();
-const WINDOW_MS = 60_000;
 
 interface RateLimitInfo {
   count: number;

@@ -24,6 +24,8 @@ describe("NoiseMeter Component & 60fps Audio Throttling", () => {
       value: {
         mediaDevices: {
           getUserMedia: mockGetUserMedia,
+          addEventListener: jest.fn(),
+          removeEventListener: jest.fn(),
         },
       },
       configurable: true,
@@ -191,5 +193,84 @@ describe("NoiseMeter Component & 60fps Audio Throttling", () => {
     // Frame 5: 33.34ms -> Should EXECUTE
     tick(33.34);
     expect(getFloatTimeDomainDataCalls).toBe(3);
+  });
+
+  it("handles devicechange by resuming AudioContext and re-acquiring stream if ended", async () => {
+    let deviceChangeCb: EventListener | null = null;
+    const mockResume = jest.fn().mockResolvedValue(undefined);
+
+    const mockTrack = { stop: jest.fn(), readyState: "live" };
+    const mockStream = {
+      getAudioTracks: () => [mockTrack],
+      getTracks: () => [mockTrack],
+    };
+    mockGetUserMedia.mockResolvedValue(mockStream);
+
+    global.navigator.mediaDevices.addEventListener = jest.fn((evt, cb) => {
+      if (evt === "devicechange") deviceChangeCb = cb as any;
+    });
+
+    const mockAudioContext = {
+      createMediaStreamSource: jest
+        .fn()
+        .mockReturnValue({ connect: jest.fn(), disconnect: jest.fn() }),
+      createAnalyser: jest
+        .fn()
+        .mockReturnValue({
+          fftSize: 2048,
+          smoothingTimeConstant: 0.25,
+          disconnect: jest.fn(),
+          getFloatTimeDomainData: jest.fn(),
+        }),
+      close: jest.fn().mockResolvedValue(undefined),
+      resume: mockResume,
+      state: "suspended",
+    };
+
+    Object.defineProperty(global, "AudioContext", {
+      value: jest.fn().mockImplementation(() => mockAudioContext),
+      writable: true,
+    });
+
+    render(<NoiseMeter onMeasured={mockOnMeasured} />);
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: /Measure Ambient Noise/i }),
+      );
+      await jest.advanceTimersByTimeAsync(50);
+    });
+
+    expect(deviceChangeCb).not.toBeNull();
+
+    // Trigger devicechange (context suspended -> calls resume)
+    await act(async () => {
+      if (deviceChangeCb) {
+        await (deviceChangeCb as EventListener)(new Event("devicechange"));
+      }
+    });
+
+    expect(mockResume).toHaveBeenCalled();
+
+    // Trigger devicechange with ended track (requires re-acquiring stream)
+    mockTrack.readyState = "ended";
+    const mockTrack2 = { stop: jest.fn(), readyState: "live" };
+    const newMockStream = {
+      getAudioTracks: () => [mockTrack2],
+      getTracks: () => [mockTrack2],
+    };
+    mockGetUserMedia.mockResolvedValueOnce(newMockStream);
+
+    await act(async () => {
+      if (deviceChangeCb) {
+        await (deviceChangeCb as EventListener)(new Event("devicechange"));
+      }
+    });
+
+    expect(mockGetUserMedia).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(5000);
+    });
   });
 });

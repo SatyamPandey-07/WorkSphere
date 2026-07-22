@@ -37,9 +37,14 @@ jest.mock("@upstash/redis", () => {
   };
 });
 
+jest.mock("@/lib/redis", () => ({
+  getRedis: jest.fn(),
+}));
+
 describe("Database Telemetry", () => {
   const originalEnv = process.env;
   let dbTelemetry: typeof import("@/lib/dbTelemetry");
+  let mockGetRedis: jest.Mock;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -57,7 +62,15 @@ describe("Database Telemetry", () => {
 
     // Reset module registry so each test gets a fresh cachedRedis and counters in dbTelemetry
     jest.resetModules();
+
+    // Re-mock after resetModules
+    jest.doMock("@/lib/redis", () => ({
+      getRedis: jest.fn(),
+    }));
+
     dbTelemetry = await import("@/lib/dbTelemetry");
+    const { getRedis } = await import("@/lib/redis");
+    mockGetRedis = getRedis as jest.Mock;
   });
 
   afterAll(() => {
@@ -68,6 +81,7 @@ describe("Database Telemetry", () => {
     beforeEach(() => {
       delete process.env.UPSTASH_REDIS_REST_URL;
       delete process.env.UPSTASH_REDIS_REST_TOKEN;
+      mockGetRedis.mockReturnValue(null);
     });
 
     it("should record query durations and calculate stats", async () => {
@@ -90,13 +104,17 @@ describe("Database Telemetry", () => {
     beforeEach(() => {
       process.env.UPSTASH_REDIS_REST_URL = "https://mock-redis.upstash.io";
       process.env.UPSTASH_REDIS_REST_TOKEN = "mock-token";
+      mockGetRedis.mockReturnValue(mockRedisInstance);
     });
 
-    it("should write queries to Redis using a pipeline", async () => {
+    it("should buffer queries and flush to Redis on demand", async () => {
       dbTelemetry.recordQueryDuration("Product", 300);
 
-      // Give async microtasks a tick to run
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      // Queries are buffered, not immediately written
+      expect(mockRedisInstance.pipeline).not.toHaveBeenCalled();
+
+      // Manually trigger flush
+      await dbTelemetry.flushTelemetryBuffer();
 
       expect(mockRedisInstance.pipeline).toHaveBeenCalled();
       expect(mockHincrby).toHaveBeenCalledWith(
@@ -123,6 +141,29 @@ describe("Database Telemetry", () => {
         199,
       );
       expect(mockExec).toHaveBeenCalled();
+    });
+
+    it("should batch multiple queries into a single flush", async () => {
+      dbTelemetry.recordQueryDuration("User", 100);
+      dbTelemetry.recordQueryDuration("User", 150);
+      dbTelemetry.recordQueryDuration("Venue", 300);
+
+      await dbTelemetry.flushTelemetryBuffer();
+
+      // Should have one hincrby for totalQueryCount with count 3
+      const totalCalls = mockHincrby.mock.calls.filter(
+        (call: unknown[]) =>
+          call[0] === "worksphere:telemetry:global" &&
+          call[1] === "totalQueryCount",
+      );
+      expect(totalCalls.length).toBe(1);
+      expect(totalCalls[0][2]).toBe(3);
+
+      // Should have sadd for both models
+      const saddCalls = mockSadd.mock.calls.filter(
+        (call: unknown[]) => call[0] === "worksphere:telemetry:models",
+      );
+      expect(saddCalls.length).toBe(2);
     });
 
     it("should fetch db stats from Redis", async () => {

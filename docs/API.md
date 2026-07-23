@@ -230,6 +230,29 @@ The optional **venue** object may contain:
 - `address`
 - `placeId`
 
+### Accepted Enum Values
+
+| Field           | Accepted Values                                                   |
+| --------------- | ----------------------------------------------------------------- |
+| `noiseLevel`    | `quiet`, `moderate`, `loud`                                       |
+| `lighting`      | `natural_daylight`, `warm_ambient`, `fluorescent`, `bright_white` |
+| `outletDensity` | `every_table`, `some_tables`, `wall_seats`, `none`                |
+| `powerTypes`    | `usb_c`, `ac_wall`, `wireless`                                    |
+
+### Example Request
+
+{
+"wifiQuality": 5,
+"hasOutlets": true,
+"noiseLevel": "quiet",
+"comment": "Excellent workspace with reliable Wi-Fi.",
+"outletDensity": "every_table",
+"lighting": "natural_daylight",
+"powerTypes": ["ac_wall", "usb_c"],
+"wifiSpeed": 250,
+"hasQuietZone": true
+}
+
 ### Aggregate Recalculation
 
 After a rating is submitted, the venue's aggregate values are recalculated automatically.
@@ -251,7 +274,11 @@ After a rating is submitted, the venue's aggregate values are recalculated autom
     "wifiQuality": 5,
     "hasOutlets": true,
     "noiseLevel": "quiet",
-    "comment": "Super fast fiber connection!",
+    "outletDensity": "every_table",
+    "lighting": "natural_daylight",
+    "powerTypes": ["ac_wall", "usb_c"],
+    "hasQuietZone": true,
+    "comment": "Excellent workspace with reliable Wi-Fi.",
     "createdAt": "2026-07-10T10:30:00.000Z"
   }
 }

@@ -179,9 +179,11 @@ fn clampVec2(v: vec2<f32>, maxLen: f32) -> vec2<f32> {
 fn agentSeparation(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32> {
   var force = vec2<f32>(0.0, 0.0);
   var count = 0u;
+  let totalAgents = min(params.agentCount, arrayLength(&agentsIn));
+  if (id >= totalAgents) { return force; }
   let pos = agents[id].position;
 
-  for (var i = 0u; i < params.agentCount; i = i + 1u) {
+  for (var i = 0u; i < totalAgents; i = i + 1u) {
     if (i == id) { continue; }
     let other = agents[i];
     if (other.state != 0u) { continue; }
@@ -205,9 +207,11 @@ fn agentSeparation(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32
 fn agentAlignment(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32> {
   var avgVel = vec2<f32>(0.0, 0.0);
   var count = 0u;
+  let totalAgents = min(params.agentCount, arrayLength(&agentsIn));
+  if (id >= totalAgents) { return avgVel; }
   let pos = agents[id].position;
 
-  for (var i = 0u; i < params.agentCount; i = i + 1u) {
+  for (var i = 0u; i < totalAgents; i = i + 1u) {
     if (i == id) { continue; }
     let other = agents[i];
     if (other.state != 0u) { continue; }
@@ -231,9 +235,11 @@ fn agentAlignment(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32>
 fn agentCohesion(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32> {
   var center = vec2<f32>(0.0, 0.0);
   var count = 0u;
+  let totalAgents = min(params.agentCount, arrayLength(&agentsIn));
+  if (id >= totalAgents) { return center; }
   let pos = agents[id].position;
 
-  for (var i = 0u; i < params.agentCount; i = i + 1u) {
+  for (var i = 0u; i < totalAgents; i = i + 1u) {
     if (i == id) { continue; }
     let other = agents[i];
     if (other.state != 0u) { continue; }
@@ -257,7 +263,8 @@ fn agentCohesion(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32> 
 }
 
 fn pathfindingForce(agent: Agent, params: SimParams) -> vec2<f32> {
-  if (agent.targetIdx < 0 || agent.targetIdx >= i32(params.exitCount)) {
+  let totalExits = min(params.exitCount, arrayLength(&exits));
+  if (agent.targetIdx < 0 || u32(agent.targetIdx) >= totalExits) {
     return vec2<f32>(0.0, 0.0);
   }
 
@@ -290,8 +297,9 @@ fn wallCollisionForce(agent: Agent, params: SimParams) -> vec2<f32> {
   var force = vec2<f32>(0.0, 0.0);
   let pos = agent.position;
   let wallRepelDist = 0.8;
+  let totalWalls = min(params.wallCount, arrayLength(&walls));
 
-  for (var i = 0u; i < params.wallCount; i = i + 1u) {
+  for (var i = 0u; i < totalWalls; i = i + 1u) {
     let wall = walls[i];
     let ab = wall.b - wall.a;
     let ap = pos - wall.a;
@@ -311,7 +319,8 @@ fn wallCollisionForce(agent: Agent, params: SimParams) -> vec2<f32> {
 @compute @workgroup_size(256)
 fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = gid.x;
-  if (id >= params.agentCount) { return; }
+  let totalAgents = min(params.agentCount, arrayLength(&agentsIn));
+  if (id >= totalAgents) { return; }
 
   let agent = agentsIn[id];
 

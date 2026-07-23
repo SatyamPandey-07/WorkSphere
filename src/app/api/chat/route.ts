@@ -35,7 +35,7 @@ function getGroqClient(): Groq {
 // ============================================================
 // AGENT 1: ORCHESTRATOR - Determines which agents to use
 // ============================================================
-async function orchestratorAgent(
+export async function orchestratorAgent(
   userMessage: string,
   context?: any,
 ): Promise<{
@@ -104,7 +104,7 @@ For general chat: {"skipAgents": true, "reasoning": "General conversation"}`;
 // ============================================================
 // AGENT 2: CONTEXT - Extracts search parameters from user intent
 // ============================================================
-async function contextAgent(
+export async function contextAgent(
   userMessage: string,
   userLocation?: { lat: number; lng: number },
   userId?: string | null,
@@ -228,7 +228,7 @@ Output ONLY valid JSON:
 // ============================================================
 // AGENT 3: DATA - Fetches venues from Overpass API
 // ============================================================
-async function dataAgent(
+export async function dataAgent(
   params: any,
   filters?: {
     wifi?: boolean;
@@ -587,7 +587,7 @@ async function enrichVenuesWithDBRatings(
 // AGENT 4: REASONING - Scores and ranks venues
 // Uses enriched DB data (wifiQuality 0-10, outletPct, noiseMode)
 // ============================================================
-function reasoningAgent(
+export function reasoningAgent(
   venues: RawVenue[],
   preferences: { workType?: string; amenities?: string[] },
 ): {
@@ -680,7 +680,7 @@ function reasoningAgent(
 // ============================================================
 // AGENT 5: ACTION - Generates final response and map updates
 // ============================================================
-async function actionAgent(
+export async function actionAgent(
   rankedVenues: any[],
   _userQuery: string,
 ): Promise<{

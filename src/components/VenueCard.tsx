@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
 import { AmbientSoundPlayer } from "@/components/noise/AmbientSoundPlayer";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
@@ -94,9 +95,13 @@ export function VenueCard({
   const [enableTransition, setEnableTransition] = useState(false);
 
   const { currency } = useCurrency();
+  const router = useRouter();
 
   const hoverPredictorRef = useHoverPredictor({
     onPredict: () => {
+      if (venue.id) {
+        router.prefetch(`/venues/${venue.id}`);
+      }
       if (typeof navigator !== "undefined" && navigator.serviceWorker?.controller) {
         navigator.serviceWorker.controller.postMessage({
           type: "PREFETCH_VENUE",

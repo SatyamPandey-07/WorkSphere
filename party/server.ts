@@ -8,6 +8,7 @@ interface SeatCheckin {
   venueId: string;
   capacity: number;
   checkedInAt: number;
+  version: number;
 }
 
 // Venues we don't have real capacity data for yet still need a sensible
@@ -27,6 +28,7 @@ export default class WorkspaceServer implements Party.Server {
   // keyed by connection id so we can always find & clear a user's previous
   // check-in on check-in/checkout/disconnect without scanning every venue.
   private seatCheckins = new Map<string, SeatCheckin>();
+  private seatCheckinLocks = new Set<string>(); // Prevents concurrent ops per connection
   private serverEpoch = Date.now();
   private sequenceId = 0;
 
@@ -216,30 +218,81 @@ export default class WorkspaceServer implements Party.Server {
     venueId: string,
     capacity?: unknown,
   ) {
-    const previous = this.seatCheckins.get(conn.id);
-    const resolvedCapacity =
-      typeof capacity === "number" && capacity > 0
-        ? capacity
-        : (previous?.capacity ?? DEFAULT_SEAT_CAPACITY);
+    const maxRetries = 3;
+    const connId = conn.id;
 
-    this.seatCheckins.set(conn.id, {
-      venueId,
-      capacity: resolvedCapacity,
-      checkedInAt: Date.now(),
-    });
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      // Per-connection lock to prevent interleaved operations
+      if (this.seatCheckinLocks.has(connId)) {
+        // Another operation for this connection is in flight - wait and retry
+        // In practice PartyKit processes sequentially, but this guards against edge cases
+        continue;
+      }
 
-    this.broadcastSeatUpdate(venueId);
-    // Also refresh the venue they just left, if any, since its count dropped.
-    if (previous && previous.venueId !== venueId) {
-      this.broadcastSeatUpdate(previous.venueId);
+      this.seatCheckinLocks.add(connId);
+      try {
+        const previous = this.seatCheckins.get(connId);
+        const expectedVersion = previous?.version ?? 0;
+        const resolvedCapacity =
+          typeof capacity === "number" && capacity > 0
+            ? capacity
+            : (previous?.capacity ?? DEFAULT_SEAT_CAPACITY);
+
+        const newCheckin: SeatCheckin = {
+          venueId,
+          capacity: resolvedCapacity,
+          checkedInAt: Date.now(),
+          version: expectedVersion + 1,
+        };
+
+        // Optimistic lock: verify no concurrent modification
+        const current = this.seatCheckins.get(connId);
+        if (current && current.version !== expectedVersion) {
+          continue; // Retry - concurrent modification detected
+        }
+
+        this.seatCheckins.set(connId, newCheckin);
+
+        this.broadcastSeatUpdate(venueId);
+        if (previous && previous.venueId !== venueId) {
+          this.broadcastSeatUpdate(previous.venueId);
+        }
+        return;
+      } finally {
+        this.seatCheckinLocks.delete(connId);
+      }
     }
+    console.error("[Seat] Max retries exceeded for checkin", connId);
   }
 
   private handleSeatCheckout(conn: Party.Connection) {
-    const previous = this.seatCheckins.get(conn.id);
-    if (!previous) return;
-    this.seatCheckins.delete(conn.id);
-    this.broadcastSeatUpdate(previous.venueId);
+    const maxRetries = 3;
+    const connId = conn.id;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (this.seatCheckinLocks.has(connId)) {
+        continue;
+      }
+
+      this.seatCheckinLocks.add(connId);
+      try {
+        const previous = this.seatCheckins.get(connId);
+        if (!previous) return;
+
+        // Optimistic lock check
+        const current = this.seatCheckins.get(connId);
+        if (current && current.version !== previous.version) {
+          continue; // Retry
+        }
+
+        this.seatCheckins.delete(connId);
+        this.broadcastSeatUpdate(previous.venueId);
+        return;
+      } finally {
+        this.seatCheckinLocks.delete(connId);
+      }
+    }
+    console.error("[Seat] Max retries exceeded for checkout", connId);
   }
 
   private countForVenue(venueId: string): number {

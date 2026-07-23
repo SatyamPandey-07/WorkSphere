@@ -648,10 +648,9 @@ async function enrichVenuesWithDBRatings(
     const placeIds = venues.map((v) => v.id);
     const dbVenues = await prisma.venue.findMany({
       where: { placeId: { in: placeIds } },
-      include: { ratings: true },
     });
 
-    // Build a lookup map: placeId → aggregated crowdsourced data
+    // Build a lookup map: placeId → cached venue data
     const dbMap = new Map<
       string,
       {
@@ -669,87 +668,18 @@ async function enrichVenuesWithDBRatings(
     >();
 
     for (const dbV of dbVenues) {
-      const ratings = dbV.ratings;
-      if (ratings.length === 0) {
-        // No user ratings — use the stored venue-level values if present
-        dbMap.set(dbV.placeId, {
-          avgWifi: dbV.wifiQuality ? dbV.wifiQuality * 2 : null, // convert 1-5 → 2-10
-          outletPct: dbV.hasOutlets ? 100 : 0,
-          noiseMode: dbV.noiseLevel ?? null,
-          hasErgonomic: dbV.hasErgonomic,
-          hasPhoneBooths: dbV.hasPhoneBooths,
-          hasNoMusic: dbV.hasNoMusic,
-          hasQuietZone: dbV.hasQuietZone,
-          hasAncHeadsetRental: dbV.hasAncHeadsetRental,
-          outletDensity: dbV.outletDensity ?? null,
-          wifiSpeed: dbV.wifiSpeed ?? null,
-        });
-      } else {
-        // Aggregate user ratings
-        const avgWifi =
-          ratings.reduce((sum, r) => sum + r.wifiQuality, 0) / ratings.length;
-        const outletPct =
-          (ratings.filter((r) => r.hasOutlets).length / ratings.length) * 100;
-        const ergonomicPct =
-          (ratings.filter((r) => r.hasErgonomic).length / ratings.length) * 100;
-        const phoneBoothsPct =
-          (ratings.filter((r) => r.hasPhoneBooths).length / ratings.length) *
-          100;
-        const noMusicPct =
-          (ratings.filter((r) => r.hasNoMusic).length / ratings.length) * 100;
-        const quietZonePct =
-          (ratings.filter((r) => r.hasQuietZone).length / ratings.length) * 100;
-
-        const validSpeeds = ratings
-          .filter((r) => r.wifiSpeed !== null && r.wifiSpeed > 0)
-          .map((r) => r.wifiSpeed as number);
-        const avgSpeed =
-          validSpeeds.length > 0
-            ? Math.round(
-                validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length,
-              )
-            : null;
-
-        const densityCounts: Record<string, number> = {};
-        for (const r of ratings) {
-          if (r.outletDensity) {
-            densityCounts[r.outletDensity] =
-              (densityCounts[r.outletDensity] || 0) + 1;
-          }
-        }
-        const outletDensityMode =
-          Object.keys(densityCounts).length > 0
-            ? Object.entries(densityCounts).reduce(
-                (best, [lvl, cnt]) =>
-                  cnt > (densityCounts[best] ?? 0) ? lvl : best,
-                "none",
-              )
-            : "none";
-
-        // Mode of noiseLevel
-        const noiseCounts: Record<string, number> = {};
-        for (const r of ratings) {
-          noiseCounts[r.noiseLevel] = (noiseCounts[r.noiseLevel] || 0) + 1;
-        }
-        const noiseMode = Object.entries(noiseCounts).reduce(
-          (best, [level, count]) =>
-            count > (noiseCounts[best] ?? 0) ? level : best,
-          "moderate",
-        );
-
-        dbMap.set(dbV.placeId, {
-          avgWifi: (avgWifi / 5) * 10, // convert 1-5 scale → 0-10
-          outletPct,
-          noiseMode,
-          hasErgonomic: ergonomicPct >= 50,
-          hasPhoneBooths: phoneBoothsPct >= 50,
-          hasNoMusic: noMusicPct >= 50,
-          hasQuietZone: quietZonePct >= 50,
-          hasAncHeadsetRental: dbV.hasAncHeadsetRental,
-          outletDensity: outletDensityMode,
-          wifiSpeed: avgSpeed,
-        });
-      }
+      dbMap.set(dbV.placeId, {
+        avgWifi: dbV.wifiQuality ? dbV.wifiQuality * 2 : null, // convert 1-5 → 2-10
+        outletPct: dbV.hasOutlets ? 100 : 0,
+        noiseMode: dbV.noiseLevel ?? null,
+        hasErgonomic: dbV.hasErgonomic,
+        hasPhoneBooths: dbV.hasPhoneBooths,
+        hasNoMusic: dbV.hasNoMusic,
+        hasQuietZone: dbV.hasQuietZone,
+        hasAncHeadsetRental: dbV.hasAncHeadsetRental,
+        outletDensity: dbV.outletDensity ?? null,
+        wifiSpeed: dbV.wifiSpeed ?? null,
+      });
     }
 
     // Merge DB data back onto OSM venues

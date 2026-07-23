@@ -5,6 +5,39 @@ import { Play, Pause, Volume2, VolumeX, Radio, Settings } from "lucide-react";
 
 type SoundPreset = "jazz" | "cafe" | "library";
 
+export type EqPresetName =
+  "flat" | "bass-boost" | "vocal-enhancer" | "treble-boost" | "warm";
+
+export interface EqPreset {
+  label: string;
+  gains: number[];
+}
+
+export const EQ_FREQUENCIES: number[] = [60, 230, 910, 4000, 14000];
+
+export const EQ_PRESETS: Record<EqPresetName, EqPreset> = {
+  flat: {
+    label: "Flat",
+    gains: [0, 0, 0, 0, 0],
+  },
+  "bass-boost": {
+    label: "Bass Boost",
+    gains: [5, 3, 0, 0, 0],
+  },
+  "vocal-enhancer": {
+    label: "Vocal Enhancer",
+    gains: [-2, -1, 3, 2, 0],
+  },
+  "treble-boost": {
+    label: "Treble Boost",
+    gains: [0, 0, 0, 3, 5],
+  },
+  warm: {
+    label: "Warm",
+    gains: [3, 2, 1, -1, -2],
+  },
+};
+
 /**
  * Interface representing component props for the AudioEqualizer component.
  *
@@ -86,7 +119,7 @@ export function AudioEqualizer({
   }, []);
 
   // Initialize Audio Context on demand
-  const initAudio = () => {
+  const initAudio = useCallback(() => {
     if (audioContextRef.current) return;
     const AudioContextClass =
       window.AudioContext || (window as any).webkitAudioContext;
@@ -100,7 +133,10 @@ export function AudioEqualizer({
       filter.type = "peaking";
       filter.frequency.setValueAtTime(freq, ctx.currentTime);
       filter.Q.setValueAtTime(1.2, ctx.currentTime);
-      filter.gain.setValueAtTime(EQ_PRESETS[eqPreset].gains[i], ctx.currentTime);
+      filter.gain.setValueAtTime(
+        EQ_PRESETS[eqPreset].gains[i],
+        ctx.currentTime,
+      );
       return filter;
     });
 
@@ -118,7 +154,7 @@ export function AudioEqualizer({
     masterGainRef.current = masterGain;
     analyserRef.current = analyser;
     eqFiltersRef.current = eqFilters;
-  };
+  }, [eqPreset]);
 
   // Helper: Create Pink Noise Buffer
   const createPinkNoiseBuffer = (ctx: AudioContext) => {
@@ -193,7 +229,6 @@ export function AudioEqualizer({
   const startPlaying = useCallback(() => {
     initAudio();
     const ctx = audioContextRef.current!;
-    const masterGain = masterGainRef.current!;
 
     if (ctx.state === "suspended") {
       ctx.resume();
@@ -276,7 +311,7 @@ export function AudioEqualizer({
       const interval = setInterval(playChord, 5000);
       jazzCleanupRef.current = () => clearInterval(interval);
     }
-  }, [preset, stopPlayingNodes]);
+  }, [preset, stopPlayingNodes, initAudio]);
 
   // Toggle Action
   const togglePlay = () => {
@@ -421,7 +456,11 @@ export function AudioEqualizer({
         >
           {(Object.entries(EQ_PRESETS) as [EqPresetName, EqPreset][]).map(
             ([key, { label }]) => (
-              <option key={key} value={key} className="bg-zinc-900 text-zinc-100">
+              <option
+                key={key}
+                value={key}
+                className="bg-zinc-900 text-zinc-100"
+              >
                 {label}
               </option>
             ),

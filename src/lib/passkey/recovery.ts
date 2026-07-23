@@ -56,7 +56,7 @@ export function splitSecret(secret: Uint8Array): [Share, Share, Share] {
   for (let i = 0; i < secret.length; i++) {
     const s = secret[i];
     const a = a1[i];
-    
+
     // y = s + a * x (in GF)
     shares[0].y[i] = s ^ gfMul(a, 1);
     shares[1].y[i] = s ^ gfMul(a, 2);
@@ -84,10 +84,10 @@ export function recoverSecret(share1: Share, share2: Share): Uint8Array {
   for (let i = 0; i < length; i++) {
     const y1 = share1.y[i];
     const y2 = share2.y[i];
-    
+
     const term1 = gfMul(y1, gfDiv(share2.x, denom));
     const term2 = gfMul(y2, gfDiv(share1.x, denom));
-    
+
     secret[i] = term1 ^ term2;
   }
 
@@ -96,7 +96,7 @@ export function recoverSecret(share1: Share, share2: Share): Uint8Array {
 
 function bufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
-  let binary = '';
+  let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
@@ -115,36 +115,42 @@ function base64ToBuffer(base64: string): ArrayBuffer {
 /**
  * Encrypts a share for distribution to a trusted device using AES-GCM
  */
-export async function encryptShare(share: Share, key: CryptoKey): Promise<EncryptedShare> {
+export async function encryptShare(
+  share: Share,
+  key: CryptoKey,
+): Promise<EncryptedShare> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
     key,
-    share.y
+    share.y as any,
   );
 
   return {
     x: share.x,
     iv: bufferToBase64(iv.buffer),
-    ciphertext: bufferToBase64(ciphertext)
+    ciphertext: bufferToBase64(ciphertext),
   };
 }
 
 /**
  * Decrypts a share received from a trusted device
  */
-export async function decryptShare(encrypted: EncryptedShare, key: CryptoKey): Promise<Share> {
+export async function decryptShare(
+  encrypted: EncryptedShare,
+  key: CryptoKey,
+): Promise<Share> {
   const iv = base64ToBuffer(encrypted.iv);
   const ciphertext = base64ToBuffer(encrypted.ciphertext);
 
   const plaintext = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv: new Uint8Array(iv) },
     key,
-    ciphertext
+    ciphertext,
   );
 
   return {
     x: encrypted.x,
-    y: new Uint8Array(plaintext)
+    y: new Uint8Array(plaintext),
   };
 }

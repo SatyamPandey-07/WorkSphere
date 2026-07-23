@@ -23,7 +23,7 @@ export function AccessibleMarker({
 }: AccessibleMarkerProps) {
   const markerRef = useRef<LeafletMarker | null>(null);
 
-  const handleKeyDown = useCallback((e: Leaflet.LeafletKeyboardEvent) => {
+  const handleKeyDown = useCallback((e: L.LeafletKeyboardEvent) => {
     if (e.originalEvent.key === "Enter" || e.originalEvent.key === " ") {
       e.originalEvent.preventDefault();
       e.target.openPopup();

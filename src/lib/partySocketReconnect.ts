@@ -1,4 +1,33 @@
 /**
+ * PartySocket Reconnection Protocol
+ *
+ * ### State Machine Transitions
+ * | Current State  | Next State     | Trigger / Description |
+ * | :------------- | :------------- | :-------------------- |
+ * | `DISCONNECTED` | `CONNECTING`   | Initial connection attempt or manual connect call. |
+ * | `CONNECTING`   | `CONNECTED`    | Connection established successfully. |
+ * | `CONNECTING`   | `RECONNECTING` | Initial connection failed, attempting to retry. |
+ * | `CONNECTED`    | `RECONNECTING` | Connection dropped unexpectedly. |
+ * | `RECONNECTING` | `CONNECTING`   | Executing the next retry attempt. |
+ * | `RECONNECTING` | `DISCONNECTED` | Max retries reached, giving up. |
+ *
+ * ### Configuration Options
+ * - `maxRetries` (number): The maximum number of reconnection attempts before terminating the process.
+ * - `initialDelayMs` / `minReconnectionDelay` (number): The base delay in milliseconds before the first reconnection attempt.
+ * - `maxDelayMs` / `maxReconnectionDelay` (number): The maximum delay in milliseconds between reconnection attempts (used for backoff limits).
+ *
+ * ### Example: Custom Event Listener Binding
+ * ```typescript
+ * const socket = new PartySocket({ host: "localhost:8080" });
+ *
+ * // Bind a custom listener to track reconnection attempts
+ * socket.addEventListener("reconnecting", (event) => {
+ *   console.log(`Reconnecting... Attempt ${event.detail.attempt}`);
+ * });
+ * ```
+ */
+
+/**
  * Shared PartySocket reconnect tuning.
  *
  * Default partysocket uses infinite retries and a 0ms delay on the first

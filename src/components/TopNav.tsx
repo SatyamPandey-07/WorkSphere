@@ -4,7 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { ReactiveUserButton } from "@/components/ReactiveUserButton";
-import { Coffee, LayoutGrid, MapPin, Menu, Shield, X } from "lucide-react";
+import { Coffee, LayoutGrid, Menu, Shield, X } from "lucide-react";
+import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/NotificationBell";
 
@@ -24,9 +25,13 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
     <nav className="sticky top-0 z-50 border-b border-zinc-200/80 dark:border-white/5 backdrop-blur-xl bg-white/70 dark:bg-black/40 transition-colors">
       <div className="container mx-auto px-6 sm:px-10 h-[72px] flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/30 group-hover:shadow-blue-500/50 transition-shadow">
-            <MapPin className="w-5 h-5 text-white" />
-          </div>
+          <Image
+            src="/icons/icon-512.png"
+            alt="WorkSphere logo"
+            width={36}
+            height={36}
+            className="w-9 h-9 rounded-xl shadow-lg shadow-blue-500/30 group-hover:shadow-blue-500/50 transition-shadow"
+          />{" "}
           <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
             WorkSphere
           </span>

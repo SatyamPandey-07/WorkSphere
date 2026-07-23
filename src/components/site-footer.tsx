@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 import {
-  MapPin,
   Github,
   Twitter,
   Linkedin,
@@ -117,9 +117,13 @@ export default function SiteFooter() {
           {/* Brand Identity Column */}
           <div className="lg:col-span-4 flex flex-col gap-4">
             <Link href="/" className="flex items-center gap-2.5 group w-fit">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-md shadow-blue-500/20 group-hover:shadow-blue-500/40 transition-all duration-300">
-                <MapPin className="w-5 h-5 text-white" />
-              </div>
+              <Image
+                src="/icons/icon-512.png"
+                alt="WorkSphere logo"
+                width={36}
+                height={36}
+                className="w-9 h-9 rounded-xl shadow-md shadow-blue-500/20 group-hover:shadow-blue-500/40 transition-all duration-300"
+              />{" "}
               <span className="text-xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-cyan-600 dark:from-blue-400 dark:via-purple-400 dark:to-cyan-400 bg-clip-text text-transparent">
                 WorkSphere
               </span>

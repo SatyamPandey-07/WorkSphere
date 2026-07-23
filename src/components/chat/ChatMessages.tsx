@@ -40,6 +40,7 @@ import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ComparisonDrawer } from "@/components/ComparisonDrawer";
 import { ChatMessageSkeleton } from "@/components/ui/skeleton";
+import { ReadAloudButton } from "./ReadAloudButton";
 import {
   VenueGrid,
   LayoutBoundary,
@@ -1016,18 +1017,8 @@ export function MessageList({
                 }`}
               >
                 {message.role === "assistant" && (
-                  <div className="absolute top-2 right-2 flex items-center gap-1">
-                    <ReadAloudButton
-                      isSpeaking={speakingMessageId === message.id}
-                      disabled={!isTtsSupported}
-                      onToggle={() => {
-                        if (speakingMessageId === message.id) {
-                          stopSpeech();
-                        } else {
-                          speakMessage(message.id, message.content);
-                        }
-                      }}
-                    />
+                  <div className="absolute top-2 right-2 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    <ReadAloudButton text={message.content} />
                     <CopyMessageButton text={message.content} />
                   </div>
                 )}
@@ -1219,7 +1210,11 @@ function CopyMessageButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
+<<<<<<< HEAD
       className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-all opacity-0 group-hover:opacity-100 focus-within:opacity-100"
+=======
+      className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-all"
+>>>>>>> 36942c3 (feat(tts): add playback rate speed options and dropdown to speech synthesis and ReadAloudButton)
       title="Copy message"
       aria-label="Copy message"
     >

@@ -8,9 +8,7 @@ const nextConfig: NextConfig = {
     "*.ngrok-free.app",
     "*.pinggy.io",
   ],
-  typescript: {
-    ignoreBuildErrors: true,
-  },
+  // TypeScript strict checking enabled — do not add ignoreBuildErrors: true
   // OSRM routing proxy configuration
   async rewrites() {
     const osrmUrl =

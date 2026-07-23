@@ -23,7 +23,12 @@ export type EqState = {
 export type UseAudioEqualizerReturn = {
   state: EqState;
   setBand: (index: number, gain: number) => Promise<void>;
-  setBandFull: (index: number, frequency: number, q: number, gain: number) => Promise<void>;
+  setBandFull: (
+    index: number,
+    frequency: number,
+    q: number,
+    gain: number,
+  ) => Promise<void>;
   toggleBypass: () => void;
   resetBands: () => Promise<void>;
   frequencyResponse: FrequencyResponse | null;
@@ -42,15 +47,29 @@ export function useAudioEqualizer(
     isProcessing: false,
     error: null,
   });
-  const [frequencyResponse, setFrequencyResponse] = useState<FrequencyResponse | null>(null);
+  const [frequencyResponse, setFrequencyResponse] =
+    useState<FrequencyResponse | null>(null);
   const bandsRef = useRef(initialBands);
   const sampleRateRef = useRef(sampleRate);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const filterNodesRef = useRef<Array<AudioWorkletNode | AudioNode>>([]);
 
   useEffect(() => {
     let mounted = true;
 
     async function setup() {
       try {
+        if (
+          typeof window !== "undefined" &&
+          ("AudioContext" in window || "webkitAudioContext" in window)
+        ) {
+          const AudioCtxClass =
+            window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioCtxClass && !audioContextRef.current) {
+            audioContextRef.current = new AudioCtxClass();
+          }
+        }
+
         await initEqualizer(initialBands, sampleRate);
         if (mounted) {
           setState((prev) => ({ ...prev, isReady: true }));
@@ -71,6 +90,31 @@ export function useAudioEqualizer(
 
     return () => {
       mounted = false;
+      // Disconnect all AudioWorkletNode filter bands explicitly in cleanup function (#1285)
+      if (filterNodesRef.current && filterNodesRef.current.length > 0) {
+        filterNodesRef.current.forEach((node) => {
+          try {
+            node.disconnect();
+          } catch {
+            // Already disconnected
+          }
+        });
+        filterNodesRef.current = [];
+      }
+
+      // Close AudioContext instance when parent component unmounts (#1285)
+      if (
+        audioContextRef.current &&
+        audioContextRef.current.state !== "closed"
+      ) {
+        try {
+          audioContextRef.current.close();
+        } catch {
+          // Already closed
+        }
+        audioContextRef.current = null;
+      }
+
       resetEqualizer();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -80,9 +124,7 @@ export function useAudioEqualizer(
     const bands = bandsRef.current;
     if (index < 0 || index >= bands.length) return;
 
-    const updated = bands.map((b, i) =>
-      i === index ? { ...b, gain } : b,
-    );
+    const updated = bands.map((b, i) => (i === index ? { ...b, gain } : b));
     bandsRef.current = updated;
 
     setState((prev) => ({ ...prev, bands: updated, isProcessing: true }));
@@ -147,7 +189,10 @@ export function useAudioEqualizer(
 
   const refreshResponse = useCallback(async () => {
     try {
-      const resp = await getFrequencyResponse(bandsRef.current, sampleRateRef.current);
+      const resp = await getFrequencyResponse(
+        bandsRef.current,
+        sampleRateRef.current,
+      );
       setFrequencyResponse(resp);
     } catch {
       // silently fail for response refresh

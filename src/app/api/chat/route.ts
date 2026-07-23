@@ -4,6 +4,7 @@ import Groq from "groq-sdk";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 import { triggerBackgroundMemorySync } from "@/lib/backgroundSync";
 import { chatRequestSchema, validateRequest } from "@/lib/validations";
+import { applyFilters } from "@/lib/filters";
 import {
   checkSemanticCache,
   setSemanticCache,
@@ -377,74 +378,7 @@ async function dataAgent(
 
       // Apply filters if provided
       if (filters) {
-        if (filters.wifi) venues = venues.filter((v: any) => v.wifi);
-        if (filters.outlets) venues = venues.filter((v: any) => v.hasOutlets);
-        if (filters.quiet)
-          venues = venues.filter((v: any) => v.noiseLevel === "quiet");
-        if (filters.ergonomic)
-          venues = venues.filter((v: any) => v.hasErgonomic);
-        if (filters.outletDensity && filters.outletDensity !== "none") {
-          if (filters.outletDensity === "every_table") {
-            venues = venues.filter(
-              (v: any) => v.outletDensity === "every_table",
-            );
-          } else if (filters.outletDensity === "some_tables") {
-            venues = venues.filter((v: any) =>
-              ["every_table", "some_tables"].includes(v.outletDensity),
-            );
-          } else if (filters.outletDensity === "wall_seats") {
-            venues = venues.filter((v: any) =>
-              ["every_table", "some_tables", "wall_seats"].includes(
-                v.outletDensity,
-              ),
-            );
-          }
-        }
-        if (filters.wifiSpeedBand && filters.wifiSpeedBand !== "all") {
-          if (filters.wifiSpeedBand === "basic") {
-            venues = venues.filter(
-              (v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 10,
-            );
-          } else if (filters.wifiSpeedBand === "fast") {
-            venues = venues.filter(
-              (v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50,
-            );
-          } else if (filters.wifiSpeedBand === "ultra") {
-            venues = venues.filter(
-              (v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100,
-            );
-          }
-        }
-        if (filters.hasPhoneBooths)
-          venues = venues.filter((v: any) => v.hasPhoneBooths);
-        if (filters.hasAncHeadsetRental)
-          venues = venues.filter((v: any) => v.hasAncHeadsetRental);
-        if (filters.singleOriginBeans)
-          venues = venues.filter((v: any) => v.singleOriginBeans);
-
-        if (filters.specialtyEspresso)
-          venues = venues.filter((v: any) => v.specialtyEspresso);
-
-        if (filters.oatAlmondMilk)
-          venues = venues.filter((v: any) => v.oatAlmondMilk);
-
-        if (filters.pourOverAvailable)
-          venues = venues.filter((v: any) => v.pourOverAvailable);
-        if (filters.hasNoMusic)
-          venues = venues.filter((v: any) => v.hasNoMusic);
-        if (filters.hasQuietZone)
-          venues = venues.filter((v: any) => v.hasQuietZone);
-        if (filters.musicStyle && filters.musicStyle !== "all") {
-          if (filters.musicStyle === "no_music") {
-            venues = venues.filter(
-              (v: any) => v.musicStyle === "no_music" || v.hasNoMusic,
-            );
-          } else {
-            venues = venues.filter(
-              (v: any) => v.musicStyle === filters.musicStyle,
-            );
-          }
-        }
+        venues = applyFilters(venues, filters);
       }
 
       return {
@@ -539,67 +473,7 @@ async function dataAgent(
   ];
 
   // Apply filters to mock data as well so the user can test filters
-  let filteredMock = mockVenues;
-  if (filters) {
-    if (filters.wifi) filteredMock = filteredMock.filter((v: any) => v.wifi);
-    if (filters.outlets)
-      filteredMock = filteredMock.filter((v: any) => v.hasOutlets);
-    if (filters.quiet)
-      filteredMock = filteredMock.filter((v: any) => v.noiseLevel === "quiet");
-    if (filters.ergonomic)
-      filteredMock = filteredMock.filter((v: any) => v.hasErgonomic);
-    if (filters.outletDensity && filters.outletDensity !== "none") {
-      if (filters.outletDensity === "every_table") {
-        filteredMock = filteredMock.filter(
-          (v: any) => v.outletDensity === "every_table",
-        );
-      } else if (filters.outletDensity === "some_tables") {
-        filteredMock = filteredMock.filter((v: any) =>
-          ["every_table", "some_tables"].includes(v.outletDensity),
-        );
-      } else if (filters.outletDensity === "wall_seats") {
-        filteredMock = filteredMock.filter((v: any) =>
-          ["every_table", "some_tables", "wall_seats"].includes(
-            v.outletDensity,
-          ),
-        );
-      }
-    }
-    if (filters.wifiSpeedBand && filters.wifiSpeedBand !== "all") {
-      if (filters.wifiSpeedBand === "basic") {
-        filteredMock = filteredMock.filter(
-          (v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 10,
-        );
-      } else if (filters.wifiSpeedBand === "fast") {
-        filteredMock = filteredMock.filter(
-          (v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50,
-        );
-      } else if (filters.wifiSpeedBand === "ultra") {
-        filteredMock = filteredMock.filter(
-          (v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100,
-        );
-      }
-    }
-    if (filters.hasPhoneBooths)
-      filteredMock = filteredMock.filter((v: any) => v.hasPhoneBooths);
-    if (filters.hasAncHeadsetRental)
-      filteredMock = filteredMock.filter((v: any) => v.hasAncHeadsetRental);
-    if (filters.hasNoMusic)
-      filteredMock = filteredMock.filter((v: any) => v.hasNoMusic);
-    if (filters.hasQuietZone)
-      filteredMock = filteredMock.filter((v: any) => v.hasQuietZone);
-    if (filters.musicStyle && filters.musicStyle !== "all") {
-      if (filters.musicStyle === "no_music") {
-        filteredMock = filteredMock.filter(
-          (v: any) => v.musicStyle === "no_music" || v.hasNoMusic,
-        );
-      } else {
-        filteredMock = filteredMock.filter(
-          (v: any) => v.musicStyle === filters.musicStyle,
-        );
-      }
-    }
-  }
+  const filteredMock = filters ? applyFilters(mockVenues, filters) : mockVenues;
 
   return {
     venues: filteredMock,
@@ -648,10 +522,9 @@ async function enrichVenuesWithDBRatings(
     const placeIds = venues.map((v) => v.id);
     const dbVenues = await prisma.venue.findMany({
       where: { placeId: { in: placeIds } },
-      include: { ratings: true },
     });
 
-    // Build a lookup map: placeId → aggregated crowdsourced data
+    // Build a lookup map: placeId → cached venue data
     const dbMap = new Map<
       string,
       {
@@ -669,87 +542,18 @@ async function enrichVenuesWithDBRatings(
     >();
 
     for (const dbV of dbVenues) {
-      const ratings = dbV.ratings;
-      if (ratings.length === 0) {
-        // No user ratings — use the stored venue-level values if present
-        dbMap.set(dbV.placeId, {
-          avgWifi: dbV.wifiQuality ? dbV.wifiQuality * 2 : null, // convert 1-5 → 2-10
-          outletPct: dbV.hasOutlets ? 100 : 0,
-          noiseMode: dbV.noiseLevel ?? null,
-          hasErgonomic: dbV.hasErgonomic,
-          hasPhoneBooths: dbV.hasPhoneBooths,
-          hasNoMusic: dbV.hasNoMusic,
-          hasQuietZone: dbV.hasQuietZone,
-          hasAncHeadsetRental: dbV.hasAncHeadsetRental,
-          outletDensity: dbV.outletDensity ?? null,
-          wifiSpeed: dbV.wifiSpeed ?? null,
-        });
-      } else {
-        // Aggregate user ratings
-        const avgWifi =
-          ratings.reduce((sum, r) => sum + r.wifiQuality, 0) / ratings.length;
-        const outletPct =
-          (ratings.filter((r) => r.hasOutlets).length / ratings.length) * 100;
-        const ergonomicPct =
-          (ratings.filter((r) => r.hasErgonomic).length / ratings.length) * 100;
-        const phoneBoothsPct =
-          (ratings.filter((r) => r.hasPhoneBooths).length / ratings.length) *
-          100;
-        const noMusicPct =
-          (ratings.filter((r) => r.hasNoMusic).length / ratings.length) * 100;
-        const quietZonePct =
-          (ratings.filter((r) => r.hasQuietZone).length / ratings.length) * 100;
-
-        const validSpeeds = ratings
-          .filter((r) => r.wifiSpeed !== null && r.wifiSpeed > 0)
-          .map((r) => r.wifiSpeed as number);
-        const avgSpeed =
-          validSpeeds.length > 0
-            ? Math.round(
-                validSpeeds.reduce((sum, s) => sum + s, 0) / validSpeeds.length,
-              )
-            : null;
-
-        const densityCounts: Record<string, number> = {};
-        for (const r of ratings) {
-          if (r.outletDensity) {
-            densityCounts[r.outletDensity] =
-              (densityCounts[r.outletDensity] || 0) + 1;
-          }
-        }
-        const outletDensityMode =
-          Object.keys(densityCounts).length > 0
-            ? Object.entries(densityCounts).reduce(
-                (best, [lvl, cnt]) =>
-                  cnt > (densityCounts[best] ?? 0) ? lvl : best,
-                "none",
-              )
-            : "none";
-
-        // Mode of noiseLevel
-        const noiseCounts: Record<string, number> = {};
-        for (const r of ratings) {
-          noiseCounts[r.noiseLevel] = (noiseCounts[r.noiseLevel] || 0) + 1;
-        }
-        const noiseMode = Object.entries(noiseCounts).reduce(
-          (best, [level, count]) =>
-            count > (noiseCounts[best] ?? 0) ? level : best,
-          "moderate",
-        );
-
-        dbMap.set(dbV.placeId, {
-          avgWifi: (avgWifi / 5) * 10, // convert 1-5 scale → 0-10
-          outletPct,
-          noiseMode,
-          hasErgonomic: ergonomicPct >= 50,
-          hasPhoneBooths: phoneBoothsPct >= 50,
-          hasNoMusic: noMusicPct >= 50,
-          hasQuietZone: quietZonePct >= 50,
-          hasAncHeadsetRental: dbV.hasAncHeadsetRental,
-          outletDensity: outletDensityMode,
-          wifiSpeed: avgSpeed,
-        });
-      }
+      dbMap.set(dbV.placeId, {
+        avgWifi: dbV.wifiQuality ? dbV.wifiQuality * 2 : null, // convert 1-5 → 2-10
+        outletPct: dbV.hasOutlets ? 100 : 0,
+        noiseMode: dbV.noiseLevel ?? null,
+        hasErgonomic: dbV.hasErgonomic,
+        hasPhoneBooths: dbV.hasPhoneBooths,
+        hasNoMusic: dbV.hasNoMusic,
+        hasQuietZone: dbV.hasQuietZone,
+        hasAncHeadsetRental: dbV.hasAncHeadsetRental,
+        outletDensity: dbV.outletDensity ?? null,
+        wifiSpeed: dbV.wifiSpeed ?? null,
+      });
     }
 
     // Merge DB data back onto OSM venues
@@ -1186,86 +990,9 @@ export async function POST(req: Request) {
       );
 
       // Apply advanced filters post-DB enrichment
-      let finalFilteredVenues = enrichedVenues;
-      if (filters) {
-        if (filters.wifi)
-          finalFilteredVenues = finalFilteredVenues.filter((v: any) => v.wifi);
-        if (filters.outlets)
-          finalFilteredVenues = finalFilteredVenues.filter(
-            (v: any) => v.hasOutlets,
-          );
-        if (filters.quiet)
-          finalFilteredVenues = finalFilteredVenues.filter(
-            (v: any) => v.noiseLevel === "quiet",
-          );
-        if (filters.ergonomic)
-          finalFilteredVenues = finalFilteredVenues.filter(
-            (v: any) => v.hasErgonomic,
-          );
-        if (filters.outletDensity && filters.outletDensity !== "none") {
-          if (filters.outletDensity === "every_table") {
-            finalFilteredVenues = finalFilteredVenues.filter(
-              (v: any) => v.outletDensity === "every_table",
-            );
-          } else if (filters.outletDensity === "some_tables") {
-            finalFilteredVenues = finalFilteredVenues.filter((v: any) =>
-              ["every_table", "some_tables"].includes(v.outletDensity),
-            );
-          } else if (filters.outletDensity === "wall_seats") {
-            finalFilteredVenues = finalFilteredVenues.filter((v: any) =>
-              ["every_table", "some_tables", "wall_seats"].includes(
-                v.outletDensity,
-              ),
-            );
-          }
-        }
-        if (filters.wifiSpeedBand && filters.wifiSpeedBand !== "all") {
-          if (filters.wifiSpeedBand === "basic") {
-            finalFilteredVenues = finalFilteredVenues.filter(
-              (v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 10,
-            );
-          } else if (filters.wifiSpeedBand === "fast") {
-            finalFilteredVenues = finalFilteredVenues.filter(
-              (v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 50,
-            );
-          } else if (filters.wifiSpeedBand === "ultra") {
-            finalFilteredVenues = finalFilteredVenues.filter(
-              (v: any) => v.wifiSpeed !== null && v.wifiSpeed >= 100,
-            );
-          }
-        }
-        if (filters.hasPhoneBooths) {
-          finalFilteredVenues = finalFilteredVenues.filter(
-            (v: any) => v.hasPhoneBooths,
-          );
-        }
-        if (filters.hasAncHeadsetRental) {
-          finalFilteredVenues = finalFilteredVenues.filter(
-            (v: any) => v.hasAncHeadsetRental,
-          );
-        }
-        if (filters.hasNoMusic) {
-          finalFilteredVenues = finalFilteredVenues.filter(
-            (v: any) => v.hasNoMusic,
-          );
-        }
-        if (filters.hasQuietZone) {
-          finalFilteredVenues = finalFilteredVenues.filter(
-            (v: any) => v.hasQuietZone,
-          );
-        }
-        if (filters.musicStyle && filters.musicStyle !== "all") {
-          if (filters.musicStyle === "no_music") {
-            finalFilteredVenues = finalFilteredVenues.filter(
-              (v: any) => v.musicStyle === "no_music" || v.hasNoMusic,
-            );
-          } else {
-            finalFilteredVenues = finalFilteredVenues.filter(
-              (v: any) => v.musicStyle === filters.musicStyle,
-            );
-          }
-        }
-      }
+      const finalFilteredVenues = filters
+        ? applyFilters(enrichedVenues, filters)
+        : enrichedVenues;
 
       if (orchestratorResult.complexity === "simple") {
         console.log("Bypassing Reasoning Agent for Simple query...");

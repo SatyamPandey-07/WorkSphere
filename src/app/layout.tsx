@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import "./globals.css";
 
@@ -121,6 +121,8 @@ export default async function RootLayout({
   const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
   const cookieStore = await cookies();
+  const headersList = await headers();
+  const nonce = headersList.get("x-csp-nonce") ?? "";
   const storedTheme = cookieStore.get("worksphere-theme")?.value;
   const theme: "light" | "dark" | "cyberpunk" =
     storedTheme === "dark" ||
@@ -181,6 +183,7 @@ export default async function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
         <script
           id="theme-init"
+          nonce={nonce}
           dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
         />
       </head>

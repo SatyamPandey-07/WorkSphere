@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import ScreenSharePanel from "@/components/sessions/ScreenSharePanel";
 import Scratchpad from "@/components/sessions/Scratchpad";
+import { MeshCallGrid } from "@/components/audio/MeshCallGrid";
 
 type Props = {
   session: {
@@ -175,6 +176,13 @@ export default function SessionDetailClient({ session }: Props) {
               hostId={session.host.id}
               currentUserId={user?.id}
             />
+
+            <div className="mt-8">
+              <MeshCallGrid
+                sessionSlug={session.slug}
+                hostId={session.host.id}
+              />
+            </div>
 
             <div className="mt-8">
               <Scratchpad sessionId={session.slug} />

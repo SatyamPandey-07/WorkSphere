@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { processUpcomingReservationAlerts } from "@/lib/reminderCron";
 import { prisma } from "@/lib/prisma";
-import { autoCreateUpcomingPartitions } from "@/lib/partitionMaintenance";
+import { autoCreateUpcomingPartitions } from "../../../../lib/partitionMaintenance";
 import nodemailer from "nodemailer";
 import twilio from "twilio";
 import { Redis } from "@upstash/redis";

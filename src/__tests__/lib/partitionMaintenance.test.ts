@@ -1,4 +1,4 @@
-import { autoCreateUpcomingPartitions } from "@/lib/partitionMaintenance";
+import { autoCreateUpcomingPartitions } from "../../lib/partitionMaintenance";
 import { prisma } from "@/lib/prisma";
 
 jest.mock("@/lib/prisma", () => ({

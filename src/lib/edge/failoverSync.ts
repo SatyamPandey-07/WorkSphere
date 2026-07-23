@@ -213,3 +213,49 @@ export class FailoverSyncManager<T = unknown> {
     this.deltaBuffer = [];
   }
 }
+
+export const secondaryNodes = [
+  "https://backup-a.example.com",
+  "https://backup-b.example.com",
+  "https://backup-c.example.com",
+];
+
+export async function pingEndpoint(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${url}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(3000),
+    });
+
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function getHealthyNode(
+  nodes: string[] = secondaryNodes,
+): Promise<string | null> {
+  for (const node of nodes) {
+    for (let i = 0; i < 3; i++) {
+      if (await pingEndpoint(node)) {
+        return node;
+      }
+    }
+  }
+
+  return null;
+}
+
+export async function switchSyncEndpoint(
+  _currentEndpoint?: string,
+): Promise<string> {
+  const healthyNode = await getHealthyNode();
+
+  if (healthyNode) {
+    console.info(`Switching sync endpoint -> ${healthyNode}`);
+    return healthyNode;
+  }
+
+  throw new Error("No healthy failover nodes available");
+}

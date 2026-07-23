@@ -3,6 +3,11 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import fs from "fs";
 import path from "path";
+import {
+  getCurrentMerkleRoot,
+  verifyMerkleProof,
+  generateWitness,
+} from "@/lib/zkp/revocation";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const snarkjs = require("snarkjs");
@@ -14,7 +19,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { proof, publicSignals } = await req.json();
+    const { proof, publicSignals, witness } = await req.json();
 
     if (!proof || !publicSignals) {
       return NextResponse.json(
@@ -49,13 +54,34 @@ export async function POST(req: Request) {
       );
     }
 
+    // Check Revocation Merkle Tree
+    // The expectedCommit is typically the first public signal.
+    const credentialHash = publicSignals[0];
+
+    // Use provided witness or generate it server-side for legacy clients
+    const currentWitness = witness || generateWitness(credentialHash);
+
+    const currentRoot = await getCurrentMerkleRoot();
+    const revoked = verifyMerkleProof(
+      credentialHash,
+      currentWitness,
+      currentRoot,
+    );
+
+    if (revoked) {
+      return NextResponse.json(
+        { error: "Credential revoked" },
+        { status: 403 },
+      );
+    }
+
     // Update user in Prisma
     await prisma.user.update({
       where: { id: userId },
       data: { isVerifiedStudent: true },
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, verified: true });
   } catch (error) {
     console.error("[VERIFY_STUDENT]", error);
     return NextResponse.json(

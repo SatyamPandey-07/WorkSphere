@@ -68,4 +68,15 @@ describe("ReceiptVerificationModal", () => {
       screen.getByText(/WebAssembly-compiled OpenSSL/),
     ).toBeInTheDocument();
   });
+
+  it("renders valid documentation link with target=_blank and rel=noopener", () => {
+    render(<ReceiptVerificationModal open={true} onClose={onClose} />);
+    const docLink = screen.getByRole("link", { name: /Documentation/i });
+    expect(docLink).toHaveAttribute(
+      "href",
+      "/docs/WASM_DIGITAL_SIGNATURE_VERIFICATION_GUIDE.md",
+    );
+    expect(docLink).toHaveAttribute("target", "_blank");
+    expect(docLink).toHaveAttribute("rel", "noopener noreferrer");
+  });
 });

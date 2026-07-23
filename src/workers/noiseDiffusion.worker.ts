@@ -1,7 +1,6 @@
+// prettier-ignore
 // @ts-expect-error - wasm module might not be built yet
-import init, {
-  calculate_heat_diffusion,
-} from "../../wasm/heat-diffusion/pkg/heat_diffusion.js";
+import init, { calculate_heat_diffusion } from "../../wasm/heat-diffusion/pkg/heat_diffusion.js";
 
 let wasmLoaded = false;
 let loadError: any = null;

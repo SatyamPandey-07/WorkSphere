@@ -1,3 +1,4 @@
+// @ts-expect-error - missing types for partykit
 import { Party } from "partykit/server";
 
 interface MockConnection extends Party.Connection {

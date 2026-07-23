@@ -24,6 +24,12 @@ export function VenueGodRays({
 }: VenueGodRaysProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isEnabled, setIsEnabled] = useState<boolean>(true);
+  const MAX_DENSITY = 10;
+  const [density, setDensity] = useState(5);
+  const handleDensityChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+    setDensity(parseFloat(e.target.value));
+  const safeDensityPercent = (d: number, max: number) =>
+    Math.round((d / max) * 100);
 
   useEffect(() => {
     try {
@@ -130,7 +136,11 @@ export function VenueGodRays({
                   ? "bg-amber-500/20 border-amber-500/30 text-amber-200 hover:bg-amber-500/30"
                   : "bg-zinc-500/20 border-zinc-500/30 text-zinc-400 hover:bg-zinc-500/30"
               }`}
-              title={isEnabled ? "Disable volumetric rendering" : "Enable volumetric rendering"}
+              title={
+                isEnabled
+                  ? "Disable volumetric rendering"
+                  : "Enable volumetric rendering"
+              }
             >
               {isEnabled ? (
                 <Eye className="w-3 h-3" />

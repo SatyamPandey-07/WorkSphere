@@ -105,7 +105,11 @@ export default function SiteFooter() {
   ];
 
   return (
-    <footer className="relative z-10 border-t border-zinc-200/50 dark:border-white/5 bg-zinc-50/80 dark:bg-black/30 backdrop-blur-md py-16 pb-28 sm:pb-16 text-zinc-600 dark:text-white/60">
+    <footer
+      role="contentinfo"
+      aria-label="Footer Navigation"
+      className="relative z-10 border-t border-zinc-200/50 dark:border-white/5 bg-zinc-50/80 dark:bg-black/30 backdrop-blur-md py-16 pb-28 sm:pb-16 text-zinc-600 dark:text-white/60"
+    >
       {/* Decorative ambient gradient backdrop */}
       <div className="absolute inset-0 -z-10 overflow-hidden pointer-events-none opacity-40 dark:opacity-100">
         <div className="absolute -bottom-10 left-1/4 w-[500px] h-[300px] rounded-full bg-blue-600/5 dark:bg-blue-600/10 blur-[80px]" />
@@ -116,7 +120,10 @@ export default function SiteFooter() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-10 lg:gap-12">
           {/* Brand Identity Column */}
           <div className="lg:col-span-4 flex flex-col gap-4">
-            <Link href="/" className="flex items-center gap-2.5 group w-fit">
+            <Link
+              href="/"
+              className="flex items-center gap-2.5 group w-fit focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-blue-500 rounded-sm"
+            >
               <Image
                 src="/icons/icon-512.png"
                 alt="WorkSphere logo"
@@ -144,7 +151,7 @@ export default function SiteFooter() {
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={social.label}
-                  className="w-9 h-9 rounded-xl bg-zinc-200/50 hover:bg-zinc-200 dark:bg-white/5 dark:hover:bg-white/10 flex items-center justify-center text-zinc-600 dark:text-white/50 accent-text-hover transition-colors duration-200 border border-zinc-300/30 dark:border-white/5"
+                  className="w-9 h-9 rounded-xl bg-zinc-200/50 hover:bg-zinc-200 dark:bg-white/5 dark:hover:bg-white/10 flex items-center justify-center text-zinc-600 dark:text-white/50 accent-text-hover transition-colors duration-200 border border-zinc-300/30 dark:border-white/5 focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-blue-500"
                   whileHover={{ y: -3, scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
@@ -166,7 +173,7 @@ export default function SiteFooter() {
                   <li key={idx}>
                     <Link
                       href={link.href}
-                      className="accent-text-hover transition-colors duration-200 block"
+                      className="accent-text-hover transition-colors duration-200 block focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-blue-500 rounded-sm"
                     >
                       {link.name}
                     </Link>
@@ -188,14 +195,14 @@ export default function SiteFooter() {
                         href={link.href}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="accent-text-hover transition-colors duration-200 block"
+                        className="accent-text-hover transition-colors duration-200 block focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-blue-500 rounded-sm"
                       >
                         {link.name}
                       </a>
                     ) : (
                       <Link
                         href={link.href}
-                        className="accent-text-hover transition-colors duration-200 block"
+                        className="accent-text-hover transition-colors duration-200 block focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-blue-500 rounded-sm"
                       >
                         {link.name}
                       </Link>
@@ -215,7 +222,7 @@ export default function SiteFooter() {
                   <li key={idx}>
                     <Link
                       href={link.href}
-                      className="accent-text-hover transition-colors duration-200 block"
+                      className="accent-text-hover transition-colors duration-200 block focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-blue-500 rounded-sm"
                     >
                       {link.name}
                     </Link>
@@ -247,7 +254,7 @@ export default function SiteFooter() {
                   value={email}
                   disabled={status === "loading" || status === "success"}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-3.5 pr-11 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-white/10 bg-white/70 dark:bg-white/5 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-white/30 focus:outline-none focus:ring-2 accent-ring-20 transition-all disabled:opacity-50"
+                  className="w-full pl-3.5 pr-11 py-2.5 text-sm rounded-xl border border-zinc-300 dark:border-white/10 bg-white/70 dark:bg-white/5 text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-white/30 focus:outline-none focus-visible:ring-2 accent-ring-20 transition-all disabled:opacity-50"
                   aria-label="Email Address for newsletter"
                 />
 
@@ -257,7 +264,7 @@ export default function SiteFooter() {
                     disabled={
                       status === "loading" || status === "success" || !email
                     }
-                    className="p-2 rounded-lg accent-bg text-white font-medium disabled:opacity-60 transition-colors flex items-center justify-center"
+                    className="p-2 rounded-lg accent-bg text-white font-medium disabled:opacity-60 transition-colors flex items-center justify-center focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                     aria-label="Subscribe"
                   >
                     {status === "loading" ? (
@@ -297,4 +304,3 @@ export default function SiteFooter() {
     </footer>
   );
 }
-

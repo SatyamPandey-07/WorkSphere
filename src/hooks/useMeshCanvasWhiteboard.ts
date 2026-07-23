@@ -94,7 +94,7 @@ export function useMeshCanvasWhiteboard(
 
     if (typeof getToken === "function") {
       getToken()
-        .then((t) => setToken(t ?? null))
+        .then((t: any) => setToken(t ?? null))
         .catch(() => setToken(null));
     }
   }, [canvasId, getToken]);

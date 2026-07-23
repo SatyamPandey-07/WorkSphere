@@ -51,6 +51,12 @@ const mockAudioContext = {
     frequency: {
       setValueAtTime: jest.fn(),
     },
+    Q: {
+      setValueAtTime: jest.fn(),
+    },
+    gain: {
+      setValueAtTime: jest.fn(),
+    },
   })),
   destination: {},
   currentTime: 0,
@@ -107,5 +113,52 @@ describe("AudioEqualizer Component (#859)", () => {
 
     // Cafe Chatter preset becomes active
     expect(cafeBtn).toHaveClass("bg-indigo-600");
+  });
+
+  it("renders EQ preset selector with default Flat", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+    expect(select).toBeInTheDocument();
+    expect(select.value).toBe("flat");
+  });
+
+  it("contains all EQ presets in dropdown", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+    const options = Array.from(select.options).map((o) => o.value);
+
+    expect(options).toContain("flat");
+    expect(options).toContain("bass-boost");
+    expect(options).toContain("vocal-enhancer");
+    expect(options).toContain("treble-boost");
+    expect(options).toContain("warm");
+    expect(options).toHaveLength(5);
+  });
+
+  it("updates EQ preset on selection", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+
+    fireEvent.change(select, { target: { value: "bass-boost" } });
+    expect(select.value).toBe("bass-boost");
+
+    fireEvent.change(select, { target: { value: "vocal-enhancer" } });
+    expect(select.value).toBe("vocal-enhancer");
+  });
+
+  it("displays correct label for each EQ preset option", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+    const optionLabels = Array.from(select.options).map((o) => o.text);
+
+    expect(optionLabels).toContain("Flat");
+    expect(optionLabels).toContain("Bass Boost");
+    expect(optionLabels).toContain("Vocal Enhancer");
+    expect(optionLabels).toContain("Treble Boost");
+    expect(optionLabels).toContain("Warm");
   });
 });

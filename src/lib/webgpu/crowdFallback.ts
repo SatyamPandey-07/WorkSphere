@@ -112,6 +112,14 @@ export class CrowdFallbackRenderer {
   private indexBuffer: WebGLBuffer | null = null;
   private ext: ANGLE_instanced_arrays | null = null;
 
+  // Density heatmap
+  private heatmapProgram: WebGLProgram | null = null;
+  private densityGrid: Float32Array = new Float32Array(0);
+  private densityTexture: WebGLTexture | null = null;
+  private quadBuffer: WebGLBuffer | null = null;
+  private readonly DENSITY_GRID_SIZE = 64;
+  private maxDensity = 1;
+
   private config: Required<
     Pick<
       SimulationConfig,
@@ -257,6 +265,32 @@ export class CrowdFallbackRenderer {
       this.config.exitPositions,
     );
 
+    // Initialize density grid
+    this.densityGrid = new Float32Array(this.DENSITY_GRID_SIZE * this.DENSITY_GRID_SIZE);
+
+    // Create density texture
+    this.densityTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, this.densityTexture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.R32F,
+      this.DENSITY_GRID_SIZE,
+      this.DENSITY_GRID_SIZE,
+      0,
+      gl.RED,
+      gl.FLOAT,
+      this.densityGrid,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // Initialize heatmap shader
+    this.heatmapProgram = this.initHeatmapProgram(gl);
+    this.quadBuffer = gl.createBuffer();
+
     return true;
   }
 
@@ -274,6 +308,136 @@ export class CrowdFallbackRenderer {
       return null;
     }
     return shader;
+  }
+
+  private initHeatmapProgram(gl: WebGL2RenderingContext): WebGLProgram | null {
+    const vsSource = `#version 300 es
+      in vec2 aPos;
+      out vec2 vUV;
+      void main() {
+        vUV = aPos * 0.5 + 0.5;
+        gl_Position = vec4(aPos, 0.0, 1.0);
+      }
+    `;
+
+    const fsSource = `#version 300 es
+      precision mediump float;
+      in vec2 vUV;
+      out vec4 fragColor;
+      uniform sampler2D uDensityTex;
+      uniform float uMaxDensity;
+      uniform float uOpacity;
+
+      vec3 heatmapColor(float t) {
+        if (t < 0.25) return mix(vec3(0.0, 0.0, 0.3), vec3(0.0, 0.5, 0.8), t / 0.25);
+        if (t < 0.5) return mix(vec3(0.0, 0.5, 0.8), vec3(0.0, 0.9, 0.3), (t - 0.25) / 0.25);
+        if (t < 0.75) return mix(vec3(0.0, 0.9, 0.3), vec3(1.0, 0.9, 0.0), (t - 0.5) / 0.25);
+        return mix(vec3(1.0, 0.9, 0.0), vec3(1.0, 0.1, 0.0), (t - 0.75) / 0.25);
+      }
+
+      void main() {
+        float density = texture(uDensityTex, vUV).r;
+        float t = clamp(density / max(uMaxDensity, 1.0), 0.0, 1.0);
+        if (t < 0.01) discard;
+        vec3 color = heatmapColor(t);
+        fragColor = vec4(color, t * uOpacity);
+      }
+    `;
+
+    const vs = this.compileShader(gl, gl.VERTEX_SHADER, vsSource);
+    const fs = this.compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+    if (!vs || !fs) return null;
+
+    const program = gl.createProgram();
+    if (!program) return null;
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      gl.deleteProgram(program);
+      return null;
+    }
+    return program;
+  }
+
+  private computeDensityGrid(): void {
+    const grid = this.densityGrid;
+    const gridW = this.DENSITY_GRID_SIZE;
+    const gridH = this.DENSITY_GRID_SIZE;
+    const { worldWidth, worldHeight, agentCount } = this.config;
+
+    // Decay existing values
+    for (let i = 0; i < grid.length; i++) {
+      grid[i] *= 0.92;
+    }
+
+    // Accumulate agent positions
+    for (let i = 0; i < agentCount; i++) {
+      const a = this.agents[i];
+      if (a.state !== 0) continue;
+
+      const gx = Math.floor((a.px / worldWidth) * gridW);
+      const gy = Math.floor((a.py / worldHeight) * gridH);
+      const cx = Math.max(0, Math.min(gridW - 1, gx));
+      const cy = Math.max(0, Math.min(gridH - 1, gy));
+      grid[cy * gridW + cx] += 1.0;
+    }
+
+    // Track peak
+    let peak = 1;
+    for (let i = 0; i < grid.length; i++) {
+      if (grid[i] > peak) peak = grid[i];
+    }
+    this.maxDensity = Math.max(this.maxDensity * 0.999, peak);
+  }
+
+  private renderHeatmap(): void {
+    const gl = this.gl;
+    if (!gl || !this.heatmapProgram || !this.densityTexture || !this.quadBuffer) return;
+
+    // Upload density data to texture
+    gl.bindTexture(gl.TEXTURE_2D, this.densityTexture);
+    gl.texSubImage2D(
+      gl.TEXTURE_2D,
+      0,
+      0,
+      0,
+      this.DENSITY_GRID_SIZE,
+      this.DENSITY_GRID_SIZE,
+      gl.RED,
+      gl.FLOAT,
+      this.densityGrid,
+    );
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    gl.useProgram(this.heatmapProgram);
+
+    // Fullscreen quad
+    const quadData = new Float32Array([-1, -1, 3, -1, -1, 3]);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, quadData, gl.DYNAMIC_DRAW);
+
+    const aPos = gl.getAttribLocation(this.heatmapProgram, "aPos");
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    // Bind density texture
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, this.densityTexture);
+    gl.uniform1i(gl.getUniformLocation(this.heatmapProgram, "uDensityTex"), 0);
+    gl.uniform1f(
+      gl.getUniformLocation(this.heatmapProgram, "uMaxDensity"),
+      this.maxDensity,
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(this.heatmapProgram, "uOpacity"),
+      0.6,
+    );
+
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.BLEND);
   }
 
   private createIcosahedron(): {
@@ -669,6 +833,10 @@ export class CrowdFallbackRenderer {
     // Reset divisors
     this.ext.vertexAttribDivisorANGLE(aInstancePos, 0);
     this.ext.vertexAttribDivisorANGLE(aInstanceColor, 0);
+
+    // Render density heatmap overlay
+    this.computeDensityGrid();
+    this.renderHeatmap();
   }
 
   startRenderLoop(): void {
@@ -726,5 +894,8 @@ export class CrowdFallbackRenderer {
     this.gl?.deleteBuffer(this.instanceBuffer);
     this.gl?.deleteBuffer(this.indexBuffer);
     this.gl?.deleteProgram(this.program);
+    this.gl?.deleteTexture(this.densityTexture);
+    this.gl?.deleteBuffer(this.quadBuffer);
+    this.gl?.deleteProgram(this.heatmapProgram);
   }
 }

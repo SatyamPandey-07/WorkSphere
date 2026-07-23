@@ -5,6 +5,7 @@ import { ReceiptVerificationModal } from "../ReceiptVerificationModal";
 jest.mock("@/hooks/usePdfSignatureVerifier", () => ({
   usePdfSignatureVerifier: () => ({
     status: "idle",
+    progress: 0,
     signatures: [],
     result: null,
     error: null,

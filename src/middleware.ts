@@ -9,6 +9,21 @@ import {
   verifyCsrfToken,
 } from "./lib/csrf";
 
+function generateCsp(nonce: string): string {
+  return [
+    `base-uri 'self'`,
+    `default-src 'self'`,
+    `script-src 'self' 'nonce-${nonce}' https://cdn.clerk.com`,
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
+    `font-src 'self' https://fonts.gstatic.com data:`,
+    `img-src 'self' https://images.unsplash.com https://*.unsplash.com https://res.cloudinary.com data: blob:`,
+    `connect-src 'self' https://*.clerk.com https://api.groq.com https://router.project-osrm.org wss://*.partykit.dev`,
+    `frame-src 'self' https://*.clerk.com`,
+    `worker-src 'self' blob:`,
+    `object-src 'none'`,
+  ].join("; ");
+}
+
 const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
@@ -130,6 +145,8 @@ export default function middleware(request: any, event: any) {
 
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set("x-pathname", req.nextUrl.pathname);
+    const nonce = crypto.randomUUID();
+    requestHeaders.set("x-csp-nonce", nonce);
     const start = Date.now();
     requestHeaders.set("x-request-start", String(start));
 
@@ -149,6 +166,7 @@ export default function middleware(request: any, event: any) {
         headers: requestHeaders,
       },
     });
+    res.headers.set("Content-Security-Policy", generateCsp(nonce));
     return applyCsrfProtection(req, res);
   });
 

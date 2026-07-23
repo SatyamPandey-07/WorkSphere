@@ -24,6 +24,12 @@ export function VenueGodRays({
 }: VenueGodRaysProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isEnabled, setIsEnabled] = useState<boolean>(true);
+  const MAX_DENSITY = 10;
+  const [density, setDensity] = useState(5);
+  const handleDensityChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+    setDensity(parseFloat(e.target.value));
+  const safeDensityPercent = (d: number, max: number) =>
+    Math.round((d / max) * 100);
 
   useEffect(() => {
     try {
@@ -68,7 +74,7 @@ export function VenueGodRays({
     intensity: sunPos.isAboveHorizon ? 0.7 : 0.2,
     rayLength: sunPos.isAboveHorizon ? 1.2 : 0.6,
     decay: 0.96,
-    density: 4.0,
+    density,
     weight: 0.04,
     quality,
     animate: isEnabled,
@@ -84,6 +90,8 @@ export function VenueGodRays({
       }
     };
   }, [canvas]);
+
+  const densityPercent = safeDensityPercent(density, MAX_DENSITY);
 
   return (
     <div
@@ -128,7 +136,11 @@ export function VenueGodRays({
                   ? "bg-amber-500/20 border-amber-500/30 text-amber-200 hover:bg-amber-500/30"
                   : "bg-zinc-500/20 border-zinc-500/30 text-zinc-400 hover:bg-zinc-500/30"
               }`}
-              title={isEnabled ? "Disable volumetric rendering" : "Enable volumetric rendering"}
+              title={
+                isEnabled
+                  ? "Disable volumetric rendering"
+                  : "Enable volumetric rendering"
+              }
             >
               {isEnabled ? (
                 <Eye className="w-3 h-3" />
@@ -140,14 +152,32 @@ export function VenueGodRays({
           </div>
         </div>
 
-        <div className="flex items-end justify-between">
+        <div className="flex items-end justify-between gap-3">
           <div className="bg-black/65 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl text-white text-[10px]">
             <p className="font-bold text-amber-200">Volumetric Light Shafts</p>
             <p className="text-zinc-400 mt-0.5">
               32-sample radial blur with procedural noise perturbation
             </p>
+            <div className="flex items-center gap-2 mt-2 pointer-events-auto">
+              <label className="text-zinc-500 text-[9px] uppercase tracking-wider shrink-0">
+                Density
+              </label>
+              <input
+                type="range"
+                min="0"
+                max={MAX_DENSITY}
+                step="0.5"
+                value={density}
+                onChange={handleDensityChange}
+                className="flex-1 h-1 bg-zinc-700 accent-amber-500 rounded-lg cursor-pointer"
+                title={`Ray density: ${density.toFixed(1)}`}
+              />
+              <span className="text-[10px] font-mono text-zinc-300 w-8 text-right shrink-0">
+                {densityPercent}%
+              </span>
+            </div>
           </div>
-          <div className="bg-black/40 backdrop-blur-md px-2 py-0.5 rounded-full text-[9px] text-zinc-400 border border-white/5">
+          <div className="bg-black/40 backdrop-blur-md px-2 py-0.5 rounded-full text-[9px] text-zinc-400 border border-white/5 shrink-0">
             {sunPos.isAboveHorizon ? "Sunrise/Sunset" : "Night"} mode
           </div>
         </div>

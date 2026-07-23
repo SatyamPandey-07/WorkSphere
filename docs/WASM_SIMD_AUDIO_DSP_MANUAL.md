@@ -15,6 +15,7 @@ real-time noise suppression in WorkSphere.
 > - Shared memory and aligned buffers
 > - Latency measurement and benchmarking
 > - Browser compatibility and graceful fallback
+> - Docker-based build pipelines
 
 ---
 
@@ -65,12 +66,62 @@ C++ standard: C++20 or newer
 CMake: 3.20+
 Node.js: project-supported LTS release
 Browser: current Chromium, Firefox, or Safari with AudioWorklet support
+Docker: 24.0+ (for isolated builds)
 ```
 
-Install and activate Emscripten:
+### Docker Build Environment (Recommended)
+
+To ensure a consistent, reproducible build environment across all WorkSphere contributors without polluting your local system, you can compile the WebAssembly DSP modules using the official Emscripten Docker image.
+
+**1. Create a `Dockerfile` in the root of the DSP directory:**
+
+```dockerfile
+# Use the official Emscripten SDK image
+FROM emscripten/emsdk:latest AS builder
+
+WORKDIR /workspace
+
+# Copy source files into the container
+COPY src/ /workspace/src/
+RUN mkdir -p /workspace/build
+
+# Run the compilation step with SIMD enabled
+RUN em++ src/dsp_processor.cpp src/bindings.cpp \
+    -O3 -std=c++20 -msimd128 -fno-exceptions -fno-rtti \
+    -s WASM=1 -s MODULARIZE=1 -s EXPORT_ES6=1 \
+    -s ENVIRONMENT=web,worker -s ALLOW_MEMORY_GROWTH=0 \
+    -s INITIAL_MEMORY=16777216 \
+    -s EXPORTED_FUNCTIONS='["_malloc","_free","_dsp_create","_dsp_destroy","_dsp_process","_dsp_set_suppression_strength"]' \
+    -s EXPORTED_RUNTIME_METHODS='["HEAPF32"]' \
+    -o /workspace/build/dsp-module-simd.js
+```
+
+**2. Build and Extract Artifacts:**
+
+Run the following commands in your terminal to build the Docker image and extract the compiled `.js` and `.wasm` files to your project's public folder.
 
 ```bash
-git clone https://github.com/emscripten-core/emsdk.git
+# Build the docker image
+docker build -t worksphere-wasm-dsp .
+
+# Create a temporary container
+docker create --name temp-dsp-container worksphere-wasm-dsp
+
+# Extract the compiled assets into your public directory
+mkdir -p public/audio/
+docker cp temp-dsp-container:/workspace/build/dsp-module-simd.js public/audio/
+docker cp temp-dsp-container:/workspace/build/dsp-module-simd.wasm public/audio/
+
+# Clean up the temporary container
+docker rm temp-dsp-container
+```
+
+### Local Build Environment (Fallback)
+
+If you prefer to compile locally, install and activate Emscripten:
+
+```bash
+git clone [https://github.com/emscripten-core/emsdk.git](https://github.com/emscripten-core/emsdk.git)
 cd emsdk
 ./emsdk install latest
 ./emsdk activate latest
@@ -80,7 +131,7 @@ source ./emsdk_env.sh
 Windows PowerShell:
 
 ```powershell
-git clone https://github.com/emscripten-core/emsdk.git
+git clone [https://github.com/emscripten-core/emsdk.git](https://github.com/emscripten-core/emsdk.git)
 cd emsdk
 .\emsdk install latest
 .\emsdk activate latest
@@ -412,6 +463,8 @@ control the allocation offset.
 
 ## 7. SIMD processing example
 
+This demonstrates applying spectral suppression gain vectors to input signals using `v128_t` memory operations for peak DSP efficiency.
+
 ```cpp
 #include <wasm_simd128.h>
 
@@ -658,9 +711,9 @@ The **Lock-Free Single-Producer Single-Consumer (SPSC) SharedArrayBuffer Ring Bu
 │                        SharedArrayBuffer Memory                        │
 │                                                                        │
 │  ┌─────────────────────────────┐    ┌───────────────────────────────┐  │
-│  │   Control Buffer (Int32)    │    │    Audio Data Ring (Float32)  │  │
-│  │  [0]: Write Head Pointer    │    │  [Sample 0, Sample 1, ...]    │  │
-│  │  [1]: Read Tail Pointer     │    │  Capacity = 8192 Float32      │  │
+│  │   Control Buffer (Int32)    │    │     Audio Data Ring (Float32)  │  │
+│  │  [0]: Write Head Pointer    │    │  [Sample 0, Sample 1, ...]     │  │
+│  │  [1]: Read Tail Pointer     │    │  Capacity = 8192 Float32       │  │
 │  └─────────────────────────────┘    └───────────────────────────────┘  │
 └────────────────────────────────────────────────────────────────────────┘
                  │                                        ▲
@@ -1377,9 +1430,9 @@ Client hook:
 import { useRef, useState } from "react";
 
 export function useNoiseSuppression() {
-  const contextRef = useRef<AudioContext | null>(null);
-  const nodeRef = useRef<AudioWorkletNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const contextRef = useRef<AudioContext null |>(null);
+  const nodeRef = useRef<AudioWorkletNode null |>(null);
+  const streamRef = useRef<MediaStream null |>(null);
 
   const [enabled, setEnabled] = useState(false);
   const [status, setStatus] = useState<"idle" | "starting" | "ready" | "error">(

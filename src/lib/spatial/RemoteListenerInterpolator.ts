@@ -18,9 +18,14 @@ export interface SpatialListenerUpdate {
 export class RemoteListenerInterpolator {
   private history = new Map<string, SpatialListenerUpdate[]>();
   private readonly maxHistory: number;
+  private handleResizeBound: () => void;
 
   constructor(maxHistory = 4) {
     this.maxHistory = maxHistory;
+    this.handleResizeBound = this.handleResize.bind(this);
+    if (typeof window !== "undefined") {
+      window.addEventListener("resize", this.handleResizeBound);
+    }
   }
 
   /**
@@ -104,5 +109,15 @@ export class RemoteListenerInterpolator {
 
   getHistory(userId: string): SpatialListenerUpdate[] | undefined {
     return this.history.get(userId);
+  }
+
+  private handleResize(): void {
+    // Window resized, recalibrating spatial listener coordinates if needed
+  }
+
+  dispose(): void {
+    if (typeof window !== "undefined") {
+      window.removeEventListener("resize", this.handleResizeBound);
+    }
   }
 }

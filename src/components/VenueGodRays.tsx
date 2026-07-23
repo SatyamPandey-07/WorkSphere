@@ -1,9 +1,11 @@
 "use client";
 
-import React, { useEffect, useRef, useMemo } from "react";
-import { Sparkles, Sun, AlertCircle } from "lucide-react";
+import React, { useEffect, useRef, useMemo, useState } from "react";
+import { Sparkles, Sun, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { useGodRaysRenderer } from "@/hooks/useGodRaysRenderer";
 import { calculateSunPosition } from "@/lib/sunPosition";
+
+const GODRAYS_STORAGE_KEY = "worksphere:godrays:enabled";
 
 export interface VenueGodRaysProps {
   lat?: number | null;
@@ -21,6 +23,30 @@ export function VenueGodRays({
   quality = "medium",
 }: VenueGodRaysProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isEnabled, setIsEnabled] = useState<boolean>(true);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(GODRAYS_STORAGE_KEY);
+      if (stored !== null) {
+        setIsEnabled(stored === "true");
+      }
+    } catch {
+      // localStorage unavailable — default to enabled
+    }
+  }, []);
+
+  const toggleGodRays = () => {
+    setIsEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(GODRAYS_STORAGE_KEY, String(next));
+      } catch {
+        // silently ignore
+      }
+      return next;
+    });
+  };
 
   const sunPos = useMemo(() => {
     if (typeof lat !== "number" || typeof lng !== "number") {
@@ -45,7 +71,7 @@ export function VenueGodRays({
     density: 4.0,
     weight: 0.04,
     quality,
-    animate: true,
+    animate: isEnabled,
     resolutionScale: 0.75,
   });
 
@@ -95,6 +121,22 @@ export function VenueGodRays({
             <div className="px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-md text-[10px] font-mono text-zinc-300 border border-white/5">
               {fps} FPS
             </div>
+            <button
+              onClick={toggleGodRays}
+              className={`pointer-events-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full backdrop-blur-md text-[10px] font-semibold border transition-colors ${
+                isEnabled
+                  ? "bg-amber-500/20 border-amber-500/30 text-amber-200 hover:bg-amber-500/30"
+                  : "bg-zinc-500/20 border-zinc-500/30 text-zinc-400 hover:bg-zinc-500/30"
+              }`}
+              title={isEnabled ? "Disable volumetric rendering" : "Enable volumetric rendering"}
+            >
+              {isEnabled ? (
+                <Eye className="w-3 h-3" />
+              ) : (
+                <EyeOff className="w-3 h-3" />
+              )}
+              <span>{isEnabled ? "ON" : "OFF"}</span>
+            </button>
           </div>
         </div>
 

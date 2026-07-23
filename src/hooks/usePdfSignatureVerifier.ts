@@ -65,7 +65,7 @@ export function usePdfSignatureVerifier(): UsePdfSignatureVerifierReturn {
       }
 
       const worker = new Worker(
-        new URL("@/workers/pdfSignature.worker.ts", import.meta.url),
+        new URL("../workers/pdfSignature.worker.ts", import.meta.url),
         { type: "module" },
       );
       workerRef.current = worker;

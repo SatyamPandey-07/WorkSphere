@@ -12,6 +12,25 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const snarkjs = require("snarkjs");
 
+export async function GET() {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ verified: false });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { isVerifiedStudent: true },
+    });
+
+    return NextResponse.json({ verified: user?.isVerifiedStudent ?? false });
+  } catch (error) {
+    console.error("[VERIFY_STUDENT_GET]", error);
+    return NextResponse.json({ verified: false });
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();

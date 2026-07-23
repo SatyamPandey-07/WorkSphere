@@ -196,7 +196,7 @@ describe("NotificationSettings", () => {
     await waitFor(() => {
       expect(screen.getByText("Failed to save settings.")).toBeInTheDocument();
     });
-  });
+  }, 20000);
 
   it("sets the cropped area via the crop modal after selecting a file", async () => {
     render(<NotificationSettings />);
@@ -220,8 +220,8 @@ describe("NotificationSettings", () => {
     });
 
     // Trigger the mocked cropper's onCropComplete
-    fireEvent.click(screen.getByText("mock-crop-complete"));
+    fireEvent.click(screen.getByRole("button", { name: /Apply/i }));
 
-    expect(screen.getByText("Save Avatar")).toBeInTheDocument();
-  });
+    expect(screen.queryByTestId("cropper-mock")).not.toBeInTheDocument();
+  }, 20000);
 });

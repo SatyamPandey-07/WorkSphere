@@ -682,7 +682,7 @@ model PushSubscription {
 }
 
 model PushNotificationLog {
-  id        String   @id @default(cuid())
+  id        String   @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String?
@@ -693,6 +693,7 @@ model PushNotificationLog {
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
+  @@id([id, createdAt])
   @@index([createdAt])
   @@index([status])
 }

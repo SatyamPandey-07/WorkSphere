@@ -97,7 +97,10 @@ export function VenueCard({
 
   const hoverPredictorRef = useHoverPredictor({
     onPredict: () => {
-      if (typeof navigator !== "undefined" && navigator.serviceWorker?.controller) {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.serviceWorker?.controller
+      ) {
         navigator.serviceWorker.controller.postMessage({
           type: "PREFETCH_VENUE",
           payload: {
@@ -366,7 +369,7 @@ export function VenueCard({
   const scannerLowConfidence = isLibrary && voteMetrics.scanner.hidden;
 
   return (
-    <div 
+    <div
       ref={hoverPredictorRef}
       className="antialiased bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative"
     >
@@ -646,13 +649,13 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("wifi", true)}
-                    className={`transition-colors ${voteMetrics.wifi.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.wifi.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
                   <button
                     onClick={() => submitAmenityVote("wifi", false)}
-                    className={`transition-colors ${voteMetrics.wifi.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.wifi.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -677,13 +680,13 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("outlets", true)}
-                    className={`transition-colors ${voteMetrics.outlets.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.outlets.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
                   <button
                     onClick={() => submitAmenityVote("outlets", false)}
-                    className={`transition-colors ${voteMetrics.outlets.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.outlets.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -708,13 +711,13 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("ergonomic", true)}
-                    className={`transition-colors ${voteMetrics.ergonomic.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.ergonomic.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
                   <button
                     onClick={() => submitAmenityVote("ergonomic", false)}
-                    className={`transition-colors ${voteMetrics.ergonomic.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.ergonomic.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -739,13 +742,13 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("silentRoom", true)}
-                    className={`transition-colors ${voteMetrics.silentRoom.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.silentRoom.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
                   <button
                     onClick={() => submitAmenityVote("silentRoom", false)}
-                    className={`transition-colors ${voteMetrics.silentRoom.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.silentRoom.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -770,13 +773,13 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("studyTable", true)}
-                    className={`transition-colors ${voteMetrics.studyTable.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.studyTable.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
                   <button
                     onClick={() => submitAmenityVote("studyTable", false)}
-                    className={`transition-colors ${voteMetrics.studyTable.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.studyTable.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -801,13 +804,13 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("scanner", true)}
-                    className={`transition-colors ${voteMetrics.scanner.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.scanner.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
                   <button
                     onClick={() => submitAmenityVote("scanner", false)}
-                    className={`transition-colors ${voteMetrics.scanner.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.scanner.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -833,7 +836,7 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("freeStreetParking", true)}
-                    className={`transition-colors ${voteMetrics.freeStreetParking.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.freeStreetParking.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
@@ -841,7 +844,7 @@ export function VenueCard({
                     onClick={() =>
                       submitAmenityVote("freeStreetParking", false)
                     }
-                    className={`transition-colors ${voteMetrics.freeStreetParking.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.freeStreetParking.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -866,13 +869,13 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("paidGarage", true)}
-                    className={`transition-colors ${voteMetrics.paidGarage.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.paidGarage.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
                   <button
                     onClick={() => submitAmenityVote("paidGarage", false)}
-                    className={`transition-colors ${voteMetrics.paidGarage.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.paidGarage.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -897,13 +900,13 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("bicycleRack", true)}
-                    className={`transition-colors ${voteMetrics.bicycleRack.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.bicycleRack.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
                   <button
                     onClick={() => submitAmenityVote("bicycleRack", false)}
-                    className={`transition-colors ${voteMetrics.bicycleRack.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.bicycleRack.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -931,7 +934,7 @@ export function VenueCard({
                     onClick={() =>
                       submitAmenityVote("secureMotorcycleParking", true)
                     }
-                    className={`transition-colors ${voteMetrics.secureMotorcycleParking.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.secureMotorcycleParking.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
@@ -939,7 +942,7 @@ export function VenueCard({
                     onClick={() =>
                       submitAmenityVote("secureMotorcycleParking", false)
                     }
-                    className={`transition-colors ${voteMetrics.secureMotorcycleParking.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.secureMotorcycleParking.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -967,7 +970,7 @@ export function VenueCard({
                     onClick={() =>
                       submitAmenityVote("petsAllowedIndoors", true)
                     }
-                    className={`transition-colors ${voteMetrics.petsAllowedIndoors.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.petsAllowedIndoors.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
@@ -975,7 +978,7 @@ export function VenueCard({
                     onClick={() =>
                       submitAmenityVote("petsAllowedIndoors", false)
                     }
-                    className={`transition-colors ${voteMetrics.petsAllowedIndoors.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.petsAllowedIndoors.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -1002,13 +1005,13 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("dogFriendly", true)}
-                    className={`transition-colors ${voteMetrics.dogFriendly.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.dogFriendly.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
                   <button
                     onClick={() => submitAmenityVote("dogFriendly", false)}
-                    className={`transition-colors ${voteMetrics.dogFriendly.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.dogFriendly.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>
@@ -1035,13 +1038,13 @@ export function VenueCard({
                 <div className="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]">
                   <button
                     onClick={() => submitAmenityVote("catsAllowed", true)}
-                    className={`transition-colors ${voteMetrics.catsAllowed.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.catsAllowed.userVote === true ? "text-green-500" : "hover:text-green-500"}`}
                   >
                     👍
                   </button>
                   <button
                     onClick={() => submitAmenityVote("catsAllowed", false)}
-                    className={`transition-colors ${voteMetrics.catsAllowed.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
+                    className={`transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded ${voteMetrics.catsAllowed.userVote === false ? "text-red-500" : "hover:text-red-500"}`}
                   >
                     👎
                   </button>

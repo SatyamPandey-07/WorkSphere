@@ -27,6 +27,55 @@ export interface BufferedDelta<T = unknown> {
 export interface FailoverSyncOptions {
   snapshotTimeoutMs?: number;
   onStateChange?: (state: SyncState) => void;
+  probeIntervalMs?: number;
+  nodes?: string[];
+  onEndpointSwitch?: (newEndpoint: string) => void;
+}
+
+export const secondaryNodes = [
+  "https://backup-a.example.com",
+  "https://backup-b.example.com",
+  "https://backup-c.example.com",
+];
+
+export async function pingEndpoint(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${url}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(3000),
+    });
+
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function getHealthyNode(
+  nodes: string[] = secondaryNodes,
+): Promise<string | null> {
+  for (const node of nodes) {
+    for (let i = 0; i < 3; i++) {
+      if (await pingEndpoint(node)) {
+        return node;
+      }
+    }
+  }
+
+  return null;
+}
+
+export async function switchSyncEndpoint(
+  _currentEndpoint?: string,
+): Promise<string> {
+  const healthyNode = await getHealthyNode();
+
+  if (healthyNode) {
+    console.info(`Switching sync endpoint -> ${healthyNode}`);
+    return healthyNode;
+  }
+
+  throw new Error("No healthy failover nodes available");
 }
 
 export class FailoverSyncManager<T = unknown> {
@@ -40,9 +89,18 @@ export class FailoverSyncManager<T = unknown> {
   private snapshotTimeoutMs: number;
   private onStateChange?: (state: SyncState) => void;
 
+  private probeIntervalMs: number;
+  private healthProbeTimer: ReturnType<typeof setInterval> | null = null;
+  public currentEndpoint: string | null = null;
+  private nodes: string[];
+  private onEndpointSwitch?: (newEndpoint: string) => void;
+
   constructor(options: FailoverSyncOptions = {}) {
     this.snapshotTimeoutMs = options.snapshotTimeoutMs ?? 3000;
     this.onStateChange = options.onStateChange;
+    this.probeIntervalMs = options.probeIntervalMs ?? 30000;
+    this.nodes = options.nodes ?? secondaryNodes;
+    this.onEndpointSwitch = options.onEndpointSwitch;
   }
 
   public getStatus(): SyncState {
@@ -59,6 +117,40 @@ export class FailoverSyncManager<T = unknown> {
       if (this.onStateChange) {
         this.onStateChange(newState);
       }
+    }
+  }
+
+  public startHealthProbing(initialEndpoint: string) {
+    this.currentEndpoint = initialEndpoint;
+    this.stopHealthProbing();
+
+    this.healthProbeTimer = setInterval(async () => {
+      if (this.currentEndpoint && !(await pingEndpoint(this.currentEndpoint))) {
+        console.warn(
+          `[FailoverSync] Current endpoint ${this.currentEndpoint} is unhealthy. Probing failover nodes...`,
+        );
+        try {
+          const healthyNode = await getHealthyNode(this.nodes);
+          if (healthyNode) {
+            console.info(`Switching sync endpoint -> ${healthyNode}`);
+            this.currentEndpoint = healthyNode;
+            if (this.onEndpointSwitch) {
+              this.onEndpointSwitch(healthyNode);
+            }
+          } else {
+            console.error("[FailoverSync] No healthy failover nodes available");
+          }
+        } catch (error) {
+          console.error(`[FailoverSync] Failover failed:`, error);
+        }
+      }
+    }, this.probeIntervalMs);
+  }
+
+  public stopHealthProbing() {
+    if (this.healthProbeTimer) {
+      clearInterval(this.healthProbeTimer);
+      this.healthProbeTimer = null;
     }
   }
 
@@ -205,11 +297,13 @@ export class FailoverSyncManager<T = unknown> {
 
   public reset(): void {
     this.clearSnapshotTimeout();
+    this.stopHealthProbing();
     this.syncState = "idle";
     this.isReconnecting = false;
     this.hasConnectedOnce = false;
     this.currentSnapshotId = null;
     this.lastAppliedSnapshotId = null;
     this.deltaBuffer = [];
+    this.currentEndpoint = null;
   }
 }

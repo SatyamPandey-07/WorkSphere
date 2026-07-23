@@ -7,12 +7,7 @@ import { adaptVideoBitrate } from "@/lib/screenShareBitrate";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
-type SignalKind =
-  | "peer-join"
-  | "offer"
-  | "answer"
-  | "ice"
-  | "peer-leave";
+type SignalKind = "peer-join" | "offer" | "answer" | "ice" | "peer-leave";
 
 type SignalMessage = {
   type: "webrtc-signal";
@@ -39,10 +34,13 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
   // States for media
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null);
-  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
+  const [localScreenStream, setLocalScreenStream] =
+    useState<MediaStream | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<
+    Record<string, MediaStream>
+  >({});
   const [audioLevels, setAudioLevels] = useState<Record<string, number>>({});
-  
+
   // Toggles
   const [isAudioEnabled, setIsAudioEnabled] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(false);
@@ -51,21 +49,36 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
   // Network Telemetry
   const [rtt, setRtt] = useState<number>(0);
-  const [networkQuality, setNetworkQuality] = useState<"good" | "fair" | "poor" | "unknown">("unknown");
+  const [networkQuality, setNetworkQuality] = useState<
+    "good" | "fair" | "poor" | "unknown"
+  >("unknown");
 
   // Refs for WebRTC state
   const localStreamRef = useRef<MediaStream | null>(null);
   const localScreenStreamRef = useRef<MediaStream | null>(null);
   const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+
+  type PeerState = {
+    makingOffer: boolean;
+    ignoreOffer: boolean;
+    polite: boolean;
+    isSettingRemoteAnswerPending: boolean;
+  };
+  const peerStatesRef = useRef<Map<string, PeerState>>(new Map());
+
   const socketRef = useRef<{ send: (data: string) => void } | null>(null);
-  
+
   // Audio context for monitoring levels
   const audioContextRef = useRef<AudioContext | null>(null);
-  const analysersRef = useRef<Map<string, { analyser: AnalyserNode, dataArray: Uint8Array }>>(new Map());
+  const analysersRef = useRef<
+    Map<string, { analyser: AnalyserNode; dataArray: Uint8Array }>
+  >(new Map());
 
   // Intervals
   const bitrateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioLevelTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioLevelTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rttEmaRef = useRef<number>(0);
 
@@ -85,18 +98,19 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       };
       socketRef.current.send(JSON.stringify(payload));
     },
-    [userId]
+    [userId],
   );
 
   const cleanupPeer = useCallback((peerId: string) => {
     const pc = peersRef.current.get(peerId);
     if (!pc) return;
-    
+
     pc.onicecandidate = null;
     pc.ontrack = null;
     pc.close();
     peersRef.current.delete(peerId);
-    
+    peerStatesRef.current.delete(peerId);
+
     setRemoteStreams((prev) => {
       const next = { ...prev };
       delete next[peerId];
@@ -112,30 +126,35 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     analysersRef.current.delete(peerId);
   }, []);
 
-  const setupAudioMonitoring = useCallback((peerId: string, stream: MediaStream) => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    
-    const audioCtx = audioContextRef.current;
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
+  const setupAudioMonitoring = useCallback(
+    (peerId: string, stream: MediaStream) => {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (
+          window.AudioContext || (window as any).webkitAudioContext
+        )();
+      }
 
-    if (stream.getAudioTracks().length === 0) return;
+      const audioCtx = audioContextRef.current;
+      if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+      }
 
-    try {
-      const source = audioCtx.createMediaStreamSource(stream);
-      const analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      
-      analysersRef.current.set(peerId, { analyser, dataArray });
-    } catch (e) {
-      console.warn("Could not setup audio monitoring for peer", peerId, e);
-    }
-  }, []);
+      if (stream.getAudioTracks().length === 0) return;
+
+      try {
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        analysersRef.current.set(peerId, { analyser, dataArray });
+      } catch (e) {
+        console.warn("Could not setup audio monitoring for peer", peerId, e);
+      }
+    },
+    [],
+  );
 
   const ensurePeer = useCallback(
     (peerId: string, isInitiator: boolean) => {
@@ -150,6 +169,13 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
       pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       peersRef.current.set(peerId, pc);
+      const polite = isInitiator;
+      peerStatesRef.current.set(peerId, {
+        makingOffer: false,
+        ignoreOffer: false,
+        polite,
+        isSettingRemoteAnswerPending: false,
+      });
 
       pc.onicecandidate = (ev) => {
         sendSignal({
@@ -174,7 +200,10 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       };
 
       pc.oniceconnectionstatechange = () => {
-        if (pc?.iceConnectionState === "disconnected" || pc?.iceConnectionState === "failed") {
+        if (
+          pc?.iceConnectionState === "disconnected" ||
+          pc?.iceConnectionState === "failed"
+        ) {
           cleanupPeer(peerId);
         }
       };
@@ -192,39 +221,27 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       }
 
       pc.onnegotiationneeded = async () => {
+        const state = peerStatesRef.current.get(peerId);
+        if (!state) return;
+
         try {
-          if (pc?.signalingState !== "stable") return;
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
+          state.makingOffer = true;
+          await pc!.setLocalDescription();
           sendSignal({
             kind: "offer",
             to: peerId,
-            sdp: pc.localDescription ?? offer,
+            sdp: pc!.localDescription!,
           });
         } catch (err) {
           console.error("Negotiation error:", err);
+        } finally {
+          state.makingOffer = false;
         }
       };
 
-      if (isInitiator) {
-        pc.createOffer()
-          .then((offer) => pc?.setLocalDescription(offer).then(() => offer))
-          .then((offer) => {
-            sendSignal({
-              kind: "offer",
-              to: peerId,
-              sdp: pc!.localDescription ?? offer,
-            });
-          })
-          .catch((err) => {
-            console.error("Error creating offer:", err);
-            cleanupPeer(peerId);
-          });
-      }
-
       return pc;
     },
-    [sendSignal, cleanupPeer, setupAudioMonitoring]
+    [sendSignal, cleanupPeer, setupAudioMonitoring],
   );
 
   const startBitrateLoop = useCallback(() => {
@@ -240,8 +257,11 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     if (audioLevelTimerRef.current) clearInterval(audioLevelTimerRef.current);
     audioLevelTimerRef.current = setInterval(() => {
       const newLevels: Record<string, number> = {};
-      
-      for (const [peerId, { analyser, dataArray }] of analysersRef.current.entries()) {
+
+      for (const [
+        peerId,
+        { analyser, dataArray },
+      ] of analysersRef.current.entries()) {
         analyser.getByteFrequencyData(dataArray as any);
         let sum = 0;
         for (let i = 0; i < dataArray.length; i++) {
@@ -251,7 +271,7 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
         // Normalize 0-1
         newLevels[peerId] = Math.min(1, average / 128);
       }
-      
+
       setAudioLevels(newLevels);
     }, 100);
   }, []);
@@ -260,7 +280,9 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     if (pingTimerRef.current) clearInterval(pingTimerRef.current);
     pingTimerRef.current = setInterval(() => {
       if (socketRef.current) {
-        socketRef.current.send(JSON.stringify({ type: "ping", timestamp: Date.now() }));
+        socketRef.current.send(
+          JSON.stringify({ type: "ping", timestamp: Date.now() }),
+        );
       }
     }, 2000);
   }, []);
@@ -279,44 +301,57 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
         return;
       }
 
-      if (msg.kind === "offer" && msg.to === userId) {
-        const pc = ensurePeer(msg.from, false);
+      if (msg.kind === "offer" || msg.kind === "answer") {
+        const pc =
+          peersRef.current.get(msg.from) || ensurePeer(msg.from, false);
         if (!pc) return;
+        const state = peerStatesRef.current.get(msg.from);
+        if (!state) return;
+
+        const description = msg.sdp as RTCSessionDescriptionInit;
+        const offerCollision =
+          description.type === "offer" &&
+          (state.makingOffer || pc.signalingState !== "stable");
+
+        state.ignoreOffer = !state.polite && offerCollision;
+        if (state.ignoreOffer) {
+          return;
+        }
+
         try {
-          await pc.setRemoteDescription(msg.sdp!);
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          sendSignal({
-            kind: "answer",
-            to: msg.from,
-            sdp: pc.localDescription ?? answer,
-          });
-        } catch {
+          if (offerCollision) {
+            await pc.setLocalDescription({ type: "rollback" });
+          }
+          await pc.setRemoteDescription(description);
+          if (description.type === "offer") {
+            await pc.setLocalDescription();
+            sendSignal({
+              kind: "answer",
+              to: msg.from,
+              sdp: pc.localDescription!,
+            });
+          }
+        } catch (err) {
+          console.error("Signal handling error", err);
           cleanupPeer(msg.from);
         }
         return;
       }
 
-      if (msg.kind === "answer" && msg.to === userId) {
+      if (msg.kind === "ice" && msg.candidate) {
         const pc = peersRef.current.get(msg.from);
         if (!pc) return;
-        try {
-          await pc.setRemoteDescription(msg.sdp!);
-        } catch {
-          cleanupPeer(msg.from);
-        }
-        return;
-      }
+        const state = peerStatesRef.current.get(msg.from);
 
-      if (msg.kind === "ice" && msg.to === userId && msg.candidate) {
-        const pc = peersRef.current.get(msg.from);
-        if (!pc) return;
         try {
+          if (state && state.ignoreOffer) return;
           await pc.addIceCandidate(msg.candidate);
-        } catch {}
+        } catch (err) {
+          console.error("Error adding ice candidate", err);
+        }
       }
     },
-    [userId, ensurePeer, cleanupPeer, sendSignal]
+    [userId, ensurePeer, cleanupPeer, sendSignal],
   );
 
   const socket = usePartySocket({
@@ -339,11 +374,11 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
             rttEmaRef.current = rttEmaRef.current * 0.7 + currentRtt * 0.3;
           }
           setRtt(rttEmaRef.current);
-          
+
           if (rttEmaRef.current > 300) setNetworkQuality("poor");
           else if (rttEmaRef.current > 100) setNetworkQuality("fair");
           else setNetworkQuality("good");
-          
+
           return;
         }
         if (data.type !== "webrtc-signal") return;
@@ -360,19 +395,22 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     startBitrateLoop();
     startAudioMonitoringLoop();
     startPingLoop();
+    const peersMap = peersRef.current;
+
     return () => {
       if (bitrateTimerRef.current) clearInterval(bitrateTimerRef.current);
       if (audioLevelTimerRef.current) clearInterval(audioLevelTimerRef.current);
       if (pingTimerRef.current) clearInterval(pingTimerRef.current);
-      
-      for (const id of [...peersRef.current.keys()]) {
+
+      const currentPeers = Array.from(peersMap.keys());
+      for (const id of currentPeers) {
         cleanupPeer(id);
       }
-      
+
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localScreenStreamRef.current?.getTracks().forEach((t) => t.stop());
-      
-      if (audioContextRef.current?.state !== 'closed') {
+
+      if (audioContextRef.current?.state !== "closed") {
         audioContextRef.current?.close();
       }
     };
@@ -382,13 +420,13 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     if (!localStreamRef.current) return;
     const audioTrack = localStreamRef.current.getAudioTracks()[0];
     if (!audioTrack) return;
-    
+
     if (networkQuality === "poor") {
-      audioTrack.applyConstraints({ sampleRate: 16000 }).catch(err => {
+      audioTrack.applyConstraints({ sampleRate: 16000 }).catch((err) => {
         console.warn("Failed to downsample audio:", err);
       });
     } else if (networkQuality === "good") {
-      audioTrack.applyConstraints({ sampleRate: 48000 }).catch(err => {
+      audioTrack.applyConstraints({ sampleRate: 48000 }).catch((err) => {
         console.warn("Failed to restore audio sample rate:", err);
       });
     }
@@ -396,28 +434,30 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
   const ensureLocalStream = async () => {
     if (localStreamRef.current) return localStreamRef.current;
-    
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 640, height: 480, frameRate: 15 },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
-      
-      stream.getAudioTracks().forEach(t => t.enabled = false);
-      stream.getVideoTracks().forEach(t => t.enabled = false);
-      
+
+      stream.getAudioTracks().forEach((t) => (t.enabled = false));
+      stream.getVideoTracks().forEach((t) => (t.enabled = false));
+
       localStreamRef.current = stream;
       setLocalStream(stream);
       setupAudioMonitoring("local", stream);
 
       for (const pc of peersRef.current.values()) {
         for (const track of stream.getTracks()) {
-          try { pc.addTrack(track, stream); } catch {}
+          try {
+            pc.addTrack(track, stream);
+          } catch {}
         }
       }
-      
+
       return stream;
-    } catch (err) {
+    } catch {
       setError("Could not access camera or microphone.");
       return null;
     }
@@ -445,7 +485,7 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
   const toggleScreenShare = async () => {
     if (isScreenSharing && localScreenStreamRef.current) {
-      localScreenStreamRef.current.getTracks().forEach(t => t.stop());
+      localScreenStreamRef.current.getTracks().forEach((t) => t.stop());
       localScreenStreamRef.current = null;
       setLocalScreenStream(null);
       setIsScreenSharing(false);
@@ -478,7 +518,9 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
       for (const pc of peersRef.current.values()) {
         for (const track of stream.getTracks()) {
-          try { pc.addTrack(track, stream); } catch {}
+          try {
+            pc.addTrack(track, stream);
+          } catch {}
         }
       }
     } catch (err) {

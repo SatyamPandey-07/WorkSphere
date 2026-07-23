@@ -292,18 +292,6 @@ export async function POST(
         )[0]
         : "none";
 
-    // Most common socket condition
-    const socketCounts: Record<string, number> = {};
-    allRatings.forEach((r: any) => {
-      if (r.socketCondition) {
-        socketCounts[r.socketCondition] = (socketCounts[r.socketCondition] || 0) + 1;
-      }
-    });
-    const dominantSocketCondition =
-      Object.keys(socketCounts).length > 0
-        ? Object.entries(socketCounts).reduce((a: [string, number], b: [string, number]) => (b[1] > a[1] ? b : a))[0]
-        : null;
-
     // Aggregate power types (unique union of all powerTypes in all ratings)
     const aggregatedPowerTypes = Array.from(
       new Set(allRatings.flatMap((r: any) => r.powerTypes || [])),

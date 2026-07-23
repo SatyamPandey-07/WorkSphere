@@ -14,7 +14,7 @@ export function ReceiptVerificationModal({
   open,
   onClose,
 }: ReceiptVerificationModalProps) {
-  const { status, signatures, result, error, verify, reset } =
+  const { status, progress, signatures, result, error, verify, reset } =
     usePdfSignatureVerifier();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -141,6 +141,23 @@ export function ReceiptVerificationModal({
 
               <div className="flex flex-col gap-4">
                 <SignatureVerificationBadge status={status} result={result} />
+
+                {(status === "loading" || status === "verifying") && (
+                  <div className="flex flex-col gap-2">
+                    <div className="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${progress}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-xs text-zinc-500 self-end">
+                      {status === "loading"
+                        ? "Reading file..."
+                        : "Verifying signature..."}{" "}
+                      {progress}%
+                    </span>
+                  </div>
+                )}
 
                 {status === "verified" && signatures.length > 0 && (
                   <div className="flex flex-col gap-1 p-3 bg-zinc-50 dark:bg-zinc-800 rounded text-sm">

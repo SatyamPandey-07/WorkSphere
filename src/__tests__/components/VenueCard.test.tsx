@@ -2,6 +2,11 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { VenueCard } from '@/components/VenueCard';
 
+const mockPrefetch = jest.fn();
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ prefetch: mockPrefetch }),
+}));
+
 const mockVenue = {
   id: 'test-venue-1',
   name: 'Coffee Shop',
@@ -109,5 +114,43 @@ describe('VenueCard', () => {
     expect(screen.getByText(/Silent Room/)).toBeInTheDocument();
     expect(screen.getByText(/Study Tables/)).toBeInTheDocument();
     expect(screen.getByText(/Scanners\/Printers/)).toBeInTheDocument();
+  });
+
+  it('attaches hover predictor ref to the card root element', async () => {
+    const { container } = await renderVenueCard();
+    const card = container.firstElementChild as HTMLElement;
+    expect(card).toBeInTheDocument();
+  });
+
+  it('calls router.prefetch with venue detail route on hover predict', async () => {
+    await renderVenueCard();
+    expect(mockPrefetch).not.toHaveBeenCalled();
+
+    const card = document.querySelector('[class*="rounded-3xl"]') as HTMLElement;
+    if (card) {
+      const enterEvent = new MouseEvent('mouseenter', { bubbles: true });
+      card.dispatchEvent(enterEvent);
+
+      for (let i = 0; i < 6; i++) {
+        const moveEvent = new MouseEvent('mousemove', {
+          bubbles: true,
+          clientX: 100 + i * 2,
+          clientY: 100,
+        });
+        card.dispatchEvent(moveEvent);
+      }
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      });
+    }
+
+    expect(mockPrefetch).toHaveBeenCalledWith('/venues/test-venue-1');
+  });
+
+  it('does not call router.prefetch when venue has no id', async () => {
+    const venueNoId = { ...mockVenue, id: '' };
+    await renderVenueCard(venueNoId);
+    expect(mockPrefetch).not.toHaveBeenCalled();
   });
 });

@@ -9,6 +9,23 @@ if (typeof global.TextEncoder === "undefined") {
   global.TextDecoder = TextDecoder;
 }
 
+const { ReadableStream, TransformStream, WritableStream } = require("stream/web");
+if (typeof global.ReadableStream === "undefined") {
+  global.ReadableStream = ReadableStream;
+}
+if (typeof global.TransformStream === "undefined") {
+  global.TransformStream = TransformStream;
+}
+if (typeof global.WritableStream === "undefined") {
+  global.WritableStream = WritableStream;
+}
+
+const { MessageChannel, MessagePort } = require("worker_threads");
+if (typeof global.MessageChannel === "undefined") {
+  global.MessageChannel = MessageChannel;
+  global.MessagePort = MessagePort;
+}
+
 /* eslint-disable @typescript-eslint/no-require-imports */
 const {
   Request: UndiciRequest,

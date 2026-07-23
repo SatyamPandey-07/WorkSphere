@@ -25,26 +25,61 @@ const DB_VERSION = 4;
 const IDB_STORAGE_LOCK = "worksphere-offline-storage-lock";
 
 /**
- * Web Locks API wrapper to serialize IndexedDB transactions across concurrent tabs (#910)
+ * Execute an operation with exponential backoff retry if a DatabaseLockedError or lock contention error occurs.
+ */
+export async function executeWithRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries = 3,
+  delayMs = 50,
+): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await operation();
+    } catch (err: any) {
+      attempt++;
+      const isLockedError =
+        err?.name === "DatabaseLockedError" ||
+        err?.name === "AbortError" ||
+        err?.name === "UnknownError" ||
+        (err?.message && String(err.message).toLowerCase().includes("lock"));
+
+      if (isLockedError && attempt <= maxRetries) {
+        await new Promise((res) =>
+          setTimeout(res, delayMs * Math.pow(2, attempt - 1)),
+        );
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
+/**
+ * Web Locks API wrapper to serialize IndexedDB transactions across concurrent tabs (#910, #1279)
  */
 export async function withWebLock<T>(
   callback: () => Promise<T>,
   lockName = IDB_STORAGE_LOCK,
 ): Promise<T> {
-  if (
-    typeof navigator !== "undefined" &&
-    "locks" in navigator &&
-    navigator.locks?.request
-  ) {
-    try {
-      return await navigator.locks.request(lockName, async () => {
+  const runner = async () => {
+    if (
+      typeof navigator !== "undefined" &&
+      "locks" in navigator &&
+      navigator.locks?.request
+    ) {
+      try {
+        return await navigator.locks.request(lockName, async () => {
+          return callback();
+        });
+      } catch {
         return callback();
-      });
-    } catch {
-      return callback();
+      }
     }
-  }
-  return callback();
+    return callback();
+  };
+
+  return executeWithRetry(runner);
 }
 
 /**
@@ -479,9 +514,9 @@ export async function queuePendingAction(action: {
     const database = await initOfflineDB();
 
     return new Promise((resolve, reject) => {
-      const checkTx = database.transaction(["pendingActions"], "readonly");
-      const checkStore = checkTx.objectStore("pendingActions");
-      const getAll = checkStore.getAll();
+      const transaction = database.transaction(["pendingActions"], "readwrite");
+      const store = transaction.objectStore("pendingActions");
+      const getAll = store.getAll();
 
       getAll.onsuccess = () => {
         const existing = (
@@ -492,16 +527,14 @@ export async function queuePendingAction(action: {
           return;
         }
 
-        const addTx = database.transaction(["pendingActions"], "readwrite");
-        const addStore = addTx.objectStore("pendingActions");
-        addStore.add({
+        store.add({
           ...action,
           timestamp: Date.now(),
         });
-        addTx.oncomplete = () => resolve();
-        addTx.onerror = () => reject(addTx.error);
       };
       getAll.onerror = () => reject(getAll.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
     });
   });
 }

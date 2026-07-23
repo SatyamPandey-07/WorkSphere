@@ -37,14 +37,14 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
 
   const venueId = typeof body.venueId === "string" ? body.venueId : "";
-  
+
   let seatIds: string[] = [];
   if (Array.isArray(body.seatIds)) {
     seatIds = body.seatIds.filter((id: any) => typeof id === "string");
   } else if (typeof body.seatId === "string" && body.seatId) {
     seatIds = [body.seatId];
   }
-  
+
   // Sort seat IDs deterministically before acquiring FOR UPDATE row locks
   // Enforce strict ascending locking order across concurrent requests
   const uniqueSeatIds = Array.from(new Set(seatIds)).sort();
@@ -85,7 +85,10 @@ export async function POST(request: NextRequest) {
     const result = await prisma.$transaction(async (tx: any) => {
       // 1. Acquire FOR UPDATE locks on all seats in deterministic order
       for (const id of uniqueSeatIds) {
-        await tx.$executeRawUnsafe(`SELECT id FROM "VenueSeat" WHERE id = $1 FOR UPDATE`, id);
+        await tx.$executeRawUnsafe(
+          `SELECT id FROM "VenueSeat" WHERE id = $1 FOR UPDATE`,
+          id,
+        );
       }
 
       // 2. Fetch seats
@@ -119,8 +122,9 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      const conflict = existingBookings.some((booking) =>
-        overlaps(booking.time, booking.duration ?? 60, time, duration),
+      const conflict = existingBookings.some(
+        (booking: { time: string; duration: number | null }) =>
+          overlaps(booking.time, booking.duration ?? 60, time, duration),
       );
 
       if (conflict) {
@@ -146,7 +150,9 @@ export async function POST(request: NextRequest) {
                 ? body.customerEmail
                 : "guest@worksphere.local",
             customerPhone:
-              typeof body.customerPhone === "string" ? body.customerPhone : null,
+              typeof body.customerPhone === "string"
+                ? body.customerPhone
+                : null,
             confirmationId,
             status: "CONFIRMED",
           },
@@ -182,10 +188,10 @@ export async function POST(request: NextRequest) {
                     name: guest.name || null,
                     status: "PENDING",
                   },
-                })
-              )
-            )
-          )
+                }),
+              ),
+            ),
+          ),
         );
       } catch (err) {
         console.error("[BookAPI] Failed to create guest records:", err);
@@ -241,6 +247,9 @@ export async function POST(request: NextRequest) {
       );
     }
     console.error("[BookAPI] Error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
   }
 }

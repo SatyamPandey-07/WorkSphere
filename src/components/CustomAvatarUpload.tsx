@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { Upload, Loader2, Image as ImageIcon } from "lucide-react";
 import Image from "next/image";
-import { notifyAvatarUpdated } from "@/lib/avatar-events";
+import { notifyAvatarUpdated, dispatchAvatarUpdated } from "@/lib/avatar-events";
 
 const HEIC_EXTENSIONS = [".heic", ".heif"];
 const isHeicFile = (file: File) =>
@@ -64,12 +64,13 @@ export function CustomAvatarUpload() {
     setIsUploading(true);
 
     try {
-      await user.setProfileImage({ file });
-
-      // Reload Clerk's active user resource so every useUser() consumer receives
-      // the new image URL immediately instead of waiting for a hard refresh.
+      const updatedUser = await user.setProfileImage({ file });
       await user.reload();
       notifyAvatarUpdated();
+      const newAvatarUrl = updatedUser?.imageUrl || user.imageUrl;
+      if (user.id && newAvatarUrl) {
+        dispatchAvatarUpdated(user.id, newAvatarUrl);
+      }
       setSuccess("Profile picture updated.");
     } catch (err: any) {
       console.error("Failed to upload image:", err);

@@ -122,9 +122,8 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      const conflict = existingBookings.some(
-        (booking: { time: string; duration: number | null }) =>
-          overlaps(booking.time, booking.duration ?? 60, time, duration),
+      const conflict = existingBookings.some((booking: { time: string; duration: any; }) =>
+        overlaps(booking.time, booking.duration ?? 60, time, duration),
       );
 
       if (conflict) {

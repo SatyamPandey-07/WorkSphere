@@ -118,6 +118,8 @@ export function useCanvasWhiteboard(
     const doc = new Y.Doc();
     docRef.current = doc;
     let newProvider: YProvider | null = null;
+    let handleStatus: (({ status }: { status: string }) => void) | null = null;
+    let handleSync: ((synced: boolean) => void) | null = null;
     try {
       newProvider = new YProvider(PARTYKIT_HOST, roomId, doc, {
         params: token ? { token } : {},
@@ -133,7 +135,7 @@ export function useCanvasWhiteboard(
         },
       });
 
-      newProvider.on("status", ({ status }: { status: string }) => {
+      handleStatus = ({ status }: { status: string }) => {
         if (status === "disconnected") {
           failoverSync.handleDisconnect();
           setIsConnected(false);
@@ -145,13 +147,16 @@ export function useCanvasWhiteboard(
           };
           failoverSync.handleConnect(sendFn, roomId);
         }
-      });
+      };
 
-      newProvider.on("sync", (synced: boolean) => {
+      handleSync = (synced: boolean) => {
         if (synced && failoverSync.getStatus() !== "syncing_snapshot") {
           setIsConnected(true);
         }
-      });
+      };
+
+      newProvider.on("status", handleStatus);
+      newProvider.on("sync", handleSync);
     } catch (err) {
       console.warn("YProvider connection initialization deferred:", err);
     }
@@ -192,7 +197,7 @@ export function useCanvasWhiteboard(
 
     const handleAwarenessChange = () => {
       if (!awareness) return;
-      const states = Array.from(awareness.getStates().entries());
+      const states = Array.from(awareness.getStates().entries()) as [number, any][];
       const cursors: RemoteCursor[] = [];
       for (const [clientId, state] of states) {
         if (clientId === awareness.clientID) continue;
@@ -215,7 +220,11 @@ export function useCanvasWhiteboard(
       shapes.unobserve(updateSnapshots);
       awareness?.off("change", handleAwarenessChange);
       um.destroy();
-      newProvider?.disconnect();
+      if (newProvider) {
+        if (handleStatus) newProvider.off("status", handleStatus);
+        if (handleSync) newProvider.off("sync", handleSync);
+        newProvider.disconnect();
+      }
       doc.destroy();
       shapesRef.current = null;
       docRef.current = null;

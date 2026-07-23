@@ -303,8 +303,22 @@ export class CrowdSimulationEngine {
 
     const { agentCount, exitPositions, wallSegments } = this.config;
 
-    // Agent buffers (ping-pong)
+    // Validate memory limits
     const agentSize = agentCount * AGENT_STRIDE;
+    const maxBindingSize =
+      this.device.limits?.maxStorageBufferBindingSize || 134217728;
+    const maxBufferSize = this.device.limits?.maxBufferSize || 268435456;
+
+    if (agentSize > maxBindingSize || agentSize > maxBufferSize) {
+      console.warn(
+        `[CrowdSim] Required buffer size ${agentSize} bytes exceeds WebGPU storage buffer limits (maxBindingSize: ${maxBindingSize})`,
+      );
+      throw new Error(
+        `WebGPU memory limit reached: requested ${agentSize} bytes exceeds limit ${maxBindingSize}`,
+      );
+    }
+
+    // Agent buffers (ping-pong)
     this.agentBufferA = this.device.createBuffer({
       size: agentSize,
       usage: BufferUsage.STORAGE | BufferUsage.COPY_SRC | BufferUsage.COPY_DST,
@@ -397,13 +411,21 @@ export class CrowdSimulationEngine {
       size: AGENT_VERTICES.byteLength,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.agentVertexBuffer!, 0, AGENT_VERTICES as unknown as BufferSource);
+    this.device.queue.writeBuffer(
+      this.agentVertexBuffer!,
+      0,
+      AGENT_VERTICES as unknown as BufferSource,
+    );
 
     this.agentIndexBuffer = this.device.createBuffer({
       size: AGENT_INDICES.byteLength,
       usage: BufferUsage.INDEX | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.agentIndexBuffer!, 0, AGENT_INDICES as unknown as BufferSource);
+    this.device.queue.writeBuffer(
+      this.agentIndexBuffer!,
+      0,
+      AGENT_INDICES as unknown as BufferSource,
+    );
   }
 
   private async createPipelines(format: GPUTextureFormat): Promise<void> {

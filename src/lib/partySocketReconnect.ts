@@ -39,10 +39,25 @@ export function jitteredReconnectDelay(
   return Math.round(Math.min(max, Math.max(min, base + jitter)));
 }
 
+export enum ConnectionState {
+  CLOSED = "CLOSED",
+  CONNECTING = "CONNECTING",
+  CONNECTED = "CONNECTED",
+}
+
 type DelaySocket = {
   _retryCount: number;
   _getNextDelay: () => number;
+  _connect?: () => void;
+  _disconnect?: (code?: number, reason?: string) => void;
+  _clearTimeouts?: () => void;
+  _wait?: () => Promise<void>;
+  addEventListener?: (
+    event: string,
+    callback: (...args: any[]) => void,
+  ) => void;
   __worksphereJitter?: boolean;
+  __worksphereState?: ConnectionState;
 };
 
 /** Swap in jittered backoff on a live PartySocket instance (idempotent). */
@@ -50,9 +65,80 @@ export function attachJitteredBackoff<T extends object>(socket: T): T {
   const s = socket as T & DelaySocket;
   if (s.__worksphereJitter) return socket;
 
+  let pendingTimeoutId: any = null;
+  s.__worksphereState = ConnectionState.CLOSED;
+
   s._getNextDelay = function (this: DelaySocket) {
     return jitteredReconnectDelay(this._retryCount);
   };
+
+  s._wait = function (this: any) {
+    if (pendingTimeoutId) {
+      clearTimeout(pendingTimeoutId);
+    }
+    return new Promise<void>((resolve) => {
+      pendingTimeoutId = setTimeout(() => {
+        pendingTimeoutId = null;
+        resolve();
+      }, this._getNextDelay());
+    });
+  };
+
+  const originalClearTimeouts = s._clearTimeouts;
+  s._clearTimeouts = function (this: any) {
+    if (pendingTimeoutId) {
+      clearTimeout(pendingTimeoutId);
+      pendingTimeoutId = null;
+    }
+    if (originalClearTimeouts) {
+      originalClearTimeouts.call(this);
+    }
+  };
+
+  const originalDisconnect = s._disconnect;
+  s._disconnect = function (this: any, code?: number, reason?: string) {
+    s.__worksphereState = ConnectionState.CLOSED;
+    if (pendingTimeoutId) {
+      clearTimeout(pendingTimeoutId);
+      pendingTimeoutId = null;
+    }
+    if (originalDisconnect) {
+      originalDisconnect.call(this, code, reason);
+    }
+  };
+
+  const originalConnect = s._connect;
+  if (originalConnect) {
+    s._connect = function (this: any) {
+      if (
+        s.__worksphereState === ConnectionState.CONNECTING ||
+        s.__worksphereState === ConnectionState.CONNECTED
+      ) {
+        return;
+      }
+      s.__worksphereState = ConnectionState.CONNECTING;
+      if (pendingTimeoutId) {
+        clearTimeout(pendingTimeoutId);
+        pendingTimeoutId = null;
+      }
+      originalConnect.call(this);
+    };
+  }
+
+  if (typeof s.addEventListener === "function") {
+    s.addEventListener("open", () => {
+      s.__worksphereState = ConnectionState.CONNECTED;
+    });
+
+    s.addEventListener("close", () => {
+      s.__worksphereState = ConnectionState.CLOSED;
+    });
+
+    s.addEventListener("error", () => {
+      s.__worksphereState = ConnectionState.CLOSED;
+    });
+  }
+
   s.__worksphereJitter = true;
   return socket;
 }

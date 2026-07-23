@@ -291,7 +291,7 @@ export default function SiteFooter() {
 
         {/* Footer Bottom Strip */}
         <div className="mt-12 flex justify-end text-xs text-zinc-400 dark:text-white/30">
-          <p>© 2026 WorkSphere</p>
+          <p>© {new Date().getFullYear()} WorkSphere</p>
         </div>
       </div>
     </footer>

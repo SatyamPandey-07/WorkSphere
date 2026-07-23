@@ -5,7 +5,7 @@ import "@testing-library/jest-dom";
 
 jest.mock("@clerk/nextjs", () => ({
   UserButton: () => <div data-testid="user-button" />,
-  useUser: () => ({ user: null }),
+  useUser: () => ({ isLoaded: true, isSignedIn: false, user: null }),
 }));
 
 jest.mock("@/components/ThemeToggle", () => ({

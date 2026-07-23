@@ -19,7 +19,6 @@ import {
   Send,
   Star,
   Volume2,
-  VolumeX,
   Wifi,
   Zap,
   LayoutGrid,
@@ -931,13 +930,7 @@ export function MessageList({
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const {
-    isSupported: isTtsSupported,
-    speakingMessageId,
-    speakingSentenceIndex,
-    speakMessage,
-    stopSpeech,
-  } = useSpeechSynthesis();
+  const { speakingMessageId, speakingSentenceIndex } = useSpeechSynthesis();
 
   const scrollToBottomIfNeeded = useCallback(() => {
     const container = containerRef.current;
@@ -1168,36 +1161,6 @@ function TerminalIcon(props: any) {
   return <span {...props}>💻</span>;
 }
 
-function ReadAloudButton({
-  isSpeaking,
-  onToggle,
-  disabled,
-}: {
-  isSpeaking: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      disabled={disabled}
-      className={`p-1.5 rounded-md transition-all ${
-        isSpeaking
-          ? "text-amber-500 bg-amber-500/10 hover:bg-amber-500/20 ring-1 ring-amber-500/30 shadow-sm opacity-100"
-          : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 opacity-0 group-hover:opacity-100 focus-within:opacity-100"
-      }`}
-      title={isSpeaking ? "Stop reading aloud" : "Read aloud"}
-      aria-label={isSpeaking ? "Stop reading aloud" : "Read aloud"}
-    >
-      {isSpeaking ? (
-        <VolumeX className="w-3.5 h-3.5 animate-pulse text-amber-500" />
-      ) : (
-        <Volume2 className="w-3.5 h-3.5" />
-      )}
-    </button>
-  );
-}
-
 function CopyMessageButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -1210,11 +1173,7 @@ function CopyMessageButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-<<<<<<< HEAD
       className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-all opacity-0 group-hover:opacity-100 focus-within:opacity-100"
-=======
-      className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-all"
->>>>>>> 36942c3 (feat(tts): add playback rate speed options and dropdown to speech synthesis and ReadAloudButton)
       title="Copy message"
       aria-label="Copy message"
     >

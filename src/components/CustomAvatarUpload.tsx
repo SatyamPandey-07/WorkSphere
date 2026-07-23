@@ -4,7 +4,10 @@ import { useState, useRef } from "react";
 import { useUser } from "@clerk/nextjs";
 import { Upload, Loader2, Image as ImageIcon } from "lucide-react";
 import Image from "next/image";
-import { notifyAvatarUpdated, dispatchAvatarUpdated } from "@/lib/avatar-events";
+import {
+  notifyAvatarUpdated,
+  dispatchAvatarUpdated,
+} from "@/lib/avatar-events";
 
 const HEIC_EXTENSIONS = [".heic", ".heif"];
 const isHeicFile = (file: File) =>
@@ -67,7 +70,7 @@ export function CustomAvatarUpload() {
       const updatedUser = await user.setProfileImage({ file });
       await user.reload();
       notifyAvatarUpdated();
-      const newAvatarUrl = updatedUser?.imageUrl || user.imageUrl;
+      const newAvatarUrl = updatedUser?.publicUrl || user.imageUrl;
       if (user.id && newAvatarUrl) {
         dispatchAvatarUpdated(user.id, newAvatarUrl);
       }

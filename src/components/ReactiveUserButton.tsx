@@ -21,8 +21,7 @@ export type ReactiveUserButtonProps = ClerkUserButtonProps & {
 };
 
 export function ReactiveUserButton(props: ReactiveUserButtonProps) {
-  const userState = typeof useUser === "function" ? useUser() : null;
-  const user = userState?.user;
+  const { user } = useUser();
   const [avatarRevision, setAvatarRevision] = useState(0);
 
   useEffect(() => {
@@ -30,9 +29,11 @@ export function ReactiveUserButton(props: ReactiveUserButtonProps) {
       setAvatarRevision((revision) => revision + 1);
     };
 
-    const unsubscribe = subscribeAvatarUpdated((_detail: AvatarUpdatedDetail) => {
-      refreshAvatar();
-    });
+    const unsubscribe = subscribeAvatarUpdated(
+      (_detail: AvatarUpdatedDetail) => {
+        refreshAvatar();
+      },
+    );
 
     window.addEventListener(AVATAR_UPDATED_EVENT, refreshAvatar);
 

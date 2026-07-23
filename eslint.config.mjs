@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
     "scratch/**",
     "jest.setup.js",
     "wasm/**",
+    // Generated / third-party files in public/
+    "public/**",
   ]),
   // Custom rules for this project
   {

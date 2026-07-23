@@ -47,6 +47,15 @@ const nextConfig: NextConfig = {
             key: "Referrer-Policy",
             value: "strict-origin-when-cross-origin",
           },
+          // Required for SharedArrayBuffer (lock-free SPSC ring buffer for AudioWorklet)
+          {
+            key: "Cross-Origin-Opener-Policy",
+            value: "same-origin",
+          },
+          {
+            key: "Cross-Origin-Embedder-Policy",
+            value: "require-corp",
+          },
           {
             key: "Permissions-Policy",
             value: "camera=(self), microphone=(self), geolocation=(self)",

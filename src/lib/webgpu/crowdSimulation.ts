@@ -1101,7 +1101,7 @@ export class CrowdSimulationEngine {
         p.worldWidth,
         p.worldHeight,
         0.92, // decay factor per frame (smooth trailing)
-        0,
+        1.5,  // densityMultiplier
         0,
       ]),
     );

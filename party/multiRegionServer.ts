@@ -23,6 +23,7 @@ interface SeatCheckin {
   venueId: string;
   capacity: number;
   checkedInAt: number;
+  version: number;
 }
 
 const DEFAULT_SEAT_CAPACITY = 8;
@@ -94,6 +95,7 @@ const REGION_NODES: RegionNode[] = [
 
 export default class MultiRegionWorkspaceServer implements Party.Server {
   private seatCheckins = new Map<string, SeatCheckin>();
+  private seatCheckinLocks = new Set<string>();
   private stateSync: DurableStateSync;
   private connRegions = new Map<string, Region>();
   private serverEpoch = Date.now();
@@ -298,33 +300,79 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
     venueId: string,
     capacity?: unknown,
   ) {
-    const previous = this.seatCheckins.get(conn.id);
-    const resolvedCapacity =
-      typeof capacity === "number" && capacity > 0
-        ? capacity
-        : (previous?.capacity ?? DEFAULT_SEAT_CAPACITY);
+    const maxRetries = 3;
+    const connId = conn.id;
 
-    this.seatCheckins.set(conn.id, {
-      venueId,
-      capacity: resolvedCapacity,
-      checkedInAt: Date.now(),
-    });
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (this.seatCheckinLocks.has(connId)) {
+        continue;
+      }
 
-    // Update cross-region presence
-    this.stateSync.updatePresence(conn.id, venueId, null);
+      this.seatCheckinLocks.add(connId);
+      try {
+        const previous = this.seatCheckins.get(connId);
+        const expectedVersion = previous?.version ?? 0;
+        const resolvedCapacity =
+          typeof capacity === "number" && capacity > 0
+            ? capacity
+            : (previous?.capacity ?? DEFAULT_SEAT_CAPACITY);
 
-    this.broadcastSeatUpdate(venueId);
-    if (previous && previous.venueId !== venueId) {
-      this.broadcastSeatUpdate(previous.venueId);
+        const newCheckin: SeatCheckin = {
+          venueId,
+          capacity: resolvedCapacity,
+          checkedInAt: Date.now(),
+          version: expectedVersion + 1,
+        };
+
+        const current = this.seatCheckins.get(connId);
+        if (current && current.version !== expectedVersion) {
+          continue;
+        }
+
+        this.seatCheckins.set(connId, newCheckin);
+
+        this.stateSync.updatePresence(connId, venueId, null);
+
+        this.broadcastSeatUpdate(venueId);
+        if (previous && previous.venueId !== venueId) {
+          this.broadcastSeatUpdate(previous.venueId);
+        }
+        return;
+      } finally {
+        this.seatCheckinLocks.delete(connId);
+      }
     }
+    console.error("[Seat] Max retries exceeded for checkin", connId);
   }
 
   private handleSeatCheckout(conn: Party.Connection) {
-    const previous = this.seatCheckins.get(conn.id);
-    if (!previous) return;
-    this.seatCheckins.delete(conn.id);
-    this.stateSync.removePresence(conn.id, previous.venueId);
-    this.broadcastSeatUpdate(previous.venueId);
+    const maxRetries = 3;
+    const connId = conn.id;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (this.seatCheckinLocks.has(connId)) {
+        continue;
+      }
+
+      this.seatCheckinLocks.add(connId);
+      try {
+        const previous = this.seatCheckins.get(connId);
+        if (!previous) return;
+
+        const current = this.seatCheckins.get(connId);
+        if (current && current.version !== previous.version) {
+          continue;
+        }
+
+        this.seatCheckins.delete(connId);
+        this.stateSync.removePresence(connId, previous.venueId);
+        this.broadcastSeatUpdate(previous.venueId);
+        return;
+      } finally {
+        this.seatCheckinLocks.delete(connId);
+      }
+    }
+    console.error("[Seat] Max retries exceeded for checkout", connId);
   }
 
   private countForVenue(venueId: string): number {

@@ -785,7 +785,17 @@ export async function flushConversationEditQueue(): Promise<void> {
         await removePendingActionById(action.id);
       }
     } catch (err) {
-      // Still offline or request failed — leave it queued for the next attempt.
+      // Network errors (TypeError from fetch) mean the request never reached the
+      // server. Do NOT remove the action from the queue — it will be retried on
+      // the next flush or Background Sync event without data loss or duplication.
+      if (err instanceof TypeError) {
+        console.warn(
+          `[OfflineStorage] flushConversationEditQueue: Network error for action ${action.id} — preserving in queue.`,
+        );
+        // Abort the loop: subsequent actions are likely to fail too.
+        return;
+      }
+      // Non-network error — leave it queued for the next attempt.
       console.error("Failed to sync conversation edit:", err);
     }
   }

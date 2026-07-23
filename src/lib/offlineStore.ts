@@ -296,6 +296,41 @@ export async function incrementRetryCount(id: number): Promise<number | null> {
 }
 
 /**
+ * Restores a failed payload back into the queue by resetting its retryCount to 0.
+ * This ensures network-disconnected items are not penalized with retry exhaustion
+ * and are re-attempted on the next sync cycle without data loss.
+ *
+ * Returns `true` if the item was found and restored, `false` if the item no longer exists.
+ */
+export async function restoreFailedPayload(id: number): Promise<boolean> {
+  return withWebLock(async () => {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const getRequest = store.get(id);
+
+        getRequest.onsuccess = () => {
+          const existing = getRequest.result as OfflineAction | undefined;
+          if (!existing) {
+            resolve(false);
+            return;
+          }
+          store.put({ ...existing, retryCount: 0 });
+          tx.oncomplete = () => resolve(true);
+        };
+        getRequest.onerror = () => reject(getRequest.error);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.error("Failed to restore failed payload:", err);
+      return false;
+    }
+  });
+}
+
+/**
  * Clears an action from the store once it has been processed
  */
 export async function dequeueOfflineAction(id: number): Promise<void> {

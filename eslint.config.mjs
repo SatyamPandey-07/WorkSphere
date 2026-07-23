@@ -18,7 +18,14 @@ const eslintConfig = defineConfig([
     "jest.setup.js",
     "wasm/**",
     // Generated / third-party files in public/
-    "public/**",
+    "public/**/*.wasm",
+    "public/ca-bundle.pem",
+    "public/audio-equalizer-processor.js",
+    "public/hrtf_engine.js",
+    "public/*.svg",
+    "public/manifest.json",
+    "public/workers/**",
+    "public/zkp/**",
   ]),
   // Custom rules for this project
   {

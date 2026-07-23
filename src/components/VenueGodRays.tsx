@@ -1,11 +1,21 @@
 "use client";
 
-import React, { useEffect, useRef, useMemo, useState } from "react";
+import React, { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { Sparkles, Sun, AlertCircle, Eye, EyeOff } from "lucide-react";
 import { useGodRaysRenderer } from "@/hooks/useGodRaysRenderer";
 import { calculateSunPosition } from "@/lib/sunPosition";
 
 const GODRAYS_STORAGE_KEY = "worksphere:godrays:enabled";
+const DENSITY_STORAGE_KEY = "worksphere:godrays:density";
+const DEFAULT_DENSITY = 4.0;
+const MAX_DENSITY = 10.0;
+
+function safeDensityPercent(density: number, max: number): number {
+  if (!Number.isFinite(density) || !Number.isFinite(max) || max <= 0) {
+    return 0;
+  }
+  return Math.round((density / max) * 100);
+}
 
 export interface VenueGodRaysProps {
   lat?: number | null;
@@ -24,19 +34,27 @@ export function VenueGodRays({
 }: VenueGodRaysProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isEnabled, setIsEnabled] = useState<boolean>(true);
+  const [density, setDensity] = useState<number>(DEFAULT_DENSITY);
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(GODRAYS_STORAGE_KEY);
-      if (stored !== null) {
-        setIsEnabled(stored === "true");
+      const storedEnabled = localStorage.getItem(GODRAYS_STORAGE_KEY);
+      if (storedEnabled !== null) {
+        setIsEnabled(storedEnabled === "true");
+      }
+      const storedDensity = localStorage.getItem(DENSITY_STORAGE_KEY);
+      if (storedDensity !== null) {
+        const parsed = Number(storedDensity);
+        if (Number.isFinite(parsed) && parsed >= 0 && parsed <= MAX_DENSITY) {
+          setDensity(parsed);
+        }
       }
     } catch {
-      // localStorage unavailable — default to enabled
+      // localStorage unavailable — use defaults
     }
   }, []);
 
-  const toggleGodRays = () => {
+  const toggleGodRays = useCallback(() => {
     setIsEnabled((prev) => {
       const next = !prev;
       try {
@@ -46,7 +64,22 @@ export function VenueGodRays({
       }
       return next;
     });
-  };
+  }, []);
+
+  const handleDensityChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = Number(e.target.value);
+      if (!Number.isFinite(val)) return;
+      const clamped = Math.max(0, Math.min(MAX_DENSITY, val));
+      setDensity(clamped);
+      try {
+        localStorage.setItem(DENSITY_STORAGE_KEY, String(clamped));
+      } catch {
+        // silently ignore
+      }
+    },
+    [],
+  );
 
   const sunPos = useMemo(() => {
     if (typeof lat !== "number" || typeof lng !== "number") {
@@ -68,7 +101,7 @@ export function VenueGodRays({
     intensity: sunPos.isAboveHorizon ? 0.7 : 0.2,
     rayLength: sunPos.isAboveHorizon ? 1.2 : 0.6,
     decay: 0.96,
-    density: 4.0,
+    density,
     weight: 0.04,
     quality,
     animate: isEnabled,
@@ -84,6 +117,8 @@ export function VenueGodRays({
       }
     };
   }, [canvas]);
+
+  const densityPercent = safeDensityPercent(density, MAX_DENSITY);
 
   return (
     <div
@@ -140,14 +175,32 @@ export function VenueGodRays({
           </div>
         </div>
 
-        <div className="flex items-end justify-between">
+        <div className="flex items-end justify-between gap-3">
           <div className="bg-black/65 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl text-white text-[10px]">
             <p className="font-bold text-amber-200">Volumetric Light Shafts</p>
             <p className="text-zinc-400 mt-0.5">
               32-sample radial blur with procedural noise perturbation
             </p>
+            <div className="flex items-center gap-2 mt-2 pointer-events-auto">
+              <label className="text-zinc-500 text-[9px] uppercase tracking-wider shrink-0">
+                Density
+              </label>
+              <input
+                type="range"
+                min="0"
+                max={MAX_DENSITY}
+                step="0.5"
+                value={density}
+                onChange={handleDensityChange}
+                className="flex-1 h-1 bg-zinc-700 accent-amber-500 rounded-lg cursor-pointer"
+                title={`Ray density: ${density.toFixed(1)}`}
+              />
+              <span className="text-[10px] font-mono text-zinc-300 w-8 text-right shrink-0">
+                {densityPercent}%
+              </span>
+            </div>
           </div>
-          <div className="bg-black/40 backdrop-blur-md px-2 py-0.5 rounded-full text-[9px] text-zinc-400 border border-white/5">
+          <div className="bg-black/40 backdrop-blur-md px-2 py-0.5 rounded-full text-[9px] text-zinc-400 border border-white/5 shrink-0">
             {sunPos.isAboveHorizon ? "Sunrise/Sunset" : "Night"} mode
           </div>
         </div>

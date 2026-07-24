@@ -8,6 +8,7 @@ import SiteFooter from "@/components/site-footer";
 import PremiumZkpGate from "@/components/venues/PremiumZkpGate";
 import { isPremiumVenue } from "@/lib/zkp/membership";
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
+import { NoiseForecastChart } from "@/components/noise/NoiseForecastChart";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -168,6 +169,13 @@ export default async function VenuePage({ params }: PageProps) {
                   </div>
                 </div>
               ) : null}
+            </div>
+
+            <div className="pt-2">
+              <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
+                <span>Expected Noise Levels</span>
+              </h3>
+              <NoiseForecastChart venueId={venue.id} />
             </div>
 
             {/* Live WebGL 3D Volumetric Cloud Weather Visualizer for Outdoor Workspaces */}

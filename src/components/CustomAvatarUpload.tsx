@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { Upload, Loader2, Image as ImageIcon } from "lucide-react";
 import Image from "next/image";
 import { notifyAvatarUpdated } from "@/lib/avatar-events";
+import { normalizeImageOrientation } from "@/lib/exifOrientation";
 
 const HEIC_EXTENSIONS = [".heic", ".heif"];
 const isHeicFile = (file: File) =>
@@ -30,6 +31,7 @@ export function CustomAvatarUpload() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (!isLoaded || !user) return null;
@@ -59,6 +61,12 @@ export function CustomAvatarUpload() {
       return;
     }
 
+    // Parse EXIF orientation tags and normalize image canvas matrix if needed
+    file = await normalizeImageOrientation(file);
+
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+
     setError(null);
     setSuccess(null);
     setIsUploading(true);
@@ -84,17 +92,20 @@ export function CustomAvatarUpload() {
     }
   };
 
+  const activeAvatarUrl = previewUrl || (user.hasImage ? user.imageUrl : null);
+
   return (
     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
       <div className="flex items-start gap-4">
         <div className="w-16 h-16 rounded-full overflow-hidden shrink-0 border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
-          {user.hasImage ? (
+          {activeAvatarUrl ? (
             <Image
-              src={user.imageUrl}
+              src={activeAvatarUrl}
               alt={user.fullName || "User avatar"}
               width={64}
               height={64}
               className="w-full h-full object-cover"
+              style={{ imageOrientation: "from-image" }}
               unoptimized
             />
           ) : (
@@ -115,6 +126,7 @@ export function CustomAvatarUpload() {
               type="file"
               accept="image/*"
               className="hidden"
+              data-testid="file-input"
               ref={fileInputRef}
               onChange={handleFileChange}
               disabled={isUploading}

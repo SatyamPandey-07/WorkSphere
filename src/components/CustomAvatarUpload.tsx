@@ -13,7 +13,8 @@ import { normalizeImageOrientation } from "@/lib/exifOrientation";
 import { AvatarCropModal } from "@/components/AvatarCropModal";
 import { dispatchAvatarUpdated } from "@/lib/avatar-events";
 
-const MAX_SOURCE_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB limit in bytes
+
 const HEIC_EXTENSIONS = [".heic", ".heif"];
 
 const isHeicFile = (file: File) =>
@@ -81,27 +82,12 @@ export function CustomAvatarUpload() {
         URL.revokeObjectURL(currentSource);
       }
 
-      return null;
-    });
-    setSelectedFileName("");
-    clearInput();
-  };
-
-  const handleFileChange = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    let file = event.target.files?.[0];
-
-    if (!file) {
-      return;
-    }
-
-    setError(null);
-    setSuccess(null);
-
-    if (file.size > MAX_SOURCE_FILE_SIZE) {
-      setError("Image must be smaller than 5MB.");
-      clearInput();
+    // 1. Check file size against 2MB limit before reading image stream or processing
+    if (file.size > MAX_FILE_SIZE) {
+      setError("Image size exceeds 2MB limit.");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       return;
     }
 
@@ -203,50 +189,38 @@ export function CustomAvatarUpload() {
             )}
           </div>
 
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-1">
-              Profile Picture
-            </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
-              Upload a custom avatar to personalize your profile.
-            </p>
+        <div className="flex-1">
+          <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-1">
+            Profile Picture
+          </h3>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
+            Upload a custom avatar to personalize your profile. (Max 2MB)
+          </p>
 
-            <div className="flex items-center gap-4">
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                data-testid="file-input"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                disabled={isUploading || isPreparing}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading || isPreparing}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-sm font-medium rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-100 disabled:opacity-50 transition-colors"
-              >
-                {isUploading || isPreparing ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Uploading...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" />
-                    Upload Image
-                  </>
-                )}
-              </button>
-              {error && <span className="text-sm text-red-500">{error}</span>}
-              {success && (
-                <p
-                  className="mt-3 flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400"
-                  role="status"
-                >
-                  <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-                  {success}
-                </p>
+          <div className="flex items-center gap-4">
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              disabled={isUploading}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-sm font-medium rounded-lg hover:bg-zinc-800 dark:hover:bg-zinc-100 disabled:opacity-50 transition-colors"
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4" />
+                  Upload Image
+                </>
               )}
             </div>
           </div>

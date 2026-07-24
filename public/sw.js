@@ -294,39 +294,41 @@ async function syncFavorites() {
   isSyncingFavorites = true;
   try {
     const db = await openIndexedDB();
-    const pendingFavorites = await getPendingActions(db, [
-      "favorite",
-      "unfavorite",
-      "favorites",
-    ]);
 
-    for (const action of pendingFavorites) {
-      try {
-        const url =
-          action.type === "unfavorite"
-            ? `/api/favorites?venueId=${action.venueId}`
-            : "/api/favorites";
-        const method =
-          action.type === "unfavorite" ? "DELETE" : action.method || "POST";
-        const body =
-          action.type === "favorite"
-            ? JSON.stringify(action.data)
-            : action.data
-              ? JSON.stringify(action.data)
-              : undefined;
+    const pendingFavorites = await new Promise((resolve, reject) => {
+      const tx = db.transaction("pendingFavorites", "readonly");
+      const store = tx.objectStore("pendingFavorites");
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
 
-        const response = await fetch(url, {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body,
-        });
+    if (pendingFavorites.length === 0) return;
 
-        if (response.ok) {
-          await removePendingAction(db, action.id);
-        }
-      } catch (error) {
-        console.error("Failed to sync favorite:", error);
-      }
+    // Sort by timestamp
+    pendingFavorites.sort((a, b) => a.timestamp - b.timestamp);
+
+    const operations = pendingFavorites.map((fav) => ({
+      venueId: fav.venueId,
+      action: fav.action,
+      timestamp: fav.timestamp,
+    }));
+
+    const response = await fetch("/api/favorites/tags/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operations }),
+    });
+
+    if (response.ok) {
+      // Clear all synced favorites
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("pendingFavorites", "readwrite");
+        const store = tx.objectStore("pendingFavorites");
+        pendingFavorites.forEach((fav) => store.delete(fav.id));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
     }
   } catch (error) {
     console.error("Sync favorites failed:", error);
@@ -546,7 +548,7 @@ async function syncReceiptExports() {
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
     try {
-      const request = indexedDB.open("worksphere-offline", 5);
+      const request = indexedDB.open("worksphere-offline", 6);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
@@ -609,6 +611,13 @@ function openIndexedDB() {
           });
           receiptStore.createIndex("status", "status", { unique: false });
           receiptStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
+        // Pending favorites store
+        if (!db.objectStoreNames.contains("pendingFavorites")) {
+          db.createObjectStore("pendingFavorites", {
+            keyPath: "id",
+          });
         }
       };
     } catch (err) {

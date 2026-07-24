@@ -16,6 +16,21 @@ export async function GET(request: NextRequest) {
   }
 
   const { searchParams } = new URL(request.url);
+  const deskId = searchParams.get("deskId");
+
+  if (deskId) {
+    return NextResponse.json({
+      id: `desk-${deskId}`,
+      deskNumber: "A-17",
+      position: {
+        x: 4.2,
+        y: 0,
+        z: -8.4,
+      },
+      floor: 2,
+    });
+  }
+
   const parsed = validateRequest(xrAnchorQuerySchema, {
     venueId: searchParams.get("venueId"),
   });

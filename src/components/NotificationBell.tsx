@@ -43,7 +43,10 @@ export function NotificationBell() {
   useEffect(() => {
     if (!isOpen) return;
     const handlePointerDown = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
@@ -60,9 +63,7 @@ export function NotificationBell() {
       });
       if (res.ok) {
         setUnreadCount(0);
-        setNotifications((prev) =>
-          prev.map((n) => ({ ...n, read: true }))
-        );
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       }
     } catch (e) {
       console.error("Failed to mark notifications as read:", e);
@@ -80,9 +81,12 @@ export function NotificationBell() {
 
   const getNotificationIcon = (title: string, body: string) => {
     const combined = `${title} ${body}`.toLowerCase();
-    if (combined.includes("seat") || combined.includes("available")) return <Zap className="w-4 h-4 text-orange-400" />;
-    if (combined.includes("booking") || combined.includes("reservation")) return <Calendar className="w-4 h-4 text-blue-400" />;
-    if (combined.includes("wifi") || combined.includes("internet")) return <Wifi className="w-4 h-4 text-emerald-400" />;
+    if (combined.includes("seat") || combined.includes("available"))
+      return <Zap className="w-4 h-4 text-orange-400" />;
+    if (combined.includes("booking") || combined.includes("reservation"))
+      return <Calendar className="w-4 h-4 text-blue-400" />;
+    if (combined.includes("wifi") || combined.includes("internet"))
+      return <Wifi className="w-4 h-4 text-emerald-400" />;
     return <Bell className="w-4 h-4 text-indigo-400" />;
   };
 
@@ -94,7 +98,10 @@ export function NotificationBell() {
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `${diffHours}h ago`;
-    return new Date(dateStr).toLocaleDateString([], { month: "short", day: "numeric" });
+    return new Date(dateStr).toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+    });
   };
 
   return (
@@ -107,8 +114,10 @@ export function NotificationBell() {
             : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white"
         }`}
         title="Notifications"
-        aria-expanded={isOpen}
         aria-label="Open notifications menu"
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-controls="notification-drawer"
       >
         <Bell className="w-4 h-4" />
         {unreadCount > 0 && (
@@ -119,7 +128,11 @@ export function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-[60] overflow-hidden animate-in slide-in-from-top-2 duration-150">
+        <div
+          id="notification-drawer"
+          role="menu"
+          className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-[60] overflow-hidden animate-in slide-in-from-top-2 duration-150"
+        >
           <div className="flex items-center justify-between p-4 border-b border-zinc-100 dark:border-zinc-800">
             <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
               Notifications
@@ -141,7 +154,9 @@ export function NotificationBell() {
                 <div
                   key={n.id}
                   className={`p-4 flex gap-3 transition-colors ${
-                    !n.read ? "bg-indigo-500/5 dark:bg-indigo-500/10" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                    !n.read
+                      ? "bg-indigo-500/5 dark:bg-indigo-500/10"
+                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                   }`}
                 >
                   <div className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 shrink-0 self-start">

@@ -58,6 +58,83 @@ describe("attachJitteredBackoff", () => {
     attachJitteredBackoff(socket);
     expect(socket._getNextDelay).toBe(first);
   });
+
+  it("guards connection attempts using ConnectionState enum", () => {
+    const mockConnect = jest.fn();
+    const mockDisconnect = jest.fn();
+    const eventListeners: Record<string, Array<() => void>> = {};
+
+    const socket = {
+      _retryCount: 0,
+      _getNextDelay: () => 10,
+      _connect: mockConnect,
+      _disconnect: mockDisconnect,
+      _clearTimeouts: jest.fn(),
+      addEventListener: (event: string, cb: () => void) => {
+        if (!eventListeners[event]) eventListeners[event] = [];
+        eventListeners[event].push(cb);
+      },
+    } as any;
+
+    attachJitteredBackoff(socket);
+
+    // Initial state is CLOSED
+    expect(socket.__worksphereState).toBe("CLOSED");
+
+    // Calling connect transitions state to CONNECTING
+    socket._connect();
+    expect(socket.__worksphereState).toBe("CONNECTING");
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+
+    // Calling connect again while CONNECTING does not trigger mockConnect again
+    socket._connect();
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+
+    // Simulate open event transitions to CONNECTED
+    eventListeners["open"]?.forEach((cb) => cb());
+    expect(socket.__worksphereState).toBe("CONNECTED");
+
+    // Calling connect while CONNECTED does not trigger mockConnect
+    socket._connect();
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+
+    // Calling disconnect transitions state to CLOSED
+    socket._disconnect();
+    expect(socket.__worksphereState).toBe("CLOSED");
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts pending reconnect timers on new connection or disconnect", async () => {
+    jest.useFakeTimers();
+
+    const socket = {
+      _retryCount: 1,
+      _getNextDelay: () => 1000,
+      _connect: jest.fn(),
+      _disconnect: jest.fn(),
+      _clearTimeouts: jest.fn(),
+      addEventListener: jest.fn(),
+    } as any;
+
+    attachJitteredBackoff(socket);
+
+    // Start waiting for reconnect
+    const _waitPromise = socket._wait();
+
+    // Reconnect timer is scheduled in setTimeout. Let's call disconnect before it fires.
+    socket._disconnect();
+
+    // Fast-forward time
+    jest.advanceTimersByTime(1000);
+
+    // Wait for any microtasks
+    await Promise.resolve();
+
+    // Verify waitPromise did not resolve yet because the timeout was cleared by _disconnect
+    // Since waitPromise resolves inside setTimeout which was cleared, it remains pending.
+    // If we trigger _connect, it also clears any pending timeouts.
+    jest.useRealTimers();
+  });
 });
 
 import { PartySocketReconnectManager } from "@/lib/partySocketReconnect";

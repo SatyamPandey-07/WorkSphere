@@ -32,11 +32,11 @@
 >
 > You will have **6 days** to complete it! 🚀
 
-### 🚀 Contributors (All 50 Active Rockstars)
+### 🚀 Contributors (All Active Rockstars)
 
 Automated contributor tracking synced directly via the GitHub API:
 
-[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100&columns=10)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100&columns=10&v=57)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 
 ---
 

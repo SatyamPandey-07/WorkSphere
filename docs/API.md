@@ -66,16 +66,16 @@ Public (Authentication Optional)
 
 ### Query Parameters
 
-| Parameter | Type | Required | Default | Validation | Description |
-|-----------|------|----------|---------|------------|-------------|
-| `lat` | Float | ✅ Yes | — | `-90` to `90` | Coordinate latitude |
-| `lng` | Float | ✅ Yes | — | `-180` to `180` | Coordinate longitude |
-| `radius` | Integer | No | `5000` | `100–50000` meters | Approximate search radius |
-| `category` | String | No | — | `cafe`, `coworking`, `library`, `all` | Workspace category |
-| `wifi` | Boolean | No | — | `true` / `false` | Filter venues with good Wi-Fi |
-| `outlets` | Boolean | No | — | `true` / `false` | Filter venues with power outlets |
-| `quiet` | Boolean | No | — | `true` / `false` | Filter quiet venues |
-| `hasQuietZone` | Boolean | No | `false` | `true` / `false` | Filter venues that provide verified quiet zones |
+| Parameter      | Type    | Required | Default | Validation                            | Description                                     |
+| -------------- | ------- | -------- | ------- | ------------------------------------- | ----------------------------------------------- |
+| `lat`          | Float   | ✅ Yes   | —       | `-90` to `90`                         | Coordinate latitude                             |
+| `lng`          | Float   | ✅ Yes   | —       | `-180` to `180`                       | Coordinate longitude                            |
+| `radius`       | Integer | No       | `5000`  | `100–50000` meters                    | Approximate search radius                       |
+| `category`     | String  | No       | —       | `cafe`, `coworking`, `library`, `all` | Workspace category                              |
+| `wifi`         | Boolean | No       | —       | `true` / `false`                      | Filter venues with good Wi-Fi                   |
+| `outlets`      | Boolean | No       | —       | `true` / `false`                      | Filter venues with power outlets                |
+| `quiet`        | Boolean | No       | —       | `true` / `false`                      | Filter quiet venues                             |
+| `hasQuietZone` | Boolean | No       | `false` | `true` / `false`                      | Filter venues that provide verified quiet zones |
 
 ### Search Bar Quick Filters (Pills)
 
@@ -151,18 +151,18 @@ POST /api/venues
 
 ### Request Body
 
-| Field | Type | Required | Validation | Description |
-|------|------|----------|------------|-------------|
-| `placeId` | String | ✅ Yes | Minimum 1 character | Google Place ID |
-| `name` | String | ✅ Yes | 1–200 characters | Venue name |
-| `latitude` | Float | ✅ Yes | `-90` to `90` | Latitude |
-| `longitude` | Float | ✅ Yes | `-180` to `180` | Longitude |
-| `category` | String | ✅ Yes | `cafe`, `coworking`, `library` | Venue category |
-| `address` | String | No | Maximum 500 characters | Physical address |
-| `wifiQuality` | Integer | No | `1–5` | Wi-Fi quality rating |
-| `hasOutlets` | Boolean | No | — | Outlet availability |
-| `noiseLevel` | String | No | `quiet`, `moderate`, `loud` | Ambient noise level |
-| `rating` | Float | No | — | Community rating |
+| Field         | Type    | Required | Validation                     | Description          |
+| ------------- | ------- | -------- | ------------------------------ | -------------------- |
+| `placeId`     | String  | ✅ Yes   | Minimum 1 character            | Google Place ID      |
+| `name`        | String  | ✅ Yes   | 1–200 characters               | Venue name           |
+| `latitude`    | Float   | ✅ Yes   | `-90` to `90`                  | Latitude             |
+| `longitude`   | Float   | ✅ Yes   | `-180` to `180`                | Longitude            |
+| `category`    | String  | ✅ Yes   | `cafe`, `coworking`, `library` | Venue category       |
+| `address`     | String  | No       | Maximum 500 characters         | Physical address     |
+| `wifiQuality` | Integer | No       | `1–5`                          | Wi-Fi quality rating |
+| `hasOutlets`  | Boolean | No       | —                              | Outlet availability  |
+| `noiseLevel`  | String  | No       | `quiet`, `moderate`, `loud`    | Ambient noise level  |
+| `rating`      | Float   | No       | —                              | Community rating     |
 
 ### Success Response (201 Created)
 
@@ -207,19 +207,19 @@ POST /api/venues/{venueId}/rate
 
 ### Path Parameters
 
-| Parameter | Description |
-|-----------|-------------|
+| Parameter | Description                               |
+| --------- | ----------------------------------------- |
 | `venueId` | Internal database CUID or Google Place ID |
 
 ### Request Body
 
-| Field | Type | Required | Validation | Description |
-|------|------|----------|------------|-------------|
-| `wifiQuality` | Integer | ✅ Yes | `1–5` | Personal Wi-Fi assessment |
-| `hasOutlets` | Boolean | ✅ Yes | — | Outlet availability |
-| `noiseLevel` | String | ✅ Yes | `quiet`, `moderate`, `loud` | Ambient noise |
-| `comment` | String | No | Maximum 1000 characters | Optional review |
-| `venue` | Object | No | — | Metadata used to create the venue if it does not already exist |
+| Field         | Type    | Required | Validation                  | Description                                                    |
+| ------------- | ------- | -------- | --------------------------- | -------------------------------------------------------------- |
+| `wifiQuality` | Integer | ✅ Yes   | `1–5`                       | Personal Wi-Fi assessment                                      |
+| `hasOutlets`  | Boolean | ✅ Yes   | —                           | Outlet availability                                            |
+| `noiseLevel`  | String  | ✅ Yes   | `quiet`, `moderate`, `loud` | Ambient noise                                                  |
+| `comment`     | String  | No       | Maximum 1000 characters     | Optional review                                                |
+| `venue`       | Object  | No       | —                           | Metadata used to create the venue if it does not already exist |
 
 The optional **venue** object may contain:
 
@@ -234,11 +234,11 @@ The optional **venue** object may contain:
 
 After a rating is submitted, the venue's aggregate values are recalculated automatically.
 
-| Field | Calculation |
-|-------|-------------|
-| **wifiQuality** | Rounded average of all submitted ratings |
-| **hasOutlets** | `true` if more than 50% of ratings confirm outlets |
-| **noiseLevel** | Most frequently submitted value |
+| Field           | Calculation                                        |
+| --------------- | -------------------------------------------------- |
+| **wifiQuality** | Rounded average of all submitted ratings           |
+| **hasOutlets**  | `true` if more than 50% of ratings confirm outlets |
+| **noiseLevel**  | Most frequently submitted value                    |
 
 ### Success Response (201 Created)
 
@@ -299,6 +299,7 @@ GET /api/venues/{venueId}/rate
 ```
 
 ---
+
 # 3. Bookings API
 
 ## Confirm Workspace Booking
@@ -416,11 +417,11 @@ GET /api/receipts/{bookingId}
 
 ### Export Format
 
-| Property | Value |
-|----------|-------|
-| Payload | Pretty-printed JSON (`JSON.stringify(transactionPayload, null, 2)`) |
-| Content-Type | `application/json` |
-| Filename | `receipt-{bookingId}.json` |
+| Property     | Value                                                               |
+| ------------ | ------------------------------------------------------------------- |
+| Payload      | Pretty-printed JSON (`JSON.stringify(transactionPayload, null, 2)`) |
+| Content-Type | `application/json`                                                  |
+| Filename     | `receipt-{bookingId}.json`                                          |
 
 #### Example Filename
 
@@ -481,8 +482,8 @@ Connection: keep-alive
 
 ### Query Parameters
 
-| Parameter | Description |
-|-----------|-------------|
+| Parameter | Description                                                                         |
+| --------- | ----------------------------------------------------------------------------------- |
 | `venueId` | Filter updates for one or more venues. Multiple `venueId` parameters are supported. |
 
 #### Example
@@ -575,5 +576,64 @@ Public
 ```
 
 ---
+
+## 5. Amenity Voting API
+
+### Vote on a Venue Amenity
+
+Allows users to cast an upvote or downvote on a specific amenity for a venue.
+
+- **Endpoint:** `/api/venues/amenity-vote`
+- **Method:** `POST`
+- **Headers:** `Content-Type: application/json`
+
+#### Request Body
+
+```json
+{
+  "venueId": "string",
+  "amenity": "string",
+  "isUpvote": true
+}
+```
+
+#### Success Response (200 OK)
+
+```json
+{
+  "success": true,
+  "amenity": "string",
+  "upvotes": 12,
+  "downvotes": 3,
+  "confidenceScore": 80,
+  "hidden": false
+}
+```
+
+---
+
+### Get Amenity Vote Breakdown
+
+Retrieves the total votes, confidence score, and hidden status for a venue's amenities.
+
+- **Endpoint:** `/api/venues/amenity-vote?venueId=YOUR_VENUE_ID`
+- **Method:** `GET`
+
+#### Success Response (200 OK)
+
+```json
+{
+  "venueId": "string",
+  "amenities": [
+    {
+      "amenity": "string",
+      "upvotes": 12,
+      "downvotes": 3,
+      "confidenceScore": 80,
+      "hidden": false
+    }
+  ]
+}
+```
 
 # End of API Reference

@@ -5,6 +5,7 @@ import "@testing-library/jest-dom";
 
 jest.mock("@clerk/nextjs", () => ({
   UserButton: () => <div data-testid="user-button" />,
+  useUser: () => ({ isLoaded: true, isSignedIn: false, user: null }),
 }));
 
 jest.mock("@/components/ThemeToggle", () => ({
@@ -13,9 +14,13 @@ jest.mock("@/components/ThemeToggle", () => ({
 
 jest.mock("next/link", () => ({
   __esModule: true,
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
-    <a href={href}>{children}</a>
-  ),
+  default: ({
+    children,
+    href,
+  }: {
+    children: React.ReactNode;
+    href: string;
+  }) => <a href={href}>{children}</a>,
 }));
 
 function FiltersHarness() {

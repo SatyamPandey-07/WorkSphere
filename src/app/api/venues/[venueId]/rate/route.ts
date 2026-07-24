@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
@@ -222,169 +222,171 @@ export async function POST(
       });
     }
 
-    // Update venue with new averages
-    const allRatings = await prisma.venueRating.findMany({
-      where: { venueId: finalVenueId },
-    });
+    // Asynchronously update venue with new averages
+    after(async () => {
+      try {
+        const allRatings = await prisma.venueRating.findMany({
+          where: { venueId: finalVenueId },
+        });
 
-    const avgWifi =
-      allRatings.reduce(
-        (sum: number, r: { wifiQuality: number }) => sum + r.wifiQuality,
-        0,
-      ) / allRatings.length;
-    const outletPercent =
-      (allRatings.filter((r: { hasOutlets: boolean }) => r.hasOutlets).length /
-        allRatings.length) *
-      100;
-    const ergonomicPercent =
-      (allRatings.filter((r: any) => r.hasErgonomic).length /
-        allRatings.length) *
-      100;
-    const phoneBoothsPercent =
-      (allRatings.filter((r: any) => r.hasPhoneBooths).length /
-        allRatings.length) *
-      100;
-    const noMusicPercent =
-      (allRatings.filter((r: any) => r.hasNoMusic).length / allRatings.length) *
-      100;
-    const quietZonePercent =
-      (allRatings.filter((r: any) => r.hasQuietZone).length /
-        allRatings.length) *
-      100;
+        const avgWifi =
+          allRatings.reduce(
+            (sum: number, r: { wifiQuality: number }) => sum + r.wifiQuality,
+            0,
+          ) / allRatings.length;
+        const outletPercent =
+          (allRatings.filter((r: { hasOutlets: boolean }) => r.hasOutlets)
+            .length /
+            allRatings.length) *
+          100;
+        const ergonomicPercent =
+          (allRatings.filter((r: any) => r.hasErgonomic).length /
+            allRatings.length) *
+          100;
+        const phoneBoothsPercent =
+          (allRatings.filter((r: any) => r.hasPhoneBooths).length /
+            allRatings.length) *
+          100;
+        const noMusicPercent =
+          (allRatings.filter((r: any) => r.hasNoMusic).length /
+            allRatings.length) *
+          100;
+        const quietZonePercent =
+          (allRatings.filter((r: any) => r.hasQuietZone).length /
+            allRatings.length) *
+          100;
 
-    // Most common noise level
-    const noiseCounts: Record<string, number> = {};
-    allRatings.forEach((r: { noiseLevel: string }) => {
-      noiseCounts[r.noiseLevel] = (noiseCounts[r.noiseLevel] || 0) + 1;
-    });
-    const dominantNoise =
-      Object.keys(noiseCounts).length > 0
-        ? Object.entries(noiseCounts).reduce((a: [string, number], b: [string, number]) =>
-          b[1] > a[1] ? b : a,
-        )[0]
-        : null;
+        // Most common noise level
+        const noiseCounts: Record<string, number> = {};
+        allRatings.forEach((r: { noiseLevel: string }) => {
+          noiseCounts[r.noiseLevel] = (noiseCounts[r.noiseLevel] || 0) + 1;
+        });
+        const dominantNoise =
+          Object.keys(noiseCounts).length > 0
+            ? Object.entries(noiseCounts).reduce(
+                (a: [string, number], b: [string, number]) =>
+                  b[1] > a[1] ? b : a,
+              )[0]
+            : null;
 
-    // Most common lighting
-    const lightingCounts: Record<string, number> = {};
-    allRatings.forEach((r: any) => {
-      if (r.lighting) {
-        lightingCounts[r.lighting] = (lightingCounts[r.lighting] || 0) + 1;
+        // Most common lighting
+        const lightingCounts: Record<string, number> = {};
+        allRatings.forEach((r: any) => {
+          if (r.lighting) {
+            lightingCounts[r.lighting] = (lightingCounts[r.lighting] || 0) + 1;
+          }
+        });
+        const dominantLighting =
+          Object.keys(lightingCounts).length > 0
+            ? Object.entries(lightingCounts).reduce(
+                (a: [string, number], b: [string, number]) =>
+                  b[1] > a[1] ? b : a,
+              )[0]
+            : null;
+
+        const densityCounts: Record<string, number> = {};
+        allRatings.forEach((r: any) => {
+          if (r.outletDensity) {
+            densityCounts[r.outletDensity] =
+              (densityCounts[r.outletDensity] || 0) + 1;
+          }
+        });
+        const dominantDensity =
+          Object.keys(densityCounts).length > 0
+            ? Object.entries(densityCounts).reduce(
+                (a: [string, number], b: [string, number]) =>
+                  b[1] > a[1] ? b : a,
+              )[0]
+            : "none";
+
+        // Aggregate power types (unique union of all powerTypes in all ratings)
+        const aggregatedPowerTypes = Array.from(
+          new Set(allRatings.flatMap((r: any) => r.powerTypes || [])),
+        );
+
+        // Aggregate outlet locations (unique union of all outletLocations in all ratings)
+        const aggregatedOutletLocations = Array.from(
+          new Set(allRatings.flatMap((r: any) => r.outletLocations || [])),
+        );
+
+        // Average wifi speed
+        const validSpeeds = allRatings
+          .filter((r: any) => r.wifiSpeed !== null && r.wifiSpeed > 0)
+          .map((r: any) => r.wifiSpeed as number);
+        const avgSpeed =
+          validSpeeds.length > 0
+            ? Math.round(
+                validSpeeds.reduce((sum: number, s: number) => sum + s, 0) /
+                  validSpeeds.length,
+              )
+            : null;
+
+        // Most common music style
+        const musicCounts: Record<string, number> = {};
+        allRatings.forEach((r: any) => {
+          if (r.musicStyle) {
+            musicCounts[r.musicStyle] = (musicCounts[r.musicStyle] || 0) + 1;
+          }
+        });
+        const dominantMusic =
+          Object.keys(musicCounts).length > 0
+            ? Object.entries(musicCounts).reduce(
+                (a: [string, number], b: [string, number]) =>
+                  b[1] > a[1] ? b : a,
+              )[0]
+            : null;
+        const petsAllowedIndoorsPercent =
+          (allRatings.filter((r: any) => r.petsAllowedIndoors).length /
+            allRatings.length) *
+          100;
+        const patioOnlyPercent =
+          (allRatings.filter((r: any) => r.patioOnly).length /
+            allRatings.length) *
+          100;
+        const waterBowlsPercent =
+          (allRatings.filter((r: any) => r.waterBowlsProvided).length /
+            allRatings.length) *
+          100;
+        const dogFriendlyPercent =
+          (allRatings.filter((r: any) => r.dogFriendly).length /
+            allRatings.length) *
+          100;
+        const catsAllowedPercent =
+          (allRatings.filter((r: any) => r.catsAllowed).length /
+            allRatings.length) *
+          100;
+
+        await prisma.venue.update({
+          where: { id: finalVenueId },
+          data: {
+            wifiQuality: Math.round(avgWifi),
+            hasOutlets: outletPercent > 50,
+            noiseLevel: dominantNoise,
+            hasErgonomic: ergonomicPercent > 50,
+            outletDensity: dominantDensity,
+            wifiSpeed: avgSpeed,
+            hasPhoneBooths: phoneBoothsPercent > 50,
+            hasNoMusic: noMusicPercent > 50,
+            hasQuietZone: quietZonePercent > 50,
+            lighting: dominantLighting,
+            musicStyle: dominantMusic,
+            powerTypes: aggregatedPowerTypes,
+            outletLocations: aggregatedOutletLocations,
+            petsAllowedIndoors: petsAllowedIndoorsPercent > 50,
+            patioOnly: patioOnlyPercent > 50,
+            waterBowlsProvided: waterBowlsPercent > 50,
+            dogFriendly: dogFriendlyPercent > 50,
+            catsAllowed: catsAllowedPercent > 50,
+            crowdsourced: true,
+          },
+        });
+
+        // Trigger background preference summary consolidation
+        await updateUserPreferencesSummary(userId);
+      } catch (err) {
+        console.error("[RateAPI] Background aggregation failed:", err);
       }
     });
-    const dominantLighting =
-      Object.keys(lightingCounts).length > 0
-        ? Object.entries(lightingCounts).reduce((a: [string, number], b: [string, number]) =>
-          b[1] > a[1] ? b : a,
-        )[0]
-        : null;
-
-    const densityCounts: Record<string, number> = {};
-    allRatings.forEach((r: any) => {
-      if (r.outletDensity) {
-        densityCounts[r.outletDensity] =
-          (densityCounts[r.outletDensity] || 0) + 1;
-      }
-    });
-    const dominantDensity =
-      Object.keys(densityCounts).length > 0
-        ? Object.entries(densityCounts).reduce((a: [string, number], b: [string, number]) =>
-          b[1] > a[1] ? b : a,
-        )[0]
-        : "none";
-
-    // Most common socket condition
-    const socketCounts: Record<string, number> = {};
-    allRatings.forEach((r: any) => {
-      if (r.socketCondition) {
-        socketCounts[r.socketCondition] = (socketCounts[r.socketCondition] || 0) + 1;
-      }
-    });
-    const dominantSocketCondition =
-      Object.keys(socketCounts).length > 0
-        ? Object.entries(socketCounts).reduce((a: [string, number], b: [string, number]) => (b[1] > a[1] ? b : a))[0]
-        : null;
-
-    // Aggregate power types (unique union of all powerTypes in all ratings)
-    const aggregatedPowerTypes = Array.from(
-      new Set(allRatings.flatMap((r: any) => r.powerTypes || [])),
-    );
-
-    // Aggregate outlet locations (unique union of all outletLocations in all ratings)
-    const aggregatedOutletLocations = Array.from(
-      new Set(allRatings.flatMap((r: any) => r.outletLocations || [])),
-    );
-
-    // Average wifi speed
-    const validSpeeds = allRatings
-      .filter((r: any) => r.wifiSpeed !== null && r.wifiSpeed > 0)
-      .map((r: any) => r.wifiSpeed as number);
-    const avgSpeed =
-      validSpeeds.length > 0
-        ? Math.round(
-          validSpeeds.reduce((sum: number, s: number) => sum + s, 0) / validSpeeds.length,
-        )
-        : null;
-
-    // Most common music style
-    const musicCounts: Record<string, number> = {};
-    allRatings.forEach((r: any) => {
-      if (r.musicStyle) {
-        musicCounts[r.musicStyle] = (musicCounts[r.musicStyle] || 0) + 1;
-      }
-    });
-    const dominantMusic =
-      Object.keys(musicCounts).length > 0
-        ? Object.entries(musicCounts).reduce((a: [string, number], b: [string, number]) => (b[1] > a[1] ? b : a))[0]
-        : null;
-    const petsAllowedIndoorsPercent =
-      (allRatings.filter((r: any) => r.petsAllowedIndoors).length /
-        allRatings.length) *
-      100;
-    const patioOnlyPercent =
-      (allRatings.filter((r: any) => r.patioOnly).length / allRatings.length) *
-      100;
-    const waterBowlsPercent =
-      (allRatings.filter((r: any) => r.waterBowlsProvided).length /
-        allRatings.length) *
-      100;
-    const dogFriendlyPercent =
-      (allRatings.filter((r: any) => r.dogFriendly).length /
-        allRatings.length) *
-      100;
-    const catsAllowedPercent =
-      (allRatings.filter((r: any) => r.catsAllowed).length /
-        allRatings.length) *
-      100;
-
-    await prisma.venue.update({
-      where: { id: finalVenueId },
-      data: {
-        wifiQuality: Math.round(avgWifi),
-        hasOutlets: outletPercent > 50,
-        noiseLevel: dominantNoise,
-        hasErgonomic: ergonomicPercent > 50,
-        outletDensity: dominantDensity,
-        wifiSpeed: avgSpeed,
-        hasPhoneBooths: phoneBoothsPercent > 50,
-        hasNoMusic: noMusicPercent > 50,
-        hasQuietZone: quietZonePercent > 50,
-        lighting: dominantLighting,
-        musicStyle: dominantMusic,
-        powerTypes: aggregatedPowerTypes,
-        outletLocations: aggregatedOutletLocations,
-        petsAllowedIndoors: petsAllowedIndoorsPercent > 50,
-        patioOnly: patioOnlyPercent > 50,
-        waterBowlsProvided: waterBowlsPercent > 50,
-        dogFriendly: dogFriendlyPercent > 50,
-        catsAllowed: catsAllowedPercent > 50,
-        crowdsourced: true,
-      },
-    });
-
-    // Trigger background preference summary consolidation
-    updateUserPreferencesSummary(userId).catch((err) =>
-      console.error("[RateAPI] Background preference sync failed:", err),
-    );
 
     return NextResponse.json({ rating }, { status: 201 });
   } catch (error) {

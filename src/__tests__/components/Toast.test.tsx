@@ -6,18 +6,14 @@ import { ToastProvider, useToast } from "@/components/ui/Toast";
 function TestButton() {
   const { toast } = useToast();
   return (
-    <button onClick={() => toast("Test message", "success")}>
-      Show Toast
-    </button>
+    <button onClick={() => toast("Test message", "success")}>Show Toast</button>
   );
 }
 
 function ErrorToastButton() {
   const { toast } = useToast();
   return (
-    <button onClick={() => toast("Error occurred", "error")}>
-      Show Error
-    </button>
+    <button onClick={() => toast("Error occurred", "error")}>Show Error</button>
   );
 }
 
@@ -116,7 +112,8 @@ describe("Toast pause-on-hover", () => {
     );
 
     fireEvent.click(screen.getByText("Show Toast"));
-    const icon = screen.getByText("Test message")
+    const icon = screen
+      .getByText("Test message")
       .closest("[role='status']")!
       .querySelector(".text-green-500");
     expect(icon).toBeInTheDocument();
@@ -130,7 +127,8 @@ describe("Toast pause-on-hover", () => {
     );
 
     fireEvent.click(screen.getByText("Show Error"));
-    const icon = screen.getByText("Error occurred")
+    const icon = screen
+      .getByText("Error occurred")
       .closest("[role='status']")!
       .querySelector(".text-red-500");
     expect(icon).toBeInTheDocument();
@@ -145,5 +143,79 @@ describe("Toast pause-on-hover", () => {
 
     fireEvent.click(screen.getByText("Show Action"));
     expect(screen.getByText("Undo")).toBeInTheDocument();
+  });
+
+  it("displays rate limit retry toast on rate-limit-triggered custom event and counts down", async () => {
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("rate-limit-triggered", {
+          detail: { retryAfter: 3, endpoint: "chat" },
+        }),
+      );
+    });
+
+    expect(
+      screen.getByText("Rate limit reached. Try again in 3 seconds"),
+    ).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(
+      screen.getByText("Rate limit reached. Try again in 2 seconds"),
+    ).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(
+      screen.getByText("Rate limit reached. Try again in 1 second"),
+    ).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(screen.queryByText(/Rate limit reached/)).not.toBeInTheDocument();
+  });
+
+  it("updates and deduplicates rate limit toast on subsequent events", async () => {
+    render(
+      <Wrapper>
+        <div />
+      </Wrapper>,
+    );
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("rate-limit-triggered", {
+          detail: { retryAfter: 5, endpoint: "chat" },
+        }),
+      );
+    });
+
+    expect(
+      screen.getByText("Rate limit reached. Try again in 5 seconds"),
+    ).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("rate-limit-triggered", {
+          detail: { retryAfter: 10, endpoint: "book" },
+        }),
+      );
+    });
+
+    // Should update existing toast rather than spawning a duplicate
+    const toasts = screen.getAllByRole("status");
+    expect(toasts.length).toBe(1);
+    expect(
+      screen.getByText("Rate limit reached. Try again in 10 seconds"),
+    ).toBeInTheDocument();
   });
 });

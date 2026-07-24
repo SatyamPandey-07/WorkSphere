@@ -2,6 +2,57 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { drawSafeText, safeText } from "@/lib/pdfHelpers";
 import { Venue } from "@/components/chat/ChatMessages";
 
+function safeWidthOfTextAtSize(text: string, font: any, size: number): number {
+  try {
+    return font.widthOfTextAtSize(text, size);
+  } catch {
+    const asciiText = text.replace(/[^\x20-\x7E]/g, "");
+    try {
+      return font.widthOfTextAtSize(asciiText, size);
+    } catch {
+      return asciiText.length * size * 0.6;
+    }
+  }
+}
+
+function truncateText(
+  text: string,
+  font: any,
+  size: number,
+  maxWidth: number,
+): string {
+  const sanitized = safeText(text);
+  if (safeWidthOfTextAtSize(sanitized, font, size) <= maxWidth) {
+    return sanitized;
+  }
+
+  const ellipsis = "...";
+  const ellipsisWidth = safeWidthOfTextAtSize(ellipsis, font, size);
+
+  if (maxWidth <= ellipsisWidth) {
+    return ellipsis;
+  }
+
+  let low = 0;
+  let high = sanitized.length;
+  let result = "";
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const substring = sanitized.slice(0, mid) + ellipsis;
+    const width = safeWidthOfTextAtSize(substring, font, size);
+
+    if (width <= maxWidth) {
+      result = substring;
+      low = mid + 1;
+    } else {
+      high = mid - 1;
+    }
+  }
+
+  return result || ellipsis;
+}
+
 export interface CityMetricSummary {
   city: string;
   totalVenues: number;
@@ -267,8 +318,16 @@ export async function generateMultiCityPdfReport(options: {
             borderWidth: 0.75,
           });
 
-          // Venue Name
-          drawSafeText(page, safeText(venue.name).slice(0, 32), {
+          // Venue Name (truncated dynamically to fit column width minus padding)
+          const maxNameWidth = colWidth - 16;
+          const truncatedName = truncateText(
+            venue.name,
+            bold,
+            8.5,
+            maxNameWidth,
+          );
+
+          drawSafeText(page, truncatedName, {
             x: colX + 8,
             y: rowY + 22,
             size: 8.5,

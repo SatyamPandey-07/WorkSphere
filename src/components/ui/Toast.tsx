@@ -136,6 +136,9 @@ function ToastContainer({
   );
 }
 
+/** Auto-dismiss timeout in milliseconds. */
+const TOAST_DURATION_MS = 4000;
+
 function ToastItem({
   toast,
   onRemove,
@@ -147,6 +150,11 @@ function ToastItem({
   const [countdown, setCountdown] = useState<number | undefined>(
     toast.countdown,
   );
+  
+  // Track pointer over and focus within separately as suggested by CodeRabbit
+  const [isPointerOver, setIsPointerOver] = useState(false);
+  const [isFocusedWithin, setIsFocusedWithin] = useState(false);
+  const isInteracting = isPointerOver || isFocusedWithin;
 
   useEffect(() => {
     if (toast.countdown === undefined) return;
@@ -169,7 +177,8 @@ function ToastItem({
     if (toast.countdown !== undefined || isHovered) return;
     const timer = setTimeout(() => {
       onRemove(toast.id);
-    }, 4000);
+    }, TOAST_DURATION_MS);
+
     return () => clearTimeout(timer);
   }, [toast.id, onRemove, toast.countdown, isHovered]);
 
@@ -196,13 +205,20 @@ function ToastItem({
   return (
     <div
       role="status"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
       className={cn(
         "pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md min-w-[280px] max-w-[380px]",
         "bg-white/90 dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800",
         "animate-in slide-in-from-right-full fade-in duration-300",
       )}
+      onMouseEnter={() => setIsPointerOver(true)}
+      onMouseLeave={() => setIsPointerOver(false)}
+      onFocus={() => setIsFocusedWithin(true)}
+      onBlur={(e) => {
+        // If the new focus target is still inside this toast, don't clear the focus state
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          setIsFocusedWithin(false);
+        }
+      }}
     >
       <Icon className={cn("w-4 h-4 shrink-0", iconColor)} aria-hidden="true" />
       <div className="flex-1 flex flex-col items-start text-sm text-zinc-700 dark:text-zinc-300">

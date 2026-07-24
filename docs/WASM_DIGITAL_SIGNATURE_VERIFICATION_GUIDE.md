@@ -64,6 +64,62 @@ em++ -O3 -std=c++20 verification_bindings.cpp \
 
 Run verification in a Web Worker when possible so that large PDFs cannot block the receipt UI. Production builds should not expose debug interfaces, test trust roots, arbitrary filesystem access, or dynamic-loading features unless a reviewed requirement needs them.
 
+## Local Development & Compilation Guide
+
+### Required C++ Build Toolchains
+
+To build and verify the WASM PDF verification engine locally, ensure the following toolchains and dependencies are installed:
+
+- **Emscripten SDK (`emcc` / `em++`)**: Version 3.1.0 or newer for compiling C++ to WebAssembly with embind and ES6 module support.
+- **Clang / LLVM Toolchain**: `clang++` (version 14+) for syntax checking, host validation, and native debugging.
+- **Make & Bash**: `make` build utility and Bash shell environment (`bash` 4.0+).
+- **Node.js**: Node.js 18+ for running test scripts and WASM unit test suites.
+
+Installing Emscripten SDK (`emsdk`):
+
+```bash
+git clone https://github.com/emscripten-core/emsdk.git
+cd emsdk
+./emsdk install latest
+./emsdk activate latest
+source ./emsdk_env.sh
+```
+
+### Compiling WASM Engine with `compile.sh`
+
+To compile the C++ source files in `wasm/pdf-verify/engine/` into target WebAssembly and JavaScript wrapper assets:
+
+1. Make `compile.sh` executable (if not already set):
+
+   ```bash
+   chmod +x wasm/pdf-verify/compile.sh
+   ```
+
+2. Run the compilation script from project root:
+   ```bash
+   bash wasm/pdf-verify/compile.sh
+   ```
+
+### Expected Output Files
+
+Upon successful execution of `wasm/pdf-verify/compile.sh`, the build script compiles `wasm/pdf-verify/engine/pdf_verify.cpp` and outputs the following artifacts into the `public/` directory:
+
+- `public/pdf-verify.js`: The ES6 modularized JavaScript glue code and WebAssembly loader module.
+- `public/pdf-verify.wasm`: The compiled binary WebAssembly module containing the C++ PDF signature verification engine.
+
+### Test Execution Steps
+
+To execute unit tests for the compiled WASM verification engine and Worker integration:
+
+1. Run Jest tests for PDF signature worker and WASM integration:
+   ```bash
+   npm test src/__tests__/lib/pdfSignature.test.ts
+   ```
+2. Run standalone WASM verification script:
+   ```bash
+   node wasm/verify.js
+   ```
+
 ## C++ OpenSSL binding
 
 The binding below accepts the exact reconstructed signed bytes, DER-encoded CMS data, and a controlled PEM trust bundle. Its public contract is a stable result code; raw OpenSSL errors should be used only for protected diagnostics.
@@ -180,7 +236,10 @@ function signedBytes(pdf: Uint8Array, range: ByteRange): Uint8Array {
 }
 
 function cmsFromContents(hexContents: string): Uint8Array {
-  const compact = hexContents.replace(/[\u0000\u0009\u000A\u000C\u000D\u0020]/g, "");
+  const compact = hexContents.replace(
+    /[\u0000\u0009\u000A\u000C\u000D\u0020]/g,
+    "",
+  );
   if (compact.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(compact)) {
     throw new Error("invalid CMS hex content");
   }
@@ -209,9 +268,10 @@ The modal presents the result of verification; it must not make cryptographic de
 
 ```ts
 type VerificationResult = {
-  status: "valid" | "invalid" | "untrusted" | "expired" | "unsupported" | "error";
+  status:
+    "valid" | "invalid" | "untrusted" | "expired" | "unsupported" | "error";
   signerDisplayName?: string;
-  signedAt?: string;       // Present only when timestamp policy has passed.
+  signedAt?: string; // Present only when timestamp policy has passed.
   coveredRevision?: number;
   detailsCode: string;
 };

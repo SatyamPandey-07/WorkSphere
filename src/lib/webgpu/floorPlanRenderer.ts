@@ -459,8 +459,76 @@ export class WebGPUFloorPlanRenderer {
   private currentData: FloorPlanData | null = null;
   private visibilityHandler: (() => void) | null = null;
 
+  // Named bound handlers so destroy() can call removeEventListener on them
+  private _onMouseDown: (e: MouseEvent) => void;
+  private _onMouseMove: (e: MouseEvent) => void;
+  private _onMouseUp: () => void;
+  private _onMouseLeave: () => void;
+  private _onWheel: (e: WheelEvent) => void;
+  private _onTouchStart: (e: TouchEvent) => void;
+  private _onTouchMove: (e: TouchEvent) => void;
+  private _onTouchEnd: () => void;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
+    // Initialise bound handlers before setupInteraction() so they are
+    // available as stable references for removeEventListener in destroy().
+    this._onMouseDown = (e: MouseEvent) => {
+      this.isDragging = true;
+      this.lastMouse = { x: e.clientX, y: e.clientY };
+    };
+    this._onMouseMove = (e: MouseEvent) => {
+      if (!this.isDragging) return;
+      const dx = e.clientX - this.lastMouse.x;
+      const dy = e.clientY - this.lastMouse.y;
+      this.camera.rotationY += dx * 0.01;
+      this.camera.rotationX = Math.max(
+        -Math.PI / 2.5,
+        Math.min(-0.1, this.camera.rotationX + dy * 0.01),
+      );
+      this.lastMouse = { x: e.clientX, y: e.clientY };
+    };
+    this._onMouseUp = () => {
+      this.isDragging = false;
+    };
+    this._onMouseLeave = () => {
+      this.isDragging = false;
+    };
+    this._onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      this.camera.distance = Math.max(
+        2,
+        Math.min(20, this.camera.distance + e.deltaY * 0.01),
+      );
+    };
+    this._onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        this.isDragging = true;
+        this.lastMouse = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+        };
+      }
+    };
+    this._onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      if (e.touches.length === 1 && this.isDragging) {
+        const dx = e.touches[0].clientX - this.lastMouse.x;
+        const dy = e.touches[0].clientY - this.lastMouse.y;
+        this.camera.rotationY += dx * 0.01;
+        this.camera.rotationX = Math.max(
+          -Math.PI / 2.5,
+          Math.min(-0.1, this.camera.rotationX + dy * 0.01),
+        );
+        this.lastMouse = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+        };
+      }
+    };
+    this._onTouchEnd = () => {
+      this.isDragging = false;
+    };
     this.setupInteraction();
     this.setupVisibilityHandler();
   }
@@ -483,70 +551,19 @@ export class WebGPUFloorPlanRenderer {
   }
 
   private setupInteraction(): void {
-    this.canvas.addEventListener("mousedown", (e) => {
-      this.isDragging = true;
-      this.lastMouse = { x: e.clientX, y: e.clientY };
-    });
-
-    this.canvas.addEventListener("mousemove", (e) => {
-      if (!this.isDragging) return;
-      const dx = e.clientX - this.lastMouse.x;
-      const dy = e.clientY - this.lastMouse.y;
-      this.camera.rotationY += dx * 0.01;
-      this.camera.rotationX = Math.max(
-        -Math.PI / 2.5,
-        Math.min(-0.1, this.camera.rotationX + dy * 0.01),
-      );
-      this.lastMouse = { x: e.clientX, y: e.clientY };
-    });
-
-    this.canvas.addEventListener("mouseup", () => {
-      this.isDragging = false;
-    });
-
-    this.canvas.addEventListener("mouseleave", () => {
-      this.isDragging = false;
-    });
-
-    this.canvas.addEventListener("wheel", (e) => {
-      e.preventDefault();
-      this.camera.distance = Math.max(
-        2,
-        Math.min(20, this.camera.distance + e.deltaY * 0.01),
-      );
-    });
-
+    this.canvas.addEventListener("mousedown", this._onMouseDown);
+    this.canvas.addEventListener("mousemove", this._onMouseMove);
+    this.canvas.addEventListener("mouseup", this._onMouseUp);
+    this.canvas.addEventListener("mouseleave", this._onMouseLeave);
+    this.canvas.addEventListener("wheel", this._onWheel, { passive: false });
     // Touch support
-    this.canvas.addEventListener("touchstart", (e) => {
-      if (e.touches.length === 1) {
-        this.isDragging = true;
-        this.lastMouse = {
-          x: e.touches[0].clientX,
-          y: e.touches[0].clientY,
-        };
-      }
+    this.canvas.addEventListener("touchstart", this._onTouchStart, {
+      passive: false,
     });
-
-    this.canvas.addEventListener("touchmove", (e) => {
-      e.preventDefault();
-      if (e.touches.length === 1 && this.isDragging) {
-        const dx = e.touches[0].clientX - this.lastMouse.x;
-        const dy = e.touches[0].clientY - this.lastMouse.y;
-        this.camera.rotationY += dx * 0.01;
-        this.camera.rotationX = Math.max(
-          -Math.PI / 2.5,
-          Math.min(-0.1, this.camera.rotationX + dy * 0.01),
-        );
-        this.lastMouse = {
-          x: e.touches[0].clientX,
-          y: e.touches[0].clientY,
-        };
-      }
+    this.canvas.addEventListener("touchmove", this._onTouchMove, {
+      passive: false,
     });
-
-    this.canvas.addEventListener("touchend", () => {
-      this.isDragging = false;
-    });
+    this.canvas.addEventListener("touchend", this._onTouchEnd);
   }
 
   async initialize(): Promise<boolean> {
@@ -566,18 +583,20 @@ export class WebGPUFloorPlanRenderer {
         console.error("[WebGPU] Uncaptured error detected:", event.error);
       });
 
-      this.device.lost.then(async (info: { reason: string; message: string }) => {
-        console.warn(
-          `[WebGPU] GPUDevice lost (${info.reason}): ${info.message}`,
-        );
-        this.isDeviceLost = true;
-        this.cleanupGPUResources();
-        
-        if (info.reason !== "destroyed") {
-          console.info("[WebGPU] Attempting automatic device recovery...");
-          await this.reinitialize();
-        }
-      });
+      this.device.lost.then(
+        async (info: { reason: string; message: string }) => {
+          console.warn(
+            `[WebGPU] GPUDevice lost (${info.reason}): ${info.message}`,
+          );
+          this.isDeviceLost = true;
+          this.cleanupGPUResources();
+
+          if (info.reason !== "destroyed") {
+            console.info("[WebGPU] Attempting automatic device recovery...");
+            await this.reinitialize();
+          }
+        },
+      );
 
       this.context = this.canvas.getContext(
         "webgpu",
@@ -668,13 +687,21 @@ export class WebGPUFloorPlanRenderer {
       size: mesh.vertices.byteLength,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.vertexBuffer!, 0, mesh.vertices as unknown as BufferSource);
+    this.device.queue.writeBuffer(
+      this.vertexBuffer!,
+      0,
+      mesh.vertices as unknown as BufferSource,
+    );
 
     this.indexBuffer = this.device.createBuffer({
       size: mesh.indices.byteLength,
       usage: BufferUsage.INDEX | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.indexBuffer!, 0, mesh.indices as unknown as BufferSource);
+    this.device.queue.writeBuffer(
+      this.indexBuffer!,
+      0,
+      mesh.indices as unknown as BufferSource,
+    );
   }
 
   render(): void {
@@ -814,6 +841,16 @@ export class WebGPUFloorPlanRenderer {
     if (this.visibilityHandler && typeof document !== "undefined") {
       document.removeEventListener("visibilitychange", this.visibilityHandler);
     }
+    // Remove all 9 canvas interaction listeners to prevent memory leaks
+    // when the floor plan viewer is mounted/unmounted multiple times.
+    this.canvas.removeEventListener("mousedown", this._onMouseDown);
+    this.canvas.removeEventListener("mousemove", this._onMouseMove);
+    this.canvas.removeEventListener("mouseup", this._onMouseUp);
+    this.canvas.removeEventListener("mouseleave", this._onMouseLeave);
+    this.canvas.removeEventListener("wheel", this._onWheel);
+    this.canvas.removeEventListener("touchstart", this._onTouchStart);
+    this.canvas.removeEventListener("touchmove", this._onTouchMove);
+    this.canvas.removeEventListener("touchend", this._onTouchEnd);
     this.cleanupGPUResources();
   }
 }

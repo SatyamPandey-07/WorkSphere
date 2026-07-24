@@ -1,7 +1,24 @@
+/**
+ * Unit tests for ToastItem behaviour including countdowns, types, and pause-on-hover.
+ */
+
 import React from "react";
 import { render, screen, act, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { ToastProvider, useToast } from "@/components/ui/Toast";
+
+// Mock lucide-react icons
+jest.mock("lucide-react", () => ({
+  X: (props: any) => <svg data-testid="icon-x" {...props} />,
+  CheckCircle2: (props: any) => <svg data-testid="icon-check" {...props} />,
+  AlertCircle: (props: any) => <svg data-testid="icon-alert-circle" {...props} />,
+  AlertTriangle: (props: any) => <svg data-testid="icon-alert-triangle" {...props} />,
+}));
+
+// Mock cn helper
+jest.mock("@/lib/utils", () => ({
+  cn: (...args: unknown[]) => args.filter(Boolean).join(" "),
+}));
 
 function TestButton() {
   const { toast } = useToast();
@@ -39,11 +56,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  jest.runOnlyPendingTimers();
   jest.useRealTimers();
 });
 
-describe("Toast pause-on-hover", () => {
-  it("auto-dismisses after 4 seconds when not hovered", async () => {
+describe("Toast functionality", () => {
+  it("auto-dismisses after 4 seconds when not hovered", () => {
     render(
       <Wrapper>
         <TestButton />
@@ -60,7 +78,7 @@ describe("Toast pause-on-hover", () => {
     expect(screen.queryByText("Test message")).not.toBeInTheDocument();
   });
 
-  it("pauses dismissal on mouseenter and resumes on mouseleave", async () => {
+  it("pauses dismissal on mouseenter and resumes on mouseleave", () => {
     render(
       <Wrapper>
         <TestButton />
@@ -90,7 +108,39 @@ describe("Toast pause-on-hover", () => {
     expect(screen.queryByText("Test message")).not.toBeInTheDocument();
   });
 
-  it("dismisses immediately when dismiss button is clicked", async () => {
+  it("pauses the timer on focus and restarts on blur", () => {
+    render(
+      <Wrapper>
+        <TestButton />
+      </Wrapper>,
+    );
+
+    fireEvent.click(screen.getByText("Show Toast"));
+    const toastEl = screen.getByText("Test message").closest("[role='status']")!;
+
+    act(() => {
+      jest.advanceTimersByTime(500);
+      fireEvent.focus(toastEl);
+    });
+
+    // Advance past 4-second mark — toast must be held by focus
+    act(() => {
+      jest.advanceTimersByTime(5000);
+    });
+    expect(screen.getByText("Test message")).toBeInTheDocument();
+
+    // Blur restarts the timer
+    act(() => {
+      fireEvent.blur(toastEl);
+    });
+
+    act(() => {
+      jest.advanceTimersByTime(4001);
+    });
+    expect(screen.queryByText("Test message")).not.toBeInTheDocument();
+  });
+
+  it("dismisses immediately when dismiss button is clicked", () => {
     render(
       <Wrapper>
         <TestButton />
@@ -104,7 +154,7 @@ describe("Toast pause-on-hover", () => {
     expect(screen.queryByText("Test message")).not.toBeInTheDocument();
   });
 
-  it("renders success toast with correct icon color", async () => {
+  it("renders success toast with correct icon color", () => {
     render(
       <Wrapper>
         <TestButton />
@@ -119,7 +169,7 @@ describe("Toast pause-on-hover", () => {
     expect(icon).toBeInTheDocument();
   });
 
-  it("renders error toast with correct icon color", async () => {
+  it("renders error toast with correct icon color", () => {
     render(
       <Wrapper>
         <ErrorToastButton />
@@ -134,7 +184,7 @@ describe("Toast pause-on-hover", () => {
     expect(icon).toBeInTheDocument();
   });
 
-  it("renders action button when action is provided", async () => {
+  it("renders action button when action is provided", () => {
     render(
       <Wrapper>
         <ActionToastButton />

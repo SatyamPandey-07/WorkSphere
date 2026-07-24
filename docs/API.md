@@ -205,6 +205,20 @@ Required
 
 ### Request Body
 
+<<<<<<< HEAD
+| Field         | Type    | Required | Validation                     | Description          |
+| ------------- | ------- | -------- | ------------------------------ | -------------------- |
+| `placeId`     | String  | ✅ Yes   | Minimum 1 character            | Google Place ID      |
+| `name`        | String  | ✅ Yes   | 1–200 characters               | Venue name           |
+| `latitude`    | Float   | ✅ Yes   | `-90` to `90`                  | Latitude             |
+| `longitude`   | Float   | ✅ Yes   | `-180` to `180`                | Longitude            |
+| `category`    | String  | ✅ Yes   | `cafe`, `coworking`, `library` | Venue category       |
+| `address`     | String  | No       | Maximum 500 characters         | Physical address     |
+| `wifiQuality` | Integer | No       | `1–5`                          | Wi-Fi quality rating |
+| `hasOutlets`  | Boolean | No       | —                              | Outlet availability  |
+| `noiseLevel`  | String  | No       | `quiet`, `moderate`, `loud`    | Ambient noise level  |
+| `rating`      | Float   | No       | —                              | Community rating     |
+=======
 | Field | Type | Required | Validation | Description |
 |------|------|----------|------------|-------------|
 | `placeId` | String | ✅ Yes | Minimum 1 character | Google Place ID |
@@ -217,6 +231,7 @@ Required
 | `hasOutlets` | Boolean | No | — | Outlet availability |
 | `noiseLevel` | String | No | `quiet`, `moderate`, `loud` | Noise level |
 | `rating` | Float | No | — | Community rating |
+>>>>>>> main
 
 **Required**
 
@@ -297,11 +312,16 @@ Required
 
 | Parameter | Description                               |
 | --------- | ----------------------------------------- |
+<<<<<<< HEAD
+=======
 
+>>>>>>> main
 | `venueId` | Internal database CUID or Google Place ID |
 
 ### Request Body
 
+<<<<<<< HEAD
+=======
 
 | Field | Type | Required | Validation | Description |
 |------|------|----------|------------|-------------|
@@ -313,6 +333,7 @@ Required
 
 The optional `venue` object may contain:
 
+>>>>>>> main
 | Field         | Type    | Required | Validation                  | Description                                                    |
 | ------------- | ------- | -------- | --------------------------- | -------------------------------------------------------------- |
 | `wifiQuality` | Integer | ✅ Yes   | `1–5`                       | Personal Wi-Fi assessment                                      |
@@ -372,7 +393,10 @@ After a rating is submitted, the venue's aggregate values are recalculated autom
 | **wifiQuality** | Rounded average of all submitted ratings           |
 | **hasOutlets**  | `true` if more than 50% of ratings confirm outlets |
 | **noiseLevel**  | Most frequently submitted value                    |
+<<<<<<< HEAD
+=======
 
+>>>>>>> main
 
 ### Success Response (201 Created)
 
@@ -685,6 +709,8 @@ Connection: keep-alive
 
 ### Query Parameters
 
+<<<<<<< HEAD
+=======
 | Parameter | Description |
 |-----------|-------------|
 | `venueId` | Filter updates for one or more venues. Multiple `venueId` parameters are allowed. |
@@ -755,6 +781,7 @@ Connection: keep-alive
 
 ### Query Parameters
 
+>>>>>>> main
 | Parameter | Description                                                                         |
 | --------- | ----------------------------------------------------------------------------------- |
 | `venueId` | Filter updates for one or more venues. Multiple `venueId` parameters are supported. |
@@ -865,8 +892,11 @@ Public
 
 ---
 
+<<<<<<< HEAD
+=======
 
 
+>>>>>>> main
 ## 5. Amenity Voting API
 
 ### Vote on a Venue Amenity
@@ -926,5 +956,8 @@ Retrieves the total votes, confidence score, and hidden status for a venue's ame
 }
 ```
 
+<<<<<<< HEAD
+=======
 
+>>>>>>> main
 # End of API Reference

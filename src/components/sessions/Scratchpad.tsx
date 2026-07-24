@@ -26,7 +26,7 @@ export default function Scratchpad({ sessionId }: Props) {
   const [isNegotiating, setIsNegotiating] = useState(false);
   const [text, setText] = useState("");
   const { toast } = useToast();
-  
+
   const clientId = useRef(crypto.randomUUID());
   const ecdhKeyPair = useRef<KeyPair | null>(null);
 
@@ -106,17 +106,7 @@ export default function Scratchpad({ sessionId }: Props) {
             ciphertext,
             iv,
           );
-
-          const hash = Array.from(decryptedUpdate)
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
-          if (processedUpdatesRef.current.has(hash)) {
-            return;
-          }
-          processedUpdatesRef.current.add(hash);
-
-          updateQueueRef.current.push(decryptedUpdate);
-
+          
           isLocalUpdateRef.current = true;
           processQueue();
           isLocalUpdateRef.current = false;
@@ -237,21 +227,11 @@ export default function Scratchpad({ sessionId }: Props) {
       if (isLocalUpdateRef.current || !cryptoKeyRef.current) return;
 
       try {
-        const hash = Array.from(update)
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join("");
-        processedUpdatesRef.current.add(hash);
-
-        const encrypted = await CryptoManager.encryptPayload(
-          cryptoKeyRef.current,
-          update,
-        );
-        socket.send(
-          JSON.stringify({
-            type: "e2ee-delta",
-            payload: encrypted,
-          }),
-        );
+        const encrypted = await CryptoManager.encryptPayload(cryptoKeyRef.current, update);
+        socket.send(JSON.stringify({
+          type: "e2ee-delta",
+          payload: encrypted
+        }));
       } catch (err) {
         console.error("Failed to encrypt/send update", err);
       }
@@ -263,16 +243,14 @@ export default function Scratchpad({ sessionId }: Props) {
     };
   }, [socket, hasKey]);
   const handleShare = async () => {
-  try {
-    await navigator.clipboard.writeText(window.location.href);
-    toast("Scratchpad link copied to clipboard!", "success");
-  } catch (error) {
-    console.error("Failed to copy scratchpad link", error);
-    toast("Failed to copy scratchpad link.", "error");
-  }
-};
-
-
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast("Scratchpad link copied to clipboard!", "success");
+    } catch (error) {
+      console.error("Failed to copy scratchpad link", error);
+      toast("Failed to copy scratchpad link.", "error");
+    }
+  };
 
   const handleClearKey = async () => {
     await keyStore.deleteSessionKey(sessionId);
@@ -348,23 +326,22 @@ export default function Scratchpad({ sessionId }: Props) {
           <span className="text-sm font-medium">E2EE Scratchpad</span>
         </div>
         <div className="flex items-center gap-2">
-  <button
-    onClick={handleShare}
-    className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
-  >
-    <Share2 className="h-3 w-3" />
-    Share
-  </button>
+          <button
+            onClick={handleShare}
+            className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-primary focus:outline-none"
+          >
+            <Share2 className="h-3 w-3" />
+            Share
+          </button>
 
-  <button
-    onClick={handleClearKey}
-    className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
-  >
-    <Key className="h-3 w-3" />
-    Clear Key
-  </button>
-</div>
-        
+          <button
+            onClick={handleClearKey}
+            className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-primary focus:outline-none"
+          >
+            <Key className="h-3 w-3" />
+            Clear Key
+          </button>
+        </div>
       </div>
       <div className="flex-1 p-4">
         <textarea

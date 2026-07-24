@@ -174,6 +174,8 @@ function ToastItem({
   return (
     <div
       role="status"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       className={cn(
         "pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md min-w-[280px] max-w-[380px]",
         "bg-white/90 dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800",

@@ -29,6 +29,7 @@
     "cloudinary": "^2.10.0",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",
+    "fast-xml-parser": "^4.3.6",
     "groq-sdk": "^0.37.0",
     "heic2any": "^0.0.4",
     "i18next": "^26.3.6",
@@ -67,6 +68,8 @@
     "y-partykit": "^0.0.33",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.31",
+    "xml-crypto": "^3.2.0",
+    "@xmldom/xmldom": "^0.8.10",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -87,6 +90,7 @@
     "@types/react-dom": "^19",
     "@types/three": "^0.185.1",
     "@types/web-push": "^3.6.4",
+    "@types/xml-crypto": "^1.4.2",
     "@webgpu/types": "^0.1.71",
     "circom2": "^0.2.23",
     "eslint": "^10",

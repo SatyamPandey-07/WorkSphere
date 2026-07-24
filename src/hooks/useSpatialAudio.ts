@@ -72,6 +72,7 @@ export function useSpatialAudio({
       ctx.removeEventListener("statechange", handleStateChange);
       router.detachAll();
       ctx.close().catch(() => {});
+      interpolator.dispose();
       setIsReady(false);
     };
   }, []);

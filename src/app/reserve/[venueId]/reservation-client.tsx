@@ -269,7 +269,13 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
           </div>
 
           <h1 className="mt-4 text-4xl font-semibold tracking-tight">
-            Reserve at {venue.name}
+            Reserve at{" "}
+            <span
+              className="inline-block max-w-[200px] truncate align-bottom"
+              title={venue.name}
+            >
+              {venue.name}
+            </span>
           </h1>
 
           <p className="mt-2 text-zinc-500">

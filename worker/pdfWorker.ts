@@ -222,18 +222,26 @@ async function startWorker() {
         activeJobStartTime = Date.now();
 
         try {
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(
+          let timeoutId: ReturnType<typeof setTimeout> | undefined;
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(
               () => reject(new Error("Worker job timeout exceeded")),
               JOB_TIMEOUT_MS,
-            ),
-          );
-          await Promise.race([processJob(jobStr as string), timeoutPromise]);
+            );
+          });
+          try {
+            await Promise.race([processJob(jobStr as string), timeoutPromise]);
+          } finally {
+            clearTimeout(timeoutId);
+          }
         } catch (err: any) {
           const failedId = activeJobId;
           if (failedId) {
             console.error(`[Worker] Job ${failedId} failed:`, err.message);
-            await updateJobStatus(failedId, { status: "FAILED", error: err.message });
+            await updateJobStatus(failedId, {
+              status: "FAILED",
+              error: err.message,
+            });
           }
         } finally {
           await redis.lrem("pdf:jobs:processing", 1, jobStr);

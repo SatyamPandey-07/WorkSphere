@@ -1,88 +1,84 @@
-"use client";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+export type SpeedOption = number;
+export const SPEED_OPTIONS: SpeedOption[] = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
-export const SPEED_OPTIONS = [0.75, 1, 1.25, 1.5, 1.75, 2] as const;
-export type SpeedOption = (typeof SPEED_OPTIONS)[number];
+const VOICE_STORAGE_KEY = "worksphere_selected_voice_uri";
+
+export function getPersistedVoiceURI(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(VOICE_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function persistVoiceURI(uri: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (uri) {
+      localStorage.setItem(VOICE_STORAGE_KEY, uri);
+    } else {
+      localStorage.removeItem(VOICE_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 export function splitTextIntoSentences(text: string): string[] {
   if (!text) return [];
-  // Strip UI components <ui-component ... />
-  const cleanText = text
-    .replace(/<ui-component\s+name="[^"]+"\s+props='[^']+'\s*\/>/g, "")
-    .trim();
-  if (!cleanText) return [];
-
-  // Split on sentence boundaries (. ! ?) avoiding numbered list prefixes like "1."
-  const sentences = cleanText.split(/(?<=[!?])\s+|(?<=(?<!\b\d+)\.)\s+/g);
-  return sentences.length > 0 ? sentences : [cleanText];
+  // Split on sentence boundaries (. ! ?) while preserving reasonable chunks
+  const raw = text.split(/(?<=[.!?])\s+/);
+  return raw
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }
 
 export interface UseSpeechSynthesisOptions {
-  /** Initial playback rate (default: 1) */
+  textToSpeakDefault?: string;
   defaultRate?: number;
-  /** Initial pitch parameter (default: 1, range: 0 to 2) */
   defaultPitch?: number;
-  /** Optional language tag (e.g., "en-US") */
   lang?: string;
-  /** Callback fired when speech starts */
   onStart?: () => void;
-  /** Callback fired when speech ends normally */
   onEnd?: () => void;
-  /** Callback fired on speech synthesis error */
   onError?: (event: SpeechSynthesisErrorEvent) => void;
 }
 
 export interface UseSpeechSynthesisReturn {
-  /** Whether window.speechSynthesis and SpeechSynthesisUtterance are supported */
   isSupported: boolean;
-  /** True while speech is currently active */
   isSpeaking: boolean;
-  /** True while speech is paused */
   isPaused: boolean;
-  /** Current playback rate (0.75x to 2x) */
   rate: number;
-  /** Current pitch (0 to 2) */
   pitch: number;
-  /** Currently selected voice */
-  voice: SpeechSynthesisVoice | null;
-  /** List of available system voices */
   voices: SpeechSynthesisVoice[];
-  /** Error message if synthesis fails */
+  voice: SpeechSynthesisVoice | null;
   error: string | null;
-  /** Active speaking message ID (for sentence highlighting player) */
   speakingMessageId: string | null;
-  /** Active speaking sentence index (for sentence highlighting player) */
   speakingSentenceIndex: number | null;
-  /** Start or restart speaking text */
-  speak: (textToSpeak?: string) => void;
-  /** Speak a specific message ID with sentence tracking */
+  speak: (textOverride?: string) => void;
   speakMessage: (messageId: string, text: string) => void;
-  /** Stop speech and reset state */
-  stopSpeech: () => void;
-  /** Stop speech and cancel queue */
   cancel: () => void;
-  /** Pause active speech */
+  stopSpeech: () => void;
   pause: () => void;
-  /** Resume paused speech */
   resume: () => void;
-  /** Update playback rate (clamped between 0.75 and 2) */
-  setRate: (newRate: number) => void;
-  /** Update pitch parameter (clamped between 0 and 2) */
-  setPitch: (newPitch: number) => void;
-  /** Select specific voice */
-  setVoice: (newVoice: SpeechSynthesisVoice | null) => void;
+  setRate: (rate: number) => void;
+  setPitch: (pitch: number) => void;
+  setVoice: (voice: SpeechSynthesisVoice | null) => void;
 }
 
-/**
- * Custom hook wrapping the Web Speech API's SpeechSynthesis interface.
- * Manages playback rate, pitch, voice selection, sentence highlighting, and state handlers.
- */
 export function useSpeechSynthesis(
-  textToSpeakDefault: string = "",
-  options: UseSpeechSynthesisOptions = {},
+  textToSpeakDefaultOrOptions?: string | UseSpeechSynthesisOptions,
+  optionsParam?: UseSpeechSynthesisOptions,
 ): UseSpeechSynthesisReturn {
+  const options: UseSpeechSynthesisOptions =
+    typeof textToSpeakDefaultOrOptions === "string"
+      ? { textToSpeakDefault: textToSpeakDefaultOrOptions, ...optionsParam }
+      : (textToSpeakDefaultOrOptions || {});
+
   const {
+    textToSpeakDefault = "",
     defaultRate = 1,
     defaultPitch = 1,
     lang = "en-US",
@@ -91,31 +87,26 @@ export function useSpeechSynthesis(
     onError,
   } = options;
 
-  const [isSupported, setIsSupported] = useState<boolean>(false);
-  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [rate, setRateState] = useState<number>(defaultRate);
-  const [pitch, setPitchState] = useState<number>(defaultPitch);
+  const [isSupported, setIsSupported] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [rate, setRateState] = useState(defaultRate);
+  const [pitch, setPitchState] = useState(defaultPitch);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [voice, setVoice] = useState<SpeechSynthesisVoice | null>(null);
+  const [voice, setVoiceState] = useState<SpeechSynthesisVoice | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(
-    null,
-  );
-  const [speakingSentenceIndex, setSpeakingSentenceIndex] = useState<
-    number | null
-  >(null);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [speakingSentenceIndex, setSpeakingSentenceIndex] = useState<number | null>(null);
 
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const utterancesRef = useRef<SpeechSynthesisUtterance[]>([]);
-  const currentTextRef = useRef<string>(textToSpeakDefault);
+  const currentTextRef = useRef(textToSpeakDefault);
+  const selectedVoiceURIRef = useRef(getPersistedVoiceURI());
 
   useEffect(() => {
     currentTextRef.current = textToSpeakDefault;
   }, [textToSpeakDefault]);
 
-  // Check browser support and load available voices
   useEffect(() => {
     if (
       typeof window !== "undefined" &&
@@ -127,13 +118,28 @@ export function useSpeechSynthesis(
       const updateVoices = () => {
         const availableVoices = window.speechSynthesis.getVoices();
         setVoices(availableVoices);
-        if (availableVoices.length > 0 && !voice) {
+        if (availableVoices.length === 0) return;
+
+        setVoiceState((prev) => {
+          if (prev) {
+            const stillAvailable = availableVoices.find(
+              (v) => v.voiceURI === prev.voiceURI,
+            );
+            if (stillAvailable) return stillAvailable;
+          }
+
+          const persistedURI = selectedVoiceURIRef.current;
+          const persistedVoice = persistedURI
+            ? availableVoices.find((v) => v.voiceURI === persistedURI)
+            : null;
+          if (persistedVoice) return persistedVoice;
+
           const defaultLangVoice =
             availableVoices.find((v) => v.lang.startsWith(lang)) ||
             availableVoices.find((v) => v.default) ||
             availableVoices[0];
-          setVoice(defaultLangVoice || null);
-        }
+          return defaultLangVoice || null;
+        });
       };
 
       updateVoices();
@@ -144,7 +150,23 @@ export function useSpeechSynthesis(
     } else {
       setIsSupported(false);
     }
-  }, [lang, voice]);
+  }, [lang]);
+
+  const setVoice = useCallback((newVoice: SpeechSynthesisVoice | null) => {
+    selectedVoiceURIRef.current = newVoice ? newVoice.voiceURI : null;
+    persistVoiceURI(selectedVoiceURIRef.current);
+    setVoiceState(newVoice);
+  }, []);
+
+  const resolveVoice = useCallback(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      return null;
+    }
+    const uri = selectedVoiceURIRef.current ?? voice?.voiceURI ?? null;
+    if (!uri) return voice;
+    const currentVoices = window.speechSynthesis.getVoices();
+    return currentVoices.find((v) => v.voiceURI === uri) || voice;
+  }, [voice]);
 
   const cancel = useCallback(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -187,15 +209,16 @@ export function useSpeechSynthesis(
         return;
       }
 
-      // Cancel ongoing speech before starting a new utterance
       window.speechSynthesis.cancel();
       setError(null);
 
       const utterance = new SpeechSynthesisUtterance(textToRead);
       utterance.rate = rate;
       utterance.pitch = pitch;
-      if (voice) {
-        utterance.voice = voice;
+
+      const resolvedVoice = resolveVoice();
+      if (resolvedVoice) {
+        utterance.voice = resolvedVoice;
       } else if (lang) {
         utterance.lang = lang;
       }
@@ -212,7 +235,7 @@ export function useSpeechSynthesis(
         onEnd?.();
       };
 
-      utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
+      utterance.onerror = (event) => {
         setIsSpeaking(false);
         setIsPaused(false);
         setError(event.error || "Speech synthesis error occurred.");
@@ -230,7 +253,7 @@ export function useSpeechSynthesis(
       utteranceRef.current = utterance;
       window.speechSynthesis.speak(utterance);
     },
-    [rate, pitch, voice, lang, onStart, onEnd, onError],
+    [rate, pitch, resolveVoice, lang, onStart, onEnd, onError],
   );
 
   const speakMessage = useCallback(
@@ -245,12 +268,13 @@ export function useSpeechSynthesis(
       if (sentences.length === 0) return;
 
       const utterances: SpeechSynthesisUtterance[] = [];
+      const resolvedVoice = resolveVoice();
 
       sentences.forEach((sentenceText, idx) => {
         const utterance = new SpeechSynthesisUtterance(sentenceText.trim());
         utterance.rate = rate;
         utterance.pitch = pitch;
-        if (voice) utterance.voice = voice;
+        if (resolvedVoice) utterance.voice = resolvedVoice;
 
         utterance.onstart = () => {
           setIsSpeaking(true);
@@ -268,7 +292,7 @@ export function useSpeechSynthesis(
             onEnd?.();
           }
         };
-        utterance.onerror = (event: SpeechSynthesisErrorEvent) => {
+        utterance.onerror = (event) => {
           setIsSpeaking(false);
           setIsPaused(false);
           setSpeakingMessageId(null);
@@ -281,7 +305,7 @@ export function useSpeechSynthesis(
       utterancesRef.current = utterances;
       utterances.forEach((u) => window.speechSynthesis.speak(u));
     },
-    [stopSpeech, rate, pitch, voice, onStart, onEnd, onError],
+    [stopSpeech, rate, pitch, resolveVoice, onStart, onEnd, onError],
   );
 
   const setRate = useCallback(
@@ -289,9 +313,8 @@ export function useSpeechSynthesis(
       const clampedRate = Math.max(0.75, Math.min(2, newRate));
       setRateState(clampedRate);
 
-      // If speech is actively playing, restart with the updated playback rate
       if (isSpeaking) {
-        speak();
+        speak(currentTextRef.current);
       }
     },
     [isSpeaking, speak],
@@ -302,7 +325,6 @@ export function useSpeechSynthesis(
     setPitchState(clampedPitch);
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
@@ -317,15 +339,15 @@ export function useSpeechSynthesis(
     isPaused,
     rate,
     pitch,
-    voice,
     voices,
+    voice,
     error,
     speakingMessageId,
     speakingSentenceIndex,
     speak,
     speakMessage,
-    stopSpeech,
     cancel,
+    stopSpeech,
     pause,
     resume,
     setRate,

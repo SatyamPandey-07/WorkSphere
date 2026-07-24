@@ -5,7 +5,7 @@ import * as Y from "yjs";
 import usePartySocket from "partysocket/react";
 import { CryptoManager } from "@/lib/e2ee/CryptoManager";
 import { KeyStore } from "@/lib/e2ee/KeyStore";
-import { Unlock, Key, Loader2, Share2 } from "lucide-react";
+import { Lock, Unlock, Key, Loader2, Share2 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 import {
   generateKeyPair,
@@ -34,6 +34,27 @@ export default function Scratchpad({ sessionId }: Props) {
   const yTextRef = useRef<Y.Text | null>(null);
   const cryptoKeyRef = useRef<CryptoKey | null>(null);
   const isLocalUpdateRef = useRef(false);
+  const processedUpdatesRef = useRef<Set<string>>(new Set());
+  const updateQueueRef = useRef<Uint8Array[]>([]);
+  const isApplyingRef = useRef(false);
+
+  const processQueue = () => {
+    if (isApplyingRef.current || !docRef.current) return;
+    isApplyingRef.current = true;
+
+    try {
+      docRef.current.transact(() => {
+        while (updateQueueRef.current.length > 0) {
+          const update = updateQueueRef.current.shift();
+          if (update) {
+            Y.applyUpdate(docRef.current!, update);
+          }
+        }
+      });
+    } finally {
+      isApplyingRef.current = false;
+    }
+  };
 
   // Initialize Y.Doc
   useEffect(() => {
@@ -85,9 +106,9 @@ export default function Scratchpad({ sessionId }: Props) {
             ciphertext,
             iv,
           );
-
+          
           isLocalUpdateRef.current = true;
-          Y.applyUpdate(docRef.current, decryptedUpdate);
+          processQueue();
           isLocalUpdateRef.current = false;
           return;
         }
@@ -206,16 +227,11 @@ export default function Scratchpad({ sessionId }: Props) {
       if (isLocalUpdateRef.current || !cryptoKeyRef.current) return;
 
       try {
-        const encrypted = await CryptoManager.encryptPayload(
-          cryptoKeyRef.current,
-          update,
-        );
-        socket.send(
-          JSON.stringify({
-            type: "e2ee-delta",
-            payload: encrypted,
-          }),
-        );
+        const encrypted = await CryptoManager.encryptPayload(cryptoKeyRef.current, update);
+        socket.send(JSON.stringify({
+          type: "e2ee-delta",
+          payload: encrypted
+        }));
       } catch (err) {
         console.error("Failed to encrypt/send update", err);
       }

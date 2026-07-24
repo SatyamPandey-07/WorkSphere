@@ -13,9 +13,11 @@ import {
   MapPin,
   Loader2,
   SlidersHorizontal,
+  FileDown,
 } from "lucide-react";
 import { Venue } from "@/components/chat/ChatMessages";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
+import { generateMultiCityPdfReport } from "@/lib/multiCityPdfExport";
 
 const DEFAULT_CITIES = [
   "San Francisco",
@@ -55,7 +57,32 @@ export function MultiCityComparison({
   const [customCityInput, setCustomCityInput] = useState("");
   const [venues, setVenues] = useState<Venue[]>(initialVenues);
   const [loading, setLoading] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+
+  const handleExportPdfReport = async () => {
+    if (selectedCities.length === 0) return;
+    setIsExportingPdf(true);
+    try {
+      const pdfBytes = await generateMultiCityPdfReport({
+        selectedCities,
+        venues,
+      });
+      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `worksphere-multi-city-report-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to generate PDF report:", err);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
 
   // Sync URL search params whenever selectedCities changes
   const updateUrlParams = useCallback(
@@ -173,9 +200,25 @@ export function MultiCityComparison({
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-bold font-mono text-zinc-500">
-          <SlidersHorizontal className="w-4 h-4 text-blue-500" />
-          <span>{selectedCities.length} Cities Active</span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-xs font-bold font-mono text-zinc-500">
+            <SlidersHorizontal className="w-4 h-4 text-blue-500" />
+            <span>{selectedCities.length} Cities Active</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleExportPdfReport}
+            disabled={selectedCities.length === 0 || isExportingPdf}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white shadow-sm transition-all"
+            title="Export PDF comparison report"
+          >
+            {isExportingPdf ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <FileDown className="w-3.5 h-3.5" />
+            )}
+            <span>Export PDF Report</span>
+          </button>
         </div>
       </div>
 

@@ -1,162 +1,357 @@
-/**
- * API Route Tests for /api/chat
- * 
- * These tests verify the chat API endpoint behavior
- */
+import { POST } from "@/app/api/chat/route";
+import {
+  orchestratorAgent,
+  contextAgent,
+  dataAgent,
+  reasoningAgent,
+  actionAgent,
+} from "@/lib/ai/chatAgents";
+import { auth } from "@clerk/nextjs/server";
+import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+import { prisma } from "@/lib/prisma";
 
-describe('Chat API', () => {
+// Mock clerk auth
+jest.mock("@clerk/nextjs/server", () => ({
+  auth: jest.fn(),
+}));
+
+// Mock rateLimit utilities
+jest.mock("@/lib/rateLimit", () => ({
+  rateLimit: jest.fn(),
+  getRateLimitInfo: jest.fn(),
+}));
+
+// Mock prisma client
+jest.mock("@/lib/prisma", () => ({
+  prisma: {
+    user: {
+      findUnique: jest.fn(),
+    },
+    venue: {
+      findMany: jest.fn(),
+    },
+    message: {
+      create: jest.fn(),
+    },
+    conversation: {
+      update: jest.fn(),
+    },
+    $queryRawUnsafe: jest.fn(),
+  },
+}));
+
+// Create a mock completions function we can control per-test
+const mockCreateCompletions = jest.fn();
+
+// Mock groq-sdk client
+jest.mock("groq-sdk", () => {
+  return jest.fn().mockImplementation(() => ({
+    chat: {
+      completions: {
+        create: mockCreateCompletions,
+      },
+    },
+  }));
+});
+
+// Mock semantic cache
+jest.mock("@/lib/cache/semanticCache", () => ({
+  checkSemanticCache: jest.fn().mockResolvedValue(null),
+  setSemanticCache: jest.fn().mockResolvedValue(true),
+}));
+
+// Mock backgroundSync
+jest.mock("@/lib/backgroundSync", () => ({
+  triggerBackgroundMemorySync: jest.fn(),
+}));
+
+// Mock global fetch for Overpass API and Cohere API
+global.fetch = jest.fn();
+
+describe("Chat API - Route Handler", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (auth as any).mockResolvedValue({ userId: "user_123" });
+    (rateLimit as any).mockResolvedValue(true);
+    process.env.GROQ_API_KEY = "test-key";
+
+    // Default mock response for orchestrator agent
+    mockCreateCompletions.mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              agentsToUse: [
+                "ContextAgent",
+                "DataAgent",
+                "ReasoningAgent",
+                "ActionAgent",
+              ],
+              reasoning: "Test reasoning",
+              skipAgents: false,
+              complexity: "complex",
+            }),
+          },
+        },
+      ],
+    });
+
+    (prisma.venue.findMany as any).mockResolvedValue([]);
   });
 
-  it('should return 400 if messages are missing', async () => {
-    // Simulating request without messages
-    const requestBody = { location: { lat: 37.7749, lng: -122.4194 } };
-    
-    // Mock the route handler behavior
-    const response = { status: 400, error: 'Messages are required' };
-    
-    expect(requestBody.location).toBeDefined();
-    expect(response.status).toBe(400);
+  it("should return 400 if messages are missing", async () => {
+    const req = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ location: { lat: 37.7749, lng: -122.4194 } }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("messages");
   });
 
-  it('should return 400 if location is missing', async () => {
-    // Simulating request without location
-    const requestBody = { messages: [{ role: 'user', content: 'Find cafes' }] };
+  it("should process valid request and run pipeline successfully", async () => {
+    // Mock Context Agent LLM response
+    mockCreateCompletions
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                agentsToUse: [
+                  "ContextAgent",
+                  "DataAgent",
+                  "ReasoningAgent",
+                  "ActionAgent",
+                ],
+                reasoning: "Complex needs",
+                skipAgents: false,
+                complexity: "complex",
+              }),
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                intent: "Find quiet cafe",
+                parameters: {
+                  workType: "focus",
+                  amenities: ["wifi", "quiet"],
+                  radius: 2000,
+                  category: ["cafe"],
+                },
+                reasoning: "User is looking for quiet place to work",
+              }),
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        [Symbol.asyncIterator]: async function* () {
+          yield { choices: [{ delta: { content: "Here is the response." } }] };
+        },
+      });
 
-    const response = { status: 400, error: 'Location is required' };
-    
-    expect(requestBody.messages).toBeDefined();
-    expect(response.status).toBe(400);
+    // Mock Overpass API response
+    (global.fetch as any).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        elements: [
+          {
+            id: 1,
+            lat: 37.7749,
+            lon: -122.4194,
+            tags: {
+              name: "Mock Cafe",
+              amenity: "cafe",
+              internet_access: "wlan",
+            },
+          },
+        ],
+      }),
+    });
+
+    const req = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "find quiet cafe" }],
+        location: { lat: 37.7749, lng: -122.4194 },
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain("METADATA:");
+    expect(text).toContain("TEXT:");
   });
 
-  it('should process valid request with messages and location', async () => {
-    // Valid request with both required fields
-    const requestBody = {
-      messages: [{ role: 'user', content: 'Find quiet cafes near me' }],
-      location: { lat: 37.7749, lng: -122.4194 },
-    };
+  it("should return 429 when custom server rate limit is exceeded", async () => {
+    (rateLimit as any).mockResolvedValue(false);
+    (getRateLimitInfo as any).mockResolvedValue({
+      resetTime: Date.now() + 60000,
+    });
 
-    // Simulated successful response structure
-    const response = {
-      status: 200,
-      data: {
-        message: expect.any(String),
-        venues: expect.any(Array),
-        agentSteps: expect.any(Array),
-      },
-    };
+    const req = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "hello" }],
+        location: { lat: 37.7749, lng: -122.4194 },
+      }),
+    });
 
-    expect(requestBody.messages.length).toBeGreaterThan(0);
-    expect(requestBody.location.lat).toBeDefined();
-    expect(response.status).toBe(200);
-  });
-
-  it('should include highTraffic = false in successful response by default', async () => {
-    const response = {
-      status: 200,
-      data: {
-        message: 'Here are some workspaces.',
-        venues: [],
-        highTraffic: false,
-      },
-    };
-    expect(response.data.highTraffic).toBe(false);
-  });
-
-  it('should include highTraffic = true in response if Overpass API is rate-limited', async () => {
-    const response = {
-      status: 200,
-      data: {
-        message: 'Returned simulated fallback venues.',
-        venues: [],
-        highTraffic: true,
-      },
-    };
-    expect(response.data.highTraffic).toBe(true);
-  });
-
-  it('should return status 429 when custom server rate limit is exceeded', async () => {
-    const response = {
-      status: 429,
-      data: {
-        error: 'Rate limit exceeded. Please wait before sending more messages.',
-        retryAfter: 60,
-      },
-    };
-    expect(response.status).toBe(429);
-    expect(response.data.error).toContain('Rate limit exceeded');
+    const res = await POST(req);
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error).toContain("Rate limit exceeded");
   });
 });
 
-describe('Agent Pipeline', () => {
-  it('should run agents in correct order', () => {
-    const agentOrder = ['Orchestrator', 'Context', 'Data', 'Reasoning', 'Action'];
-    
-    // Verify the expected agent execution order
-    expect(agentOrder[0]).toBe('Orchestrator');
-    expect(agentOrder[1]).toBe('Context');
-    expect(agentOrder[2]).toBe('Data');
-    expect(agentOrder[3]).toBe('Reasoning');
-    expect(agentOrder[4]).toBe('Action');
-  });
+describe("5-Agent Pipeline Unit Tests", () => {
+  describe("Orchestrator Agent", () => {
+    it("should parse Orchestrator decisions correctly", async () => {
+      mockCreateCompletions.mockResolvedValue({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                agentsToUse: [
+                  "ContextAgent",
+                  "DataAgent",
+                  "ReasoningAgent",
+                  "ActionAgent",
+                ],
+                reasoning: "Test reasoning",
+                skipAgents: false,
+                complexity: "complex",
+              }),
+            },
+          },
+        ],
+      });
 
-  it('should extract intent from user query', () => {
-    const query = 'Find a quiet cafe with WiFi near me';
-    
-    // Expected intent extraction - verify query contains key terms
-    const expectedTerms = ['quiet', 'wifi', 'cafe'];
-
-    expectedTerms.forEach(term => {
-      expect(query.toLowerCase()).toContain(term);
+      const decision = await orchestratorAgent("Find cafes", {
+        lat: 37.7749,
+        lng: -122.4194,
+      });
+      expect(decision.agentsToUse).toContain("ContextAgent");
+      expect(decision.skipAgents).toBe(false);
     });
   });
 
-  it('should score venues based on criteria', () => {
-    const venue = {
-      name: 'Test Cafe',
-      wifi: true,
-      hasOutlets: true,
-      noiseLevel: 'quiet',
-      rating: 4.5,
-      distance: 500,
-    };
+  describe("Context Agent", () => {
+    it("should extract search parameters from user queries", async () => {
+      mockCreateCompletions.mockResolvedValue({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                intent: "Find quiet cafe",
+                parameters: {
+                  workType: "focus",
+                  amenities: ["wifi", "quiet"],
+                  radius: 2000,
+                  category: ["cafe"],
+                },
+                reasoning: "User is looking for quiet place to work",
+              }),
+            },
+          },
+        ],
+      });
 
-    // Scoring weights
-    const weights = {
-      wifi: 0.3,
-      noise: 0.25,
-      outlets: 0.2,
-      rating: 0.15,
-      distance: 0.1,
-    };
-
-    // Calculate expected score
-    const wifiScore = venue.wifi ? 10 * weights.wifi : 0;
-    const noiseScore = venue.noiseLevel === 'quiet' ? 10 * weights.noise : 5 * weights.noise;
-    const outletScore = venue.hasOutlets ? 10 * weights.outlets : 0;
-    const ratingScore = (venue.rating / 5) * 10 * weights.rating;
-    const distanceScore = Math.max(0, (2000 - venue.distance) / 2000) * 10 * weights.distance;
-
-    const totalScore = wifiScore + noiseScore + outletScore + ratingScore + distanceScore;
-
-    expect(totalScore).toBeGreaterThan(0);
-    expect(totalScore).toBeLessThanOrEqual(10);
-  });
-});
-
-describe('Clerk Webhook API Avatar Logic', () => {
-  it('should optimize image_url using replace when present', () => {
-    const mockImageUrl = "https://img.clerk.com/avatar.png?width=400";
-    const optimized = mockImageUrl.replace(/(\?|&)width=\d+/, "$1width=150");
-    expect(optimized).toBe("https://img.clerk.com/avatar.png?width=150");
+      const context = await contextAgent(
+        "Find quiet cafes",
+        { lat: 37.7749, lng: -122.4194 },
+        "user_123",
+      );
+      expect(context.parameters.workType).toBe("focus");
+      expect(context.parameters.amenities).toContain("quiet");
+    });
   });
 
-  it('should fallback to initials UI Avatar when image_url is missing', () => {
-    const first = "Chirag";
-    const last = "Pandey";
-    const initials = `${first?.[0] || ""}${last?.[0] || ""}`.toUpperCase();
-    const fallbackUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(initials || "WS")}&background=6366f1&color=fff`;
-    expect(fallbackUrl).toBe("https://ui-avatars.com/api/?name=CP&background=6366f1&color=fff");
+  describe("Data Agent", () => {
+    it("should query Overpass API or fallback to simulation if Overpass fails", async () => {
+      (global.fetch as any).mockRejectedValue(new Error("Network Error"));
+
+      const data = await dataAgent({
+        location: { lat: 37.7749, lng: -122.4194 },
+      });
+      expect(data.venues.length).toBeGreaterThan(0);
+      expect(data.meta.source).toBe("Simulation Fallback");
+    });
+  });
+
+  describe("Reasoning Agent", () => {
+    it("should score and rank venues based on preferences", () => {
+      const mockVenues = [
+        {
+          id: "1",
+          name: "Cafe A",
+          lat: 37.7749,
+          lng: -122.4194,
+          category: "cafe",
+          address: null,
+          wifi: true,
+          hasOutlets: true,
+          noiseLevel: "quiet",
+          rating: 4.5,
+          wifiQuality: 5,
+          openingHours: null,
+          hasErgonomic: true,
+          outletDensity: "some_tables",
+          wifiSpeed: 50,
+          hasPhoneBooths: false,
+          hasNoMusic: false,
+          hasQuietZone: false,
+          hasAncHeadsetRental: false,
+        },
+      ];
+
+      const ranked = reasoningAgent(mockVenues, {
+        workType: "focus",
+        amenities: ["wifi", "quiet"],
+      });
+      expect(ranked.rankedVenues[0].score).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Action Agent", () => {
+    it("should generate clean action recommendations and map markers", async () => {
+      const mockRanked = [
+        {
+          id: "1",
+          name: "Cafe A",
+          lat: 37.7749,
+          lng: -122.4194,
+          category: "cafe",
+          address: null,
+          wifi: true,
+          hasOutlets: true,
+          noiseLevel: "quiet",
+          rating: 4.5,
+          wifiQuality: 5,
+          openingHours: null,
+          hasErgonomic: true,
+          outletDensity: "some_tables",
+          wifiSpeed: 50,
+          hasPhoneBooths: false,
+          hasNoMusic: false,
+          hasQuietZone: false,
+          hasAncHeadsetRental: false,
+          score: 8.5,
+          scoreBreakdown: {},
+        },
+      ];
+
+      const result = await actionAgent(mockRanked, "hello");
+      expect(result.message).toContain("Cafe A");
+      expect(result.mapUpdates.markers.length).toBe(1);
+    });
   });
 });

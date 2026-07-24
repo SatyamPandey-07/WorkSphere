@@ -5,7 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
 
-export function StudentDiscountVerification() {
+interface StudentDiscountVerificationProps {
+  /** Called after the proof is accepted and the user is verified server-side. */
+  onVerified?: () => void;
+}
+
+export function StudentDiscountVerification({
+  onVerified,
+}: StudentDiscountVerificationProps) {
   const [studentId, setStudentId] = useState("");
   const [isProving, setIsProving] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -47,6 +54,7 @@ export function StudentDiscountVerification() {
           }
 
           setIsSuccess(true);
+          onVerified?.();
         } catch (err: any) {
           setError(err.message);
         } finally {
@@ -58,7 +66,7 @@ export function StudentDiscountVerification() {
     return () => {
       workerRef.current?.terminate();
     };
-  }, []);
+  }, [onVerified]);
 
   const handleVerify = () => {
     if (!studentId) return;

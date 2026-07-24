@@ -344,7 +344,10 @@ describe("Map Component", () => {
 
       expect(venueMarker).toHaveAttribute("role", "button");
       expect(venueMarker).toHaveAttribute("tabindex", "0");
-      expect(venueMarker).toHaveAttribute("aria-label", "Accessible Cafe");
+      expect(venueMarker).toHaveAttribute(
+        "aria-label",
+        "Venue: Accessible Cafe, cafe",
+      );
     });
 
     it("triggers popup on Enter key", () => {

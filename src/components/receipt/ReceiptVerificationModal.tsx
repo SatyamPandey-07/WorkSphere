@@ -14,7 +14,7 @@ export function ReceiptVerificationModal({
   open,
   onClose,
 }: ReceiptVerificationModalProps) {
-  const { status, signatures, result, error, verify, reset } =
+  const { status, progress, signatures, result, error, verify, reset } =
     usePdfSignatureVerifier();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -142,6 +142,23 @@ export function ReceiptVerificationModal({
               <div className="flex flex-col gap-4">
                 <SignatureVerificationBadge status={status} result={result} />
 
+                {(status === "loading" || status === "verifying") && (
+                  <div className="flex flex-col gap-2">
+                    <div className="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${progress}%` }}
+                      ></div>
+                    </div>
+                    <span className="text-xs text-zinc-500 self-end">
+                      {status === "loading"
+                        ? "Reading file..."
+                        : "Verifying signature..."}{" "}
+                      {progress}%
+                    </span>
+                  </div>
+                )}
+
                 {status === "verified" && signatures.length > 0 && (
                   <div className="flex flex-col gap-1 p-3 bg-zinc-50 dark:bg-zinc-800 rounded text-sm">
                     <div className="flex justify-between">
@@ -174,16 +191,36 @@ export function ReceiptVerificationModal({
                 )}
 
                 {status === "invalid" && result?.error && (
-                  <div className="flex items-start gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded text-sm text-red-500">
-                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                    <span>{result.error}</span>
+                  <div className="flex flex-col gap-1 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded text-sm text-red-500">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span>{result.error}</span>
+                    </div>
+                    <a
+                      href="/docs/WASM_DIGITAL_SIGNATURE_VERIFICATION_GUIDE.md"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-red-400 underline hover:text-red-300 ml-5 transition-colors"
+                    >
+                      Read PDF verification docs &rarr;
+                    </a>
                   </div>
                 )}
 
                 {status === "error" && error && (
-                  <div className="flex items-start gap-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded text-sm text-red-500">
-                    <AlertCircle size={14} className="shrink-0 mt-0.5" />
-                    <span>{error}</span>
+                  <div className="flex flex-col gap-1 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded text-sm text-red-500">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                      <span>{error}</span>
+                    </div>
+                    <a
+                      href="/docs/WASM_DIGITAL_SIGNATURE_VERIFICATION_GUIDE.md"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-red-400 underline hover:text-red-300 ml-5 transition-colors"
+                    >
+                      Read PDF verification docs &rarr;
+                    </a>
                   </div>
                 )}
               </div>
@@ -198,11 +235,19 @@ export function ReceiptVerificationModal({
           )}
         </div>
 
-        <div className="border-t border-zinc-200 dark:border-zinc-800 px-6 py-3">
+        <div className="border-t border-zinc-200 dark:border-zinc-800 px-6 py-3 flex items-center justify-between">
           <p className="text-xs text-zinc-500 leading-relaxed">
             Verification uses WebAssembly-compiled OpenSSL to validate RSA-2048
             and ECDSA signatures against trusted CA certificate chains.
           </p>
+          <a
+            href="/docs/WASM_DIGITAL_SIGNATURE_VERIFICATION_GUIDE.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-blue-500 hover:underline shrink-0 ml-2"
+          >
+            Documentation
+          </a>
         </div>
       </div>
     </div>

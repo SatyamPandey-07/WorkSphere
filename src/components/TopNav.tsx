@@ -44,12 +44,12 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
 
           {!hideAuth && (
             <>
-              <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-700 hidden sm:block" />
+              <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-700 hidden md:block" />
 
               {!isSignedIn ? (
                 <>
                   {/* Desktop */}
-                  <div className="hidden sm:flex items-center gap-3">
+                  <div className="hidden md:flex items-center gap-3">
                     <Link href="/sign-in">
                       <button className="px-3 sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium">
                         Sign In
@@ -66,7 +66,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                   {/* Mobile */}
                   <button
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    className="sm:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    className="md:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
                   >
                     {isMenuOpen ? (
                       <X className="w-5 h-5" />
@@ -80,7 +80,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                   {/* Mobile Menu Button */}
                   <button
                     onClick={() => setIsMenuOpen(!isMenuOpen)}
-                    className="sm:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    className="md:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
                     aria-label="Toggle navigation menu"
                   >
                     {isMenuOpen ? (
@@ -93,7 +93,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                   {/* Desktop Links */}
                   <Link
                     href="/ai"
-                    className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
+                    className="hidden md:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
                   >
                     <Coffee className="w-4 h-4" />
                     Dashboard
@@ -101,14 +101,14 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
 
                   <Link
                     href="/collections"
-                    className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
+                    className="hidden md:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
                   >
                     <LayoutGrid className="w-4 h-4" />
                     Collections
                   </Link>
                   <Link
                     href="/admin/performance"
-                    className="hidden sm:flex items-center gap-2 px-4 py-2 text-sm text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 font-medium transition-colors whitespace-nowrap"
+                    className="hidden md:flex items-center gap-2 px-4 py-2 text-sm text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 font-medium transition-colors whitespace-nowrap"
                   >
                     <Shield className="w-4 h-4" />
                     Admin
@@ -128,31 +128,44 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
       </div>
 
       {isMenuOpen && (
-        <div className="sm:hidden border-t bg-white dark:bg-black">
-          <div className="flex flex-col p-4 gap-3">
-            {!isSignedIn ? (
-              <>
-                <Link href="/sign-in" onClick={() => setIsMenuOpen(false)}>
-                  Sign In
-                </Link>
+        <>
+          {/* Backdrop Overlay */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm md:hidden z-40"
+            onClick={() => setIsMenuOpen(false)}
+            aria-hidden="true"
+          />
 
-                <Link href="/sign-up" onClick={() => setIsMenuOpen(false)}>
-                  Get Started
-                </Link>
-              </>
-            ) : (
-              <>
-                <Link href="/ai" onClick={() => setIsMenuOpen(false)}>
-                  Dashboard
-                </Link>
+          {/* Mobile Menu Drawer */}
+          <div className="md:hidden border-t bg-white dark:bg-black relative z-50">
+            <div className="flex flex-col p-4 gap-3">
+              {!isSignedIn ? (
+                <>
+                  <Link href="/sign-in" onClick={() => setIsMenuOpen(false)}>
+                    Sign In
+                  </Link>
 
-                <Link href="/collections" onClick={() => setIsMenuOpen(false)}>
-                  Collections
-                </Link>
-              </>
-            )}
+                  <Link href="/sign-up" onClick={() => setIsMenuOpen(false)}>
+                    Get Started
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link href="/ai" onClick={() => setIsMenuOpen(false)}>
+                    Dashboard
+                  </Link>
+
+                  <Link
+                    href="/collections"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    Collections
+                  </Link>
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
     </nav>
   );

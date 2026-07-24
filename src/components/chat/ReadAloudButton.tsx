@@ -14,7 +14,7 @@ export interface ReadAloudButtonProps {
   /** Optional extra CSS classes for container */
   className?: string;
   /** Initial playback speed rate (default: 1) */
-  defaultRate?: SpeedOption;
+  defaultRate?: number;
   /** Initial pitch parameter (default: 1) */
   pitch?: number;
   /** Callback fired when speech starts */
@@ -32,7 +32,8 @@ export function ReadAloudButton({
   onEnd,
 }: ReadAloudButtonProps) {
   const { isSupported, isSpeaking, rate, setRate, speak, cancel } =
-    useSpeechSynthesis(text, {
+    useSpeechSynthesis({
+      textToSpeakDefault: text,
       defaultRate,
       defaultPitch: pitch,
       onStart,
@@ -108,7 +109,7 @@ export function ReadAloudButton({
           title="Playback speed"
           className="appearance-none rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 pl-2 pr-5 py-1 text-xs font-semibold cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
         >
-          {SPEED_OPTIONS.map((speed) => (
+          {SPEED_OPTIONS.map((speed: number) => (
             <option key={speed} value={speed}>
               {speed}x
             </option>

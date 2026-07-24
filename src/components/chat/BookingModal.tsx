@@ -35,6 +35,8 @@ import { ReceiptVerificationModal } from "@/components/receipt/ReceiptVerificati
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
 import { shouldCloseFromBackdrop } from "@/lib/modal-interactions";
+import { apiFetch } from "@/lib/apiClient";
+import { useRateLimit } from "@/hooks/useRateLimit";
 
 interface Booking {
   id: string;
@@ -63,6 +65,7 @@ export function BookingModal({
   onClose,
   mode = "booking",
 }: BookingModalProps) {
+  const retryAfter = useRateLimit("book");
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
   >("details");
@@ -409,7 +412,7 @@ export function BookingModal({
         }
       }
 
-      const response = await fetch("/api/bookings/confirm", {
+      const response = await apiFetch("/api/bookings/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -959,10 +962,13 @@ export function BookingModal({
 
               <button
                 onClick={handleBooking}
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest py-6 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-2xl shadow-green-500/20 hover:scale-[1.02] transition-all active:scale-95"
+                disabled={retryAfter > 0}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest py-6 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-2xl shadow-green-500/20 hover:scale-[1.02] transition-all active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
               >
                 <Lock className="w-5 h-5 shadow-inner" />
-                Finalize Secure Protocol
+                {retryAfter > 0
+                  ? `Retry in ${retryAfter}s`
+                  : "Finalize Secure Protocol"}
               </button>
             </div>
           )}

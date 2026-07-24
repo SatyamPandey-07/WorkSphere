@@ -1,5 +1,6 @@
 "use client";
 
+import { useRateLimit } from "@/hooks/useRateLimit";
 import {
   BookOpen,
   Brain,
@@ -1206,6 +1207,7 @@ export function ChatInput({
   const MAX_CHARS = 2000;
   const charCount = safeInput.length;
   const isOverLimit = charCount > MAX_CHARS;
+  const retryAfter = useRateLimit("chat");
 
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [isFocused, setIsFocused] = useState(false);
@@ -1473,7 +1475,7 @@ export function ChatInput({
             placeholder={
               isListening ? "Listening…" : "Where's the focus mode hotspot?"
             }
-            disabled={isLoading}
+            disabled={isLoading || retryAfter > 0}
             className="w-full bg-transparent px-4 py-3 pr-16 text-sm font-bold text-zinc-900 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 dark:text-zinc-50"
           />
           {safeInput.length > 0 && (
@@ -1518,11 +1520,15 @@ export function ChatInput({
         {/* ── Send button ────────────────────────────────────────────────── */}
         <button
           type="submit"
-          disabled={isLoading || !input.trim() || isOverLimit}
-          className="p-3 bg-[var(--primary-accent)] cursor-pointer hover:opacity-90 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
+          disabled={isLoading || !input.trim() || isOverLimit || retryAfter > 0}
+          className="p-3 bg-[var(--primary-accent)] cursor-pointer hover:opacity-90 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group flex items-center justify-center gap-1.5"
         >
           {isLoading ? (
             <Loader2 className="w-5 h-5 animate-spin" />
+          ) : retryAfter > 0 ? (
+            <span className="text-xs font-black whitespace-nowrap px-1">
+              Retry in {retryAfter}s
+            </span>
           ) : (
             <Send className="w-5 h-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
           )}

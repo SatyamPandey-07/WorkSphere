@@ -184,3 +184,58 @@ describe("ChatInput keyboard inset", () => {
     expect(wrap.style.paddingBottom).toContain("300px");
   });
 });
+
+describe("ChatInput Ctrl+K shortcut badge", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("shows Ctrl+K badge in the empty search bar on non-Apple platforms", () => {
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      value: "Win32",
+    });
+
+    render(
+      <ChatInput
+        input=""
+        isLoading={false}
+        onInputChange={jest.fn()}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTitle("Focus search")).toHaveTextContent("Ctrl+K");
+  });
+
+  it("shows ⌘K badge on Apple platforms", () => {
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      value: "MacIntel",
+    });
+
+    render(
+      <ChatInput
+        input=""
+        isLoading={false}
+        onInputChange={jest.fn()}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTitle("Focus search")).toHaveTextContent("⌘K");
+  });
+
+  it("hides the shortcut badge when the search input has text", () => {
+    render(
+      <ChatInput
+        input="quiet cafe"
+        isLoading={false}
+        onInputChange={jest.fn()}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByTitle("Focus search")).not.toBeInTheDocument();
+  });
+});

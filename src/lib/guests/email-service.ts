@@ -77,6 +77,8 @@ interface InviteEmailParams {
   directionsUrl: string;
   venuePhotoUrl?: string;
   bookingRef: string;
+  bookingId: string;
+  guestId: string;
 }
 
 /**
@@ -94,6 +96,8 @@ function buildInviteHtml(params: InviteEmailParams): string {
     directionsUrl,
     venuePhotoUrl,
     bookingRef,
+    bookingId,
+    guestId,
   } = params;
 
   const greeting = guestName ? `Hi ${guestName},` : "Hello,";
@@ -107,6 +111,10 @@ function buildInviteHtml(params: InviteEmailParams): string {
          <img src="${venuePhotoUrl}" alt="${venueName}" style="width: 100%; max-width: 560px; border-radius: 12px; height: auto;" />
        </div>`
     : "";
+
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  const acceptUrl = `${baseUrl}/api/bookings/${bookingId}/guests?guestId=${guestId}&status=ACCEPTED`;
+  const declineUrl = `${baseUrl}/api/bookings/${bookingId}/guests?guestId=${guestId}&status=DECLINED`;
 
   return `
     <!DOCTYPE html>
@@ -159,6 +167,28 @@ function buildInviteHtml(params: InviteEmailParams): string {
 
                   ${photoHtml}
 
+                  <!-- RSVP Buttons -->
+                  <table width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0;">
+                    <tr>
+                      <td align="center">
+                        <table cellpadding="0" cellspacing="0" style="margin: 0 auto;">
+                          <tr>
+                            <td style="padding: 0 10px;">
+                              <a href="${acceptUrl}" style="display: inline-block; background-color: #10b981; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 6px; font-size: 14px; font-weight: 600; text-align: center;">
+                                Accept RSVP
+                              </a>
+                            </td>
+                            <td style="padding: 0 10px;">
+                              <a href="${declineUrl}" style="display: inline-block; background-color: #ef4444; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 6px; font-size: 14px; font-weight: 600; text-align: center;">
+                                Decline RSVP
+                              </a>
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+
                   <!-- Map Button -->
                   <table width="100%" cellpadding="0" cellspacing="0">
                     <tr>
@@ -203,10 +233,56 @@ function buildInviteHtml(params: InviteEmailParams): string {
 export async function sendGuestInvite(
   params: InviteEmailParams,
 ): Promise<{ success: boolean; error?: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+
+  if (apiKey) {
+    try {
+      const fromEmail =
+        process.env.RESEND_FROM_EMAIL || "noreply@worksphere.io";
+      const fromName = process.env.SMTP_FROM_NAME || "WorkSphere Concierge";
+      const html = buildInviteHtml(params);
+      const icsFilename = `workspace-invite-${params.date}.ics`;
+      const base64Ics = Buffer.from(params.icsContent).toString("base64");
+
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          from: `"${fromName}" <${fromEmail}>`,
+          to: params.guestEmail,
+          subject: `You're invited to a workspace session at ${params.venueName}`,
+          html,
+          attachments: [
+            {
+              filename: icsFilename,
+              content: base64Ics,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`Resend API error: ${response.status} - ${errText}`);
+      }
+
+      return { success: true };
+    } catch (error: any) {
+      console.error(
+        "[GuestEmail] Resend API send failed, trying SMTP fallback:",
+        error,
+      );
+      // Fall through to SMTP configuration if SMTP is present
+    }
+  }
+
   const config = getSmtpConfig();
 
   if (!config) {
-    return { success: false, error: "SMTP not configured" };
+    return { success: false, error: "SMTP or Resend not configured" };
   }
 
   try {
@@ -231,7 +307,7 @@ export async function sendGuestInvite(
 
     return { success: true };
   } catch (error: any) {
-    console.error("[GuestEmail] Failed to send invite:", error);
+    console.error("[GuestEmail] SMTP send failed:", error);
     return {
       success: false,
       error: error?.message || "Unknown email error",

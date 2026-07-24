@@ -1,0 +1,22 @@
+
+> worksphere@0.1.0 lint
+> eslint
+
+
+/home/runner/work/WorkSphere/WorkSphere/src/app/admin/emails/AdminEmailDashboard.tsx
+   28:3   warning  'Cell' is defined but never used. Allowed unused vars must match /^_/u                                     @typescript-eslint/no-unused-vars
+  108:7   warning  'STATUS_COLORS' is assigned a value but never used. Allowed unused vars must match /^_/u                   @typescript-eslint/no-unused-vars
+  168:6   warning  React Hook useEffect has a missing dependency: 'search'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  197:14  warning  'err' is defined but never used                                                                            @typescript-eslint/no-unused-vars
+
+/home/runner/work/WorkSphere/WorkSphere/src/app/dashboard/settings/notifications/actions.ts
+  5:10  warning  'revalidatePath' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+/home/runner/work/WorkSphere/WorkSphere/src/components/CustomAvatarUpload.tsx
+  50:13  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+/home/runner/work/WorkSphere/WorkSphere/src/components/settings/WorkspaceNotificationPanel.tsx
+  4:10  warning  'Bell' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+
+✖ 7 problems (0 errors, 7 warnings)
+

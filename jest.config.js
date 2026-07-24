@@ -16,6 +16,7 @@ const customJestConfig = {
     // snarkjs/ffjavascript resolve to browser ESM under jsdom — pin CJS for tests
     '^snarkjs$': '<rootDir>/node_modules/snarkjs/build/main.cjs',
     '^ffjavascript$': '<rootDir>/node_modules/ffjavascript/build/main.cjs',
+    '^uncrypto$': '<rootDir>/node_modules/uncrypto/dist/crypto.node.cjs',
   },
   testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/', 'e2e'],
   collectCoverageFrom: [

@@ -1,0 +1,110 @@
+npm warn ERESOLVE overriding peer dependency
+npm warn While resolving: eslint-plugin-import@2.32.0
+npm warn Found: eslint@10.7.0
+npm warn node_modules/eslint
+npm warn   dev eslint@"^10" from the root project
+npm warn   9 more (@eslint-community/eslint-utils, ...)
+npm warn
+npm warn Could not resolve dependency:
+npm warn peer eslint@"^2 || ^3 || ^4 || ^5 || ^6 || ^7.2.0 || ^8 || ^9" from eslint-plugin-import@2.32.0
+npm warn node_modules/eslint-config-next/node_modules/eslint-plugin-import
+npm warn   eslint-plugin-import@"^2.32.0" from eslint-config-next@16.2.10
+npm warn   node_modules/eslint-config-next
+npm warn   1 more (eslint-import-resolver-typescript)
+npm warn
+npm warn Conflicting peer dependency: eslint@9.39.5
+npm warn node_modules/eslint
+npm warn   peer eslint@"^2 || ^3 || ^4 || ^5 || ^6 || ^7.2.0 || ^8 || ^9" from eslint-plugin-import@2.32.0
+npm warn   node_modules/eslint-config-next/node_modules/eslint-plugin-import
+npm warn     eslint-plugin-import@"^2.32.0" from eslint-config-next@16.2.10
+npm warn     node_modules/eslint-config-next
+npm warn     1 more (eslint-import-resolver-typescript)
+npm warn ERESOLVE overriding peer dependency
+npm warn While resolving: eslint-plugin-jsx-a11y@6.10.2
+npm warn Found: eslint@10.7.0
+npm warn node_modules/eslint
+npm warn   dev eslint@"^10" from the root project
+npm warn   9 more (@eslint-community/eslint-utils, ...)
+npm warn
+npm warn Could not resolve dependency:
+npm warn peer eslint@"^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9" from eslint-plugin-jsx-a11y@6.10.2
+npm warn node_modules/eslint-config-next/node_modules/eslint-plugin-jsx-a11y
+npm warn   eslint-plugin-jsx-a11y@"^6.10.0" from eslint-config-next@16.2.10
+npm warn   node_modules/eslint-config-next
+npm warn
+npm warn Conflicting peer dependency: eslint@9.39.5
+npm warn node_modules/eslint
+npm warn   peer eslint@"^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9" from eslint-plugin-jsx-a11y@6.10.2
+npm warn   node_modules/eslint-config-next/node_modules/eslint-plugin-jsx-a11y
+npm warn     eslint-plugin-jsx-a11y@"^6.10.0" from eslint-config-next@16.2.10
+npm warn     node_modules/eslint-config-next
+npm warn ERESOLVE overriding peer dependency
+npm warn While resolving: eslint-plugin-react@7.37.5
+npm warn Found: eslint@10.7.0
+npm warn node_modules/eslint
+npm warn   dev eslint@"^10" from the root project
+npm warn   9 more (@eslint-community/eslint-utils, ...)
+npm warn
+npm warn Could not resolve dependency:
+npm warn peer eslint@"^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9.7" from eslint-plugin-react@7.37.5
+npm warn node_modules/eslint-config-next/node_modules/eslint-plugin-react
+npm warn   eslint-plugin-react@"^7.37.0" from eslint-config-next@16.2.10
+npm warn   node_modules/eslint-config-next
+npm warn
+npm warn Conflicting peer dependency: eslint@9.39.5
+npm warn node_modules/eslint
+npm warn   peer eslint@"^3 || ^4 || ^5 || ^6 || ^7 || ^8 || ^9.7" from eslint-plugin-react@7.37.5
+npm warn   node_modules/eslint-config-next/node_modules/eslint-plugin-react
+npm warn     eslint-plugin-react@"^7.37.0" from eslint-config-next@16.2.10
+npm warn     node_modules/eslint-config-next
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: '@prisma/streams-local@0.1.2',
+npm warn EBADENGINE   required: { bun: '>=1.3.6', node: '>=22.0.0' },
+npm warn EBADENGINE   current: { node: 'v20.20.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'lint-staged@17.1.0',
+npm warn EBADENGINE   required: { node: '>=22.22.1' },
+npm warn EBADENGINE   current: { node: 'v20.20.2', npm: '10.8.2' }
+npm warn EBADENGINE }
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+npm warn deprecated scmp@2.1.0: Just use Node.js's crypto.timingSafeEqual()
+npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+
+> worksphere@0.1.0 postinstall
+> prisma generate
+
+◇ injected env (0) from .env.local // tip: ⌘ suppress logs { quiet: true }
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+
+✔ Generated Prisma Client (v7.8.0) to ./node_modules/@prisma/client in 463ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+
+
+> worksphere@0.1.0 prepare
+> husky
+
+
+added 1372 packages, and audited 1373 packages in 33s
+
+222 packages are looking for funding
+  run `npm fund` for details
+
+14 vulnerabilities (9 moderate, 5 high)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues possible (including breaking changes), run:
+  npm audit fix --force
+
+Some issues need review, and may require choosing
+a different dependency.
+
+Run `npm audit` for details.

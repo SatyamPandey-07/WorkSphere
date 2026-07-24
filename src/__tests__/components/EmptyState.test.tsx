@@ -2,6 +2,16 @@ import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { EmptyState } from "@/components/ui/EmptyState";
 
+// Mock framer-motion to prevent animation-related test failures
+// and safely simulate the useReducedMotion hook we added
+jest.mock("framer-motion", () => {
+  const actual = jest.requireActual("framer-motion");
+  return {
+    ...actual,
+    useReducedMotion: jest.fn(() => false),
+  };
+});
+
 describe("EmptyState", () => {
   it("renders search empty state correctly", () => {
     render(

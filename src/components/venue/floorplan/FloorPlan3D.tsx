@@ -184,22 +184,22 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
                   })`,
                 }}
               />
-              <span className="text-[9px] text-zinc-400">{label}</span>
+              <span className="text-[9px] text-zinc-200">{label}</span>
             </div>
           ))}
           <div className="flex items-center gap-1.5">
             <Power className="w-2.5 h-2.5 text-yellow-400" />
-            <span className="text-[9px] text-zinc-400">Power Outlet</span>
+            <span className="text-[9px] text-zinc-200">Power Outlet</span>
           </div>
         </div>
 
         {/* Stats overlay */}
         <div className="absolute top-3 right-3 bg-zinc-900/90 backdrop-blur-sm rounded-lg p-2 space-y-1">
-          <p className="text-[9px] text-zinc-400">
+          <p className="text-[9px] text-zinc-200">
             <span className="text-white font-bold">{powerSeats}</span> seats
             with power
           </p>
-          <p className="text-[9px] text-zinc-400">
+          <p className="text-[9px] text-zinc-200">
             <span className="text-white font-bold">{quietSeats}</span> quiet
             zone seats
           </p>
@@ -207,7 +207,7 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
       </div>
 
       <div className="p-3 text-center">
-        <p className="text-[10px] text-zinc-400">
+        <p className="text-[10px] text-zinc-200">
           Drag to rotate • Scroll to zoom •{" "}
           {useWebGPU
             ? "Hardware-accelerated via WebGPU"

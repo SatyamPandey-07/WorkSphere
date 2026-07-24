@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
+import { useSearchParams } from "next/navigation";
 import {
   CalendarDays,
   Check,
@@ -10,8 +11,18 @@ import {
   Navigation,
   Share2,
   UsersRound,
+  Link2,
+  ShieldCheck,
+  AlertCircle,
 } from "lucide-react";
 import ScreenSharePanel from "@/components/sessions/ScreenSharePanel";
+import Scratchpad from "@/components/sessions/Scratchpad";
+import { MeshCallGrid } from "@/components/audio/MeshCallGrid";
+import {
+  generateSessionInviteToken,
+  validateSessionInviteToken,
+  ValidationResult,
+} from "@/lib/sessionInviteTokens";
 
 type Props = {
   session: {
@@ -47,12 +58,30 @@ type Props = {
 
 export default function SessionDetailClient({ session }: Props) {
   const { user } = useUser();
+  const searchParams = useSearchParams();
   const [rsvps, setRsvps] = useState(session.rsvps);
   const [message, setMessage] = useState("");
+  const [copiedInvite, setCopiedInvite] = useState(false);
+  const [inviteValidation, setInviteValidation] =
+    useState<ValidationResult | null>(null);
+
   const going = useMemo(
     () => rsvps.filter((item) => item.status === "GOING"),
     [rsvps],
   );
+
+  const inviteTokenParam = searchParams?.get("inviteToken");
+
+  useEffect(() => {
+    if (inviteTokenParam) {
+      const result = validateSessionInviteToken(
+        inviteTokenParam,
+        going.length,
+        session.slug,
+      );
+      setInviteValidation(result);
+    }
+  }, [inviteTokenParam, going.length, session.slug]);
 
   const hostName =
     [session.host.firstName, session.host.lastName].filter(Boolean).join(" ") ||
@@ -100,6 +129,29 @@ export default function SessionDetailClient({ session }: Props) {
     }
   }
 
+  async function copyInviteLink() {
+    try {
+      const token = await generateSessionInviteToken(
+        session.slug,
+        24,
+        session.maxGuests || undefined,
+      );
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "";
+      const inviteUrl = `${origin}/sessions/${session.slug}?inviteToken=${token}`;
+
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopiedInvite(true);
+      setMessage(
+        "Secure invite link copied to clipboard! (Expires in 24 hours)",
+      );
+      setTimeout(() => setCopiedInvite(false), 3000);
+    } catch (err) {
+      console.error("Failed to generate invite link:", err);
+      setMessage("Failed to generate invite link.");
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#07070a] px-5 py-10 text-white">
       <div className="mx-auto max-w-5xl">
@@ -144,6 +196,39 @@ export default function SessionDetailClient({ session }: Props) {
               />
             </div>
 
+            {inviteValidation && (
+              <div
+                className={`mt-4 flex items-center gap-3 p-4 rounded-xl border ${
+                  inviteValidation.valid
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                    : "border-red-500/30 bg-red-500/10 text-red-200"
+                }`}
+              >
+                {inviteValidation.valid ? (
+                  <ShieldCheck className="h-5 w-5 shrink-0 text-emerald-400" />
+                ) : (
+                  <AlertCircle className="h-5 w-5 shrink-0 text-red-400" />
+                )}
+                <div className="text-sm">
+                  {inviteValidation.valid ? (
+                    <span>
+                      <strong className="font-semibold">
+                        Private Invite Verified:
+                      </strong>{" "}
+                      You accessed this session via a valid invite link.
+                    </span>
+                  ) : (
+                    <span>
+                      <strong className="font-semibold">
+                        Invite Link Invalid:
+                      </strong>{" "}
+                      {inviteValidation.error}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="mt-8 flex flex-wrap gap-3">
               <button
                 onClick={() => respond("GOING")}
@@ -163,6 +248,21 @@ export default function SessionDetailClient({ session }: Props) {
               >
                 <Share2 className="h-4 w-4" /> Share
               </button>
+              <button
+                onClick={copyInviteLink}
+                className="inline-flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/15 px-5 py-3 font-medium text-violet-200 hover:bg-violet-500/25 transition-colors"
+                title="Generate and copy WebCrypto secure invite link"
+              >
+                {copiedInvite ? (
+                  <>
+                    <Check className="h-4 w-4 text-emerald-400" /> Copied!
+                  </>
+                ) : (
+                  <>
+                    <Link2 className="h-4 w-4" /> Copy Invite Link
+                  </>
+                )}
+              </button>
             </div>
 
             {message && (
@@ -174,6 +274,17 @@ export default function SessionDetailClient({ session }: Props) {
               hostId={session.host.id}
               currentUserId={user?.id}
             />
+
+            <div className="mt-8">
+              <MeshCallGrid
+                sessionSlug={session.slug}
+                hostId={session.host.id}
+              />
+            </div>
+
+            <div className="mt-8">
+              <Scratchpad sessionId={session.slug} />
+            </div>
           </section>
 
           <aside className="space-y-6">

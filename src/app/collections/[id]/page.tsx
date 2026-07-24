@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Users,
@@ -14,7 +15,7 @@ import {
   FileDown,
 } from "lucide-react";
 
-import usePartySocket from "partysocket/react";
+import usePartySocket from "@/hooks/usePartySocketReconnect";
 import Image from "next/image";
 import { ComparisonTool } from "@/components/collections/ComparisonTool";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -45,6 +46,10 @@ export default function FolderDetailsPage({
   });
 
   const [isMounted, setIsMounted] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const router = useRouter();
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -189,6 +194,26 @@ export default function FolderDetailsPage({
     }
   };
 
+  const handleDeleteFolder = async () => {
+    try {
+      setIsDeleting(true);
+      const res = await fetch(`/api/folders/${id}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        router.push("/collections");
+      } else {
+        console.error("Failed to delete folder");
+        setIsDeleting(false);
+        setShowDeleteConfirm(false);
+      }
+    } catch (e) {
+      console.error(e);
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   const removeVenue = async (venueId: string) => {
     try {
       const res = await fetch(`/api/folders/${id}/venues/${venueId}`, {
@@ -234,23 +259,34 @@ export default function FolderDetailsPage({
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8 pt-8">
       <div className="max-w-[1600px] mx-auto">
-        <div className="flex items-center gap-4 mb-8">
-          <Link
-            href="/collections"
-            className="p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-              {folder.name}
-            </h1>
-            {folder.description && (
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                {folder.description}
-              </p>
-            )}
+        <div className="flex items-start justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <Link
+              href="/collections"
+              className="p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 transition-colors"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Link>
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+                {folder.name}
+              </h1>
+              {folder.description && (
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  {folder.description}
+                </p>
+              )}
+            </div>
           </div>
+          {userRole === "OWNER" && (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-xl hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete Collection
+            </button>
+          )}
         </div>
 
         <ComparisonTool currentFolder={folder} />
@@ -565,6 +601,44 @@ export default function FolderDetailsPage({
           </div>
         </div>
       </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 max-w-md w-full shadow-xl">
+            <h2 className="text-xl font-bold text-zinc-900 dark:text-white mb-2">
+              Delete Collection
+            </h2>
+            <p className="text-zinc-500 dark:text-zinc-400 mb-6">
+              Are you sure you want to delete{" "}
+              <strong className="text-zinc-900 dark:text-white">
+                {folder.name}
+              </strong>
+              ? This action cannot be undone and will remove all saved places
+              for everyone.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="px-4 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteFolder}
+                disabled={isDeleting}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "Delete"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

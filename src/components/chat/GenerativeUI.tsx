@@ -186,20 +186,69 @@ export function DataTable({
 
 // --- Parser & Renderer ---
 
-export function MessageRenderer({ content }: { content: string }) {
+function renderTextWithHighlight(
+  text: string,
+  keyPrefix: string,
+  speakingSentenceIndex?: number | null,
+  globalSentenceIndexRef?: { current: number },
+) {
+  if (speakingSentenceIndex === undefined || speakingSentenceIndex === null) {
+    return (
+      <span key={keyPrefix} className="whitespace-pre-wrap">
+        {text}
+      </span>
+    );
+  }
+
+  const sentences = text.split(/(?<=[!?])\s+|(?<=(?<!\b\d+)\.)\s+/g);
+
+  return (
+    <span key={keyPrefix} className="whitespace-pre-wrap">
+      {sentences.map((sent, i) => {
+        const sentenceIdx = globalSentenceIndexRef
+          ? globalSentenceIndexRef.current++
+          : i;
+        const isHighlighted = sentenceIdx === speakingSentenceIndex;
+
+        return isHighlighted ? (
+          <mark
+            key={`${keyPrefix}-sent-${i}`}
+            className="bg-yellow-300 dark:bg-yellow-500/40 text-zinc-900 dark:text-zinc-50 font-semibold rounded px-1 py-0.5 shadow-sm border border-yellow-400/50 transition-all duration-200"
+          >
+            {sent}
+          </mark>
+        ) : (
+          <span key={`${keyPrefix}-sent-${i}`}>{sent}</span>
+        );
+      })}
+    </span>
+  );
+}
+
+export function MessageRenderer({
+  content,
+  speakingSentenceIndex,
+}: {
+  content: string;
+  speakingSentenceIndex?: number | null;
+}) {
   // We use a regex to find <ui-component name="..." props='{...}' />
   const regex = /<ui-component\s+name="([^"]+)"\s+props='([^']+)'\s*\/>/g;
 
   const parts: ReactNode[] = [];
   let lastIndex = 0;
   let match;
+  const sentenceCounter = { current: 0 };
 
   while ((match = regex.exec(content)) !== null) {
     if (match.index > lastIndex) {
       parts.push(
-        <span key={`text-${lastIndex}`} className="whitespace-pre-wrap">
-          {content.slice(lastIndex, match.index)}
-        </span>,
+        renderTextWithHighlight(
+          content.slice(lastIndex, match.index),
+          `text-${lastIndex}`,
+          speakingSentenceIndex,
+          sentenceCounter,
+        ),
       );
     }
 
@@ -243,9 +292,12 @@ export function MessageRenderer({ content }: { content: string }) {
 
   if (lastIndex < content.length) {
     parts.push(
-      <span key={`text-${lastIndex}`} className="whitespace-pre-wrap">
-        {content.slice(lastIndex)}
-      </span>,
+      renderTextWithHighlight(
+        content.slice(lastIndex),
+        `text-${lastIndex}`,
+        speakingSentenceIndex,
+        sentenceCounter,
+      ),
     );
   }
 

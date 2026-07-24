@@ -1,0 +1,159 @@
+
+> worksphere@0.1.0 build
+> prisma generate && next build
+
+◇ injected env (0) from .env.local // tip: ◈ encrypted .env [www.dotenvx.com]
+Loaded Prisma config from prisma.config.ts.
+
+Prisma schema loaded from prisma/schema.prisma.
+
+✔ Generated Prisma Client (v7.8.0) to ./node_modules/@prisma/client in 471ms
+
+Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+
+
+⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+▲ Next.js 16.2.10 (Turbopack)
+
+⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+  Creating an optimized production build ...
+Turbopack build encountered 1 warnings:
+./next.config.ts
+Encountered unexpected file in NFT list
+A file was traced that indicates that the whole project was traced unintentionally. Somewhere in the import trace below, there are:
+- filesystem operations (like path.join, path.resolve or fs.readFile), or
+- very dynamic requires (like require('./' + foo)).
+To resolve this, you can
+- remove them if possible, or
+- only use them in development, or
+- make sure they are statically scoped to some subfolder: path.join(process.cwd(), 'data', bar), or
+- add ignore comments: path.join(/*turbopackIgnore: true*/ process.cwd(), bar)
+
+Import trace:
+  App Route:
+    ./next.config.ts
+    ./src/lib/zkp/verify.ts
+    ./src/app/api/venues/[venueId]/zkp-access/route.ts
+
+
+✓ Compiled successfully in 19.2s
+  Running TypeScript ...
+  Finished TypeScript in 16.1s ...
+  Collecting page data using 3 workers ...
+  Generating static pages using 3 workers (0/62) ...
+  Generating static pages using 3 workers (15/62) 
+  Generating static pages using 3 workers (30/62) 
+  Generating static pages using 3 workers (46/62) 
+✓ Generating static pages using 3 workers (62/62) in 409ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /admin/analytics
+├ ƒ /admin/emails
+├ ƒ /admin/feedback
+├ ƒ /admin/system
+├ ƒ /ai
+├ ƒ /analytics
+├ ƒ /api/admin/analytics
+├ ƒ /api/admin/emails
+├ ƒ /api/admin/system
+├ ƒ /api/analytics
+├ ƒ /api/auth/csrf-token
+├ ƒ /api/auth/forgot-password
+├ ƒ /api/auth/resend-otp
+├ ƒ /api/auth/reset-password
+├ ƒ /api/auth/verify-otp
+├ ƒ /api/auth/webauthn/verify
+├ ƒ /api/bookings/[bookingId]/download
+├ ƒ /api/bookings/[bookingId]/guests
+├ ƒ /api/bookings/confirm
+├ ƒ /api/bookings/export
+├ ƒ /api/bookings/history
+├ ƒ /api/chat
+├ ƒ /api/collections/public
+├ ƒ /api/collections/public/upvote
+├ ƒ /api/conversations
+├ ƒ /api/conversations/[id]
+├ ƒ /api/cron/reminders
+├ ƒ /api/favorites
+├ ƒ /api/favorites/[favoriteId]/notes
+├ ƒ /api/favorites/[favoriteId]/tags
+├ ƒ /api/favorites/[favoriteId]/tags/[tagId]
+├ ƒ /api/folders
+├ ƒ /api/folders/[id]
+├ ƒ /api/folders/[id]/export-billing
+├ ƒ /api/folders/[id]/invites
+├ ƒ /api/folders/[id]/refresh
+├ ƒ /api/folders/[id]/venues
+├ ƒ /api/folders/[id]/venues/[venueId]
+├ ƒ /api/folders/join
+├ ƒ /api/jobs/[jobId]
+├ ƒ /api/location
+├ ƒ /api/map/heatmap
+├ ƒ /api/map/heatmap/seed
+├ ƒ /api/map/noise-heatmap
+├ ƒ /api/memory
+├ ƒ /api/memory/extract
+├ ƒ /api/menu-translate
+├ ƒ /api/newsletter
+├ ƒ /api/partykit/auth
+├ ƒ /api/receipts/[bookingId]
+├ ƒ /api/reservations/availability
+├ ƒ /api/reservations/book
+├ ƒ /api/reservations/events
+├ ƒ /api/social/sessions
+├ ƒ /api/social/sessions/[slug]
+├ ƒ /api/social/sessions/[slug]/rsvp
+├ ƒ /api/social/status
+├ ƒ /api/sync
+├ ƒ /api/translate
+├ ƒ /api/upload
+├ ƒ /api/user/settings
+├ ƒ /api/user/streak
+├ ƒ /api/venues
+├ ƒ /api/venues/[venueId]/amenity-votes
+├ ƒ /api/venues/[venueId]/live-stream
+├ ƒ /api/venues/[venueId]/menu
+├ ƒ /api/venues/[venueId]/noise-metrics
+├ ƒ /api/venues/[venueId]/photo
+├ ƒ /api/venues/[venueId]/rate
+├ ƒ /api/venues/[venueId]/reviews
+├ ƒ /api/venues/[venueId]/telemetry
+├ ƒ /api/venues/[venueId]/wifi-prediction
+├ ƒ /api/venues/[venueId]/zkp-access
+├ ƒ /api/venues/amenity-vote
+├ ƒ /api/venues/enrich
+├ ƒ /api/venues/share
+├ ƒ /api/venues/updates
+├ ƒ /api/webhook
+├ ƒ /api/webhooks/test
+├ ƒ /api/webhooks/worker
+├ ƒ /collections
+├ ƒ /collections/[id]
+├ ƒ /collections/join
+├ ƒ /dashboard
+├ ƒ /dashboard/webhooks
+├ ƒ /offline
+├ ƒ /privacy
+├ ƒ /reserve/[venueId]
+├ ƒ /saved
+├ ƒ /sessions/[slug]
+├ ƒ /sign-in/[[...sign-in]]
+├ ƒ /sign-up/[[...sign-up]]
+├ ƒ /social
+├ ƒ /terms
+├ ƒ /user-profile/[[...user-profile]]
+└ ƒ /venues/[id]
+
+
+ƒ Proxy (Middleware)
+
+ƒ  (Dynamic)  server-rendered on demand
+

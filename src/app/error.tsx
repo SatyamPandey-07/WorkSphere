@@ -62,11 +62,11 @@ export default function Error({
           </button>
 
           <Link
-            href="/"
+            href="/user-profile"
             className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 text-white/90 hover:text-white font-semibold active:scale-[0.98] transition-all"
           >
             <Home className="w-4 h-4" />
-            Go Home
+            Back to Security Settings
           </Link>
         </div>
       </div>

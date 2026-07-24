@@ -38,7 +38,9 @@ jest.mock("@/lib/prisma", () => ({
 describe("POST /api/venues/[venueId]/rate — Concurrent Updates & Key Collision Resilience (#280)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (auth as unknown as jest.Mock).mockResolvedValue({ userId: "user_test_123" });
+    (auth as unknown as jest.Mock).mockResolvedValue({
+      userId: "user_test_123",
+    });
 
     (prisma.venue.upsert as jest.Mock).mockResolvedValue({
       id: "venue_123",

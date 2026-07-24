@@ -14,7 +14,12 @@ import {
 type SoundPreset = "jazz" | "cafe" | "library";
 
 export type EqPresetName =
-  "flat" | "bass-boost" | "vocal-enhancer" | "treble-boost" | "warm" | "custom";
+  | "flat"
+  | "bass-boost"
+  | "vocal-enhancer"
+  | "treble-boost"
+  | "warm"
+  | "custom";
 
 export interface EqPreset {
   label: string;
@@ -424,7 +429,7 @@ export function AudioEqualizer({
       const interval = setInterval(playChord, 5000);
       jazzCleanupRef.current = () => clearInterval(interval);
     }
-  }, [preset, stopPlayingNodes, initAudio]);
+  }, [preset, initAudio, stopPlayingNodes]);
 
   const togglePlay = () => {
     if (isPlaying) {

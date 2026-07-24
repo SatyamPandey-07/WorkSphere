@@ -85,4 +85,26 @@ describe("MultiCityComparison Component (#860)", () => {
       expect(screen.getByText("Shibuya Desk")).toBeInTheDocument();
     });
   });
+
+  it("renders Export PDF Report button and triggers PDF download on click", async () => {
+    const createObjectURLMock = jest
+      .fn()
+      .mockReturnValue("blob:http://localhost/pdf-blob");
+    const revokeObjectURLMock = jest.fn();
+    global.URL.createObjectURL = createObjectURLMock;
+    global.URL.revokeObjectURL = revokeObjectURLMock;
+
+    render(<MultiCityComparison initialVenues={mockVenues} />);
+
+    const exportBtn = screen.getByRole("button", {
+      name: /Export PDF Report/i,
+    });
+    expect(exportBtn).toBeInTheDocument();
+
+    fireEvent.click(exportBtn);
+
+    await waitFor(() => {
+      expect(createObjectURLMock).toHaveBeenCalled();
+    });
+  });
 });

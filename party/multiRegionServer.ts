@@ -106,6 +106,7 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
     this.stateSync.setBroadcastFn((message) => {
       this.room.broadcast(message);
     });
+    this.stateSync.startSync();
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {

@@ -1,8 +1,18 @@
-import React from "react";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { KMEANS_DIMENSIONS, NUM_CLUSTERS } from "@/lib/kmeans/types";
 import type { AmenityVector } from "@/lib/kmeans/types";
 import type { PreferenceVector } from "@/hooks/usePreferenceReranking";
+import {
+  savePreferenceRanking,
+  getPreferenceRanking,
+  clearPreferenceRanking,
+} from "@/lib/offlineStorage";
+
+jest.mock("@/lib/offlineStorage", () => ({
+  savePreferenceRanking: jest.fn(),
+  getPreferenceRanking: jest.fn(),
+  clearPreferenceRanking: jest.fn(),
+}));
 
 // ── Mock Worker ──
 const mockPostMessage = jest.fn();
@@ -49,7 +59,8 @@ class MockWorker {
       }, 0);
     }
     if (m.type === "RANK_VENUES") {
-      const venueVecs = (m as { venueVectors?: Array<{ id: string }> }).venueVectors ?? [];
+      const venueVecs =
+        (m as { venueVectors?: Array<{ id: string }> }).venueVectors ?? [];
       setTimeout(() => {
         this.onmessage?.({
           data: {
@@ -116,9 +127,7 @@ describe("usePreferenceReranking (#1270)", () => {
 
   describe("initialization", () => {
     it("starts with isReady=false and no centroids", () => {
-      const { result } = renderHook(() =>
-        usePreferenceReranking([]),
-      );
+      const { result } = renderHook(() => usePreferenceReranking([]));
       expect(result.current.isReady).toBe(false);
       expect(result.current.centroids).toBeNull();
       expect(result.current.rankedResults).toEqual([]);
@@ -128,12 +137,13 @@ describe("usePreferenceReranking (#1270)", () => {
   describe("5-cluster centroid computation", () => {
     it("computes exactly 5 centroids from preference vectors", async () => {
       const prefs = Array.from({ length: 10 }, (_, i) =>
-        makePreference(`p${i}`, KMEANS_DIMENSIONS.map(() => (i % 10) / 10)),
+        makePreference(
+          `p${i}`,
+          KMEANS_DIMENSIONS.map(() => (i % 10) / 10),
+        ),
       );
 
-      const { result } = renderHook(() =>
-        usePreferenceReranking(prefs),
-      );
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -145,9 +155,7 @@ describe("usePreferenceReranking (#1270)", () => {
     });
 
     it("handles empty preferences gracefully", async () => {
-      const { result } = renderHook(() =>
-        usePreferenceReranking([]),
-      );
+      const { result } = renderHook(() => usePreferenceReranking([]));
 
       // Trigger compute manually
       await act(async () => {
@@ -162,12 +170,13 @@ describe("usePreferenceReranking (#1270)", () => {
   describe("Euclidean distance ranking", () => {
     it("returns ranked venues with distance and cluster info", async () => {
       const prefs = Array.from({ length: 10 }, (_, i) =>
-        makePreference(`p${i}`, KMEANS_DIMENSIONS.map(() => (i % 10) / 10)),
+        makePreference(
+          `p${i}`,
+          KMEANS_DIMENSIONS.map(() => (i % 10) / 10),
+        ),
       );
 
-      const { result } = renderHook(() =>
-        usePreferenceReranking(prefs),
-      );
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -179,7 +188,11 @@ describe("usePreferenceReranking (#1270)", () => {
         makeVenue("v3", 3),
       ];
 
-      let ranked: ReturnType<typeof result.current.rankVenues> extends Promise<infer R> ? R : never;
+      let ranked: ReturnType<typeof result.current.rankVenues> extends Promise<
+        infer R
+      >
+        ? R
+        : never;
       await act(async () => {
         ranked = await result.current.rankVenues(venues);
       });
@@ -198,12 +211,13 @@ describe("usePreferenceReranking (#1270)", () => {
 
     it("results are sorted by blended score descending", async () => {
       const prefs = Array.from({ length: 10 }, (_, i) =>
-        makePreference(`p${i}`, KMEANS_DIMENSIONS.map(() => (i % 10) / 10)),
+        makePreference(
+          `p${i}`,
+          KMEANS_DIMENSIONS.map(() => (i % 10) / 10),
+        ),
       );
 
-      const { result } = renderHook(() =>
-        usePreferenceReranking(prefs),
-      );
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -229,12 +243,13 @@ describe("usePreferenceReranking (#1270)", () => {
   describe("client-side only re-ranking", () => {
     it("re-ranks entirely client-side without server round-trips", async () => {
       const prefs = Array.from({ length: 10 }, (_, i) =>
-        makePreference(`p${i}`, KMEANS_DIMENSIONS.map(() => (i % 10) / 10)),
+        makePreference(
+          `p${i}`,
+          KMEANS_DIMENSIONS.map(() => (i % 10) / 10),
+        ),
       );
 
-      const { result } = renderHook(() =>
-        usePreferenceReranking(prefs),
-      );
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -247,7 +262,11 @@ describe("usePreferenceReranking (#1270)", () => {
         makeVenue("v3", 3),
       ];
 
-      let ranked: Array<{ id: string; blendedScore: number; nearestCluster: number }> = [];
+      let ranked: Array<{
+        id: string;
+        blendedScore: number;
+        nearestCluster: number;
+      }> = [];
       await act(async () => {
         ranked = await result.current.rankVenues(venues);
       });
@@ -267,9 +286,7 @@ describe("usePreferenceReranking (#1270)", () => {
     });
 
     it("re-ranks without centroids by falling back to server score", async () => {
-      const { result } = renderHook(() =>
-        usePreferenceReranking([]),
-      );
+      const { result } = renderHook(() => usePreferenceReranking([]));
 
       const venues = [makeVenue("v1", 3), makeVenue("v2", 9)];
 
@@ -287,7 +304,10 @@ describe("usePreferenceReranking (#1270)", () => {
   describe("custom blend weights", () => {
     it("respects custom server and client weights", async () => {
       const prefs = Array.from({ length: 10 }, (_, i) =>
-        makePreference(`p${i}`, KMEANS_DIMENSIONS.map(() => (i % 10) / 10)),
+        makePreference(
+          `p${i}`,
+          KMEANS_DIMENSIONS.map(() => (i % 10) / 10),
+        ),
       );
 
       const { result } = renderHook(() =>
@@ -316,12 +336,13 @@ describe("usePreferenceReranking (#1270)", () => {
   describe("localStorage persistence", () => {
     it("saves centroids to localStorage after computation", async () => {
       const prefs = Array.from({ length: 10 }, (_, i) =>
-        makePreference(`p${i}`, KMEANS_DIMENSIONS.map(() => (i % 10) / 10)),
+        makePreference(
+          `p${i}`,
+          KMEANS_DIMENSIONS.map(() => (i % 10) / 10),
+        ),
       );
 
-      const { result } = renderHook(() =>
-        usePreferenceReranking(prefs),
-      );
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
@@ -337,19 +358,23 @@ describe("usePreferenceReranking (#1270)", () => {
   describe("setPreferences", () => {
     it("allows updating preferences externally", async () => {
       const initialPrefs = Array.from({ length: 5 }, (_, i) =>
-        makePreference(`p${i}`, KMEANS_DIMENSIONS.map(() => 0.1)),
+        makePreference(
+          `p${i}`,
+          KMEANS_DIMENSIONS.map(() => 0.1),
+        ),
       );
 
-      const { result } = renderHook(() =>
-        usePreferenceReranking(initialPrefs),
-      );
+      const { result } = renderHook(() => usePreferenceReranking(initialPrefs));
 
       await waitFor(() => {
         expect(result.current.isReady).toBe(true);
       });
 
       const newPrefs = Array.from({ length: 5 }, (_, i) =>
-        makePreference(`p${i}`, KMEANS_DIMENSIONS.map(() => 0.9)),
+        makePreference(
+          `p${i}`,
+          KMEANS_DIMENSIONS.map(() => 0.9),
+        ),
       );
 
       await act(async () => {
@@ -367,11 +392,219 @@ describe("usePreferenceReranking (#1270)", () => {
 
   describe("terminate", () => {
     it("can be called safely", async () => {
-      const { result } = renderHook(() =>
-        usePreferenceReranking([]),
-      );
+      const { result } = renderHook(() => usePreferenceReranking([]));
 
       expect(() => result.current.terminate()).not.toThrow();
+    });
+  });
+
+  describe("Offline Reranking Caching", () => {
+    let originalOnLine: boolean;
+
+    beforeEach(() => {
+      originalOnLine = navigator.onLine;
+      jest.clearAllMocks();
+    });
+
+    afterEach(() => {
+      Object.defineProperty(navigator, "onLine", {
+        configurable: true,
+        value: originalOnLine,
+      });
+    });
+
+    const setOnline = (isOnline: boolean) => {
+      Object.defineProperty(navigator, "onLine", {
+        configurable: true,
+        value: isOnline,
+      });
+    };
+
+    it("✅ Stores reranked scores in IndexedDB", async () => {
+      setOnline(true);
+      const prefs = [
+        makePreference(
+          "p1",
+          KMEANS_DIMENSIONS.map(() => 0.5),
+        ),
+      ];
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
+
+      await waitFor(() => expect(result.current.isReady).toBe(true));
+
+      const venues = [makeVenue("v1", 8)];
+      await act(async () => {
+        await result.current.rankVenues(venues);
+      });
+
+      expect(savePreferenceRanking).toHaveBeenCalledWith(
+        expect.objectContaining({
+          venueIds: ["v1"],
+          scores: expect.any(Array),
+          weights: expect.any(Object),
+        }),
+      );
+    });
+
+    it("✅ Loads cached rankings when offline", async () => {
+      setOnline(false);
+      (getPreferenceRanking as jest.Mock).mockResolvedValueOnce({
+        venueIds: ["v1", "v2"],
+        scores: [0.9, 0.2],
+        weights: { serverWeight: 0.6, clientWeight: 0.4 },
+        updatedAt: Date.now(),
+      });
+
+      const prefs = [
+        makePreference(
+          "p1",
+          KMEANS_DIMENSIONS.map(() => 0.5),
+        ),
+      ];
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
+
+      await waitFor(() => expect(result.current.isReady).toBe(true));
+
+      const venues = [makeVenue("v2", 5), makeVenue("v1", 5)];
+      let ranked: any[] = [];
+      await act(async () => {
+        ranked = await result.current.rankVenues(venues);
+      });
+
+      expect(getPreferenceRanking).toHaveBeenCalled();
+      // v1 score: 0.9 * 0.4 + 0.5 * 0.6 = 0.36 + 0.3 = 0.66
+      // v2 score: 0.2 * 0.4 + 0.5 * 0.6 = 0.08 + 0.3 = 0.38
+      // so v1 should rank higher
+      expect(ranked[0].id).toBe("v1");
+      expect(ranked[1].id).toBe("v2");
+    });
+
+    it("✅ Handles empty cache gracefully", async () => {
+      setOnline(false);
+      (getPreferenceRanking as jest.Mock).mockResolvedValueOnce(null);
+
+      const prefs = [
+        makePreference(
+          "p1",
+          KMEANS_DIMENSIONS.map(() => 0.5),
+        ),
+      ];
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
+      await waitFor(() => expect(result.current.isReady).toBe(true));
+
+      const venues = [makeVenue("v1", 5)];
+      await act(async () => {
+        await result.current.rankVenues(venues);
+      });
+
+      expect(getPreferenceRanking).toHaveBeenCalled();
+    });
+
+    it("✅ Ignores corrupted cache", async () => {
+      setOnline(false);
+      (getPreferenceRanking as jest.Mock).mockRejectedValueOnce(
+        new Error("Corrupt DB"),
+      );
+
+      const prefs = [
+        makePreference(
+          "p1",
+          KMEANS_DIMENSIONS.map(() => 0.5),
+        ),
+      ];
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
+      await waitFor(() => expect(result.current.isReady).toBe(true));
+
+      const venues = [makeVenue("v1", 5)];
+      await act(async () => {
+        await result.current.rankVenues(venues);
+      });
+
+      expect(clearPreferenceRanking).toHaveBeenCalled();
+    });
+
+    it("✅ Updates cache after preference changes", async () => {
+      setOnline(true);
+      const prefs = [
+        makePreference(
+          "p1",
+          KMEANS_DIMENSIONS.map(() => 0.5),
+        ),
+      ];
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
+      await waitFor(() => expect(result.current.isReady).toBe(true));
+
+      const venues = [makeVenue("v1", 5)];
+      await act(async () => {
+        await result.current.rankVenues(venues);
+      });
+
+      expect(savePreferenceRanking).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        result.current.setPreferences([]);
+      });
+
+      await act(async () => {
+        await result.current.rankVenues(venues);
+      });
+
+      expect(savePreferenceRanking).toHaveBeenCalledTimes(2);
+    });
+
+    it("✅ Recomputes rankings when online", async () => {
+      setOnline(true);
+      const prefs = [
+        makePreference(
+          "p1",
+          KMEANS_DIMENSIONS.map(() => 0.5),
+        ),
+      ];
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
+      await waitFor(() => expect(result.current.isReady).toBe(true));
+
+      const venues = [makeVenue("v1", 5)];
+      await act(async () => {
+        await result.current.rankVenues(venues);
+      });
+
+      expect(savePreferenceRanking).toHaveBeenCalled();
+    });
+
+    it("✅ Falls back correctly after reconnect", async () => {
+      setOnline(false);
+      (getPreferenceRanking as jest.Mock).mockResolvedValueOnce({
+        venueIds: ["v1"],
+        scores: [0.9],
+        weights: { serverWeight: 0.6, clientWeight: 0.4 },
+        updatedAt: Date.now(),
+      });
+
+      const prefs = [
+        makePreference(
+          "p1",
+          KMEANS_DIMENSIONS.map(() => 0.5),
+        ),
+      ];
+      const { result } = renderHook(() => usePreferenceReranking(prefs));
+      await waitFor(() => expect(result.current.isReady).toBe(true));
+
+      const venues = [makeVenue("v1", 5)];
+      await act(async () => {
+        await result.current.rankVenues(venues);
+      });
+
+      expect(getPreferenceRanking).toHaveBeenCalled();
+
+      jest.clearAllMocks();
+      setOnline(true);
+
+      await act(async () => {
+        await result.current.rankVenues(venues);
+      });
+
+      expect(getPreferenceRanking).not.toHaveBeenCalled();
+      expect(savePreferenceRanking).toHaveBeenCalled();
     });
   });
 });

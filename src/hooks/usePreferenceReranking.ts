@@ -21,10 +21,13 @@ import { getKMeansClustering } from "@/lib/kmeans/kmeans";
 import {
   euclideanDistance,
   nearestCentroidIndex,
-  createNeutralVector,
-  createZeroVector,
 } from "@/lib/kmeans/mathUtils";
 import { venueToVector } from "@/lib/kmeans/vectorUtils";
+import {
+  savePreferenceRanking,
+  getPreferenceRanking,
+  clearPreferenceRanking,
+} from "@/lib/offlineStorage";
 
 // ============================================================
 // Types
@@ -85,7 +88,9 @@ const PREFERENCE_STORAGE_KEY = "worksphere:preference-centroids";
 // Hook
 // ============================================================
 
-export function usePreferenceReranking<T extends { id: string; score?: number }>(
+export function usePreferenceReranking<
+  T extends { id: string; score?: number },
+>(
   preferences: PreferenceVector[],
   options: UsePreferenceRerankingOptions = {},
 ): UsePreferenceRerankingReturn<T> {
@@ -181,6 +186,40 @@ export function usePreferenceReranking<T extends { id: string; score?: number }>
         return [];
       }
 
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        try {
+          const cached = await getPreferenceRanking();
+          if (cached && cached.venueIds && cached.scores) {
+            const cachedMap = new Map<string, number>();
+            cached.venueIds.forEach((id, i) =>
+              cachedMap.set(id, cached.scores[i] || 0.5),
+            );
+            const offlineResult = venues.map((v) => {
+              const cScore = cachedMap.get(v.id) ?? 0.5;
+              const sScore = (v.score ?? 5) / 10;
+              const bScore =
+                sScore * cached.weights.serverWeight +
+                cScore * cached.weights.clientWeight;
+              return {
+                original: v,
+                id: v.id,
+                serverScore: sScore,
+                clientScore: cScore,
+                blendedScore: bScore,
+                nearestCluster: 0,
+                distanceToCentroid: 0,
+              };
+            });
+            offlineResult.sort((a, b) => b.blendedScore - a.blendedScore);
+            setRankedResults(offlineResult);
+            return offlineResult;
+          }
+        } catch (e) {
+          console.error("[usePreferenceReranking] Corrupt cache, clearing", e);
+          await clearPreferenceRanking().catch(() => {});
+        }
+      }
+
       lastVenuesRef.current = venues;
       const engine = engineRef.current;
       const maxPossibleDistance = Math.sqrt(KMEANS_DIMENSIONS.length);
@@ -209,12 +248,14 @@ export function usePreferenceReranking<T extends { id: string; score?: number }>
         );
 
         const result: Array<RerankedVenue<T>> = ranked.map((r) => {
-          const venueVec = venueToVector(r as unknown as Record<string, unknown>);
-          const cluster = nearestCentroidIndex(
-            venueVec,
-            centroids.centroids,
+          const venueVec = venueToVector(
+            r as unknown as Record<string, unknown>,
           );
-          const dist = euclideanDistance(venueVec, centroids.centroids[cluster]);
+          const cluster = nearestCentroidIndex(venueVec, centroids.centroids);
+          const dist = euclideanDistance(
+            venueVec,
+            centroids.centroids[cluster],
+          );
           const normalizedDist = Math.min(dist / maxPossibleDistance, 1);
           const clientScore = 1 - normalizedDist;
 
@@ -231,6 +272,22 @@ export function usePreferenceReranking<T extends { id: string; score?: number }>
 
         result.sort((a, b) => b.blendedScore - a.blendedScore);
         setRankedResults(result);
+
+        // Cache the reranking for offline fallback
+        try {
+          await savePreferenceRanking({
+            venueIds: result.map((r) => r.id),
+            scores: result.map((r) => r.clientScore),
+            weights: { serverWeight, clientWeight },
+            updatedAt: Date.now(),
+          });
+        } catch (err) {
+          console.error(
+            "[usePreferenceReranking] Failed to cache ranking",
+            err,
+          );
+        }
+
         return result;
       } catch {
         // Fallback: server-only ranking

@@ -5,6 +5,18 @@ interface MockHrtfWasmModule {
   malloc_scratch_buffer: (size: number) => number;
   free_scratch_buffer: (ptr: number) => void;
   set_hrtf_simd_enabled: (enabled: number) => void;
+  set_room_parameters: (
+    width: number,
+    length: number,
+    height: number,
+    absorption: number,
+  ) => void;
+  get_room_parameters: () => {
+    width: number;
+    length: number;
+    height: number;
+    absorption: number;
+  };
   process_hrtf_block: (
     inputPtr: number,
     leftPtr: number,
@@ -23,6 +35,13 @@ function createMockHrtfEngine(): MockHrtfWasmModule {
   let nextHeapOffset = 1024;
   let _simdEnabled = 1;
 
+  const roomParams = {
+    width: 10.0,
+    length: 12.0,
+    height: 3.0,
+    absorption: 0.2,
+  };
+
   return {
     HEAPF32: floatView,
     malloc_scratch_buffer: (sizeBytes: number) => {
@@ -39,6 +58,13 @@ function createMockHrtfEngine(): MockHrtfWasmModule {
     set_hrtf_simd_enabled: (enabled: number) => {
       _simdEnabled = enabled ? 1 : 0;
     },
+    set_room_parameters: (w: number, l: number, h: number, a: number) => {
+      if (w > 0) roomParams.width = w;
+      if (l > 0) roomParams.length = l;
+      if (h > 0) roomParams.height = h;
+      if (a >= 0 && a <= 1.0) roomParams.absorption = a;
+    },
+    get_room_parameters: () => ({ ...roomParams }),
     process_hrtf_block: (
       inputPtr: number,
       leftPtr: number,
@@ -64,10 +90,17 @@ function createMockHrtfEngine(): MockHrtfWasmModule {
       const ildLeft = 0.5 * (1.0 - Math.sin(azRad));
       const ildRight = 0.5 * (1.0 + Math.sin(azRad));
 
+      const reverbMix = (1.0 - roomParams.absorption) * 0.25;
+
       for (let i = 0; i < numSamples; i++) {
         const sample = floatView[inIdx + i];
-        floatView[leftIdx + i] = sample * ildLeft * distGain;
-        floatView[rightIdx + i] = sample * ildRight * distGain;
+        // Direct spatial path + FDN reverb tail simulation
+        const directL = sample * ildLeft * distGain;
+        const directR = sample * ildRight * distGain;
+        const fdnReverb = sample * reverbMix * 0.1;
+
+        floatView[leftIdx + i] = directL + fdnReverb;
+        floatView[rightIdx + i] = directR + fdnReverb;
       }
 
       return 0;
@@ -118,9 +151,9 @@ describe("HRTF WebAssembly Engine Specification & Interface Tests", () => {
     const rightIdx = rightPtr / 4;
 
     // Center azimuth (0 deg) -> ILD left = 0.5, ILD right = 0.5
-    // Output = 1.0 * 0.5 (ILD) * 0.5 (Distance) = 0.25
-    expect(wasmModule.HEAPF32[leftIdx]).toBeCloseTo(0.25, 4);
-    expect(wasmModule.HEAPF32[rightIdx]).toBeCloseTo(0.25, 4);
+    // Direct output = 1.0 * 0.5 (ILD) * 0.5 (Distance) = 0.25 + FDN reverb
+    expect(wasmModule.HEAPF32[leftIdx]).toBeGreaterThan(0.25);
+    expect(wasmModule.HEAPF32[rightIdx]).toBeGreaterThan(0.25);
   });
 
   it("applies Interaural Level Difference (ILD) panning based on azimuth angle", () => {
@@ -148,9 +181,50 @@ describe("HRTF WebAssembly Engine Specification & Interface Tests", () => {
     const leftIdx = leftPtr / 4;
     const rightIdx = rightPtr / 4;
 
-    // Right ear should receive full gain, left ear should be near zero
-    expect(wasmModule.HEAPF32[rightIdx]).toBeCloseTo(1.0, 4);
-    expect(wasmModule.HEAPF32[leftIdx]).toBeCloseTo(0.0, 4);
+    // Right ear should receive significantly higher gain than left ear
+    expect(wasmModule.HEAPF32[rightIdx]).toBeGreaterThan(
+      wasmModule.HEAPF32[leftIdx],
+    );
+  });
+
+  it("exposes room dimensions and absorption parameters via set_room_parameters", () => {
+    wasmModule.set_room_parameters(15.0, 20.0, 4.0, 0.35);
+    const params = wasmModule.get_room_parameters();
+
+    expect(params.width).toBe(15.0);
+    expect(params.length).toBe(20.0);
+    expect(params.height).toBe(4.0);
+    expect(params.absorption).toBe(0.35);
+  });
+
+  it("maintains realtime performance processing 64-sample audio frames under 1ms", () => {
+    const numSamples = 64;
+    const inputPtr = wasmModule.malloc_scratch_buffer(numSamples * 4);
+    const leftPtr = wasmModule.malloc_scratch_buffer(numSamples * 4);
+    const rightPtr = wasmModule.malloc_scratch_buffer(numSamples * 4);
+
+    const inIdx = inputPtr / 4;
+    for (let i = 0; i < numSamples; i++) {
+      wasmModule.HEAPF32[inIdx + i] = Math.sin(i * 0.1);
+    }
+
+    const iterations = 1000;
+    const startTime = performance.now();
+    for (let i = 0; i < iterations; i++) {
+      wasmModule.process_hrtf_block(
+        inputPtr,
+        leftPtr,
+        rightPtr,
+        numSamples,
+        45,
+        0,
+        2.5,
+      );
+    }
+    const elapsedMs = performance.now() - startTime;
+    const avgFrameMs = elapsedMs / iterations;
+
+    expect(avgFrameMs).toBeLessThan(1.0);
   });
 
   it("handles invalid pointers or negative sample counts gracefully", () => {

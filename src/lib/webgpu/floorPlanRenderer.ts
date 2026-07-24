@@ -562,12 +562,21 @@ export class WebGPUFloorPlanRenderer {
       this.device = await adapter.requestDevice();
       this.isDeviceLost = false;
 
-      this.device.lost.then((info: { reason: string; message: string }) => {
+      this.device.addEventListener("uncapturederror", (event: any) => {
+        console.error("[WebGPU] Uncaptured error detected:", event.error);
+      });
+
+      this.device.lost.then(async (info: { reason: string; message: string }) => {
         console.warn(
           `[WebGPU] GPUDevice lost (${info.reason}): ${info.message}`,
         );
         this.isDeviceLost = true;
         this.cleanupGPUResources();
+        
+        if (info.reason !== "destroyed") {
+          console.info("[WebGPU] Attempting automatic device recovery...");
+          await this.reinitialize();
+        }
       });
 
       this.context = this.canvas.getContext(

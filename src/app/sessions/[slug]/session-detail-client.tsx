@@ -275,6 +275,13 @@ export default function SessionDetailClient({ session }: Props) {
             />
 
             <div className="mt-8">
+              <MeshCallGrid
+                sessionSlug={session.slug}
+                hostId={session.host.id}
+              />
+            </div>
+
+            <div className="mt-8">
               <Scratchpad sessionId={session.slug} />
             </div>
           </section>

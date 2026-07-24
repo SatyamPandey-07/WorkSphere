@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { processUpcomingReservationAlerts } from "@/lib/reminderCron";
 import { prisma } from "@/lib/prisma";
+import { autoCreateUpcomingPartitions } from "../../../../lib/partitionMaintenance";
 import nodemailer from "nodemailer";
 import twilio from "twilio";
 import { Redis } from "@upstash/redis";
@@ -23,6 +24,7 @@ export async function GET(request: Request) {
     return new NextResponse("Unauthorized Endpoint Action", { status: 401 });
   }
 
+  await autoCreateUpcomingPartitions();
   await processUpcomingReservationAlerts();
   return NextResponse.json({
     success: true,
@@ -206,6 +208,8 @@ export async function POST(req: Request) {
         }
       }
     }
+
+    await autoCreateUpcomingPartitions();
 
     return NextResponse.json({
       success: true,

@@ -146,6 +146,14 @@ export function EnhancedChatbot({
   >({});
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
 
+  // Monotonic message ID counter — avoids React key collisions when
+  // multiple messages arrive within the same millisecond (Date.now() issue).
+  const msgIdCounter = useRef(0);
+  const nextMsgId = () => {
+    msgIdCounter.current += 1;
+    return `msg-${Date.now()}-${msgIdCounter.current}`;
+  };
+
   // Core state
   const [location, setLocation] = useState(userLocation);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -737,17 +745,13 @@ export function EnhancedChatbot({
     }
 
     const newUserMessage: Message = {
-      id: Date.now().toString(),
+      id: nextMsgId(),
       role: "user",
       content: userMessage,
       name: user?.firstName || "Anonymous",
     };
 
-    // Prevent user message duplication on hot reload
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === newUserMessage.id)) return prev;
-      return [...prev, newUserMessage];
-    });
+    setMessages((prev) => [...prev, newUserMessage]);
 
     if (socket && roomId) {
       sendSocketMessage(
@@ -793,20 +797,16 @@ export function EnhancedChatbot({
         throw new Error(errorMessage);
       }
 
-      const assistantMessageId = (Date.now() + 1).toString();
-      // Prevent assistant message duplication on hot reload
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === assistantMessageId)) return prev;
-        return [
-          ...prev,
-          {
-            id: assistantMessageId,
-            role: "assistant",
-            content: "",
-            isStreaming: true,
-          },
-        ];
-      });
+      const assistantMessageId = nextMsgId();
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: assistantMessageId,
+          role: "assistant",
+          content: "",
+          isStreaming: true,
+        },
+      ]);
 
       setIsLoading(false); // Stream starts, disable loading spinner
 
@@ -1065,7 +1065,7 @@ export function EnhancedChatbot({
 
   // Render
   return (
-    <div className="flex h-full flex-col min-h-0 bg-white dark:bg-zinc-950 relative overflow-visible">
+    <div className="flex h-full flex-col min-h-0 bg-white dark:bg-zinc-950 relative overflow-hidden">
       {/* Remote Cursors */}
       <AnimatePresence>
         {Object.values(cursors).map((cursor) => (

@@ -12,6 +12,7 @@ import { isSafeWebhookUrl } from "@/lib/ssrfValidation";
 export async function createWebhookEndpoint(data: {
   url: string;
   eventTypes: any[];
+  headers?: Record<string, string>;
 }) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");

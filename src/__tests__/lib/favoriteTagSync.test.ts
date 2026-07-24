@@ -5,6 +5,11 @@ import {
   queueFavoriteTagMutation,
   getQueuedTagMutations,
   processTagMutationsQueue,
+  withFavoriteTagWebLock,
+  broadcastTagSyncEvent,
+  subscribeTagSyncChannel,
+  TAG_SYNC_LOCK_NAME,
+  TAG_SYNC_CHANNEL_NAME,
 } from "@/lib/favoriteTagSync";
 import { prisma } from "@/lib/prisma";
 
@@ -181,6 +186,107 @@ describe("Client-side Offline Sync", () => {
     expect(retryCall[0]).toBe("/api/favorites/tags/sync");
     expect(JSON.parse(retryCall[1].body)).toEqual({
       updates: [{ id: "real-tag-id", name: "Existing Name" }],
+    });
+  });
+
+  describe("Web Locks API & BroadcastChannel Cross-Tab Synchronization (#1382)", () => {
+    it("acquires Exclusive Web Lock when navigator.locks is available", async () => {
+      const mockRequest = jest.fn((name, options, callback) => {
+        expect(name).toBe(TAG_SYNC_LOCK_NAME);
+        expect(options).toEqual({ mode: "exclusive" });
+        return callback({ name });
+      });
+
+      Object.defineProperty(navigator, "locks", {
+        value: { request: mockRequest },
+        writable: true,
+        configurable: true,
+      });
+
+      const result = await withFavoriteTagWebLock(async () => "locked-result");
+      expect(result).toBe("locked-result");
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it("falls back gracefully when navigator.locks is missing or unsupported", async () => {
+      Object.defineProperty(navigator, "locks", {
+        value: undefined,
+        writable: true,
+        configurable: true,
+      });
+
+      const result = await withFavoriteTagWebLock(
+        async () => "fallback-result",
+      );
+      expect(result).toBe("fallback-result");
+    });
+
+    it("broadcasts and receives cross-tab tag sync events via BroadcastChannel", (done) => {
+      const postMessageMock = jest.fn();
+      const closeMock = jest.fn();
+      const channelListeners = new Set<(ev: { data: any }) => void>();
+
+      class MockBroadcastChannel {
+        name: string;
+        private _onmessage: ((ev: { data: any }) => void) | null = null;
+
+        constructor(name: string) {
+          this.name = name;
+        }
+
+        postMessage(data: any) {
+          postMessageMock(data);
+          channelListeners.forEach((listener) => listener({ data }));
+        }
+
+        close() {
+          closeMock();
+          if (this._onmessage) {
+            channelListeners.delete(this._onmessage);
+          }
+        }
+
+        set onmessage(fn: ((ev: { data: any }) => void) | null) {
+          if (this._onmessage) {
+            channelListeners.delete(this._onmessage);
+          }
+          this._onmessage = fn;
+          if (fn) {
+            channelListeners.add(fn);
+          }
+        }
+
+        get onmessage() {
+          return this._onmessage;
+        }
+      }
+
+      (global as any).BroadcastChannel = MockBroadcastChannel;
+
+      expect(TAG_SYNC_CHANNEL_NAME).toBe(
+        "worksphere:favorite-tags-sync-channel",
+      );
+
+      const unsubscribe = subscribeTagSyncChannel((payload) => {
+        expect(payload.type).toBe("TAG_MUTATION");
+        expect(payload.tagId).toBe("tag-lock-1");
+        expect(postMessageMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "TAG_MUTATION",
+            tagId: "tag-lock-1",
+          }),
+        );
+        unsubscribe();
+        done();
+      });
+
+      broadcastTagSyncEvent({
+        type: "TAG_MUTATION",
+        tagId: "tag-lock-1",
+        operation: "CREATE",
+        data: { name: "Locked Tag" },
+        timestamp: Date.now(),
+      });
     });
   });
 });

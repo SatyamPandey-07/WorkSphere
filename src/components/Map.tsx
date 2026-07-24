@@ -19,6 +19,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
+import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import {
   useSeatAvailability,
@@ -470,29 +471,6 @@ const Map = ({
   const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay()); // 0=Sun
   const [selectedHour, setSelectedHour] = useState<number>(
     new Date().getHours(),
-  );
-
-  // Memoized event handlers for all interactive markers to prevent react-leaflet
-  // from removing and re-adding event listeners on every render.
-  const markerEventHandlers = useMemo(
-    () => ({
-      keydown: (e: any) => {
-        if (e.originalEvent.key === "Enter" || e.originalEvent.key === " ") {
-          e.originalEvent.preventDefault();
-          e.target.openPopup();
-        }
-      },
-      add: (e: any) => {
-        const el = e.target.getElement();
-        if (el) {
-          const name = e.target.options.title || "Map marker";
-          el.setAttribute("aria-label", name);
-          el.setAttribute("role", "button");
-          el.setAttribute("tabindex", "0");
-        }
-      },
-    }),
-    [],
   );
 
   // Real-time seat availability (#703) — PartyKit presence layer that
@@ -992,6 +970,15 @@ const Map = ({
           margin: 12px 16px;
         }
         
+        /* Focus-visible ring for keyboard-navigated markers */
+        .venue-marker:focus-visible,
+        .destination-marker:focus-visible,
+        .custom-user-marker:focus-visible {
+          outline: 2px solid #3b82f6;
+          outline-offset: 2px;
+          border-radius: 50%;
+        }
+
         /* Floating toggle position above canvas layers */
         .map-noise-toggle {
           position: absolute;
@@ -1029,6 +1016,11 @@ const Map = ({
         }}
       />
 
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {spiderfiedMarkers.length > 0
+          ? `${spiderfiedMarkers.length} venue${spiderfiedMarkers.length === 1 ? "" : "s"} on map. Use Tab to navigate markers, Enter to open details.`
+          : "No venues on map"}
+      </div>
       <MapContainer
         center={center}
         zoom={13}
@@ -1137,21 +1129,13 @@ const Map = ({
         <WebGLContextWatcher />
 
         {customIcon && (
-          <Marker
+          <AccessibleMarker
             position={center}
             icon={customIcon}
-            title="Your location"
-            alt="Your location"
-            keyboard={true}
-            eventHandlers={markerEventHandlers}
+            name="Your location"
           >
-            <Popup
-              autoPanPaddingTopLeft={[20, 90]}
-              autoPanPaddingBottomRight={[20, 20]}
-            >
-              You are here!
-            </Popup>
-          </Marker>
+            <div className="text-sm text-white">You are here!</div>
+          </AccessibleMarker>
         )}
         <MapEvents onMouseMove={throttledBroadcast} />
         {Object.entries(mapCursors).map(([userId, cursor]) => {
@@ -1167,87 +1151,81 @@ const Map = ({
           );
         })}
         {spiderfiedMarkers.map((marker) => (
-          <Marker
+          <AccessibleMarker
             key={marker.id}
             position={[marker.renderedLat, marker.renderedLng]}
             icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
-            title={marker.name}
-            alt={marker.name}
-            keyboard={true}
-            eventHandlers={markerEventHandlers}
+            name={marker.name}
+            category={marker.category}
+            isDestination={marker.id.includes("dest")}
           >
-            <Popup
-              autoPanPaddingTopLeft={[20, 90]}
-              autoPanPaddingBottomRight={[20, 20]}
+            <div className="text-sm">
+              <div className="font-semibold text-white">{marker.name}</div>
+              {marker.category && (
+                <div className="text-zinc-400">{marker.category}</div>
+              )}
+              {marker.address && (
+                <div className="text-zinc-500 text-xs mt-1">
+                  {marker.address}
+                </div>
+              )}
+              {!marker.id.includes("dest") &&
+                (() => {
+                  const seat = getAvailability(marker.id);
+                  const isCheckedInHere = checkedInVenueId === marker.id;
+                  const seatTextColor =
+                    seat.status === "red"
+                      ? "text-red-400"
+                      : seat.status === "yellow"
+                        ? "text-yellow-400"
+                        : "text-green-400";
+                  return (
+                    <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
+                      <span
+                        className={`text-[10px] font-medium ${seatTextColor}`}
+                      >
+                        {isSeatSocketConnected
+                          ? `${seat.count}/${seat.capacity} checked in`
+                          : "Connecting…"}
+                      </span>
+                      <button
+                        onClick={() =>
+                          isCheckedInHere ? checkOut() : checkIn(marker.id)
+                        }
+                        className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                          isCheckedInHere
+                            ? "accent-bg text-white hover:opacity-90"
+                            : "bg-zinc-800 text-zinc-200 hover:accent-bg hover:text-white"
+                        }`}
+                      >
+                        {isCheckedInHere ? "Check out" : "Check in here"}
+                      </button>
+                    </div>
+                  );
+                })()}
+            </div>
+            <button
+              onClick={() => {
+                // Prevent duplicates in queue chain matrix
+                if (!routingQueue.some((v) => v.id === marker.id)) {
+                  const updated = [
+                    ...routingQueue,
+                    {
+                      id: marker.id,
+                      name: marker.name,
+                      latitude: Number(marker.position.lat),
+                      longitude: Number(marker.position.lng),
+                    },
+                  ];
+                  setRoutingQueue(updated);
+                  calculateOptimizedRoute(updated);
+                }
+              }}
+              className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:accent-bg hover:text-white transition-colors"
             >
-              <div className="text-sm">
-                <div className="font-semibold text-white">{marker.name}</div>
-                {marker.category && (
-                  <div className="text-zinc-400">{marker.category}</div>
-                )}
-                {marker.address && (
-                  <div className="text-zinc-500 text-xs mt-1">
-                    {marker.address}
-                  </div>
-                )}
-                {!marker.id.includes("dest") &&
-                  (() => {
-                    const seat = getAvailability(marker.id);
-                    const isCheckedInHere = checkedInVenueId === marker.id;
-                    const seatTextColor =
-                      seat.status === "red"
-                        ? "text-red-400"
-                        : seat.status === "yellow"
-                          ? "text-yellow-400"
-                          : "text-green-400";
-                    return (
-                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
-                        <span
-                          className={`text-[10px] font-medium ${seatTextColor}`}
-                        >
-                          {isSeatSocketConnected
-                            ? `${seat.count}/${seat.capacity} checked in`
-                            : "Connecting…"}
-                        </span>
-                        <button
-                          onClick={() =>
-                            isCheckedInHere ? checkOut() : checkIn(marker.id)
-                          }
-                          className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
-                            isCheckedInHere
-                              ? "accent-bg text-white hover:opacity-90"
-                              : "bg-zinc-800 text-zinc-200 hover:accent-bg hover:text-white"
-                          }`}
-                        >
-                          {isCheckedInHere ? "Check out" : "Check in here"}
-                        </button>
-                      </div>
-                    );
-                  })()}
-              </div>
-              <button
-                onClick={() => {
-                  // Prevent duplicates in queue chain matrix
-                  if (!routingQueue.some((v) => v.id === marker.id)) {
-                    const updated = [
-                      ...routingQueue,
-                      {
-                        id: marker.id,
-                        name: marker.name,
-                        latitude: Number(marker.position.lat),
-                        longitude: Number(marker.position.lng),
-                      },
-                    ];
-                    setRoutingQueue(updated);
-                    calculateOptimizedRoute(updated);
-                  }
-                }}
-                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:accent-bg hover:text-white transition-colors"
-              >
-                ➕ Add to Workday Timeline
-              </button>
-            </Popup>
-          </Marker>
+              ➕ Add to Workday Timeline
+            </button>
+          </AccessibleMarker>
         ))}
 
         {/* Render OSRM Optimized Multi-Stop Routing Layer Geometry */}

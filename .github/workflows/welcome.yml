@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Welcome Issue Contributor
         if: github.event_name == 'issues'
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         with:
           script: |
             const association = context.payload.issue.author_association;
@@ -126,7 +126,7 @@ jobs:
 
       - name: Welcome PR Contributor & Triage PR
         if: github.event_name == 'pull_request_target'
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         with:
           script: |
             const prNumber = context.payload.pull_request.number;

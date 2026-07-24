@@ -605,6 +605,31 @@ export function EnhancedChatbot({
   }) => {
     if (!ratingVenue || !isSignedIn) return;
     try {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const previousMessages = [...messages];
+
+      // Optimistic UI update before server response finishes
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (!msg.venues) return msg;
+          return {
+            ...msg,
+            venues: msg.venues.map((v) =>
+              v.id === ratingVenue.id
+                ? {
+                    ...v,
+                    score: rating.wifiQuality,
+                    rating: rating.wifiQuality,
+                    wifiQuality: rating.wifiQuality,
+                    hasOutlets: rating.hasOutlets,
+                    noiseLevel: rating.noiseLevel,
+                  }
+                : v,
+            ),
+          };
+        }),
+      );
+
       const token = await getToken();
       await fetch(`/api/venues/${ratingVenue.id}/rate`, {
         method: "POST",
@@ -630,6 +655,7 @@ export function EnhancedChatbot({
       });
       setRatingVenue(null);
     } catch (e) {
+      setMessages(previousMessages); // rollback to previous messages in closure
       console.error("Failed to submit rating:", e);
       trackError(
         e instanceof Error ? e : new Error(String(e)),

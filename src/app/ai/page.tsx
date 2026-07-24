@@ -638,6 +638,24 @@ function AppPage() {
   }) => {
     if (!ratingDialog.venue) return;
 
+    const prevMarkers = [...markers];
+
+    // Optimistic UI update before server response finishes
+    setMarkers((prev) =>
+      prev.map((m) =>
+        m.id === ratingDialog.venue!.id
+          ? {
+              ...m,
+              score: rating.wifiQuality,
+              rating: rating.wifiQuality,
+              wifiQuality: rating.wifiQuality,
+              hasOutlets: rating.hasOutlets,
+              noiseLevel: rating.noiseLevel,
+            }
+          : m,
+      ),
+    );
+
     try {
       const response = await fetch(
         `/api/venues/${ratingDialog.venue.id}/rate`,
@@ -669,6 +687,7 @@ function AppPage() {
       console.log("Rating submitted successfully");
       alert("Rating submitted! Thank you for helping the community.");
     } catch (error) {
+      setMarkers(prevMarkers);
       console.error("Error submitting rating:", error);
       alert("Failed to submit rating. Please try again.");
     }

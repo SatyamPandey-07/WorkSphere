@@ -20,6 +20,7 @@ interface Toast {
     label: string;
     onClick: () => void;
   };
+  countdown?: number;
 }
 
 interface ToastContextValue {
@@ -27,6 +28,7 @@ interface ToastContextValue {
     message: string,
     type?: ToastType,
     action?: { label: string; onClick: () => void },
+    countdown?: number,
   ) => void;
 }
 
@@ -50,9 +52,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       message: string,
       type: ToastType = "success",
       action?: { label: string; onClick: () => void },
+      countdown?: number,
     ) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setToasts((prev) => [...prev, { id, message, type, action }]);
+      setToasts((prev) => [...prev, { id, message, type, action, countdown }]);
     },
     [],
   );
@@ -60,6 +63,31 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  useEffect(() => {
+    const handleRateLimit = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        retryAfter: number;
+        endpoint: string;
+      }>;
+      const retryAfter = customEvent.detail?.retryAfter || 60;
+      addToast(
+        "Rate limit reached. Try again in {countdown} seconds",
+        "error",
+        undefined,
+        retryAfter,
+      );
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("rate-limit-triggered", handleRateLimit);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("rate-limit-triggered", handleRateLimit);
+      }
+    };
+  }, [addToast]);
 
   return (
     <ToastContext.Provider value={{ toast: addToast }}>
@@ -96,23 +124,34 @@ function ToastItem({
   toast: Toast;
   onRemove: (id: string) => void;
 }) {
-  const [isHovered, setIsHovered] = useState(false);
-  const timerRef = useState(() => ({ current: null as ReturnType<typeof setTimeout> | null }))[0];
+  const [countdown, setCountdown] = useState<number | undefined>(
+    toast.countdown,
+  );
 
   useEffect(() => {
-    if (isHovered) {
-      if (timerRef.current) clearTimeout(timerRef.current);
+    if (toast.countdown === undefined) return;
+    setCountdown(toast.countdown);
+  }, [toast.countdown]);
+
+  useEffect(() => {
+    if (countdown === undefined) return;
+    if (countdown <= 0) {
+      onRemove(toast.id);
       return;
     }
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev !== undefined ? prev - 1 : undefined));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [countdown, toast.id, onRemove]);
 
-    timerRef.current = setTimeout(() => {
+  useEffect(() => {
+    if (toast.countdown !== undefined) return;
+    const timer = setTimeout(() => {
       onRemove(toast.id);
     }, 4000);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [toast.id, onRemove, isHovered]);
+    return () => clearTimeout(timer);
+  }, [toast.id, onRemove, toast.countdown]);
 
   const Icon =
     toast.type === "success"
@@ -127,6 +166,11 @@ function ToastItem({
         ? "text-red-500"
         : "text-amber-500";
 
+  const displayMessage =
+    countdown !== undefined
+      ? toast.message.replace("{countdown}", String(countdown))
+      : toast.message;
+
   return (
     <div
       role="status"
@@ -140,7 +184,7 @@ function ToastItem({
     >
       <Icon className={cn("w-4 h-4 shrink-0", iconColor)} aria-hidden="true" />
       <div className="flex-1 flex flex-col items-start text-sm text-zinc-700 dark:text-zinc-300">
-        <span className="font-medium">{toast.message}</span>
+        <span className="font-medium">{displayMessage}</span>
         {toast.action && (
           <button
             type="button"

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
+import { apiFetch } from "@/lib/apiClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayerSession } from "@/hooks/useRealTime";
 import { VenueRatingDialog } from "./VenueRatingDialog";
@@ -771,14 +772,12 @@ export function EnhancedChatbot({
       name: user?.firstName || "Anonymous",
     };
 
-
     setMessages((prev) => {
       if (prev.some((m) => m.id === newUserMessage.id)) return prev;
       return [...prev, newUserMessage];
     });
 
     setMessages((prev) => [...prev, newUserMessage]);
-
 
     if (socket && roomId) {
       sendSocketMessage(
@@ -792,7 +791,7 @@ export function EnhancedChatbot({
 
     try {
       const startTime = Date.now();
-      const response = await fetch("/api/chat", {
+      const response = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -845,7 +844,6 @@ export function EnhancedChatbot({
           isStreaming: true,
         },
       ]);
-
 
       setIsLoading(false);
 

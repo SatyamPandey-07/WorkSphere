@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
+import { apiFetch } from "@/lib/apiClient";
+import { useRateLimit } from "@/hooks/useRateLimit";
 
 type Seat = {
   id: string;
@@ -50,6 +52,7 @@ function todayString() {
 }
 
 export default function ReservationClient({ venue }: { venue: Venue }) {
+  const retryAfter = useRateLimit("book");
   const [date, setDate] = useState(todayString());
   const [time, setTime] = useState("09:00");
   const [duration, setDuration] = useState(60);
@@ -218,7 +221,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       body.occurrences = occurrences || null;
     }
 
-    const response = await fetch(endpoint, {
+    const response = await apiFetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -651,14 +654,16 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
             </div>
 
             <button
-              disabled={!selected || booking}
-              className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!selected || booking || retryAfter > 0}
+              className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
             >
               {booking
                 ? "Securing workspace..."
-                : recurringEnabled
-                  ? `Confirm ${previewDates.length} recurring bookings`
-                  : "Confirm reservation"}
+                : retryAfter > 0
+                  ? `Retry in ${retryAfter}s`
+                  : recurringEnabled
+                    ? `Confirm ${previewDates.length} recurring bookings`
+                    : "Confirm reservation"}
             </button>
           </form>
         </div>

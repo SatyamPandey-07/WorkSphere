@@ -35,6 +35,8 @@ import { ReceiptVerificationModal } from "@/components/receipt/ReceiptVerificati
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
 import { shouldCloseFromBackdrop } from "@/lib/modal-interactions";
+import { apiFetch } from "@/lib/apiClient";
+import { useRateLimit } from "@/hooks/useRateLimit";
 
 interface Booking {
   id: string;
@@ -64,6 +66,7 @@ export function BookingModal({
   mode = "booking",
 }: BookingModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const retryAfter = useRateLimit("book");
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
   >("details");
@@ -412,7 +415,7 @@ export function BookingModal({
         }
       }
 
-      const response = await fetch("/api/bookings/confirm", {
+      const response = await apiFetch("/api/bookings/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

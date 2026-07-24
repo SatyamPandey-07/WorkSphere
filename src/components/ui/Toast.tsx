@@ -96,12 +96,23 @@ function ToastItem({
   toast: Toast;
   onRemove: (id: string) => void;
 }) {
+  const [isHovered, setIsHovered] = useState(false);
+  const timerRef = useState(() => ({ current: null as ReturnType<typeof setTimeout> | null }))[0];
+
   useEffect(() => {
-    const timer = setTimeout(() => {
+    if (isHovered) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      return;
+    }
+
+    timerRef.current = setTimeout(() => {
       onRemove(toast.id);
     }, 4000);
-    return () => clearTimeout(timer);
-  }, [toast.id, onRemove]);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [toast.id, onRemove, isHovered]);
 
   const Icon =
     toast.type === "success"
@@ -119,6 +130,8 @@ function ToastItem({
   return (
     <div
       role="status"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       className={cn(
         "pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md min-w-[280px] max-w-[380px]",
         "bg-white/90 dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800",

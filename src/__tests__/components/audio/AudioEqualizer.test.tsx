@@ -51,6 +51,15 @@ const mockAudioContext = {
     frequency: {
       setValueAtTime: jest.fn(),
     },
+    gain: {
+      setValueAtTime: jest.fn(),
+      setTargetAtTime: jest.fn(),
+      linearRampToValueAtTime: jest.fn(),
+      value: 0,
+    },
+    Q: {
+      value: 1.0,
+    },
   })),
   destination: {},
   currentTime: 0,
@@ -61,7 +70,9 @@ const mockAudioContext = {
 };
 
 beforeAll(() => {
-  global.AudioContext = jest.fn().mockImplementation(() => mockAudioContext) as any;
+  global.AudioContext = jest
+    .fn()
+    .mockImplementation(() => mockAudioContext) as any;
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: jest.fn().mockImplementation((query) => ({
@@ -107,5 +118,28 @@ describe("AudioEqualizer Component (#859)", () => {
 
     // Cafe Chatter preset becomes active
     expect(cafeBtn).toHaveClass("bg-indigo-600");
+  });
+
+  it("updates BiquadFilterNode gain in real-time with smooth audio param ramping when dragging EQ sliders (#1392)", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    // Start playing audio so initAudio creates BiquadFilterNode cascade
+    const playButton = screen.getByTitle("Listen to Ambience");
+    fireEvent.click(playButton);
+
+    const slider60Hz = screen.getByRole("slider", { name: "60Hz Gain" });
+    expect(slider60Hz).toBeInTheDocument();
+
+    fireEvent.change(slider60Hz, { target: { value: "6" } });
+    expect(screen.getByText("+6 dB")).toBeInTheDocument();
+
+    const slider1kHz = screen.getByRole("slider", { name: "1kHz Gain" });
+    fireEvent.change(slider1kHz, { target: { value: "-4" } });
+    expect(screen.getByText("-4 dB")).toBeInTheDocument();
+
+    // Reset EQ
+    const resetBtn = screen.getByTitle("Reset all EQ gains to 0 dB");
+    fireEvent.click(resetBtn);
+    expect(screen.getAllByText("0 dB")).toHaveLength(5);
   });
 });

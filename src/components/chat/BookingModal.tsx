@@ -20,7 +20,13 @@ import {
   CalendarPlus,
   Mail,
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  type MouseEvent,
+  type PointerEvent,
+} from "react";
 import confetti from "canvas-confetti";
 import { Venue } from "./ChatMessages";
 import { trackEvent } from "@/lib/analytics";
@@ -28,6 +34,9 @@ import { ReceiptVerificationModal } from "@/components/receipt/ReceiptVerificati
 
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
+import { shouldCloseFromBackdrop } from "@/lib/modal-interactions";
+import { apiFetch } from "@/lib/apiClient";
+import { useRateLimit } from "@/hooks/useRateLimit";
 
 interface Booking {
   id: string;
@@ -56,6 +65,8 @@ export function BookingModal({
   onClose,
   mode = "booking",
 }: BookingModalProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const retryAfter = useRateLimit("book");
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
   >("details");
@@ -92,6 +103,26 @@ export function BookingModal({
   const [verifyModalOpen, setVerifyModalOpen] = useState(false);
 
   const modalRef = useRef<HTMLDivElement>(null);
+  const pointerDownStartedOnBackdrop = useRef(false);
+
+  const handleBackdropPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    pointerDownStartedOnBackdrop.current = event.target === event.currentTarget;
+  };
+
+  const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    const clickEndedOnBackdrop = event.target === event.currentTarget;
+
+    if (
+      shouldCloseFromBackdrop(
+        pointerDownStartedOnBackdrop.current,
+        clickEndedOnBackdrop,
+      )
+    ) {
+      onClose();
+    }
+
+    pointerDownStartedOnBackdrop.current = false;
+  };
 
   // =========================================================================
   // CELEBRATORY CONFETTI SUCCESS TRIGGER OVERLAY
@@ -340,8 +371,10 @@ export function BookingModal({
   if (!isOpen) return null;
 
   const handleBooking = async () => {
+    setIsSubmitting(true);
     const todayStr = getTodayString();
     if (bookingDate && bookingDate < todayStr) {
+      setIsSubmitting(false);
       alert("Cannot book a date in the past.");
       return;
     }
@@ -382,7 +415,7 @@ export function BookingModal({
         }
       }
 
-      const response = await fetch("/api/bookings/confirm", {
+      const response = await apiFetch("/api/bookings/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -434,19 +467,25 @@ export function BookingModal({
       }
     } catch (err: any) {
       console.error("Booking failure details:", err);
+      setIsSubmitting(false);
       setStep("details");
       alert(`NEURAL SIGNAL ERROR: ${err.message}`);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/90 animate-in fade-in duration-300 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/90 animate-in fade-in duration-300 backdrop-blur-sm"
+      onPointerDown={handleBackdropPointerDown}
+      onClick={handleBackdropClick}
+    >
       <div
         ref={modalRef}
         role="dialog"
         aria-modal="true"
         className="bg-white dark:bg-zinc-900 w-full max-w-2xl overflow-hidden rounded-[2.5rem] shadow-[0_20px_100px_rgba(0,0,0,0.9)] border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-300"
-        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       >
         {/* Header */}
         <div className="p-8 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-800/30">
@@ -736,6 +775,8 @@ export function BookingModal({
                       min={getTodayString()}
                       className="w-full pl-12 pr-6 py-4 bg-zinc-50 dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 rounded-[1.25rem] text-sm font-bold focus:ring-4 focus:ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)] focus:accent-border outline-none transition-all"
                       value={bookingDate}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
                       onChange={(e) => setBookingDate(e.target.value)}
                     />
                   </div>
@@ -925,10 +966,38 @@ export function BookingModal({
 
               <button
                 onClick={handleBooking}
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest py-6 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-2xl shadow-green-500/20 hover:scale-[1.02] transition-all active:scale-95"
+                disabled={isSubmitting}
+                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white font-black uppercase tracking-widest py-6 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-2xl shadow-green-500/20 hover:scale-[1.02] disabled:hover:scale-100 transition-all active:scale-95 disabled:cursor-not-allowed"
               >
-                <Lock className="w-5 h-5 shadow-inner" />
-                Finalize Secure Protocol
+                {isSubmitting ? (
+                  <>
+                    <svg
+                      className="animate-spin h-5 w-5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                      />
+                    </svg>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-5 h-5 shadow-inner" />
+                    Finalize Secure Protocol
+                  </>
+                )}
               </button>
             </div>
           )}

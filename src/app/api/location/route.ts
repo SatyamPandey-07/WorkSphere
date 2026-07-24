@@ -39,7 +39,10 @@ async function fetchIPLocation(rawIp: string | null) {
   try {
     const res = await fetch(`https://ipwho.is/${targetIp}`, {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(3000),
+      signal:
+        typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(3000)
+          : undefined,
     });
     if (res.ok) {
       const data = await res.json();
@@ -65,7 +68,10 @@ async function fetchIPLocation(rawIp: string | null) {
   try {
     const res = await fetch(`http://ip-api.com/json/${targetIp}`, {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(3000),
+      signal:
+        typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(3000)
+          : undefined,
     });
     if (res.ok) {
       const data = await res.json();
@@ -93,7 +99,10 @@ async function fetchIPLocation(rawIp: string | null) {
       `https://ipapi.co/${targetIp ? targetIp + "/" : ""}json/`,
       {
         headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(3000),
+        signal:
+          typeof AbortSignal.timeout === "function"
+            ? AbortSignal.timeout(3000)
+            : undefined,
       },
     );
     if (res.ok) {

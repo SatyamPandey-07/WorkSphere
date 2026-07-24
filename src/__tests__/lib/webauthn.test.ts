@@ -208,6 +208,45 @@ describe("getExpectedOrigin", () => {
       "apple-touch-icon://embed",
     ]);
   });
+
+  describe("ALLOWED_EMBED_ORIGINS support", () => {
+    const prev = process.env.ALLOWED_EMBED_ORIGINS;
+
+    afterEach(() => {
+      if (prev === undefined) delete process.env.ALLOWED_EMBED_ORIGINS;
+      else process.env.ALLOWED_EMBED_ORIGINS = prev;
+    });
+
+    it("returns array including clientDataOrigin when it is listed in ALLOWED_EMBED_ORIGINS", () => {
+      process.env.ALLOWED_EMBED_ORIGINS =
+        "https://partner.com, https://dashboard.partner.com";
+      const req = new Request(
+        "https://worksphere.app/api/auth/passkey/verify",
+        {
+          headers: { host: "worksphere.app" },
+        },
+      );
+
+      expect(getExpectedOrigin(req, "https://partner.com")).toEqual([
+        "https://worksphere.app",
+        "https://partner.com",
+      ]);
+    });
+
+    it("ignores clientDataOrigin when it is NOT listed in ALLOWED_EMBED_ORIGINS", () => {
+      process.env.ALLOWED_EMBED_ORIGINS = "https://partner.com";
+      const req = new Request(
+        "https://worksphere.app/api/auth/passkey/verify",
+        {
+          headers: { host: "worksphere.app" },
+        },
+      );
+
+      expect(getExpectedOrigin(req, "https://evil.com")).toBe(
+        "https://worksphere.app",
+      );
+    });
+  });
 });
 
 describe("parseClientDataJSON", () => {

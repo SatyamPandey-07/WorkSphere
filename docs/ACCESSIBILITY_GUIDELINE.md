@@ -1,6 +1,9 @@
 # Accessibility (a11y) Guidelines for Custom Modal Interfaces & Audio Controls
 
+
+This document outlines the accessibility standards and best practices required when building custom modal interfaces (dialog boxes), custom selectors, and interactive audio controls within the WorkSphere platform.
 This document outlines the accessibility standards and best practices required when building custom modal interfaces (dialog boxes), custom selectors, reservation clients, and interactive audio controls within the WorkSphere platform.
+
 
 Adhering to these guidelines ensures our application is fully usable for individuals relying on screen readers and keyboard navigation.
 
@@ -22,6 +25,7 @@ The elements that trigger interfaces or controls have specific accessibility req
 
 - **Dialog Triggers:** The button that opens a standard dialog should generally have `aria-haspopup="dialog"`.
 - **Custom Selectors (Comboboxes/Listboxes):** These require a defined widget pattern. The trigger must use `aria-expanded` (toggling between `true` and `false`), `aria-controls`, and the appropriate `combobox` or `listbox` roles. Do not apply `aria-expanded` to standard dialog buttons.
+
 - **Reservation Client Controls (Date Picker & Duration Selectors):**
   - Interactive trigger buttons (such as date pickers and duration selectors in `reservation-client.tsx`) must include explicit, descriptive `aria-label` attributes (e.g., `aria-label="Select reservation date"`, `aria-label="Select duration"`).
   - Triggers controlling dynamic popovers or dropdown menus must dynamically reflect their state using `aria-expanded="true"` when open and `aria-expanded="false"` when collapsed.

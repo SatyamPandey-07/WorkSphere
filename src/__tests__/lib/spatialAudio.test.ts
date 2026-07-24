@@ -223,4 +223,18 @@ describe("RemoteListenerInterpolator", () => {
     const mid = interpolator.interpolate("user-1", 1500);
     expect(mid?.position).toEqual({ x: 5, y: 0, z: 10 });
   });
+
+  it("registers window resize listener on setup and removes it on dispose", () => {
+    const addSpy = jest.spyOn(window, "addEventListener");
+    const removeSpy = jest.spyOn(window, "removeEventListener");
+
+    const interpolator = new RemoteListenerInterpolator();
+    expect(addSpy).toHaveBeenCalledWith("resize", expect.any(Function));
+
+    interpolator.dispose();
+    expect(removeSpy).toHaveBeenCalledWith("resize", expect.any(Function));
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
 });

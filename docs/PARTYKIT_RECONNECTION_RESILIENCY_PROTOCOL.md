@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the architectural specification, connection lifecycle, state machine, reconnection behavior, offline queueing mechanisms, and state re-synchronization protocols for the real-time multiplayer and presence infrastructure in WorkSphere. 
+This document defines the architectural specification, connection lifecycle, state machine, reconnection behavior, offline queueing mechanisms, and state re-synchronization protocols for the real-time multiplayer and presence infrastructure in WorkSphere.
 
 WorkSphere utilizes **PartyKit** (`partykit` / `partysocket` / `y-partykit`) alongside native Web APIs (WebSockets, IndexedDB, Web Locks API, Server-Sent Events) to deliver real-time collaboration across workspace folders, interactive map seat availability, collaborative whiteboards, WebRTC signaling, and multi-region edge node routing.
 
@@ -33,12 +33,12 @@ graph TD
     Client[Browser Client React App] -->|Next.js 16 SSR Isolation| Wrapper[PartyKitPresenceWrapper]
     Wrapper -->|usePartySocket / YProvider| PKSocket[PartySocket WebSocket]
     Wrapper -->|EventSource| SSEStream[SSE /api/venues/updates]
-    
+
     PKSocket -->|WSS Protocol| EdgeServer[PartyKit Edge Server]
     EdgeServer -->|verifyToken| ClerkAuth[Clerk Auth / @clerk/backend]
     EdgeServer -->|GET /api/partykit/auth| RoleAPI[Next.js Internal Auth API]
     EdgeServer -->|onConnectYjs| YjsCRDT[Yjs Shared Doc Engine]
-    
+
     Client -->|Offline Mutations| IDBOutbox[(IndexedDB Outbox)]
     IDBOutbox -->|Web Locks Serialization| WebLock[navigator.locks]
     IDBOutbox -->|Online Event / SW Sync| SyncEngine[Queue Flush Engine]
@@ -52,16 +52,16 @@ graph TD
 
 The WebSocket lifecycle in WorkSphere spans initialization, token verification, open handshake, message processing, close handling, and cleanup:
 
-| Stage | Responsible Component / Function | Location | Description |
-| :--- | :--- | :--- | :--- |
-| **Initialization** | `usePartySocket` / `YProvider` | `src/hooks/useSeatAvailability.ts`<br>`src/hooks/useCanvasWhiteboard.ts` | Configures host (`process.env.NEXT_PUBLIC_PARTYKIT_HOST`), room ID, and query parameters (`?token=...`). Uses `startClosed` flag during SSR. |
-| **SSR Isolation** | `PartyKitPresenceWrapper` | `src/components/chat/PartyKitPresenceWrapper.tsx` | Defers socket initialization until client-side hydration (`isMounted = true`) completes, isolating Next.js 16 SSR streaming. |
-| **Authentication** | `verifyToken` & `GET /api/partykit/auth` | `party/server.ts` (lines 33-85)<br>`src/app/api/partykit/auth/route.ts` | Server extracts Clerk JWT token from URL params, verifies signature, queries internal Next.js auth endpoint for role (`OWNER`, `MEMBER`, `VIEWER`), and sets connection state. |
-| **Connection Open** | `onConnect` / `onOpen` | `party/server.ts` (lines 33-113)<br>`src/hooks/useSeatAvailability.ts` (line 80) | Server broadcasts current seat snapshot (`seat_snapshot`) and presence state. Client updates `isConnected` state to `true`. |
-| **Message Exchange** | `onMessage` / `conn.addEventListener` | `party/server.ts` (lines 115-180)<br>`src/hooks/useCanvasWhiteboard.ts` | Exchanges JSON control frames (`seat_checkin`, `presence`, `cursor`, `webrtc-signal`, `request_room_snapshot`) and Yjs binary CRDT updates. |
-| **Connection Close** | `onClose` | `party/server.ts` (lines 184-186)<br>`src/hooks/useMultiRegion.ts` (line 48) | Server executes `handleSeatCheckout(conn)` to automatically release seat reservations for disconnected clients. |
-| **Reconnection** | `partysocket` / `FailoverSyncManager` | `src/lib/edge/failoverSync.ts`<br>`src/hooks/useCanvasWhiteboard.ts` | Client auto-reconnects via `partysocket`. `FailoverSyncManager` requests full room snapshot and buffers post-reconnect deltas. |
-| **Cleanup** | Unmount cleanup in `useEffect` | `src/hooks/useSeatAvailability.ts` (lines 207-217) | Disconnects provider/socket, closes peer connections, clears interval timers, and sends best-effort `seat_checkout` frame. |
+| Stage                | Responsible Component / Function         | Location                                                                         | Description                                                                                                                                                                    |
+| :------------------- | :--------------------------------------- | :------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Initialization**   | `usePartySocket` / `YProvider`           | `src/hooks/useSeatAvailability.ts`<br>`src/hooks/useCanvasWhiteboard.ts`         | Configures host (`process.env.NEXT_PUBLIC_PARTYKIT_HOST`), room ID, and query parameters (`?token=...`). Uses `startClosed` flag during SSR.                                   |
+| **SSR Isolation**    | `PartyKitPresenceWrapper`                | `src/components/chat/PartyKitPresenceWrapper.tsx`                                | Defers socket initialization until client-side hydration (`isMounted = true`) completes, isolating Next.js 16 SSR streaming.                                                   |
+| **Authentication**   | `verifyToken` & `GET /api/partykit/auth` | `party/server.ts` (lines 33-85)<br>`src/app/api/partykit/auth/route.ts`          | Server extracts Clerk JWT token from URL params, verifies signature, queries internal Next.js auth endpoint for role (`OWNER`, `MEMBER`, `VIEWER`), and sets connection state. |
+| **Connection Open**  | `onConnect` / `onOpen`                   | `party/server.ts` (lines 33-113)<br>`src/hooks/useSeatAvailability.ts` (line 80) | Server broadcasts current seat snapshot (`seat_snapshot`) and presence state. Client updates `isConnected` state to `true`.                                                    |
+| **Message Exchange** | `onMessage` / `conn.addEventListener`    | `party/server.ts` (lines 115-180)<br>`src/hooks/useCanvasWhiteboard.ts`          | Exchanges JSON control frames (`seat_checkin`, `presence`, `cursor`, `webrtc-signal`, `request_room_snapshot`) and Yjs binary CRDT updates.                                    |
+| **Connection Close** | `onClose`                                | `party/server.ts` (lines 184-186)<br>`src/hooks/useMultiRegion.ts` (line 48)     | Server executes `handleSeatCheckout(conn)` to automatically release seat reservations for disconnected clients.                                                                |
+| **Reconnection**     | `partysocket` / `FailoverSyncManager`    | `src/lib/edge/failoverSync.ts`<br>`src/hooks/useCanvasWhiteboard.ts`             | Client auto-reconnects via `partysocket`. `FailoverSyncManager` requests full room snapshot and buffers post-reconnect deltas.                                                 |
+| **Cleanup**          | Unmount cleanup in `useEffect`           | `src/hooks/useSeatAvailability.ts` (lines 207-217)                               | Disconnects provider/socket, closes peer connections, clears interval timers, and sends best-effort `seat_checkout` frame.                                                     |
 
 ---
 
@@ -131,6 +131,7 @@ sequenceDiagram
 ```
 
 ### Server Role Enforcement
+
 - **VIEWER Role Restrictions**:
   - `onConnectYjs` is initialized with `{ readOnly: true }` for VIEWERS, instructing `y-partykit` to drop all incoming CRDT mutations from the client.
   - In `onMessage` (`party/server.ts` line 167), non-presence/non-signaling broadcasts from `VIEWER` connections are explicitly dropped.
@@ -169,11 +170,13 @@ sequenceDiagram
 WorkSphere operates two distinct reconnection strategies depending on the transport protocol:
 
 ### 1. PartySocket WebSocket Reconnection (`partysocket`)
+
 - WorkSphere relies on the built-in automatic reconnect loop supplied by `partysocket` (`partysocket` ^1.3.0).
 - When a WebSocket disconnects, `partysocket` automatically handles socket re-creation and exponential backoff retry attempts under the hood.
 - WorkSphere application code attaches to socket events (`onOpen`, `onClose`) and uses `FailoverSyncManager` to handle state resynchronization upon reconnection rather than re-implementing raw socket retries.
 
 ### 2. Server-Sent Events (SSE) Reconnection (`useRealTimeUpdates`)
+
 - Located in `src/hooks/useRealTime.tsx` (lines 43-148), `useRealTimeUpdates` implements an explicit application-layer exponential backoff loop for the EventSource connection (`/api/venues/updates`):
 
 ```typescript
@@ -204,13 +207,13 @@ eventSource.onopen = () => {
 
 ### Verified Application SSE Backoff Parameters (`src/hooks/useRealTime.tsx`)
 
-| Parameter | Value | Evidence / Line |
-| :--- | :--- | :--- |
-| **Initial Delay** | `1000` ms (1 second) | `src/hooks/useRealTime.tsx:49` |
-| **Backoff Multiplier** | `2.0` (Doubles delay per attempt) | `src/hooks/useRealTime.tsx:104` |
-| **Maximum Delay Cap** | `30000` ms (30 seconds) | `src/hooks/useRealTime.tsx:104` |
-| **Jitter Calculation** | **Not Implemented** (Uses deterministic doubling: `Math.min(30000, currentBackoff * 2)`) | `src/hooks/useRealTime.tsx:104` |
-| **Reset Condition** | Connection `onopen` or Browser `online` event | `src/hooks/useRealTime.tsx:69,111` |
+| Parameter              | Value                                                                                    | Evidence / Line                    |
+| :--------------------- | :--------------------------------------------------------------------------------------- | :--------------------------------- |
+| **Initial Delay**      | `1000` ms (1 second)                                                                     | `src/hooks/useRealTime.tsx:49`     |
+| **Backoff Multiplier** | `2.0` (Doubles delay per attempt)                                                        | `src/hooks/useRealTime.tsx:104`    |
+| **Maximum Delay Cap**  | `30000` ms (30 seconds)                                                                  | `src/hooks/useRealTime.tsx:104`    |
+| **Jitter Calculation** | **Not Implemented** (Uses deterministic doubling: `Math.min(30000, currentBackoff * 2)`) | `src/hooks/useRealTime.tsx:104`    |
+| **Reset Condition**    | Connection `onopen` or Browser `online` event                                            | `src/hooks/useRealTime.tsx:69,111` |
 
 ---
 
@@ -254,7 +257,11 @@ export async function withWebLock<T>(
   callback: () => Promise<T>,
   lockName = "worksphere-offline-store-lock",
 ): Promise<T> {
-  if (typeof navigator !== "undefined" && "locks" in navigator && navigator.locks?.request) {
+  if (
+    typeof navigator !== "undefined" &&
+    "locks" in navigator &&
+    navigator.locks?.request
+  ) {
     try {
       return await navigator.locks.request(lockName, async () => callback());
     } catch {
@@ -307,6 +314,7 @@ sequenceDiagram
 ```
 
 ### Flush Error & Retry Policy
+
 - **Maximum Retries**: `MAX_SYNC_RETRIES = 3` (`src/lib/offlineStore.ts` line 12).
 - If sync fails for an item, `incrementCheckInRetryCount(item.id)` increments the attempt counter.
 - User receives feedback via toast notifications ("Sync started", "Sync completed", "Sync failed").
@@ -330,7 +338,7 @@ sequenceDiagram
     Socket->>FSM: handleConnect(sendFn, roomId)
     FSM->>FSM: Set state = "syncing_snapshot", clear deltaBuffer
     FSM->>Server: send({ type: "request_room_snapshot", roomId, snapshotId })
-    
+
     par Buffer Incoming Deltas
         Server-->>FSM: Broadcast Delta 1 (t=105)
         FSM->>FSM: Buffer Delta 1 in deltaBuffer
@@ -344,6 +352,7 @@ sequenceDiagram
 ```
 
 ### Key Re-synchronization Invariants
+
 1. **Delta Buffering during Snapshot Fetch**: While state is `syncing_snapshot`, incoming incremental deltas are buffered in `deltaBuffer` instead of being applied immediately.
 2. **Snapshot Reconciliation & Delta Replay**: On receipt of `room_snapshot_response`, local state is replaced with snapshot state. Deltas buffered after `snapshotTimestamp - 50ms` (allowing for minor clock skew) are replayed in order.
 3. **Snapshot Timeout Safety Net**: If the server fails to return a snapshot within 3000ms (`snapshotTimeoutMs`), `FailoverSyncManager` logs a warning, drains the delta buffer, and transitions the state to `synced` to avoid blocking the UI indefinitely.
@@ -383,13 +392,13 @@ onClose() {
 
 ## Failure Recovery
 
-| Failure Scenario | Recovery Mechanism | Implementation Details |
-| :--- | :--- | :--- |
-| **Network Interruption** | Auto-reconnect + Offline Outbox | `partysocket` reconnects underlying WS. Outbox queues check-ins in IndexedDB and flushes on `window.online`. |
-| **Edge Server Failover** | Snapshot Sync + Delta Replay | `FailoverSyncManager.handleConnect` issues `request_room_snapshot` to the new edge node and replays post-snapshot deltas. |
-| **Browser Tab Suspension** | Tab Focus Health Check | `useRealTimeUpdates` listens to `document.visibilitychange`. If `visibilityState === "visible"` and stream is closed, triggers reconnect. |
-| **SSR / Hydration Mismatch** | Client-Only Wrapper | `PartyKitPresenceWrapper` prevents rendering WebSocket-dependent presence nodes until client hydration completes. |
-| **Duplicate Snapshot Frames** | Snapshot ID Tracking | `FailoverSyncManager` records `lastAppliedSnapshotId` and drops duplicate snapshot responses. |
+| Failure Scenario              | Recovery Mechanism              | Implementation Details                                                                                                                    |
+| :---------------------------- | :------------------------------ | :---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Network Interruption**      | Auto-reconnect + Offline Outbox | `partysocket` reconnects underlying WS. Outbox queues check-ins in IndexedDB and flushes on `window.online`.                              |
+| **Edge Server Failover**      | Snapshot Sync + Delta Replay    | `FailoverSyncManager.handleConnect` issues `request_room_snapshot` to the new edge node and replays post-snapshot deltas.                 |
+| **Browser Tab Suspension**    | Tab Focus Health Check          | `useRealTimeUpdates` listens to `document.visibilitychange`. If `visibilityState === "visible"` and stream is closed, triggers reconnect. |
+| **SSR / Hydration Mismatch**  | Client-Only Wrapper             | `PartyKitPresenceWrapper` prevents rendering WebSocket-dependent presence nodes until client hydration completes.                         |
+| **Duplicate Snapshot Frames** | Snapshot ID Tracking            | `FailoverSyncManager` records `lastAppliedSnapshotId` and drops duplicate snapshot responses.                                             |
 
 ---
 

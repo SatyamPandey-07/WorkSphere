@@ -12,6 +12,7 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
     this.wasmExports = null;
     this.inputBufferPtr = 0;
     this.outputBufferPtr = 0;
+    this.noiseProfilePtr = 0;
     this.frameSize = 256;
     this.port.onmessage = this.handleMessage.bind(this);
   }
@@ -65,15 +66,39 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
         break;
       case "getNoiseProfile":
         if (this.wasmExports) {
-          const ptr = this.wasmExports.malloc(this.align16(513 * 4));
-          this.wasmExports.getNoiseProfile(ptr, 513);
-          const profile = new Float32Array(
-            this.wasmExports.memory.buffer,
-            ptr,
-            513,
-          ).slice();
-          this.wasmExports.free(ptr, this.align16(513 * 4));
-          this.port.postMessage({ type: "noiseProfile", profile });
+          const profileBytes = this.align16(513 * 4);
+          if (!this.noiseProfilePtr) {
+            this.noiseProfilePtr = this.wasmExports.malloc(profileBytes);
+          }
+          try {
+            this.wasmExports.getNoiseProfile(this.noiseProfilePtr, 513);
+            const profile = new Float32Array(
+              this.wasmExports.memory.buffer,
+              this.noiseProfilePtr,
+              513,
+            ).slice();
+            this.port.postMessage({ type: "noiseProfile", profile });
+          } catch (error) {
+            this.port.postMessage({ type: "error", error: error.message });
+          }
+        }
+        break;
+      case "destroy":
+        if (this.wasmExports) {
+          const frameBytes = this.align16(this.frameSize * 4);
+          if (this.inputBufferPtr) {
+            this.wasmExports.free(this.inputBufferPtr, frameBytes);
+            this.inputBufferPtr = 0;
+          }
+          if (this.outputBufferPtr) {
+            this.wasmExports.free(this.outputBufferPtr, frameBytes);
+            this.outputBufferPtr = 0;
+          }
+          if (this.noiseProfilePtr) {
+            this.wasmExports.free(this.noiseProfilePtr, this.align16(513 * 4));
+            this.noiseProfilePtr = 0;
+          }
+          this.wasmReady = false;
         }
         break;
     }
@@ -83,7 +108,7 @@ class AudioDSPProcessor extends AudioWorkletProcessor {
     try {
       const wasmModule = await WebAssembly.compile(wasmBinary);
 
-      const simdAvailable = await AudioDSPProcessor.probeSIMDSupport();
+      const _simdAvailable = await AudioDSPProcessor.probeSIMDSupport();
 
       const instance = await WebAssembly.instantiate(wasmModule);
 

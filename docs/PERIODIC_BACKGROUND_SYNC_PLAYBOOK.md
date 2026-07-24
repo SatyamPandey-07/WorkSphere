@@ -50,6 +50,27 @@ graph TD
 
 ## 4. Periodic Background Sync Implementation
 
+### 4.0 Background Strategy & Constraints Specifications
+
+#### Minimum Interval Settings
+
+- **Default Minimum Interval**: `SYNC_INTERVAL_MS = 30 * 60 * 1000` ($30\text{ minutes}$ / $1,800,000\text{ ms}$).
+- **Browser Interval Floor**: Browsers (such as Chrome) enforce a minimum periodic sync interval execution limit of 12 hours unless the Web App is installed as a Progressive Web App (PWA) and exhibits high user engagement (Site Engagement Score).
+- **Tag Identifier**: `workspace-availability` (`PERIODIC_AVAILABILITY_TAG`).
+
+#### Browser Permission Requirements & Battery Status Constraints
+
+1. **Periodic Sync Permission (`periodic-background-sync`)**:
+   - Permission status must be queried via `navigator.permissions.query({ name: "periodic-background-sync" })`.
+   - Requires explicit `"granted"` state prior to calling `reg.periodicSync.register()`.
+   - In Chromium browsers, permission is automatically granted when installed to home screen as a PWA under HTTPS context.
+2. **Battery Status & Power Constraints**:
+   - The OS and browser runtime defer or skip `periodicsync` event execution if the device is operating in **Low Power Mode** / **Battery Saver Mode**.
+   - Browsers check `navigator.getBattery()` (where supported); if `battery.level < 0.15` (below 15%) and discharging, periodic sync events are temporarily throttled or paused until connected to power.
+   - Unmetered network connectivity (Wi-Fi/Ethernet) is prioritized over cellular data connections to preserve mobile data allowances.
+
+---
+
 ### 4.1 Client-Side Registration (`usePWA.tsx`)
 
 The `usePeriodicAvailabilitySync` hook attempts to register the Periodic Background Sync API, then falls back to one-shot sync for unsupported browsers.
@@ -104,16 +125,23 @@ export function usePeriodicAvailabilitySync() {
 }
 ```
 
-### 4.2 Service Worker Event Handler (`sw.js`)
+### 4.2 Service Worker Event Listener Snippet (`public/sw.js`)
+
+The Service Worker listens for `periodicsync` background events and delegates execution to `syncAvailability()` via `event.waitUntil()`:
 
 ```javascript
-// public/sw.js — lines 252-257
+// public/sw.js — Periodic Background Sync Event Listener
 
 const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
 
 self.addEventListener("periodicsync", (event) => {
+  console.log("[SW] Periodic background sync event triggered tag:", event.tag);
   if (event.tag === PERIODIC_AVAILABILITY_TAG) {
-    event.waitUntil(syncAvailability());
+    event.waitUntil(
+      syncAvailability().catch((err) => {
+        console.error("[SW] Background availability sync error:", err);
+      }),
+    );
   }
 });
 ```

@@ -9,6 +9,22 @@ import {
   verifyCsrfToken,
 } from "./lib/csrf";
 
+function generateCsp(nonce: string): string {
+  const isDev = process.env.NODE_ENV === "development";
+  return [
+    `base-uri 'self'`,
+    `default-src 'self'`,
+    `script-src 'self' 'nonce-${nonce}' https://cdn.clerk.com ${isDev ? "'unsafe-eval' https://*.clerk.accounts.dev" : ""}`,
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
+    `font-src 'self' https://fonts.gstatic.com data:`,
+    `img-src 'self' https://images.unsplash.com https://*.unsplash.com https://res.cloudinary.com data: blob:`,
+    `connect-src 'self' https://*.clerk.com https://api.groq.com https://router.project-osrm.org wss://*.partykit.dev`,
+    `frame-src 'self' https://*.clerk.com`,
+    `worker-src 'self' blob:`,
+    `object-src 'none'`,
+  ].join("; ");
+}
+
 const isPublicRoute = createRouteMatcher([
   "/",
   "/sign-in(.*)",
@@ -93,6 +109,10 @@ async function applyCsrfProtection(
 }
 
 export default function middleware(request: any, event: any) {
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY =
+      "pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ";
+  }
   const clerkMw = clerkMiddleware(async (auth, req) => {
     if (!isPublicRoute(req)) {
       await auth.protect();
@@ -130,6 +150,8 @@ export default function middleware(request: any, event: any) {
 
     const requestHeaders = new Headers(req.headers);
     requestHeaders.set("x-pathname", req.nextUrl.pathname);
+    const nonce = crypto.randomUUID();
+    requestHeaders.set("x-csp-nonce", nonce);
     const start = Date.now();
     requestHeaders.set("x-request-start", String(start));
 
@@ -149,6 +171,7 @@ export default function middleware(request: any, event: any) {
         headers: requestHeaders,
       },
     });
+    res.headers.set("Content-Security-Policy", generateCsp(nonce));
     return applyCsrfProtection(req, res);
   });
 

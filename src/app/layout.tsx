@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import "./globals.css";
 
@@ -10,6 +10,7 @@ import { ThemeProvider } from "../components/ThemeProvider";
 import { SoundProvider } from "../components/SoundProvider";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
 import { CookieBanner } from "../components/CookieBanner";
+import { CurrencyProvider } from "@/context/CurrencyContext";
 import { SyncManager } from "../hooks/usePWA";
 import { ToastProvider } from "../components/ui/Toast";
 import { PWAUpdateListener } from "../components/PWAUpdateListener";
@@ -18,32 +19,34 @@ const THEME_INIT_SCRIPT = `
 (function () {
   try {
     var stored = localStorage.getItem("worksphere-theme");
-
-    var theme = stored === "light" || stored === "dark" ||  stored === "cyberpunk"
+    var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    var theme = stored === "light" || stored === "dark" || stored === "cyberpunk"
       ? stored
-      : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    var root = document.documentElement;
-   root.classList.remove("dark", "cyberpunk");
-
-if (theme === "dark") {
-  root.classList.add("dark");
-} else if (theme === "cyberpunk") {
-  root.classList.add("cyberpunk");
-}
-
-root.style.colorScheme = theme === "light" ? "light" : "dark";
-  } catch (e) {}
-
-    var theme =
-      stored === "light" || stored === "dark"
-        ? stored
-        : window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light";
+      : (prefersDark ? "dark" : "light");
 
     var root = document.documentElement;
-    root.classList.toggle("dark", theme === "dark");
-    root.style.colorScheme = theme;
+    root.classList.remove("dark", "cyberpunk");
+
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else if (theme === "cyberpunk") {
+      root.classList.add("cyberpunk");
+    }
+
+    root.style.colorScheme = theme === "light" ? "light" : "dark";
+
+    // ─── Inline background/foreground to prevent white flash ───
+    // Set colors directly on <html> before external CSS loads
+    if (theme === "dark") {
+      root.style.backgroundColor = "#0a0a0a";
+      root.style.color = "#ededed";
+    } else if (theme === "cyberpunk") {
+      root.style.backgroundColor = "#090014";
+      root.style.color = "#f4f4ff";
+    } else {
+      root.style.backgroundColor = "#ffffff";
+      root.style.color = "#171717";
+    }
 
     if (document.cookie.indexOf("worksphere-theme=") === -1) {
       document.cookie =
@@ -51,7 +54,7 @@ root.style.colorScheme = theme === "light" ? "light" : "dark";
         theme +
         "; path=/; max-age=31536000; SameSite=Lax";
     }
-  } catch {}
+  } catch (e) {}
 
   try {
     var accentStored = localStorage.getItem("worksphere-accent");
@@ -129,12 +132,20 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const publishableKey =
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
+    "pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ";
 
   const cookieStore = await cookies();
+  const headersList = await headers();
+  const nonce = headersList.get("x-csp-nonce") ?? "";
   const storedTheme = cookieStore.get("worksphere-theme")?.value;
-  const theme: "light" | "dark" =
-    storedTheme === "dark" || storedTheme === "light" ? storedTheme : "light";
+  const theme: "light" | "dark" | "cyberpunk" =
+    storedTheme === "dark" ||
+    storedTheme === "light" ||
+    storedTheme === "cyberpunk"
+      ? (storedTheme as any)
+      : "light";
 
   const storedAccent = cookieStore.get("worksphere-accent")?.value;
   const accent: "blue" | "purple" | "emerald" | "amber" =
@@ -146,13 +157,16 @@ export default async function RootLayout({
       : "blue";
 
   const appContent = (
-    <ThemeProvider initialTheme={theme} initialAccent={accent}>
+    <ThemeProvider initialTheme={theme as any} initialAccent={accent}>
       <SoundProvider>
         <ToastProvider>
-          <PWAUpdateListener />
-          <I18nProvider>{children}</I18nProvider>
+          <CurrencyProvider>
+            <PWAUpdateListener />
+            <I18nProvider>{children}</I18nProvider>
+          </CurrencyProvider>
         </ToastProvider>
       </SoundProvider>
+      <SyncManager />
     </ThemeProvider>
   );
 
@@ -174,17 +188,20 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={theme === "dark" ? "dark" : ""}
+      className={
+        theme === "dark" ? "dark" : theme === "cyberpunk" ? "cyberpunk" : ""
+      }
       suppressHydrationWarning
     >
       <head>
+        <script
+          id="theme-init"
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <script
-          id="theme-init"
-          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
-        />
       </head>
 
       <body

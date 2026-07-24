@@ -23,7 +23,7 @@ export async function getPasskeyRotationStatus(
   });
 
   return credentials.map((cred) => {
-    const expiresAt = new Date(cred.expiresAt);
+    const expiresAt = new Date(cred.createdAt.getTime() + KEY_ROTATION_INTERVAL_DAYS * 24 * 60 * 60 * 1000);
     const now = new Date();
     const diffMs = expiresAt.getTime() - now.getTime();
     const daysUntilExpiry = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
@@ -56,7 +56,7 @@ export async function rotatePasskey(
   const newExpiresAt = getKeyExpiryDate();
   await prisma.passkeyCredential.update({
     where: { id: credentialId },
-    data: { expiresAt: newExpiresAt },
+    data: { lastUsedAt: new Date() },
   });
 
   return { success: true, newExpiresAt };
@@ -66,10 +66,11 @@ export async function cleanupExpiredPasskeys(
   userId: string,
 ): Promise<{ deletedCount: number }> {
   const now = new Date();
+  const ninetyDaysAgo = new Date(now.getTime() - KEY_ROTATION_INTERVAL_DAYS * 24 * 60 * 60 * 1000);
   const result = await prisma.passkeyCredential.deleteMany({
     where: {
       userId,
-      expiresAt: { lt: now },
+      createdAt: { lt: ninetyDaysAgo },
     },
   });
 

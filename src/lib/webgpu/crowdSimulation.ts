@@ -9,6 +9,9 @@ import {
   computeShader,
   agentVertexShader,
   agentFragmentShader,
+  densityComputeShader,
+  heatmapVertexShader,
+  heatmapFragmentShader,
   AGENT_VERTICES,
   AGENT_INDICES,
 } from "./crowdShaders.wgsl";
@@ -143,9 +146,13 @@ export class CrowdSimulationEngine {
   private context: GPUCanvasContext | null = null;
   private isDeviceLost = false;
 
+  // Dynamic Buffer Allocation Capacity Management
+  private allocatedCapacity = 10000;
+
   // Pipelines
   private computePipeline: GPURenderPipeline | null = null;
   private renderPipeline: GPURenderPipeline | null = null;
+  private computeBindGroupLayout: GPUBindGroupLayout | null = null;
 
   // Buffers (ping-pong)
   private agentBufferA: GPUBuffer | null = null;
@@ -165,6 +172,19 @@ export class CrowdSimulationEngine {
   // Mesh buffers
   private agentVertexBuffer: GPUBuffer | null = null;
   private agentIndexBuffer: GPUBuffer | null = null;
+
+  // Density heatmap
+  private densityBuffer: GPUBuffer | null = null;
+  private densityTexture: GPUTexture | null = null;
+  private densitySampler: GPUSampler | null = null;
+  private densityUniformBuffer: GPUBuffer | null = null;
+  private heatmapUniformBuffer: GPUBuffer | null = null;
+  private heatmapPipeline: GPURenderPipeline | null = null;
+  private heatmapBindGroup: GPUBindGroup | null = null;
+  private heatmapTexture: GPUTexture | null = null;
+  private densityBindGroup: GPUBindGroup | null = null;
+  private maxDensity = 1;
+  private readonly DENSITY_GRID_SIZE = 64;
 
   // Exit + wall buffers
   private exitBuffer: GPUBuffer | null = null;
@@ -198,6 +218,8 @@ export class CrowdSimulationEngine {
       agentScale: 0.15,
       ...config,
     };
+
+    this.allocatedCapacity = Math.max(config.agentCount, 10000);
 
     // Initialize agent data on CPU
     this.agents = new Float32Array(config.agentCount * 8); // 8 floats per agent
@@ -289,7 +311,7 @@ export class CrowdSimulationEngine {
       });
 
       await this.createBuffers();
-      await this.createPipelines(format);
+      await this.createPipelines(format as any);
 
       return true;
     } catch (error) {
@@ -298,13 +320,193 @@ export class CrowdSimulationEngine {
     }
   }
 
+  public getAllocatedCapacity(): number {
+    return this.allocatedCapacity;
+  }
+
+  public getCapacityThreshold(): number {
+    return Math.floor(this.allocatedCapacity * 0.8);
+  }
+
+  public isReallocationNeeded(newAgentCount: number): boolean {
+    return newAgentCount >= this.allocatedCapacity * 0.8;
+  }
+
+  public async ensureCapacity(targetAgentCount: number): Promise<boolean> {
+    if (!this.isReallocationNeeded(targetAgentCount)) {
+      return true;
+    }
+    const newCapacity = Math.max(Math.ceil(targetAgentCount * 1.5), 10000);
+    return this.reallocateBuffers(newCapacity);
+  }
+
+  public async reallocateBuffers(newCapacity: number): Promise<boolean> {
+    this.allocatedCapacity = newCapacity;
+    if (!this.device) return true;
+
+    const agentSize = newCapacity * AGENT_STRIDE;
+    const maxBindingSize =
+      this.device.limits?.maxStorageBufferBindingSize || 134217728;
+    const maxBufferSize = this.device.limits?.maxBufferSize || 268435456;
+
+    if (agentSize > maxBindingSize || agentSize > maxBufferSize) {
+      console.warn(
+        `[CrowdSim] Reallocation size ${agentSize} bytes exceeds WebGPU limits`,
+      );
+      return false;
+    }
+
+    try {
+      const oldBufferA = this.agentBufferA;
+      const oldBufferB = this.agentBufferB;
+
+      this.agentBufferA = this.device.createBuffer({
+        size: agentSize,
+        usage:
+          BufferUsage.STORAGE | BufferUsage.COPY_SRC | BufferUsage.COPY_DST,
+      });
+      this.agentBufferB = this.device.createBuffer({
+        size: agentSize,
+        usage:
+          BufferUsage.STORAGE | BufferUsage.COPY_SRC | BufferUsage.COPY_DST,
+      });
+
+      this.device.queue.writeBuffer(this.agentBufferA!, 0, this.agents as any);
+
+      this.recreateBindGroups();
+
+      oldBufferA?.destroy();
+      oldBufferB?.destroy();
+
+      this.allocatedCapacity = newCapacity;
+      return true;
+    } catch (err) {
+      console.error("[CrowdSim] Dynamic buffer reallocation failed:", err);
+      return false;
+    }
+  }
+
+  public async setAgentCount(newCount: number): Promise<boolean> {
+    const success = await this.ensureCapacity(newCount);
+    if (!success) return false;
+
+    const oldCount = this.config.agentCount;
+    const oldAgents = this.agents;
+    this.config.agentCount = newCount;
+    this.agents = new Float32Array(newCount * 8);
+
+    const copyCount = Math.min(oldAgents.length, this.agents.length);
+    this.agents.set(oldAgents.subarray(0, copyCount));
+
+    if (newCount > oldCount) {
+      this.spawnNewAgents(oldCount, newCount);
+    }
+
+    if (this.device && this.agentBufferA) {
+      this.device.queue.writeBuffer(this.agentBufferA, 0, this.agents as any);
+    }
+
+    return true;
+  }
+
+  private spawnNewAgents(startIndex: number, endIndex: number): void {
+    const { worldWidth, worldHeight, exitPositions } = this.config;
+    const data = this.agents;
+
+    for (let i = startIndex; i < endIndex; i++) {
+      const offset = i * 8;
+      let x: number, y: number;
+      do {
+        x = Math.random() * worldWidth * 0.8 + worldWidth * 0.1;
+        y = Math.random() * worldHeight * 0.8 + worldHeight * 0.1;
+      } while (
+        exitPositions.some(([ex, ey]) => Math.hypot(x - ex, y - ey) < 2)
+      );
+
+      data[offset + 0] = x;
+      data[offset + 1] = y;
+      data[offset + 2] = 0;
+      data[offset + 3] = 0;
+      data[offset + 4] = this.findNearestExit(x, y);
+      data[offset + 5] = 0;
+      data[offset + 6] = 0;
+      data[offset + 7] = 0;
+    }
+  }
+
+  private recreateBindGroups(): void {
+    if (!this.device || !this.computeBindGroupLayout || !this.renderPipeline)
+      return;
+
+    this.computeBindGroupA = this.device.createBindGroup({
+      layout: this.computeBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.computeUniformBuffer! } },
+        { binding: 1, resource: { buffer: this.agentBufferA! } },
+        { binding: 2, resource: { buffer: this.agentBufferB! } },
+        { binding: 3, resource: { buffer: this.exitBuffer! } },
+        { binding: 4, resource: { buffer: this.wallBuffer! } },
+        { binding: 5, resource: this.distanceTexture!.createView() },
+        { binding: 6, resource: this.distanceSampler! },
+      ],
+    });
+
+    this.computeBindGroupB = this.device.createBindGroup({
+      layout: this.computeBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.computeUniformBuffer! } },
+        { binding: 1, resource: { buffer: this.agentBufferB! } },
+        { binding: 2, resource: { buffer: this.agentBufferA! } },
+        { binding: 3, resource: { buffer: this.exitBuffer! } },
+        { binding: 4, resource: { buffer: this.wallBuffer! } },
+        { binding: 5, resource: this.distanceTexture!.createView() },
+        { binding: 6, resource: this.distanceSampler! },
+      ],
+    });
+
+    const renderBindGroupLayout = this.renderPipeline.getBindGroupLayout(0);
+
+    this.renderBindGroupA = this.device.createBindGroup({
+      layout: renderBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.renderUniformBuffer! } },
+        { binding: 1, resource: { buffer: this.agentBufferA! } },
+      ],
+    });
+
+    this.renderBindGroupB = this.device.createBindGroup({
+      layout: renderBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.renderUniformBuffer! } },
+        { binding: 1, resource: { buffer: this.agentBufferB! } },
+      ],
+    });
+
+    this.updateDensityBindGroup();
+  }
+
   private async createBuffers(): Promise<void> {
     if (!this.device) return;
 
-    const { agentCount, exitPositions, wallSegments } = this.config;
+    const { exitPositions, wallSegments } = this.config;
+    this.allocatedCapacity = Math.max(this.config.agentCount, 10000);
+
+    // Validate memory limits
+    const agentSize = this.allocatedCapacity * AGENT_STRIDE;
+    const maxBindingSize =
+      this.device.limits?.maxStorageBufferBindingSize || 134217728;
+    const maxBufferSize = this.device.limits?.maxBufferSize || 268435456;
+
+    if (agentSize > maxBindingSize || agentSize > maxBufferSize) {
+      console.warn(
+        `[CrowdSim] Required buffer size ${agentSize} bytes exceeds WebGPU storage buffer limits (maxBindingSize: ${maxBindingSize})`,
+      );
+      throw new Error(
+        `WebGPU memory limit reached: requested ${agentSize} bytes exceeds limit ${maxBindingSize}`,
+      );
+    }
 
     // Agent buffers (ping-pong)
-    const agentSize = agentCount * AGENT_STRIDE;
     this.agentBufferA = this.device.createBuffer({
       size: agentSize,
       usage: BufferUsage.STORAGE | BufferUsage.COPY_SRC | BufferUsage.COPY_DST,
@@ -315,9 +517,7 @@ export class CrowdSimulationEngine {
     });
 
     // Upload initial agent data
-    this.device.queue.writeBuffer(this.agentBufferA, 0, this.agents);
-
-    // Compute uniform buffer (18 * 4 = 72 bytes, padded to 80)
+    this.device.queue.writeBuffer(this.agentBufferA!, 0, this.agents as any);
     this.computeUniformBuffer = this.device.createBuffer({
       size: 80,
       usage: BufferUsage.UNIFORM | BufferUsage.COPY_DST,
@@ -339,7 +539,7 @@ export class CrowdSimulationEngine {
       size: exitData.byteLength,
       usage: BufferUsage.STORAGE | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.exitBuffer, 0, exitData);
+    this.device.queue.writeBuffer(this.exitBuffer!, 0, exitData as any);
 
     // Wall segments buffer
     const wallData = new Float32Array(wallSegments.length * 4);
@@ -354,7 +554,7 @@ export class CrowdSimulationEngine {
       usage: BufferUsage.STORAGE | BufferUsage.COPY_DST,
     });
     if (wallData.byteLength > 0) {
-      this.device.queue.writeBuffer(this.wallBuffer, 0, wallData);
+      this.device.queue.writeBuffer(this.wallBuffer!, 0, wallData as any);
     }
 
     // Distance field texture
@@ -366,17 +566,22 @@ export class CrowdSimulationEngine {
       exitPositions,
     );
 
+    const textureUsage =
+      typeof GPUTextureUsage !== "undefined"
+        ? GPUTextureUsage
+        : { TEXTURE_BINDING: 0x0004, COPY_DST: 0x0002 };
+
     this.distanceTexture = this.device.createTexture({
       size: [GRID_SIZE, GRID_SIZE],
       format: "r32float",
-      usage: BufferUsage.TEXTURE_BINDING | BufferUsage.COPY_DST,
-    });
+      usage: textureUsage.TEXTURE_BINDING | textureUsage.COPY_DST,
+    })!;
 
     // Upload distance field data row by row
     for (let y = 0; y < GRID_SIZE; y++) {
       this.device.queue.writeTexture(
-        { texture: this.distanceTexture, origin: { x: 0, y } },
-        distField.subarray(y * GRID_SIZE, (y + 1) * GRID_SIZE),
+        { texture: this.distanceTexture!, origin: { x: 0, y } },
+        distField.subarray(y * GRID_SIZE, (y + 1) * GRID_SIZE) as any,
         { bytesPerRow: GRID_SIZE * 4 },
         { width: GRID_SIZE, height: 1 },
       );
@@ -392,13 +597,66 @@ export class CrowdSimulationEngine {
       size: AGENT_VERTICES.byteLength,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.agentVertexBuffer, 0, AGENT_VERTICES);
+    this.device.queue.writeBuffer(
+      this.agentVertexBuffer!,
+      0,
+      AGENT_VERTICES as unknown as BufferSource,
+    );
 
     this.agentIndexBuffer = this.device.createBuffer({
       size: AGENT_INDICES.byteLength,
       usage: BufferUsage.INDEX | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.agentIndexBuffer, 0, AGENT_INDICES);
+    this.device.queue.writeBuffer(
+      this.agentIndexBuffer!,
+      0,
+      AGENT_INDICES as unknown as BufferSource,
+    );
+
+    // ── Density heatmap buffers ──
+    const gridCells = this.DENSITY_GRID_SIZE * this.DENSITY_GRID_SIZE;
+
+    this.densityBuffer = this.device.createBuffer({
+      size: gridCells * 4,
+      usage: BufferUsage.STORAGE | BufferUsage.COPY_SRC | BufferUsage.COPY_DST,
+    });
+
+    this.densityUniformBuffer = this.device.createBuffer({
+      size: 32,
+      usage: BufferUsage.UNIFORM | BufferUsage.COPY_DST,
+    });
+
+    this.heatmapUniformBuffer = this.device.createBuffer({
+      size: 16,
+      usage: BufferUsage.UNIFORM | BufferUsage.COPY_DST,
+    });
+
+    const texUsage =
+      typeof GPUTextureUsage !== "undefined"
+        ? GPUTextureUsage
+        : {
+            TEXTURE_BINDING: 0x0004,
+            COPY_DST: 0x0002,
+            COPY_SRC: 0x0001,
+            RENDER_ATTACHMENT: 0x0010,
+          };
+
+    this.densityTexture = this.device.createTexture({
+      size: [this.DENSITY_GRID_SIZE, this.DENSITY_GRID_SIZE],
+      format: "r32float",
+      usage: texUsage.TEXTURE_BINDING | texUsage.COPY_DST | texUsage.COPY_SRC,
+    })!;
+
+    this.heatmapTexture = this.device.createTexture({
+      size: [this.canvas.width, this.canvas.height],
+      format: navigator.gpu?.getPreferredCanvasFormat() ?? "bgra8unorm",
+      usage: texUsage.RENDER_ATTACHMENT | texUsage.TEXTURE_BINDING,
+    });
+
+    this.densitySampler = this.device.createSampler({
+      magFilter: "linear",
+      minFilter: "linear",
+    });
   }
 
   private async createPipelines(format: GPUTextureFormat): Promise<void> {
@@ -409,7 +667,7 @@ export class CrowdSimulationEngine {
       code: computeShader,
     });
 
-    const computeBindGroupLayout = this.device.createBindGroupLayout({
+    this.computeBindGroupLayout = this.device.createBindGroupLayout({
       entries: [
         {
           binding: 0,
@@ -450,7 +708,7 @@ export class CrowdSimulationEngine {
     });
 
     const computePipelineLayout = this.device.createPipelineLayout({
-      bindGroupLayouts: [computeBindGroupLayout],
+      bindGroupLayouts: [this.computeBindGroupLayout],
     });
 
     // WebGPU compute pipeline creation
@@ -473,7 +731,7 @@ export class CrowdSimulationEngine {
 
       // Create bind groups (ping-pong)
       this.computeBindGroupA = this.device.createBindGroup({
-        layout: computeBindGroupLayout,
+        layout: this.computeBindGroupLayout,
         entries: [
           { binding: 0, resource: { buffer: this.computeUniformBuffer! } },
           { binding: 1, resource: { buffer: this.agentBufferA! } },
@@ -486,7 +744,7 @@ export class CrowdSimulationEngine {
       });
 
       this.computeBindGroupB = this.device.createBindGroup({
-        layout: computeBindGroupLayout,
+        layout: this.computeBindGroupLayout,
         entries: [
           { binding: 0, resource: { buffer: this.computeUniformBuffer! } },
           { binding: 1, resource: { buffer: this.agentBufferB! } },
@@ -552,7 +810,7 @@ export class CrowdSimulationEngine {
     });
 
     // Render bind groups (read from whichever buffer is current)
-    const renderBindGroupLayout = this.renderPipeline.getBindGroupLayout(0);
+    const renderBindGroupLayout = this.renderPipeline!.getBindGroupLayout(0);
 
     this.renderBindGroupA = this.device.createBindGroup({
       layout: renderBindGroupLayout,
@@ -567,6 +825,118 @@ export class CrowdSimulationEngine {
       entries: [
         { binding: 0, resource: { buffer: this.renderUniformBuffer! } },
         { binding: 1, resource: { buffer: this.agentBufferB! } },
+      ],
+    });
+
+    // ── Density Compute Pipeline ──
+    const densityModule = this.device.createShaderModule({
+      code: densityComputeShader,
+    });
+
+    const densityBindGroupLayout = this.device.createBindGroupLayout({
+      entries: [
+        {
+          binding: 0,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: "uniform" },
+        },
+        {
+          binding: 1,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: "read-only-storage" },
+        },
+        {
+          binding: 2,
+          visibility: GPUShaderStage.COMPUTE,
+          buffer: { type: "storage" },
+        },
+      ],
+    });
+
+    const densityPipelineLayout = this.device.createPipelineLayout({
+      bindGroupLayouts: [densityBindGroupLayout],
+    });
+
+    if (
+      "createComputePipeline" in this.device &&
+      typeof this.device.createComputePipeline === "function"
+    ) {
+      const densityPipeline = (
+        this.device as unknown as {
+          createComputePipeline: (desc: unknown) => unknown;
+        }
+      ).createComputePipeline({
+        layout: densityPipelineLayout,
+        compute: {
+          module: densityModule,
+          entryPoint: "cs_density",
+        },
+      });
+
+      (this as unknown as { _densityPipeline: unknown })._densityPipeline =
+        densityPipeline;
+
+      this.densityBindGroup = this.device.createBindGroup({
+        layout: densityBindGroupLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.densityUniformBuffer! } },
+          { binding: 1, resource: { buffer: this.agentBufferA! } },
+          { binding: 2, resource: { buffer: this.densityBuffer! } },
+        ],
+      });
+    }
+
+    // ── Heatmap Render Pipeline ──
+    const heatmapVertModule = this.device.createShaderModule({
+      code: heatmapVertexShader,
+    });
+    const heatmapFragModule = this.device.createShaderModule({
+      code: heatmapFragmentShader,
+    });
+
+    this.heatmapPipeline = this.device.createRenderPipeline({
+      layout: "auto",
+      vertex: {
+        module: heatmapVertModule,
+        entryPoint: "vs_fullscreen",
+      },
+      fragment: {
+        module: heatmapFragModule,
+        entryPoint: "fs_heatmap",
+        targets: [
+          {
+            format: navigator.gpu?.getPreferredCanvasFormat() ?? "bgra8unorm",
+            blend: {
+              color: {
+                srcFactor: "src-alpha",
+                dstFactor: "one-minus-src-alpha",
+                operation: "add",
+              },
+              alpha: {
+                srcFactor: "one",
+                dstFactor: "one-minus-src-alpha",
+                operation: "add",
+              },
+            },
+          },
+        ],
+      },
+      primitive: {
+        topology: "triangle-list",
+      },
+    });
+
+    const heatmapBindGroupLayout = this.heatmapPipeline!.getBindGroupLayout(0);
+
+    this.heatmapBindGroup = this.device.createBindGroup({
+      layout: heatmapBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.heatmapUniformBuffer! } },
+        {
+          binding: 1,
+          resource: this.densityTexture!.createView(),
+        },
+        { binding: 2, resource: this.densitySampler! },
       ],
     });
   }
@@ -714,10 +1084,11 @@ export class CrowdSimulationEngine {
       this.time += dt;
       this.updateComputeUniforms(dt);
       this.updateRenderUniforms();
+      this.updateDensityUniforms();
 
       const commandEncoder = this.device.createCommandEncoder();
 
-      // ── Compute Pass ──
+      // ── Compute Pass: Boids ──
       const computeBindGroup =
         this.currentReadBuffer === 0
           ? this.computeBindGroupA
@@ -733,7 +1104,61 @@ export class CrowdSimulationEngine {
         computePass.end();
       }
 
-      // ── Render Pass ──
+      // ── Compute Pass: Density accumulation ──
+      const densityPipeline = (this as unknown as { _densityPipeline: unknown })
+        ._densityPipeline;
+      if (densityPipeline && this.densityBindGroup) {
+        const densityPass = commandEncoder.beginComputePass();
+        densityPass.setPipeline(densityPipeline as GPUComputePipeline);
+        densityPass.setBindGroup(0, this.densityBindGroup);
+        const densityWorkgroups = Math.ceil(this.config.agentCount / 256);
+        densityPass.dispatchWorkgroups(densityWorkgroups);
+        densityPass.end();
+      }
+
+      // ── Copy density buffer → density texture ──
+      if (this.densityBuffer && this.densityTexture) {
+        const gridW = this.DENSITY_GRID_SIZE;
+        const bytesPerRow = gridW * 4;
+        const alignedBytesPerRow = Math.ceil(bytesPerRow / 256) * 256;
+
+        // Copy buffer to a staging buffer then to texture
+        const stagingBuffer = this.device.createBuffer({
+          size: gridW * gridW * 4,
+          usage: BufferUsage.COPY_SRC | BufferUsage.MAP_WRITE,
+        });
+
+        commandEncoder.copyBufferToBuffer(
+          this.densityBuffer,
+          0,
+          stagingBuffer,
+          0,
+          gridW * gridW * 4,
+        );
+
+        // We'll do the buffer→texture copy after submit via a separate encoder
+        // For now, copy directly row-by-row from staging after map
+        // Simplified: copy whole buffer to texture via buffer->texture copy
+        commandEncoder.copyBufferToTexture(
+          {
+            buffer: stagingBuffer,
+            bytesPerRow: alignedBytesPerRow,
+          },
+          {
+            texture: this.densityTexture,
+          },
+          {
+            width: gridW,
+            height: gridW,
+          },
+        );
+
+        // We'll destroy staging after submit
+        (this as unknown as { _stagingBuffer: GPUBuffer })._stagingBuffer =
+          stagingBuffer;
+      }
+
+      // ── Render Pass: Agents ──
       const textureView = this.context.getCurrentTexture().createView();
 
       // Depth texture
@@ -782,19 +1207,112 @@ export class CrowdSimulationEngine {
       }
 
       renderPass.end();
+
+      // ── Render Pass: Heatmap overlay (blended on top) ──
+      if (this.heatmapPipeline && this.heatmapBindGroup) {
+        const heatmapPass = commandEncoder.beginRenderPass({
+          colorAttachments: [
+            {
+              view: textureView,
+              loadOp: "load",
+              storeOp: "store",
+            },
+          ],
+        });
+
+        heatmapPass.setPipeline(this.heatmapPipeline);
+        heatmapPass.setBindGroup(0, this.heatmapBindGroup);
+        heatmapPass.draw(3);
+        heatmapPass.end();
+      }
+
       this.device.queue.submit([commandEncoder]);
 
-      // Cleanup depth texture
+      // Cleanup
       depthTexture.destroy();
+      const stagingBuffer = (this as unknown as { _stagingBuffer: GPUBuffer })
+        ._stagingBuffer;
+      if (stagingBuffer) {
+        stagingBuffer.destroy();
+        (
+          this as unknown as { _stagingBuffer: GPUBuffer | undefined }
+        )._stagingBuffer = undefined;
+      }
 
       // Swap ping-pong buffers
       this.currentReadBuffer = this.currentReadBuffer === 0 ? 1 : 0;
+
+      // Update density bind group to point at the new read buffer
+      this.updateDensityBindGroup();
 
       // Read back agent data periodically for stats
       this.readAgentData();
     } catch (error) {
       console.error("[CrowdSim] Render error:", error);
     }
+  }
+
+  private updateDensityUniforms(): void {
+    if (
+      !this.device ||
+      !this.densityUniformBuffer ||
+      !this.heatmapUniformBuffer
+    )
+      return;
+
+    const p = this.config;
+    this.device.queue.writeBuffer(
+      this.densityUniformBuffer,
+      0,
+      new Float32Array([
+        p.agentCount,
+        this.DENSITY_GRID_SIZE,
+        this.DENSITY_GRID_SIZE,
+        p.worldWidth,
+        p.worldHeight,
+        0.92, // decay factor per frame (smooth trailing)
+        1.5, // densityMultiplier
+        0,
+      ]),
+    );
+
+    // Track peak density for heatmap normalization
+    this.maxDensity = Math.max(this.maxDensity * 0.999, 1);
+
+    this.device.queue.writeBuffer(
+      this.heatmapUniformBuffer,
+      0,
+      new Float32Array([
+        this.DENSITY_GRID_SIZE,
+        this.DENSITY_GRID_SIZE,
+        this.maxDensity,
+        0.6, // heatmap opacity
+      ]),
+    );
+  }
+
+  private updateDensityBindGroup(): void {
+    if (!this.device || !this.densityBindGroup) return;
+
+    const densityPipeline = (this as unknown as { _densityPipeline: unknown })
+      ._densityPipeline;
+    if (!densityPipeline) return;
+
+    const densityBindGroupLayout = (
+      densityPipeline as GPUComputePipeline
+    ).getBindGroupLayout(0);
+
+    const readBuffer =
+      this.currentReadBuffer === 0 ? this.agentBufferA : this.agentBufferB;
+
+    this.densityBindGroup = this.device.createBindGroup({
+      layout: densityBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.densityUniformBuffer! } },
+        { binding: 1, resource: { buffer: readBuffer! } },
+        { binding: 2, resource: { buffer: this.densityBuffer! } },
+      ],
+    });
   }
 
   private readAgentData(): void {
@@ -870,7 +1388,7 @@ export class CrowdSimulationEngine {
   reset(): void {
     this.spawnAgents();
     if (this.device && this.agentBufferA) {
-      this.device.queue.writeBuffer(this.agentBufferA, 0, this.agents);
+      this.device.queue.writeBuffer(this.agentBufferA, 0, this.agents as any);
     }
     this.currentReadBuffer = 0;
     this.time = 0;
@@ -886,6 +1404,11 @@ export class CrowdSimulationEngine {
     this.distanceTexture?.destroy();
     this.agentVertexBuffer?.destroy();
     this.agentIndexBuffer?.destroy();
+    this.densityBuffer?.destroy();
+    this.densityTexture?.destroy();
+    this.densityUniformBuffer?.destroy();
+    this.heatmapUniformBuffer?.destroy();
+    this.heatmapTexture?.destroy();
   }
 
   async reinitialize(): Promise<boolean> {

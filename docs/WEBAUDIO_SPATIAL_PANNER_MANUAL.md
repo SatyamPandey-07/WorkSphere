@@ -61,13 +61,13 @@ The spatial audio graph creates a 3D sound field where each remote peer's voice 
 
 ### Component Responsibilities
 
-| Layer | Component | Responsibility |
-|-------|-----------|----------------|
-| **Signaling** | PartyKit (`party/server.ts`) | WebRTC SDP/ICE exchange; broadcast listener coordinate updates |
-| **Transport** | `RTCPeerConnection` (per peer) | Capture remote audio `MediaStreamTrack` |
-| **Spatialization** | `PannerNode` (per peer) | HRTF binaural rendering from 3D position/orientation |
-| **Listener** | `AudioListener` (singleton) | Local user head position/orientation in world space |
-| **Application** | React hook + Zustand store | Track peer positions, update PannerNodes each frame |
+| Layer              | Component                      | Responsibility                                                 |
+| ------------------ | ------------------------------ | -------------------------------------------------------------- |
+| **Signaling**      | PartyKit (`party/server.ts`)   | WebRTC SDP/ICE exchange; broadcast listener coordinate updates |
+| **Transport**      | `RTCPeerConnection` (per peer) | Capture remote audio `MediaStreamTrack`                        |
+| **Spatialization** | `PannerNode` (per peer)        | HRTF binaural rendering from 3D position/orientation           |
+| **Listener**       | `AudioListener` (singleton)    | Local user head position/orientation in world space            |
+| **Application**    | React hook + Zustand store     | Track peer positions, update PannerNodes each frame            |
 
 ---
 
@@ -112,12 +112,12 @@ AudioContext.destination  ←── AudioListener (local head position/orientati
 ```typescript
 // Recommended PannerNode defaults for WorkSphere spatial audio
 const PANNER_DEFAULTS: Partial<PannerNode> = {
-  panningModel: "HRTF",        // Binaural rendering via Head-Related Transfer Function
-  distanceModel: "inverse",    // Realistic distance attenuation (1 / distance)
-  refDistance: 1.0,            // Reference distance (no attenuation at this distance)
-  maxDistance: 50.0,           // Beyond this distance, gain remains constant
-  rolloffFactor: 1.0,          // Attenuation steepness
-  coneInnerAngle: 360,         // Full sphere — no directional cone for voice
+  panningModel: "HRTF", // Binaural rendering via Head-Related Transfer Function
+  distanceModel: "inverse", // Realistic distance attenuation (1 / distance)
+  refDistance: 1.0, // Reference distance (no attenuation at this distance)
+  maxDistance: 50.0, // Beyond this distance, gain remains constant
+  rolloffFactor: 1.0, // Attenuation steepness
+  coneInnerAngle: 360, // Full sphere — no directional cone for voice
   coneOuterAngle: 0,
   coneOuterGain: 0,
 };
@@ -139,10 +139,10 @@ listener.positionY.value = localY;
 listener.positionZ.value = localZ;
 
 // Update listener orientation (forward + up vectors)
-listener.forwardX.value = forwardX;   // unit vector for "where the nose points"
+listener.forwardX.value = forwardX; // unit vector for "where the nose points"
 listener.forwardY.value = forwardY;
 listener.forwardZ.value = forwardZ;
-listener.upX.value = upX;             // unit vector for "where the top of head points"
+listener.upX.value = upX; // unit vector for "where the top of head points"
 listener.upY.value = upY;
 listener.upZ.value = upZ;
 ```
@@ -257,11 +257,11 @@ The complete spatial transform combines distance attenuation (section 3.1) with 
 
 WorkSphere uses a **right-handed Y-up** coordinate system (common in 3D environments):
 
-| Axis | Direction    | Notes                           |
-|------|-------------|----------------------------------|
-| +X   | Right        | East in world space              |
-| +Y   | Up           | Elevation                        |
-| +Z   | Forward      | North in world space (into screen)|
+| Axis | Direction | Notes                              |
+| ---- | --------- | ---------------------------------- |
+| +X   | Right     | East in world space                |
+| +Y   | Up        | Elevation                          |
+| +Z   | Forward   | North in world space (into screen) |
 
 ```
   Y (up)
@@ -325,7 +325,7 @@ class SpatialAudioRouter {
       refDistance: 1.0,
       maxDistance: 50.0,
       rolloffFactor: 1.0,
-      position: [0, 2, 0],   // default: 2m above origin
+      position: [0, 2, 0], // default: 2m above origin
       orientation: [0, 0, -1],
       coneInnerAngle: 360,
       coneOuterAngle: 0,
@@ -371,9 +371,15 @@ class SpatialAudioRouter {
     if (!chain) {
       return;
     }
-    try { chain.source.disconnect(); } catch {}
-    try { chain.gain.disconnect(); } catch {}
-    try { chain.panner.disconnect(); } catch {}
+    try {
+      chain.source.disconnect();
+    } catch {}
+    try {
+      chain.gain.disconnect();
+    } catch {}
+    try {
+      chain.panner.disconnect();
+    } catch {}
     this.chains.delete(peerId);
   }
 
@@ -392,7 +398,9 @@ class SpatialAudioRouter {
 
 ```typescript
 // Inside RTCPeerConnection setup (see useScreenShare.ts pattern)
-const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+const pc = new RTCPeerConnection({
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+});
 
 pc.ontrack = (event: RTCTrackEvent) => {
   const [remoteStream] = event.streams;
@@ -406,7 +414,10 @@ pc.ontrack = (event: RTCTrackEvent) => {
 
 // On ICE connection state change:
 pc.onconnectionstatechange = () => {
-  if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+  if (
+    pc.connectionState === "disconnected" ||
+    pc.connectionState === "failed"
+  ) {
     spatialRouter.detachPeer(peerId);
   }
 };
@@ -507,12 +518,16 @@ class RemoteListenerInterpolator {
   }
 
   /** Optional: linear interpolation for smoother updates */
-  interpolate(userId: string, atTime: number): { x: number; y: number; z: number } | null {
+  interpolate(
+    userId: string,
+    atTime: number,
+  ): { x: number; y: number; z: number } | null {
     const list = this.history.get(userId);
     if (!list || list.length < 2) return null;
 
     // Find two bracketing samples
-    let before = list[0], after = list[list.length - 1];
+    let before = list[0],
+      after = list[list.length - 1];
     for (let i = 0; i < list.length - 1; i++) {
       if (list[i].timestamp <= atTime && list[i + 1].timestamp >= atTime) {
         before = list[i];
@@ -521,7 +536,8 @@ class RemoteListenerInterpolator {
       }
     }
 
-    const t = (atTime - before.timestamp) / (after.timestamp - before.timestamp);
+    const t =
+      (atTime - before.timestamp) / (after.timestamp - before.timestamp);
     const clampedT = Math.max(0, Math.min(1, t));
 
     return {
@@ -698,26 +714,17 @@ export function useSpatialAudio({
     peers,
     isReady,
     /** Attach a remote WebRTC MediaStream to the spatial graph */
-    attachRemoteTrack: useCallback(
-      (peerId: string, stream: MediaStream) => {
-        routerRef.current?.attachRemoteTrack(peerId, stream);
-      },
-      [],
-    ),
+    attachRemoteTrack: useCallback((peerId: string, stream: MediaStream) => {
+      routerRef.current?.attachRemoteTrack(peerId, stream);
+    }, []),
     /** Detach a peer on disconnect */
-    detachPeer: useCallback(
-      (peerId: string) => {
-        routerRef.current?.detachPeer(peerId);
-      },
-      [],
-    ),
+    detachPeer: useCallback((peerId: string) => {
+      routerRef.current?.detachPeer(peerId);
+    }, []),
     /** Set per-peer volume (mute other users) */
-    setPeerVolume: useCallback(
-      (peerId: string, volume: number) => {
-        routerRef.current?.setPeerVolume(peerId, volume);
-      },
-      [],
-    ),
+    setPeerVolume: useCallback((peerId: string, volume: number) => {
+      routerRef.current?.setPeerVolume(peerId, volume);
+    }, []),
   };
 }
 ```
@@ -798,21 +805,25 @@ This is acceptable for most modern CPUs, but budget carefully.
 
 ### 7.2 Recommendations
 
-| Strategy | Implementation |
-|----------|----------------|
-| **Limit active spatial sources** | Cull peers beyond `maxDistance` (the `PannerNode` already applies a clamp, but consider bypassing the `PannerNode` entirely for distant speakers via a `GainNode` bypass) |
-| **Use `"inverse"` distance model** | Avoid `"exponential"` which has non-linear cost in some implementations |
-| **Pool PannerNode instances** | Create a pool of `N` PannerNodes; recycle when peers come and go, avoiding GC pressure |
-| **Batch parameter updates** | Update all PannerNode positions in a single animation frame batch rather than scattering updates across microtasks |
-| **Throttle listener broadcasts** | 20 Hz (50ms) is sufficient for conversational audio; higher rates waste bandwidth |
-| **Resume AudioContext on gesture** | Always gate `AudioContext` creation/resume on a user click/tap to comply with browser autoplay policies |
+| Strategy                           | Implementation                                                                                                                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Limit active spatial sources**   | Cull peers beyond `maxDistance` (the `PannerNode` already applies a clamp, but consider bypassing the `PannerNode` entirely for distant speakers via a `GainNode` bypass) |
+| **Use `"inverse"` distance model** | Avoid `"exponential"` which has non-linear cost in some implementations                                                                                                   |
+| **Pool PannerNode instances**      | Create a pool of `N` PannerNodes; recycle when peers come and go, avoiding GC pressure                                                                                    |
+| **Batch parameter updates**        | Update all PannerNode positions in a single animation frame batch rather than scattering updates across microtasks                                                        |
+| **Throttle listener broadcasts**   | 20 Hz (50ms) is sufficient for conversational audio; higher rates waste bandwidth                                                                                         |
+| **Resume AudioContext on gesture** | Always gate `AudioContext` creation/resume on a user click/tap to comply with browser autoplay policies                                                                   |
 
 ### 7.3 Culling Strategy
 
 ```typescript
 const SPATIAL_UPDATE_THRESHOLD_SQ = 30 * 30; // 30m² — beyond this, use minimal gain
 
-function updatePeerPositions(spatialRouter: SpatialAudioRouter, peerPositions: Map<string, { x: number; y: number; z: number }>, localPos: { x: number; y: number; z: number }) {
+function updatePeerPositions(
+  spatialRouter: SpatialAudioRouter,
+  peerPositions: Map<string, { x: number; y: number; z: number }>,
+  localPos: { x: number; y: number; z: number },
+) {
   for (const [peerId, pos] of peerPositions) {
     const dx = pos.x - localPos.x;
     const dz = pos.z - localPos.z;
@@ -880,38 +891,37 @@ document.addEventListener("visibilitychange", () => {
 
 ### Existing WorkSphere Documentation
 
-| Document | Description |
-|----------|-------------|
-| [WEBRTC_MESH_NETWORKING_GUIDE.md](./WEBRTC_MESH_NETWORKING_GUIDE.md) | WebRTC peer-to-peer signaling, SDP/ICE, PartyKit integration |
-| [NOISE_METER_ARCHITECTURE.md](./NOISE_METER_ARCHITECTURE.md) | WebAudio AudioContext lifecycle, AnalyserNode FFT, dB calculation |
-| [PARTYKIT_ARCHITECTURE.md](./PARTYKIT_ARCHITECTURE.md) | PartyKit room/server architecture |
-| [CRDT_REALTIME_SYNC_PROTOCOL.md](./CRDT_REALTIME_SYNC_PROTOCOL.md) | Yjs CRDT for shared state (alternative transport) |
+| Document                                                             | Description                                                       |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [WEBRTC_MESH_NETWORKING_GUIDE.md](./WEBRTC_MESH_NETWORKING_GUIDE.md) | WebRTC peer-to-peer signaling, SDP/ICE, PartyKit integration      |
+| [NOISE_METER_ARCHITECTURE.md](./NOISE_METER_ARCHITECTURE.md)         | WebAudio AudioContext lifecycle, AnalyserNode FFT, dB calculation |
+| [PARTYKIT_ARCHITECTURE.md](./PARTYKIT_ARCHITECTURE.md)               | PartyKit room/server architecture                                 |
+| [CRDT_REALTIME_SYNC_PROTOCOL.md](./CRDT_REALTIME_SYNC_PROTOCOL.md)   | Yjs CRDT for shared state (alternative transport)                 |
 
 ### Existing Source Files
 
-| File | Relevance |
-|------|-----------|
-| `party/server.ts` | WebRTC signaling handler (`webrtc-signal`), seat check-in, user auth |
-| `src/hooks/useScreenShare.ts` | WebRTC `RTCPeerConnection` lifecycle, `ontrack`, `onicecandidate` |
-| `src/lib/p2p/p2pManager.ts` | Alternative P2P connection manager with DataChannels |
+| File                                          | Relevance                                                                                |
+| --------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `party/server.ts`                             | WebRTC signaling handler (`webrtc-signal`), seat check-in, user auth                     |
+| `src/hooks/useScreenShare.ts`                 | WebRTC `RTCPeerConnection` lifecycle, `ontrack`, `onicecandidate`                        |
+| `src/lib/p2p/p2pManager.ts`                   | Alternative P2P connection manager with DataChannels                                     |
 | `src/components/noise/AmbientSoundPlayer.tsx` | WebAudio API graph: `AudioContext`, `GainNode`, `BiquadFilterNode`, pink noise synthesis |
-| `src/components/noise/NoiseMeter.tsx` | `AnalyserNode`, FFT, `getFloatTimeDomainData`, RMS → dB |
-| `src/lib/wasm/audioDSPManager.ts` | `AudioWorkletNode`, WASM SIMD DSP pipeline |
-| `src/lib/wasm/audioDSPWorklet.js` | `AudioWorkletProcessor`, WASM integration, Float32Array alignment |
+| `src/components/noise/NoiseMeter.tsx`         | `AnalyserNode`, FFT, `getFloatTimeDomainData`, RMS → dB                                  |
+| `src/lib/wasm/audioDSPManager.ts`             | `AudioWorkletNode`, WASM SIMD DSP pipeline                                               |
+| `src/lib/wasm/audioDSPWorklet.js`             | `AudioWorkletProcessor`, WASM integration, Float32Array alignment                        |
 
 ### External Resources
 
-| Resource | URL |
-|----------|-----|
-| MDN: `PannerNode` | https://developer.mozilla.org/en-US/docs/Web/API/PannerNode |
-| MDN: `AudioListener` | https://developer.mozilla.org/en-US/docs/Web/API/AudioListener |
-| WebAudio Spatialization Spec | https://webaudio.github.io/web-audio-api/#Spatialization |
-| HRTF Panning Explanation | https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Web_audio_spatialization_basics |
-| WebRTC `RTCPeerConnection` | https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection |
+| Resource                     | URL                                                                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------------------- |
+| MDN: `PannerNode`            | https://developer.mozilla.org/en-US/docs/Web/API/PannerNode                                    |
+| MDN: `AudioListener`         | https://developer.mozilla.org/en-US/docs/Web/API/AudioListener                                 |
+| WebAudio Spatialization Spec | https://webaudio.github.io/web-audio-api/#Spatialization                                       |
+| HRTF Panning Explanation     | https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API/Web_audio_spatialization_basics |
+| WebRTC `RTCPeerConnection`   | https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection                             |
 
 ---
 
 ---
 
 > **Future Work:** When implementing this architecture, consider measuring spatial audio latency with `AudioContext.baseLatency` and `outputLatency`, adding an optional `"equalpower"` fallback for devices without HRTF support (mobile Safari), and integrating WebXR `XRViewerPose` for automatic listener position/orientation in VR/AR modes.
-

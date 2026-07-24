@@ -30,6 +30,7 @@ import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import {
   saveVenueOffline,
   getAllVenuesOffline,
+  withLeaderLock,
   OfflineVenue,
 } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
@@ -160,22 +161,28 @@ function AppPage() {
     };
   }, []);
 
-  // Save venues to offline storage when markers update
+  // Save venues to offline storage when markers update.
+  // Uses leader-election (#1072) so only ONE tab across all open windows
+  // persists venues — the IndexedDB data is shared per-origin.
   useEffect(() => {
     if (markers.length > 0 && isOnline) {
-      markers.forEach(async (marker) => {
-        try {
-          await saveVenueOffline({
-            id: marker.id,
-            name: marker.name,
-            latitude: marker.position.lat,
-            longitude: marker.position.lng,
-            category: marker.category,
-            address: marker.address,
-          });
-        } catch (err) {
-          console.error("[Offline] Failed to save venue:", err);
-        }
+      withLeaderLock("worksphere-venue-cache-leader", async () => {
+        await Promise.all(
+          markers.map(async (marker) => {
+            try {
+              await saveVenueOffline({
+                id: marker.id,
+                name: marker.name,
+                latitude: marker.position.lat,
+                longitude: marker.position.lng,
+                category: marker.category,
+                address: marker.address,
+              });
+            } catch (err) {
+              console.error("[Offline] Failed to save venue:", err);
+            }
+          }),
+        );
       });
     }
   }, [markers, isOnline]);
@@ -631,6 +638,24 @@ function AppPage() {
   }) => {
     if (!ratingDialog.venue) return;
 
+    const prevMarkers = [...markers];
+
+    // Optimistic UI update before server response finishes
+    setMarkers((prev) =>
+      prev.map((m) =>
+        m.id === ratingDialog.venue!.id
+          ? {
+              ...m,
+              score: rating.wifiQuality,
+              rating: rating.wifiQuality,
+              wifiQuality: rating.wifiQuality,
+              hasOutlets: rating.hasOutlets,
+              noiseLevel: rating.noiseLevel,
+            }
+          : m,
+      ),
+    );
+
     try {
       const response = await fetch(
         `/api/venues/${ratingDialog.venue.id}/rate`,
@@ -662,6 +687,7 @@ function AppPage() {
       console.log("Rating submitted successfully");
       alert("Rating submitted! Thank you for helping the community.");
     } catch (error) {
+      setMarkers(prevMarkers);
       console.error("Error submitting rating:", error);
       alert("Failed to submit rating. Please try again.");
     }

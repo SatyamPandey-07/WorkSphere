@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   RefreshCw,
   Clock,
+  Copy,
 } from "lucide-react";
 import { useCsrfToken } from "@/hooks/useCsrfToken";
 
@@ -61,6 +62,22 @@ export function PasskeyManager() {
   const [customName, setCustomName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyId = async (credentialId: string) => {
+    try {
+      await navigator.clipboard.writeText(credentialId);
+      setCopiedId(credentialId);
+      setSuccess("Credential ID copied to clipboard");
+      setTimeout(() => {
+        setCopiedId(null);
+        setSuccess(null);
+      }, 3000);
+    } catch {
+      setError("Failed to copy credential ID");
+      setTimeout(() => setError(null), 3000);
+    }
+  };
 
   useEffect(() => {
     setIsWebAuthnSupported(browserSupportsWebAuthn());
@@ -406,6 +423,25 @@ export function PasskeyManager() {
                           <> • Attestation: {pk.attestationFormat}</>
                         )}
                     </p>
+                    <div className="flex items-center gap-1.5 mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                      <span className="font-mono bg-zinc-200/50 dark:bg-zinc-800/50 px-1.5 py-0.5 rounded">
+                        ID:{" "}
+                        {pk.credentialId.length > 12
+                          ? `${pk.credentialId.slice(0, 6)}...${pk.credentialId.slice(-6)}`
+                          : pk.credentialId}
+                      </span>
+                      <button
+                        onClick={() => handleCopyId(pk.credentialId)}
+                        className="p-1 hover:text-zinc-700 dark:hover:text-zinc-300 rounded hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                        title="Copy Credential ID"
+                      >
+                        {copiedId === pk.credentialId ? (
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </div>
 

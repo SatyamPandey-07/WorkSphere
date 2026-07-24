@@ -21,7 +21,11 @@ userDoc.on("update", async (update: Uint8Array) => {
 });
 
 const DB_NAME = "worksphere-offline";
-const DB_VERSION = 4;
+ feat/1628-offline-favorites-sync
+const DB_VERSION = 6;
+
+const DB_VERSION = 5;
+ main
 
 export interface OfflineVenue {
   id: string;
@@ -42,6 +46,19 @@ interface OfflineSearch {
   query: string;
   results: OfflineVenue[];
   timestamp: number;
+}
+
+export interface PreferenceWeights {
+  serverWeight: number;
+  clientWeight: number;
+}
+
+export interface CachedPreferenceRanking {
+  id?: string;
+  venueIds: string[];
+  scores: number[];
+  weights: PreferenceWeights;
+  updatedAt: number;
 }
 
 let db: IDBDatabase | null = null;
@@ -144,6 +161,19 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
           });
           receiptStore.createIndex("status", "status", { unique: false });
           receiptStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
+ feat/1628-offline-favorites-sync
+        // Pending favorites store
+        if (!database.objectStoreNames.contains("pendingFavorites")) {
+          database.createObjectStore("pendingFavorites", {
+
+        // Preference reranking cache store
+        if (!database.objectStoreNames.contains("preference_rankings")) {
+          database.createObjectStore("preference_rankings", {
+ main
+            keyPath: "id",
+          });
         }
 
         console.log("[OfflineDB] Database schema created");
@@ -297,25 +327,37 @@ export async function saveSearchOffline(
   query: string,
   results: OfflineVenue[],
 ): Promise<void> {
-  return withWebLock(async () => {
-    const database = await initOfflineDB();
+  // Leader-election: if another tab is already caching results for this same
+  // query, skip this write — the IndexedDB data is shared per-origin (#1072).
+  const { acquired } = await withLeaderLock(
+    `worksphere-search-cache-${query.trim().toLowerCase().slice(0, 64)}`,
+    async () => {
+      return withWebLock(async () => {
+        const database = await initOfflineDB();
 
-    await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(["searches"], "readwrite");
-      const store = transaction.objectStore("searches");
+        await new Promise<void>((resolve, reject) => {
+          const transaction = database.transaction(["searches"], "readwrite");
+          const store = transaction.objectStore("searches");
 
-      const request = store.put({
-        query: query.toLowerCase().trim(),
-        results,
-        timestamp: Date.now(),
+          const request = store.put({
+            query: query.toLowerCase().trim(),
+            results,
+            timestamp: Date.now(),
+          });
+
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+
+        await trimSearchHistory();
       });
-
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
-
-    await trimSearchHistory();
-  });
+    },
+  );
+  if (!acquired) {
+    console.log(
+      `[Offline] Skipping search cache write for "${query}" — another tab is already indexing`,
+    );
+  }
 }
 
 /**
@@ -410,9 +452,9 @@ export async function queuePendingAction(action: {
     const database = await initOfflineDB();
 
     return new Promise((resolve, reject) => {
-      const checkTx = database.transaction(["pendingActions"], "readonly");
-      const checkStore = checkTx.objectStore("pendingActions");
-      const getAll = checkStore.getAll();
+      const transaction = database.transaction(["pendingActions"], "readwrite");
+      const store = transaction.objectStore("pendingActions");
+      const getAll = store.getAll();
 
       getAll.onsuccess = () => {
         const existing = (
@@ -423,16 +465,14 @@ export async function queuePendingAction(action: {
           return;
         }
 
-        const addTx = database.transaction(["pendingActions"], "readwrite");
-        const addStore = addTx.objectStore("pendingActions");
-        addStore.add({
+        store.add({
           ...action,
           timestamp: Date.now(),
         });
-        addTx.oncomplete = () => resolve();
-        addTx.onerror = () => reject(addTx.error);
       };
       getAll.onerror = () => reject(getAll.error);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
     });
   });
 }
@@ -716,7 +756,17 @@ export async function flushConversationEditQueue(): Promise<void> {
         await removePendingActionById(action.id);
       }
     } catch (err) {
-      // Still offline or request failed — leave it queued for the next attempt.
+      // Network errors (TypeError from fetch) mean the request never reached the
+      // server. Do NOT remove the action from the queue — it will be retried on
+      // the next flush or Background Sync event without data loss or duplication.
+      if (err instanceof TypeError) {
+        console.warn(
+          `[OfflineStorage] flushConversationEditQueue: Network error for action ${action.id} — preserving in queue.`,
+        );
+        // Abort the loop: subsequent actions are likely to fail too.
+        return;
+      }
+      // Non-network error — leave it queued for the next attempt.
       console.error("Failed to sync conversation edit:", err);
     }
   }
@@ -875,5 +925,132 @@ export async function removeReceiptJob(bookingId: string): Promise<void> {
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
+  });
+}
+
+// ============================================================
+// Preference Reranking Cache
+// ============================================================
+
+export async function savePreferenceRanking(
+  data: Omit<CachedPreferenceRanking, "id">,
+): Promise<void> {
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = database.transaction(["preference_rankings"], "readwrite");
+      const store = tx.objectStore("preference_rankings");
+      // Use a single well-known key for the latest ranking
+      const req = store.put({ ...data, id: "latest" });
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function getPreferenceRanking(): Promise<CachedPreferenceRanking | null> {
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = database.transaction(["preference_rankings"], "readonly");
+      const store = tx.objectStore("preference_rankings");
+      const req = store.get("latest");
+      req.onsuccess = () =>
+        resolve(req.result as CachedPreferenceRanking | null);
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export async function clearPreferenceRanking(): Promise<void> {
+  return withWebLock(async () => {
+    const database = await initOfflineDB();
+    return new Promise((resolve, reject) => {
+      const tx = database.transaction(["preference_rankings"], "readwrite");
+      const store = tx.objectStore("preference_rankings");
+      const req = store.delete("latest");
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  });
+}
+
+export interface PendingFavorite {
+  id: string;
+  venueId: string;
+  action: "add" | "remove";
+  timestamp: number;
+}
+
+export async function queuePendingFavorite(
+  venueId: string,
+  action: "add" | "remove",
+): Promise<void> {
+  const database = await initOfflineDB();
+
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(["pendingFavorites"], "readwrite");
+    const store = transaction.objectStore("pendingFavorites");
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const existing = (request.result as PendingFavorite[]).filter(
+        (a) => a.venueId === venueId,
+      );
+
+      // If opposite action exists, delete it. Only latest action matters.
+      existing.forEach((a) => store.delete(a.id));
+
+      store.add({
+        id: crypto.randomUUID(),
+        venueId,
+        action,
+        timestamp: Date.now(),
+      });
+    };
+    request.onerror = () => reject(request.error);
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+
+  if ("serviceWorker" in navigator && "SyncManager" in window) {
+    try {
+      const swRegistration = await navigator.serviceWorker.ready;
+      await (swRegistration as any).sync.register("sync-favorites");
+    } catch (err) {
+      console.error("Background Sync registration failed:", err);
+    }
+  }
+}
+
+export async function getPendingFavorites(): Promise<PendingFavorite[]> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(["pendingFavorites"], "readonly");
+    const store = transaction.objectStore("pendingFavorites");
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const actions = (request.result as PendingFavorite[]).sort(
+        (a, b) => a.timestamp - b.timestamp,
+      );
+      resolve(actions);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function removePendingFavorite(id: string): Promise<void> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(["pendingFavorites"], "readwrite");
+    const store = transaction.objectStore("pendingFavorites");
+    const request = store.delete(id);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
   });
 }

@@ -19,10 +19,8 @@ export async function GET() {
         deviceType: true,
         backedUp: true,
         transports: true,
-        attestationFormat: true,
         createdAt: true,
         lastUsedAt: true,
-        expiresAt: true,
       },
     });
 

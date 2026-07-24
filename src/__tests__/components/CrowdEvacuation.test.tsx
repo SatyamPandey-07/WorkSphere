@@ -59,7 +59,7 @@ Object.defineProperty(navigator, "gpu", {
 });
 
 // Mock canvas getContext
-HTMLCanvasElement.prototype.getContext = jest.fn((type: string) => {
+HTMLCanvasElement.prototype.getContext = jest.fn((type: string): any => {
   if (type === "webgpu") {
     return {
       configure: jest.fn(),

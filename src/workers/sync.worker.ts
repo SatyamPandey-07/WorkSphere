@@ -2,6 +2,7 @@ import {
   getQueuedFavorites,
   dequeueOfflineAction,
   incrementRetryCount,
+  restoreFailedPayload,
   MAX_SYNC_RETRIES,
 } from "../lib/offlineStore";
 
@@ -172,15 +173,47 @@ async function processOutbox() {
         } catch (error: any) {
           console.error("[Sync Worker] Failed to sync favorite:", error);
 
-          // If failure is due to device being offline, do NOT penalize or dequeue outbox item
+          // -------------------------------------------------------------------
+          // Distinguish network errors (TypeError) from server errors.
+          //
+          // fetch() throws TypeError for network failures:
+          //   - DNS resolution failures
+          //   - TCP connection timeouts / resets
+          //   - TLS handshake failures
+          //   - Premature connection close while reading body
+          //
+          // For network errors we MUST NOT:
+          //   - Increment retryCount (it would exhaust MAX_SYNC_RETRIES unfairly)
+          //   - Trip the circuit breaker (network is transient, not a server issue)
+          //   - Dequeue the item (would lose data permanently)
+          //
+          // Instead we restore the payload (reset retryCount to 0) so the item
+          // is re-attempted fresh on the next WAKE_UP cycle.
+          // -------------------------------------------------------------------
+          const isNetworkError = error instanceof TypeError;
+
+          if (isNetworkError) {
+            console.warn(
+              "[Sync Worker] Network error detected (fetch TypeError). Restoring payload without retry penalty.",
+            );
+            await restoreFailedPayload(action.id!);
+            // Break the loop — device may have gone offline mid-sync.
+            // The next WAKE_UP (from online event, visibility change, or
+            // next page load) will re-process the queue from scratch.
+            break;
+          }
+
+          // If failure is due to device being offline (navigator.onLine),
+          // do NOT penalize or dequeue outbox item
           if (
             typeof self !== "undefined" &&
             self.navigator &&
             !self.navigator.onLine
           ) {
             console.warn(
-              "[Sync Worker] Offline network error; keeping item in queue.",
+              "[Sync Worker] Offline network error; restoring payload without penalty.",
             );
+            await restoreFailedPayload(action.id!);
             break;
           }
 

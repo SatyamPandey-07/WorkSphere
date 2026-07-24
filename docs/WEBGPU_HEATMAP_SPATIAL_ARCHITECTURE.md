@@ -21,10 +21,10 @@ WorkSphere employs a dual GPU acceleration model across two distinct graphics su
 ```mermaid
 flowchart TD
     App[WorkSphere Frontend / Leaflet Map] --> Selection{GPU Pipeline Selection}
-    
+
     Selection -->|3D Floor Plan Rendering| WebGPUEngine["WebGPU Engine (floorPlanRenderer.ts)"]
     Selection -->|Spatial Heatmap Layer| WebGLEngine["WebGL Heatmap Engine (webglHeatmapRenderer.ts)"]
-    
+
     subgraph WebGPU ["WebGPU Render Subsystem"]
         WebGPUEngine --> GPUAdapter["navigator.gpu.requestAdapter()"]
         GPUAdapter --> GPUDevice["adapter.requestDevice()"]
@@ -40,7 +40,7 @@ flowchart TD
         GLSLShader --> VBOBuffer["Float32Array VBO (x, y, intensity, radius)"]
         VBOBuffer --> GLDraw["gl.drawArrays(gl.POINTS)"]
     end
-    
+
     WebGPUEngine -->|Fallback if !navigator.gpu| WebGLEngine
 ```
 
@@ -123,11 +123,12 @@ async initialize(): Promise<boolean> {
 > **Audit Status**: **NOT FOUND**
 
 A detailed repository-wide scan confirms that **no compute pipelines** exist in the project:
-* `GPUComputePipeline`: 0 references across repository.
-* `createComputePipeline`: 0 references across repository.
-* `dispatchWorkgroups` / `dispatchWorkgroupsIndirect`: 0 references across repository.
-* `@compute` shader entry points: 0 references across repository.
-* Storage Buffer binding layouts (`GPUBufferUsage.STORAGE`): 0 compute storage bindings used for spatial algorithms.
+
+- `GPUComputePipeline`: 0 references across repository.
+- `createComputePipeline`: 0 references across repository.
+- `dispatchWorkgroups` / `dispatchWorkgroupsIndirect`: 0 references across repository.
+- `@compute` shader entry points: 0 references across repository.
+- Storage Buffer binding layouts (`GPUBufferUsage.STORAGE`): 0 compute storage bindings used for spatial algorithms.
 
 All parallel compute tasks for spatial telemetry processing are handled either on the CPU via Javascript transformations in [`src/components/WebGLHeatmapLayer.tsx`](file:///c:/Codes/WorkSphere/src/components/WebGLHeatmapLayer.tsx#L86-L109) or during rasterization inside WebGL fragment shaders.
 
@@ -139,9 +140,9 @@ WGSL shaders are defined in [`src/lib/webgpu/shaders.wgsl.ts`](file:///c:/Codes/
 
 ### 1. Vertex Shader (`vs_main`)
 
-* **Purpose**: Transforms 3D vertex positions using Model-View-Projection (MVP) and Model transformation matrices. Passes world positions, normals, vertex colors, and UV coordinates to the fragment stage.
-* **Inputs**: `VertexInput` struct (`position: vec3<f32>`, `normal: vec3<f32>`, `color: vec3<f32>`, `uv: vec2<f32>`).
-* **Bindings**: `@group(0) @binding(0) var<uniform> uniforms: Uniforms`.
+- **Purpose**: Transforms 3D vertex positions using Model-View-Projection (MVP) and Model transformation matrices. Passes world positions, normals, vertex colors, and UV coordinates to the fragment stage.
+- **Inputs**: `VertexInput` struct (`position: vec3<f32>`, `normal: vec3<f32>`, `color: vec3<f32>`, `uv: vec2<f32>`).
+- **Bindings**: `@group(0) @binding(0) var<uniform> uniforms: Uniforms`.
 
 ```wgsl
 struct Uniforms {
@@ -182,8 +183,8 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 ### 2. Fragment Shader (`fs_main`)
 
-* **Purpose**: Calculates Blinn-Phong lighting (ambient `0.3`, diffuse `0.5`, specular `0.2` with exponent `32.0`) and procedural grid line modulation on floor surfaces.
-* **Outputs**: Color target `@location(0) vec4<f32>`.
+- **Purpose**: Calculates Blinn-Phong lighting (ambient `0.3`, diffuse `0.5`, specular `0.2` with exponent `32.0`) and procedural grid line modulation on floor surfaces.
+- **Outputs**: Color target `@location(0) vec4<f32>`.
 
 ```wgsl
 @fragment
@@ -238,11 +239,11 @@ where $d^2 = (x - 0.5)^2 + (y - 0.5)^2$ calculated using `gl_PointCoord`.
 
 Density values are mapped to color stops using additive color blending (`gl.blendFunc(gl.SRC_ALPHA, gl.ONE)`):
 
-* **Density 0.0 - 0.2**: Transparent Blue `(0.05, 0.15, 0.45, 0.0)` $\rightarrow$ Electric Cyan `(0.0, 0.8, 1.0, 0.4)`
-* **Density 0.2 - 0.4**: Electric Cyan $\rightarrow$ Mint Emerald `(0.1, 0.9, 0.4, 0.65)`
-* **Density 0.4 - 0.7**: Mint Emerald $\rightarrow$ Vibrant Yellow `(1.0, 0.85, 0.1, 0.85)`
-* **Density 0.7 - 0.9**: Vibrant Yellow $\rightarrow$ Fiery Orange `(1.0, 0.4, 0.0, 0.95)`
-* **Density 0.9 - 1.0**: Fiery Orange $\rightarrow$ Crimson Red `(0.95, 0.05, 0.15, 1.0)`
+- **Density 0.0 - 0.2**: Transparent Blue `(0.05, 0.15, 0.45, 0.0)` $\rightarrow$ Electric Cyan `(0.0, 0.8, 1.0, 0.4)`
+- **Density 0.2 - 0.4**: Electric Cyan $\rightarrow$ Mint Emerald `(0.1, 0.9, 0.4, 0.65)`
+- **Density 0.4 - 0.7**: Mint Emerald $\rightarrow$ Vibrant Yellow `(1.0, 0.85, 0.1, 0.85)`
+- **Density 0.7 - 0.9**: Vibrant Yellow $\rightarrow$ Fiery Orange `(1.0, 0.4, 0.0, 0.95)`
+- **Density 0.9 - 1.0**: Fiery Orange $\rightarrow$ Crimson Red `(0.95, 0.05, 0.15, 1.0)`
 
 ### Verified GLSL Fragment Shader (`src/shaders/heatmapShaders.ts`)
 
@@ -308,18 +309,19 @@ The vertex buffer in [`src/lib/webgpu/floorPlanRenderer.ts`](file:///c:/Codes/Wo
 <---------------------------------- 40 bytes Stride ---------------------------->
 ```
 
-* `position`: `float32x3` @ offset 0
-* `normal`: `float32x3` @ offset 12
-* `color`: `float32x3` @ offset 24
-* `uv`: `float32x2` @ offset 36
+- `position`: `float32x3` @ offset 0
+- `normal`: `float32x3` @ offset 12
+- `color`: `float32x3` @ offset 24
+- `uv`: `float32x2` @ offset 36
 
 ### 2. WebGPU Uniform Buffer Memory Layout
 
 Allocated as 128 bytes (`GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST`):
-* `mvpFinal`: `mat4x4<f32>` (64 bytes, offsets 0..63)
-* `model`: `mat4x4<f32>` (64 bytes, offsets 64..127)
-* `lightDir`: `vec3<f32>` (packed in floats 24..26)
-* `time`: `f32` (float 27)
+
+- `mvpFinal`: `mat4x4<f32>` (64 bytes, offsets 0..63)
+- `model`: `mat4x4<f32>` (64 bytes, offsets 64..127)
+- `lightDir`: `vec3<f32>` (packed in floats 24..26)
+- `time`: `f32` (float 27)
 
 ### 3. WebGL Heatmap VBO Memory Layout
 
@@ -380,15 +382,15 @@ stateDiagram-v2
 ### Allocation & Destruction Protocol
 
 1. **WebGPU Resource Allocation**:
-   * Vertex & Index buffers allocated via `device.createBuffer({ size, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST })`.
-   * Data uploaded via `device.queue.writeBuffer(buffer, 0, data)`.
-   * Depth texture (`depth24plus`) generated per frame and explicitly freed via `depthTexture.destroy()` in [`src/lib/webgpu/floorPlanRenderer.ts#L721`](file:///c:/Codes/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts#L721).
-   * Complete engine teardown calls `vertexBuffer.destroy()`, `indexBuffer.destroy()`, `uniformBuffer.destroy()`, and `device.destroy()`.
+   - Vertex & Index buffers allocated via `device.createBuffer({ size, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST })`.
+   - Data uploaded via `device.queue.writeBuffer(buffer, 0, data)`.
+   - Depth texture (`depth24plus`) generated per frame and explicitly freed via `depthTexture.destroy()` in [`src/lib/webgpu/floorPlanRenderer.ts#L721`](file:///c:/Codes/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts#L721).
+   - Complete engine teardown calls `vertexBuffer.destroy()`, `indexBuffer.destroy()`, `uniformBuffer.destroy()`, and `device.destroy()`.
 
 2. **WebGL Context Lost Recovery**:
-   * Implemented in [`src/lib/webgl/contextManager.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/contextManager.ts).
-   * Prevents default context lost behavior: `e.preventDefault()`.
-   * Automatically re-initializes VBO buffers upon receiving `webglcontextrestored`.
+   - Implemented in [`src/lib/webgl/contextManager.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/contextManager.ts).
+   - Prevents default context lost behavior: `e.preventDefault()`.
+   - Automatically re-initializes VBO buffers upon receiving `webglcontextrestored`.
 
 ---
 
@@ -411,11 +413,11 @@ flowchart TD
     CheckWebGPU -->|Yes| ReqAdapter[requestAdapter]
     ReqAdapter -->|Success| ReqDevice[requestDevice]
     ReqDevice -->|Success| WebGPUPipeline[Initialize WebGPU Pipeline]
-    
+
     CheckWebGPU -->|No| FallbackWebGL[Fallback to WebGL 2.0 Engine]
     ReqAdapter -->|Fail| FallbackWebGL
     ReqDevice -->|Fail| FallbackWebGL
-    
+
     WebGPUPipeline --> RenderWebGPU[Render 60+ FPS via WebGPU]
     FallbackWebGL --> RenderWebGL[Render via WebGL 2.0]
 ```
@@ -426,12 +428,12 @@ flowchart TD
 
 Below is the verified performance comparison from [`docs/WEBGPU_3D_FLOOR_PLAN_MANUAL.md`](file:///c:/Codes/WorkSphere/docs/WEBGPU_3D_FLOOR_PLAN_MANUAL.md#L218-L228) for 3D room model workloads (150,000 polygons, 50 dynamic seats, real-time lighting):
 
-| Metric | WebGPU Pipeline | WebGL 2.0 Fallback | Improvement |
-| :--- | :--- | :--- | :--- |
-| **Average Frame Rate** | **60.0 FPS** | 42.5 FPS | **+41.1%** |
-| **Frame Render Time** | **2.1 ms** | 8.4 ms | **-75.0%** |
-| **Draw Call Overhead** | **1 Pass** | 12 Passes | **-91.6%** |
-| **GPU Buffer Bandwidth** | **12.4 GB/s** | 4.2 GB/s | **+195.2%** |
+| Metric                   | WebGPU Pipeline | WebGL 2.0 Fallback | Improvement |
+| :----------------------- | :-------------- | :----------------- | :---------- |
+| **Average Frame Rate**   | **60.0 FPS**    | 42.5 FPS           | **+41.1%**  |
+| **Frame Render Time**    | **2.1 ms**      | 8.4 ms             | **-75.0%**  |
+| **Draw Call Overhead**   | **1 Pass**      | 12 Passes          | **-91.6%**  |
+| **GPU Buffer Bandwidth** | **12.4 GB/s**   | 4.2 GB/s           | **+195.2%** |
 
 > [!CAUTION]
 > **Spatial Compute Benchmarks**: No WebGPU compute shader benchmark scripts or GPU timing metrics exist because compute shaders are not implemented in the repository.
@@ -440,30 +442,30 @@ Below is the verified performance comparison from [`docs/WEBGPU_3D_FLOOR_PLAN_MA
 
 ## Browser Compatibility
 
-| Browser | WebGPU Floor Plan | WebGL Heatmap | Notes |
-| :--- | :--- | :--- | :--- |
-| **Chrome 113+** | Supported | Supported | Full native WebGPU & WebGL 2.0 support |
-| **Edge 113+** | Supported | Supported | Native DirectX 12 / Vulkan backend |
-| **Firefox 120+** | Experimental | Supported | WebGPU requires `dom.webgpu.enabled` in `about:config` |
-| **Safari 17+** | Experimental | Supported | WebGPU requires feature flag in macOS/iOS |
-| **Legacy Browsers** | Fallback | Supported | WebGL 1.0 fallback path |
+| Browser             | WebGPU Floor Plan | WebGL Heatmap | Notes                                                  |
+| :------------------ | :---------------- | :------------ | :----------------------------------------------------- |
+| **Chrome 113+**     | Supported         | Supported     | Full native WebGPU & WebGL 2.0 support                 |
+| **Edge 113+**       | Supported         | Supported     | Native DirectX 12 / Vulkan backend                     |
+| **Firefox 120+**    | Experimental      | Supported     | WebGPU requires `dom.webgpu.enabled` in `about:config` |
+| **Safari 17+**      | Experimental      | Supported     | WebGPU requires feature flag in macOS/iOS              |
+| **Legacy Browsers** | Fallback          | Supported     | WebGL 1.0 fallback path                                |
 
 ---
 
 ## Repository Gap Analysis
 
-| Feature | Status | Evidence | Missing / Remediations |
-| :--- | :--- | :--- | :--- |
-| **WebGPU 3D Floor Plan Renderer** | **Implemented** | [`src/lib/webgpu/floorPlanRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts) | Fully implemented for 3D geometry |
-| **WGSL Render Shaders** | **Implemented** | [`src/lib/webgpu/shaders.wgsl.ts`](file:///c:/Codes/WorkSphere/src/lib/webgpu/shaders.wgsl.ts) | Vertex & fragment shaders implemented |
-| **WebGL Point Heatmap Renderer** | **Implemented** | [`src/lib/webgl/webglHeatmapRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/webglHeatmapRenderer.ts) | Renders 100k points via `gl.POINTS` |
-| **GLSL Heatmap Density Shaders** | **Implemented** | [`src/shaders/heatmapShaders.ts`](file:///c:/Codes/WorkSphere/src/shaders/heatmapShaders.ts) | Gaussian decay & multi-stop color ramp |
-| **WebGL Context Lost Recovery** | **Implemented** | [`src/lib/webgl/contextManager.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/contextManager.ts) | Handles tab switching context loss |
-| **WebGPU Compute Pipeline** | **Not Found** | Entire repository scan | No `GPUComputePipeline` created |
-| **WGSL Compute Shaders** | **Not Found** | Entire repository scan | No `@compute` entry points |
-| **2D Heat Diffusion Solver** | **Not Found** | Entire repository scan | No Jacobi / finite difference PDE solver |
-| **Compute Workgroup Dispatch** | **Not Found** | Entire repository scan | No `dispatchWorkgroups()` calls |
-| **Compute Shader Benchmarks** | **Not Found** | Entire repository scan | No profiling scripts for compute dispatches |
+| Feature                           | Status          | Evidence                                                                                                     | Missing / Remediations                      |
+| :-------------------------------- | :-------------- | :----------------------------------------------------------------------------------------------------------- | :------------------------------------------ |
+| **WebGPU 3D Floor Plan Renderer** | **Implemented** | [`src/lib/webgpu/floorPlanRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgpu/floorPlanRenderer.ts)     | Fully implemented for 3D geometry           |
+| **WGSL Render Shaders**           | **Implemented** | [`src/lib/webgpu/shaders.wgsl.ts`](file:///c:/Codes/WorkSphere/src/lib/webgpu/shaders.wgsl.ts)               | Vertex & fragment shaders implemented       |
+| **WebGL Point Heatmap Renderer**  | **Implemented** | [`src/lib/webgl/webglHeatmapRenderer.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/webglHeatmapRenderer.ts) | Renders 100k points via `gl.POINTS`         |
+| **GLSL Heatmap Density Shaders**  | **Implemented** | [`src/shaders/heatmapShaders.ts`](file:///c:/Codes/WorkSphere/src/shaders/heatmapShaders.ts)                 | Gaussian decay & multi-stop color ramp      |
+| **WebGL Context Lost Recovery**   | **Implemented** | [`src/lib/webgl/contextManager.ts`](file:///c:/Codes/WorkSphere/src/lib/webgl/contextManager.ts)             | Handles tab switching context loss          |
+| **WebGPU Compute Pipeline**       | **Not Found**   | Entire repository scan                                                                                       | No `GPUComputePipeline` created             |
+| **WGSL Compute Shaders**          | **Not Found**   | Entire repository scan                                                                                       | No `@compute` entry points                  |
+| **2D Heat Diffusion Solver**      | **Not Found**   | Entire repository scan                                                                                       | No Jacobi / finite difference PDE solver    |
+| **Compute Workgroup Dispatch**    | **Not Found**   | Entire repository scan                                                                                       | No `dispatchWorkgroups()` calls             |
+| **Compute Shader Benchmarks**     | **Not Found**   | Entire repository scan                                                                                       | No profiling scripts for compute dispatches |
 
 ---
 

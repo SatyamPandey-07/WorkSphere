@@ -15,11 +15,19 @@ export async function verifyPackedAttestation(
   authenticatorData: Uint8Array,
   clientDataHash: Uint8Array,
 ): Promise<{ verified: boolean; trustPath?: string[] }> {
-  const attStmtSig = attStmt.sig as Uint8Array;
+  if (!attStmt || typeof attStmt !== "object") return { verified: false };
+
+  const attStmtSig = attStmt.sig as Uint8Array | undefined;
   const attStmtX5c = attStmt.x5c as Uint8Array[] | undefined;
 
-  if (attStmtX5c && attStmtX5c.length > 0) {
+  if (!attStmtSig) {
+    return { verified: false };
+  }
+
+  if (attStmtX5c && Array.isArray(attStmtX5c) && attStmtX5c.length > 0) {
     const leafCert = attStmtX5c[0];
+    if (!leafCert) return { verified: false };
+
     const toBeSigned = new Uint8Array([
       ...authenticatorData,
       ...clientDataHash,
@@ -32,8 +40,8 @@ export async function verifyPackedAttestation(
     const valid = await crypto.subtle.verify(
       { name: "RSASSA-PKCS1-v1_5" },
       publicKey,
-      attStmtSig,
-      toBeSigned,
+      attStmtSig as unknown as BufferSource,
+      toBeSigned as unknown as BufferSource,
     );
 
     return {
@@ -50,14 +58,17 @@ export async function verifyAndroidKeyAttestation(
   authenticatorData: Uint8Array,
   clientDataHash: Uint8Array,
 ): Promise<{ verified: boolean; trustPath?: string[] }> {
-  const attStmtSig = attStmt.sig as Uint8Array;
-  const x5c = attStmt.x5c as Uint8Array[];
+  if (!attStmt || typeof attStmt !== "object") return { verified: false };
 
-  if (!x5c || x5c.length === 0) {
+  const attStmtSig = attStmt.sig as Uint8Array | undefined;
+  const x5c = attStmt.x5c as Uint8Array[] | undefined;
+
+  if (!attStmtSig || !x5c || !Array.isArray(x5c) || x5c.length === 0) {
     return { verified: false };
   }
 
   const leafCert = x5c[0];
+  if (!leafCert) return { verified: false };
   const toVerify = new Uint8Array([...authenticatorData, ...clientDataHash]);
 
   const certDerBuf = Buffer.from(leafCert);
@@ -67,14 +78,28 @@ export async function verifyAndroidKeyAttestation(
   const valid = await crypto.subtle.verify(
     { name: "RSASSA-PKCS1-v1_5" },
     publicKey,
-    attStmtSig,
-    toVerify,
+    attStmtSig as unknown as BufferSource,
+    toVerify as unknown as BufferSource,
   );
 
   return {
     verified: valid,
     trustPath: x5c.map((cert) => Buffer.from(cert).toString("base64")),
   };
+}
+
+export function verifyNoneAttestation(attStmt: Record<string, unknown>): {
+  verified: boolean;
+} {
+  if (!attStmt || typeof attStmt !== "object") {
+    return { verified: false };
+  }
+
+  if (Object.keys(attStmt).length !== 0) {
+    return { verified: false };
+  }
+
+  return { verified: true };
 }
 
 async function importPublicKeyFromCert(

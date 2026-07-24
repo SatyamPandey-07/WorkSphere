@@ -13,6 +13,7 @@ class MockAudioWorkletNode {
     onmessage: null as ((ev: any) => void) | null,
   };
   connect = jest.fn();
+  disconnect = jest.fn();
 }
 
 class MockAudioContext {
@@ -72,5 +73,17 @@ describe("AudioDSP Manager & WASM SIMD Alignment (Issue #1080)", () => {
         wasmBinary: expect.any(ArrayBuffer),
       }),
     );
+  });
+
+  test("stopAudioProcessing sends a destroy message to the worklet to prevent memory leaks", async () => {
+    await initAudioDSP();
+
+    // Clear previous calls like 'init'
+    mockPostMessage.mockClear();
+
+    const { stopAudioProcessing } = await import("@/lib/wasm/audioDSPManager");
+    stopAudioProcessing();
+
+    expect(mockPostMessage).toHaveBeenCalledWith({ type: "destroy" });
   });
 });

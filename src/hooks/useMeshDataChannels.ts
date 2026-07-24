@@ -46,9 +46,11 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
   }, [onData]);
 
   useEffect(() => {
-    getToken()
-      .then(setToken)
-      .catch(() => setToken(null));
+    if (typeof getToken === "function") {
+      getToken()
+        .then(setToken)
+        .catch(() => setToken(null));
+    }
   }, [getToken]);
 
   const sendSignal = useCallback(

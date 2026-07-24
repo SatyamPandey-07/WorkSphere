@@ -1,17 +1,18 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import * as Y from "yjs";
 import usePartySocket from "partysocket/react";
-import { CryptoManager, bufferToBase64, base64ToBuffer } from "@/lib/e2ee/CryptoManager";
+import { CryptoManager } from "@/lib/e2ee/CryptoManager";
 import { KeyStore } from "@/lib/e2ee/KeyStore";
-import { Lock, Unlock, Key, Loader2 } from "lucide-react";
+import { Lock, Unlock, Key, Loader2, Share2 } from "lucide-react";
+import { useToast } from "@/components/ui/Toast";
 import {
   generateKeyPair,
   exportPublicKey,
   importPublicKey,
   deriveSharedKey,
-  KeyPair
+  KeyPair,
 } from "@/lib/p2p/encryption";
 
 interface Props {
@@ -24,14 +25,36 @@ export default function Scratchpad({ sessionId }: Props) {
   const [hasKey, setHasKey] = useState(false);
   const [isNegotiating, setIsNegotiating] = useState(false);
   const [text, setText] = useState("");
-  
+  const { toast } = useToast();
+
   const clientId = useRef(crypto.randomUUID());
   const ecdhKeyPair = useRef<KeyPair | null>(null);
-  
+
   const docRef = useRef<Y.Doc | null>(null);
   const yTextRef = useRef<Y.Text | null>(null);
   const cryptoKeyRef = useRef<CryptoKey | null>(null);
   const isLocalUpdateRef = useRef(false);
+  const processedUpdatesRef = useRef<Set<string>>(new Set());
+  const updateQueueRef = useRef<Uint8Array[]>([]);
+  const isApplyingRef = useRef(false);
+
+  const processQueue = () => {
+    if (isApplyingRef.current || !docRef.current) return;
+    isApplyingRef.current = true;
+
+    try {
+      docRef.current.transact(() => {
+        while (updateQueueRef.current.length > 0) {
+          const update = updateQueueRef.current.shift();
+          if (update) {
+            Y.applyUpdate(docRef.current!, update);
+          }
+        }
+      });
+    } finally {
+      isApplyingRef.current = false;
+    }
+  };
 
   // Initialize Y.Doc
   useEffect(() => {
@@ -70,18 +93,22 @@ export default function Scratchpad({ sessionId }: Props) {
     onMessage: async (e) => {
       try {
         const msg = JSON.parse(e.data);
-        
+
         // Handle incoming E2EE delta updates
-        if (msg.type === "e2ee-delta" && cryptoKeyRef.current && docRef.current) {
+        if (
+          msg.type === "e2ee-delta" &&
+          cryptoKeyRef.current &&
+          docRef.current
+        ) {
           const { ciphertext, iv } = msg.payload;
           const decryptedUpdate = await CryptoManager.decryptPayload(
             cryptoKeyRef.current,
             ciphertext,
-            iv
+            iv,
           );
           
           isLocalUpdateRef.current = true;
-          Y.applyUpdate(docRef.current, decryptedUpdate);
+          processQueue();
           isLocalUpdateRef.current = false;
           return;
         }
@@ -90,42 +117,64 @@ export default function Scratchpad({ sessionId }: Props) {
         if (msg.type === "e2ee-request-key" && hasKey && cryptoKeyRef.current) {
           const peerPubKey = await importPublicKey(msg.publicKey);
           const tempPair = await generateKeyPair();
-          const sharedKey = await deriveSharedKey(tempPair.privateKey, peerPubKey);
-          
-          const rawGroupKey = await window.crypto.subtle.exportKey("raw", cryptoKeyRef.current);
-          const encryptedGroupKey = await CryptoManager.encryptPayload(sharedKey, new Uint8Array(rawGroupKey));
-          
+          const sharedKey = await deriveSharedKey(
+            tempPair.privateKey,
+            peerPubKey,
+          );
+
+          const rawGroupKey = await window.crypto.subtle.exportKey(
+            "raw",
+            cryptoKeyRef.current,
+          );
+          const encryptedGroupKey = await CryptoManager.encryptPayload(
+            sharedKey,
+            new Uint8Array(rawGroupKey),
+          );
+
           const myPubKeyBase64 = await exportPublicKey(tempPair.publicKey);
-          socket.send(JSON.stringify({
-            type: "e2ee-share-key",
-            targetClientId: msg.clientId,
-            senderPublicKey: myPubKeyBase64,
-            encryptedKey: encryptedGroupKey
-          }));
+          socket.send(
+            JSON.stringify({
+              type: "e2ee-share-key",
+              targetClientId: msg.clientId,
+              senderPublicKey: myPubKeyBase64,
+              encryptedKey: encryptedGroupKey,
+            }),
+          );
           return;
         }
 
         // Handle receiving the group key (we are the new peer)
-        if (msg.type === "e2ee-share-key" && msg.targetClientId === clientId.current && isNegotiating) {
+        if (
+          msg.type === "e2ee-share-key" &&
+          msg.targetClientId === clientId.current &&
+          isNegotiating
+        ) {
           const peerPubKey = await importPublicKey(msg.senderPublicKey);
-          const sharedKey = await deriveSharedKey(ecdhKeyPair.current!.privateKey, peerPubKey);
-          
-          const decryptedRawKey = await CryptoManager.decryptPayload(sharedKey, msg.encryptedKey.ciphertext, msg.encryptedKey.iv);
+          const sharedKey = await deriveSharedKey(
+            ecdhKeyPair.current!.privateKey,
+            peerPubKey,
+          );
+
+          const decryptedRawKey = await CryptoManager.decryptPayload(
+            sharedKey,
+            msg.encryptedKey.ciphertext,
+            msg.encryptedKey.iv,
+          );
           const groupKey = await window.crypto.subtle.importKey(
             "raw",
             decryptedRawKey as BufferSource,
             { name: "AES-GCM", length: 256 },
             true,
-            ["encrypt", "decrypt"]
+            ["encrypt", "decrypt"],
           );
-          
+
           cryptoKeyRef.current = groupKey;
           await keyStore.saveSessionKey(sessionId, groupKey, new Uint8Array(0));
           setHasKey(true);
           setIsNegotiating(false);
           return;
         }
-      } catch (err) {
+      } catch {
         // Ignore non-json or decryption errors
       }
     },
@@ -133,24 +182,34 @@ export default function Scratchpad({ sessionId }: Props) {
 
   // Start negotiation when socket is open
   useEffect(() => {
-    if (isNegotiating && ecdhKeyPair.current && socket.readyState === WebSocket.OPEN) {
-      exportPublicKey(ecdhKeyPair.current.publicKey).then(pubKeyStr => {
-        socket.send(JSON.stringify({
-          type: "e2ee-request-key",
-          clientId: clientId.current,
-          publicKey: pubKeyStr
-        }));
-        
+    if (
+      isNegotiating &&
+      ecdhKeyPair.current &&
+      socket.readyState === WebSocket.OPEN
+    ) {
+      exportPublicKey(ecdhKeyPair.current.publicKey).then((pubKeyStr) => {
+        socket.send(
+          JSON.stringify({
+            type: "e2ee-request-key",
+            clientId: clientId.current,
+            publicKey: pubKeyStr,
+          }),
+        );
+
         // Fallback: If no one responds in 3 seconds, generate a fresh group key
         setTimeout(async () => {
           if (!cryptoKeyRef.current) {
             const newGroupKey = await window.crypto.subtle.generateKey(
               { name: "AES-GCM", length: 256 },
               true,
-              ["encrypt", "decrypt"]
+              ["encrypt", "decrypt"],
             );
             cryptoKeyRef.current = newGroupKey;
-            await keyStore.saveSessionKey(sessionId, newGroupKey, new Uint8Array(0));
+            await keyStore.saveSessionKey(
+              sessionId,
+              newGroupKey,
+              new Uint8Array(0),
+            );
             setHasKey(true);
             setIsNegotiating(false);
           }
@@ -162,11 +221,11 @@ export default function Scratchpad({ sessionId }: Props) {
   // Handle local Yjs updates and encrypt them
   useEffect(() => {
     if (!docRef.current) return;
-    
+
     const doc = docRef.current;
-    const handleUpdate = async (update: Uint8Array, origin: any) => {
+    const handleUpdate = async (update: Uint8Array, _origin: any) => {
       if (isLocalUpdateRef.current || !cryptoKeyRef.current) return;
-      
+
       try {
         const encrypted = await CryptoManager.encryptPayload(cryptoKeyRef.current, update);
         socket.send(JSON.stringify({
@@ -183,8 +242,15 @@ export default function Scratchpad({ sessionId }: Props) {
       doc.off("update", handleUpdate);
     };
   }, [socket, hasKey]);
-
-
+  const handleShare = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast("Scratchpad link copied to clipboard!", "success");
+    } catch (error) {
+      console.error("Failed to copy scratchpad link", error);
+      toast("Failed to copy scratchpad link.", "error");
+    }
+  };
 
   const handleClearKey = async () => {
     await keyStore.deleteSessionKey(sessionId);
@@ -195,28 +261,36 @@ export default function Scratchpad({ sessionId }: Props) {
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     if (!yTextRef.current || !docRef.current) return;
     const ytext = yTextRef.current;
-    
+
     // Simple diffing logic to apply changes to Yjs
     const newValue = e.target.value;
     const oldValue = ytext.toString();
-    
+
     // Find common prefix
     let start = 0;
-    while (start < oldValue.length && start < newValue.length && oldValue[start] === newValue[start]) {
+    while (
+      start < oldValue.length &&
+      start < newValue.length &&
+      oldValue[start] === newValue[start]
+    ) {
       start++;
     }
-    
+
     // Find common suffix
     let endOld = oldValue.length - 1;
     let endNew = newValue.length - 1;
-    while (endOld >= start && endNew >= start && oldValue[endOld] === newValue[endNew]) {
+    while (
+      endOld >= start &&
+      endNew >= start &&
+      oldValue[endOld] === newValue[endNew]
+    ) {
       endOld--;
       endNew--;
     }
-    
+
     const removeCount = endOld - start + 1;
     const insertString = newValue.slice(start, endNew + 1);
-    
+
     docRef.current.transact(() => {
       if (removeCount > 0) {
         ytext.delete(start, removeCount);
@@ -233,9 +307,12 @@ export default function Scratchpad({ sessionId }: Props) {
         <div className="mb-4 rounded-full bg-violet-500/10 p-4 text-violet-300">
           <Loader2 className="h-8 w-8 animate-spin" />
         </div>
-        <h3 className="text-xl font-semibold text-white">Establishing Secure Connection</h3>
+        <h3 className="text-xl font-semibold text-white">
+          Establishing Secure Connection
+        </h3>
         <p className="mt-2 text-sm text-zinc-400 mb-6 max-w-sm">
-          Exchanging ECDH cryptographic keys with peers to seamlessly encrypt your scratchpad.
+          Exchanging ECDH cryptographic keys with peers to seamlessly encrypt
+          your scratchpad.
         </p>
       </div>
     );
@@ -248,13 +325,23 @@ export default function Scratchpad({ sessionId }: Props) {
           <Unlock className="h-4 w-4" />
           <span className="text-sm font-medium">E2EE Scratchpad</span>
         </div>
-        <button
-          onClick={handleClearKey}
-          className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
-        >
-          <Key className="h-3 w-3" />
-          Clear Key
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleShare}
+            className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-primary focus:outline-none"
+          >
+            <Share2 className="h-3 w-3" />
+            Share
+          </button>
+
+          <button
+            onClick={handleClearKey}
+            className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-primary focus:outline-none"
+          >
+            <Key className="h-3 w-3" />
+            Clear Key
+          </button>
+        </div>
       </div>
       <div className="flex-1 p-4">
         <textarea

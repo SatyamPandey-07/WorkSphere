@@ -13,7 +13,7 @@
 
 import { eventBus } from "../events";
 import { prisma as prismaClient } from "@/lib/prisma";
-import { inviteGuestsToBooking } from "@/lib/guests";
+import { sendGuestInvitation } from "@/lib/guests";
 
 // Cast for dynamic Prisma client access with the new BookingGuest model
 const prisma = prismaClient as any;
@@ -65,29 +65,29 @@ eventBus.on("booking:confirmed", async (payload) => {
         .join(" ")
         .trim() || booking.customerEmail;
 
-    // Send invitations using the guest manager
-    const results = await inviteGuestsToBooking(
-      bookingId,
-      guests.map((g) => ({ email: g.email, name: g.name || undefined })),
-      async () => ({
-        venue: {
-          name: booking.venue!.name,
-          address: booking.venue!.address || "",
-          latitude: booking.venue!.latitude,
-          longitude: booking.venue!.longitude,
-          photoUrl: booking.venue!.imageUrl || undefined,
-        },
-        host: {
-          name: hostName,
-          email: booking!.customerEmail,
-        },
-        booking: {
-          confirmationId: booking!.confirmationId,
-          date: booking!.date,
-          time: booking!.time,
-          durationMinutes: booking!.duration || 60,
-        },
-      }),
+    // Send invitations directly to existing guests in parallel
+    const results = await Promise.all(
+      guests.map((g) =>
+        sendGuestInvitation({
+          guest: {
+            email: g.email,
+            name: g.name || undefined,
+          },
+          guestId: g.id,
+          bookingId,
+          confirmationId: booking.confirmationId,
+          venueName: booking.venue!.name,
+          venueAddress: booking.venue!.address || "",
+          venueLatitude: booking.venue!.latitude,
+          venueLongitude: booking.venue!.longitude,
+          venuePhotoUrl: booking.venue!.imageUrl || undefined,
+          hostName,
+          hostEmail: booking.customerEmail,
+          date: booking.date,
+          time: booking.time,
+          durationMinutes: booking.duration || 60,
+        }),
+      ),
     );
 
     // Emit individual events for each result

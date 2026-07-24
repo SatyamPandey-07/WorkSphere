@@ -267,6 +267,8 @@ enum GuestStatus {
   SENT
   FAILED
   CANCELLED
+  ACCEPTED
+  DECLINED
 }
 
 enum BookingStatus {

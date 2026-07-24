@@ -127,7 +127,7 @@ export async function sendGuestInvitation(params: {
       name: params.venueName,
     });
 
-    // 4. Send the email with ICS attachment
+    // 4. Send the email with ICS attachment and RSVP links
     const emailResult = await sendGuestInvite({
       guestEmail: params.guest.email,
       guestName: params.guest.name,
@@ -141,6 +141,8 @@ export async function sendGuestInvitation(params: {
       directionsUrl: directionsLink.url,
       venuePhotoUrl: params.venuePhotoUrl,
       bookingRef: params.confirmationId,
+      bookingId: params.bookingId,
+      guestId: params.guestId,
     });
 
     // 5. Update database record

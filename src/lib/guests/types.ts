@@ -99,7 +99,7 @@ export interface BookingGuestRecord {
   email: string;
   name?: string | null;
   phone?: string | null;
-  status: "PENDING" | "SENT" | "FAILED" | "CANCELLED";
+  status: "PENDING" | "SENT" | "FAILED" | "CANCELLED" | "ACCEPTED" | "DECLINED";
   calendarUid?: string | null;
   sentAt?: Date | null;
   createdAt: Date;

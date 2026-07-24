@@ -63,6 +63,7 @@ export function BookingModal({
   onClose,
   mode = "booking",
 }: BookingModalProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
   >("details");
@@ -367,8 +368,10 @@ export function BookingModal({
   if (!isOpen) return null;
 
   const handleBooking = async () => {
+    setIsSubmitting(true);
     const todayStr = getTodayString();
     if (bookingDate && bookingDate < todayStr) {
+      setIsSubmitting(false);
       alert("Cannot book a date in the past.");
       return;
     }
@@ -461,6 +464,7 @@ export function BookingModal({
       }
     } catch (err: any) {
       console.error("Booking failure details:", err);
+      setIsSubmitting(false);
       setStep("details");
       alert(`NEURAL SIGNAL ERROR: ${err.message}`);
     }
@@ -959,10 +963,38 @@ export function BookingModal({
 
               <button
                 onClick={handleBooking}
-                className="w-full bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest py-6 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-2xl shadow-green-500/20 hover:scale-[1.02] transition-all active:scale-95"
+                disabled={isSubmitting}
+                className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white font-black uppercase tracking-widest py-6 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-2xl shadow-green-500/20 hover:scale-[1.02] disabled:hover:scale-100 transition-all active:scale-95 disabled:cursor-not-allowed"
               >
-                <Lock className="w-5 h-5 shadow-inner" />
-                Finalize Secure Protocol
+                {isSubmitting ? (
+                  <>
+                    <svg
+                      className="animate-spin h-5 w-5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                      />
+                    </svg>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    <Lock className="w-5 h-5 shadow-inner" />
+                    Finalize Secure Protocol
+                  </>
+                )}
               </button>
             </div>
           )}

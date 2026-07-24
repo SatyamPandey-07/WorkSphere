@@ -1,5 +1,6 @@
 const STORE_NAME = "favorites-outbox";
 const CHECKIN_STORE_NAME = "checkins-outbox";
+export const TAG_STORE_NAME = "favorite-tags-outbox";
 const DB_NAME = "WorkSphereOfflineDB";
 
 /**
@@ -96,7 +97,7 @@ function showPrivateBrowsingAlert() {
   );
 }
 
-function getDB(): Promise<IDBDatabase> {
+export function getDB(): Promise<IDBDatabase> {
   // Guard: IndexedDB is not available in SSR / Node environments.
   // Checking `indexedDB` directly (rather than `window`) ensures that
   // contexts such as Service Workers — which expose indexedDB without a
@@ -121,7 +122,7 @@ function getDB(): Promise<IDBDatabase> {
   // Slow path — first caller: open the database and cache the Promise.
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     try {
-      const request = indexedDB.open(DB_NAME, 2);
+      const request = indexedDB.open(DB_NAME, 3);
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
@@ -133,6 +134,12 @@ function getDB(): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains(CHECKIN_STORE_NAME)) {
           db.createObjectStore(CHECKIN_STORE_NAME, {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
+        if (!db.objectStoreNames.contains(TAG_STORE_NAME)) {
+          db.createObjectStore(TAG_STORE_NAME, {
             keyPath: "id",
             autoIncrement: true,
           });
@@ -284,6 +291,41 @@ export async function incrementRetryCount(id: number): Promise<number | null> {
     } catch (err) {
       console.error("Failed to increment retry count:", err);
       return null;
+    }
+  });
+}
+
+/**
+ * Restores a failed payload back into the queue by resetting its retryCount to 0.
+ * This ensures network-disconnected items are not penalized with retry exhaustion
+ * and are re-attempted on the next sync cycle without data loss.
+ *
+ * Returns `true` if the item was found and restored, `false` if the item no longer exists.
+ */
+export async function restoreFailedPayload(id: number): Promise<boolean> {
+  return withWebLock(async () => {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const getRequest = store.get(id);
+
+        getRequest.onsuccess = () => {
+          const existing = getRequest.result as OfflineAction | undefined;
+          if (!existing) {
+            resolve(false);
+            return;
+          }
+          store.put({ ...existing, retryCount: 0 });
+          tx.oncomplete = () => resolve(true);
+        };
+        getRequest.onerror = () => reject(getRequest.error);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.error("Failed to restore failed payload:", err);
+      return false;
     }
   });
 }

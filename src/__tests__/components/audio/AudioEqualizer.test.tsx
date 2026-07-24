@@ -1,104 +1,164 @@
+import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import "@testing-library/jest-dom";
 import { AudioEqualizer } from "@/components/audio/AudioEqualizer";
-import { resetEqualizer } from "@/lib/wasm/audioEqualizer";
 
-const wasmBase64 =
-  "AGFzbQEAAAABLghgAX8Bf2ACf38AYAAAYAF/AGAGf319fX19AGACf30BfWACfX8BfWAEf39/fwADCQgAAQIDBAUGBwUDAQABBgwCfwFBgAgLfwFBAAsHZQgGbWVtb3J5AgAGbWFsbG9jAAAEZnJlZQABCXJlc2V0SGVhcAACC3NldEJhbmRzUHRyAAMPaW5pdEJpcXVhZFN0YXRlAAQNcHJvY2Vzc1NhbXBsZQAGDHByb2Nlc3NCbG9jawAHCvMDCBEBAX8jACEBIwAgAGokACABCxEAIAAgAWojAEYEQCAAJAALCwcAQYAIJAALBgAgACQBC3EBAX8jASAAQSRsaiEGIAZDAAAAADgCACAGQQRqQwAAAAA4AgAgBkEIakMAAAAAOAIAIAZBDGpDAAAAADgCACAGQRBqIAE4AgAgBkEUaiACOAIAIAZBGGogAzgCACAGQRxqIAQ4AgAgBkEgaiAFOAIAC6EBAQp9IAAqAgAhAiAAQQRqKgIAIQMgAEEIaioCACEEIABBDGoqAgAhBSAAQRBqKgIAIQYgAEEUaioCACEHIABBGGoqAgAhCCAAQRxqKgIAIQkgAEEgaioCACEKIAYgAZQgByAClJIgCCADlJIgCSAElCAKIAWUkpMhCyAAQQxqIAQ4AgAgAEEIaiALOAIAIABBBGogAjgCACAAIAE4AgAgCws6AwF/AX0BfyAAIQNBACECAkADQCACIAFPDQEjASACQSRsaiEEIAQgAxAFIQMgAkEBaiECDAALCyADC24EAX8CfQJ/AX1BACEEAkADQCAEIAJPDQEgACAEQQJ0aioCACEFIAUhCUEAIQcCQANAIAcgA08NASMBIAdBJGxqIQggCCAJEAUhCSAHQQFqIQcMAAsLIAEgBEECdGogCTgCACAEQQFqIQQMAAsLCwCsAgRuYW1lAQ4BBQtwcm9jZXNzQmFuZAL+AQgAAgAEc2l6ZQEDcHRyAQIAA3B0cgEEc2l6ZQIAAwEAA3B0cgQHAAliYW5kSW5kZXgBAmIwAgJiMQMCYjIEAmExBQJhMgYDcHRyBQwAA3B0cgEFaW5wdXQCAngxAwJ4MgQCeTEFAnkyBgJiMAcCYjEIAmIyCQJhMQoCYTILBm91dHB1dAYFAAVpbnB1dAEIbnVtQmFuZHMCAWkDBm91dHB1dAQHYmFuZFB0cgcKAAhpbnB1dFB0cgEJb3V0cHV0UHRyAgZsZW5ndGgDCG51bUJhbmRzBAFpBQVpbnB1dAYGb3V0cHV0BwFqCAdiYW5kUHRyCQpiYW5kT3V0cHV0BxQCAAdoZWFwUHRyAQhiYW5kc1B0cg==";
-
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binary = atob(base64.replace(/\s/g, ""));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-const wasmBuffer = base64ToArrayBuffer(wasmBase64);
-
-const mockCtx: Record<string, unknown> = {
-  clearRect: jest.fn(),
-  beginPath: jest.fn(),
-  moveTo: jest.fn(),
-  lineTo: jest.fn(),
-  stroke: jest.fn(),
-  fill: jest.fn(),
-  fillText: jest.fn(),
-  closePath: jest.fn(),
-  scale: jest.fn(),
-  fillRect: jest.fn(),
-  strokeStyle: "",
-  fillStyle: "",
-  lineWidth: 1,
-  lineJoin: "",
-  font: "",
-  textAlign: "",
+// Mock the Web Audio API
+const mockOscillator = {
+  connect: jest.fn(),
+  start: jest.fn(),
+  stop: jest.fn(),
+  frequency: {
+    setValueAtTime: jest.fn(),
+  },
 };
 
-beforeEach(async () => {
-  const mockFetch = global.fetch as jest.Mock;
-  mockFetch.mockReset();
-  mockFetch.mockResolvedValue({
-    arrayBuffer: () => Promise.resolve(wasmBuffer),
+const mockGain = {
+  connect: jest.fn(),
+  gain: {
+    setValueAtTime: jest.fn(),
+    linearRampToValueAtTime: jest.fn(),
+    exponentialRampToValueAtTime: jest.fn(),
+  },
+};
+
+const mockAnalyser = {
+  connect: jest.fn(),
+  fftSize: 64,
+  frequencyBinCount: 32,
+  getByteFrequencyData: jest.fn((array) => {
+    array.fill(128);
+  }),
+};
+
+const mockAudioContext = {
+  createOscillator: jest.fn(() => mockOscillator),
+  createGain: jest.fn(() => mockGain),
+  createAnalyser: jest.fn(() => mockAnalyser),
+  createBuffer: jest.fn((channels, size, rate) => ({
+    getChannelData: jest.fn(() => new Float32Array(size)),
+    sampleRate: rate,
+  })),
+  createBufferSource: jest.fn(() => ({
+    connect: jest.fn(),
+    start: jest.fn(),
+    stop: jest.fn(),
+    loop: false,
+  })),
+  createBiquadFilter: jest.fn(() => ({
+    connect: jest.fn(),
+    type: "lowpass",
+    frequency: {
+      setValueAtTime: jest.fn(),
+    },
+    Q: {
+      setValueAtTime: jest.fn(),
+    },
+    gain: {
+      setValueAtTime: jest.fn(),
+    },
+  })),
+  destination: {},
+  currentTime: 0,
+  state: "suspended",
+  resume: jest.fn().mockResolvedValue(undefined),
+  suspend: jest.fn().mockResolvedValue(undefined),
+  close: jest.fn().mockResolvedValue(undefined),
+};
+
+beforeAll(() => {
+  global.AudioContext = jest.fn().mockImplementation(() => mockAudioContext) as any;
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: jest.fn().mockImplementation((query) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: jest.fn(),
+      removeListener: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      dispatchEvent: jest.fn(),
+    })),
+  });
+});
+
+describe("AudioEqualizer Component (#859)", () => {
+  it("renders correctly with title and presets", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    expect(screen.getByText("Acoustic Ambience Preview")).toBeInTheDocument();
+    expect(screen.getByText("🎷 Soft Jazz")).toBeInTheDocument();
+    expect(screen.getByText("☕ Cafe Chatter")).toBeInTheDocument();
+    expect(screen.getByText("📚 Library Silence")).toBeInTheDocument();
   });
 
-  HTMLCanvasElement.prototype.getContext = jest.fn((): any => mockCtx);
-  Object.defineProperty(window, "devicePixelRatio", { value: 1, configurable: true });
+  it("toggles play and active states", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
 
-  await resetEqualizer();
-});
+    const playButton = screen.getByTitle("Listen to Ambience");
+    expect(playButton).toBeInTheDocument();
 
-it("renders the equalizer with title", async () => {
-  render(<AudioEqualizer />);
-  expect(screen.getByText("Parametric Equalizer")).toBeInTheDocument();
-});
+    fireEvent.click(playButton);
 
-it("renders bypass and reset buttons", async () => {
-  render(<AudioEqualizer />);
-  expect(screen.getByTitle("Bypass EQ")).toBeInTheDocument();
-  expect(screen.getByTitle("Reset to flat")).toBeInTheDocument();
-});
-
-it("renders loading state while initializing", () => {
-  render(<AudioEqualizer />);
-  expect(screen.getByText("Initializing equalizer...")).toBeInTheDocument();
-});
-
-it("renders band controls after initialization", async () => {
-  render(<AudioEqualizer />);
-  const sliders = await screen.findAllByRole("slider", {}, { timeout: 3000 });
-  expect(sliders.length).toBeGreaterThanOrEqual(1);
-  sliders.forEach((slider) => {
-    expect(slider).toHaveAttribute("aria-label");
+    // Should switch play state to active (Pause title)
+    expect(screen.getByTitle("Pause Sound")).toBeInTheDocument();
   });
-});
 
-it("updates gain display when slider changes", async () => {
-  render(<AudioEqualizer />);
-  const sliders = await screen.findAllByRole("slider", {}, { timeout: 3000 });
-  const firstSlider = sliders[0];
+  it("switches sound presets", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
 
-  fireEvent.change(firstSlider, { target: { value: "6" } });
-  const gainLabel = await screen.findByText("+6.0 dB", {}, { timeout: 3000 });
-  expect(gainLabel).toBeInTheDocument();
-});
+    const cafeBtn = screen.getByText("☕ Cafe Chatter");
+    fireEvent.click(cafeBtn);
 
-it("renders reset button for each band", async () => {
-  render(<AudioEqualizer />);
+    // Cafe Chatter preset becomes active
+    expect(cafeBtn).toHaveClass("bg-indigo-600");
+  });
 
-  let errorEl: HTMLElement | null = null;
-  try {
-    errorEl = screen.queryByText(/Failed to initialize/i);
-  } catch {
-    // ignore
-  }
-  if (errorEl) {
-    throw new Error(`Component shows error: ${errorEl.textContent}`);
-  }
+  it("renders EQ preset selector with default Flat", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
 
-  const sliders = await screen.findAllByRole("slider", {}, { timeout: 3000 });
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+    expect(select).toBeInTheDocument();
+    expect(select.value).toBe("flat");
+  });
 
-  const totalButtons = sliders.length + 2;
-  const allButtons = await screen.findAllByRole("button", {}, { timeout: 3000 });
-  expect(allButtons.length).toBe(totalButtons);
+  it("contains all EQ presets in dropdown", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+    const options = Array.from(select.options).map((o) => o.value);
+
+    expect(options).toContain("flat");
+    expect(options).toContain("bass-boost");
+    expect(options).toContain("vocal-enhancer");
+    expect(options).toContain("treble-boost");
+    expect(options).toContain("warm");
+    expect(options).toHaveLength(5);
+  });
+
+  it("updates EQ preset on selection", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+
+    fireEvent.change(select, { target: { value: "bass-boost" } });
+    expect(select.value).toBe("bass-boost");
+
+    fireEvent.change(select, { target: { value: "vocal-enhancer" } });
+    expect(select.value).toBe("vocal-enhancer");
+  });
+
+  it("displays correct label for each EQ preset option", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+    const optionLabels = Array.from(select.options).map((o) => o.text);
+
+    expect(optionLabels).toContain("Flat");
+    expect(optionLabels).toContain("Bass Boost");
+    expect(optionLabels).toContain("Vocal Enhancer");
+    expect(optionLabels).toContain("Treble Boost");
+    expect(optionLabels).toContain("Warm");
+  });
 });

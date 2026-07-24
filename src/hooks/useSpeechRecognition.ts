@@ -224,7 +224,7 @@ export function useSpeechRecognition(
 
     try {
       recognition.start();
-    } catch (err) {
+    } catch (_err) {
       // Some browsers throw synchronously (e.g. when already listening)
       setErrorMessage(
         "Could not start voice recognition. Please refresh and try again.",

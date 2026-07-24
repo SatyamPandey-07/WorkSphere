@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-declare var self: DedicatedWorkerGlobalScope;
+declare let self: DedicatedWorkerGlobalScope;
 declare function importScripts(...urls: string[]): void;
 
 export type RouteRequest = {
@@ -36,7 +36,7 @@ async function initWasm() {
   if (!wasmModule) {
     // createRoutingEngine is exported via MODULARIZE=1 in Emscripten
     wasmModule = await (self as any).createRoutingEngine({
-      locateFile: (path: string) => `/wasm/${path}`
+      locateFile: (path: string) => `/wasm/${path}`,
     });
   }
 }
@@ -62,19 +62,19 @@ async function handleLoadGraph(req: LoadGraphRequest) {
 }
 
 // Find closest node ID in a simplified manner (since spatial index is not in C++ for brevity)
-function findClosestNode(lat: number, lng: number): number | null {
+function _findClosestNode(_lat: number, _lng: number): number | null {
   if (!wasmModule || !graphLoaded) return null;
-  const numNodes = wasmModule._get_last_path_size(); // Actually we need total nodes, let's just search
+  const _numNodes = wasmModule._get_last_path_size(); // Actually we need total nodes, let's just search
   // Wait, we didn't export `get_num_nodes`, so we'll just track it in JS for finding closest node
   return -1; // Handled below
 }
 
 // Keep track of nodes in JS to find closest node quickly
-let jsNodes: {lat: number, lng: number}[] = [];
+let jsNodes: { lat: number; lng: number }[] = [];
 
 async function handleCalculateRoute(req: RouteRequest) {
   const startTime = performance.now();
-  
+
   if (!graphLoaded || !wasmModule) {
     self.postMessage({
       type: "ROUTE_RESULT",
@@ -94,9 +94,12 @@ async function handleCalculateRoute(req: RouteRequest) {
 
   for (let i = 0; i < jsNodes.length; i++) {
     const node = jsNodes[i];
-    const dStart = Math.hypot(node.lat - req.start.lat, node.lng - req.start.lng);
+    const dStart = Math.hypot(
+      node.lat - req.start.lat,
+      node.lng - req.start.lng,
+    );
     const dEnd = Math.hypot(node.lat - req.end.lat, node.lng - req.end.lng);
-    
+
     if (dStart < minDistStart) {
       minDistStart = dStart;
       startNodeId = i;
@@ -133,7 +136,7 @@ async function handleCalculateRoute(req: RouteRequest) {
 
   // Read array from WASM memory
   const pathArray = new Int32Array(wasmModule.HEAP32.buffer, pathPtr, pathSize);
-  
+
   // Build GeoJSON LineString
   const coordinates = [];
   for (let i = 0; i < pathSize; i++) {
@@ -151,11 +154,11 @@ async function handleCalculateRoute(req: RouteRequest) {
         type: "Feature",
         geometry: {
           type: "LineString",
-          coordinates
+          coordinates,
         },
-        properties: {}
-      }
-    ]
+        properties: {},
+      },
+    ],
   };
 
   const latencyMs = performance.now() - startTime;
@@ -165,7 +168,7 @@ async function handleCalculateRoute(req: RouteRequest) {
     id: req.id,
     success: true,
     route: geoJson,
-    latencyMs
+    latencyMs,
   } as RouteResponse);
 }
 

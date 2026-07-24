@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildVenueSearchSchema } from "@/lib/filters";
 
 // =========================================================================
 // CORE SCHEMAS
@@ -23,38 +24,7 @@ export const chatRequestSchema = z.object({
 });
 
 // Venue schemas
-export const venueSearchSchema = z.object({
-  lat: z.coerce.number().min(-90).max(90),
-  lng: z.coerce.number().min(-180).max(180),
-  radius: z.coerce.number().min(100).max(50000).default(5000),
-  category: z.enum(["cafe", "coworking", "library", "all"]).optional(),
-  wifi: z.coerce.boolean().optional(),
-  outlets: z.coerce.boolean().optional(),
-  quiet: z.coerce.boolean().optional(),
-  ergonomic: z.coerce.boolean().optional(),
-  outletDensity: z
-    .enum(["every_table", "some_tables", "wall_seats", "none"])
-    .optional(),
-  wifiSpeedBand: z.enum(["basic", "fast", "ultra", "all"]).optional(),
-  hasPhoneBooths: z.coerce.boolean().optional(),
-  hasNoMusic: z.coerce.boolean().optional(),
-  hasQuietZone: z.coerce.boolean().optional(),
-  hasAncHeadsetRental: z.coerce.boolean().optional(),
-  singleOriginBeans: z.coerce.boolean().optional(),
-  specialtyEspresso: z.coerce.boolean().optional(),
-  oatAlmondMilk: z.coerce.boolean().optional(),
-  pourOverAvailable: z.coerce.boolean().optional(),
-  lighting: z
-    .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
-    .optional(),
-  petsAllowedIndoors: z.coerce.boolean().optional(),
-  patioOnly: z.coerce.boolean().optional(),
-  waterBowlsProvided: z.coerce.boolean().optional(),
-  dogFriendly: z.coerce.boolean().optional(),
-  catsAllowed: z.coerce.boolean().optional(),
-  musicStyle: z.enum(["lofi", "classical_jazz", "no_music", "all"]).optional(),
-  cities: z.string().optional(),
-});
+export const venueSearchSchema = buildVenueSearchSchema();
 
 export const venueCreateSchema = z.object({
   name: z.string().min(1).max(200),

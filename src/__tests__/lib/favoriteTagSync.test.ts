@@ -1,6 +1,10 @@
+import "fake-indexeddb/auto";
 import {
   sortTagIdsDeterministically,
   syncFavoriteTagsBulk,
+  queueFavoriteTagMutation,
+  getQueuedTagMutations,
+  processTagMutationsQueue,
 } from "@/lib/favoriteTagSync";
 import { prisma } from "@/lib/prisma";
 
@@ -15,9 +19,11 @@ jest.mock("@/lib/prisma", () => ({
 
 describe("sortTagIdsDeterministically", () => {
   it("returns tag ids in lexicographic order", () => {
-    expect(
-      sortTagIdsDeterministically(["tag-c", "tag-a", "tag-b"]),
-    ).toEqual(["tag-a", "tag-b", "tag-c"]);
+    expect(sortTagIdsDeterministically(["tag-c", "tag-a", "tag-b"])).toEqual([
+      "tag-a",
+      "tag-b",
+      "tag-c",
+    ]);
   });
 
   it("does not mutate the input array", () => {
@@ -76,6 +82,105 @@ describe("syncFavoriteTagsBulk", () => {
     expect(ops[0].args).toEqual({
       where: { id: "tag-a" },
       data: { name: "Second", color: "#abcdef" },
+    });
+  });
+});
+
+describe("Client-side Offline Sync", () => {
+  beforeEach(() => {
+    // Clear the fake indexeddb between tests
+    const req = indexedDB.deleteDatabase("WorkSphereOfflineDB");
+    return new Promise<void>((resolve) => {
+      req.onsuccess = () => resolve();
+      req.onerror = () => resolve();
+    });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("queues and retrieves a tag mutation in IndexedDB", async () => {
+    await queueFavoriteTagMutation("tag-1", "UPDATE", { name: "New Name" });
+    const queued = await getQueuedTagMutations();
+
+    expect(queued).toHaveLength(1);
+    expect(queued[0].tagId).toBe("tag-1");
+    expect(queued[0].operation).toBe("UPDATE");
+    expect(queued[0].data).toEqual({ name: "New Name" });
+    expect(queued[0].retryCount).toBe(0);
+  });
+
+  it("replays sequentially and dequeues on success", async () => {
+    // Mock navigator.onLine
+    Object.defineProperty(navigator, "onLine", {
+      value: true,
+      configurable: true,
+    });
+
+    await queueFavoriteTagMutation("tag-2", "UPDATE", { name: "Test" });
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+    });
+
+    await processTagMutationsQueue();
+
+    const queued = await getQueuedTagMutations();
+    expect(queued).toHaveLength(0);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts replay on permanent failure and dequeues", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      value: true,
+      configurable: true,
+    });
+    await queueFavoriteTagMutation("tag-3", "UPDATE", { name: "Bad" });
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 400, // Bad Request is permanent
+    });
+
+    await processTagMutationsQueue();
+
+    const queued = await getQueuedTagMutations();
+    expect(queued).toHaveLength(0); // Dequeued immediately on 400
+  });
+
+  it("resolves 409 conflict by fetching and merging", async () => {
+    Object.defineProperty(navigator, "onLine", {
+      value: true,
+      configurable: true,
+    });
+    await queueFavoriteTagMutation("old-tag-id", "UPDATE", {
+      name: "Existing Name",
+    });
+
+    global.fetch = jest
+      .fn()
+      // 1. Initial sync fails with 409
+      .mockResolvedValueOnce({ ok: false, status: 409 })
+      // 2. Fetch latest tags
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [{ id: "real-tag-id", name: "Existing Name" }],
+      })
+      // 3. Retry sync with merged data (real-tag-id)
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+
+    await processTagMutationsQueue();
+
+    const queued = await getQueuedTagMutations();
+    expect(queued).toHaveLength(0);
+
+    expect(global.fetch).toHaveBeenCalledTimes(3);
+    const retryCall = (global.fetch as jest.Mock).mock.calls[2];
+    expect(retryCall[0]).toBe("/api/favorites/tags/sync");
+    expect(JSON.parse(retryCall[1].body)).toEqual({
+      updates: [{ id: "real-tag-id", name: "Existing Name" }],
     });
   });
 });

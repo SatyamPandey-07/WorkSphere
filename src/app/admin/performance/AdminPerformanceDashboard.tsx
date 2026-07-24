@@ -331,7 +331,9 @@ export default function AdminPerformanceDashboard() {
                     formatMs(Number(value) || 0),
                     name === "avgMs" ? "Avg" : "p95",
                   ]}
-                  labelFormatter={(label) => `Hour: ${formatHour(label)}`}
+                  labelFormatter={(label) =>
+                    `Hour: ${formatHour(String(label))}`
+                  }
                 />
                 <Area
                   type="monotone"

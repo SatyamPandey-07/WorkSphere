@@ -1,557 +1,359 @@
-# High-Concurrency PostgreSQL Transaction Isolation and Lock Mitigation
+# Postgres Transaction Isolation Levels Guide
 
-This guide documents safe transaction patterns for WorkSphere when PostgreSQL handles concurrent bookings, collections, ratings, notifications, and other write-heavy workflows.
+This guide provides a comprehensive reference for PostgreSQL transaction isolation levels as used in the WorkSphere codebase. It covers the three common read phenomena, the isolation levels that prevent them, practical Prisma code snippets (including `SELECT FOR UPDATE`), and guidelines for preventing race conditions in financial and booking operations.
 
-## 1. Goals
+---
 
-Concurrent requests can produce lost updates, duplicate reservations, inconsistent counters, lock waits, deadlocks, serialization failures, and exhausted pools. Use the least expensive isolation level that still preserves the business invariant.
+## 1. Read Phenomena
 
-## 2. PostgreSQL isolation levels
+Before choosing an isolation level, understand the three anomalies that concurrent transactions can produce.
 
-| Level             | Behavior                                                       | Use in WorkSphere                                      |
-| ----------------- | -------------------------------------------------------------- | ------------------------------------------------------ |
-| `READ COMMITTED`  | Each statement sees data committed before that statement began | Default CRUD and independent writes                    |
-| `REPEATABLE READ` | All statements use one stable transaction snapshot             | Multi-step reports and consistent calculations         |
-| `SERIALIZABLE`    | PostgreSQL rejects executions that cannot be ordered serially  | Last-seat allocation, booking conflicts, strict quotas |
+### 1.1 Dirty Read
 
-PostgreSQL treats `READ UNCOMMITTED` as `READ COMMITTED`.
+A **dirty read** occurs when Transaction B reads a row that Transaction A has modified but **not yet committed**. If A rolls back, B has acted on data that never existed.
 
-### Read Committed
+| Step | Transaction A | Transaction B |
+| :--: | :--- | :--- |
+| 1 | `BEGIN` | |
+| 2 | `UPDATE bookings SET status = 'cancelled' WHERE id = 42;` | |
+| 3 | | `BEGIN` |
+| 4 | | `SELECT status FROM bookings WHERE id = 42;` → sees `'cancelled'` (dirty) |
+| 5 | `ROLLBACK` — the update is undone | |
+| 6 | | Proceeds with stale data that was never committed |
 
-Use the default for independent operations and rely on constraints plus atomic Prisma operations:
+> **PostgreSQL note:** Dirty reads are **impossible** in PostgreSQL. Even `Read Uncommitted` behaves like `Read Committed`, so this anomaly is academic for our stack.
 
-```ts
-await prisma.venueRating.upsert({
-  where: { userId_venueId: { userId, venueId } },
-  update: ratingData,
-  create: { userId, venueId, ...ratingData },
-});
-```
+### 1.2 Non-Repeatable Read
 
-### Repeatable Read
+A **non-repeatable read** happens when Transaction B reads the same row twice and gets **different values** because Transaction A committed a change in between.
 
-```ts
+| Step | Transaction A | Transaction B |
+| :--: | :--- | :--- |
+| 1 | | `BEGIN` |
+| 2 | | `SELECT credits FROM wallets WHERE user_id = 7;` → `100` |
+| 3 | `BEGIN` | |
+| 4 | `UPDATE wallets SET credits = 50 WHERE user_id = 7;` | |
+| 5 | `COMMIT` | |
+| 6 | | `SELECT credits FROM wallets WHERE user_id = 7;` → `50` (different!) |
+| 7 | | Business logic that assumed `credits = 100` is now wrong |
+
+### 1.3 Phantom Read
+
+A **phantom read** occurs when Transaction B re-executes a range query and finds **new rows** that Transaction A inserted and committed in between.
+
+| Step | Transaction A | Transaction B |
+| :--: | :--- | :--- |
+| 1 | | `BEGIN` |
+| 2 | | `SELECT COUNT(*) FROM bookings WHERE venue_id = 5 AND date = '2026-08-01';` → `3` |
+| 3 | `BEGIN` | |
+| 4 | `INSERT INTO bookings (venue_id, date, time) VALUES (5, '2026-08-01', '14:00');` | |
+| 5 | `COMMIT` | |
+| 6 | | `SELECT COUNT(*) FROM bookings WHERE venue_id = 5 AND date = '2026-08-01';` → `4` (phantom!) |
+| 7 | | Capacity check that relied on count `3` is now invalid |
+
+---
+
+## 2. Isolation Levels in PostgreSQL
+
+PostgreSQL supports four isolation levels. The table below compares the three that are meaningfully distinct (remember: `Read Uncommitted` behaves identically to `Read Committed` in Postgres).
+
+| | Dirty Read | Non-Repeatable Read | Phantom Read | Serialization Failure Risk | Performance |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Read Committed** | Prevented | Possible | Possible | None | Best |
+| **Repeatable Read** | Prevented | Prevented | Prevented* | Moderate | Good |
+| **Serializable** | Prevented | Prevented | Prevented | High | Lowest |
+
+> \* PostgreSQL's `Repeatable Read` uses snapshot isolation, which also prevents phantom reads — unlike the SQL standard's minimum guarantee.
+
+### When to Use Each Level in WorkSphere
+
+| Isolation Level | Use Case | WorkSphere Examples |
+| :--- | :--- | :--- |
+| **Read Committed** | Standard CRUD, list pages, search, most API routes | Default for all routes; explicit in `folders.ts` batch deletes |
+| **Repeatable Read** | Multi-step reads that must see a consistent snapshot (reporting, analytics aggregation) | Financial summaries, admin analytics dashboards |
+| **Serializable** | Operations where absolute correctness across concurrent writers is mandatory and you can tolerate retries | Wallet balance transfers, seat-capacity enforcement |
+
+---
+
+## 3. Prisma Transaction Patterns
+
+WorkSphere uses **Prisma 7** with the `@prisma/adapter-pg` driver adapter. The following patterns are used across the codebase.
+
+### 3.1 Interactive Transaction with Explicit Isolation Level
+
+Use interactive transactions when multiple dependent read/write steps must execute atomically. Pass the `isolationLevel` option to control the isolation.
+
+```typescript
 import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 
-const snapshot = await prisma.$transaction(
-  async (tx) => {
-    const venue = await tx.venue.findUniqueOrThrow({ where: { id: venueId } });
-    const ratings = await tx.venueRating.findMany({ where: { venueId } });
-    return { venue, ratings };
-  },
-  {
-    isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead,
-    maxWait: 2_000,
-    timeout: 5_000,
-  },
-);
-```
+async function transferCredits(fromUserId: string, toUserId: string, amount: number) {
+  return prisma.$transaction(
+    async (tx) => {
+      // Step 1: Read the sender's balance
+      const sender = await tx.wallet.findUniqueOrThrow({
+        where: { userId: fromUserId },
+      });
 
-### Serializable
-
-Use for strict invariants and retry the complete transaction when PostgreSQL reports a serialization failure.
-
-```ts
-const booking = await prisma.$transaction(
-  async (tx) => {
-    const conflict = await tx.booking.findFirst({
-      where: {
-        venueId,
-        startsAt: { lt: requestedEnd },
-        endsAt: { gt: requestedStart },
-        status: { in: ["PENDING", "CONFIRMED"] },
-      },
-      select: { id: true },
-    });
-
-    if (conflict) throw new Error("BOOKING_CONFLICT");
-
-    return tx.booking.create({ data: bookingData });
-  },
-  {
-    isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-    maxWait: 2_000,
-    timeout: 5_000,
-  },
-);
-```
-
-Never perform external API calls, email delivery, AI requests, file processing, or user interaction inside an interactive transaction.
-
-## 3. Isolation-level decision table
-
-| Invariant                              | Recommended technique               |
-| -------------------------------------- | ----------------------------------- |
-| One rating/favorite per user and venue | Unique constraint plus `upsert`     |
-| Independent notification inserts       | `createMany` or `$transaction([])`  |
-| Stable report snapshot                 | `REPEATABLE READ`                   |
-| Last available seat                    | `SERIALIZABLE` plus retry           |
-| Simple counter                         | Atomic `{ increment: 1 }` update    |
-| Multi-row read-modify-write            | `SERIALIZABLE` or explicit row lock |
-
-## 4. Prisma batching patterns
-
-### Nested writes
-
-```ts
-await prisma.conversation.create({
-  data: {
-    userId,
-    title,
-    messages: { create: initialMessages },
-  },
-});
-```
-
-### Bulk operations
-
-```ts
-await prisma.notification.createMany({
-  data: recipients.map((userId) => ({ userId, title, body })),
-  skipDuplicates: true,
-});
-```
-
-Prefer this over a loop of individual inserts.
-
-### Sequential transaction batch
-
-```ts
-const [booking, auditLog] = await prisma.$transaction([
-  prisma.booking.create({ data: bookingData }),
-  prisma.auditLog.create({ data: auditData }),
-]);
-```
-
-### Interactive transaction
-
-Use only when later queries depend on earlier results.
-
-```ts
-await prisma.$transaction(
-  async (tx) => {
-    const folder = await tx.folder.findUniqueOrThrow({
-      where: { id: folderId },
-      select: { ownerId: true },
-    });
-
-    if (folder.ownerId !== userId) throw new Error("FORBIDDEN");
-
-    await tx.folderMember.upsert({
-      where: { folderId_userId: { folderId, userId: memberId } },
-      update: { role },
-      create: { folderId, userId: memberId, role },
-    });
-  },
-  { maxWait: 2_000, timeout: 5_000 },
-);
-```
-
-## 5. Retry transient concurrency failures
-
-Important PostgreSQL codes:
-
-| Code    | Meaning                |
-| ------- | ---------------------- |
-| `40001` | Serialization failure  |
-| `40P01` | Deadlock detected      |
-| `55P03` | Lock not available     |
-| `57014` | Query canceled/timeout |
-
-```ts
-type RetryOptions = {
-  attempts?: number;
-  baseDelayMs?: number;
-  maxDelayMs?: number;
-};
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function isRetryableTransactionError(error: unknown) {
-  if (!(error instanceof Error)) return false;
-
-  const candidate = error as Error & {
-    code?: string;
-    meta?: { code?: string; database_error?: string };
-  };
-
-  const details = [
-    candidate.code,
-    candidate.meta?.code,
-    candidate.meta?.database_error,
-    candidate.message,
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return /40001|40P01|55P03|serialization|deadlock/i.test(details);
-}
-
-export async function withTransactionRetry<T>(
-  operation: () => Promise<T>,
-  { attempts = 3, baseDelayMs = 50, maxDelayMs = 500 }: RetryOptions = {},
-): Promise<T> {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-      if (!isRetryableTransactionError(error) || attempt === attempts) {
-        throw error;
+      if (sender.credits < amount) {
+        throw new Error("INSUFFICIENT_FUNDS");
       }
 
-      const delay = Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs);
-      const jitter = Math.floor(Math.random() * baseDelayMs);
-      await sleep(delay + jitter);
+      // Step 2: Debit sender
+      await tx.wallet.update({
+        where: { userId: fromUserId },
+        data: { credits: { decrement: amount } },
+      });
+
+      // Step 3: Credit receiver
+      await tx.wallet.update({
+        where: { userId: toUserId },
+        data: { credits: { increment: amount } },
+      });
+
+      return { success: true };
+    },
+    {
+      maxWait: 5_000,    // max time to acquire a connection from the pool
+      timeout: 10_000,   // max transaction duration
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+    },
+  );
+}
+```
+
+### 3.2 SELECT FOR UPDATE (Pessimistic Locking)
+
+When you need to **lock specific rows** for the duration of a transaction to prevent concurrent modifications, use `SELECT ... FOR UPDATE` via a raw query inside an interactive transaction.
+
+```typescript
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+
+async function claimSeat(venueId: string, date: string, time: string, userId: string) {
+  return prisma.$transaction(
+    async (tx) => {
+      // Lock the venue row — any concurrent transaction trying to lock
+      // the same row will block until this transaction commits or rolls back.
+      const [venue] = await tx.$queryRaw<{ id: string; capacity: number }[]>(
+        Prisma.sql`SELECT id, capacity FROM "Venue" WHERE id = ${venueId} FOR UPDATE`
+      );
+
+      if (!venue) throw new Error("VENUE_NOT_FOUND");
+
+      // Count existing bookings for this slot (safe because the venue row is locked)
+      const currentCount = await tx.booking.count({
+        where: { venueId, date, time },
+      });
+
+      if (currentCount >= venue.capacity) {
+        throw new Error("SLOT_FULL");
+      }
+
+      // Safe to insert — no other transaction can pass the capacity check concurrently
+      return tx.booking.create({
+        data: { venueId, date, time, userId },
+      });
+    },
+    {
+      maxWait: 5_000,
+      timeout: 10_000,
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+    },
+  );
+}
+```
+
+> **Key point:** `SELECT FOR UPDATE` acquires a row-level exclusive lock. Only one transaction can hold it on the same row at a time. This is the correct tool when you need to read-then-write and guarantee no concurrent modification between the two steps.
+
+#### Lock Modes at a Glance
+
+| Lock Clause | Behavior |
+| :--- | :--- |
+| `FOR UPDATE` | Exclusive row lock — blocks other `FOR UPDATE`, `FOR SHARE`, `UPDATE`, and `DELETE` |
+| `FOR NO KEY UPDATE` | Like `FOR UPDATE` but allows concurrent `FOR KEY SHARE` (useful when you are not changing the primary key) |
+| `FOR SHARE` | Shared lock — blocks `UPDATE` and `DELETE` but allows concurrent `FOR SHARE` reads |
+| `FOR KEY SHARE` | Weakest lock — only blocks changes to key columns |
+| `NOWAIT` | Fail immediately instead of blocking (e.g., `FOR UPDATE NOWAIT`) |
+| `SKIP LOCKED` | Skip already-locked rows (useful for job queue patterns) |
+
+### 3.3 Batched Array Transactions
+
+For independent writes that must all succeed or all fail (but don't need intermediate reads), use the array form. This is more efficient because Prisma can batch the queries.
+
+```typescript
+import { prisma } from "@/lib/prisma";
+
+// Example: deterministic-order bulk updates to avoid deadlocks
+const orderedIds = sortTagIdsDeterministically([...tagMap.keys()]);
+
+await prisma.$transaction(
+  orderedIds.map((id) =>
+    prisma.favoriteTag.update({
+      where: { id },
+      data: tagMap.get(id)!,
+    }),
+  ),
+);
+```
+
+> **Deadlock prevention:** Always sort the IDs or keys before passing them to a batch transaction. If two concurrent requests lock rows in different orders, PostgreSQL will detect a deadlock and abort one of them. Deterministic ordering eliminates this.
+
+---
+
+## 4. Preventing Race Conditions in Financial Operations
+
+Financial and booking operations are the most concurrency-sensitive areas in WorkSphere. Follow these guidelines to prevent race conditions.
+
+### 4.1 Never Read-Then-Write Without a Lock
+
+The classic race condition:
+
+```
+Thread A: SELECT credits → 100
+Thread B: SELECT credits → 100
+Thread A: UPDATE credits = 100 - 30 = 70
+Thread B: UPDATE credits = 100 - 50 = 50   ← should be 20, not 50!
+```
+
+**Fix options:**
+
+| Strategy | How | When to Use |
+| :--- | :--- | :--- |
+| **Atomic update** | `UPDATE wallets SET credits = credits - 30 WHERE ...` | Simple increment/decrement (counters, upvotes) |
+| **SELECT FOR UPDATE** | Lock the row, read, validate, then write (see §3.2) | Conditional logic depends on the current value |
+| **Serializable isolation** | Let Postgres detect the conflict and retry (see §5) | Multiple rows or range queries involved |
+
+### 4.2 Booking Collision Prevention
+
+The existing booking confirmation route demonstrates the recommended pattern:
+
+1. Wrap the entire check-then-insert flow in an **interactive transaction**.
+2. Query for conflicting bookings **inside** the transaction.
+3. Throw a clear collision error if a conflict is detected.
+4. Catch `P2002` (unique constraint) at the API boundary as a safety net.
+
+```typescript
+const { bookings } = await prisma.$transaction(async (tx) => {
+  // Check for existing bookings (inside the transaction!)
+  const existing = await tx.booking.findMany({
+    where: { venueId, date: { in: bookingDates }, time },
+  });
+
+  if (existing.length > 0) {
+    throw new Error("COLLISION");
+  }
+
+  // Safe to insert
+  const created = [];
+  for (const d of bookingDates) {
+    created.push(await tx.booking.create({ data: { venueId, date: d, time, userId } }));
+  }
+  return { bookings: created };
+});
+```
+
+### 4.3 Counter Updates
+
+For counters like upvote counts, always use atomic operations instead of read-then-write:
+
+```typescript
+// ✅ Correct: atomic increment
+await tx.folder.update({
+  where: { id: folderId },
+  data: { upvotes: { increment: 1 } },
+});
+
+// ❌ Wrong: read-then-write race
+const folder = await tx.folder.findUnique({ where: { id: folderId } });
+await tx.folder.update({
+  where: { id: folderId },
+  data: { upvotes: folder.upvotes + 1 },
+});
+```
+
+---
+
+## 5. Retry Strategies for Serialization Failures
+
+When using `Repeatable Read` or `Serializable` isolation, PostgreSQL may abort a transaction with a serialization failure. Prisma surfaces this as error code **P2034**.
+
+### 5.1 The Retry Pattern
+
+The following pattern (based on the `folders.ts` implementation) provides bounded retries with linear backoff:
+
+```typescript
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+
+const MAX_RETRIES = 3;
+const RETRY_BACKOFF_MS = 50;
+
+function isTransientWriteConflict(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === "P2034"
+  );
+}
+
+async function runWithRetry<T>(
+  fn: (tx: any) => Promise<T>,
+  isolationLevel: Prisma.TransactionIsolationLevel =
+    Prisma.TransactionIsolationLevel.ReadCommitted,
+): Promise<T> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await prisma.$transaction(fn, {
+        maxWait: 5_000,
+        timeout: 10_000,
+        isolationLevel,
+      });
+    } catch (error) {
+      attempt += 1;
+      if (!isTransientWriteConflict(error) || attempt > MAX_RETRIES) {
+        throw error;
+      }
+      // Linear backoff: 50ms, 100ms, 150ms
+      await new Promise((resolve) =>
+        setTimeout(resolve, RETRY_BACKOFF_MS * attempt),
+      );
     }
   }
-
-  throw lastError;
 }
 ```
 
-Keep retries bounded; excessive retries amplify overload.
-
-## 6. Deadlock prevention
-
-1. Lock or update rows in a consistent order.
-2. Keep transactions short.
-3. Never wait for user input inside a transaction.
-4. Index predicates used by contended updates.
-5. Use atomic updates instead of read-modify-write.
-6. Prefer unique/check/exclusion constraints over application-only checks.
-7. Batch writes and avoid unbounded `Promise.all` database calls.
-
-Consistent ordering example:
-
-```ts
-const orderedIds = [...venueIds].sort();
-
-await prisma.$transaction(async (tx) => {
-  for (const id of orderedIds) {
-    await tx.venue.update({ where: { id }, data: { updatedAt: new Date() } });
-  }
-});
-```
-
-Atomic counter:
-
-```ts
-await prisma.venue.update({
-  where: { id: venueId },
-  data: { favoriteCount: { increment: 1 } },
-});
-```
-
-## 7. Explicit row locking
-
-Prisma does not expose every PostgreSQL lock clause through its standard API. Use parameterized raw SQL when strict row locking is necessary.
-
-```ts
-type CapacityRow = { id: string; capacity: number; occupied: number };
-
-await prisma.$transaction(async (tx) => {
-  const rows = await tx.$queryRaw<CapacityRow[]>`
-    SELECT id, capacity, occupied
-    FROM "VenueSeatPool"
-    WHERE id = ${poolId}
-    FOR UPDATE
-  `;
-
-  const pool = rows[0];
-  if (!pool || pool.occupied >= pool.capacity) throw new Error("NO_CAPACITY");
-
-  await tx.venueSeatPool.update({
-    where: { id: poolId },
-    data: { occupied: { increment: 1 } },
-  });
-});
-```
-
-Use tagged `$queryRaw`, lock only required rows, and keep a deterministic order.
-
-## 8. Deadlock and lock analysis SQL
-
-### Active sessions and waits
-
-```sql
-SELECT
-  pid,
-  usename,
-  application_name,
-  client_addr,
-  state,
-  wait_event_type,
-  wait_event,
-  now() - query_start AS query_age,
-  now() - xact_start AS transaction_age,
-  left(query, 500) AS query
-FROM pg_stat_activity
-WHERE datname = current_database()
-  AND pid <> pg_backend_pid()
-ORDER BY transaction_age DESC NULLS LAST;
-```
-
-### Waiting sessions and blockers
-
-```sql
-SELECT
-  waiting.pid AS waiting_pid,
-  waiting.usename AS waiting_user,
-  now() - waiting.query_start AS waiting_duration,
-  left(waiting.query, 300) AS waiting_query,
-  blocking.pid AS blocking_pid,
-  blocking.usename AS blocking_user,
-  now() - blocking.query_start AS blocking_duration,
-  left(blocking.query, 300) AS blocking_query
-FROM pg_stat_activity AS waiting
-CROSS JOIN LATERAL unnest(pg_blocking_pids(waiting.pid)) AS blocker(blocking_pid)
-JOIN pg_stat_activity AS blocking
-  ON blocking.pid = blocker.blocking_pid
-ORDER BY waiting_duration DESC;
-```
-
-### Lock inventory
-
-```sql
-SELECT
-  l.pid,
-  a.usename,
-  a.state,
-  l.locktype,
-  l.mode,
-  l.granted,
-  l.relation::regclass AS relation,
-  l.virtualxid,
-  l.transactionid,
-  now() - a.query_start AS query_age,
-  left(a.query, 300) AS query
-FROM pg_locks AS l
-LEFT JOIN pg_stat_activity AS a ON a.pid = l.pid
-WHERE a.datname = current_database()
-ORDER BY l.granted, query_age DESC NULLS LAST;
-```
-
-### Long-running and idle transactions
-
-```sql
-SELECT
-  pid,
-  usename,
-  state,
-  now() - xact_start AS transaction_age,
-  now() - state_change AS state_age,
-  wait_event_type,
-  wait_event,
-  left(query, 500) AS query
-FROM pg_stat_activity
-WHERE xact_start IS NOT NULL
-  AND pid <> pg_backend_pid()
-ORDER BY transaction_age DESC;
-```
-
-Cancel a query:
-
-```sql
-SELECT pg_cancel_backend(<pid>);
-```
-
-Terminate a session only after confirming the blocker:
-
-```sql
-SELECT pg_terminate_backend(<pid>);
-```
-
-## 9. Timeout rules
-
-Recommended starting points for normal APIs:
-
-| Setting                               | Initial value | Purpose                                  |
-| ------------------------------------- | ------------: | ---------------------------------------- |
-| Prisma `maxWait`                      |     2 seconds | Maximum wait to acquire a transaction    |
-| Prisma `timeout`                      |     5 seconds | Maximum interactive transaction duration |
-| PostgreSQL `lock_timeout`             |   1–3 seconds | Maximum lock wait                        |
-| PostgreSQL `statement_timeout`        |  5–15 seconds | Maximum statement execution              |
-| `idle_in_transaction_session_timeout` | 15–30 seconds | Ends abandoned open transactions         |
-| Connection `connect_timeout`          |  5–10 seconds | Limits connection establishment          |
-
-Per-transaction example:
-
-```ts
-await prisma.$transaction(
-  async (tx) => {
-    await tx.$executeRaw`SET LOCAL lock_timeout = '2s'`;
-    await tx.$executeRaw`SET LOCAL statement_timeout = '5s'`;
-    await tx.booking.create({ data: bookingData });
-  },
-  { maxWait: 2_000, timeout: 6_000 },
-);
-```
-
-Keep Prisma's transaction timeout slightly above the database statement timeout.
-
-## 10. Neon pool tuning
-
-Use the pooled Neon URL for runtime traffic and a direct URL for migrations and administrative work.
-
-```env
-DATABASE_URL="postgresql://USER:PASSWORD@ep-example-pooler.region.aws.neon.tech/DB?sslmode=require"
-DIRECT_URL="postgresql://USER:PASSWORD@ep-example.region.aws.neon.tech/DB?sslmode=require"
-```
-
-Prisma 7 CLI configuration:
-
-```ts
-import "dotenv/config";
-import { defineConfig, env } from "prisma/config";
-
-export default defineConfig({
-  schema: "prisma/schema.prisma",
-  migrations: { path: "prisma/migrations" },
-  datasource: { url: env("DIRECT_URL") },
-});
-```
-
-Operational rules:
-
-- Reuse one Prisma Client per long-running process.
-- Use the pooled endpoint for API/serverless traffic.
-- Use direct connections for migrations and session-dependent tools.
-- Keep transactions short because they hold a backend connection.
-- Bound concurrency for bulk jobs.
-- Batch writes.
-- Monitor pool wait time, active connections, and idle transactions.
-
-Inspect capacity:
-
-```sql
-SHOW max_connections;
-```
-
-```sql
-SELECT
-  count(*) AS current_connections,
-  current_setting('max_connections')::int AS max_connections,
-  round(
-    100.0 * count(*) / current_setting('max_connections')::int,
-    2
-  ) AS utilization_percent
-FROM pg_stat_activity;
-```
-
-Connections by state:
-
-```sql
-SELECT state, count(*) AS connections
-FROM pg_stat_activity
-WHERE datname = current_database()
-GROUP BY state
-ORDER BY connections DESC;
-```
-
-Pool exhaustion symptoms include rising request latency, Prisma transaction acquisition timeouts, queued requests, and many long or idle transactions. Do not increase connection counts before removing long transactions, N+1 queries, and unbounded parallelism.
-
-## 11. Bounded bulk concurrency
-
-Avoid thousands of simultaneous database promises.
-
-Prefer:
-
-```ts
-await prisma.venue.updateMany({
-  where: { id: { in: venueIds } },
-  data: update,
-});
-```
-
-For distinct per-item operations, process small batches:
-
-```ts
-const concurrency = 5;
-
-for (let index = 0; index < tasks.length; index += concurrency) {
-  const batch = tasks.slice(index, index + concurrency);
-  await Promise.all(batch.map(processTask));
-}
-```
-
-## 12. Observability
-
-Track:
-
-- transaction duration;
-- acquisition wait;
-- retry count and success rate;
-- deadlock and serialization-failure counts;
-- statement and lock timeouts;
-- active and idle-in-transaction sessions;
-- pool wait duration;
-- connection utilization.
-
-Never log connection strings, passwords, authentication tokens, or sensitive personal data.
-
-## 13. Concurrency testing
-
-Concurrency safety requires integration tests using PostgreSQL.
-
-```ts
-const attempts = Array.from({ length: 20 }, (_, index) =>
-  createSeatReservation({
-    userId: `test-user-${index}`,
-    venueId,
-    seatId,
-  }),
-);
-
-const results = await Promise.allSettled(attempts);
-const successful = results.filter((result) => result.status === "fulfilled");
-expect(successful).toHaveLength(1);
-```
-
-Also test retry exhaustion, idempotency, lock timeouts, and bounded pool behavior. Never run destructive load tests against production.
-
-## 14. Review checklist
-
-- [ ] The transaction protects a documented invariant.
-- [ ] The isolation level is justified.
-- [ ] Constraints back up application checks.
-- [ ] Transactions contain no external network calls.
-- [ ] Lock/update order is deterministic.
-- [ ] `maxWait` and `timeout` are bounded.
-- [ ] Retry logic covers serialization failures and deadlocks where needed.
-- [ ] Bulk APIs replace per-row loops where possible.
-- [ ] Atomic updates replace read-modify-write counters.
-- [ ] Lock predicates are indexed.
-- [ ] Raw SQL is parameterized.
-- [ ] Runtime uses a pooled Neon URL.
-- [ ] Migrations use a direct URL.
-- [ ] Prisma Client is reused.
-- [ ] Bulk-job concurrency is bounded.
-- [ ] Deadlock diagnostics are documented.
-- [ ] Timeout errors map to safe API responses.
-
-## 15. Recommended WorkSphere defaults
-
-Ordinary API transactions:
-
-```ts
-{
-  maxWait: 2_000,
-  timeout: 5_000,
-  isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
-}
-```
-
-Strict booking/capacity operations:
-
-```ts
-{
-  maxWait: 2_000,
-  timeout: 5_000,
-  isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-}
-```
-
-Pair serializable operations with at most three retry attempts, exponential backoff with jitter, database constraints, and structured retry metrics.
+### 5.2 When to Retry vs. When to Fail
+
+| Scenario | Action |
+| :--- | :--- |
+| P2034 — serialization failure / write conflict | Retry (bounded) |
+| P2002 — unique constraint violation | Do **not** retry — this is a business logic conflict (e.g., duplicate booking) |
+| P2025 — record not found | Do **not** retry — the data does not exist |
+| Connection timeout | Retry once, then fail — may indicate pool exhaustion |
+
+---
+
+## 6. Best Practices Checklist
+
+Use this checklist when writing or reviewing database operations that involve concurrency:
+
+- [ ] **Default to `Read Committed`** — only escalate when you have a documented reason.
+- [ ] **Keep transactions short** — never perform network calls, file I/O, or heavy computation inside a transaction block.
+- [ ] **Use atomic updates** for simple counters (`{ increment: 1 }`) instead of read-then-write.
+- [ ] **Lock rows explicitly** with `SELECT FOR UPDATE` when conditional write logic depends on the current row state.
+- [ ] **Sort lock acquisition order** deterministically (by ID or another stable key) to prevent deadlocks.
+- [ ] **Handle P2034 retries** with bounded attempts and backoff when using `Repeatable Read` or `Serializable`.
+- [ ] **Catch P2002 at the API boundary** as a safety net for unique constraint races.
+- [ ] **Batch independent writes** using the Prisma array transaction form (`prisma.$transaction([...])`) for better throughput.
+- [ ] **Set `maxWait` and `timeout`** on every interactive transaction to prevent connection pool starvation.
+- [ ] **Test with concurrent requests** — use tools like `autocannon` or parallel test runners to verify that race conditions are actually prevented.
+
+---
+
+## Further Reading
+
+- [PostgreSQL Documentation — Transaction Isolation](https://www.postgresql.org/docs/current/transaction-iso.html)
+- [Prisma Docs — Transactions and Batch Queries](https://www.prisma.io/docs/orm/prisma-client/queries/transactions)
+- [WorkSphere — High Concurrency Database Guide](./HIGH_CONCURRENCY_DATABASE_GUIDE.md)
+- [WorkSphere — Database Connection Pooling](./DATABASE_CONNECTION_POOLING.md)

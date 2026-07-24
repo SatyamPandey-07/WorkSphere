@@ -45,3 +45,59 @@ export async function autoCreateUpcomingPartitions(): Promise<string[]> {
 
   return createdPartitions;
 }
+export interface PartitionHealthReport {
+  status: "HEALTHY" | "CRITICAL";
+  checkedAt: string;
+  partitions: {
+    name: string;
+    exists: boolean;
+    rowCount: number;
+  }[];
+}
+
+export async function checkPartitionHealth(): Promise<PartitionHealthReport> {
+  const now = new Date();
+  const partitionsReport: any[] = [];
+  let isCritical = false;
+
+  // Track the current month (offset 0) and the next month (offset 1)
+  for (let offset = 0; offset <= 1; offset++) {
+    const targetDate = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const year = targetDate.getFullYear();
+    const month = String(targetDate.getMonth() + 1).padStart(2, "0");
+    const partitionName = `PushNotificationLog_y${year}m${month}`;
+
+    try {
+      // Query PostgreSQL system catalogs to verify if the partition sub-table exists
+      const result = await prisma.$queryRawUnsafe<{ relname: string; n_live_tup: number }[]>(`
+        SELECT relname, n_live_tup::int as n_live_tup
+        FROM pg_stat_user_tables 
+        WHERE relname = '${partitionName}'
+        LIMIT 1;
+      `);
+
+      const exists = result && result.length > 0;
+      const rowCount = exists ? (result[0] as any).n_live_tup : 0;
+
+      // If next month's partition (offset 1) is missing, mark the state as CRITICAL
+      if (offset === 1 && !exists) {
+        isCritical = true;
+      }
+
+      partitionsReport.push({
+        name: partitionName,
+        exists,
+        rowCount,
+      });
+    } catch (error) {
+      console.error(`Error checking status for table partition ${partitionName}:`, error);
+      isCritical = true;
+    }
+  }
+
+  return {
+    status: isCritical ? "CRITICAL" : "HEALTHY",
+    checkedAt: new Date().toISOString(),
+    partitions: partitionsReport,
+  };
+}

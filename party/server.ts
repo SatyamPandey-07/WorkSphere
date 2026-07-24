@@ -109,10 +109,16 @@ export default class WorkspaceServer implements Party.Server {
     // Also handle simple presence via standard WebSockets
     conn.addEventListener("message", (event) => {
       try {
-        const data = JSON.parse(event.data as string);
+        const raw = event.data as string;
+        if (raw.length > 10_240) return;
+
+        const data = JSON.parse(raw);
         if (data.type === "presence" || data.type === "cursor") {
-          // Broadcast presence/cursor to everyone else in the room
-          this.room.broadcast(event.data as string, [conn.id]);
+          const state = conn.state as { userId?: string } | null;
+          if (!state?.userId || data.userId !== state.userId) return;
+          if (typeof data.venueId !== "string") return;
+
+          this.room.broadcast(raw, [conn.id]);
         }
       } catch {
         // Not JSON or other error, handled by Yjs

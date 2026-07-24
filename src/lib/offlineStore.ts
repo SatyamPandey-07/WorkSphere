@@ -1,3 +1,5 @@
+export { withWebLock } from "./webLock";
+import { withWebLock } from "./webLock";
 const STORE_NAME = "favorites-outbox";
 const CHECKIN_STORE_NAME = "checkins-outbox";
 const DB_NAME = "WorkSphereOfflineDB";
@@ -10,32 +12,6 @@ const DB_NAME = "WorkSphereOfflineDB";
  * dropped. (Issue #712)
  */
 export const MAX_SYNC_RETRIES = 3;
-
-const IDB_LOCK_NAME = "worksphere-offline-store-lock";
-
-/**
- * Web Locks API wrapper to serialize IndexedDB transactions across multiple concurrent browser tabs.
- * Prevents IndexedDB transaction deadlock during offline outbox sync (#910).
- */
-export async function withWebLock<T>(
-  callback: () => Promise<T>,
-  lockName = IDB_LOCK_NAME,
-): Promise<T> {
-  if (
-    typeof navigator !== "undefined" &&
-    "locks" in navigator &&
-    navigator.locks?.request
-  ) {
-    try {
-      return await navigator.locks.request(lockName, async () => {
-        return callback();
-      });
-    } catch {
-      return callback();
-    }
-  }
-  return callback();
-}
 
 export interface OfflineAction {
   id?: number;
@@ -185,7 +161,8 @@ function getDB(): Promise<IDBDatabase> {
 
 /**
  * Pushes a target action into the client IndexedDB transaction queue.
- * Wrapped with Web Locks API to serialize multi-tab storage access (#910).
+ * Wrapped with Web Locks API to serialize multi-tab storage access (#910),
+ * now sharing the same lock as offlineStorage.ts (fix for #829).
  */
 export async function queueOfflineFavorite(
   venueId: string,
@@ -226,6 +203,7 @@ export async function queueOfflineFavorite(
       });
     } catch (err) {
       console.error("Failed to queue offline action:", err);
+      throw err; // let the caller (UI / service worker) know the write did not happen
     }
   });
 }
@@ -342,6 +320,7 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
       });
     } catch (err) {
       console.error("Failed to queue offline check-in:", err);
+      throw err; // let the caller (UI / service worker) know the write did not happen
     }
   });
 }

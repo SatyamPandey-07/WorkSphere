@@ -4,6 +4,7 @@
  * Integrated with Yjs for CRDT-based offline state mutation and background sync.
  */
 import * as Y from "yjs";
+import { withWebLock } from "./webLock";
 
 // Initialize global Y.Doc for user state
 export const userDoc = new Y.Doc();
@@ -21,31 +22,6 @@ userDoc.on("update", async (update: Uint8Array) => {
 
 const DB_NAME = "worksphere-offline";
 const DB_VERSION = 4;
-
-const IDB_STORAGE_LOCK = "worksphere-offline-storage-lock";
-
-/**
- * Web Locks API wrapper to serialize IndexedDB transactions across concurrent tabs (#910)
- */
-export async function withWebLock<T>(
-  callback: () => Promise<T>,
-  lockName = IDB_STORAGE_LOCK,
-): Promise<T> {
-  if (
-    typeof navigator !== "undefined" &&
-    "locks" in navigator &&
-    navigator.locks?.request
-  ) {
-    try {
-      return await navigator.locks.request(lockName, async () => {
-        return callback();
-      });
-    } catch {
-      return callback();
-    }
-  }
-  return callback();
-}
 
 export interface OfflineVenue {
   id: string;

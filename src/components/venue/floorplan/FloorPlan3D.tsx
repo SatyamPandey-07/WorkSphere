@@ -13,6 +13,8 @@ import {
   WebGPUFloorPlanRenderer,
   type FloorPlanData,
 } from "@/lib/webgpu/floorPlanRenderer";
+import { allocateCanvasDrawingBuffer } from "@/lib/webgl/canvasBufferSize";
+import { attachWebGLContextRecovery } from "@/lib/webgl/contextManager";
 
 interface FloorPlan3DProps {
   venueId: string;
@@ -31,6 +33,7 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
     const canvas = canvasRef.current;
     const renderer = new WebGPUFloorPlanRenderer(canvas);
     rendererRef.current = renderer;
+    let detachRecovery: (() => void) | null = null;
 
     renderer.initialize().then((success) => {
       if (success) {
@@ -39,10 +42,15 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
         renderer.startRenderLoop();
       } else {
         renderWebGLFallback(canvas, data);
+        // Reallocate DPR-correct buffers after context loss on Retina (#1030)
+        detachRecovery = attachWebGLContextRecovery(canvas, () => {
+          renderWebGLFallback(canvas, data);
+        });
       }
     });
 
     return () => {
+      detachRecovery?.();
       renderer.destroy();
     };
   }, [data]);
@@ -224,6 +232,14 @@ function renderWebGLFallback(
 ): void {
   const gl = canvas.getContext("webgl2");
   if (!gl) return;
+
+  // CSS size × devicePixelRatio so Retina restores are sharp (#1030)
+  const { width, height } = allocateCanvasDrawingBuffer(
+    canvas,
+    canvas.clientWidth || 800,
+    canvas.clientHeight || 450,
+  );
+  gl.viewport(0, 0, width, height);
 
   gl.clearColor(0.08, 0.08, 0.1, 1.0);
   gl.enable(gl.DEPTH_TEST);

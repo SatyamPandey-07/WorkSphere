@@ -6,6 +6,8 @@
  * and displaying a premium, non-intrusive recovery progress banner to the user.
  */
 
+import { allocateCanvasDrawingBuffer } from "./canvasBufferSize";
+
 export interface WebGLContextRecoveryOptions {
   onLost?: () => void;
   onRestore: (gl: WebGLRenderingContext | WebGL2RenderingContext) => void;
@@ -104,6 +106,10 @@ export class WebGLContextRecoveryManager {
 
     if (gl) {
       try {
+        // Retina / high-DPI: rebuild the drawing buffer at CSS size × dpr
+        // before shaders/buffers are reallocated (#1030).
+        const { width, height } = allocateCanvasDrawingBuffer(this.canvas);
+        gl.viewport(0, 0, width, height);
         this.onRestore(gl);
       } catch (err) {
         console.error(

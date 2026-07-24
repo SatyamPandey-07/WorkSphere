@@ -110,7 +110,9 @@ function exportVenueCSV(data: AnalyticsData): void {
     Category: `"${venue.category}"`,
     "Visitor Count": venue.views,
     Bookings: venue.bookings,
-    Rating: venue.rating.toFixed(1),
+    Rating: venue.rating != null && !isNaN(venue.rating)
+      ? venue.rating.toFixed(1)
+      : "0.0",
     Score: venue.score,
   }));
 
@@ -545,9 +547,23 @@ export default function AdminAnalyticsDashboard() {
                       {venue.bookings}
                     </td>
                     <td className="px-3 py-4">
-                      <span className="inline-flex items-center gap-1 text-amber-300">
-                        <Star className="h-4 w-4 fill-current" />
-                        {venue.rating.toFixed(1)}
+                      <span
+                        className={`inline-flex items-center gap-1 ${
+                          (venue.rating ?? 0) > 0
+                            ? "text-amber-300"
+                            : "text-zinc-500"
+                        }`}
+                      >
+                        <Star
+                          className={`h-4 w-4 ${
+                            (venue.rating ?? 0) > 0
+                              ? "fill-current"
+                              : "text-zinc-500"
+                          }`}
+                        />
+                        {venue.rating != null && !isNaN(venue.rating)
+                          ? venue.rating.toFixed(1)
+                          : "0.0"}
                       </span>
                     </td>
                     <td className="px-3 py-4 font-medium text-violet-300">

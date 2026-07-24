@@ -81,6 +81,17 @@ export function CustomAvatarUpload() {
       if (currentSource) {
         URL.revokeObjectURL(currentSource);
       }
+      return null;
+    });
+    setSelectedFileName("");
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    let file = e.target.files?.[0];
+    if (!file) return;
+
+    setError(null);
+    setSuccess(null);
 
     // 1. Check file size against 2MB limit before reading image stream or processing
     if (file.size > MAX_FILE_SIZE) {
@@ -222,12 +233,13 @@ export function CustomAvatarUpload() {
                   Upload Image
                 </>
               )}
-            </div>
+            </button>
           </div>
         </div>
       </div>
+    </div>
 
-      <AvatarCropModal
+    <AvatarCropModal
         imageSource={cropSource ?? ""}
         originalFileName={selectedFileName}
         isOpen={Boolean(cropSource)}

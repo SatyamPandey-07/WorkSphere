@@ -226,15 +226,85 @@ export class HNSWIndex {
     const node = this.nodes.get(id)!;
 
     for (const [layer, neighborIds] of node.neighbors.entries()) {
+      // 1. Remove deleted node from neighbors' adjacency lists
       for (const neighborId of neighborIds) {
         const neighbor = this.nodes.get(neighborId);
         if (!neighbor) continue;
-
         const layerNeighbors = neighbor.neighbors.get(layer) || [];
         neighbor.neighbors.set(
           layer,
-          layerNeighbors.filter((nid) => nid !== id),
+          layerNeighbors.filter((nid) => nid !== id)
         );
+      }
+
+      // 2. Reconnect neighbors to prevent orphaned components
+      for (const neighborId of neighborIds) {
+        const neighborNode = this.nodes.get(neighborId);
+        if (!neighborNode) continue;
+        
+        const currentNeighbors = neighborNode.neighbors.get(layer) || [];
+        const candidateSet = new Set<string>();
+        
+        // Add other neighbors of deleted node
+        for (const nid of neighborIds) {
+          if (nid !== neighborId) candidateSet.add(nid);
+        }
+        
+        // Add 2-hop neighbors
+        for (const nid of currentNeighbors) {
+          const nn = this.nodes.get(nid);
+          if (nn) {
+            for (const nnid of (nn.neighbors.get(layer) || [])) {
+              if (nnid !== neighborId && nnid !== id) candidateSet.add(nnid);
+            }
+          }
+        }
+        
+        // Exclude current neighbors
+        for (const nid of currentNeighbors) {
+          candidateSet.delete(nid);
+        }
+        
+        const candidateDistances = Array.from(candidateSet)
+          .map((cid) => {
+            const cNode = this.nodes.get(cid);
+            return cNode ? { id: cid, distance: this.cosineDistance(neighborNode.vector, cNode.vector) } : null;
+          })
+          .filter((n): n is SearchResult => n !== null)
+          .sort((a, b) => a.distance - b.distance);
+        
+        const needed = this.config.M - currentNeighbors.length;
+        if (needed > 0 && candidateDistances.length > 0) {
+          const toAdd = candidateDistances.slice(0, needed);
+          
+          for (const item of toAdd) {
+            currentNeighbors.push(item.id);
+            
+            const targetNode = this.nodes.get(item.id);
+            if (targetNode) {
+              const targetNeighbors = targetNode.neighbors.get(layer) || [];
+              if (!targetNeighbors.includes(neighborId)) {
+                targetNeighbors.push(neighborId);
+                
+                if (targetNeighbors.length > this.config.M) {
+                  const targetDistances = targetNeighbors
+                    .map((nid) => {
+                      const n = this.nodes.get(nid);
+                      return n ? { id: nid, distance: this.cosineDistance(n.vector, targetNode.vector) } : null;
+                    })
+                    .filter((n): n is SearchResult => n !== null)
+                    .sort((a, b) => a.distance - b.distance);
+                  
+                  targetNode.neighbors.set(layer, targetDistances.slice(0, this.config.M).map((n) => n.id));
+                } else {
+                  targetNode.neighbors.set(layer, targetNeighbors);
+                }
+              }
+            }
+          }
+        }
+        
+        neighborNode.neighbors.set(layer, currentNeighbors);
       }
     }
 

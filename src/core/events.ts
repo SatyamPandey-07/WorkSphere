@@ -23,7 +23,12 @@ export interface AppEvents {
     bookingId: string;
     guestEmail: string;
   };
-  // Add more events as needed
+  "booking:guest-rsvp": {
+    bookingId: string;
+    guestId: string;
+    guestEmail: string;
+    status: string;
+  };
   "user:created": { userId: string; email: string };
   "checkin:confirmed": {
     userId: string;

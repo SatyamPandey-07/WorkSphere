@@ -1,19 +1,38 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Play, Pause, Volume2, VolumeX, Radio, Settings } from "lucide-react";
+import {
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Radio,
+  Settings,
+  RotateCcw,
+} from "lucide-react";
 
 type SoundPreset = "jazz" | "cafe" | "library";
 
 export type EqPresetName =
-  "flat" | "bass-boost" | "vocal-enhancer" | "treble-boost" | "warm";
+  | "flat"
+  | "bass-boost"
+  | "vocal-enhancer"
+  | "treble-boost"
+  | "warm";
 
 export interface EqPreset {
   label: string;
   gains: number[];
 }
 
-export const EQ_FREQUENCIES: number[] = [60, 230, 910, 4000, 14000];
+export const EQ_BANDS: number[] = [60, 250, 1000, 4000, 12000];
+export const EQ_BAND_LABELS: string[] = [
+  "60Hz",
+  "250Hz",
+  "1kHz",
+  "4kHz",
+  "12kHz",
+];
 
 export const EQ_PRESETS: Record<EqPresetName, EqPreset> = {
   flat: {
@@ -38,53 +57,61 @@ export const EQ_PRESETS: Record<EqPresetName, EqPreset> = {
   },
 };
 
-/**
- * Interface representing component props for the AudioEqualizer component.
- *
- * @example
- * ```tsx
- * import { AudioEqualizer } from "@/components/audio/AudioEqualizer";
- *
- * export default function WorkspacePage() {
- *   return (
- *     <AudioEqualizer
- *       venueName="Quiet Library"
- *       initialGains={[0, 2, -1, 3, 0, -2, 1, 0, 0, 0]}
- *       onGainChange={(index, gain) => console.log(`Band ${index} gain changed to ${gain}dB`)}
- *       sampleRate={44100}
- *     />
- *   );
- * }
- * ```
- */
 export interface AudioEqualizerProps {
-  /**
-   * Display name of the workspace or venue shown in the equalizer header.
-   * @default "Workspace"
-   */
   venueName?: string;
-  /**
-   * Initial gain values in decibels (dB) for each frequency band.
-   * @default [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-   */
   initialGains?: number[];
-  /**
-   * Callback fired when an equalizer frequency band gain is modified.
-   * @param bandIndex - The zero-based index of the updated band.
-   * @param newGain - The newly selected gain value in decibels (dB).
-   */
   onGainChange?: (bandIndex: number, newGain: number) => void;
-  /**
-   * Audio processing sample rate in Hz.
-   * @default 44100
-   */
   sampleRate?: number;
+}
+
+// Helper: Create Pink Noise Buffer
+function createPinkNoiseBuffer(ctx: AudioContext) {
+  const bufferSize = 2 * ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const output = buffer.getChannelData(0);
+  let b0 = 0,
+    b1 = 0,
+    b2 = 0,
+    b3 = 0,
+    b4 = 0,
+    b5 = 0,
+    b6 = 0;
+
+  for (let i = 0; i < bufferSize; i++) {
+    const white = Math.random() * 2 - 1;
+    b0 = 0.99886 * b0 + white * 0.0555179;
+    b1 = 0.99332 * b1 + white * 0.0750759;
+    b2 = 0.969 * b2 + white * 0.153852;
+    b3 = 0.8665 * b3 + white * 0.3104856;
+    b4 = 0.55 * b4 + white * 0.5329522;
+    b5 = -0.7616 * b5 - white * 0.016898;
+    output[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+    output[i] *= 0.11;
+    b6 = white * 0.115926;
+  }
+  return buffer;
+}
+
+// Helper: Create Brown Noise Buffer
+function createBrownNoiseBuffer(ctx: AudioContext) {
+  const bufferSize = 2 * ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const output = buffer.getChannelData(0);
+  let lastOut = 0.0;
+
+  for (let i = 0; i < bufferSize; i++) {
+    const white = Math.random() * 2 - 1;
+    output[i] = (lastOut + 0.02 * white) / 1.02;
+    lastOut = output[i];
+    output[i] *= 3.5;
+  }
+  return buffer;
 }
 
 export function AudioEqualizer({
   venueName = "Workspace",
-  initialGains: _initialGains,
-  onGainChange: _onGainChange,
+  initialGains,
+  onGainChange,
   sampleRate: _sampleRate = 44100,
 }: AudioEqualizerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -93,12 +120,15 @@ export function AudioEqualizer({
   const [volume, setVolume] = useState(0.5);
   const [muted, setMuted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [bandGains, setBandGains] = useState<number[]>(
+    initialGains || [0, 0, 0, 0, 0],
+  );
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
+  const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const jazzCleanupRef = useRef<(() => void) | null>(null);
   const [frequencies, setFrequencies] = useState<number[]>(
     new Array(12).fill(10),
@@ -118,7 +148,7 @@ export function AudioEqualizer({
     }
   }, []);
 
-  // Initialize Audio Context on demand
+  // Initialize Audio Context and BiquadFilterNode EQ chain on demand
   const initAudio = useCallback(() => {
     if (audioContextRef.current) return;
     const AudioContextClass =
@@ -127,78 +157,51 @@ export function AudioEqualizer({
     const masterGain = ctx.createGain();
     const analyser = ctx.createAnalyser();
 
-    // Create 5-band parametric EQ filters
-    const eqFilters = EQ_FREQUENCIES.map((freq, i) => {
-      const filter = ctx.createBiquadFilter();
-      filter.type = "peaking";
-      filter.frequency.setValueAtTime(freq, ctx.currentTime);
-      filter.Q.setValueAtTime(1.2, ctx.currentTime);
-      filter.gain.setValueAtTime(
-        EQ_PRESETS[eqPreset].gains[i],
-        ctx.currentTime,
-      );
-      return filter;
-    });
-
-    // Chain: source -> EQ filters -> master gain -> analyser -> destination
-    let lastNode: AudioNode = eqFilters[0];
-    for (let i = 1; i < eqFilters.length; i++) {
-      lastNode.connect(eqFilters[i]);
-      lastNode = eqFilters[i];
-    }
-    lastNode.connect(masterGain);
+    analyser.fftSize = 64;
     masterGain.connect(analyser);
     analyser.connect(ctx.destination);
 
+    // Build 5-band BiquadFilterNode cascade
+    const filters: BiquadFilterNode[] = EQ_BANDS.map((freq, i) => {
+      const filter = ctx.createBiquadFilter();
+      if (i === 0) {
+        filter.type = "lowshelf";
+      } else if (i === EQ_BANDS.length - 1) {
+        filter.type = "highshelf";
+      } else {
+        filter.type = "peaking";
+        if ("Q" in filter && filter.Q) {
+          if (typeof filter.Q.setValueAtTime === "function") {
+            filter.Q.setValueAtTime(1.4, ctx.currentTime);
+          } else {
+            filter.Q.value = 1.4;
+          }
+        }
+      }
+      if (
+        filter.frequency &&
+        typeof filter.frequency.setValueAtTime === "function"
+      ) {
+        filter.frequency.setValueAtTime(freq, ctx.currentTime);
+      }
+      if (filter.gain && typeof filter.gain.setValueAtTime === "function") {
+        filter.gain.setValueAtTime(bandGains[i] ?? 0, ctx.currentTime);
+      }
+      return filter;
+    });
+
+    for (let i = 0; i < filters.length - 1; i++) {
+      filters[i].connect(filters[i + 1]);
+    }
+    if (filters.length > 0) {
+      filters[filters.length - 1].connect(masterGain);
+    }
+
     audioContextRef.current = ctx;
     masterGainRef.current = masterGain;
+    eqFiltersRef.current = filters;
     analyserRef.current = analyser;
-    eqFiltersRef.current = eqFilters;
-  }, [eqPreset]);
-
-  // Helper: Create Pink Noise Buffer
-  const createPinkNoiseBuffer = (ctx: AudioContext) => {
-    const bufferSize = 2 * ctx.sampleRate;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const output = buffer.getChannelData(0);
-    let b0 = 0,
-      b1 = 0,
-      b2 = 0,
-      b3 = 0,
-      b4 = 0,
-      b5 = 0,
-      b6 = 0;
-
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      b0 = 0.99886 * b0 + white * 0.0555179;
-      b1 = 0.99332 * b1 + white * 0.0750759;
-      b2 = 0.969 * b2 + white * 0.153852;
-      b3 = 0.8665 * b3 + white * 0.3104856;
-      b4 = 0.55 * b4 + white * 0.5329522;
-      b5 = -0.7616 * b5 - white * 0.016898;
-      output[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
-      output[i] *= 0.11;
-      b6 = white * 0.115926;
-    }
-    return buffer;
-  };
-
-  // Helper: Create Brown Noise Buffer
-  const createBrownNoiseBuffer = (ctx: AudioContext) => {
-    const bufferSize = 2 * ctx.sampleRate;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const output = buffer.getChannelData(0);
-    let lastOut = 0.0;
-
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      output[i] = (lastOut + 0.02 * white) / 1.02;
-      lastOut = output[i];
-      output[i] *= 3.5;
-    }
-    return buffer;
-  };
+  }, [bandGains]);
 
   // Play Sound Logic
   const stopPlayingNodes = useCallback(() => {
@@ -225,38 +228,90 @@ export function AudioEqualizer({
     }
   }, [stopPlayingNodes]);
 
+  // Handle Real-Time Gain Slider Drag with Smooth Audio Parameter Ramping
+  const handleBandGainChange = (index: number, newGain: number) => {
+    setBandGains((prev) => {
+      const next = [...prev];
+      next[index] = newGain;
+      return next;
+    });
+
+    if (onGainChange) {
+      onGainChange(index, newGain);
+    }
+
+    const filter = eqFiltersRef.current[index];
+    if (filter && filter.gain && audioContextRef.current) {
+      const now = audioContextRef.current.currentTime;
+      if (typeof filter.gain.setTargetAtTime === "function") {
+        // Smooth audio param ramp to eliminate audio pops and clicks
+        filter.gain.setTargetAtTime(newGain, now, 0.015);
+      } else if (typeof filter.gain.linearRampToValueAtTime === "function") {
+        filter.gain.setValueAtTime(filter.gain.value ?? 0, now);
+        filter.gain.linearRampToValueAtTime(newGain, now + 0.03);
+      } else if (typeof filter.gain.setValueAtTime === "function") {
+        filter.gain.setValueAtTime(newGain, now);
+      }
+    }
+  };
+
+  const handleEqPresetChange = (presetName: EqPresetName) => {
+    setEqPreset(presetName);
+    const gains = EQ_PRESETS[presetName].gains;
+    setBandGains(gains);
+
+    if (audioContextRef.current) {
+      const now = audioContextRef.current.currentTime;
+      eqFiltersRef.current.forEach((filter, i) => {
+        if (filter && filter.gain) {
+          const targetGain = gains[i] ?? 0;
+          if (typeof filter.gain.setTargetAtTime === "function") {
+            filter.gain.setTargetAtTime(targetGain, now, 0.015);
+          } else if (typeof filter.gain.setValueAtTime === "function") {
+            filter.gain.setValueAtTime(targetGain, now);
+          }
+        }
+      });
+    }
+  };
+
+  const handleResetEq = () => {
+    handleEqPresetChange("flat");
+  };
+
   // Play Sound Logic
   const startPlaying = useCallback(() => {
     initAudio();
     const ctx = audioContextRef.current!;
+    const masterGain = masterGainRef.current!;
+    const audioEntryPoint = eqFiltersRef.current[0] || masterGain;
 
     if (ctx.state === "suspended") {
       ctx.resume();
     }
 
-    // Stop existing source/jazz notes
     stopPlayingNodes();
 
-    const eqInput = eqFiltersRef.current[0];
-
     if (preset === "cafe") {
-      // Cafe Chatter
       const buffer = createPinkNoiseBuffer(ctx);
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.loop = true;
 
-      // Filter to simulate muffled chatter
       const filter = ctx.createBiquadFilter();
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(800, ctx.currentTime);
+      if (
+        filter.frequency &&
+        typeof filter.frequency.setValueAtTime === "function"
+      ) {
+        filter.frequency.setValueAtTime(800, ctx.currentTime);
+      }
 
       source.connect(filter);
-      filter.connect(eqInput);
+      filter.connect(audioEntryPoint);
       source.start();
       sourceNodeRef.current = source;
     } else if (preset === "library") {
-      // Library Silence (Brown Noise + filter for HVAC hum)
       const buffer = createBrownNoiseBuffer(ctx);
       const source = ctx.createBufferSource();
       source.buffer = buffer;
@@ -264,14 +319,18 @@ export function AudioEqualizer({
 
       const filter = ctx.createBiquadFilter();
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(150, ctx.currentTime);
+      if (
+        filter.frequency &&
+        typeof filter.frequency.setValueAtTime === "function"
+      ) {
+        filter.frequency.setValueAtTime(150, ctx.currentTime);
+      }
 
       source.connect(filter);
-      filter.connect(eqInput);
+      filter.connect(audioEntryPoint);
       source.start();
       sourceNodeRef.current = source;
     } else if (preset === "jazz") {
-      // Soft Jazz synthesizer chords
       const notes = [
         [174.61, 220.0, 261.63, 329.63], // Fmaj7
         [196.0, 233.08, 293.66, 349.23], // Gmin7
@@ -293,15 +352,30 @@ export function AudioEqualizer({
           const osc = ctx.createOscillator();
           const oscGain = ctx.createGain();
           osc.type = "sine";
-          osc.frequency.setValueAtTime(freq, now);
+          if (
+            osc.frequency &&
+            typeof osc.frequency.setValueAtTime === "function"
+          ) {
+            osc.frequency.setValueAtTime(freq, now);
+          }
 
-          // Pad envelope: soft attack & long release
-          oscGain.gain.setValueAtTime(0, now);
-          oscGain.gain.linearRampToValueAtTime(0.04, now + 1.5);
-          oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 4.8);
+          if (
+            oscGain.gain &&
+            typeof oscGain.gain.setValueAtTime === "function"
+          ) {
+            oscGain.gain.setValueAtTime(0, now);
+            if (typeof oscGain.gain.linearRampToValueAtTime === "function") {
+              oscGain.gain.linearRampToValueAtTime(0.04, now + 1.5);
+            }
+            if (
+              typeof oscGain.gain.exponentialRampToValueAtTime === "function"
+            ) {
+              oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 4.8);
+            }
+          }
 
           osc.connect(oscGain);
-          oscGain.connect(eqInput);
+          oscGain.connect(audioEntryPoint);
           osc.start(now);
           osc.stop(now + 5.0);
         });
@@ -311,9 +385,8 @@ export function AudioEqualizer({
       const interval = setInterval(playChord, 5000);
       jazzCleanupRef.current = () => clearInterval(interval);
     }
-  }, [preset, stopPlayingNodes, initAudio]);
+  }, [preset, initAudio, stopPlayingNodes]);
 
-  // Toggle Action
   const togglePlay = () => {
     if (isPlaying) {
       stopPlaying();
@@ -323,7 +396,6 @@ export function AudioEqualizer({
     }
   };
 
-  // Handle Preset or Volume changes
   useEffect(() => {
     if (isPlaying) {
       startPlaying();
@@ -331,24 +403,16 @@ export function AudioEqualizer({
   }, [preset, isPlaying, startPlaying]);
 
   useEffect(() => {
-    if (masterGainRef.current) {
-      masterGainRef.current.gain.setValueAtTime(
-        muted ? 0 : volume,
-        audioContextRef.current ? audioContextRef.current.currentTime : 0,
-      );
+    if (masterGainRef.current && masterGainRef.current.gain) {
+      if (typeof masterGainRef.current.gain.setValueAtTime === "function") {
+        masterGainRef.current.gain.setValueAtTime(
+          muted ? 0 : volume,
+          audioContextRef.current ? audioContextRef.current.currentTime : 0,
+        );
+      }
     }
   }, [volume, muted]);
 
-  useEffect(() => {
-    const ctx = audioContextRef.current;
-    if (!ctx) return;
-    const gains = EQ_PRESETS[eqPreset].gains;
-    eqFiltersRef.current.forEach((filter, i) => {
-      filter.gain.setValueAtTime(gains[i], ctx.currentTime);
-    });
-  }, [eqPreset]);
-
-  // Clean up on unmount
   useEffect(() => {
     return () => {
       stopPlayingNodes();
@@ -358,7 +422,6 @@ export function AudioEqualizer({
     };
   }, [stopPlayingNodes]);
 
-  // Visualizer Animation Loop
   useEffect(() => {
     let animFrame: number;
     let interval: NodeJS.Timeout;
@@ -368,7 +431,6 @@ export function AudioEqualizer({
       const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
       analyserRef.current.getByteFrequencyData(dataArray);
 
-      // Downsample data points for 12 display bars
       const nextFrequencies = Array.from({ length: 12 }, (_, i) => {
         const val = dataArray[i * 2] || 0;
         return Math.max(5, Math.min(100, (val / 255) * 100));
@@ -378,7 +440,6 @@ export function AudioEqualizer({
 
     if (isPlaying) {
       if (reducedMotion) {
-        // Reduced motion: update very slowly for accessibility/performance
         interval = setInterval(updateFrequencies, 350);
       } else {
         const loop = () => {
@@ -430,7 +491,7 @@ export function AudioEqualizer({
       </div>
 
       {/* Controller & Equalizer Visualizer */}
-      <div className="flex flex-col sm:flex-row items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/5">
+      <div className="flex flex-col sm:flex-row items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/5 mb-4">
         <button
           onClick={togglePlay}
           className={`p-3 rounded-full flex items-center justify-center transition-all ${
@@ -450,7 +511,7 @@ export function AudioEqualizer({
         {/* EQ Preset Selector */}
         <select
           value={eqPreset}
-          onChange={(e) => setEqPreset(e.target.value as EqPresetName)}
+          onChange={(e) => handleEqPresetChange(e.target.value as EqPresetName)}
           className="text-xs font-semibold bg-white/5 border border-white/10 text-zinc-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500 transition-colors cursor-pointer appearance-none"
           title="Equalizer Preset"
         >
@@ -506,6 +567,48 @@ export function AudioEqualizer({
             }}
             className="w-16 h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
           />
+        </div>
+      </div>
+
+      {/* 5-Band BiquadFilterNode Equalizer Controls */}
+      <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300">
+            5-Band Acoustic Equalizer
+          </span>
+          <button
+            onClick={handleResetEq}
+            className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white transition-colors"
+            title="Reset all EQ gains to 0 dB"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Reset EQ</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-5 gap-2 text-center">
+          {EQ_BAND_LABELS.map((label, idx) => (
+            <div key={label} className="flex flex-col items-center gap-1.5">
+              <span className="text-[10px] font-mono text-zinc-400">
+                {label}
+              </span>
+              <input
+                type="range"
+                min="-12"
+                max="12"
+                step="0.5"
+                aria-label={`${label} Gain`}
+                value={bandGains[idx]}
+                onChange={(e) =>
+                  handleBandGainChange(idx, parseFloat(e.target.value))
+                }
+                className="w-full h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
+              />
+              <span className="text-[9px] font-mono text-indigo-400">
+                {bandGains[idx] > 0 ? `+${bandGains[idx]}` : bandGains[idx]} dB
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 

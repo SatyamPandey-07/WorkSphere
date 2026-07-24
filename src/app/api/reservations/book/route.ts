@@ -85,62 +85,73 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Seat not found" }, { status: 404 });
   }
 
-  const existingBookings = await prisma.booking.findMany({
-    where: {
-      seatId,
-      date,
-      status: {
-        in: ["CONFIRMED", "PENDING"],
-      },
-    },
-    select: {
-      time: true,
-      duration: true,
-    },
-  });
-
-  const conflict = existingBookings.some((booking) =>
-    overlaps(booking.time, booking.duration ?? 60, time, duration),
-  );
-
-  if (conflict) {
-    return NextResponse.json(
-      { error: "That seat was just reserved. Choose another seat." },
-      { status: 409 },
-    );
-  }
-
   const confirmationId = `WS-#${Math.floor(100000 + Math.random() * 900000)}`;
 
-  const booking = await prisma.booking.create({
-    data: {
-      userId,
-      venueId,
-      seatId,
-      seatNumber: seat.seatNumber,
-      duration,
-      amenitiesNeeded,
-      date,
-      time,
-      customerEmail:
-        typeof body.customerEmail === "string"
-          ? body.customerEmail
-          : "guest@worksphere.local",
-      customerPhone:
-        typeof body.customerPhone === "string" ? body.customerPhone : null,
-      confirmationId,
-      status: "CONFIRMED",
-    },
-    include: {
-      venue: {
-        select: {
-          name: true,
-          address: true,
+  let booking: Awaited<ReturnType<typeof prisma.booking.create>> | null = null;
+
+  try {
+    booking = await prisma.$transaction(async (tx) => {
+      const existingBookings = await tx.booking.findMany({
+        where: {
+          seatId,
+          date,
+          status: {
+            in: ["CONFIRMED", "PENDING"],
+          },
         },
-      },
-      seat: true,
-    },
-  });
+        select: {
+          time: true,
+          duration: true,
+        },
+      });
+
+      const conflict = existingBookings.some((b) =>
+        overlaps(b.time, b.duration ?? 60, time, duration),
+      );
+
+      if (conflict) {
+        throw new Error("CONFLICT");
+      }
+
+      return tx.booking.create({
+        data: {
+          userId,
+          venueId,
+          seatId,
+          seatNumber: seat.seatNumber,
+          duration,
+          amenitiesNeeded,
+          date,
+          time,
+          customerEmail:
+            typeof body.customerEmail === "string"
+              ? body.customerEmail
+              : "guest@worksphere.local",
+          customerPhone:
+            typeof body.customerPhone === "string" ? body.customerPhone : null,
+          confirmationId,
+          status: "CONFIRMED",
+        },
+        include: {
+          venue: {
+            select: {
+              name: true,
+              address: true,
+            },
+          },
+          seat: true,
+        },
+      });
+    });
+  } catch (err) {
+    if ((err as Error).message === "CONFLICT") {
+      return NextResponse.json(
+        { error: "That seat was just reserved. Choose another seat." },
+        { status: 409 },
+      );
+    }
+    throw err;
+  }
 
   // Create BookingGuest records if guests were provided
   if (guestEmails.length > 0) {

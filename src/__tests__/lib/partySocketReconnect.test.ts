@@ -133,10 +133,47 @@ describe("attachJitteredBackoff", () => {
     // Verify waitPromise did not resolve yet because the timeout was cleared by _disconnect
     // Since waitPromise resolves inside setTimeout which was cleared, it remains pending.
     // If we trigger _connect, it also clears any pending timeouts.
+jest.useRealTimers();
+  });
+
+  it("clears the pending backoff timer and reconnects immediately on online event", async () => {
+    jest.useFakeTimers();
+
+    let onlineHandler: (() => void) | undefined;
+    const originalAddEventListener = window.addEventListener;
+    window.addEventListener = jest.fn((event: string, cb: any) => {
+      if (event === "online") {
+        onlineHandler = cb;
+      }
+    }) as any;
+
+    const socket = {
+      _retryCount: 3,
+      _getNextDelay: () => 30_000,
+      _connect: jest.fn(),
+      _disconnect: jest.fn(),
+      _clearTimeouts: jest.fn(),
+      addEventListener: jest.fn(),
+    } as any;
+
+    attachJitteredBackoff(socket);
+
+    let resolved = false;
+    const waitPromise = socket._wait().then(() => {
+      resolved = true;
+    });
+
+    // Simulate the browser regaining network connection
+    onlineHandler?.();
+    await Promise.resolve();
+    await waitPromise;
+
+    expect(resolved).toBe(true);
+
+    window.addEventListener = originalAddEventListener;
     jest.useRealTimers();
   });
 });
-
 import { PartySocketReconnectManager } from "@/lib/partySocketReconnect";
 
 describe("PartySocketReconnectManager", () => {

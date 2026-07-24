@@ -9,7 +9,7 @@ export function useRateLimit(endpointKey: "chat" | "book") {
     const handleRateLimit = (e: Event) => {
       const customEvent = e as CustomEvent<{
         retryAfter: number;
-        endpoint: string;
+        endpoint: "chat" | "book";
       }>;
       if (customEvent.detail && customEvent.detail.endpoint === endpointKey) {
         setRetryAfter(customEvent.detail.retryAfter);

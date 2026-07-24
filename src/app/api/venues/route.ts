@@ -5,6 +5,7 @@ import {
   venueSearchSchema,
   venueCreateSchema,
   validateRequest,
+  type VenueSearch,
 } from "@/lib/validations";
 import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
@@ -16,6 +17,34 @@ import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 // burst-tolerant ceiling — generous enough for fast typing, still low enough to stop
 // scripted abuse. See #717.
 const VENUE_SEARCH_RATE_LIMIT = 60;
+
+interface VenueSearchData {
+  lat: number;
+  lng: number;
+  radius: number;
+  category?: string;
+  wifi?: boolean;
+  outlets?: boolean;
+  quiet?: boolean;
+  ergonomic?: boolean;
+  outletDensity?: string;
+  wifiSpeedBand?: string;
+  hasPhoneBooths?: boolean;
+  hasNoMusic?: boolean;
+  hasQuietZone?: boolean;
+  hasAncHeadsetRental?: boolean;
+  lighting?: string;
+  petsAllowedIndoors?: boolean;
+  patioOnly?: boolean;
+  waterBowlsProvided?: boolean;
+  dogFriendly?: boolean;
+  catsAllowed?: boolean;
+  singleOriginBeans?: boolean;
+  specialtyEspresso?: boolean;
+  oatAlmondMilk?: boolean;
+  pourOverAvailable?: boolean;
+  musicStyle?: string;
+}
 
 // GET /api/venues - Search venues
 export async function GET(req: NextRequest) {
@@ -57,10 +86,29 @@ export async function GET(req: NextRequest) {
       : 50;
     const skip = (page - 1) * limit;
 
-    // Fallback: If no coordinates are provided, return all venues
+    // Fallback: If no coordinates are provided, return all venues (or filtered by cities)
     if (!searchParams.get("lat") || !searchParams.get("lng")) {
-      const total = await prisma.venue.count();
+      const citiesParam = searchParams.get("cities");
+      const where: any = {};
+
+      if (citiesParam) {
+        const cityList = citiesParam
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean);
+        if (cityList.length > 0) {
+          where.OR = cityList.map((city) => ({
+            address: { contains: city, mode: "insensitive" },
+          }));
+        }
+      }
+
+      const hasWhere = Object.keys(where).length > 0;
+      const total = hasWhere
+        ? await prisma.venue.count({ where })
+        : await prisma.venue.count();
       const venues = await prisma.venue.findMany({
+        ...(hasWhere && { where }),
         skip,
         take: limit,
         include: {
@@ -110,6 +158,7 @@ export async function GET(req: NextRequest) {
       "oatAlmondMilk",
       "pourOverAvailable",
       "musicStyle",
+      "cities",
     ];
     for (const key of keys) {
       const val = searchParams.get(key);
@@ -117,7 +166,7 @@ export async function GET(req: NextRequest) {
         rawData[key] = val;
       }
     }
-    const validation = validateRequest(venueSearchSchema, rawData);
+    const validation = validateRequest<VenueSearch>(venueSearchSchema, rawData);
 
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
@@ -149,7 +198,7 @@ export async function GET(req: NextRequest) {
       oatAlmondMilk,
       pourOverAvailable,
       musicStyle,
-    } = validation.data;
+    } = validation.data as unknown as VenueSearchData;
 
     // Simple bounding box search (for PostgreSQL without PostGIS)
     // Approximate: 1 degree ≈ 111km
@@ -268,6 +317,24 @@ export async function GET(req: NextRequest) {
 
     if (lighting) {
       where.lighting = lighting;
+    }
+
+    if (rawData.cities) {
+      const cityList = String(rawData.cities)
+        .split(",")
+        .map((c: string) => c.trim())
+        .filter(Boolean);
+      if (cityList.length > 0) {
+        const cityConditions = cityList.map((city: string) => ({
+          address: { contains: city, mode: "insensitive" },
+        }));
+        if (where.OR) {
+          where.AND = [{ OR: where.OR }, { OR: cityConditions }];
+          delete where.OR;
+        } else {
+          where.OR = cityConditions;
+        }
+      }
     }
 
     const total = await prisma.venue.count({ where });

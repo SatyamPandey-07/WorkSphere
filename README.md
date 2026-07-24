@@ -32,11 +32,11 @@
 >
 > You will have **6 days** to complete it! 🚀
 
-### 🚀 Contributors (All 50 Active Rockstars)
+### 🚀 Contributors (All Active Rockstars)
 
 Automated contributor tracking synced directly via the GitHub API:
 
-[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100&columns=10)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100&columns=10&v=57)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 
 ---
 
@@ -380,7 +380,18 @@ GROQ_API_KEY=gsk_...
 
 # Pexels (for venue photos - free at pexels.com/api)
 PEXELS_API_KEY=your_pexels_key_here
+
+# Upstash Redis (for distributed rate limiting)
+UPSTASH_REDIS_REST_URL=https://your-upstash-redis-endpoint.upstash.io
+UPSTASH_REDIS_REST_TOKEN=your-upstash-redis-token
 ```
+
+You can obtain the Upstash Redis credentials from your Upstash Redis database dashboard.
+
+The Upstash Redis variables are optional for local development. If UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are omitted, the application falls back to an in-memory rate limiter. This allows the application to run locally without an Upstash Redis configuration, but rate-limit state is stored only in the local application memory and is not shared across multiple instances or processes.
+
+For production or multi-instance deployments, configuring Upstash Redis is recommended to ensure consistent rate limiting across application instances.
+
 
 ### Getting API Keys
 
@@ -428,6 +439,8 @@ PEXELS_API_KEY=your_pexels_key_here
 | `POST`   | `/api/webhook`            | Clerk webhook for user sync            |
 
 ---
+
+
 
 ## 🤖 Multi-Agent System
 

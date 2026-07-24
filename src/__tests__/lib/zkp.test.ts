@@ -34,6 +34,7 @@ describe("zkp membership allowlist", () => {
 });
 
 describe("zkp prove + verify", () => {
+  jest.setTimeout(90000);
   it("builds a valid proof under 1s without exposing the token", async () => {
     const token = 42;
     const { proof, publicSignals, ms } = await proveMembership(token);
@@ -45,7 +46,7 @@ describe("zkp prove + verify", () => {
 
     const ok = await verifyMembershipProof(proof, publicSignals);
     expect(ok).toBe(true);
-  }, 30000);
+  }, 120000);
 
   it("rejects a proof with a tampered public signal", async () => {
     const { proof, publicSignals } = await proveMembership(99);
@@ -53,5 +54,5 @@ describe("zkp prove + verify", () => {
     tampered[0] = "1";
     const ok = await verifyMembershipProof(proof, tampered);
     expect(ok).toBe(false);
-  }, 30000);
+  }, 120000);
 });

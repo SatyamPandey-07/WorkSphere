@@ -89,6 +89,7 @@ jest.mock("y-partykit/provider", () => ({
     awareness: mockAwareness,
     disconnect: mockDisconnect,
     on: jest.fn(),
+    off: jest.fn(),
   })),
 }));
 

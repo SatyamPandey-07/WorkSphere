@@ -1,5 +1,8 @@
 import { WebGLHeatmapRenderer } from "@/lib/webgl/webglHeatmapRenderer";
-import { HEATMAP_VERTEX_SHADER, HEATMAP_FRAGMENT_SHADER } from "@/shaders/heatmapShaders";
+import {
+  HEATMAP_VERTEX_SHADER,
+  HEATMAP_FRAGMENT_SHADER,
+} from "@/shaders/heatmapShaders";
 
 describe("WebGLHeatmapRenderer Engine & Shaders (#818)", () => {
   let canvas: HTMLCanvasElement;
@@ -62,7 +65,10 @@ describe("WebGLHeatmapRenderer Engine & Shaders (#818)", () => {
   });
 
   test("initializes WebGL buffers and shader programs", () => {
-    const renderer = new WebGLHeatmapRenderer(canvas, { opacity: 0.8, blur: 1.2 });
+    const renderer = new WebGLHeatmapRenderer(canvas, {
+      opacity: 0.8,
+      blur: 1.2,
+    });
     expect(mockGl.createProgram).toHaveBeenCalled();
     expect(mockGl.createBuffer).toHaveBeenCalled();
     expect(mockGl.enable).toHaveBeenCalledWith(mockGl.BLEND);
@@ -77,7 +83,10 @@ describe("WebGLHeatmapRenderer Engine & Shaders (#818)", () => {
     ];
 
     renderer.updatePoints(points);
-    expect(mockGl.bindBuffer).toHaveBeenCalledWith(mockGl.ARRAY_BUFFER, expect.anything());
+    expect(mockGl.bindBuffer).toHaveBeenCalledWith(
+      mockGl.ARRAY_BUFFER,
+      expect.anything(),
+    );
     expect(mockGl.bufferSubData).toHaveBeenCalled();
     renderer.destroy();
   });

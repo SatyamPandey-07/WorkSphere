@@ -131,12 +131,18 @@ export const SavedVenueCard = memo(function SavedVenueCard({
           >
             {venue.category}
           </span>
-          {venue.rating && (
-            <span className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
-              <Star className="w-3 h-3 fill-current text-amber-500" />
-              {venue.rating.toFixed(1)}
-            </span>
-          )}
+          <span className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+            <Star
+              className={`w-3 h-3 ${
+                (venue.rating ?? 0) > 0
+                  ? "fill-current text-amber-500"
+                  : "text-zinc-300 dark:text-zinc-600"
+              }`}
+            />
+            {isNaN(Number(venue.rating))
+              ? "0.0"
+              : Number(venue.rating ?? 0).toFixed(1)}
+          </span>
           {venue.wifiQuality && (
             <span className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
               <Wifi className="w-3 h-3" />

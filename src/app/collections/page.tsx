@@ -249,6 +249,13 @@ export default function CollectionsPage() {
               <Globe className="w-4 h-4 text-blue-500" />
               Discovery Feed
             </button>
+            <Link
+              href="/compare"
+              className="px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-zinc-800"
+            >
+              <MapPin className="w-4 h-4 text-indigo-500" />
+              Multi-City Compare
+            </Link>
           </div>
         </div>
 

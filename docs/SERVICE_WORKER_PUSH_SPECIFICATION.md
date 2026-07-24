@@ -64,11 +64,13 @@ sequenceDiagram
 ```
 
 ### 1. Registration Phase
+
 - **Location**: `src/hooks/usePWA.tsx` (lines 92–145)
 - **Environment Gate**: Service Worker registration runs strictly in production (`process.env.NODE_ENV === "production"`). In development mode, existing registrations are unregistered to avoid hot-module reload evaluation errors.
 - **Update Check**: Calls `reg.update()` on every page load to check for byte-level service worker updates.
 
 ### 2. Install Event
+
 - **Location**: `public/sw.js` (lines 16–35)
 - **Precache Strategy**: Opens a isolated temporary cache named `${CACHE_NAME}-installing` (`worksphere-v3-installing`) and pre-caches core application shell assets:
   - `/`
@@ -78,6 +80,7 @@ sequenceDiagram
 - **Immediate Takeover**: Invokes `self.skipWaiting()` immediately upon asset pre-caching (and inside error handlers) to prevent the service worker from getting stuck in an `installing` state.
 
 ### 3. Activate Event
+
 - **Location**: `public/sw.js` (lines 38–70)
 - **Cache Invalidation**: Iterates over existing Cache Storage buckets and purges stale caches whose names do not match active constants:
   - `CACHE_NAME`: `"worksphere-v3"`
@@ -128,11 +131,13 @@ sequenceDiagram
 ```
 
 ### Frontend Subscription Handler
+
 - Application code requests permission via `Notification.requestPermission()`.
 - Obtains subscription through `registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`.
 - Sends key payload `{ endpoint, p256dh, auth }` to `/api/push/subscribe`.
 
 ### Backend Registration Endpoint
+
 - **Location**: `src/app/api/push/subscribe/route.ts`
 - **Authentication**: Requires authenticated user session via Clerk (`auth()`).
 - **Rate Limiting**: Enforces rate limiting (`push-subscribe:${userId}`, max 10 requests per window) via `@upstash/ratelimit`.
@@ -144,6 +149,7 @@ sequenceDiagram
   - `userAgent`: Client user-agent string
 
 ### Backend Unsubscribe Endpoint
+
 - **Location**: `src/app/api/push/unsubscribe/route.ts`
 - Rate-limited and authenticated; removes matching endpoint records via `prisma.pushSubscription.deleteMany`.
 
@@ -299,18 +305,19 @@ sequenceDiagram
 
 IndexedDB object stores are distributed across two databases:
 
-| Database | Store Name | Key Path | AutoIncrement | Purpose |
-| --- | --- | --- | --- | --- |
-| `worksphere-offline` (v5) | `venues` | `id` | False | Offline venue caching |
-| `worksphere-offline` (v5) | `favorites` | `id` | False | Offline favorites cache |
-| `worksphere-offline` (v5) | `searches` | `query` | False | Recent search history |
-| `worksphere-offline` (v5) | `pendingActions` | `id` | True | Unified queue for CRDT, ratings, conversation edits |
-| `worksphere-offline` (v5) | `imageCacheLRU` | `url` | False | True LRU metadata for external image eviction |
-| `worksphere-offline` (v5) | `receiptExports` | `bookingId` | False | PDF receipt generation & sync status |
-| `WorkSphereOfflineDB` (v2) | `favorites-outbox` | `id` | True | Client-side queued favorite toggle actions |
-| `WorkSphereOfflineDB` (v2) | `checkins-outbox` | `id` | True | Client-side queued venue check-ins |
+| Database                   | Store Name         | Key Path    | AutoIncrement | Purpose                                             |
+| -------------------------- | ------------------ | ----------- | ------------- | --------------------------------------------------- |
+| `worksphere-offline` (v5)  | `venues`           | `id`        | False         | Offline venue caching                               |
+| `worksphere-offline` (v5)  | `favorites`        | `id`        | False         | Offline favorites cache                             |
+| `worksphere-offline` (v5)  | `searches`         | `query`     | False         | Recent search history                               |
+| `worksphere-offline` (v5)  | `pendingActions`   | `id`        | True          | Unified queue for CRDT, ratings, conversation edits |
+| `worksphere-offline` (v5)  | `imageCacheLRU`    | `url`       | False         | True LRU metadata for external image eviction       |
+| `worksphere-offline` (v5)  | `receiptExports`   | `bookingId` | False         | PDF receipt generation & sync status                |
+| `WorkSphereOfflineDB` (v2) | `favorites-outbox` | `id`        | True          | Client-side queued favorite toggle actions          |
+| `WorkSphereOfflineDB` (v2) | `checkins-outbox`  | `id`        | True          | Client-side queued venue check-ins                  |
 
 ### Multi-Tab Concurrency Control
+
 - **Web Locks API**: `withWebLock()` in `src/lib/offlineStore.ts` wraps store operations in `navigator.locks.request("worksphere-offline-store-lock")`.
 - **Worker Lock**: `sync.worker.ts` requests `navigator.locks.request("sync-favorites-queue", { ifAvailable: true })` to ensure only one tab or worker processes outbox items concurrently.
 
@@ -319,6 +326,7 @@ IndexedDB object stores are distributed across two databases:
 ## Retry Strategy & Circuit Breaker
 
 ### Exponential Backoff with Jitter
+
 - **Location**: `src/workers/sync.worker.ts` (lines 121–138)
 - **Base Delay**: `1000ms` (`BASE_DELAY_MS`)
 - **Max Delay**: `60000ms` (`MAX_DELAY_MS`)
@@ -326,6 +334,7 @@ IndexedDB object stores are distributed across two databases:
 - **Offline Guard**: Backoff delays and retry counters are frozen when `navigator.onLine === false` to avoid penalizing offline queued items.
 
 ### Circuit Breaker Specification
+
 - **Threshold**: 3 consecutive failures (`CB_MAX_FAILURES = 3`).
 - **States**:
   - `CLOSED`: Normal operation.
@@ -348,7 +357,7 @@ sequenceDiagram
     SW->>SW: Parse event.data.json() (Fallback to text)
     SW->>SW: Construct NotificationOptions (actions, vibrate, tag)
     SW->>SW: self.registration.showNotification(title, options)
-    
+
     Note over SW: User interacts with Notification
     alt User clicks "Dismiss"
         SW->>SW: notificationclick Event (event.action === 'dismiss')
@@ -368,6 +377,7 @@ sequenceDiagram
 ```
 
 ### Event Handlers (`public/sw.js`)
+
 - `push`: Parses JSON data, formats vibration patterns (`[200, 100, 200, 100, 200]` for venue availability; `[100, 50, 100]` for default), sets actions `[Open, Dismiss]`, and calls `showNotification()`.
 - `notificationclick`: Closes notification, ignores `"dismiss"`, focuses existing open client matching URL via `postMessage({ type: "NAVIGATE_PUSH" })`, or calls `clients.openWindow(fullUrl)`.
 
@@ -384,7 +394,7 @@ flowchart TD
     MethodCheck -- Yes --> DownloadCheck{URL contains /download?}
     DownloadCheck -- Yes --> NetworkOnly
     DownloadCheck -- No --> VenueCheck{URL contains /api/venues?}
-    
+
     VenueCheck -- Yes --> NetFirstVenues[Network-First Strategy]
     NetFirstVenues -->|Success| CacheVenues[Update worksphere-v3 Cache]
     NetFirstVenues -->|Fail| MatchVenuesCache[Match worksphere-v3 Cache]
@@ -404,6 +414,7 @@ flowchart TD
 ```
 
 ### Active Cache Strategies
+
 1. **Network-First (`/api/venues`)**: Fetches latest data from server; updates `worksphere-v3` cache on 200 OK. Serves cached copy if network fails.
 2. **Cache-First (Map Tiles)**: Intercepts `tile.openstreetmap.org` and `basemaps.cartocdn.com`. Serves from `worksphere-maptiles-v1` immediately; fetches and caches on miss.
 3. **Cache-First with True LRU Eviction (External Images)**: Caches `images.unsplash.com` into `worksphere-images-v4`. Updates IndexedDB `imageCacheLRU` timestamps. Enforces strict 20MB limit (`MAX_IMAGE_CACHE_BYTES`).
@@ -413,13 +424,13 @@ flowchart TD
 
 ## Browser Compatibility
 
-| Browser / OS | SW Support | Push API | Background Sync | PWA Install | Compatibility Notes / Workarounds |
-| --- | --- | --- | --- | --- | --- |
-| **Chrome Desktop / Android** | Full | Full | Full | Full | Native `beforeinstallprompt` supported. Full background sync support. |
-| **Firefox Desktop / Android** | Full | Full | Partial | Partial | Standard service worker and push delivery supported. |
-| **Edge** | Full | Full | Full | Full | Chromium core guarantees full feature parity with Chrome. |
-| **Safari (macOS)** | Full | Full | Limited | Partial | Push supported via web-push VAPID standards. |
-| **iOS Safari (iPhone/iPad)** | Full | Full (iOS 16.4+) | Limited | Custom Overlay | Requires Home Screen installation for WebPush. Handled via `<IOSInstallOverlay />`. Storage capped at ~50MB (image cache quota tuned to 20MB). IndexedDB restricted in Private Browsing. |
+| Browser / OS                  | SW Support | Push API         | Background Sync | PWA Install    | Compatibility Notes / Workarounds                                                                                                                                                        |
+| ----------------------------- | ---------- | ---------------- | --------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Chrome Desktop / Android**  | Full       | Full             | Full            | Full           | Native `beforeinstallprompt` supported. Full background sync support.                                                                                                                    |
+| **Firefox Desktop / Android** | Full       | Full             | Partial         | Partial        | Standard service worker and push delivery supported.                                                                                                                                     |
+| **Edge**                      | Full       | Full             | Full            | Full           | Chromium core guarantees full feature parity with Chrome.                                                                                                                                |
+| **Safari (macOS)**            | Full       | Full             | Limited         | Partial        | Push supported via web-push VAPID standards.                                                                                                                                             |
+| **iOS Safari (iPhone/iPad)**  | Full       | Full (iOS 16.4+) | Limited         | Custom Overlay | Requires Home Screen installation for WebPush. Handled via `<IOSInstallOverlay />`. Storage capped at ~50MB (image cache quota tuned to 20MB). IndexedDB restricted in Private Browsing. |
 
 ---
 

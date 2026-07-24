@@ -455,19 +455,29 @@ export class WebGPUFloorPlanRenderer {
   private lastMouse = { x: 0, y: 0 };
   private animationFrame = 0;
   private time = 0;
+  private isDeviceLost = false;
+  private currentData: FloorPlanData | null = null;
+  private visibilityHandler: (() => void) | null = null;
+
+  // Named bound handlers so destroy() can call removeEventListener on them
+  private _onMouseDown: (e: MouseEvent) => void;
+  private _onMouseMove: (e: MouseEvent) => void;
+  private _onMouseUp: () => void;
+  private _onMouseLeave: () => void;
+  private _onWheel: (e: WheelEvent) => void;
+  private _onTouchStart: (e: TouchEvent) => void;
+  private _onTouchMove: (e: TouchEvent) => void;
+  private _onTouchEnd: () => void;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    this.setupInteraction();
-  }
-
-  private setupInteraction(): void {
-    this.canvas.addEventListener("mousedown", (e) => {
+    // Initialise bound handlers before setupInteraction() so they are
+    // available as stable references for removeEventListener in destroy().
+    this._onMouseDown = (e: MouseEvent) => {
       this.isDragging = true;
       this.lastMouse = { x: e.clientX, y: e.clientY };
-    });
-
-    this.canvas.addEventListener("mousemove", (e) => {
+    };
+    this._onMouseMove = (e: MouseEvent) => {
       if (!this.isDragging) return;
       const dx = e.clientX - this.lastMouse.x;
       const dy = e.clientY - this.lastMouse.y;
@@ -477,26 +487,21 @@ export class WebGPUFloorPlanRenderer {
         Math.min(-0.1, this.camera.rotationX + dy * 0.01),
       );
       this.lastMouse = { x: e.clientX, y: e.clientY };
-    });
-
-    this.canvas.addEventListener("mouseup", () => {
+    };
+    this._onMouseUp = () => {
       this.isDragging = false;
-    });
-
-    this.canvas.addEventListener("mouseleave", () => {
+    };
+    this._onMouseLeave = () => {
       this.isDragging = false;
-    });
-
-    this.canvas.addEventListener("wheel", (e) => {
+    };
+    this._onWheel = (e: WheelEvent) => {
       e.preventDefault();
       this.camera.distance = Math.max(
         2,
         Math.min(20, this.camera.distance + e.deltaY * 0.01),
       );
-    });
-
-    // Touch support
-    this.canvas.addEventListener("touchstart", (e) => {
+    };
+    this._onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) {
         this.isDragging = true;
         this.lastMouse = {
@@ -504,9 +509,8 @@ export class WebGPUFloorPlanRenderer {
           y: e.touches[0].clientY,
         };
       }
-    });
-
-    this.canvas.addEventListener("touchmove", (e) => {
+    };
+    this._onTouchMove = (e: TouchEvent) => {
       e.preventDefault();
       if (e.touches.length === 1 && this.isDragging) {
         const dx = e.touches[0].clientX - this.lastMouse.x;
@@ -521,11 +525,45 @@ export class WebGPUFloorPlanRenderer {
           y: e.touches[0].clientY,
         };
       }
-    });
-
-    this.canvas.addEventListener("touchend", () => {
+    };
+    this._onTouchEnd = () => {
       this.isDragging = false;
+    };
+    this.setupInteraction();
+    this.setupVisibilityHandler();
+  }
+
+  private setupVisibilityHandler(): void {
+    if (typeof document === "undefined") return;
+
+    this.visibilityHandler = () => {
+      if (document.visibilityState === "visible") {
+        if (this.isDeviceLost || !this.device) {
+          console.warn(
+            "[WebGPU] Page resumed from sleep/hidden state; re-initializing render pipeline...",
+          );
+          this.reinitialize();
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", this.visibilityHandler);
+  }
+
+  private setupInteraction(): void {
+    this.canvas.addEventListener("mousedown", this._onMouseDown);
+    this.canvas.addEventListener("mousemove", this._onMouseMove);
+    this.canvas.addEventListener("mouseup", this._onMouseUp);
+    this.canvas.addEventListener("mouseleave", this._onMouseLeave);
+    this.canvas.addEventListener("wheel", this._onWheel, { passive: false });
+    // Touch support
+    this.canvas.addEventListener("touchstart", this._onTouchStart, {
+      passive: false,
     });
+    this.canvas.addEventListener("touchmove", this._onTouchMove, {
+      passive: false,
+    });
+    this.canvas.addEventListener("touchend", this._onTouchEnd);
   }
 
   async initialize(): Promise<boolean> {
@@ -539,6 +577,27 @@ export class WebGPUFloorPlanRenderer {
       if (!adapter) return false;
 
       this.device = await adapter.requestDevice();
+      this.isDeviceLost = false;
+
+      this.device.addEventListener("uncapturederror", (event: any) => {
+        console.error("[WebGPU] Uncaptured error detected:", event.error);
+      });
+
+      this.device.lost.then(
+        async (info: { reason: string; message: string }) => {
+          console.warn(
+            `[WebGPU] GPUDevice lost (${info.reason}): ${info.message}`,
+          );
+          this.isDeviceLost = true;
+          this.cleanupGPUResources();
+
+          if (info.reason !== "destroyed") {
+            console.info("[WebGPU] Attempting automatic device recovery...");
+            await this.reinitialize();
+          }
+        },
+      );
+
       this.context = this.canvas.getContext(
         "webgpu",
       ) as unknown as GPUCanvasContext | null;
@@ -606,8 +665,17 @@ export class WebGPUFloorPlanRenderer {
     }
   }
 
+  async reinitialize(): Promise<boolean> {
+    const success = await this.initialize();
+    if (success && this.currentData) {
+      this.loadFloorPlan(this.currentData);
+    }
+    return success;
+  }
+
   loadFloorPlan(data: FloorPlanData): void {
-    if (!this.device) return;
+    this.currentData = data;
+    if (!this.device || this.isDeviceLost) return;
 
     const mesh = buildFloorPlanMesh(data);
     this.indexCount = mesh.indexCount;
@@ -619,17 +687,26 @@ export class WebGPUFloorPlanRenderer {
       size: mesh.vertices.byteLength,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.vertexBuffer, 0, mesh.vertices);
+    this.device.queue.writeBuffer(
+      this.vertexBuffer!,
+      0,
+      mesh.vertices as unknown as BufferSource,
+    );
 
     this.indexBuffer = this.device.createBuffer({
       size: mesh.indices.byteLength,
       usage: BufferUsage.INDEX | BufferUsage.COPY_DST,
     });
-    this.device.queue.writeBuffer(this.indexBuffer, 0, mesh.indices);
+    this.device.queue.writeBuffer(
+      this.indexBuffer!,
+      0,
+      mesh.indices as unknown as BufferSource,
+    );
   }
 
   render(): void {
     if (
+      this.isDeviceLost ||
       !this.device ||
       !this.context ||
       !this.pipeline ||
@@ -639,86 +716,91 @@ export class WebGPUFloorPlanRenderer {
     )
       return;
 
-    this.time += 0.016;
+    try {
+      this.time += 0.016;
 
-    const aspect = this.canvas.width / this.canvas.height;
-    const projection = mat4Perspective(Math.PI / 4, aspect, 0.1, 100);
+      const aspect = this.canvas.width / this.canvas.height;
+      const projection = mat4Perspective(Math.PI / 4, aspect, 0.1, 100);
 
-    const eyeX =
-      this.camera.target[0] +
-      this.camera.panX +
-      this.camera.distance *
-        Math.cos(this.camera.rotationX) *
-        Math.sin(this.camera.rotationY);
-    const eyeY =
-      this.camera.target[1] +
-      this.camera.panY +
-      this.camera.distance * Math.sin(-this.camera.rotationX);
-    const eyeZ =
-      this.camera.target[2] +
-      this.camera.distance *
-        Math.cos(this.camera.rotationX) *
-        Math.cos(this.camera.rotationY);
+      const eyeX =
+        this.camera.target[0] +
+        this.camera.panX +
+        this.camera.distance *
+          Math.cos(this.camera.rotationX) *
+          Math.sin(this.camera.rotationY);
+      const eyeY =
+        this.camera.target[1] +
+        this.camera.panY +
+        this.camera.distance * Math.sin(-this.camera.rotationX);
+      const eyeZ =
+        this.camera.target[2] +
+        this.camera.distance *
+          Math.cos(this.camera.rotationX) *
+          Math.cos(this.camera.rotationY);
 
-    const view = mat4LookAt(
-      [eyeX, eyeY, eyeZ],
-      [
-        this.camera.target[0] + this.camera.panX,
-        this.camera.target[1] + this.camera.panY,
-        this.camera.target[2],
-      ],
-      [0, 1, 0],
-    );
+      const view = mat4LookAt(
+        [eyeX, eyeY, eyeZ],
+        [
+          this.camera.target[0] + this.camera.panX,
+          this.camera.target[1] + this.camera.panY,
+          this.camera.target[2],
+        ],
+        [0, 1, 0],
+      );
 
-    const model = mat4Identity();
-    const mvp = mat4Multiply(view, model);
-    const mvpFinal = mat4Multiply(projection, mvp);
+      const model = mat4Identity();
+      const mvp = mat4Multiply(view, model);
+      const mvpFinal = mat4Multiply(projection, mvp);
 
-    // Upload uniforms
-    const uniformData = new Float32Array(32);
-    uniformData.set(mvpFinal, 0);
-    uniformData.set(model, 16);
-    uniformData[24] = 0.5;
-    uniformData[25] = 1.0;
-    uniformData[26] = 0.7;
-    uniformData[27] = this.time;
-    this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
+      // Upload uniforms
+      const uniformData = new Float32Array(32);
+      uniformData.set(mvpFinal, 0);
+      uniformData.set(model, 16);
+      uniformData[24] = 0.5;
+      uniformData[25] = 1.0;
+      uniformData[26] = 0.7;
+      uniformData[27] = this.time;
+      this.device.queue.writeBuffer(this.uniformBuffer!, 0, uniformData);
 
-    const commandEncoder = this.device.createCommandEncoder();
-    const textureView = this.context.getCurrentTexture().createView();
+      const commandEncoder = this.device.createCommandEncoder();
+      const textureView = this.context.getCurrentTexture().createView();
 
-    const depthTexture = this.device.createTexture({
-      size: [this.canvas.width, this.canvas.height],
-      format: "depth24plus",
-      usage: TextureUsage.RENDER_ATTACHMENT,
-    });
+      const depthTexture = this.device.createTexture({
+        size: [this.canvas.width, this.canvas.height],
+        format: "depth24plus",
+        usage: TextureUsage.RENDER_ATTACHMENT,
+      });
 
-    const renderPass = commandEncoder.beginRenderPass({
-      colorAttachments: [
-        {
-          view: textureView,
-          clearValue: { r: 0.08, g: 0.08, b: 0.1, a: 1.0 },
-          loadOp: "clear",
-          storeOp: "store",
+      const renderPass = commandEncoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: textureView,
+            clearValue: { r: 0.08, g: 0.08, b: 0.1, a: 1.0 },
+            loadOp: "clear",
+            storeOp: "store",
+          },
+        ],
+        depthStencilAttachment: {
+          view: depthTexture.createView(),
+          depthClearValue: 1.0,
+          depthLoadOp: "clear",
+          depthStoreOp: "store",
         },
-      ],
-      depthStencilAttachment: {
-        view: depthTexture.createView(),
-        depthClearValue: 1.0,
-        depthLoadOp: "clear",
-        depthStoreOp: "store",
-      },
-    });
+      });
 
-    renderPass.setPipeline(this.pipeline);
-    renderPass.setBindGroup(0, this.bindGroup);
-    renderPass.setVertexBuffer(0, this.vertexBuffer);
-    renderPass.setIndexBuffer(this.indexBuffer, "uint16");
-    renderPass.drawIndexed(this.indexCount);
-    renderPass.end();
+      renderPass.setPipeline(this.pipeline);
+      renderPass.setBindGroup(0, this.bindGroup);
+      renderPass.setVertexBuffer(0, this.vertexBuffer);
+      renderPass.setIndexBuffer(this.indexBuffer, "uint16");
+      renderPass.drawIndexed(this.indexCount);
+      renderPass.end();
 
-    this.device.queue.submit([commandEncoder.finish()]);
-    depthTexture.destroy();
+      this.device.queue.submit([commandEncoder.finish()]);
+      depthTexture.destroy();
+    } catch (error) {
+      console.error("[WebGPU] Render pass error (device lost):", error);
+      this.isDeviceLost = true;
+    }
   }
 
   startRenderLoop(): void {
@@ -733,11 +815,42 @@ export class WebGPUFloorPlanRenderer {
     cancelAnimationFrame(this.animationFrame);
   }
 
+  private cleanupGPUResources(): void {
+    this.pipeline = null;
+    this.bindGroup = null;
+    this.vertexBuffer?.destroy();
+    this.vertexBuffer = null;
+    this.indexBuffer?.destroy();
+    this.indexBuffer = null;
+    this.uniformBuffer?.destroy();
+    this.uniformBuffer = null;
+    this.context = null;
+    this.device = null;
+  }
+
+  getIsDeviceLost(): boolean {
+    return this.isDeviceLost;
+  }
+
+  getDevice(): GPUDevice | null {
+    return this.device;
+  }
+
   destroy(): void {
     this.stopRenderLoop();
-    this.vertexBuffer?.destroy();
-    this.indexBuffer?.destroy();
-    this.uniformBuffer?.destroy();
-    this.device?.destroy();
+    if (this.visibilityHandler && typeof document !== "undefined") {
+      document.removeEventListener("visibilitychange", this.visibilityHandler);
+    }
+    // Remove all 9 canvas interaction listeners to prevent memory leaks
+    // when the floor plan viewer is mounted/unmounted multiple times.
+    this.canvas.removeEventListener("mousedown", this._onMouseDown);
+    this.canvas.removeEventListener("mousemove", this._onMouseMove);
+    this.canvas.removeEventListener("mouseup", this._onMouseUp);
+    this.canvas.removeEventListener("mouseleave", this._onMouseLeave);
+    this.canvas.removeEventListener("wheel", this._onWheel);
+    this.canvas.removeEventListener("touchstart", this._onTouchStart);
+    this.canvas.removeEventListener("touchmove", this._onTouchMove);
+    this.canvas.removeEventListener("touchend", this._onTouchEnd);
+    this.cleanupGPUResources();
   }
 }

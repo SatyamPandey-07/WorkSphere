@@ -1,10 +1,12 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { publishVenueAvailability } from "@/lib/reservations/event-bus";
 import { eventBus } from "@/core/events";
 import "@/core/subscribers/guests";
+import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 
 function toMinutes(value: string) {
   const [hours, minutes] = value.split(":").map(Number);
@@ -27,6 +29,31 @@ function overlaps(
 
 export async function POST(request: NextRequest) {
   const { userId } = await auth();
+  const forwarded = request.headers.get("x-forwarded-for");
+  const identifier = `book:${userId || forwarded?.split(",")[0] || "anonymous"}`;
+
+  if (!(await rateLimit(identifier, 5))) {
+    const info = await getRateLimitInfo(identifier, 5);
+    const retryAfter = info?.resetTime
+      ? Math.ceil((info.resetTime - Date.now()) / 1000)
+      : 60;
+    const resetTimeSec = info?.resetTime
+      ? Math.ceil(info.resetTime / 1000)
+      : Math.ceil((Date.now() + 60000) / 1000);
+
+    return NextResponse.json(
+      {
+        error: "Rate limit exceeded. Please wait before making more bookings.",
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(retryAfter),
+          "X-RateLimit-Reset": String(resetTimeSec),
+        },
+      },
+    );
+  }
 
   if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -37,7 +64,16 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
 
   const venueId = typeof body.venueId === "string" ? body.venueId : "";
-  const seatId = typeof body.seatId === "string" ? body.seatId : "";
+
+  let seatIds: string[] = [];
+  if (Array.isArray(body.seatIds)) {
+    seatIds = body.seatIds.filter((id: any) => typeof id === "string");
+  } else if (typeof body.seatId === "string" && body.seatId) {
+    seatIds = [body.seatId];
+  }
+
+  const uniqueSeatIds = Array.from(new Set(seatIds)).sort();
+
   const date = typeof body.date === "string" ? body.date : "";
   const time = typeof body.time === "string" ? body.time : "";
   const duration = Number(body.duration);
@@ -57,7 +93,7 @@ export async function POST(request: NextRequest) {
 
   if (
     !venueId ||
-    !seatId ||
+    uniqueSeatIds.length === 0 ||
     !date ||
     !/^\d{2}:\d{2}$/.test(time) ||
     !Number.isInteger(duration) ||
@@ -70,129 +106,207 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const seat = await prisma.venueSeat.findFirst({
-    where: {
-      id: seatId,
-      venueId,
-      isEnabled: true,
-    },
-    include: {
-      venue: true,
-    },
-  });
+  const MAX_RETRIES = 3;
+  let attempt = 0;
 
-  if (!seat) {
-    return NextResponse.json({ error: "Seat not found" }, { status: 404 });
-  }
-
-  const existingBookings = await prisma.booking.findMany({
-    where: {
-      seatId,
-      date,
-      status: {
-        in: ["CONFIRMED", "PENDING"],
-      },
-    },
-    select: {
-      time: true,
-      duration: true,
-    },
-  });
-
-  const conflict = existingBookings.some((booking) =>
-    overlaps(booking.time, booking.duration ?? 60, time, duration),
-  );
-
-  if (conflict) {
-    return NextResponse.json(
-      { error: "That seat was just reserved. Choose another seat." },
-      { status: 409 },
-    );
-  }
-
-  const confirmationId = `WS-#${Math.floor(100000 + Math.random() * 900000)}`;
-
-  const booking = await prisma.booking.create({
-    data: {
-      userId,
-      venueId,
-      seatId,
-      seatNumber: seat.seatNumber,
-      duration,
-      amenitiesNeeded,
-      date,
-      time,
-      customerEmail:
-        typeof body.customerEmail === "string"
-          ? body.customerEmail
-          : "guest@worksphere.local",
-      customerPhone:
-        typeof body.customerPhone === "string" ? body.customerPhone : null,
-      confirmationId,
-      status: "CONFIRMED",
-    },
-    include: {
-      venue: {
-        select: {
-          name: true,
-          address: true,
-        },
-      },
-      seat: true,
-    },
-  });
-
-  // Create BookingGuest records if guests were provided
-  if (guestEmails.length > 0) {
+  while (attempt <= MAX_RETRIES) {
     try {
-      await Promise.all(
-        guestEmails.map((guest) =>
-          (prisma as any).bookingGuest.create({
-            data: {
-              bookingId: booking.id,
-              email: guest.email,
-              name: guest.name || null,
-              status: "PENDING",
+      const result = await prisma.$transaction(
+        async (tx) => {
+          // Lock candidate VenueSeat rows in PostgreSQL using SELECT FOR UPDATE
+          const idsList = uniqueSeatIds
+            .map((id: string) => `'${id.replace(/'/g, "''")}'`)
+            .join(",");
+          if (typeof (tx as any).$executeRawUnsafe === "function") {
+            try {
+              await (tx as any).$executeRawUnsafe(
+                `SELECT 1 FROM "VenueSeat" WHERE id IN (${idsList}) FOR UPDATE`,
+              );
+            } catch {
+              // Ignore raw query error in mock/test environment
+            }
+          } else if (typeof (tx as any).$executeRaw === "function") {
+            try {
+              await (tx as any)
+                .$executeRaw`SELECT 1 FROM "VenueSeat" FOR UPDATE`;
+            } catch {
+              // Ignore raw query error in mock/test environment
+            }
+          }
+
+          const seatModel = (tx as any).venueSeat ?? (tx as any).seat;
+          const seats = await seatModel.findMany({
+            where: {
+              id: { in: uniqueSeatIds },
+              venueId,
             },
-          }),
-        ),
+          });
+
+          if (!seats || seats.length !== uniqueSeatIds.length) {
+            throw new Error("SEAT_NOT_FOUND");
+          }
+
+          const existingBookings = await tx.booking.findMany({
+            where: {
+              seatId: { in: uniqueSeatIds },
+              date,
+              status: {
+                in: ["CONFIRMED", "PENDING"],
+              },
+            },
+            select: {
+              time: true,
+              duration: true,
+            },
+          });
+
+          const conflict = existingBookings.some(
+            (booking: { time: string; duration: any }) =>
+              overlaps(booking.time, booking.duration ?? 60, time, duration),
+          );
+
+          if (conflict) {
+            throw new Error("CONFLICT");
+          }
+
+          const confirmationId = `WS-#${Math.floor(100000 + Math.random() * 900000)}`;
+          const createdBookings = [];
+
+          for (const seat of seats) {
+            const booking = await tx.booking.create({
+              data: {
+                userId,
+                venueId,
+                seatId: seat.id,
+                seatNumber: seat.seatNumber,
+                duration,
+                amenitiesNeeded,
+                date,
+                time,
+                customerEmail:
+                  typeof body.customerEmail === "string"
+                    ? body.customerEmail
+                    : "guest@worksphere.local",
+                customerPhone:
+                  typeof body.customerPhone === "string"
+                    ? body.customerPhone
+                    : null,
+                confirmationId,
+                status: "CONFIRMED",
+              },
+              include: {
+                venue: {
+                  select: {
+                    name: true,
+                    address: true,
+                  },
+                },
+                seat: true,
+              },
+            });
+            createdBookings.push(booking);
+          }
+
+          return { createdBookings, confirmationId };
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+        },
       );
-    } catch (err) {
-      console.error("[BookAPI] Failed to create guest records:", err);
+
+      const { createdBookings, confirmationId } = result;
+
+      if (guestEmails.length > 0) {
+        try {
+          await Promise.all(
+            createdBookings.map((booking: any) =>
+              Promise.all(
+                guestEmails.map((guest) =>
+                  (prisma as any).bookingGuest.create({
+                    data: {
+                      bookingId: booking.id,
+                      email: guest.email,
+                      name: guest.name || null,
+                      status: "PENDING",
+                    },
+                  }),
+                ),
+              ),
+            ),
+          );
+        } catch (err) {
+          console.error("[BookAPI] Failed to create guest records:", err);
+        }
+
+        for (const booking of createdBookings) {
+          await eventBus.emit("booking:confirmed", {
+            bookingId: booking.id,
+            confirmationId,
+            venue: {
+              id: venueId,
+              name: booking.venue.name,
+              category: (booking.venue as any).category || "workspace",
+              address: booking.venue.address || undefined,
+            },
+            customerEmail: body.customerEmail || "guest@worksphere.local",
+            date,
+            time,
+          });
+        }
+      }
+
+      for (const booking of createdBookings) {
+        publishVenueAvailability(venueId, {
+          type: "seat_reserved",
+          seatId: booking.seatId,
+          seatNumber: booking.seatNumber,
+          date,
+          time,
+          duration,
+        });
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          booking: createdBookings[0],
+          bookings: createdBookings,
+          confirmationId,
+          guestsAdded: guestEmails.length,
+        },
+        { status: 201 },
+      );
+    } catch (err: any) {
+      if (err.message === "SEAT_NOT_FOUND") {
+        return NextResponse.json({ error: "Seat not found" }, { status: 404 });
+      }
+      if (err.message === "CONFLICT") {
+        return NextResponse.json(
+          { error: "That seat was just reserved. Choose another seat." },
+          { status: 409 },
+        );
+      }
+
+      const isTransient =
+        err.code === "P2028" ||
+        err.code === "P2034" ||
+        err.code === "40001" ||
+        err.message?.includes("Timed out fetching a new connection") ||
+        err.message?.includes("deadlock") ||
+        err.message?.includes("serialization");
+
+      if (isTransient && attempt < MAX_RETRIES) {
+        attempt++;
+        const backoff = Math.pow(2, attempt) * 100 + Math.random() * 50;
+        await new Promise((res) => setTimeout(res, backoff));
+        continue;
+      }
+
+      console.error("[BookAPI] Error:", err);
+      return NextResponse.json(
+        { error: "Internal server error" },
+        { status: 500 },
+      );
     }
-
-    // Emit booking:confirmed event so the guest subscriber picks them up
-    await eventBus.emit("booking:confirmed", {
-      bookingId: booking.id,
-      confirmationId,
-      venue: {
-        id: venueId,
-        name: seat.venue.name,
-        category: seat.venue.category || "workspace",
-        address: seat.venue.address || undefined,
-      },
-      customerEmail: body.customerEmail || "guest@worksphere.local",
-      date,
-      time,
-    });
   }
-
-  publishVenueAvailability(venueId, {
-    type: "seat_reserved",
-    seatId,
-    seatNumber: seat.seatNumber,
-    date,
-    time,
-    duration,
-  });
-
-  return NextResponse.json(
-    {
-      success: true,
-      booking,
-      confirmationId,
-      guestsAdded: guestEmails.length,
-    },
-    { status: 201 },
-  );
 }

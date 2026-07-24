@@ -106,7 +106,7 @@ export async function compressConversationChunk(
   }
 
   const fullSummary = await compressWithLLM(
-    chunks.map((c) => ({ role: c.role, content: c.content })),
+    chunks.map((c) => ({ role: c.role, content: c.content, tokenCount: c.tokenCount })),
   );
   const fullEmbedding = await generateEmbedding(fullSummary);
 

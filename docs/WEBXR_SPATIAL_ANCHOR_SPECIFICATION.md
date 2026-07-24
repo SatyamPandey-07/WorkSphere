@@ -108,15 +108,15 @@ graph TB
 
 ### Component Responsibilities
 
-| Component             | Responsibility                                    |
-| --------------------- | ------------------------------------------------- |
-| WebXR Session Manager | Handles session creation, feature negotiation     |
-| Anchor Controller     | Manages anchor CRUD operations and state          |
-| Matrix Transformer    | Computes and applies transformation matrices      |
-| Marker Renderer       | Creates and animates AR desk marker visuals       |
-| Sync Coordinator      | Orchestrates multi-user anchor synchronization    |
-| IndexedDB Store       | Provides persistent storage for anchor data       |
-| PartyKit Channel      | Enables real-time multi-user communication        |
+| Component             | Responsibility                                 |
+| --------------------- | ---------------------------------------------- |
+| WebXR Session Manager | Handles session creation, feature negotiation  |
+| Anchor Controller     | Manages anchor CRUD operations and state       |
+| Matrix Transformer    | Computes and applies transformation matrices   |
+| Marker Renderer       | Creates and animates AR desk marker visuals    |
+| Sync Coordinator      | Orchestrates multi-user anchor synchronization |
+| IndexedDB Store       | Provides persistent storage for anchor data    |
+| PartyKit Channel      | Enables real-time multi-user communication     |
 
 ---
 
@@ -144,15 +144,15 @@ stateDiagram-v2
 
 ### State Descriptions
 
-| State     | Description                                    | Duration       |
-| --------- | ---------------------------------------------- | -------------- |
-| Detected  | Anchor position identified via hit-test        | Transient      |
-| Created   | Anchor object instantiated in XR runtime       | Until session  |
-| Attached  | Anchor actively tracked in current session     | Session        |
-| Detached  | Anchor not tracked but preserved in storage    | Indefinite     |
-| Persisted | Anchor data saved to IndexedDB                 | Until pruned   |
-| Updated   | Anchor position modified by user               | Transient      |
-| Removed   | Anchor deleted from all storage and runtime    | Permanent      |
+| State     | Description                                 | Duration      |
+| --------- | ------------------------------------------- | ------------- |
+| Detected  | Anchor position identified via hit-test     | Transient     |
+| Created   | Anchor object instantiated in XR runtime    | Until session |
+| Attached  | Anchor actively tracked in current session  | Session       |
+| Detached  | Anchor not tracked but preserved in storage | Indefinite    |
+| Persisted | Anchor data saved to IndexedDB              | Until pruned  |
+| Updated   | Anchor position modified by user            | Transient     |
+| Removed   | Anchor deleted from all storage and runtime | Permanent     |
 
 ---
 
@@ -172,28 +172,22 @@ stateDiagram-v2
 
 ```typescript
 // 1. Request session with anchor support
-const session = await navigator.xr.requestSession(
-  "immersive-ar",
-  {
-    requiredFeatures: ["local", "anchors"],
-    optionalFeatures: ["hit-test"],
-  }
-);
+const session = await navigator.xr.requestSession("immersive-ar", {
+  requiredFeatures: ["local", "anchors"],
+  optionalFeatures: ["hit-test"],
+});
 
 // 2. Get reference space
-const referenceSpace = await session
-  .requestReferenceSpace("local");
+const referenceSpace = await session.requestReferenceSpace("local");
 
 // 3. Create anchor from hit-test result
-const hitTestSource = await session
-  .requestHitTestSource({
-    space: referenceSpace,
-    entityTypes: ["plane"],
-  });
+const hitTestSource = await session.requestHitTestSource({
+  space: referenceSpace,
+  entityTypes: ["plane"],
+});
 
 // In render loop:
-const hitResults = frame
-  .getHitTestResults(hitTestSource);
+const hitResults = frame.getHitTestResults(hitTestSource);
 
 if (hitResults.length > 0) {
   const hit = hitResults[0];
@@ -208,9 +202,9 @@ if (hitResults.length > 0) {
         z: pose.transform.position.z,
         w: 1,
       },
-      pose.transform.orientation
+      pose.transform.orientation,
     ),
-    referenceSpace
+    referenceSpace,
   );
 
   // 5. Extract matrix
@@ -243,7 +237,7 @@ Anchors may need updating due to:
 ```typescript
 async function updateAnchor(
   anchorId: string,
-  newTransform: XRRigidTransform
+  newTransform: XRRigidTransform,
 ): Promise<void> {
   // 1. Retrieve existing anchor
   const existing = await getAnchorById(anchorId);
@@ -252,9 +246,7 @@ async function updateAnchor(
   }
 
   // 2. Compute new matrix
-  const newMatrix = rigidTransformToMatrix(
-    newTransform
-  );
+  const newMatrix = rigidTransformToMatrix(newTransform);
 
   // 3. Validate transform
   if (!isValidMatrix(newMatrix)) {
@@ -278,12 +270,12 @@ async function updateAnchor(
 When multiple users update the same anchor
 simultaneously:
 
-| Strategy         | Description                     | Use Case            |
-| ---------------- | ------------------------------- | ------------------- |
-| Last-Writer-Wins | Most recent timestamp wins      | Simple collab.      |
-| Vector Clock     | Logical ordering of events      | Causal consistency  |
-| Manual Merge     | User resolves conflicts         | Critical markers    |
-| CRDT             | Conflict-free replicated data   | High-concurrency    |
+| Strategy         | Description                   | Use Case           |
+| ---------------- | ----------------------------- | ------------------ |
+| Last-Writer-Wins | Most recent timestamp wins    | Simple collab.     |
+| Vector Clock     | Logical ordering of events    | Causal consistency |
+| Manual Merge     | User resolves conflicts       | Critical markers   |
+| CRDT             | Conflict-free replicated data | High-concurrency   |
 
 ---
 
@@ -291,17 +283,17 @@ simultaneously:
 
 ### Soft vs Hard Deletion
 
-| Type        | Description                                | Recoverable      |
-| ----------- | ------------------------------------------ | ---------------- |
-| Soft Delete | Flag anchor as deleted, retain data        | Yes (30 days)    |
-| Hard Delete | Remove all data from storage               | No               |
+| Type        | Description                         | Recoverable   |
+| ----------- | ----------------------------------- | ------------- |
+| Soft Delete | Flag anchor as deleted, retain data | Yes (30 days) |
+| Hard Delete | Remove all data from storage        | No            |
 
 ### Removal Process
 
 ```typescript
 async function removeAnchor(
   anchorId: string,
-  hard: boolean = false
+  hard: boolean = false,
 ): Promise<void> {
   if (hard) {
     // Permanent removal
@@ -362,11 +354,7 @@ interface AnchorRecord {
     expiresAt?: number;
     venueId: string;
     floor: number;
-    markerType:
-      | "desk"
-      | "waypoint"
-      | "calibration"
-      | "exit";
+    markerType: "desk" | "waypoint" | "calibration" | "exit";
     metadata: Record<string, unknown>;
     version: number;
   };
@@ -387,6 +375,151 @@ interface AnchorOperation {
   payload: Partial<AnchorRecord["value"]>;
 }
 ```
+
+---
+
+## REST API Reference (`/api/ar/anchors`)
+
+The `/api/ar/anchors` REST endpoint provides backend persistence, query resolution, transformation normalization, and lifecycle deletion for spatial anchors across client sessions.
+
+### Authentication & Access Token Validation
+
+All requests to `/api/ar/anchors` require bearer token authorization in the HTTP request headers or a valid Clerk session cookie:
+
+```http
+Authorization: Bearer <clerk_jwt_token>
+Content-Type: application/json
+```
+
+#### Token Validation Workflow
+
+1. **Header Parsing**: Server extracts JWT string from `Authorization: Bearer <token>`.
+2. **Cryptographic Verification**: Validates signature using `@clerk/backend` `verifyToken()` against `CLERK_SECRET_KEY`.
+3. **Role Evaluation**: Verifies `sub` (User ID) has write permissions (`OWNER` / `EDITOR`) for the specified `venueId`. VIEWERS are restricted to `GET` read endpoints.
+4. **401/403 Errors**: Returns HTTP 401 `UNAUTHORIZED` if token missing/invalid, or HTTP 403 `FORBIDDEN` if permission evaluation fails.
+
+---
+
+### Request & Response JSON Schemas
+
+#### 1. Create Spatial Anchor (`POST /api/ar/anchors`)
+
+**Request JSON Schema:**
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CreateSpatialAnchorRequest",
+  "type": "object",
+  "required": ["venueId", "floor", "name", "markerType", "matrix"],
+  "properties": {
+    "venueId": { "type": "string", "minLength": 1 },
+    "floor": { "type": "integer", "default": 1 },
+    "name": { "type": "string", "maxLength": 100 },
+    "markerType": {
+      "type": "string",
+      "enum": ["desk", "waypoint", "calibration", "exit"]
+    },
+    "matrix": {
+      "type": "array",
+      "items": { "type": "number" },
+      "minItems": 16,
+      "maxItems": 16,
+      "description": "Column-major 4x4 transformation matrix array normalized to unit scale."
+    },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}
+```
+
+**Success Response (HTTP 201 Created):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "anc_9f83a2c0-4e1b-4390-9c21",
+    "venueId": "venue_workplace_sf_01",
+    "floor": 2,
+    "name": "Desk A-12",
+    "markerType": "desk",
+    "matrix": [
+      1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.45, 0.82,
+      -2.3, 1.0
+    ],
+    "position": { "x": 1.45, "y": 0.82, "z": -2.3 },
+    "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 },
+    "version": 1,
+    "createdAt": 1784825000000,
+    "updatedAt": 1784825000000
+  }
+}
+```
+
+---
+
+#### 2. Query Spatial Anchors (`GET /api/ar/anchors?venueId={id}&floor={floor}`)
+
+**Response JSON Schema (HTTP 200 OK):**
+
+```json
+{
+  "success": true,
+  "count": 1,
+  "data": [
+    {
+      "id": "anc_9f83a2c0-4e1b-4390-9c21",
+      "venueId": "venue_workplace_sf_01",
+      "floor": 2,
+      "name": "Desk A-12",
+      "markerType": "desk",
+      "matrix": [
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.45, 0.82,
+        -2.3, 1.0
+      ],
+      "position": { "x": 1.45, "y": 0.82, "z": -2.3 },
+      "orientation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+      "version": 1
+    }
+  ]
+}
+```
+
+---
+
+#### 3. Delete Spatial Anchor (`DELETE /api/ar/anchors?id={anchorId}&hard={boolean}`)
+
+**Parameters:**
+
+- `id` (Query String, Required): Target spatial anchor ID.
+- `hard` (Query String, Optional): `true` for immediate hard deletion from database; `false` (default) for 30-day soft deletion.
+
+**Success Response (HTTP 200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "Spatial anchor deleted successfully",
+  "deletedId": "anc_9f83a2c0-4e1b-4390-9c21",
+  "hardDelete": false,
+  "expiresAt": 1787417000000
+}
+```
+
+---
+
+### 4x4 Transformation Matrix Coordinate Normalization
+
+Transformation matrices submitted to `/api/ar/anchors` must adhere to column-major 4x4 layout in a right-handed WebXR coordinate system (+X right, +Y up, -Z forward).
+
+#### Matrix Normalization Algorithm:
+
+1. **Decomposition**: Extract translation vector $\vec{T} = [m_{12}, m_{13}, m_{14}]$, scale factors $S_x = \|\vec{C}_0\|, S_y = \|\vec{C}_1\|, S_z = \|\vec{C}_2\|$, and rotation submatrix $R$.
+2. **Orthogonalization**: Normalize basis column vectors to prevent shear deformation:
+   $$\hat{C}_0 = \frac{\vec{C}_0}{\|\vec{C}_0\|}, \quad \hat{C}_1 = \frac{\vec{C}_1}{\|\vec{C}_1\|}, \quad \hat{C}_2 = \hat{C}_0 \times \hat{C}_1$$
+3. **Unit Scale Enforcement**: Scale factors $S_x, S_y, S_z$ are normalized to unit vector scale ($1.0$) for spatial anchor anchoring, storing unscaled rigid orientation quaternions ($q_x, q_y, q_z, q_w$).
+4. **Validation Check**: Reject matrices containing `NaN`, `Infinity`, non-affine elements ($m_3 \ne 0, m_7 \ne 0, m_{11} \ne 0, m_{15} \ne 1$), or determinant $\det(R) \le 0$.
 
 ---
 
@@ -413,12 +546,12 @@ Rotation: 3x3 submatrix
 
 ### Storage Optimization
 
-| Format           | Size    | Precision          | Use Case           |
-| ---------------- | ------- | ------------------ | ------------------ |
-| Float32Array     | 64 B    | ~7 decimal digits  | Runtime, GPU       |
-| Float64Array     | 128 B   | ~15 decimal digits | Calibration        |
-| Quantized Int16  | 32 B    | ±32767 range       | Storage-limited    |
-| Quaternion+Pos   | 28 B    | Full precision     | Compact storage    |
+| Format          | Size  | Precision          | Use Case        |
+| --------------- | ----- | ------------------ | --------------- |
+| Float32Array    | 64 B  | ~7 decimal digits  | Runtime, GPU    |
+| Float64Array    | 128 B | ~15 decimal digits | Calibration     |
+| Quantized Int16 | 32 B  | ±32767 range       | Storage-limited |
+| Quaternion+Pos  | 28 B  | Full precision     | Compact storage |
 
 ---
 
@@ -428,10 +561,22 @@ Rotation: 3x3 submatrix
 
 ```typescript
 const identityMatrix = new Float32Array([
-  1, 0, 0, 0,  // Column 0: X-axis
-  0, 1, 0, 0,  // Column 1: Y-axis
-  0, 0, 1, 0,  // Column 2: Z-axis
-  0, 0, 0, 1,  // Column 3: Translation
+  1,
+  0,
+  0,
+  0, // Column 0: X-axis
+  0,
+  1,
+  0,
+  0, // Column 1: Y-axis
+  0,
+  0,
+  1,
+  0, // Column 2: Z-axis
+  0,
+  0,
+  0,
+  1, // Column 3: Translation
 ]);
 ```
 
@@ -440,10 +585,22 @@ const identityMatrix = new Float32Array([
 ```typescript
 // Translate 2m right, 1m up, 3m forward
 const translationMatrix = new Float32Array([
-  1, 0, 0, 0,
-  0, 1, 0, 0,
-  0, 0, 1, 0,
-  2, 1, -3, 1,  // Note: -Z is forward
+  1,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  0,
+  1,
+  0,
+  2,
+  1,
+  -3,
+  1, // Note: -Z is forward
 ]);
 ```
 
@@ -452,10 +609,7 @@ const translationMatrix = new Float32Array([
 ```typescript
 // 90° rotation around Y-axis + translation
 const rotY90 = new Float32Array([
-  0, 0, -1, 0,
-  0, 1, 0, 0,
-  1, 0, 0, 0,
-  5, 0, -2, 1,
+  0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 5, 0, -2, 1,
 ]);
 ```
 
@@ -482,12 +636,12 @@ graph LR
 
 ### Reference Space Types
 
-| Space Type      | Origin                           | Use Case        |
-| --------------- | -------------------------------- | --------------- |
-| `local`         | First pose at session start      | Most AR         |
-| `local-floor`   | Floor below first pose           | Room-scale      |
-| `bounded-floor` | Floor with tracked boundary      | Room w/ limits  |
-| `unbounded`     | Continuously drifts              | Outdoor         |
+| Space Type      | Origin                      | Use Case       |
+| --------------- | --------------------------- | -------------- |
+| `local`         | First pose at session start | Most AR        |
+| `local-floor`   | Floor below first pose      | Room-scale     |
+| `bounded-floor` | Floor with tracked boundary | Room w/ limits |
+| `unbounded`     | Continuously drifts         | Outdoor        |
 
 ---
 
@@ -495,18 +649,18 @@ graph LR
 
 ### Definitions
 
-| Space        | Description                              | Persistence       |
-| ------------ | ---------------------------------------- | ----------------- |
-| World Space  | Global coordinate system                 | Requires calib.   |
-| Local Space  | Device-relative per session              | Session-only      |
-| Anchor Space | Per-anchor coordinate system             | Persistent        |
+| Space        | Description                  | Persistence     |
+| ------------ | ---------------------------- | --------------- |
+| World Space  | Global coordinate system     | Requires calib. |
+| Local Space  | Device-relative per session  | Session-only    |
+| Anchor Space | Per-anchor coordinate system | Persistent      |
 
 ### Conversion Between Spaces
 
 ```typescript
 function worldToAnchor(
   worldPoint: DOMPointReadOnly,
-  anchorMatrix: Float32Array
+  anchorMatrix: Float32Array,
 ): DOMPointReadOnly {
   const invMatrix = invertMatrix(anchorMatrix);
   return transformPoint(invMatrix, worldPoint);
@@ -514,7 +668,7 @@ function worldToAnchor(
 
 function anchorToWorld(
   anchorPoint: DOMPointReadOnly,
-  anchorMatrix: Float32Array
+  anchorMatrix: Float32Array,
 ): DOMPointReadOnly {
   return transformPoint(anchorMatrix, anchorPoint);
 }
@@ -536,13 +690,13 @@ physical points:
 
 ### Marker Types
 
-| Type          | Geometry           | Purpose           |
-| ------------- | ------------------ | ----------------- |
-| Available     | Green ring+circle  | Bookable desk     |
-| Occupied      | Red ring+circle    | In use            |
-| Reserved      | Yellow ring+circle | User reserved     |
-| Waypoint      | Blue arrow         | Navigation guide  |
-| Exit          | Gray door icon     | Emergency exit    |
+| Type      | Geometry           | Purpose          |
+| --------- | ------------------ | ---------------- |
+| Available | Green ring+circle  | Bookable desk    |
+| Occupied  | Red ring+circle    | In use           |
+| Reserved  | Yellow ring+circle | User reserved    |
+| Waypoint  | Blue arrow         | Navigation guide |
+| Exit      | Gray door icon     | Emergency exit   |
 
 ### Rendering Pipeline
 
@@ -560,14 +714,12 @@ graph TB
 
 ```typescript
 function createDeskMarker(
-  status: "available" | "occupied" | "reserved"
+  status: "available" | "occupied" | "reserved",
 ): THREE.Group {
   const group = new THREE.Group();
 
   // Outer ring
-  const ringGeometry = new THREE.RingGeometry(
-    0.3, 0.35, 64
-  );
+  const ringGeometry = new THREE.RingGeometry(0.3, 0.35, 64);
   const ringMaterial = new THREE.MeshBasicMaterial({
     color:
       status === "available"
@@ -579,33 +731,23 @@ function createDeskMarker(
     transparent: true,
     opacity: 0.8,
   });
-  const ring = new THREE.Mesh(
-    ringGeometry,
-    ringMaterial
-  );
+  const ring = new THREE.Mesh(ringGeometry, ringMaterial);
   ring.rotation.x = -Math.PI / 2;
   group.add(ring);
 
   // Inner circle
-  const circleGeometry = new THREE.CircleGeometry(
-    0.28,
-    64
-  );
-  const circleMaterial =
-    new THREE.MeshBasicMaterial({
-      color:
-        status === "available"
-          ? 0x16a34a
-          : status === "occupied"
-            ? 0xdc2626
-            : 0xca8a04,
-      transparent: true,
-      opacity: 0.6,
-    });
-  const circle = new THREE.Mesh(
-    circleGeometry,
-    circleMaterial
-  );
+  const circleGeometry = new THREE.CircleGeometry(0.28, 64);
+  const circleMaterial = new THREE.MeshBasicMaterial({
+    color:
+      status === "available"
+        ? 0x16a34a
+        : status === "occupied"
+          ? 0xdc2626
+          : 0xca8a04,
+    transparent: true,
+    opacity: 0.6,
+  });
+  const circle = new THREE.Mesh(circleGeometry, circleMaterial);
   circle.rotation.x = -Math.PI / 2;
   circle.position.y = 0.001;
   group.add(circle);
@@ -616,12 +758,12 @@ function createDeskMarker(
 
 ### Performance Guidelines
 
-| Metric              | Target     | Measurement       |
-| ------------------- | ---------- | ----------------- |
-| Polygon per marker  | < 500 tris | Geometry          |
-| Draw calls/frame    | < 20       | All markers       |
-| Texture memory      | < 10 MB    | Materials         |
-| Update frequency    | 30 Hz      | Animation loop    |
+| Metric             | Target     | Measurement    |
+| ------------------ | ---------- | -------------- |
+| Polygon per marker | < 500 tris | Geometry       |
+| Draw calls/frame   | < 20       | All markers    |
+| Texture memory     | < 10 MB    | Materials      |
+| Update frequency   | 30 Hz      | Animation loop |
 
 ---
 
@@ -651,28 +793,23 @@ sequenceDiagram
 ```typescript
 function computeAlignmentTransform(
   hostAnchor: AnchorRecord,
-  guestAnchor: AnchorRecord
+  guestAnchor: AnchorRecord,
 ): Float32Array {
   // Both users scanned same marker
   // T_align = T_host * T_guest^-1
-  const guestInverse = invertMatrix(
-    new Float32Array(guestAnchor.matrix)
-  );
-  return multiplyMatrices(
-    new Float32Array(hostAnchor.matrix),
-    guestInverse
-  );
+  const guestInverse = invertMatrix(new Float32Array(guestAnchor.matrix));
+  return multiplyMatrices(new Float32Array(hostAnchor.matrix), guestInverse);
 }
 ```
 
 ### Calibration Quality Metrics
 
-| Metric              | Threshold      | Action if Failed  |
-| ------------------- | -------------- | ----------------- |
-| Reprojection error  | < 2 cm         | Reject calib.     |
-| Tracking confidence | > 0.8          | Warn user         |
-| Marker distance     | 0.5 - 3.0 m    | Reposition        |
-| Ambient light       | > 100 lux      | Warn accuracy     |
+| Metric              | Threshold   | Action if Failed |
+| ------------------- | ----------- | ---------------- |
+| Reprojection error  | < 2 cm      | Reject calib.    |
+| Tracking confidence | > 0.8       | Warn user        |
+| Marker distance     | 0.5 - 3.0 m | Reposition       |
+| Ambient light       | > 100 lux   | Warn accuracy    |
 
 ---
 
@@ -680,38 +817,35 @@ function computeAlignmentTransform(
 
 ### Message Types
 
-| Message              | Direction              | Payload           |
-| -------------------- | ---------------------- | ----------------- |
-| `anchor:create`      | Client → Server → All  | Full anchor data  |
-| `anchor:update`      | Client → Server → All  | Changed fields    |
-| `anchor:delete`      | Client → Server → All  | Anchor ID         |
-| `anchor:sync`        | Server → Client        | Full snapshot     |
-| `calibration:point`  | Client → Server → All  | Marker pose       |
-| `calibration:align`  | Client → Server → All  | Alignment matrix  |
+| Message             | Direction             | Payload          |
+| ------------------- | --------------------- | ---------------- |
+| `anchor:create`     | Client → Server → All | Full anchor data |
+| `anchor:update`     | Client → Server → All | Changed fields   |
+| `anchor:delete`     | Client → Server → All | Anchor ID        |
+| `anchor:sync`       | Server → Client       | Full snapshot    |
+| `calibration:point` | Client → Server → All | Marker pose      |
+| `calibration:align` | Client → Server → All | Alignment matrix |
 
 ### Synchronization Conflict Resolution
 
 ```typescript
 function resolveConflict(
   local: AnchorOperation,
-  remote: AnchorOperation
+  remote: AnchorOperation,
 ): AnchorOperation {
   // Vector clock comparison
-  const localSum = Object.values(
-    local.vectorClock
-  ).reduce((a, b) => a + b, 0);
+  const localSum = Object.values(local.vectorClock).reduce((a, b) => a + b, 0);
 
-  const remoteSum = Object.values(
-    remote.vectorClock
-  ).reduce((a, b) => a + b, 0);
+  const remoteSum = Object.values(remote.vectorClock).reduce(
+    (a, b) => a + b,
+    0,
+  );
 
   if (remoteSum > localSum) return remote;
   if (remoteSum < localSum) return local;
 
   // Tie-break by timestamp
-  return remote.timestamp > local.timestamp
-    ? remote
-    : local;
+  return remote.timestamp > local.timestamp ? remote : local;
 }
 ```
 
@@ -721,12 +855,12 @@ function resolveConflict(
 
 ### Error Categories
 
-| Category | Examples                     | Recovery Strategy    |
-| -------- | ---------------------------- | -------------------- |
-| Session  | NotSupportedError            | Fallback to 2D       |
-| Anchor   | QuotaExceededError           | Prune old anchors    |
-| Sync     | Network timeout              | Queue + backoff      |
-| Storage  | IndexedDB full               | Clear cache          |
+| Category | Examples           | Recovery Strategy |
+| -------- | ------------------ | ----------------- |
+| Session  | NotSupportedError  | Fallback to 2D    |
+| Anchor   | QuotaExceededError | Prune old anchors |
+| Sync     | Network timeout    | Queue + backoff   |
+| Storage  | IndexedDB full     | Clear cache       |
 
 ### Recovery Implementation
 
@@ -734,13 +868,10 @@ function resolveConflict(
 async function safeCreateAnchor(
   frame: XRFrame,
   referenceSpace: XRReferenceSpace,
-  pose: XRRigidTransform
+  pose: XRRigidTransform,
 ): Promise<XRAnchor | null> {
   try {
-    return await frame.createAnchor(
-      pose,
-      referenceSpace
-    );
+    return await frame.createAnchor(pose, referenceSpace);
   } catch (error) {
     if (error instanceof DOMException) {
       switch (error.name) {
@@ -749,10 +880,7 @@ async function safeCreateAnchor(
           return null;
         case " QuotaExceededError":
           await pruneOldAnchors();
-          return await frame.createAnchor(
-            pose,
-            referenceSpace
-          );
+          return await frame.createAnchor(pose, referenceSpace);
       }
     }
     throw error;
@@ -766,13 +894,13 @@ async function safeCreateAnchor(
 
 ### Profiling Metrics
 
-| Metric                  | Target   | Measurement Method     |
-| ----------------------- | -------- | ---------------------- |
-| Anchor creation latency | < 50 ms  | Performance.now()      |
-| Matrix computation      | < 5 ms   | Render loop timing     |
-| Sync round-trip         | < 100 ms | PartyKit metrics       |
-| Storage read/write      | < 10 ms  | IndexedDB performance  |
-| Memory per anchor       | < 2 KB   | Heap snapshot          |
+| Metric                  | Target   | Measurement Method    |
+| ----------------------- | -------- | --------------------- |
+| Anchor creation latency | < 50 ms  | Performance.now()     |
+| Matrix computation      | < 5 ms   | Render loop timing    |
+| Sync round-trip         | < 100 ms | PartyKit metrics      |
+| Storage read/write      | < 10 ms  | IndexedDB performance |
+| Memory per anchor       | < 2 KB   | Heap snapshot         |
 
 ### Optimization Strategies
 
@@ -824,12 +952,12 @@ class AnchorRenderer {
 
 ### Data Sensitivity
 
-| Data Type              | Sensitivity | Protection Required |
-| ---------------------- | ----------- | ------------------- |
-| Anchor positions       | Medium      | Encrypted storage   |
-| Calibration data       | High        | E2E encryption      |
-| Venue floor plans      | High        | Access control      |
-| Device tracking        | Very High   | Minimal retention   |
+| Data Type         | Sensitivity | Protection Required |
+| ----------------- | ----------- | ------------------- |
+| Anchor positions  | Medium      | Encrypted storage   |
+| Calibration data  | High        | E2E encryption      |
+| Venue floor plans | High        | Access control      |
+| Device tracking   | Very High   | Minimal retention   |
 
 ### Security Requirements
 
@@ -856,14 +984,14 @@ interface PrivacySettings {
 
 ## Browser Compatibility Table
 
-| Browser          | WebXR    | Anchors | Hit-Test | Notes           |
-| ---------------- | -------- | ------- | -------- | --------------- |
-| Chrome 79+       | Full     | Yes     | Yes      | Primary         |
-| Edge 79+         | Full     | Yes     | Yes      | Chromium-based  |
-| Samsung Internet | Partial  | Varies  | Varies   | Device-dep.     |
-| Firefox          | Exper.   | No      | No       | Behind flag     |
-| Safari (iOS)     | Limited  | No      | No       | No immersive    |
-| Quest Browser    | Full     | Yes     | Yes      | Native XR       |
+| Browser          | WebXR   | Anchors | Hit-Test | Notes          |
+| ---------------- | ------- | ------- | -------- | -------------- |
+| Chrome 79+       | Full    | Yes     | Yes      | Primary        |
+| Edge 79+         | Full    | Yes     | Yes      | Chromium-based |
+| Samsung Internet | Partial | Varies  | Varies   | Device-dep.    |
+| Firefox          | Exper.  | No      | No       | Behind flag    |
+| Safari (iOS)     | Limited | No      | No       | No immersive   |
+| Quest Browser    | Full    | Yes     | Yes      | Native XR      |
 
 ---
 

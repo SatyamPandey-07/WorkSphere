@@ -23,7 +23,7 @@ export function validateSamlAssertion(xmlString: string, expectedCert: string, e
   // Provide the certificate to the verifier
   sig.keyInfoProvider = {
     getKeyInfo: () => `<X509Data><X509Certificate>${expectedCert}</X509Certificate></X509Data>`,
-    getKey: () => `-----BEGIN CERTIFICATE-----\n${expectedCert.replace(/(.{64})/g, "$1\n")}\n-----END CERTIFICATE-----`
+    getKey: () => Buffer.from(`-----BEGIN CERTIFICATE-----\n${expectedCert.replace(/(.{64})/g, "$1\n")}\n-----END CERTIFICATE-----`),
   };
 
   sig.loadSignature(signature.toString());

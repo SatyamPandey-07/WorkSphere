@@ -115,6 +115,29 @@ class HRTFProcessor extends AudioWorkletProcessor {
         if (frameSize) this.frameSize = frameSize;
         this.port.postMessage({ type: "CONFIGURED" });
         break;
+
+      case "SET_ROOM_PARAMETERS": {
+        const { width, length, height, absorption } = event.data;
+        if (
+          this.wasm &&
+          this.wasm.exports &&
+          typeof this.wasm.exports.set_room_parameters === "function"
+        ) {
+          this.wasm.exports.set_room_parameters(
+            width,
+            length,
+            height,
+            absorption,
+          );
+        } else if (
+          this.wasm &&
+          typeof this.wasm._set_room_parameters === "function"
+        ) {
+          this.wasm._set_room_parameters(width, length, height, absorption);
+        }
+        this.port.postMessage({ type: "ROOM_PARAMETERS_UPDATED" });
+        break;
+      }
     }
   }
 

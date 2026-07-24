@@ -26,20 +26,35 @@ export async function apiFetch(
     let seconds = 60;
 
     if (retryAfterHeader) {
-      seconds = parseInt(retryAfterHeader, 10) || 60;
+      const parsedInt = parseInt(retryAfterHeader, 10);
+      if (!isNaN(parsedInt)) {
+        seconds = Math.max(1, parsedInt);
+      } else {
+        const dateMs = Date.parse(retryAfterHeader);
+        if (!isNaN(dateMs)) {
+          seconds = Math.max(1, Math.ceil((dateMs - Date.now()) / 1000));
+        } else {
+          seconds = 60;
+        }
+      }
     } else if (resetHeader) {
       const resetTime = parseInt(resetHeader, 10);
-      if (resetTime) {
-        seconds = Math.max(1, Math.ceil(resetTime - Date.now() / 1000));
+      if (!isNaN(resetTime) && resetTime > 0) {
+        if (resetTime > 1e9) {
+          seconds = Math.max(1, Math.ceil(resetTime - Date.now() / 1000));
+        } else {
+          seconds = Math.max(1, resetTime);
+        }
       }
     } else {
       try {
         const clone = response.clone();
         const data = await clone.json();
-        if (typeof data.retryAfter === "number") {
-          seconds = data.retryAfter;
-        } else if (typeof data.retryAfter === "string") {
-          seconds = parseInt(data.retryAfter, 10) || 60;
+        const val = data.retryAfter ?? data.retry_after ?? data.resetIn;
+        if (typeof val === "number") {
+          seconds = Math.max(1, Math.ceil(val));
+        } else if (typeof val === "string") {
+          seconds = Math.max(1, parseInt(val, 10) || 60);
         }
       } catch {
         // ignore

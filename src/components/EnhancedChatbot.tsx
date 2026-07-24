@@ -821,20 +821,6 @@ export function EnhancedChatbot({
       }
 
       const assistantMessageId = (Date.now() + 1).toString();
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === assistantMessageId)) return prev;
-        return [
-          ...prev,
-          {
-            id: assistantMessageId,
-            role: "assistant",
-            content: "",
-            isStreaming: true,
-          },
-        ];
-      });
-
-      const assistantMessageId = nextMsgId();
       setMessages((prev) => [
         ...prev,
         {

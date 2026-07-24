@@ -55,7 +55,26 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       countdown?: number,
     ) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setToasts((prev) => [...prev, { id, message, type, action, countdown }]);
+      setToasts((prev) => {
+        if (countdown !== undefined && message.includes("Rate limit")) {
+          const existingIndex = prev.findIndex(
+            (t) =>
+              t.countdown !== undefined && t.message.includes("Rate limit"),
+          );
+          if (existingIndex !== -1) {
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              countdown: Math.max(
+                updated[existingIndex].countdown || 0,
+                countdown,
+              ),
+            };
+            return updated;
+          }
+        }
+        return [...prev, { id, message, type, action, countdown }];
+      });
     },
     [],
   );
@@ -127,6 +146,7 @@ function ToastItem({
   toast: Toast;
   onRemove: (id: string) => void;
 }) {
+  const [isHovered, setIsHovered] = useState(false);
   const [countdown, setCountdown] = useState<number | undefined>(
     toast.countdown,
   );
@@ -179,7 +199,9 @@ function ToastItem({
 
   const displayMessage =
     countdown !== undefined
-      ? toast.message.replace("{countdown}", String(countdown))
+      ? toast.message
+          .replace("{countdown}", String(countdown))
+          .replace("1 seconds", "1 second")
       : toast.message;
 
   return (

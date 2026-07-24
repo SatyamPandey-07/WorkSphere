@@ -6,6 +6,10 @@ import * as Y from "yjs";
 import YProvider from "y-partykit/provider";
 import { FailoverSyncManager } from "@/lib/edge/failoverSync";
 import { useMeshDataChannels } from "@/hooks/useMeshDataChannels";
+import {
+  compressYjsUpdate,
+  decompressYjsUpdate,
+} from "@/lib/crdt/yjsCompression";
 import type {
   ToolType,
   ShapeData,
@@ -77,7 +81,9 @@ export function useMeshCanvasWhiteboard(
     const doc = docRef.current;
     if (!doc) return;
     try {
-      Y.applyUpdate(doc, new Uint8Array(data), "mesh");
+      const rawUpdate = new Uint8Array(data);
+      const decompressed = decompressYjsUpdate(rawUpdate);
+      Y.applyUpdate(doc, decompressed, "mesh");
     } catch (err) {
       console.warn("Failed to apply mesh update from", peerId, err);
     }
@@ -176,7 +182,8 @@ export function useMeshCanvasWhiteboard(
     const sendToAll = mesh.sendToAll;
     const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
       if (origin === "mesh") return;
-      sendToAll(update.buffer as ArrayBuffer);
+      const compressed = compressYjsUpdate(update);
+      sendToAll(compressed.buffer as ArrayBuffer);
     };
     doc.on("update", handleDocUpdate);
     unsubDocUpdateRef.current = () => {
@@ -193,7 +200,10 @@ export function useMeshCanvasWhiteboard(
 
     const handleAwarenessChange = () => {
       if (!awareness) return;
-      const states = Array.from(awareness.getStates().entries()) as [number, any][];
+      const states = Array.from(awareness.getStates().entries()) as [
+        number,
+        any,
+      ][];
       const cursors: RemoteCursor[] = [];
       for (const [clientId, state] of states) {
         if (clientId === awareness.clientID) continue;

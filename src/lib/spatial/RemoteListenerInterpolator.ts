@@ -125,3 +125,33 @@ export class RemoteListenerInterpolator {
     }
   }
 }
+
+// --- Spatial Attenuation Constants & Math ---
+export const REF_DISTANCE = 1.0; // Inner boundary (meters)
+export const MAX_DISTANCE = 30.0; // Outer boundary (meters)
+export const ROLLOFF_FACTOR = 1.0;
+
+/**
+ * Calculates the audio gain multiplier based on distance.
+ * Utilizes an inverse distance logarithmic attenuation curve.
+ * @param distance The physical distance between source and listener
+ * @returns A gain value between 0.0 and 1.0
+ */
+export function calculateSpatialAttenuation(distance: number): number {
+  // If the user is closer than the reference distance, play at full volume
+  if (distance <= REF_DISTANCE) {
+    return 1.0;
+  }
+
+  // If the user is further than the max distance, cut the sound completely
+  if (distance >= MAX_DISTANCE) {
+    return 0.0;
+  }
+
+  // Apply the inverse distance attenuation formula
+  const gain =
+    REF_DISTANCE / (REF_DISTANCE + ROLLOFF_FACTOR * (distance - REF_DISTANCE));
+
+  // Return the gain rounded to 4 decimal places for clean audio processing
+  return Number(gain.toFixed(4));
+}

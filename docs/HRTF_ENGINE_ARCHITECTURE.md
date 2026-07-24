@@ -71,6 +71,8 @@ extern "C" {
     void* malloc_scratch_buffer(int size_bytes);
     void free_scratch_buffer(void* ptr);
     void set_hrtf_simd_enabled(int enabled);
+    void set_room_parameters(float width, float length, float height, float absorption);
+    void get_room_parameters(float* width, float* length, float* height, float* absorption);
     int process_hrtf_block(
         const float* input,
         float* left_output,
@@ -96,6 +98,10 @@ extern "C" {
 ### 3.3 `set_hrtf_simd_enabled(int enabled)`
 
 - **Description**: Runtime feature flag to enable (`1`) or disable (`0`) 128-bit SIMD vectorization. Provides scalar fallback protection for non-SIMD devices.
+
+### 3.4 `set_room_parameters(width, length, height, absorption)`
+
+- **Description**: Exposes room dimensions (meters) and wall surface absorption coefficient (0.0 = reflective, 1.0 = anechoic) to adjust early reflections and FDN late reverberation decay dynamically.
 
 ### 3.4 C++ Struct Layout for Binaural Filters
 

@@ -288,6 +288,25 @@ export function useMeshCanvasWhiteboard(
     [localUserId],
   );
 
+  const deleteShape = useCallback(
+    (id: string) => {
+      const shapes = shapesRef.current;
+      const doc = docRef.current;
+      if (!shapes || !doc) return;
+
+      doc.transact(() => {
+        for (let i = 0; i < shapes.length; i++) {
+          const map = shapes.get(i);
+          if (map.get("id") === id) {
+            shapes.delete(i, 1);
+            break;
+          }
+        }
+      }, localUserId);
+    },
+    [localUserId],
+  );
+
   const undo = useCallback(() => {
     undoManagerRef.current?.undo();
   }, []);
@@ -319,6 +338,7 @@ export function useMeshCanvasWhiteboard(
   return {
     addShape,
     updateShape,
+    deleteShape,
     shapeSnapshots,
     remoteCursors,
     tool,

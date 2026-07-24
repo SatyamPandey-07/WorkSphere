@@ -32,6 +32,7 @@ import {
   ChevronRight,
   Share,
   Check,
+  Sparkles,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -50,6 +51,7 @@ import { Venue } from "./ChatMessages";
 import { RatingDistribution } from "./RatingDistribution";
 import { NoiseReportingWidget } from "@/components/noise/NoiseReportingWidget";
 import { AudioEqualizer } from "@/components/audio/AudioEqualizer";
+import { MenuTranslatorModal } from "./MenuTranslatorModal";
 
 interface VenueDetailDialogProps {
   venue: Venue | null;
@@ -80,6 +82,10 @@ export function VenueDetailDialog({
 }: VenueDetailDialogProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(true);
+  const [isTranslatorOpen, setIsTranslatorOpen] = useState(false);
+  const [translatorInitialPhoto, setTranslatorInitialPhoto] = useState<
+    string | null
+  >(null);
   const [liveScore, setLiveScore] = useState<number | null>(null);
   const [imageError, setImageError] = useState(false);
   const [previewImageError, setPreviewImageError] = useState(false);
@@ -1795,6 +1801,19 @@ export function VenueDetailDialog({
 
           {activeTab === "menu" && (
             <div className="space-y-6">
+              <div className="flex gap-4">
+                <button
+                  onClick={() => {
+                    setTranslatorInitialPhoto(null);
+                    setIsTranslatorOpen(true);
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 bg-indigo-600/85 hover:bg-indigo-600 text-white font-bold uppercase tracking-wider text-xs py-3 px-6 rounded-xl transition-all shadow-md active:scale-95"
+                >
+                  <Globe2 className="w-4 h-4" />
+                  Open OCR Menu Translator
+                </button>
+              </div>
+
               <label className="flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl p-6 bg-black/20 hover:border-white/20 cursor-pointer transition-all">
                 {uploadingMenu ? (
                   <div className="flex flex-col items-center gap-2 py-2">
@@ -1876,16 +1895,22 @@ export function VenueDetailDialog({
           >
             {/* Header controls for Menu Preview */}
             <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start z-10 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
-              <div className="pointer-events-auto">
+              <div className="pointer-events-auto flex gap-2">
                 {activeTab === "menu" && (
-                  <div className="relative inline-block text-left group/dropdown">
-                    <button className="flex items-center gap-2 px-3 py-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg transition-all text-sm font-medium backdrop-blur-md border border-white/10">
-                      <Globe2 className="w-4 h-4" />
-                      Translate Menu ▼
-                    </button>
-                    <div className="absolute left-0 mt-2 w-40 rounded-xl bg-zinc-900 border border-zinc-800 shadow-xl opacity-0 invisible group-hover/dropdown:opacity-100 group-hover/dropdown:visible transition-all duration-200 overflow-hidden">
-                      {["English", "Hindi", "French", "German", "Spanish"].map(
-                        (lang) => (
+                  <>
+                    <div className="relative inline-block text-left group/dropdown">
+                      <button className="flex items-center gap-2 px-3 py-1.5 bg-black/60 hover:bg-black/80 text-white rounded-lg transition-all text-sm font-medium backdrop-blur-md border border-white/10">
+                        <Globe2 className="w-4 h-4" />
+                        Translate Menu ▼
+                      </button>
+                      <div className="absolute left-0 mt-2 w-40 rounded-xl bg-zinc-900 border border-zinc-800 shadow-xl opacity-0 invisible group-hover/dropdown:opacity-100 group-hover/dropdown:visible transition-all duration-200 overflow-hidden">
+                        {[
+                          "English",
+                          "Hindi",
+                          "French",
+                          "German",
+                          "Spanish",
+                        ].map((lang) => (
                           <button
                             key={lang}
                             className="w-full text-left px-4 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors"
@@ -1893,10 +1918,20 @@ export function VenueDetailDialog({
                           >
                             {lang}
                           </button>
-                        ),
-                      )}
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                    <button
+                      onClick={() => {
+                        setTranslatorInitialPhoto(previewPhoto);
+                        setIsTranslatorOpen(true);
+                      }}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/80 hover:bg-indigo-600 text-white rounded-lg transition-all text-sm font-medium backdrop-blur-md border border-white/10"
+                    >
+                      <Sparkles className="w-4 h-4" />
+                      OCR Translator
+                    </button>
+                  </>
                 )}
               </div>
               <button
@@ -2060,6 +2095,15 @@ export function VenueDetailDialog({
           </div>
         </div>
       )}
+
+      <MenuTranslatorModal
+        isOpen={isTranslatorOpen}
+        onClose={() => {
+          setIsTranslatorOpen(false);
+          setTranslatorInitialPhoto(null);
+        }}
+        initialPhotoUrl={translatorInitialPhoto}
+      />
     </div>
   );
 }

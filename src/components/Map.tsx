@@ -1150,83 +1150,96 @@ const Map = ({
             />
           );
         })}
-        {spiderfiedMarkers.map((marker) => (
-          <AccessibleMarker
-            key={marker.id}
-            position={[marker.renderedLat, marker.renderedLng]}
-            icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
-            name={marker.name}
-            category={marker.category}
-            isDestination={marker.id.includes("dest")}
-          >
-            <div className="text-sm">
-              <div className="font-semibold text-white">{marker.name}</div>
-              {marker.category && (
-                <div className="text-zinc-400">{marker.category}</div>
-              )}
-              {marker.address && (
-                <div className="text-zinc-500 text-xs mt-1">
-                  {marker.address}
-                </div>
-              )}
-              {!marker.id.includes("dest") &&
-                (() => {
-                  const seat = getAvailability(marker.id);
-                  const isCheckedInHere = checkedInVenueId === marker.id;
-                  const seatTextColor =
-                    seat.status === "red"
-                      ? "text-red-400"
-                      : seat.status === "yellow"
-                        ? "text-yellow-400"
-                        : "text-green-400";
-                  return (
-                    <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
-                      <span
-                        className={`text-[10px] font-medium ${seatTextColor}`}
-                      >
-                        {isSeatSocketConnected
-                          ? `${seat.count}/${seat.capacity} checked in`
-                          : "Connecting…"}
-                      </span>
-                      <button
-                        onClick={() =>
-                          isCheckedInHere ? checkOut() : checkIn(marker.id)
-                        }
-                        className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
-                          isCheckedInHere
-                            ? "accent-bg text-white hover:opacity-90"
-                            : "bg-zinc-800 text-zinc-200 hover:accent-bg hover:text-white"
-                        }`}
-                      >
-                        {isCheckedInHere ? "Check out" : "Check in here"}
-                      </button>
-                    </div>
-                  );
-                })()}
-            </div>
-            <button
-              onClick={() => {
-                // Prevent duplicates in queue chain matrix
-                if (!routingQueue.some((v) => v.id === marker.id)) {
-                  const updated = [
-                    ...routingQueue,
-                    {
-                      id: marker.id,
-                      name: marker.name,
-                      latitude: Number(marker.position.lat),
-                      longitude: Number(marker.position.lng),
-                    },
-                  ];
-                  setRoutingQueue(updated);
-                  calculateOptimizedRoute(updated);
-                }
-              }}
-              className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:accent-bg hover:text-white transition-colors"
+        {spiderfiedMarkers.map((marker) => {
+          const isDest = marker.id.includes("dest");
+          const seat = !isDest ? getAvailability(marker.id) : null;
+          const isCheckedInHere = !isDest && checkedInVenueId === marker.id;
+          const telemetry = !isDest
+            ? {
+                seatCount: seat?.count,
+                seatCapacity: seat?.capacity,
+                isCheckedIn: isCheckedInHere,
+                isConnected: isSeatSocketConnected,
+              }
+            : undefined;
+
+          return (
+            <AccessibleMarker
+              key={marker.id}
+              position={[marker.renderedLat, marker.renderedLng]}
+              icon={isDest ? destinationIcon : venueIcon}
+              name={marker.name}
+              category={marker.category}
+              isDestination={isDest}
+              telemetryData={telemetry}
             >
-              ➕ Add to Workday Timeline
-            </button>
-          </AccessibleMarker>
-        ))}
+              <div className="text-sm">
+                <div className="font-semibold text-white">{marker.name}</div>
+                {marker.category && (
+                  <div className="text-zinc-400">{marker.category}</div>
+                )}
+                {marker.address && (
+                  <div className="text-zinc-500 text-xs mt-1">
+                    {marker.address}
+                  </div>
+                )}
+                {!isDest &&
+                  (() => {
+                    const seatTextColor =
+                      seat!.status === "red"
+                        ? "text-red-400"
+                        : seat!.status === "yellow"
+                          ? "text-yellow-400"
+                          : "text-green-400";
+                    return (
+                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
+                        <span
+                          className={`text-[10px] font-medium ${seatTextColor}`}
+                        >
+                          {isSeatSocketConnected
+                            ? `${seat!.count}/${seat!.capacity} checked in`
+                            : "Connecting…"}
+                        </span>
+                        <button
+                          onClick={() =>
+                            isCheckedInHere ? checkOut() : checkIn(marker.id)
+                          }
+                          className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                            isCheckedInHere
+                              ? "accent-bg text-white hover:opacity-90"
+                              : "bg-zinc-800 text-zinc-200 hover:accent-bg hover:text-white"
+                          }`}
+                        >
+                          {isCheckedInHere ? "Check out" : "Check in here"}
+                        </button>
+                      </div>
+                    );
+                  })()}
+              </div>
+              <button
+                onClick={() => {
+                  // Prevent duplicates in queue chain matrix
+                  if (!routingQueue.some((v) => v.id === marker.id)) {
+                    const updated = [
+                      ...routingQueue,
+                      {
+                        id: marker.id,
+                        name: marker.name,
+                        latitude: Number(marker.position.lat),
+                        longitude: Number(marker.position.lng),
+                      },
+                    ];
+                    setRoutingQueue(updated);
+                    calculateOptimizedRoute(updated);
+                  }
+                }}
+                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:accent-bg hover:text-white transition-colors"
+              >
+                ➕ Add to Workday Timeline
+              </button>
+            </AccessibleMarker>
+          );
+        })}
 
         {/* Render OSRM Optimized Multi-Stop Routing Layer Geometry */}
         {optimizedRoute &&

@@ -1371,6 +1371,7 @@ export function ChatInput({
 
   return (
     <div
+      data-keyboard-inset={keyboardInset}
       className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 pb-[max(1rem,env(safe-area-inset-bottom))]"
       style={
         keyboardInset > 0

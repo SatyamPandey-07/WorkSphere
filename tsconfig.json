@@ -34,6 +34,7 @@
     "node_modules",
     "playwright.config.ts",
     "prisma.config.ts",
-    "e2e/**/*"
+    "e2e/**/*",
+    "party/**/*"
   ]
 }

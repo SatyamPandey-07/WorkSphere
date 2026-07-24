@@ -47,3 +47,7 @@ next-env.d.ts
 
 # circom build scratch (wasm/zkey for the app live in public/zkp)
 /circuits/build/
+
+# wasm-pack
+wasm-pack-init.exe
+wasm-pack-init.stamp

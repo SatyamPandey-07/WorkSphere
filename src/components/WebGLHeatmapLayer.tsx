@@ -3,7 +3,7 @@
 /**
  * Distributed WebGL Leaflet Heatmap Layer Component (#818)
  *
- * Integrates WebGLHeatmapRenderer with React-Leaflet map viewports. Converts geographical 
+ * Integrates WebGLHeatmapRenderer with React-Leaflet map viewports. Converts geographical
  * coordinates to screen space and renders continuous GPU spatial density clustering at 60 FPS.
  */
 
@@ -19,7 +19,7 @@ export interface GeoTelemetryPoint {
   lat: number;
   lng: number;
   intensity: number; // 0.0 to 1.0
-  radius?: number;   // Influence radius in pixels
+  radius?: number; // Influence radius in pixels
 }
 
 interface WebGLHeatmapLayerProps {
@@ -40,11 +40,90 @@ export function WebGLHeatmapLayer({
   const rendererRef = useRef<WebGLHeatmapRenderer | null>(null);
   const animFrameRef = useRef<number | null>(null);
 
+  // Refs so event handlers (attached once) always see the latest props
+  // without forcing the whole setup effect to re-run.
+  const pointsRef = useRef(points);
+  const visibleRef = useRef(visible);
   useEffect(() => {
-    if (!map || typeof window === "undefined" || !L || !L.DomUtil || typeof L.DomUtil.create !== "function") return;
+    pointsRef.current = points;
+    visibleRef.current = visible;
+  }, [points, visible]);
 
-    // Create canvas container overlay inside Leaflet overlayPane
-    const canvas = L.DomUtil.create("canvas", "leaflet-webgl-heatmap-layer") as HTMLCanvasElement;
+  const renderFrame = () => {
+    const canvas = canvasRef.current;
+    const renderer = rendererRef.current;
+    if (!canvas || !renderer || !map) return;
+    canvas.style.display = visibleRef.current ? "" : "none";
+    if (!visibleRef.current) return;
+
+    const size = map.getSize();
+    const pixelRatio = window.devicePixelRatio || 1;
+    const width = size.x;
+    const height = size.y;
+
+    if (
+      canvas.width !== width * pixelRatio ||
+      canvas.height !== height * pixelRatio
+    ) {
+      canvas.width = width * pixelRatio;
+      canvas.height = height * pixelRatio;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+    }
+
+    const topLeft = map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(canvas, topLeft);
+
+    const heatmapPoints: HeatmapPoint[] = [];
+    const currentZoom = map.getZoom();
+
+    for (let i = 0; i < pointsRef.current.length; i++) {
+      const pt = pointsRef.current[i];
+      const containerPt = map.latLngToContainerPoint([pt.lat, pt.lng]);
+
+      if (
+        containerPt.x < -100 ||
+        containerPt.x > width + 100 ||
+        containerPt.y < -100 ||
+        containerPt.y > height + 100
+      ) {
+        continue;
+      }
+
+      heatmapPoints.push({
+        x: containerPt.x * pixelRatio,
+        y: containerPt.y * pixelRatio,
+        intensity: pt.intensity,
+        radius: (pt.radius ?? 25) * pixelRatio,
+      });
+    }
+
+    renderer.updatePoints(heatmapPoints);
+
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+    }
+
+    animFrameRef.current = requestAnimationFrame(() => {
+      if (rendererRef.current && visibleRef.current) {
+        rendererRef.current.render(
+          width * pixelRatio,
+          height * pixelRatio,
+          currentZoom,
+        );
+      }
+    });
+  };
+
+  // Mount-only setup: create the canvas + GL context ONCE per map instance.
+  // Notice `points` is NOT in this dependency array — that was the leak.
+  useEffect(() => {
+    if (!map || typeof window === "undefined" || !L?.DomUtil?.create) return;
+
+    const canvas = L.DomUtil.create(
+      "canvas",
+      "leaflet-webgl-heatmap-layer",
+    ) as HTMLCanvasElement;
     canvas.style.position = "absolute";
     canvas.style.top = "0";
     canvas.style.left = "0";
@@ -57,98 +136,44 @@ export function WebGLHeatmapLayer({
     overlayPane.appendChild(canvas);
     canvasRef.current = canvas;
 
-    // Initialize WebGL Heatmap Renderer
     const renderer = new WebGLHeatmapRenderer(canvas, { opacity, blur });
     rendererRef.current = renderer;
 
-    const updateCanvasPositionAndRender = () => {
-      if (!canvas || !rendererRef.current || !map) return;
+    map.on("move", renderFrame);
+    map.on("zoom", renderFrame);
+    map.on("resize", renderFrame);
 
-      const size = map.getSize();
-      const pixelRatio = window.devicePixelRatio || 1;
-
-      // Match canvas dimensions to viewport
-      const width = size.x;
-      const height = size.y;
-
-      if (canvas.width !== width * pixelRatio || canvas.height !== height * pixelRatio) {
-        canvas.width = width * pixelRatio;
-        canvas.height = height * pixelRatio;
-        canvas.style.width = `${width}px`;
-        canvas.style.height = `${height}px`;
-      }
-
-      // Reposition canvas overlay to map top-left
-      const topLeft = map.containerPointToLayerPoint([0, 0]);
-      L.DomUtil.setPosition(canvas, topLeft);
-
-      // Convert geographical points to viewport pixel coordinates
-      const heatmapPoints: HeatmapPoint[] = [];
-      const currentZoom = map.getZoom();
-
-      for (let i = 0; i < points.length; i++) {
-        const pt = points[i];
-        const containerPt = map.latLngToContainerPoint([pt.lat, pt.lng]);
-        
-        // Skip points far outside viewport bounds for optimization
-        if (
-          containerPt.x < -100 ||
-          containerPt.x > width + 100 ||
-          containerPt.y < -100 ||
-          containerPt.y > height + 100
-        ) {
-          continue;
-        }
-
-        heatmapPoints.push({
-          x: containerPt.x * pixelRatio,
-          y: containerPt.y * pixelRatio,
-          intensity: pt.intensity,
-          radius: (pt.radius ?? 25) * pixelRatio,
-        });
-      }
-
-      // Upload VBO buffer data to GPU
-      rendererRef.current.updatePoints(heatmapPoints);
-
-      // Request 60 FPS hardware frame render
-      if (animFrameRef.current) {
-        cancelAnimationFrame(animFrameRef.current);
-      }
-
-      animFrameRef.current = requestAnimationFrame(() => {
-        if (rendererRef.current && visible) {
-          rendererRef.current.render(width * pixelRatio, height * pixelRatio, currentZoom);
-        }
-      });
-    };
-
-    // Attach Leaflet map event listeners
-    map.on("move", updateCanvasPositionAndRender);
-    map.on("zoom", updateCanvasPositionAndRender);
-    map.on("resize", updateCanvasPositionAndRender);
-
-    // Initial render
-    updateCanvasPositionAndRender();
+    renderFrame();
 
     return () => {
       if (animFrameRef.current) {
         cancelAnimationFrame(animFrameRef.current);
+        animFrameRef.current = null;
       }
-      map.off("move", updateCanvasPositionAndRender);
-      map.off("zoom", updateCanvasPositionAndRender);
-      map.off("resize", updateCanvasPositionAndRender);
+      map.off("move", renderFrame);
+      map.off("zoom", renderFrame);
+      map.off("resize", renderFrame);
 
-      if (rendererRef.current) {
-        rendererRef.current.destroy();
-        rendererRef.current = null;
-      }
-      if (canvas && canvas.parentNode) {
+      rendererRef.current?.destroy();
+      rendererRef.current = null;
+
+      if (canvas.parentNode) {
         canvas.parentNode.removeChild(canvas);
       }
       canvasRef.current = null;
     };
-  }, [map, points, opacity, blur, visible]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map]);
+
+  // Data/style updates: just re-upload + re-draw. Never touches the GL context.
+  useEffect(() => {
+    if (rendererRef.current) {
+      rendererRef.current.setOpacity(opacity);
+      rendererRef.current.setBlur(blur);
+    }
+    renderFrame();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points, opacity, blur, visible]);
 
   return null;
 }

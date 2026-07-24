@@ -27,52 +27,20 @@ export function reinitializeWebGLBuffers(
   return { positionBuffer };
 }
 
+import { WebGLContextRecoveryManager } from "./WebGLContextRecoveryManager";
+
 export function attachWebGLContextRecovery(
   canvas: HTMLCanvasElement,
   onRestoreCallback?: (
     gl: WebGLRenderingContext | WebGL2RenderingContext,
   ) => void,
 ): () => void {
-  let _isLost = false;
-
-  const handleContextLost = (e: Event) => {
-    e.preventDefault();
-    _isLost = true;
-    console.warn(
-      "[WebGL] Context lost detected on canvas. Preventing default discard.",
-    );
-  };
-
-  const handleContextRestored = (_e: Event) => {
-    _isLost = false;
-    console.log(
-      "[WebGL] Context successfully restored on canvas. Re-initializing buffers.",
-    );
-
-    let gl: WebGLRenderingContext | null = null;
-    try {
-      gl =
-        (canvas.getContext("webgl2") as any) ||
-        (canvas.getContext("webgl") as any) ||
-        (canvas.getContext(
-          "experimental-webgl",
-        ) as WebGLRenderingContext | null);
-    } catch {
-      // Ignored in headless environments like jsdom
-    }
-
-    if (gl) {
+  const manager = new WebGLContextRecoveryManager(canvas, {
+    onRestore: (gl) => {
       if (onRestoreCallback) {
-        onRestoreCallback(gl as WebGLRenderingContext);
+        onRestoreCallback(gl);
       }
-    }
-  };
-
-  canvas.addEventListener("webglcontextlost", handleContextLost, false);
-  canvas.addEventListener("webglcontextrestored", handleContextRestored, false);
-
-  return () => {
-    canvas.removeEventListener("webglcontextlost", handleContextLost);
-    canvas.removeEventListener("webglcontextrestored", handleContextRestored);
-  };
+    },
+  });
+  return () => manager.destroy();
 }

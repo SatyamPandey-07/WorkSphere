@@ -29,6 +29,7 @@ export interface RemoteCursor {
 export interface CanvasWhiteboardState {
   addShape: (shape: ShapeData) => void;
   updateShape: (id: string, updates: Partial<ShapeData>) => void;
+  deleteShape?: (id: string) => void;
   shapeSnapshots: ShapeData[];
   remoteCursors: RemoteCursor[];
   tool: ToolType;
@@ -79,7 +80,7 @@ function shapeMapToData(map: Y.Map<unknown>): ShapeData {
 
 export function useCanvasWhiteboard(
   canvasId: string | null,
-  options?: { userName?: string; userColor?: string },
+  options?: { userName?: string; userColor?: string; userId?: string },
 ): CanvasWhiteboardState {
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
@@ -88,6 +89,7 @@ export function useCanvasWhiteboard(
   const [isConnected, setIsConnected] = useState(false);
 
   const shapesRef = useRef<Y.Array<Y.Map<unknown>> | null>(null);
+  const docRef = useRef<Y.Doc | null>(null);
   const undoManagerRef = useRef<Y.UndoManager | null>(null);
   const providerRef = useRef<YProvider | null>(null);
 
@@ -99,6 +101,8 @@ export function useCanvasWhiteboard(
   const [tool, setTool] = useState<ToolType>("pen");
   const [color, setColor] = useState("#ffffff");
   const [strokeWidth, setStrokeWidth] = useState(3);
+
+  const localUserId = options?.userId ?? "anonymous";
 
   useEffect(() => {
     if (!canvasId) return;
@@ -113,7 +117,10 @@ export function useCanvasWhiteboard(
 
     const roomId = `canvas-${canvasId}`;
     const doc = new Y.Doc();
+    docRef.current = doc;
     let newProvider: YProvider | null = null;
+    let handleStatus: (({ status }: { status: string }) => void) | null = null;
+    let handleSync: ((synced: boolean) => void) | null = null;
     try {
       newProvider = new YProvider(PARTYKIT_HOST, roomId, doc, {
         params: token ? { token } : {},
@@ -129,7 +136,7 @@ export function useCanvasWhiteboard(
         },
       });
 
-      newProvider.on("status", ({ status }: { status: string }) => {
+      handleStatus = ({ status }: { status: string }) => {
         if (status === "disconnected") {
           failoverSync.handleDisconnect();
           setIsConnected(false);
@@ -141,13 +148,16 @@ export function useCanvasWhiteboard(
           };
           failoverSync.handleConnect(sendFn, roomId);
         }
-      });
+      };
 
-      newProvider.on("sync", (synced: boolean) => {
+      handleSync = (synced: boolean) => {
         if (synced && failoverSync.getStatus() !== "syncing_snapshot") {
           setIsConnected(true);
         }
-      });
+      };
+
+      newProvider.on("status", handleStatus);
+      newProvider.on("sync", handleSync);
     } catch (err) {
       console.warn("YProvider connection initialization deferred:", err);
     }
@@ -163,6 +173,7 @@ export function useCanvasWhiteboard(
 
     const um = new Y.UndoManager(shapes, {
       captureTimeout: 500,
+      trackedOrigins: new Set([localUserId]),
     });
     undoManagerRef.current = um;
 
@@ -187,7 +198,10 @@ export function useCanvasWhiteboard(
 
     const handleAwarenessChange = () => {
       if (!awareness) return;
-      const states = Array.from(awareness.getStates().entries());
+      const states = Array.from(awareness.getStates().entries()) as [
+        number,
+        any,
+      ][];
       const cursors: RemoteCursor[] = [];
       for (const [clientId, state] of states) {
         if (clientId === awareness.clientID) continue;
@@ -210,48 +224,65 @@ export function useCanvasWhiteboard(
       shapes.unobserve(updateSnapshots);
       awareness?.off("change", handleAwarenessChange);
       um.destroy();
-      newProvider?.disconnect();
+      if (newProvider) {
+        if (handleStatus) newProvider.off("status", handleStatus);
+        if (handleSync) newProvider.off("sync", handleSync);
+        newProvider.disconnect();
+      }
       doc.destroy();
       shapesRef.current = null;
+      docRef.current = null;
       undoManagerRef.current = null;
       providerRef.current = null;
     };
-  }, [canvasId, token, options?.userName, options?.userColor]);
+  }, [canvasId, token, options?.userName, options?.userColor, localUserId]);
 
-  const addShape = useCallback((data: ShapeData) => {
-    const shapes = shapesRef.current;
-    if (!shapes) return;
+  const addShape = useCallback(
+    (data: ShapeData) => {
+      const shapes = shapesRef.current;
+      const doc = docRef.current;
+      if (!shapes || !doc) return;
 
-    const map = new Y.Map<unknown>();
-    map.set("id", data.id);
-    map.set("type", data.type);
-    map.set("points", data.points.slice());
-    map.set("color", data.color);
-    map.set("width", data.width);
-    map.set("opacity", data.opacity);
-    map.set("userId", data.userId);
-    shapes.push([map]);
-  }, []);
+      doc.transact(() => {
+        const map = new Y.Map<unknown>();
+        map.set("id", data.id);
+        map.set("type", data.type);
+        map.set("points", data.points.slice());
+        map.set("color", data.color);
+        map.set("width", data.width);
+        map.set("opacity", data.opacity);
+        map.set("userId", data.userId);
+        shapes.push([map]);
+      }, localUserId);
+    },
+    [localUserId],
+  );
 
-  const updateShape = useCallback((id: string, updates: Partial<ShapeData>) => {
-    const shapes = shapesRef.current;
-    if (!shapes) return;
+  const updateShape = useCallback(
+    (id: string, updates: Partial<ShapeData>) => {
+      const shapes = shapesRef.current;
+      const doc = docRef.current;
+      if (!shapes || !doc) return;
 
-    for (let i = 0; i < shapes.length; i++) {
-      const map = shapes.get(i);
-      if (map.get("id") === id) {
-        if (updates.points !== undefined) {
-          map.set("points", updates.points.slice());
+      doc.transact(() => {
+        for (let i = 0; i < shapes.length; i++) {
+          const map = shapes.get(i);
+          if (map.get("id") === id) {
+            if (updates.points !== undefined) {
+              map.set("points", updates.points.slice());
+            }
+            if (updates.color !== undefined) map.set("color", updates.color);
+            if (updates.width !== undefined) map.set("width", updates.width);
+            if (updates.opacity !== undefined) {
+              map.set("opacity", updates.opacity);
+            }
+            break;
+          }
         }
-        if (updates.color !== undefined) map.set("color", updates.color);
-        if (updates.width !== undefined) map.set("width", updates.width);
-        if (updates.opacity !== undefined) {
-          map.set("opacity", updates.opacity);
-        }
-        break;
-      }
-    }
-  }, []);
+      }, localUserId);
+    },
+    [localUserId],
+  );
 
   const undo = useCallback(() => {
     undoManagerRef.current?.undo();
@@ -263,9 +294,13 @@ export function useCanvasWhiteboard(
 
   const clearCanvas = useCallback(() => {
     const shapes = shapesRef.current;
-    if (!shapes || shapes.length === 0) return;
-    shapes.delete(0, shapes.length);
-  }, []);
+    const doc = docRef.current;
+    if (!shapes || !doc || shapes.length === 0) return;
+
+    doc.transact(() => {
+      shapes.delete(0, shapes.length);
+    }, localUserId);
+  }, [localUserId]);
 
   const updateCursor = useCallback((x: number, y: number) => {
     const p = providerRef.current;

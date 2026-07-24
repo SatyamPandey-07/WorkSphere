@@ -41,12 +41,16 @@ export async function POST(request: NextRequest) {
   const { userId } = await auth();
 
   if (!userId) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Authentication required" },
+      { status: 401 },
+    );
   }
 
   const body = await request.json();
   const venueId = typeof body.venueId === "string" ? body.venueId : "";
-  const note = typeof body.note === "string" ? body.note.trim().slice(0, 160) : null;
+  const note =
+    typeof body.note === "string" ? body.note.trim().slice(0, 160) : null;
   const until = new Date(body.until);
 
   if (!venueId || Number.isNaN(until.getTime()) || until <= new Date()) {
@@ -54,15 +58,6 @@ export async function POST(request: NextRequest) {
       { error: "A valid venue and future end time are required" },
       { status: 400 },
     );
-  }
-
-  const venue = await prisma.venue.findUnique({
-    where: { id: venueId },
-    select: { id: true },
-  });
-
-  if (!venue) {
-    return NextResponse.json({ error: "Venue not found" }, { status: 404 });
   }
 
   const status = await prisma.workBuddyStatus.upsert({
@@ -83,15 +78,22 @@ export async function POST(request: NextRequest) {
     include: {
       venue: true,
       user: {
-        select: { firstName: true, lastName: true },
+        select: {
+          firstName: true,
+          lastName: true,
+          telegramWebhookUrl: true,
+        },
       },
     },
   });
 
-  const userName = `${status.user?.firstName || ""} ${status.user?.lastName || ""}`.trim() || "Someone";
+  const userName =
+    `${status.user?.firstName || ""} ${status.user?.lastName || ""}`.trim() ||
+    "Someone";
   await eventBus.emit("checkin:confirmed", {
     userId,
     userName,
+    telegramWebhookUrl: status.user?.telegramWebhookUrl ?? null,
     venue: {
       id: status.venue.id,
       name: status.venue.name,
@@ -109,7 +111,10 @@ export async function DELETE() {
   const { userId } = await auth();
 
   if (!userId) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    return NextResponse.json(
+      { error: "Authentication required" },
+      { status: 401 },
+    );
   }
 
   await prisma.workBuddyStatus.deleteMany({ where: { userId } });

@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, createContext, useContext } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  createContext,
+  useContext,
+} from "react";
 import { X, CheckCircle2, AlertCircle, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -10,10 +16,20 @@ interface Toast {
   id: string;
   message: string;
   type: ToastType;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
+  countdown?: number;
 }
 
 interface ToastContextValue {
-  toast: (message: string, type?: ToastType) => void;
+  toast: (
+    message: string,
+    type?: ToastType,
+    action?: { label: string; onClick: () => void },
+    countdown?: number,
+  ) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -31,14 +47,66 @@ export function useToast(): ToastContextValue {
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const addToast = useCallback((message: string, type: ToastType = "success") => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    setToasts((prev) => [...prev, { id, message, type }]);
-  }, []);
+  const addToast = useCallback(
+    (
+      message: string,
+      type: ToastType = "success",
+      action?: { label: string; onClick: () => void },
+      countdown?: number,
+    ) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      setToasts((prev) => {
+        if (countdown !== undefined && message.includes("Rate limit")) {
+          const existingIndex = prev.findIndex(
+            (t) =>
+              t.countdown !== undefined && t.message.includes("Rate limit"),
+          );
+          if (existingIndex !== -1) {
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              countdown: Math.max(
+                updated[existingIndex].countdown || 0,
+                countdown,
+              ),
+            };
+            return updated;
+          }
+        }
+        return [...prev, { id, message, type, action, countdown }];
+      });
+    },
+    [],
+  );
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  useEffect(() => {
+    const handleRateLimit = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        retryAfter: number;
+        endpoint: string;
+      }>;
+      const retryAfter = customEvent.detail?.retryAfter || 60;
+      addToast(
+        "Rate limit reached. Try again in {countdown} seconds",
+        "error",
+        undefined,
+        retryAfter,
+      );
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("rate-limit-triggered", handleRateLimit);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("rate-limit-triggered", handleRateLimit);
+      }
+    };
+  }, [addToast]);
 
   return (
     <ToastContext.Provider value={{ toast: addToast }}>
@@ -68,6 +136,9 @@ function ToastContainer({
   );
 }
 
+/** Auto-dismiss timeout in milliseconds. */
+const TOAST_DURATION_MS = 4000;
+
 function ToastItem({
   toast,
   onRemove,
@@ -75,15 +146,63 @@ function ToastItem({
   toast: Toast;
   onRemove: (id: string) => void;
 }) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [countdown, setCountdown] = useState<number | undefined>(
+    toast.countdown,
+  );
+  
+  // Track pointer over and focus within separately as suggested by CodeRabbit
+  const [isPointerOver, setIsPointerOver] = useState(false);
+  const [isFocusedWithin, setIsFocusedWithin] = useState(false);
+  const isInteracting = isPointerOver || isFocusedWithin;
+
   useEffect(() => {
+    if (toast.countdown === undefined) return;
+    setCountdown(toast.countdown);
+  }, [toast.countdown]);
+
+  useEffect(() => {
+    if (countdown === undefined) return;
+    if (countdown <= 0) {
+      onRemove(toast.id);
+      return;
+    }
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev !== undefined ? prev - 1 : undefined));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [countdown, toast.id, onRemove]);
+
+  useEffect(() => {
+    if (toast.countdown !== undefined) return;
+    if (isInteracting) return;
+
     const timer = setTimeout(() => {
       onRemove(toast.id);
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [toast.id, onRemove]);
+    }, TOAST_DURATION_MS);
 
-  const Icon = toast.type === "success" ? CheckCircle2 : toast.type === "error" ? AlertCircle : AlertTriangle;
-  const iconColor = toast.type === "success" ? "text-green-500" : toast.type === "error" ? "text-red-500" : "text-amber-500";
+    return () => clearTimeout(timer);
+  }, [toast.id, onRemove, toast.countdown, isInteracting]);
+
+  const Icon =
+    toast.type === "success"
+      ? CheckCircle2
+      : toast.type === "error"
+        ? AlertCircle
+        : AlertTriangle;
+  const iconColor =
+    toast.type === "success"
+      ? "text-green-500"
+      : toast.type === "error"
+        ? "text-red-500"
+        : "text-amber-500";
+
+  const displayMessage =
+    countdown !== undefined
+      ? toast.message
+          .replace("{countdown}", String(countdown))
+          .replace("1 seconds", "1 second")
+      : toast.message;
 
   return (
     <div
@@ -93,11 +212,32 @@ function ToastItem({
         "bg-white/90 dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800",
         "animate-in slide-in-from-right-full fade-in duration-300",
       )}
+      onMouseEnter={() => setIsPointerOver(true)}
+      onMouseLeave={() => setIsPointerOver(false)}
+      onFocus={() => setIsFocusedWithin(true)}
+      onBlur={(e) => {
+        // If the new focus target is still inside this toast, don't clear the focus state
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          setIsFocusedWithin(false);
+        }
+      }}
     >
       <Icon className={cn("w-4 h-4 shrink-0", iconColor)} aria-hidden="true" />
-      <span className="flex-1 text-sm text-zinc-700 dark:text-zinc-300">
-        {toast.message}
-      </span>
+      <div className="flex-1 flex flex-col items-start text-sm text-zinc-700 dark:text-zinc-300">
+        <span className="font-medium">{displayMessage}</span>
+        {toast.action && (
+          <button
+            type="button"
+            onClick={() => {
+              toast.action!.onClick();
+              onRemove(toast.id);
+            }}
+            className="mt-1.5 px-3 py-1 bg-[var(--primary-accent)] hover:opacity-90 active:scale-95 text-white rounded-md text-[11px] font-bold uppercase tracking-wider transition-all"
+          >
+            {toast.action.label}
+          </button>
+        )}
+      </div>
       <button
         type="button"
         onClick={() => onRemove(toast.id)}

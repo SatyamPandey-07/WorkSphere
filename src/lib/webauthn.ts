@@ -65,8 +65,40 @@ export function normalizeRpId(
   return normalized;
 }
 
-/** Origin host equals RP ID, or is a subdomain of it. */
-export function isOriginAllowedForRpId(origin: string, rpId: string): boolean {
+/**
+ * Detects if a User-Agent string corresponds to a mobile webview
+ * (e.g. iOS Safari WKWebView inside custom app wrappers, Android webview).
+ */
+export function isMobileWebview(userAgent?: string | null): boolean {
+  if (!userAgent) return false;
+  const ua = userAgent.toLowerCase();
+
+  const isIOSDevice = /iphone|ipad|ipod/.test(ua);
+  const isAppleWebKit = ua.includes("applewebkit");
+
+  const isIOSWebview =
+    isIOSDevice &&
+    isAppleWebKit &&
+    (!ua.includes("safari/") ||
+      !ua.includes("version/") ||
+      ua.includes("wkwebview") ||
+      ua.includes("wv"));
+
+  const isAndroidWebview = ua.includes("wv") || ua.includes("androidwebview");
+
+  return isIOSWebview || isAndroidWebview;
+}
+
+/** Origin host equals RP ID, or is a subdomain of it. Relaxed for recognized mobile webviews. */
+export function isOriginAllowedForRpId(
+  origin: string,
+  rpId: string,
+  userAgent?: string | null,
+): boolean {
+  if (isMobileWebview(userAgent)) {
+    return true;
+  }
+
   const host = tryHostname(origin);
   const rp = rpId.trim().toLowerCase();
   if (!host || !rp) return false;
@@ -83,6 +115,8 @@ export type WebAuthnVerifyInput = {
   challenge: string;
   /** Optional override; otherwise WEBAUTHN_RP_ID / derived from origin. */
   rpId?: string;
+  /** User-Agent header from incoming request. */
+  userAgent?: string | null;
 };
 
 export type WebAuthnVerifyResult =
@@ -106,7 +140,7 @@ export function verifyWebAuthnChallenge(
     return { ok: false, error: "Invalid WebAuthn challenge signature" };
   }
 
-  if (!isOriginAllowedForRpId(input.origin, rpId)) {
+  if (!isOriginAllowedForRpId(input.origin, rpId, input.userAgent)) {
     return { ok: false, error: "Invalid WebAuthn challenge signature" };
   }
 

@@ -27,6 +27,102 @@ export interface BufferedDelta<T = unknown> {
 export interface FailoverSyncOptions {
   snapshotTimeoutMs?: number;
   onStateChange?: (state: SyncState) => void;
+  probeIntervalMs?: number;
+  nodes?: string[];
+  onEndpointSwitch?: (newEndpoint: string) => void;
+}
+
+export const secondaryNodes = [
+  "https://backup-a.example.com",
+  "https://backup-b.example.com",
+  "https://backup-c.example.com",
+];
+
+/**
+ * Pings a specific node endpoint to check its health and availability.
+ * Uses a 3-second abort timeout to prevent hanging on unresponsive nodes.
+ *
+ * @param url - The fully qualified URL of the endpoint to ping.
+ * @returns A promise that resolves to `true` if the node responds with a 2xx status, otherwise `false`.
+ *
+ * @example
+ * ```ts
+ * const isNodeAlive = await pingEndpoint("[https://backup-a.example.com](https://backup-a.example.com)");
+ * if (!isNodeAlive) {
+ *   console.warn("Node is down!");
+ * }
+ * ```
+ */
+export async function pingEndpoint(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${url}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(3000),
+    });
+
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Iterates through a provided list of failover nodes to find the first healthy one.
+ * Retries pinging each node up to 3 times before moving to the next.
+ *
+ * @param nodes - Array of fallback node URLs. Defaults to `secondaryNodes`.
+ * @returns A promise resolving to the URL string of the first healthy node, or `null` if all fail.
+ *
+ * @example
+ * ```ts
+ * const activeNode = await getHealthyNode(["[https://node1.com](https://node1.com)", "[https://node2.com](https://node2.com)"]);
+ * if (activeNode) {
+ *   connectTo(activeNode);
+ * }
+ * ```
+ */
+export async function getHealthyNode(
+  nodes: string[] = secondaryNodes,
+): Promise<string | null> {
+  for (const node of nodes) {
+    for (let i = 0; i < 3; i++) {
+      if (await pingEndpoint(node)) {
+        return node;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Attempts to switch the current synchronization endpoint to a new healthy failover node.
+ *
+ * @param _currentEndpoint - The current failing endpoint (currently unused, reserved for future logic).
+ * @returns A promise resolving to the new healthy endpoint URL.
+ * @throws {Error} If no healthy failover nodes are available across the network.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   const newUrl = await switchSyncEndpoint(currentUrl);
+ *   console.log(`Successfully switched to ${newUrl}`);
+ * } catch (error) {
+ *   console.error("Critical: Network partition, all nodes down.");
+ * }
+ * ```
+ */
+export async function switchSyncEndpoint(
+  _currentEndpoint?: string,
+): Promise<string> {
+  const healthyNode = await getHealthyNode();
+
+  if (healthyNode) {
+    console.info(`Switching sync endpoint -> ${healthyNode}`);
+    return healthyNode;
+  }
+
+  throw new Error("No healthy failover nodes available");
 }
 
 export class FailoverSyncManager<T = unknown> {
@@ -40,15 +136,42 @@ export class FailoverSyncManager<T = unknown> {
   private snapshotTimeoutMs: number;
   private onStateChange?: (state: SyncState) => void;
 
+  private probeIntervalMs: number;
+  private healthProbeTimer: ReturnType<typeof setInterval> | null = null;
+  public currentEndpoint: string | null = null;
+  private nodes: string[];
+  private onEndpointSwitch?: (newEndpoint: string) => void;
+
   constructor(options: FailoverSyncOptions = {}) {
     this.snapshotTimeoutMs = options.snapshotTimeoutMs ?? 3000;
     this.onStateChange = options.onStateChange;
+    this.probeIntervalMs = options.probeIntervalMs ?? 30000;
+    this.nodes = options.nodes ?? secondaryNodes;
+    this.onEndpointSwitch = options.onEndpointSwitch;
   }
 
+  /**
+   * Retrieves the current synchronization phase of the failover manager.
+   *
+   * @returns The current `SyncState` (e.g., 'idle', 'syncing_snapshot', 'synced').
+   *
+   * @example
+   * ```ts
+   * const state = syncManager.getStatus();
+   * if (state === 'synced') {
+   *   renderUI();
+   * }
+   * ```
+   */
   public getStatus(): SyncState {
     return this.syncState;
   }
 
+  /**
+   * Checks if the manager is currently actively awaiting or processing a snapshot.
+   *
+   * @returns `true` if state is 'syncing_snapshot', otherwise `false`.
+   */
   public isSyncing(): boolean {
     return this.syncState === "syncing_snapshot";
   }
@@ -62,8 +185,43 @@ export class FailoverSyncManager<T = unknown> {
     }
   }
 
+  public startHealthProbing(initialEndpoint: string) {
+    this.currentEndpoint = initialEndpoint;
+    this.stopHealthProbing();
+
+    this.healthProbeTimer = setInterval(async () => {
+      if (this.currentEndpoint && !(await pingEndpoint(this.currentEndpoint))) {
+        console.warn(
+          `[FailoverSync] Current endpoint ${this.currentEndpoint} is unhealthy. Probing failover nodes...`,
+        );
+        try {
+          const healthyNode = await getHealthyNode(this.nodes);
+          if (healthyNode) {
+            console.info(`Switching sync endpoint -> ${healthyNode}`);
+            this.currentEndpoint = healthyNode;
+            if (this.onEndpointSwitch) {
+              this.onEndpointSwitch(healthyNode);
+            }
+          } else {
+            console.error("[FailoverSync] No healthy failover nodes available");
+          }
+        } catch (error) {
+          console.error(`[FailoverSync] Failover failed:`, error);
+        }
+      }
+    }, this.probeIntervalMs);
+  }
+
+  public stopHealthProbing() {
+    if (this.healthProbeTimer) {
+      clearInterval(this.healthProbeTimer);
+      this.healthProbeTimer = null;
+    }
+  }
+
   /**
-   * Called when WebSocket connection disconnects or fails over
+   * Called when WebSocket connection disconnects or fails over.
+   * Prepares the manager for a full snapshot request upon the next connection.
    */
   public handleDisconnect(): void {
     if (this.hasConnectedOnce) {
@@ -205,11 +363,13 @@ export class FailoverSyncManager<T = unknown> {
 
   public reset(): void {
     this.clearSnapshotTimeout();
+    this.stopHealthProbing();
     this.syncState = "idle";
     this.isReconnecting = false;
     this.hasConnectedOnce = false;
     this.currentSnapshotId = null;
     this.lastAppliedSnapshotId = null;
     this.deltaBuffer = [];
+    this.currentEndpoint = null;
   }
 }

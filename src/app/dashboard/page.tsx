@@ -26,6 +26,7 @@ import { CheckInHistory } from "./CheckInHistory";
 import { TelegramStatusBanner } from "@/components/dashboard/TelegramStatusBanner";
 import { WorkStyleProfile } from "./WorkStyleProfile";
 import { StreakCard } from "@/components/dashboard/StreakCard";
+import { StudentVerificationBadge } from "@/components/student/StudentVerificationBadge";
 
 interface AgentMetric {
   agent: string;
@@ -118,6 +119,7 @@ export default function DashboardPage() {
                   ? `Welcome, ${user?.firstName || "User"}`
                   : "Development Analytics"}
               </p>
+              {isSignedIn && <StudentVerificationBadge />}
             </div>
           </div>
           <div className="flex items-center gap-2">

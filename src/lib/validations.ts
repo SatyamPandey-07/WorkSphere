@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { buildVenueSearchSchema } from "@/lib/filters";
 
 // =========================================================================
 // CORE SCHEMAS
@@ -23,37 +24,7 @@ export const chatRequestSchema = z.object({
 });
 
 // Venue schemas
-export const venueSearchSchema = z.object({
-  lat: z.coerce.number().min(-90).max(90),
-  lng: z.coerce.number().min(-180).max(180),
-  radius: z.coerce.number().min(100).max(50000).default(5000),
-  category: z.enum(["cafe", "coworking", "library", "all"]).optional(),
-  wifi: z.coerce.boolean().optional(),
-  outlets: z.coerce.boolean().optional(),
-  quiet: z.coerce.boolean().optional(),
-  ergonomic: z.coerce.boolean().optional(),
-  outletDensity: z
-    .enum(["every_table", "some_tables", "wall_seats", "none"])
-    .optional(),
-  wifiSpeedBand: z.enum(["basic", "fast", "ultra", "all"]).optional(),
-  hasPhoneBooths: z.coerce.boolean().optional(),
-  hasNoMusic: z.coerce.boolean().optional(),
-  hasQuietZone: z.coerce.boolean().optional(),
-  hasAncHeadsetRental: z.coerce.boolean().optional(),
-  singleOriginBeans: z.coerce.boolean().optional(),
-  specialtyEspresso: z.coerce.boolean().optional(),
-  oatAlmondMilk: z.coerce.boolean().optional(),
-  pourOverAvailable: z.coerce.boolean().optional(),
-  lighting: z
-    .enum(["natural_daylight", "warm_ambient", "fluorescent", "bright_white"])
-    .optional(),
-  petsAllowedIndoors: z.coerce.boolean().optional(),
-  patioOnly: z.coerce.boolean().optional(),
-  waterBowlsProvided: z.coerce.boolean().optional(),
-  dogFriendly: z.coerce.boolean().optional(),
-  catsAllowed: z.coerce.boolean().optional(),
-  musicStyle: z.enum(["lofi", "classical_jazz", "no_music", "all"]).optional(),
-});
+export const venueSearchSchema = buildVenueSearchSchema();
 
 export const venueCreateSchema = z.object({
   name: z.string().min(1).max(200),
@@ -163,6 +134,26 @@ export const updateFavoriteTagSchema = z.object({
     .optional(),
 });
 
+export const syncFavoriteTagsSchema = z.object({
+  updates: z
+    .array(
+      z
+        .object({
+          id: z.string().min(1),
+          name: z.string().min(1).max(50).trim().optional(),
+          color: z
+            .string()
+            .regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color")
+            .optional(),
+        })
+        .refine((u) => u.name !== undefined || u.color !== undefined, {
+          message: "Each update must include name and/or color",
+        }),
+    )
+    .min(1)
+    .max(200),
+});
+
 // Location schema
 export const locationSchema = z.object({
   latitude: z.number().min(-90).max(90),
@@ -213,9 +204,33 @@ export type Favorite = z.infer<typeof favoriteSchema>;
 export type FavoriteNotes = z.infer<typeof favoriteNotesSchema>;
 export type CreateFavoriteTag = z.infer<typeof createFavoriteTagSchema>;
 export type UpdateFavoriteTag = z.infer<typeof updateFavoriteTagSchema>;
+export type SyncFavoriteTags = z.infer<typeof syncFavoriteTagsSchema>;
 export type Location = z.infer<typeof locationSchema>;
 export type CreateFolder = z.infer<typeof createFolderSchema>;
 export type UpdateFolder = z.infer<typeof updateFolderSchema>;
+
+// XR Anchor schemas
+export const xrAnchorCreateSchema = z.object({
+  venueId: z.string().min(1),
+  seatId: z.string().optional().nullable(),
+  bookingId: z.string().optional().nullable(),
+  anchorPersistId: z.string().uuid(),
+  matrix: z.array(z.number()).length(16),
+  label: z.string().max(200).optional(),
+});
+
+export const xrAnchorUpdateSchema = z.object({
+  matrix: z.array(z.number()).length(16).optional(),
+  label: z.string().max(200).optional().nullable(),
+});
+
+export const xrAnchorQuerySchema = z.object({
+  venueId: z.string().min(1),
+});
+
+export type XRAnchorCreate = z.infer<typeof xrAnchorCreateSchema>;
+export type XRAnchorUpdate = z.infer<typeof xrAnchorUpdateSchema>;
+export type XRAnchorQuery = z.infer<typeof xrAnchorQuerySchema>;
 
 // Validation helper
 export function validateRequest<T>(

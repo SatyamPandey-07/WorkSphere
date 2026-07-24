@@ -1,3 +1,5 @@
+import { isMobileWebview } from "@/lib/webauthn";
+
 export const RP_NAME = "WorkSphere";
 
 /**
@@ -19,4 +21,35 @@ export function getOrigin(req: Request): string {
       ? "http"
       : "https");
   return `${protocol}://${host}`;
+}
+
+/**
+ * Resolves the expected origin(s) for WebAuthn response verification.
+ * For recognized mobile webview user agent strings, origin checks are relaxed
+ * by accepting clientDataOrigin alongside the request origin.
+ */
+export function getExpectedOrigin(
+  req: Request,
+  clientDataOrigin?: string,
+): string | string[] {
+  const defaultOrigin = getOrigin(req);
+  const userAgent = req.headers.get("user-agent");
+
+  const expectedOrigins = new Set<string>([defaultOrigin]);
+
+  if (isMobileWebview(userAgent) && clientDataOrigin) {
+    expectedOrigins.add(clientDataOrigin);
+  }
+
+  const allowedEmbedOrigins = (process.env.ALLOWED_EMBED_ORIGINS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  if (clientDataOrigin && allowedEmbedOrigins.includes(clientDataOrigin)) {
+    expectedOrigins.add(clientDataOrigin);
+  }
+
+  const origins = Array.from(expectedOrigins);
+  return origins.length === 1 ? origins[0] : origins;
 }

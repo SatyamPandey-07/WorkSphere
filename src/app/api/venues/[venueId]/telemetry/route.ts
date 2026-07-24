@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
+import { enqueueTelemetry } from "@/lib/telemetryQueue";
 
 export async function POST(
   req: NextRequest,
@@ -25,27 +26,25 @@ export async function POST(
       );
     }
 
-    // Ensure the venue exists
     const venue = await prisma.venue.findUnique({
       where: { id: venueId },
+      select: { id: true },
     });
 
     if (!venue) {
       return NextResponse.json({ error: "Venue not found" }, { status: 404 });
     }
 
-    const telemetry = await prisma.wifiTelemetry.create({
-      data: {
-        venueId,
-        download: parseFloat(download),
-        upload: parseFloat(upload),
-        latency: parseFloat(latency),
-        crowdLevel,
-        timestamp: new Date(),
-      },
+    await enqueueTelemetry({
+      venueId,
+      download: parseFloat(download),
+      upload: parseFloat(upload),
+      latency: parseFloat(latency),
+      crowdLevel,
+      timestamp: new Date().toISOString(),
     });
 
-    return NextResponse.json({ telemetry }, { status: 201 });
+    return NextResponse.json({ queued: true }, { status: 202 });
   } catch (error) {
     console.error("POST /api/venues/[venueId]/telemetry error:", error);
     return NextResponse.json(

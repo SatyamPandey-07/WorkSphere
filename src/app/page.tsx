@@ -73,7 +73,7 @@ export default function Home() {
         >
           {/* 2. ADD YOUR TEST COMPONENT TO THE SCREEN HERE */}
           <div className="flex justify-center mb-10 relative z-50">
-             <SpatialAudioTest />
+            <SpatialAudioTest />
           </div>
 
           {/* Live badge */}
@@ -457,6 +457,21 @@ export default function Home() {
   );
 }
 
+// Gradient color map for each accent — used for the animated border
+const ACCENT_GRADIENTS: Record<string, string> = {
+  blue: "135deg, #3b82f6, #8b5cf6, #06b6d4",
+  green: "135deg, #22c55e, #10b981, #3b82f6",
+  yellow: "135deg, #eab308, #f97316, #ef4444",
+  purple: "135deg, #a855f7, #6366f1, #ec4899",
+  pink: "135deg, #ec4899, #f43f5e, #a855f7",
+  cyan: "135deg, #06b6d4, #3b82f6, #8b5cf6",
+  red: "135deg, #ef4444, #f97316, #eab308",
+  indigo: "135deg, #6366f1, #8b5cf6, #06b6d4",
+  orange: "135deg, #f97316, #eab308, #ef4444",
+  teal: "135deg, #14b8a6, #22c55e, #06b6d4",
+  violet: "135deg, #7c3aed, #a855f7, #ec4899",
+};
+
 function FeatureCard({
   icon,
   title,
@@ -472,73 +487,109 @@ function FeatureCard({
 }) {
   const accents: Record<string, { glow: string; text: string; bg: string }> = {
     blue: {
-      glow: "hover:shadow-blue-500/20",
+      glow: "hover:shadow-blue-500/25",
       text: "accent-text",
       bg: "accent-bg-10",
     },
     green: {
-      glow: "hover:shadow-green-500/20",
+      glow: "hover:shadow-green-500/25",
       text: "text-green-400",
       bg: "bg-green-500/10",
     },
     yellow: {
-      glow: "hover:shadow-yellow-500/20",
+      glow: "hover:shadow-yellow-500/25",
       text: "text-yellow-400",
       bg: "bg-yellow-500/10",
     },
     purple: {
-      glow: "hover:shadow-purple-500/20",
+      glow: "hover:shadow-purple-500/25",
       text: "text-purple-400",
       bg: "bg-purple-500/10",
     },
     pink: {
-      glow: "hover:shadow-pink-500/20",
+      glow: "hover:shadow-pink-500/25",
       text: "text-pink-400",
       bg: "bg-pink-500/10",
     },
     cyan: {
-      glow: "hover:shadow-cyan-500/20",
+      glow: "hover:shadow-cyan-500/25",
       text: "text-cyan-400",
       bg: "bg-cyan-500/10",
     },
     red: {
-      glow: "hover:shadow-red-500/20",
+      glow: "hover:shadow-red-500/25",
       text: "text-red-400",
       bg: "bg-red-500/10",
     },
     indigo: {
-      glow: "hover:shadow-indigo-500/20",
+      glow: "hover:shadow-indigo-500/25",
       text: "text-indigo-400",
       bg: "bg-indigo-500/10",
     },
     orange: {
-      glow: "hover:shadow-orange-500/20",
+      glow: "hover:shadow-orange-500/25",
       text: "text-orange-400",
       bg: "bg-orange-500/10",
     },
     teal: {
-      glow: "hover:shadow-teal-500/20",
+      glow: "hover:shadow-teal-500/25",
       text: "text-teal-400",
       bg: "bg-teal-500/10",
     },
     violet: {
-      glow: "hover:shadow-violet-500/20",
+      glow: "hover:shadow-violet-500/25",
       text: "text-violet-400",
       bg: "bg-violet-500/10",
     },
   };
-  const a = accents[accent];
+  const a = accents[accent] ?? accents.blue;
+  const gradient = ACCENT_GRADIENTS[accent] ?? ACCENT_GRADIENTS.blue;
+
   return (
     <div
-      className={`relative group p-6 rounded-2xl border border-zinc-200 dark:border-white/8 bg-white/80 dark:bg-white/4 hover:bg-white dark:hover:bg-white/6 hover:border-zinc-300 dark:hover:border-white/15 hover:shadow-xl ${a.glow} hover:-translate-y-1 transition-all duration-300 backdrop-blur-sm shadow-sm dark:shadow-none`}
+      className={`
+        relative group p-6 rounded-2xl
+        bg-white/80 dark:bg-white/4
+        hover:bg-white dark:hover:bg-white/6
+        hover:shadow-xl ${a.glow}
+        hover:-translate-y-1
+        transition-all duration-300
+        backdrop-blur-sm shadow-sm dark:shadow-none
+        /* gradient border layer */
+        before:absolute before:inset-0 before:rounded-2xl before:p-px
+        before:opacity-0 hover:before:opacity-100
+        before:transition-opacity before:duration-300
+        before:-z-10
+      `}
+      style={
+        {
+          /* Simulate an animated gradient border using a CSS outline trick:
+           We use a box-shadow inset + pseudo approach via the wrapper below */
+          "--grad": `linear-gradient(${gradient})`,
+        } as React.CSSProperties
+      }
     >
+      {/* Gradient border ring — rendered via an absolute overlay */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500"
+        style={{
+          padding: "1.5px",
+          background: `linear-gradient(${gradient})`,
+          WebkitMask:
+            "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)",
+          WebkitMaskComposite: "xor",
+          maskComposite: "exclude",
+        }}
+      />
+
       {isNew && (
-        <span className="absolute top-4 right-4 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gradient-to-r from-blue-500 to-purple-500 text-white">
+        <span className="absolute top-4 right-4 px-2 py-0.5 rounded-full text-[10px] font-bold bg-gradient-to-r from-blue-500 to-purple-500 text-white z-10">
           NEW
         </span>
       )}
       <div
-        className={`inline-flex p-3 rounded-xl mb-5 ${a.bg} ${a.text} group-hover:scale-110 transition-transform`}
+        className={`inline-flex p-3 rounded-xl mb-5 ${a.bg} ${a.text} group-hover:scale-110 transition-transform duration-300`}
       >
         {icon}
       </div>

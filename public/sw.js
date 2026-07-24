@@ -1,4 +1,3 @@
-// Service Worker for WorkSphere PWA
 async function withIdbLock(callback) {
   if ("locks" in self.navigator) {
     try {
@@ -194,7 +193,7 @@ self.addEventListener("fetch", (event) => {
         }
         return handleFetch(event.request, event);
       });
-    })
+    }),
   );
 });
 
@@ -213,7 +212,7 @@ async function handleFetch(request, event) {
         cache.put(request, response.clone());
       }
       return response;
-    } catch (error) {
+    } catch {
       const cached = await caches.match(request);
       return cached || new Response("Offline", { status: 503 });
     }
@@ -241,14 +240,18 @@ async function handleFetch(request, event) {
       const networkResponse = await fetch(request);
       if (networkResponse.status === 200 || networkResponse.status === 0) {
         const responseToCache = networkResponse.clone();
-        
+
         let size = OPAQUE_RESPONSE_SIZE_ESTIMATE;
         if (networkResponse.headers.has("content-length")) {
-          const length = parseInt(networkResponse.headers.get("content-length") || "0", 10);
+          const length = parseInt(
+            networkResponse.headers.get("content-length") || "0",
+            10,
+          );
           if (!isNaN(length) && length > 0) size = length;
         }
 
-        const cachePromise = cache.put(request, responseToCache)
+        const cachePromise = cache
+          .put(request, responseToCache)
           .then(async () => {
             await updateLRURecord(request.url, size);
             await enforceImageCacheQuota(cache);
@@ -259,7 +262,9 @@ async function handleFetch(request, event) {
               try {
                 await cache.put(request, responseToCache);
                 await updateLRURecord(request.url, size);
-              } catch (retryErr) {}
+              } catch {
+                // Retry attempt after quota enforcement - silently ignore
+              }
             }
           });
         event.waitUntil(cachePromise);
@@ -317,6 +322,23 @@ self.addEventListener("periodicsync", (event) => {
   }
 });
 
+/**
+ * Determines whether a caught error from fetch() is a network-level failure.
+ *
+ * fetch() throws a TypeError when the network is unreachable:
+ *   - DNS resolution failures
+ *   - TCP connection timeouts / resets
+ *   - TLS handshake failures
+ *   - Premature connection close while reading body
+ *
+ * Server errors (4xx, 5xx) return a Response object and do NOT throw TypeError.
+ * This distinction is critical: network errors should NOT exhaust retry quotas
+ * or cause permanent data loss — the payload must stay in the queue.
+ */
+function isNetworkError(error) {
+  return error instanceof TypeError;
+}
+
 // Helper to convert Uint8Array to base64 for fetch
 function arrayBufferToBase64(buffer) {
   let binary = "";
@@ -356,6 +378,16 @@ async function syncCrdt() {
       }
     });
   } catch (error) {
+    // If the entire batch failed due to a network outage, do NOT discard the
+    // pending CRDT actions — they remain in the queue and will be retried on
+    // the next Background Sync event. A network error (TypeError) means the
+    // fetch never reached the server, so there is no risk of duplicate writes.
+    if (isNetworkError(error)) {
+      console.warn(
+        "[SW] syncCrdt: Network error — preserving pending actions for next sync.",
+      );
+      return;
+    }
     console.error("Sync CRDT failed:", error);
   } finally {
     isSyncingCrdt = false;
@@ -401,11 +433,27 @@ async function syncFavorites() {
             await removePendingAction(db, action.id);
           }
         } catch (error) {
+          // Network errors (TypeError) mean the fetch never reached the server.
+          // Preserve the action in the queue — it will be retried on the next
+          // Background Sync event without incrementing any retry counter.
+          // Do NOT remove the action, as the server never received the request.
+          if (isNetworkError(error)) {
+            console.warn(
+              `[SW] syncFavorites: Network error for action ${action.id} — preserving in queue.`,
+            );
+            continue;
+          }
           console.error("Failed to sync favorite:", error);
         }
       }
     });
   } catch (error) {
+    if (isNetworkError(error)) {
+      console.warn(
+        "[SW] syncFavorites: Network error — preserving pending actions for next sync.",
+      );
+      return;
+    }
     console.error("Sync favorites failed:", error);
   } finally {
     isSyncingFavorites = false;
@@ -434,11 +482,23 @@ async function syncRatings() {
             await removePendingAction(db, action.id);
           }
         } catch (error) {
+          if (isNetworkError(error)) {
+            console.warn(
+              `[SW] syncRatings: Network error for action ${action.id} — preserving in queue.`,
+            );
+            continue;
+          }
           console.error("Failed to sync rating:", error);
         }
       }
     });
   } catch (error) {
+    if (isNetworkError(error)) {
+      console.warn(
+        "[SW] syncRatings: Network error — preserving pending actions for next sync.",
+      );
+      return;
+    }
     console.error("Sync ratings failed:", error);
   } finally {
     isSyncingRatings = false;
@@ -500,11 +560,26 @@ async function syncConversations() {
             await removePendingAction(db, action.id);
           }
         } catch (error) {
+          // Network errors (TypeError) mean the fetch never reached the server.
+          // Preserve the action in the queue; it will be retried on the next
+          // Background Sync event without data loss or duplication.
+          if (isNetworkError(error)) {
+            console.warn(
+              `[SW] syncConversations: Network error for action ${action.id} — preserving in queue.`,
+            );
+            continue;
+          }
           console.error("Failed to sync conversation edit:", error);
         }
       }
     });
   } catch (error) {
+    if (isNetworkError(error)) {
+      console.warn(
+        "[SW] syncConversations: Network error — preserving pending actions for next sync.",
+      );
+      return;
+    }
     console.error("Sync conversations failed:", error);
   }
 }
@@ -585,6 +660,16 @@ async function syncReceiptExports() {
             );
           }
         } catch (err) {
+          // First, check for network-level failure (TypeError from fetch()).
+          // If the network dropped mid-flush, do NOT increment retryCount —
+          // the server never received the download request, so no state was
+          // mutated. We keep the job in its original state for the next sync.
+          if (isNetworkError(err)) {
+            console.warn(
+              `[SW] syncReceiptExports: Network error for job ${job.bookingId} — preserving without incrementing retry count.`,
+            );
+            continue;
+          }
           console.error(
             `[SW] Failed to sync receipt for ${job.bookingId}:`,
             err,
@@ -623,6 +708,12 @@ async function syncReceiptExports() {
       }
     });
   } catch (error) {
+    if (isNetworkError(error)) {
+      console.warn(
+        "[SW] syncReceiptExports: Network error — preserving receipt jobs for next sync.",
+      );
+      return;
+    }
     console.error("[SW] Sync receipt exports failed:", error);
   } finally {
     isSyncingReceipts = false;
@@ -866,36 +957,47 @@ self.addEventListener("message", (event) => {
 async function prefetchVenueData(venueId, position) {
   try {
     const cache = await caches.open(PREFETCH_CACHE_NAME);
-    
+
     // 1. Prefetch venue page (RSC payload heuristics for Next.js)
     const venueApiUrl = `/api/venues/enrich?venueId=${venueId}`;
-    
+
     const fetches = [
-      fetch(venueApiUrl).then(res => res.ok ? cache.put(venueApiUrl, res) : null).catch(() => null)
+      fetch(venueApiUrl)
+        .then((res) => (res.ok ? cache.put(venueApiUrl, res) : null))
+        .catch(() => null),
     ];
 
     // 2. Prefetch map tiles (Zoom 15)
     if (position && position.length === 2) {
       const [lat, lng] = position;
       const zoom = 15;
-      const x = Math.floor((lng + 180) / 360 * Math.pow(2, zoom));
-      const y = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
-      
+      const x = Math.floor(((lng + 180) / 360) * Math.pow(2, zoom));
+      const y = Math.floor(
+        ((1 -
+          Math.log(
+            Math.tan((lat * Math.PI) / 180) +
+              1 / Math.cos((lat * Math.PI) / 180),
+          ) /
+            Math.PI) /
+          2) *
+          Math.pow(2, zoom),
+      );
+
       const mapCache = await caches.open(MAP_TILE_CACHE_NAME);
-      
+
       // Fetch a 3x3 grid around the center tile
       for (let dx = -1; dx <= 1; dx++) {
         for (let dy = -1; dy <= 1; dy++) {
           const tileUrl = `https://tile.openstreetmap.org/${zoom}/${x + dx}/${y + dy}.png`;
           fetches.push(
-            fetch(tileUrl, { mode: 'cors' })
-              .then(res => res.ok ? mapCache.put(tileUrl, res) : null)
-              .catch(() => null)
+            fetch(tileUrl, { mode: "cors" })
+              .then((res) => (res.ok ? mapCache.put(tileUrl, res) : null))
+              .catch(() => null),
           );
         }
       }
     }
-    
+
     await Promise.allSettled(fetches);
   } catch (err) {
     console.error("[SW] Failed to prefetch venue data:", err);

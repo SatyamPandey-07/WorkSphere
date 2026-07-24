@@ -97,17 +97,24 @@ extern "C" {
 
 - **Description**: Runtime feature flag to enable (`1`) or disable (`0`) 128-bit SIMD vectorization. Provides scalar fallback protection for non-SIMD devices.
 
-### 3.4 `process_hrtf_block(...)`
+### 3.4 C++ Struct Layout for Binaural Filters
 
-- **Parameter Contracts**:
-  - `input`: Pointer to `Float32Array` mono input samples in WASM heap.
-  - `left_output`: Pointer to `Float32Array` left binaural output channel in WASM heap.
-  - `right_output`: Pointer to `Float32Array` right binaural output channel in WASM heap.
-  - `num_samples`: Sample block frame count (typically 128 or 256).
-  - `azimuth`: Angle in degrees relative to listener head (-180° left to +180° right).
-  - `elevation`: Vertical angle in degrees (-90° below to +90° above).
-  - `distance`: Distance in meters from listener (`> 0`).
-- **Return Value**: `0` on success, `-1` on invalid parameters.
+To optimize cache locality and guarantee proper alignment for SIMD registers, the impulse response and overlap-add state are tightly packed into a 16-byte aligned struct:
+
+```cpp
+// 16-byte aligned structure for SIMD processing efficiency
+struct alignas(16) BinauralFilterState {
+    // Current FIR filter kernel (max 128 taps)
+    float left_impulse_response[128];
+    float right_impulse_response[128];
+
+    // Overlap-add ring buffers for seamless frame transitions
+    float left_overlap_state[128];
+    float right_overlap_state[128];
+
+    int filter_length;
+};
+```
 
 ---
 
@@ -160,7 +167,18 @@ Where $d_{\text{ref}} = 1.0\text{ m}$.
 
 ---
 
-## 5. WebAssembly Heap Layout & Alignment Protocol
+## 5. AudioWorklet Shared Memory Synchronization Model
+
+To prevent main-thread garbage collection (GC) pauses from causing audible dropouts, the architecture utilizes a lock-free `SharedArrayBuffer` (SAB) pipeline to sync spatial parameters (azimuth, elevation, distance) to the `AudioWorkletProcessor`.
+
+1. **Parameter Buffer**: A `Float32Array` mapped over a `SharedArrayBuffer` is instantiated on the main UI thread.
+2. **Atomic Writes**: When the user moves their avatar, the main thread writes new spatial coordinates to the SAB using `Atomics.store()`.
+3. **Wait-Free Reads**: The AudioWorklet pulls the latest values from the SAB via `Atomics.load()` at the start of every 128-sample render quantum.
+4. **Zero-Message Latency**: This eliminates the need for `postMessage()` events, reducing parameter sync latency to $< 0.1$ ms and avoiding memory allocation on the audio thread entirely.
+
+---
+
+## 6. WebAssembly Heap Layout & Alignment Protocol
 
 ```
 +-----------------------------------------------------------------------+
@@ -176,7 +194,7 @@ Where $d_{\text{ref}} = 1.0\text{ m}$.
 
 ---
 
-## 6. Verification & Test Plan
+## 7. Verification & Test Plan
 
 Automated test suites in `src/__tests__/wasm/hrtfEngine.test.ts` validate:
 
@@ -184,3 +202,4 @@ Automated test suites in `src/__tests__/wasm/hrtfEngine.test.ts` validate:
 2. FIR convolution correctness under both SIMD and scalar dispatch modes.
 3. Azimuth and elevation spatial panning gain distribution.
 4. Inverse distance attenuation scaling.
+5. `SharedArrayBuffer` atomic synchronization boundaries.

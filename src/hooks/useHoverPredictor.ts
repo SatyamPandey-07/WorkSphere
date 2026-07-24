@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback } from "react";
 
 interface Point {
   x: number;
@@ -68,7 +68,7 @@ export function useHoverPredictor({
         }
       }
     },
-    [onPredict, velocityThreshold, hoverTimeThreshold]
+    [onPredict, velocityThreshold, hoverTimeThreshold],
   );
 
   const handleMouseEnter = useCallback(() => {
@@ -88,36 +88,21 @@ export function useHoverPredictor({
     }
   }, []);
 
-  useEffect(() => {
-    const el = elementRef.current;
-    if (!el) return;
-
-    el.addEventListener("mousemove", handleMouseMove);
-    el.addEventListener("mouseenter", handleMouseEnter);
-    el.addEventListener("mouseleave", handleMouseLeave);
-
-    return () => {
-      el.removeEventListener("mousemove", handleMouseMove);
-      el.removeEventListener("mouseenter", handleMouseEnter);
-      el.removeEventListener("mouseleave", handleMouseLeave);
-      if (hoverTimerRef.current) {
-        clearTimeout(hoverTimerRef.current);
-      }
-    };
-  }, [handleMouseMove, handleMouseEnter, handleMouseLeave]);
-
   // Return a ref to attach to the target element
-  return useCallback((node: HTMLElement | null) => {
-    if (elementRef.current && node !== elementRef.current) {
-      elementRef.current.removeEventListener("mousemove", handleMouseMove);
-      elementRef.current.removeEventListener("mouseenter", handleMouseEnter);
-      elementRef.current.removeEventListener("mouseleave", handleMouseLeave);
-    }
-    if (node) {
-      node.addEventListener("mousemove", handleMouseMove);
-      node.addEventListener("mouseenter", handleMouseEnter);
-      node.addEventListener("mouseleave", handleMouseLeave);
-    }
-    elementRef.current = node;
-  }, [handleMouseMove, handleMouseEnter, handleMouseLeave]);
+  return useCallback(
+    (node: HTMLElement | null) => {
+      if (elementRef.current && node !== elementRef.current) {
+        elementRef.current.removeEventListener("mousemove", handleMouseMove);
+        elementRef.current.removeEventListener("mouseenter", handleMouseEnter);
+        elementRef.current.removeEventListener("mouseleave", handleMouseLeave);
+      }
+      if (node) {
+        node.addEventListener("mousemove", handleMouseMove);
+        node.addEventListener("mouseenter", handleMouseEnter);
+        node.addEventListener("mouseleave", handleMouseLeave);
+      }
+      elementRef.current = node;
+    },
+    [handleMouseMove, handleMouseEnter, handleMouseLeave],
+  );
 }

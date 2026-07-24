@@ -19,7 +19,6 @@ import {
   Send,
   Star,
   Volume2,
-  VolumeX,
   Wifi,
   Zap,
   LayoutGrid,
@@ -28,6 +27,7 @@ import {
   Check,
   Clock,
   Trash2,
+  X,
 } from "lucide-react";
 import { RefObject, useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
@@ -931,13 +931,7 @@ export function MessageList({
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const {
-    isSupported: isTtsSupported,
-    speakingMessageId,
-    speakingSentenceIndex,
-    speakMessage,
-    stopSpeech,
-  } = useSpeechSynthesis();
+  const { speakingMessageId, speakingSentenceIndex } = useSpeechSynthesis();
 
   const scrollToBottomIfNeeded = useCallback(() => {
     const container = containerRef.current;
@@ -1168,36 +1162,6 @@ function TerminalIcon(props: any) {
   return <span {...props}>💻</span>;
 }
 
-function ReadAloudButton({
-  isSpeaking,
-  onToggle,
-  disabled,
-}: {
-  isSpeaking: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      disabled={disabled}
-      className={`p-1.5 rounded-md transition-all ${
-        isSpeaking
-          ? "text-amber-500 bg-amber-500/10 hover:bg-amber-500/20 ring-1 ring-amber-500/30 shadow-sm opacity-100"
-          : "text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 opacity-0 group-hover:opacity-100 focus-within:opacity-100"
-      }`}
-      title={isSpeaking ? "Stop reading aloud" : "Read aloud"}
-      aria-label={isSpeaking ? "Stop reading aloud" : "Read aloud"}
-    >
-      {isSpeaking ? (
-        <VolumeX className="w-3.5 h-3.5 animate-pulse text-amber-500" />
-      ) : (
-        <Volume2 className="w-3.5 h-3.5" />
-      )}
-    </button>
-  );
-}
-
 function CopyMessageButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
 
@@ -1210,11 +1174,7 @@ function CopyMessageButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-<<<<<<< HEAD
       className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-all opacity-0 group-hover:opacity-100 focus-within:opacity-100"
-=======
-      className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-all"
->>>>>>> 36942c3 (feat(tts): add playback rate speed options and dropdown to speech synthesis and ReadAloudButton)
       title="Copy message"
       aria-label="Copy message"
     >
@@ -1250,6 +1210,13 @@ export function ChatInput({
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [isFocused, setIsFocused] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
+  const [shortcutLabel, setShortcutLabel] = useState("Ctrl+K");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleClear = () => {
+    onInputChange("");
+    inputRef.current?.focus();
+  };
 
   useEffect(() => {
     const history = localStorage.getItem("ws-recent-searches");
@@ -1260,6 +1227,15 @@ export function ChatInput({
         console.error(e);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    const isApple =
+      typeof navigator !== "undefined" &&
+      /Mac|iPhone|iPad|iPod/i.test(
+        navigator.platform || navigator.userAgent || "",
+      );
+    setShortcutLabel(isApple ? "⌘K" : "Ctrl+K");
   }, []);
 
   // Keep the composer above the iOS soft keyboard / browser chrome.
@@ -1486,18 +1462,40 @@ export function ChatInput({
         >
           <Mic className="w-5 h-5" />
         </button>
-        <input
-          type="text"
-          value={safeInput}
-          onChange={(e) => onInputChange(e.target.value ?? "")}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          placeholder={
-            isListening ? "Listening…" : "Where's the focus mode hotspot?"
-          }
-          disabled={isLoading}
-          className="flex-1 px-4 py-3 bg-transparent text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 text-sm font-bold"
-        />
+        <div className="relative flex min-w-0 flex-1 items-center">
+          <input
+            ref={inputRef}
+            type="text"
+            value={safeInput}
+            onChange={(e) => onInputChange(e.target.value ?? "")}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder={
+              isListening ? "Listening…" : "Where's the focus mode hotspot?"
+            }
+            disabled={isLoading}
+            className="w-full bg-transparent px-4 py-3 pr-16 text-sm font-bold text-zinc-900 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 dark:text-zinc-50"
+          />
+          {safeInput.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="absolute right-2 p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              aria-label="Clear search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          {!safeInput.trim() && (
+            <kbd
+              className="pointer-events-none absolute right-2 hidden select-none rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wide text-zinc-400 shadow-sm sm:inline-block dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500"
+              aria-hidden="true"
+              title="Focus search"
+            >
+              {shortcutLabel}
+            </kbd>
+          )}
+        </div>
 
         {/* ── Microphone button ──────────────────────────────────────────── */}
         <button

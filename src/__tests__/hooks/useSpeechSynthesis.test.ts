@@ -18,7 +18,7 @@ describe("splitTextIntoSentences", () => {
 
   it("strips UI components from text before splitting", () => {
     const text =
-      'Found 3 cafes.<ui-component name="Map" props=\'{}\' /> 1. Cafe Central is quiet.';
+      "Found 3 cafes.<ui-component name=\"Map\" props='{}' /> 1. Cafe Central is quiet.";
     const sentences = splitTextIntoSentences(text);
     expect(sentences).toEqual(["Found 3 cafes.", "1. Cafe Central is quiet."]);
   });
@@ -57,8 +57,18 @@ describe("useSpeechSynthesis hook", () => {
     mockPause = jest.fn();
     mockResume = jest.fn();
     mockGetVoices = jest.fn().mockReturnValue([
-      { name: "English Voice", lang: "en-US", default: true },
-      { name: "Spanish Voice", lang: "es-ES", default: false },
+      {
+        name: "English Voice",
+        lang: "en-US",
+        default: true,
+        voiceURI: "english-voice",
+      },
+      {
+        name: "Spanish Voice",
+        lang: "es-ES",
+        default: false,
+        voiceURI: "spanish-voice",
+      },
     ]);
 
     Object.defineProperty(window, "SpeechSynthesisUtterance", {
@@ -79,6 +89,8 @@ describe("useSpeechSynthesis hook", () => {
       writable: true,
       configurable: true,
     });
+
+    window.localStorage.clear();
   });
 
   afterEach(() => {
@@ -241,7 +253,10 @@ describe("useSpeechSynthesis hook", () => {
     });
 
     act(() => {
-      result.current.speakMessage("msg-101", "First sentence. Second sentence.");
+      result.current.speakMessage(
+        "msg-101",
+        "First sentence. Second sentence.",
+      );
     });
 
     expect(mockCancel).toHaveBeenCalled();
@@ -254,5 +269,33 @@ describe("useSpeechSynthesis hook", () => {
     });
 
     expect(result.current.speakingMessageId).toBeNull();
+  });
+
+  it("persists selected voice URI across hook re-mounts (re-render simulation)", () => {
+    const { result, unmount } = renderHook(() => useSpeechSynthesis("Hello"));
+
+    const spanishVoice = mockGetVoices()[1];
+
+    act(() => {
+      result.current.setVoice(spanishVoice);
+    });
+
+    expect(result.current.voice?.voiceURI).toBe("spanish-voice");
+    expect(
+      window.localStorage.getItem("speechSynthesis:selectedVoiceURI"),
+    ).toBe("spanish-voice");
+
+    // Simulate the component unmounting and remounting due to a parent re-render
+    unmount();
+    const { result: result2 } = renderHook(() => useSpeechSynthesis("Hello"));
+
+    expect(result2.current.voice?.voiceURI).toBe("spanish-voice");
+
+    act(() => {
+      result2.current.speak();
+    });
+
+    const utterance = createdUtterances[createdUtterances.length - 1];
+    expect(utterance.voice?.voiceURI).toBe("spanish-voice");
   });
 });

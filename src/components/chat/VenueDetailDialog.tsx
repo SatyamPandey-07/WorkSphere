@@ -101,6 +101,9 @@ export function VenueDetailDialog({
     "wifi" | "outlets" | "noise" | null
   >(null);
   const [copied, setCopied] = useState(false);
+  // Floor plan seat selection state (used by floor plan component when rendered)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
 
   const handleShare = () => {
     if (!venue) return;
@@ -695,6 +698,20 @@ export function VenueDetailDialog({
         .catch((err) => console.error(err));
     }
   }, [venue, isOpen, activeTab]);
+
+  // Effect 4: Reset floor plan seat selection on dialog close
+  useEffect(() => {
+    if (!isOpen) {
+      // Reset selected seat ID
+      setSelectedSeatId(null);
+
+      // Clear any active CSS classes from SVG seat elements
+      const seats = document.querySelectorAll(".floor-plan-seat.active");
+      seats.forEach((seat) => {
+        seat.classList.remove("active");
+      });
+    }
+  }, [isOpen]);
 
   const compressImage = (file: File): Promise<Blob> => {
     return new Promise((resolve) => {

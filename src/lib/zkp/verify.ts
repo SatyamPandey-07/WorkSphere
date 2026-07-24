@@ -63,17 +63,21 @@ export async function proveMembership(
   }
 }
 
+let cachedVkey: any = null;
+
 /** Server-only: verify a proof. Does not accept or store identity tokens. */
 export async function verifyMembershipProof(
   proof: ZkProofPayload["proof"],
   publicSignals: string[],
 ): Promise<boolean> {
   const snarkjs = loadSnarkjsNode();
-  const fs = await import("fs/promises");
-  const vkeyRaw = await fs.readFile(artifactPaths().vkey, "utf8");
-  const vkey = JSON.parse(vkeyRaw);
+  if (!cachedVkey) {
+    const fs = await import("fs/promises");
+    const vkeyRaw = await fs.readFile(artifactPaths().vkey, "utf8");
+    cachedVkey = JSON.parse(vkeyRaw);
+  }
   try {
-    return await snarkjs.groth16.verify(vkey, publicSignals, proof);
+    return await snarkjs.groth16.verify(cachedVkey, publicSignals, proof);
   } finally {
     await releaseCurve();
   }

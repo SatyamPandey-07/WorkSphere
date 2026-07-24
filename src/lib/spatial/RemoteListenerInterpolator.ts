@@ -107,6 +107,10 @@ export class RemoteListenerInterpolator {
     this.history.clear();
   }
 
+  getUserIds(): string[] {
+    return Array.from(this.history.keys());
+  }
+
   getHistory(userId: string): SpatialListenerUpdate[] | undefined {
     return this.history.get(userId);
   }

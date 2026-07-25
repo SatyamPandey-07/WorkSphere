@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayerSession } from "@/hooks/useRealTime";
@@ -158,6 +158,21 @@ export function EnhancedChatbot({
     {},
   );
   const [filters, setFilters] = useState<Filters>({});
+  const categoryCounts = useMemo(() => {
+    const counts = { cafe: 0, coworking: 0, library: 0 };
+    const latestWithVenues = [...messages]
+      .reverse()
+      .find((m) => m.venues && m.venues.length > 0);
+    const venues = latestWithVenues?.venues ?? [];
+    venues.forEach((v) => {
+      const cat = (v.category || "").toLowerCase();
+      if (cat === "cafe") counts.cafe += 1;
+      else if (cat === "library") counts.library += 1;
+      else if (cat === "coworking_space" || cat === "coworking")
+        counts.coworking += 1;
+    });
+    return counts;
+  }, [messages]);
   const [showFilters, setShowFilters] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
@@ -1103,6 +1118,7 @@ export function EnhancedChatbot({
       </AnimatePresence>
 
       <ChatHeader
+        categoryCounts={categoryCounts}
         onOpenVenueSubmission={() => setShowVenueSubmission(true)}
         userLocation={location}
         onLocationChange={handleLocationChange}

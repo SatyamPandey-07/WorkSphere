@@ -135,13 +135,13 @@ If the persisted voice cannot be found, the hook looks for a voice whose languag
 For example, with:
 
 ```ts
-lang = "en-US"
+lang = "en-US";
 ```
 
 the implementation searches for a voice where:
 
 ```ts
-voice.lang.startsWith("en-US")
+voice.lang.startsWith("en-US");
 ```
 
 ### 4. System default
@@ -192,16 +192,16 @@ const clampedRate = Math.max(0.75, Math.min(2, newRate));
 
 This means:
 
-| Requested Rate | Effective Rate |
-|---|---|
-| Less than `0.75` | `0.75x` |
-| `0.75` to `2.0` | Requested value |
-| Greater than `2.0` | `2.0x` |
+| Requested Rate     | Effective Rate  |
+| ------------------ | --------------- |
+| Less than `0.75`   | `0.75x`         |
+| `0.75` to `2.0`    | Requested value |
+| Greater than `2.0` | `2.0x`          |
 
 The available predefined speed options are:
 
 ```ts
-[0.75, 1, 1.25, 1.5, 1.75, 2]
+[0.75, 1, 1.25, 1.5, 1.75, 2];
 ```
 
 If the rate is changed while speech is active, the hook restarts speech using the updated rate.
@@ -298,17 +298,17 @@ If an error occurs during queued playback, the active speech state is cleared an
 
 The hook provides several playback controls.
 
-| Method | Description |
-|---|---|
-| `speak()` | Reads the provided or default text as one utterance |
-| `speakMessage()` | Splits a message into sentences and queues them |
-| `pause()` | Pauses browser speech synthesis |
-| `resume()` | Resumes paused speech |
-| `cancel()` | Cancels active speech and clears playback state |
-| `stopSpeech()` | Alias for cancelling active speech |
-| `setRate()` | Changes playback speed, clamped to `0.75–2.0` |
-| `setPitch()` | Changes pitch, clamped to `0–2` |
-| `setVoice()` | Selects and persists a voice |
+| Method           | Description                                         |
+| ---------------- | --------------------------------------------------- |
+| `speak()`        | Reads the provided or default text as one utterance |
+| `speakMessage()` | Splits a message into sentences and queues them     |
+| `pause()`        | Pauses browser speech synthesis                     |
+| `resume()`       | Resumes paused speech                               |
+| `cancel()`       | Cancels active speech and clears playback state     |
+| `stopSpeech()`   | Alias for cancelling active speech                  |
+| `setRate()`      | Changes playback speed, clamped to `0.75–2.0`       |
+| `setPitch()`     | Changes pitch, clamped to `0–2`                     |
+| `setVoice()`     | Selects and persists a voice                        |
 
 Starting `speakMessage()` first cancels any currently active speech to prevent multiple messages from playing simultaneously.
 
@@ -377,23 +377,23 @@ If speech synthesis is unavailable in the test environment, the application shou
 
 ## Cross-Browser Test Matrix
 
-| Test Case | Chrome | Safari | Firefox |
-|---|---|---|---|
-| Speech synthesis support detected | ☐ | ☐ | ☐ |
-| Read Aloud starts playback | ☐ | ☐ | ☐ |
-| Single-text `speak()` works | ☐ | ☐ | ☐ |
-| Sentence-level `speakMessage()` works | ☐ | ☐ | ☐ |
-| Sentences play sequentially | ☐ | ☐ | ☐ |
-| Pause works | ☐ | ☐ | ☐ |
-| Resume works | ☐ | ☐ | ☐ |
-| Stop / cancel works | ☐ | ☐ | ☐ |
-| `0.75x` rate works | ☐ | ☐ | ☐ |
-| `2.0x` rate works | ☐ | ☐ | ☐ |
-| Voice selection works | ☐ | ☐ | ☐ |
-| Persisted voice is restored | ☐ | ☐ | ☐ |
-| Language fallback works | ☐ | ☐ | ☐ |
-| Long message queueing works | ☐ | ☐ | ☐ |
-| Unsupported state handled gracefully | ☐ | ☐ | ☐ |
+| Test Case                             | Chrome | Safari | Firefox |
+| ------------------------------------- | ------ | ------ | ------- |
+| Speech synthesis support detected     | ☐      | ☐      | ☐       |
+| Read Aloud starts playback            | ☐      | ☐      | ☐       |
+| Single-text `speak()` works           | ☐      | ☐      | ☐       |
+| Sentence-level `speakMessage()` works | ☐      | ☐      | ☐       |
+| Sentences play sequentially           | ☐      | ☐      | ☐       |
+| Pause works                           | ☐      | ☐      | ☐       |
+| Resume works                          | ☐      | ☐      | ☐       |
+| Stop / cancel works                   | ☐      | ☐      | ☐       |
+| `0.75x` rate works                    | ☐      | ☐      | ☐       |
+| `2.0x` rate works                     | ☐      | ☐      | ☐       |
+| Voice selection works                 | ☐      | ☐      | ☐       |
+| Persisted voice is restored           | ☐      | ☐      | ☐       |
+| Language fallback works               | ☐      | ☐      | ☐       |
+| Long message queueing works           | ☐      | ☐      | ☐       |
+| Unsupported state handled gracefully  | ☐      | ☐      | ☐       |
 
 ---
 

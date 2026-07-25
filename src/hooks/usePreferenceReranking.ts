@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { Venue } from "@/components/chat/ChatMessages";
 import {
   UserHistoryItem,
@@ -46,10 +46,13 @@ export function usePreferenceReranking(results: Venue[]) {
     }
   }, []);
 
-  const togglePersonalization = (enabled: boolean) => {
-    setPersonalizationEnabled(enabled);
-    localStorage.setItem("ai_personalization_enabled", String(enabled));
-  };
+  const togglePersonalization = useCallback((value?: boolean) => {
+    setPersonalizationEnabled((prev) => {
+      const next = typeof value === "boolean" ? value : !prev;
+      localStorage.setItem("ai_personalization_enabled", String(next));
+      return next;
+    });
+  }, []);
 
   const userVector = useMemo(() => {
     return buildUserPreferenceVector(MOCK_HISTORY);
@@ -58,17 +61,46 @@ export function usePreferenceReranking(results: Venue[]) {
   const rerankedResults = useMemo(() => {
     if (!personalizationEnabled) {
       // Just map to RerankedVenue shape without changing order
-      return results.map(
+      return (results || []).map(
         (v) =>
           ({ ...v, similarityScore: 0, isRecommended: false }) as RerankedVenue,
       );
     }
-    return rerankVenues(results, userVector);
+    return rerankVenues(results || [], userVector);
   }, [results, userVector, personalizationEnabled]);
+
+  const rerankVenuesFn = useCallback(
+    (venuesToRank: Venue[]) => {
+      if (!personalizationEnabled) {
+        return (venuesToRank || []).map(
+          (v) =>
+            ({
+              ...v,
+              similarityScore: 0,
+              isRecommended: false,
+            }) as RerankedVenue,
+        );
+      }
+      return rerankVenues(venuesToRank || [], userVector);
+    },
+    [personalizationEnabled, userVector],
+  );
+
+  const rankVenuesFn = useCallback(
+    async (venuesToRank: Venue[]) => {
+      return rerankVenuesFn(venuesToRank);
+    },
+    [rerankVenuesFn],
+  );
 
   return {
     rerankedResults,
     personalizationEnabled,
     togglePersonalization,
+    isReady: true,
+    isOffline: typeof window !== "undefined" ? !navigator.onLine : false,
+    rerankVenues: rerankVenuesFn,
+    rankVenues: rankVenuesFn,
+    terminate: () => {},
   };
 }

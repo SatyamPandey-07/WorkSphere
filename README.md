@@ -96,7 +96,6 @@ Thanks to all **57+ contributors** building WorkSphere!
 <a href="https://github.com/karrisanthoshigayatri" target="_blank" rel="noopener noreferrer"><img src="https://avatars.githubusercontent.com/u/268634585?v=4" width="50px" height="50px" alt="karrisanthoshigayatri" title="karrisanthoshigayatri" style="border-radius: 50%; margin: 3px; border: 2px solid #3b82f6;" /></a>
 </p>
 
-
 ---
 
 ## 📋 Table of Contents
@@ -451,7 +450,6 @@ The Upstash Redis variables are optional for local development. If UPSTASH_REDIS
 
 For production or multi-instance deployments, configuring Upstash Redis is recommended to ensure consistent rate limiting across application instances.
 
-
 ### Getting API Keys
 
 | Service      | URL                                           | Free Tier        | Required             |
@@ -498,8 +496,6 @@ For production or multi-instance deployments, configuring Upstash Redis is recom
 | `POST`   | `/api/webhook`            | Clerk webhook for user sync            |
 
 ---
-
-
 
 ## 🤖 Multi-Agent System
 
@@ -741,4 +737,4 @@ This project is licensed under the MIT License.
 
 Made with ❤️ by [Satyam Pandey](https://github.com/SatyamPandey-07)
 
-</div>
+</div>

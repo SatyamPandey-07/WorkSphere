@@ -245,6 +245,19 @@ export function EnhancedChatbot({
           if (onMapUpdate && data.update) {
             onMapUpdate(data.update);
           }
+        } else if (data.type === "ping") {
+          socket.send(
+            JSON.stringify({
+              type: "pong",
+              timestamp: data.timestamp || Date.now(),
+            }),
+          );
+        } else if (data.type === "peer-leave") {
+          setCursors((prev) => {
+            const next = { ...prev };
+            if (data.name) delete next[data.name];
+            return next;
+          });
         }
       } catch (e) {
         console.error("Failed to parse WebSocket message:", e);
@@ -500,7 +513,10 @@ export function EnhancedChatbot({
         const data = await res.json();
         setFavorites(
           new Set<string>(
-            data.favorites?.map((f: { venueId: string }) => f.venueId) || [],
+            data.favorites?.map(
+              (f: { venuePlaceId?: string; venueId: string }) =>
+                f.venuePlaceId || f.venueId,
+            ) || [],
           ),
         );
       }

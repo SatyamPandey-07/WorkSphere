@@ -28,8 +28,7 @@ import {
   Check,
   Clock,
   Trash2,
-  Building2,
-  Navigation,
+  X,
 } from "lucide-react";
 import { usePreferenceReranking } from "@/hooks/usePreferenceReranking";
 import { RecommendedBadge } from "@/components/RecommendedBadge";

@@ -468,7 +468,8 @@ export function BookingModal({
         }
       }
 
-      const response = await apiFetch("/api/bookings/confirm", {
+      setBookingError(null);
+      const response = await fetch("/api/bookings/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -490,9 +491,7 @@ export function BookingModal({
           return;
         }
         throw new Error(
-          responseData.details ||
-            responseData.error ||
-            "Signal transmission failed",
+          responseData.error || "Booking failed. Please try again.",
         );
       }
 
@@ -525,9 +524,7 @@ export function BookingModal({
       }
     } catch (err: any) {
       console.error("Booking failure details:", err);
-      setIsSubmitting(false);
-      setStep("details");
-      alert(`NEURAL SIGNAL ERROR: ${err.message}`);
+      setBookingError(err.message || "Booking failed. Please try again.");
     }
   };
 
@@ -808,6 +805,11 @@ export function BookingModal({
             </div>
           )}
 
+          {bookingError && (
+            <div className="mb-4 p-4 bg-red-900/30 border border-red-700 rounded-xl text-red-200 text-sm">
+              {bookingError}
+            </div>
+          )}
           {step === "details" && venue && (
             <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
               <div className="flex items-center gap-4 p-6 bg-zinc-900 dark:bg-[var(--primary-accent)] rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">

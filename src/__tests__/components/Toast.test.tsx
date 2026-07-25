@@ -11,8 +11,12 @@ import { ToastProvider, useToast } from "@/components/ui/Toast";
 jest.mock("lucide-react", () => ({
   X: (props: any) => <svg data-testid="icon-x" {...props} />,
   CheckCircle2: (props: any) => <svg data-testid="icon-check" {...props} />,
-  AlertCircle: (props: any) => <svg data-testid="icon-alert-circle" {...props} />,
-  AlertTriangle: (props: any) => <svg data-testid="icon-alert-triangle" {...props} />,
+  AlertCircle: (props: any) => (
+    <svg data-testid="icon-alert-circle" {...props} />
+  ),
+  AlertTriangle: (props: any) => (
+    <svg data-testid="icon-alert-triangle" {...props} />
+  ),
 }));
 
 // Mock cn helper
@@ -116,7 +120,9 @@ describe("Toast functionality", () => {
     );
 
     fireEvent.click(screen.getByText("Show Toast"));
-    const toastEl = screen.getByText("Test message").closest("[role='status']")!;
+    const toastEl = screen
+      .getByText("Test message")
+      .closest("[role='status']")!;
 
     act(() => {
       jest.advanceTimersByTime(500);

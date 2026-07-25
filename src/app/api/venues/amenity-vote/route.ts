@@ -67,7 +67,10 @@ async function trackAccurateContributions(
     if (user.accurateVotes >= VERIFIED_EXPLORER_THRESHOLD) {
       await prisma.userBadge.upsert({
         where: {
-          userId_badgeType: { userId: vote.userId, badgeType: "verified_explorer" },
+          userId_badgeType: {
+            userId: vote.userId,
+            badgeType: "verified_explorer",
+          },
         },
         update: {},
         create: { userId: vote.userId, badgeType: "verified_explorer" },

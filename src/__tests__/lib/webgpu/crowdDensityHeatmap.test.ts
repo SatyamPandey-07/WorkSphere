@@ -26,7 +26,9 @@ describe("Crowd Density Heatmap Shaders (#1267)", () => {
     });
 
     it("declares the density grid storage buffer", () => {
-      expect(densityComputeShader).toContain("var<storage, read_write> densityGrid");
+      expect(densityComputeShader).toContain(
+        "var<storage, read_write> densityGrid",
+      );
     });
 
     it("declares the agents read-only storage buffer", () => {
@@ -80,7 +82,9 @@ describe("Crowd Density Heatmap Shaders (#1267)", () => {
     });
 
     it("declares the density texture and sampler bindings", () => {
-      expect(heatmapFragmentShader).toContain("var densityTex: texture_2d<f32>");
+      expect(heatmapFragmentShader).toContain(
+        "var densityTex: texture_2d<f32>",
+      );
       expect(heatmapFragmentShader).toContain("var densitySampler: sampler");
     });
 
@@ -97,7 +101,9 @@ describe("Crowd Density Heatmap Shaders (#1267)", () => {
     });
 
     it("samples density texture using UV coordinates", () => {
-      expect(heatmapFragmentShader).toContain("textureSample(densityTex, densitySampler");
+      expect(heatmapFragmentShader).toContain(
+        "textureSample(densityTex, densitySampler",
+      );
     });
   });
 
@@ -116,7 +122,7 @@ describe("Crowd Density Heatmap Shaders (#1267)", () => {
         expect(s.length).toBeGreaterThan(50);
       }
 
-// Density shader is distinct from boids compute shader
+      // Density shader is distinct from boids compute shader
       expect(densityComputeShader).not.toBe(computeShader);
     });
   });

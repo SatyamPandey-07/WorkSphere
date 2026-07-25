@@ -133,7 +133,7 @@ describe("attachJitteredBackoff", () => {
     // Verify waitPromise did not resolve yet because the timeout was cleared by _disconnect
     // Since waitPromise resolves inside setTimeout which was cleared, it remains pending.
     // If we trigger _connect, it also clears any pending timeouts.
-jest.useRealTimers();
+    jest.useRealTimers();
   });
 
   it("clears the pending backoff timer and reconnects immediately on online event", async () => {

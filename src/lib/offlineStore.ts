@@ -1,5 +1,8 @@
+export { withWebLock } from "./webLock";
+import { withWebLock } from "./webLock";
 const STORE_NAME = "favorites-outbox";
 const CHECKIN_STORE_NAME = "checkins-outbox";
+export const TAG_STORE_NAME = "favorite-tags-outbox";
 const DB_NAME = "WorkSphereOfflineDB";
 
 /**
@@ -10,32 +13,6 @@ const DB_NAME = "WorkSphereOfflineDB";
  * dropped. (Issue #712)
  */
 export const MAX_SYNC_RETRIES = 3;
-
-const IDB_LOCK_NAME = "worksphere-offline-store-lock";
-
-/**
- * Web Locks API wrapper to serialize IndexedDB transactions across multiple concurrent browser tabs.
- * Prevents IndexedDB transaction deadlock during offline outbox sync (#910).
- */
-export async function withWebLock<T>(
-  callback: () => Promise<T>,
-  lockName = IDB_LOCK_NAME,
-): Promise<T> {
-  if (
-    typeof navigator !== "undefined" &&
-    "locks" in navigator &&
-    navigator.locks?.request
-  ) {
-    try {
-      return await navigator.locks.request(lockName, async () => {
-        return callback();
-      });
-    } catch {
-      return callback();
-    }
-  }
-  return callback();
-}
 
 export interface OfflineAction {
   id?: number;
@@ -96,7 +73,7 @@ function showPrivateBrowsingAlert() {
   );
 }
 
-function getDB(): Promise<IDBDatabase> {
+export function getDB(): Promise<IDBDatabase> {
   // Guard: IndexedDB is not available in SSR / Node environments.
   // Checking `indexedDB` directly (rather than `window`) ensures that
   // contexts such as Service Workers — which expose indexedDB without a
@@ -121,7 +98,7 @@ function getDB(): Promise<IDBDatabase> {
   // Slow path — first caller: open the database and cache the Promise.
   dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     try {
-      const request = indexedDB.open(DB_NAME, 2);
+      const request = indexedDB.open(DB_NAME, 3);
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
@@ -137,6 +114,16 @@ function getDB(): Promise<IDBDatabase> {
             autoIncrement: true,
           });
         }
+        if (!db.objectStoreNames.contains(TAG_STORE_NAME)) {
+          db.createObjectStore(TAG_STORE_NAME, {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
+      };
+
+      request.onblocked = () => {
+        console.warn("[OfflineStore] Database upgrade blocked");
       };
 
       request.onsuccess = () => {
@@ -181,7 +168,8 @@ function getDB(): Promise<IDBDatabase> {
 
 /**
  * Pushes a target action into the client IndexedDB transaction queue.
- * Wrapped with Web Locks API to serialize multi-tab storage access (#910).
+ * Wrapped with Web Locks API to serialize multi-tab storage access (#910),
+ * now sharing the same lock as offlineStorage.ts (fix for #829).
  */
 export async function queueOfflineFavorite(
   venueId: string,
@@ -220,8 +208,15 @@ export async function queueOfflineFavorite(
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to queue offline action:", err);
+      if (
+        err.name === "SecurityError" ||
+        String(err.message).includes("SecurityError")
+      ) {
+        return;
+      }
+      throw err; // let the caller (UI / service worker) know the write did not happen
     }
   });
 }
@@ -230,19 +225,21 @@ export async function queueOfflineFavorite(
  * Retrieves all currently queued actions awaiting synchronization
  */
 export async function getQueuedFavorites(): Promise<OfflineAction[]> {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readonly");
-      const store = tx.objectStore(STORE_NAME);
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-  } catch (err) {
-    console.error("Failed to get queued actions:", err);
-    return [];
-  }
+  return withWebLock(async () => {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readonly");
+        const store = tx.objectStore(STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+      });
+    } catch (err) {
+      console.error("Failed to get queued actions:", err);
+      return [];
+    }
+  });
 }
 
 /**
@@ -254,48 +251,87 @@ export async function getQueuedFavorites(): Promise<OfflineAction[]> {
  * dequeued by a concurrent sync pass).
  */
 export async function incrementRetryCount(id: number): Promise<number | null> {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
-      const getRequest = store.get(id);
+  return withWebLock(async () => {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const getRequest = store.get(id);
 
-      getRequest.onsuccess = () => {
-        const existing = getRequest.result as OfflineAction | undefined;
-        if (!existing) {
-          resolve(null);
-          return;
-        }
-        const nextCount = (existing.retryCount ?? 0) + 1;
-        store.put({ ...existing, retryCount: nextCount });
-        tx.oncomplete = () => resolve(nextCount);
-      };
-      getRequest.onerror = () => reject(getRequest.error);
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (err) {
-    console.error("Failed to increment retry count:", err);
-    return null;
-  }
+        getRequest.onsuccess = () => {
+          const existing = getRequest.result as OfflineAction | undefined;
+          if (!existing) {
+            resolve(null);
+            return;
+          }
+          const nextCount = (existing.retryCount ?? 0) + 1;
+          store.put({ ...existing, retryCount: nextCount });
+          tx.oncomplete = () => resolve(nextCount);
+        };
+        getRequest.onerror = () => reject(getRequest.error);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.error("Failed to increment retry count:", err);
+      return null;
+    }
+  });
+}
+
+/**
+ * Restores a failed payload back into the queue by resetting its retryCount to 0.
+ * This ensures network-disconnected items are not penalized with retry exhaustion
+ * and are re-attempted on the next sync cycle without data loss.
+ *
+ * Returns `true` if the item was found and restored, `false` if the item no longer exists.
+ */
+export async function restoreFailedPayload(id: number): Promise<boolean> {
+  return withWebLock(async () => {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const getRequest = store.get(id);
+
+        getRequest.onsuccess = () => {
+          const existing = getRequest.result as OfflineAction | undefined;
+          if (!existing) {
+            resolve(false);
+            return;
+          }
+          store.put({ ...existing, retryCount: 0 });
+          tx.oncomplete = () => resolve(true);
+        };
+        getRequest.onerror = () => reject(getRequest.error);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.error("Failed to restore failed payload:", err);
+      return false;
+    }
+  });
 }
 
 /**
  * Clears an action from the store once it has been processed
  */
 export async function dequeueOfflineAction(id: number): Promise<void> {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE_NAME, "readwrite");
-      const store = tx.objectStore(STORE_NAME);
-      store.delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (err) {
-    console.error("Failed to dequeue offline action:", err);
-  }
+  return withWebLock(async () => {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        store.delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.error("Failed to dequeue offline action:", err);
+    }
+  });
 }
 
 /**
@@ -332,6 +368,7 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
       });
     } catch (err) {
       console.error("Failed to queue offline check-in:", err);
+      throw err; // let the caller (UI / service worker) know the write did not happen
     }
   });
 }
@@ -340,19 +377,21 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
  * Retrieves all queued check-ins
  */
 export async function getQueuedCheckIns(): Promise<OfflineCheckIn[]> {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(CHECKIN_STORE_NAME, "readonly");
-      const store = tx.objectStore(CHECKIN_STORE_NAME);
-      const request = store.getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-  } catch (err) {
-    console.error("Failed to get queued check-ins:", err);
-    return [];
-  }
+  return withWebLock(async () => {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(CHECKIN_STORE_NAME, "readonly");
+        const store = tx.objectStore(CHECKIN_STORE_NAME);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+      });
+    } catch (err) {
+      console.error("Failed to get queued check-ins:", err);
+      return [];
+    }
+  });
 }
 
 /**
@@ -361,46 +400,50 @@ export async function getQueuedCheckIns(): Promise<OfflineCheckIn[]> {
 export async function incrementCheckInRetryCount(
   id: number,
 ): Promise<number | null> {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(CHECKIN_STORE_NAME, "readwrite");
-      const store = tx.objectStore(CHECKIN_STORE_NAME);
-      const getRequest = store.get(id);
+  return withWebLock(async () => {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(CHECKIN_STORE_NAME, "readwrite");
+        const store = tx.objectStore(CHECKIN_STORE_NAME);
+        const getRequest = store.get(id);
 
-      getRequest.onsuccess = () => {
-        const existing = getRequest.result as OfflineCheckIn | undefined;
-        if (!existing) {
-          resolve(null);
-          return;
-        }
-        const nextCount = (existing.retryCount ?? 0) + 1;
-        store.put({ ...existing, retryCount: nextCount });
-        tx.oncomplete = () => resolve(nextCount);
-      };
-      getRequest.onerror = () => reject(getRequest.error);
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (err) {
-    console.error("Failed to increment check-in retry count:", err);
-    return null;
-  }
+        getRequest.onsuccess = () => {
+          const existing = getRequest.result as OfflineCheckIn | undefined;
+          if (!existing) {
+            resolve(null);
+            return;
+          }
+          const nextCount = (existing.retryCount ?? 0) + 1;
+          store.put({ ...existing, retryCount: nextCount });
+          tx.oncomplete = () => resolve(nextCount);
+        };
+        getRequest.onerror = () => reject(getRequest.error);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.error("Failed to increment check-in retry count:", err);
+      return null;
+    }
+  });
 }
 
 /**
  * Clears a check-in from the store
  */
 export async function dequeueOfflineCheckIn(id: number): Promise<void> {
-  try {
-    const db = await getDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(CHECKIN_STORE_NAME, "readwrite");
-      const store = tx.objectStore(CHECKIN_STORE_NAME);
-      store.delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (err) {
-    console.error("Failed to dequeue offline check-in:", err);
-  }
+  return withWebLock(async () => {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(CHECKIN_STORE_NAME, "readwrite");
+        const store = tx.objectStore(CHECKIN_STORE_NAME);
+        store.delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.error("Failed to dequeue offline check-in:", err);
+    }
+  });
 }

@@ -1,42 +1,30 @@
-import { Redis } from "@upstash/redis";
-import { recordApiLatency } from "@/lib/performanceTelemetry";
+import { getRedis } from "@/lib/redis";
 
 /**
  * Lightweight DB query latency telemetry.
  *
- * We deliberately do NOT log every query into the main analytics event
- * stream (src/lib/analytics.ts) — that would flood Redis/memory with one
- * event per Prisma call. Instead we keep a small rolling window of recent
- * query durations (per model) and expose aggregate stats (avg / p95 / slow-query count)
- * for the admin dashboard.
- *
- * Production: Upstash Redis provides durable distributed counters/events.
- * Development: an in-memory fallback keeps local analytics functional without Redis.
+ * Queries are buffered in memory and flushed to Redis in batches every 5
+ * seconds. This avoids firing a Redis pipeline on every single Prisma call,
+ * which would otherwise exhaust the connection pool under high traffic.
  */
 
 const MAX_SAMPLES_PER_MODEL = 200;
 const SLOW_QUERY_THRESHOLD_MS = 200;
+const FLUSH_INTERVAL_MS = 5_000;
 
 type QuerySample = { durationMs: number; timestamp: number };
 
-// ─── In-memory fallback (development / no Redis) ─────────────────────────────
+// ─── In-memory state ─────────────────────────────────────────────────────────
 const samplesByModel = new Map<string, QuerySample[]>();
 let slowQueryCount = 0;
 let totalQueryCount = 0;
 
-// ─── Redis Setup ─────────────────────────────────────────────────────────────
-let cachedRedis: Redis | null = null;
-let nextServerAfter: typeof import("next/server").after | null = null;
-
-if (typeof window === "undefined") {
-  import("next/server")
-    .then(({ after }) => {
-      nextServerAfter = after;
-    })
-    .catch(() => {
-      // Ignored: outside of Next.js server environment
-    });
-}
+// Buffer for pending writes to Redis
+let pendingGlobalTotal = 0;
+let pendingGlobalSlow = 0;
+const pendingSamplesByModel = new Map<string, QuerySample[]>();
+const pendingNewModels = new Set<string>();
+let flushTimer: ReturnType<typeof setInterval> | null = null;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -55,33 +43,78 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
-function getRedis(): Redis | null {
-  if (cachedRedis) return cachedRedis;
+// ─── Batch flush ─────────────────────────────────────────────────────────────
 
-  if (
-    !process.env.UPSTASH_REDIS_REST_URL ||
-    !process.env.UPSTASH_REDIS_REST_TOKEN
-  ) {
-    return null;
+async function flushBuffer(): Promise<void> {
+  if (pendingGlobalTotal === 0 && pendingSamplesByModel.size === 0) return;
+
+  const redis = getRedis();
+  if (!redis) {
+    pendingGlobalTotal = 0;
+    pendingGlobalSlow = 0;
+    pendingSamplesByModel.clear();
+    pendingNewModels.clear();
+    return;
   }
+
+  const globalTotal = pendingGlobalTotal;
+  const globalSlow = pendingGlobalSlow;
+  const samplesSnapshot = new Map(pendingSamplesByModel);
+  const newModelsSnapshot = new Set(pendingNewModels);
+
+  pendingGlobalTotal = 0;
+  pendingGlobalSlow = 0;
+  pendingSamplesByModel.clear();
+  pendingNewModels.clear();
 
   try {
-    cachedRedis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
-      retry: false, // Disable automatic retries for telemetry writes
-    });
-  } catch (error) {
-    console.error("[dbTelemetry] Redis initialization failed:", error);
-  }
+    const pipeline = redis.pipeline();
+    const globalKey = "worksphere:telemetry:global";
+    const modelsKey = "worksphere:telemetry:models";
 
-  return cachedRedis;
+    if (globalTotal > 0) {
+      pipeline.hincrby(globalKey, "totalQueryCount", globalTotal);
+    }
+    if (globalSlow > 0) {
+      pipeline.hincrby(globalKey, "slowQueryCount", globalSlow);
+    }
+
+    for (const model of newModelsSnapshot) {
+      pipeline.sadd(modelsKey, model);
+    }
+
+    for (const [model, samples] of samplesSnapshot) {
+      const samplesKey = `worksphere:telemetry:samples:${model}`;
+      for (const sample of samples) {
+        pipeline.lpush(samplesKey, JSON.stringify(sample));
+      }
+      pipeline.ltrim(samplesKey, 0, MAX_SAMPLES_PER_MODEL - 1);
+    }
+
+    await withTimeout(pipeline.exec(), 3000);
+  } catch (error) {
+    console.error("[dbTelemetry] Redis batch flush failed:", error);
+  }
+}
+
+function startFlusher(): void {
+  if (flushTimer) return;
+  if (typeof window !== "undefined") return;
+
+  flushTimer = setInterval(() => {
+    flushBuffer().catch((error) => {
+      console.error("[dbTelemetry] Unhandled flush error:", error);
+    });
+  }, FLUSH_INTERVAL_MS);
+
+  if (flushTimer.unref) {
+    flushTimer.unref();
+  }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export function recordQueryDuration(model: string, durationMs: number) {
-  // Always update local in-memory values as fallback/best-effort
   totalQueryCount += 1;
   if (durationMs >= SLOW_QUERY_THRESHOLD_MS) slowQueryCount += 1;
 
@@ -96,39 +129,39 @@ export function recordQueryDuration(model: string, durationMs: number) {
 
   samplesByModel.set(key, samples);
 
-  // Feed into performance telemetry
-  recordApiLatency(`prisma:${key}`, Math.round(durationMs), "local");
+  // Buffer writes for periodic Redis flush
+  pendingGlobalTotal += 1;
+  if (durationMs >= SLOW_QUERY_THRESHOLD_MS) {
+    pendingGlobalSlow += 1;
+  }
 
-  // Write to Upstash Redis asynchronously if configured
-  const redis = getRedis();
-  if (redis) {
-    const pipeline = redis.pipeline();
-    const globalKey = "worksphere:telemetry:global";
-    const modelsKey = "worksphere:telemetry:models";
-    const samplesKey = `worksphere:telemetry:samples:${key}`;
+  if (!pendingNewModels.has(key)) {
+    pendingNewModels.add(key);
+  }
 
-    pipeline.hincrby(globalKey, "totalQueryCount", 1);
-    if (durationMs >= SLOW_QUERY_THRESHOLD_MS) {
-      pipeline.hincrby(globalKey, "slowQueryCount", 1);
-    }
-    pipeline.sadd(modelsKey, key);
-    pipeline.lpush(samplesKey, JSON.stringify(sample));
-    pipeline.ltrim(samplesKey, 0, MAX_SAMPLES_PER_MODEL - 1);
-
-    const promise = withTimeout(pipeline.exec(), 2000).catch((error) => {
-      console.error("[dbTelemetry] Redis write failed:", error);
-    });
-
-    // Request lifecycle integration for Next.js 15+ serverless environments
-    if (nextServerAfter) {
-      try {
-        nextServerAfter(() => promise);
-      } catch {
-        // Ignored: outside of request context
-      }
-    }
+  const pendingSamples = pendingSamplesByModel.get(key) ?? [];
+  pendingSamples.push(sample);
+  if (pendingSamples.length > 50) {
+    pendingSamplesByModel.set(key, pendingSamples.slice(-50));
+  } else {
+    pendingSamplesByModel.set(key, pendingSamples);
   }
 }
+
+export function flushTelemetryBuffer(): Promise<void> {
+  return flushBuffer();
+}
+
+if (typeof globalThis.__dbTelemetryFlusherStarted === "undefined") {
+  globalThis.__dbTelemetryFlusherStarted = true;
+  startFlusher();
+}
+
+declare global {
+  var __dbTelemetryFlusherStarted: boolean | undefined;
+}
+
+// ─── Read API ─────────────────────────────────────────────────────────────────
 
 function percentile(sorted: number[], p: number) {
   if (sorted.length === 0) return 0;

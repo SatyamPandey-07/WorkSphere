@@ -20,17 +20,17 @@ WorkSphere employs a hybrid storage strategy:
 
 ## Redis Provider
 
-* **Provider**: Upstash Redis (Serverless / HTTP REST API based Redis service).
+- **Provider**: Upstash Redis (Serverless / HTTP REST API based Redis service).
 
-* **Client Library**: `@upstash/redis` (`^1.36.3`).
+- **Client Library**: `@upstash/redis` (`^1.36.3`).
 
-* **Connection Type**: Stateless REST HTTP requests via `fetch` (no persistent TCP socket pools required, perfectly suited for Vercel/Next.js serverless and edge environments).
+- **Connection Type**: Stateless REST HTTP requests via `fetch` (no persistent TCP socket pools required, perfectly suited for Vercel/Next.js serverless and edge environments).
 
-* **Environment Variables**:
+- **Environment Variables**:
 
-  * `UPSTASH_REDIS_REST_URL`: REST endpoint URL for the Upstash Redis instance.
+  - `UPSTASH_REDIS_REST_URL`: REST endpoint URL for the Upstash Redis instance.
 
-  * `UPSTASH_REDIS_REST_TOKEN`: Authentication token for Upstash Redis.
+  - `UPSTASH_REDIS_REST_TOKEN`: Authentication token for Upstash Redis.
 
 ---
 
@@ -43,37 +43,30 @@ Redis client instantiation is implemented in two patterns across the codebase:
    Used in rate limiting, analytics, database telemetry, and performance telemetry ([src/lib/rateLimit.ts](file:///c:/Codes/WorkSphere/src/lib/rateLimit.ts#L43-L63), [src/lib/redis.ts](file:///c:/Codes/WorkSphere/src/lib/redis.ts#L5-L21), [src/lib/analytics.ts](file:///c:/Codes/WorkSphere/src/lib/analytics.ts#L34-L53), [src/lib/dbTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts#L58-L79), [src/lib/performanceTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/performanceTelemetry.ts#L37-L58)).
 
    ```typescript
-
    import { Redis } from "@upstash/redis";
 
    let redisClient: Redis | null = null;
 
    export function getRedisClient(): Redis | null {
-
-     if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-
+     if (
+       !process.env.UPSTASH_REDIS_REST_URL ||
+       !process.env.UPSTASH_REDIS_REST_TOKEN
+     ) {
        return null;
-
      }
 
      if (!redisClient) {
-
        redisClient = new Redis({
-
          url: process.env.UPSTASH_REDIS_REST_URL,
 
          token: process.env.UPSTASH_REDIS_REST_TOKEN,
 
          retry: false, // Disables automatic retry loops for telemetry writes
-
        });
-
      }
 
      return redisClient;
-
    }
-
    ```
 
 2. **Direct Environment Instantiation**:
@@ -81,11 +74,9 @@ Redis client instantiation is implemented in two patterns across the codebase:
    Used in queue processing, event bus, and background workers ([src/lib/events/bus.ts](file:///c:/Codes/WorkSphere/src/lib/events/bus.ts#L5), [src/lib/queue.ts](file:///c:/Codes/WorkSphere/src/lib/queue.ts#L3), [src/lib/reminderCron.ts](file:///c:/Codes/WorkSphere/src/lib/reminderCron.ts#L6), [worker/pdfWorker.ts](file:///c:/Codes/WorkSphere/worker/pdfWorker.ts#L9)).
 
    ```typescript
-
    import { Redis } from "@upstash/redis";
 
    const redis = Redis.fromEnv();
-
    ```
 
 ---
@@ -94,19 +85,19 @@ Redis client instantiation is implemented in two patterns across the codebase:
 
 |
 
- Feature / Module 
+Feature / Module
 
 |
 
- Data Structure 
+Data Structure
 
 |
 
- Redis Commands Used 
+Redis Commands Used
 
 |
 
- Purpose 
+Purpose
 
 |
 
@@ -136,7 +127,7 @@ Rate Limiting
 
 **
 
- (
+(
 
 [
 
@@ -148,7 +139,7 @@ file:///c:/Codes/WorkSphere/src/lib/rateLimit.ts
 
 )
 
-) 
+)
 
 |
 
@@ -166,27 +157,27 @@ Sorted Set (
 
 `EVAL`
 
- (
+(
 
 `ZREMRANGEBYSCORE`
 
-, 
+,
 
 `ZCARD`
 
-, 
+,
 
 `ZADD`
 
-, 
+,
 
 `EXPIRE`
 
-) 
+)
 
 |
 
- Stores timestamped request tokens for sliding window evaluation. 
+Stores timestamped request tokens for sliding window evaluation.
 
 |
 
@@ -198,7 +189,7 @@ Analytics Counts
 
 **
 
- (
+(
 
 [
 
@@ -210,7 +201,7 @@ file:///c:/Codes/WorkSphere/src/lib/analytics.ts
 
 )
 
-) 
+)
 
 |
 
@@ -228,13 +219,13 @@ Hash (
 
 `HINCRBY`
 
-, 
+,
 
 `HGETALL`
 
 |
 
- Aggregates event execution totals per event name. 
+Aggregates event execution totals per event name.
 
 |
 
@@ -246,7 +237,7 @@ Recent Analytics Events
 
 **
 
- (
+(
 
 [
 
@@ -258,7 +249,7 @@ file:///c:/Codes/WorkSphere/src/lib/analytics.ts
 
 )
 
-) 
+)
 
 |
 
@@ -276,17 +267,17 @@ List (
 
 `LPUSH`
 
-, 
+,
 
 `LTRIM`
 
-, 
+,
 
 `LRANGE`
 
 |
 
- Fixed-capacity (5,000) log of recent analytics JSON events. 
+Fixed-capacity (5,000) log of recent analytics JSON events.
 
 |
 
@@ -298,7 +289,7 @@ Global DB Telemetry
 
 **
 
- (
+(
 
 [
 
@@ -310,7 +301,7 @@ file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts
 
 )
 
-) 
+)
 
 |
 
@@ -328,13 +319,13 @@ Hash (
 
 `HINCRBY`
 
-, 
+,
 
 `HGETALL`
 
 |
 
- Tracks cumulative total and slow query counts. 
+Tracks cumulative total and slow query counts.
 
 |
 
@@ -346,7 +337,7 @@ DB Telemetry Models
 
 **
 
- (
+(
 
 [
 
@@ -358,7 +349,7 @@ file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts
 
 )
 
-) 
+)
 
 |
 
@@ -376,13 +367,13 @@ Set (
 
 `SADD`
 
-, 
+,
 
 `SMEMBERS`
 
 |
 
- Maintains set of unique Prisma models being tracked. 
+Maintains set of unique Prisma models being tracked.
 
 |
 
@@ -394,7 +385,7 @@ DB Telemetry Samples
 
 **
 
- (
+(
 
 [
 
@@ -406,7 +397,7 @@ file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts
 
 )
 
-) 
+)
 
 |
 
@@ -424,17 +415,17 @@ List (
 
 `LPUSH`
 
-, 
+,
 
 `LTRIM`
 
-, 
+,
 
 `LRANGE`
 
 |
 
- Per-model rolling sample lists (capped at 200). 
+Per-model rolling sample lists (capped at 200).
 
 |
 
@@ -446,7 +437,7 @@ API Perf Telemetry
 
 **
 
- (
+(
 
 [
 
@@ -458,7 +449,7 @@ file:///c:/Codes/WorkSphere/src/lib/performanceTelemetry.ts
 
 )
 
-) 
+)
 
 |
 
@@ -472,25 +463,25 @@ List & Hash & Set
 
 `LPUSH`
 
-, 
+,
 
 `LTRIM`
 
-, 
+,
 
 `LRANGE`
 
-, 
+,
 
 `SADD`
 
-, 
+,
 
 `HINCRBY`
 
 |
 
- Capped sample log (500), route list (100 per route), and region counts. 
+Capped sample log (500), route list (100 per route), and region counts.
 
 |
 
@@ -502,7 +493,7 @@ Event Bus Webhooks
 
 **
 
- (
+(
 
 [
 
@@ -514,7 +505,7 @@ file:///c:/Codes/WorkSphere/src/lib/events/bus.ts
 
 )
 
-) 
+)
 
 |
 
@@ -532,21 +523,21 @@ List (
 
 `LPUSH`
 
-, 
+,
 
 `LMOVE`
 
-, 
+,
 
 `LREM`
 
-, 
+,
 
 `LRANGE`
 
 |
 
- Reliable event queue with processing list handover. 
+Reliable event queue with processing list handover.
 
 |
 
@@ -558,7 +549,7 @@ PDF Worker Queue
 
 **
 
- (
+(
 
 [
 
@@ -570,7 +561,7 @@ file:///c:/Codes/WorkSphere/src/lib/queue.ts
 
 )
 
-, 
+,
 
 [
 
@@ -582,7 +573,7 @@ file:///c:/Codes/WorkSphere/worker/pdfWorker.ts
 
 )
 
-) 
+)
 
 |
 
@@ -596,29 +587,29 @@ Hash & List
 
 `HSET`
 
-, 
+,
 
 `HGETALL`
 
-, 
+,
 
 `LPUSH`
 
-, 
+,
 
 `LMOVE`
 
-, 
+,
 
 `LREM`
 
-, 
+,
 
 `LRANGE`
 
 |
 
- Async PDF job state tracking and task distribution queue. 
+Async PDF job state tracking and task distribution queue.
 
 |
 
@@ -630,7 +621,7 @@ Reminder Deduplication
 
 **
 
- (
+(
 
 [
 
@@ -642,7 +633,7 @@ file:///c:/Codes/WorkSphere/src/lib/reminderCron.ts
 
 )
 
-) 
+)
 
 |
 
@@ -660,19 +651,19 @@ String (
 
 `GET`
 
-, 
+,
 
 `SET`
 
- (with 
+(with
 
 `ex: 7200`
 
-) 
+)
 
 |
 
- Deduplicates email notifications for 30-minute booking alerts. 
+Deduplicates email notifications for 30-minute booking alerts.
 
 |
 
@@ -682,37 +673,37 @@ String (
 
 Keys follow a structured, colon-delimited namespace hierarchy:
 
-* `worksphere:ratelimit:${identifier}` — Sliding window rate limiter sorted sets (e.g. `worksphere:ratelimit:192.168.1.1` or `worksphere:ratelimit:user_123`)
+- `worksphere:ratelimit:${identifier}` — Sliding window rate limiter sorted sets (e.g. `worksphere:ratelimit:192.168.1.1` or `worksphere:ratelimit:user_123`)
 
-* `worksphere:analytics:event_counts` — Hash of total counts per event name
+- `worksphere:analytics:event_counts` — Hash of total counts per event name
 
-* `worksphere:analytics:recent_events` — Capped list of recent analytics event JSON records
+- `worksphere:analytics:recent_events` — Capped list of recent analytics event JSON records
 
-* `worksphere:telemetry:global` — Hash of global database query counters (`totalQueryCount`, `slowQueryCount`)
+- `worksphere:telemetry:global` — Hash of global database query counters (`totalQueryCount`, `slowQueryCount`)
 
-* `worksphere:telemetry:models` — Set of Prisma model names tracked by telemetry
+- `worksphere:telemetry:models` — Set of Prisma model names tracked by telemetry
 
-* `worksphere:telemetry:samples:${model}` — Capped list of query duration samples for a specific Prisma model
+- `worksphere:telemetry:samples:${model}` — Capped list of query duration samples for a specific Prisma model
 
-* `worksphere:perf:samples` — Global API request latency sample list
+- `worksphere:perf:samples` — Global API request latency sample list
 
-* `worksphere:perf:routes` — Set of active API route paths
+- `worksphere:perf:routes` — Set of active API route paths
 
-* `worksphere:perf:route:${route}` — Per-route latency sample list
+- `worksphere:perf:route:${route}` — Per-route latency sample list
 
-* `worksphere:perf:regions` — Hash of request counts grouped by geographic region
+- `worksphere:perf:regions` — Hash of request counts grouped by geographic region
 
-* `work-sphere:webhook-events-queue` — Main incoming webhook queue
+- `work-sphere:webhook-events-queue` — Main incoming webhook queue
 
-* `work-sphere:webhook-events-processing` — Processing list for active webhooks undergoing delivery
+- `work-sphere:webhook-events-processing` — Processing list for active webhooks undergoing delivery
 
-* `pdf:job:${jobId}` — Hash containing state metadata for a PDF generation job
+- `pdf:job:${jobId}` — Hash containing state metadata for a PDF generation job
 
-* `pdf:jobs` — Incoming queue for PDF generation jobs
+- `pdf:jobs` — Incoming queue for PDF generation jobs
 
-* `pdf:jobs:processing` — Processing queue for PDF generation jobs
+- `pdf:jobs:processing` — Processing queue for PDF generation jobs
 
-* `booking-reminder:${booking.id}` — Expirable string flag to prevent duplicate reminder emails
+- `booking-reminder:${booking.id}` — Expirable string flag to prevent duplicate reminder emails
 
 ---
 
@@ -720,9 +711,9 @@ Keys follow a structured, colon-delimited namespace hierarchy:
 
 Rate limiting in WorkSphere enforces request thresholds on sensitive API routes (such as authentication endpoints `/api/auth/*`, venue searches `/api/venues`, and AI chat completions `/api/chat`).
 
-* **Primary Engine**: Custom Redis Lua script (`SLIDING_WINDOW_LUA`) executing on Upstash Redis using Redis Sorted Sets (`zset`).
+- **Primary Engine**: Custom Redis Lua script (`SLIDING_WINDOW_LUA`) executing on Upstash Redis using Redis Sorted Sets (`zset`).
 
-* **Fallback Engine**: Local sliding-window in-memory `Map` (`memRateLimit`) with periodic cleanup timers when Redis environment variables are missing or network calls fail.
+- **Fallback Engine**: Local sliding-window in-memory `Map` (`memRateLimit`) with periodic cleanup timers when Redis environment variables are missing or network calls fail.
 
 ---
 
@@ -744,23 +735,23 @@ The repository implements a **Sliding Window Log** algorithm.
 
 2. **Parameters Computed**:
 
-   * `now`: `Date.now()` (current epoch milliseconds).
+   - `now`: `Date.now()` (current epoch milliseconds).
 
-   * `windowMs`: `60000` (60-second sliding window).
+   - `windowMs`: `60000` (60-second sliding window).
 
-   * `windowSeconds`: `60` (window duration in seconds for TTL).
+   - `windowSeconds`: `60` (window duration in seconds for TTL).
 
-   * `windowStart`: `now - windowMs` (lower bound timestamp of active window).
+   - `windowStart`: `now - windowMs` (lower bound timestamp of active window).
 
-   * `key`: `worksphere:ratelimit:${identifier}`.
+   - `key`: `worksphere:ratelimit:${identifier}`.
 
 3. **Lua Execution**: Calls `redis.eval(SLIDING_WINDOW_LUA, [key], [now, windowStart, limit, windowSeconds])`.
 
 4. **Result**:
 
-   * Returns `1` (Allowed) if active requests in window `< limit`.
+   - Returns `1` (Allowed) if active requests in window `< limit`.
 
-   * Returns `0` (Blocked) if active requests in window `>= limit`.
+   - Returns `0` (Blocked) if active requests in window `>= limit`.
 
 5. **Fallback**: If Redis connection fails or env variables are unconfigured, `memRateLimit` is called.
 
@@ -818,15 +809,15 @@ end
 
 ### Parameters & Semantics
 
-* `KEYS[1]`: Rate limit Redis key (`worksphere:ratelimit:${identifier}`).
+- `KEYS[1]`: Rate limit Redis key (`worksphere:ratelimit:${identifier}`).
 
-* `ARGV[1]` (`now`): Current millisecond timestamp (`Date.now()`).
+- `ARGV[1]` (`now`): Current millisecond timestamp (`Date.now()`).
 
-* `ARGV[2]` (`windowStart`): Threshold timestamp (`now - 60000`).
+- `ARGV[2]` (`windowStart`): Threshold timestamp (`now - 60000`).
 
-* `ARGV[3]` (`limit`): Maximum allowed request count within the window.
+- `ARGV[3]` (`limit`): Maximum allowed request count within the window.
 
-* `ARGV[4]` (`window_seconds`): TTL duration in seconds (`60`).
+- `ARGV[4]` (`window_seconds`): TTL duration in seconds (`60`).
 
 ### Execution Mechanics
 
@@ -856,25 +847,25 @@ Concurrency issues and race conditions are mitigated through four explicit patte
 
 ## Timestamp Precision
 
-* **Active Precision**: Millisecond precision (`Date.now()`, e.g. `1700000000000`).
+- **Active Precision**: Millisecond precision (`Date.now()`, e.g. `1700000000000`).
 
-* **Generation Point**: Timestamps are generated application-side in Node.js before calling `redis.eval()`.
+- **Generation Point**: Timestamps are generated application-side in Node.js before calling `redis.eval()`.
 
-* **Test Utility / Microsecond Member Helper**: In test suite [src/__tests__/lib/rateLimit.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/rateLimit.test.ts#L108-L118), a `microTimestampMember` function is tested (`1700000000000012:a`) to demonstrate stringifying seconds and microseconds for unique sorted set member collisions under microsecond resolution.
+- **Test Utility / Microsecond Member Helper**: In test suite [src/**tests**/lib/rateLimit.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/rateLimit.test.ts#L108-L118), a `microTimestampMember` function is tested (`1700000000000012:a`) to demonstrate stringifying seconds and microseconds for unique sorted set member collisions under microsecond resolution.
 
 ---
 
 ## Concurrency Handling
 
-* **Distributed Workers**: PDF generation workers ([worker/pdfWorker.ts](file:///c:/Codes/WorkSphere/worker/pdfWorker.ts)) and Webhook handlers ([src/lib/events/bus.ts](file:///c:/Codes/WorkSphere/src/lib/events/bus.ts)) handle concurrent polling safely using atomic `LMOVE` state movement.
+- **Distributed Workers**: PDF generation workers ([worker/pdfWorker.ts](file:///c:/Codes/WorkSphere/worker/pdfWorker.ts)) and Webhook handlers ([src/lib/events/bus.ts](file:///c:/Codes/WorkSphere/src/lib/events/bus.ts)) handle concurrent polling safely using atomic `LMOVE` state movement.
 
-* **Watchdog / Stale Recovery**:
+- **Watchdog / Stale Recovery**:
 
-  * `recoverStaleJobs()` in `pdfWorker.ts` (scans jobs in `pdf:jobs:processing` older than 5 minutes / `STALE_TIMEOUT_MS` and re-queues them to `pdf:jobs`).
+  - `recoverStaleJobs()` in `pdfWorker.ts` (scans jobs in `pdf:jobs:processing` older than 5 minutes / `STALE_TIMEOUT_MS` and re-queues them to `pdf:jobs`).
 
-  * `recoverStaleEvents()` in `bus.ts` (scans `work-sphere:webhook-events-processing` older than 5 minutes and re-queues them to `work-sphere:webhook-events-queue`).
+  - `recoverStaleEvents()` in `bus.ts` (scans `work-sphere:webhook-events-processing` older than 5 minutes and re-queues them to `work-sphere:webhook-events-queue`).
 
-* **High-Concurrency Rate Limiting**: The Lua script refreshes the key expiration (`EXPIRE key window_seconds`) even when requests are blocked (`current_requests >= limit`), maintaining accurate key lifecycles under continuous traffic spikes.
+- **High-Concurrency Rate Limiting**: The Lua script refreshes the key expiration (`EXPIRE key window_seconds`) even when requests are blocked (`current_requests >= limit`), maintaining accurate key lifecycles under continuous traffic spikes.
 
 ---
 
@@ -894,11 +885,11 @@ The repository applies the following Redis memory optimization rules:
 
 2. **Fixed-Size List Capping (`LTRIM`)**:
 
-   * Analytics recent events list: capped to 5,000 items (`LTRIM worksphere:analytics:recent_events 0 4999`).
+   - Analytics recent events list: capped to 5,000 items (`LTRIM worksphere:analytics:recent_events 0 4999`).
 
-   * Database telemetry samples: capped to 200 items per model (`LTRIM worksphere:telemetry:samples:${model} 0 199`).
+   - Database telemetry samples: capped to 200 items per model (`LTRIM worksphere:telemetry:samples:${model} 0 199`).
 
-   * API performance samples: capped to 500 items globally (`LTRIM worksphere:perf:samples 0 499`) and 100 per route (`LTRIM worksphere:perf:route:${route} 0 99`).
+   - API performance samples: capped to 500 items globally (`LTRIM worksphere:perf:samples 0 499`) and 100 per route (`LTRIM worksphere:perf:route:${route} 0 99`).
 
 3. **Explicit Expiration on Deduplication Keys**: Booking notification lock keys expire automatically after 2 hours (`ex: 7200`).
 
@@ -940,19 +931,19 @@ The repository applies the following Redis memory optimization rules:
 
 |
 
- Feature 
+Feature
 
 |
 
- Status 
+Status
 
 |
 
- Evidence 
+Evidence
 
 |
 
- Missing / Observations 
+Missing / Observations
 
 |
 
@@ -994,21 +985,21 @@ Implemented
 
 `package.json`
 
- (
+(
 
 `@upstash/redis`
 
-), 
+),
 
 `src/lib/redis.ts`
 
-, 
+,
 
 `src/lib/rateLimit.ts`
 
 |
 
- Fully implemented via REST HTTP client. 
+Fully implemented via REST HTTP client.
 
 |
 
@@ -1032,23 +1023,23 @@ Implemented
 
 `src/lib/rateLimit.ts`
 
- (
+(
 
 `SLIDING_WINDOW_LUA`
 
-, 
+,
 
 `upstashRateLimit`
 
-) 
+)
 
 |
 
- Custom Lua script with 
+Custom Lua script with
 
 `zset`
 
- sliding window log. 
+sliding window log.
 
 |
 
@@ -1070,21 +1061,21 @@ Not Found
 
 |
 
- Codebase search across 
+Codebase search across
 
 `src/`
 
-, 
+,
 
 `lib/`
 
-, 
+,
 
 `worker/`
 
 |
 
- No Token Bucket implementation exists in the repo. 
+No Token Bucket implementation exists in the repo.
 
 |
 
@@ -1108,15 +1099,15 @@ Implemented
 
 `src/lib/rateLimit.ts`
 
- (lines 15–39) 
+(lines 15–39)
 
 |
 
- Single Lua script 
+Single Lua script
 
 `SLIDING_WINDOW_LUA`
 
- for rate limiting. 
+for rate limiting.
 
 |
 
@@ -1140,15 +1131,15 @@ Implemented
 
 `src/lib/rateLimit.ts`
 
- (
+(
 
 `Date.now()`
 
-) 
+)
 
 |
 
- Standard millisecond timestamps used in production Lua call. 
+Standard millisecond timestamps used in production Lua call.
 
 |
 
@@ -1172,15 +1163,15 @@ Partially Implemented
 
 `src/__tests__/lib/rateLimit.test.ts`
 
- (
+(
 
 `microTimestampMember`
 
-) 
+)
 
 |
 
- Tested helper function, but not active in runtime Lua script. 
+Tested helper function, but not active in runtime Lua script.
 
 |
 
@@ -1208,13 +1199,13 @@ Implemented
 
 `src/lib/events/bus.ts`
 
-, 
+,
 
 `worker/pdfWorker.ts`
 
 |
 
- Reliable queue popping and recovery watchdog. 
+Reliable queue popping and recovery watchdog.
 
 |
 
@@ -1242,17 +1233,17 @@ Implemented
 
 `src/lib/analytics.ts`
 
-, 
+,
 
 `src/lib/dbTelemetry.ts`
 
-, 
+,
 
 `src/lib/performanceTelemetry.ts`
 
 |
 
- Lists capped at 5000, 200, and 500/100 items. 
+Lists capped at 5000, 200, and 500/100 items.
 
 |
 
@@ -1274,21 +1265,21 @@ Not Found
 
 |
 
- Codebase search across 
+Codebase search across
 
 `tests/`
 
-, 
+,
 
 `scripts/`
 
-, 
+,
 
 `docs/`
 
 |
 
- No load test scripts or benchmarking data present. 
+No load test scripts or benchmarking data present.
 
 |
 
@@ -1296,36 +1287,36 @@ Not Found
 
 ## Repository Files Audited
 
-* [package.json](file:///c:/Codes/WorkSphere/package.json)
+- [package.json](file:///c:/Codes/WorkSphere/package.json)
 
-* [src/lib/rateLimit.ts](file:///c:/Codes/WorkSphere/src/lib/rateLimit.ts)
+- [src/lib/rateLimit.ts](file:///c:/Codes/WorkSphere/src/lib/rateLimit.ts)
 
-* [src/lib/redis.ts](file:///c:/Codes/WorkSphere/src/lib/redis.ts)
+- [src/lib/redis.ts](file:///c:/Codes/WorkSphere/src/lib/redis.ts)
 
-* [src/lib/analytics.ts](file:///c:/Codes/WorkSphere/src/lib/analytics.ts)
+- [src/lib/analytics.ts](file:///c:/Codes/WorkSphere/src/lib/analytics.ts)
 
-* [src/lib/dbTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts)
+- [src/lib/dbTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/dbTelemetry.ts)
 
-* [src/lib/performanceTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/performanceTelemetry.ts)
+- [src/lib/performanceTelemetry.ts](file:///c:/Codes/WorkSphere/src/lib/performanceTelemetry.ts)
 
-* [src/lib/events/bus.ts](file:///c:/Codes/WorkSphere/src/lib/events/bus.ts)
+- [src/lib/events/bus.ts](file:///c:/Codes/WorkSphere/src/lib/events/bus.ts)
 
-* [src/lib/queue.ts](file:///c:/Codes/WorkSphere/src/lib/queue.ts)
+- [src/lib/queue.ts](file:///c:/Codes/WorkSphere/src/lib/queue.ts)
 
-* [src/lib/reminderCron.ts](file:///c:/Codes/WorkSphere/src/lib/reminderCron.ts)
+- [src/lib/reminderCron.ts](file:///c:/Codes/WorkSphere/src/lib/reminderCron.ts)
 
-* [worker/pdfWorker.ts](file:///c:/Codes/WorkSphere/worker/pdfWorker.ts)
+- [worker/pdfWorker.ts](file:///c:/Codes/WorkSphere/worker/pdfWorker.ts)
 
-* [src/__tests__/lib/rateLimit.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/rateLimit.test.ts)
+- [src/**tests**/lib/rateLimit.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/rateLimit.test.ts)
 
-* [src/__tests__/lib/dbTelemetry.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/dbTelemetry.test.ts)
+- [src/**tests**/lib/dbTelemetry.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/dbTelemetry.test.ts)
 
-* [src/__tests__/lib/eventBus.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/eventBus.test.ts)
+- [src/**tests**/lib/eventBus.test.ts](file:///c:/Codes/WorkSphere/src/__tests__/lib/eventBus.test.ts)
 
-* [src/app/api/auth/forgot-password/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/forgot-password/route.ts)
+- [src/app/api/auth/forgot-password/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/forgot-password/route.ts)
 
-* [src/app/api/auth/resend-otp/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/resend-otp/route.ts)
+- [src/app/api/auth/resend-otp/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/resend-otp/route.ts)
 
-* [src/app/api/auth/reset-password/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/reset-password/route.ts)
+- [src/app/api/auth/reset-password/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/reset-password/route.ts)
 
-* [src/app/api/auth/verify-otp/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/verify-otp/route.ts)
+- [src/app/api/auth/verify-otp/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/verify-otp/route.ts)

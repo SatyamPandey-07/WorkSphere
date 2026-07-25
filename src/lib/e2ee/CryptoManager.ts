@@ -21,14 +21,17 @@ export class CryptoManager {
   /**
    * Derive a master AES-GCM CryptoKey using PBKDF2 from a password and salt.
    */
-  static async deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
+  static async deriveKey(
+    password: string,
+    salt: Uint8Array,
+  ): Promise<CryptoKey> {
     const encoder = new TextEncoder();
     const keyMaterial = await window.crypto.subtle.importKey(
       "raw",
       encoder.encode(password) as any,
       { name: "PBKDF2" },
       false,
-      ["deriveBits", "deriveKey"]
+      ["deriveBits", "deriveKey"],
     );
 
     return window.crypto.subtle.deriveKey(
@@ -41,7 +44,7 @@ export class CryptoManager {
       keyMaterial,
       { name: "AES-GCM", length: 256 },
       true,
-      ["encrypt", "decrypt"]
+      ["encrypt", "decrypt"],
     );
   }
 
@@ -58,7 +61,7 @@ export class CryptoManager {
    */
   static async encryptPayload(
     key: CryptoKey,
-    payload: Uint8Array
+    payload: Uint8Array,
   ): Promise<{ ciphertext: string; iv: string }> {
     const iv = window.crypto.getRandomValues(new Uint8Array(12));
     const encryptedBuffer = await window.crypto.subtle.encrypt(
@@ -67,7 +70,7 @@ export class CryptoManager {
         iv: iv as any,
       },
       key,
-      payload as any
+      payload as any,
     );
 
     return {
@@ -83,7 +86,7 @@ export class CryptoManager {
   static async decryptPayload(
     key: CryptoKey,
     ciphertextBase64: string,
-    ivBase64: string
+    ivBase64: string,
   ): Promise<Uint8Array> {
     const ciphertext = base64ToBuffer(ciphertextBase64);
     const iv = base64ToBuffer(ivBase64);
@@ -94,7 +97,7 @@ export class CryptoManager {
         iv: iv as any,
       },
       key,
-      ciphertext as any
+      ciphertext as any,
     );
 
     return new Uint8Array(decryptedBuffer);

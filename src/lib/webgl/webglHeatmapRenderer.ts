@@ -62,12 +62,24 @@ export class WebGLHeatmapRenderer {
 
   private initGL() {
     try {
+      // Defensive cleanup: if initGL() ever runs more than once (e.g. the
+      // context-recovery callback fires without a true context loss), free
+      // the previous program/buffer first so we never leak GPU resources.
+      if (this.gl) {
+        if (this.program) this.gl.deleteProgram(this.program);
+        if (this.vbo) this.gl.deleteBuffer(this.vbo);
+        this.program = null;
+        this.vbo = null;
+      }
+
       this.gl =
         (this.canvas.getContext("webgl2") as WebGL2RenderingContext | null) ||
         (this.canvas.getContext("webgl") as WebGLRenderingContext | null);
 
       if (!this.gl) {
-        console.warn("[WebGLHeatmap] WebGL context not supported by client environment.");
+        console.warn(
+          "[WebGLHeatmap] WebGL context not supported by client environment.",
+        );
         return;
       }
 
@@ -78,8 +90,14 @@ export class WebGLHeatmapRenderer {
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
 
       // Compile Shader Program
-      const vertShader = this.compileShader(gl.VERTEX_SHADER, HEATMAP_VERTEX_SHADER);
-      const fragShader = this.compileShader(gl.FRAGMENT_SHADER, HEATMAP_FRAGMENT_SHADER);
+      const vertShader = this.compileShader(
+        gl.VERTEX_SHADER,
+        HEATMAP_VERTEX_SHADER,
+      );
+      const fragShader = this.compileShader(
+        gl.FRAGMENT_SHADER,
+        HEATMAP_FRAGMENT_SHADER,
+      );
 
       if (!vertShader || !fragShader) return;
 
@@ -91,7 +109,10 @@ export class WebGLHeatmapRenderer {
       gl.linkProgram(program);
 
       if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        console.error("[WebGLHeatmap] Program link error:", gl.getProgramInfoLog(program));
+        console.error(
+          "[WebGLHeatmap] Program link error:",
+          gl.getProgramInfoLog(program),
+        );
         return;
       }
 
@@ -114,7 +135,7 @@ export class WebGLHeatmapRenderer {
       gl.bufferData(
         gl.ARRAY_BUFFER,
         this.maxPoints * 4 * Float32Array.BYTES_PER_ELEMENT,
-        gl.DYNAMIC_DRAW
+        gl.DYNAMIC_DRAW,
       );
     } catch (err) {
       console.error("[WebGLHeatmap] Context initialization error:", err);
@@ -130,7 +151,10 @@ export class WebGLHeatmapRenderer {
     this.gl.compileShader(shader);
 
     if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
-      console.error("[WebGLHeatmap] Shader compile failed:", this.gl.getShaderInfoLog(shader));
+      console.error(
+        "[WebGLHeatmap] Shader compile failed:",
+        this.gl.getShaderInfoLog(shader),
+      );
       this.gl.deleteShader(shader);
       return null;
     }
@@ -164,7 +188,13 @@ export class WebGLHeatmapRenderer {
    * Render frame to canvas with hardware spatial clustering
    */
   public render(width: number, height: number, zoom: number = 1.0) {
-    if (!this.gl || !this.program || !this.vbo || this.pointsCount === 0 || this.isDestroyed) {
+    if (
+      !this.gl ||
+      !this.program ||
+      !this.vbo ||
+      this.pointsCount === 0 ||
+      this.isDestroyed
+    ) {
       return;
     }
 
@@ -191,11 +221,25 @@ export class WebGLHeatmapRenderer {
     }
     if (this.aIntensityLoc !== -1) {
       gl.enableVertexAttribArray(this.aIntensityLoc);
-      gl.vertexAttribPointer(this.aIntensityLoc, 1, gl.FLOAT, false, stride, 2 * Float32Array.BYTES_PER_ELEMENT);
+      gl.vertexAttribPointer(
+        this.aIntensityLoc,
+        1,
+        gl.FLOAT,
+        false,
+        stride,
+        2 * Float32Array.BYTES_PER_ELEMENT,
+      );
     }
     if (this.aRadiusLoc !== -1) {
       gl.enableVertexAttribArray(this.aRadiusLoc);
-      gl.vertexAttribPointer(this.aRadiusLoc, 1, gl.FLOAT, false, stride, 3 * Float32Array.BYTES_PER_ELEMENT);
+      gl.vertexAttribPointer(
+        this.aRadiusLoc,
+        1,
+        gl.FLOAT,
+        false,
+        stride,
+        3 * Float32Array.BYTES_PER_ELEMENT,
+      );
     }
 
     // Draw telemetry points

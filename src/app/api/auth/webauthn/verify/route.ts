@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import {
-  parseClientDataJSON,
-  verifyWebAuthnChallenge,
-} from "@/lib/webauthn";
+import { parseClientDataJSON, verifyWebAuthnChallenge } from "@/lib/webauthn";
 
 const bodySchema = z.object({
   clientDataJSON: z.string().min(1),
@@ -53,6 +50,7 @@ export async function POST(req: NextRequest) {
     challenge: clientData.challenge,
     expectedChallenge,
     rpId,
+    userAgent: req.headers.get("user-agent"),
   });
 
   if (!result.ok) {

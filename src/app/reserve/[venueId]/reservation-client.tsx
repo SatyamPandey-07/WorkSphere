@@ -14,9 +14,12 @@ import {
   Mail,
   Download,
   UserPlus,
+  Repeat,
 } from "lucide-react";
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
+import { apiFetch } from "@/lib/apiClient";
+import { useRateLimit } from "@/hooks/useRateLimit";
 
 type Seat = {
   id: string;
@@ -49,6 +52,7 @@ function todayString() {
 }
 
 export default function ReservationClient({ venue }: { venue: Venue }) {
+  const retryAfter = useRateLimit("book");
   const [date, setDate] = useState(todayString());
   const [time, setTime] = useState("09:00");
   const [duration, setDuration] = useState(60);
@@ -60,6 +64,12 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   const [message, setMessage] = useState("");
   const [confirmationId, setConfirmationId] = useState<string | null>(null);
   const [guests, setGuests] = useState<GuestEntry[]>([]);
+  const [recurringEnabled, setRecurringEnabled] = useState(false);
+  const [frequency, setFrequency] = useState<"daily" | "weekly" | "monthly">(
+    "weekly",
+  );
+  const [endDate, setEndDate] = useState("");
+  const [occurrences, setOccurrences] = useState<number>(12);
 
   const loadAvailability = useCallback(async () => {
     setLoading(true);
@@ -148,6 +158,34 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
     [seats, selectedSeat],
   );
 
+  const previewDates = useMemo(() => {
+    if (!recurringEnabled) return [];
+    const dates: string[] = [];
+    const start = new Date(date + "T00:00:00Z");
+    const limit = endDate ? new Date(endDate + "T00:00:00Z") : null;
+    const maxOccurrences = occurrences ?? 52;
+    const current = new Date(start);
+    let count = 0;
+
+    while (count < maxOccurrences) {
+      if (limit && current > limit) break;
+      dates.push(current.toISOString().slice(0, 10));
+      count++;
+      switch (frequency) {
+        case "daily":
+          current.setDate(current.getDate() + 1);
+          break;
+        case "weekly":
+          current.setDate(current.getDate() + 7);
+          break;
+        case "monthly":
+          current.setMonth(current.getMonth() + 1);
+          break;
+      }
+    }
+    return dates;
+  }, [recurringEnabled, date, frequency, endDate, occurrences]);
+
   async function reserve(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -160,21 +198,33 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
     setMessage("");
     setConfirmationId(null);
 
-    const response = await fetch("/api/reservations/book", {
+    const endpoint = recurringEnabled
+      ? "/api/reservations/recurring-book"
+      : "/api/reservations/book";
+
+    const body: Record<string, unknown> = {
+      venueId: venue.id,
+      seatId: selected.id,
+      date,
+      time,
+      duration,
+      amenitiesNeeded: amenities,
+      guests: guests.map((g) => ({
+        email: g.email,
+        name: g.name || undefined,
+      })),
+    };
+
+    if (recurringEnabled) {
+      body.frequency = frequency;
+      body.endDate = endDate || null;
+      body.occurrences = occurrences || null;
+    }
+
+    const response = await apiFetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        venueId: venue.id,
-        seatId: selected.id,
-        date,
-        time,
-        duration,
-        amenitiesNeeded: amenities,
-        guests: guests.map((g) => ({
-          email: g.email,
-          name: g.name || undefined,
-        })),
-      }),
+      body: JSON.stringify(body),
     });
 
     const payload = await response.json();
@@ -186,18 +236,29 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       return;
     }
 
-    const guestMsg =
-      guests.length > 0
-        ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
-        : "";
+    if (recurringEnabled && payload.booked) {
+      const guestMsg =
+        guests.length > 0
+          ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
+          : "";
+      setMessage(
+        `${payload.booked} recurring booking(s) confirmed for ${selected.seatNumber}.${payload.skipped > 0 ? ` ${payload.skipped} date(s) skipped (unavailable).` : ""}${guestMsg}`,
+      );
+    } else {
+      const guestMsg =
+        guests.length > 0
+          ? ` + ${payload.guestsAdded || guests.length} guest invite(s) queued`
+          : "";
+      setMessage(
+        `${selected.seatNumber} confirmed. Reference: ${payload.confirmationId}${guestMsg}`,
+      );
+      setConfirmationId(payload.confirmationId);
+    }
 
-    setMessage(
-      `${selected.seatNumber} confirmed. Reference: ${payload.confirmationId}${guestMsg}`,
-    );
-    setConfirmationId(payload.confirmationId);
     setSelectedSeat(null);
     setBooking(false);
     setGuests([]);
+    setRecurringEnabled(false);
     await loadAvailability();
   }
 
@@ -211,7 +272,13 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
           </div>
 
           <h1 className="mt-4 text-4xl font-semibold tracking-tight">
-            Reserve at {venue.name}
+            Reserve at{" "}
+            <span
+              className="inline-block max-w-[200px] truncate align-bottom"
+              title={venue.name}
+            >
+              {venue.name}
+            </span>
           </h1>
 
           <p className="mt-2 text-zinc-500">
@@ -444,6 +511,100 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
               </div>
             </div>
 
+            {/* Recurring Booking */}
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => setRecurringEnabled(!recurringEnabled)}
+                className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left text-xs transition ${
+                  recurringEnabled
+                    ? "border-violet-400/50 bg-violet-400/10 text-violet-100"
+                    : "border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06]"
+                }`}
+              >
+                <Repeat className="h-4 w-4" />
+                <div>
+                  <p className="font-medium">Recurring booking</p>
+                  <p className="mt-0.5 text-[10px] opacity-70">
+                    Book this workspace on a recurring schedule
+                  </p>
+                </div>
+              </button>
+
+              {recurringEnabled && (
+                <div className="mt-3 space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                  <Field
+                    label="Frequency"
+                    icon={<Repeat className="h-4 w-4" />}
+                  >
+                    <select
+                      value={frequency}
+                      onChange={(event) =>
+                        setFrequency(
+                          event.target.value as "daily" | "weekly" | "monthly",
+                        )
+                      }
+                      className="reserve-input"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </Field>
+
+                  <Field
+                    label="End date (optional)"
+                    icon={<CalendarDays className="h-4 w-4" />}
+                  >
+                    <input
+                      type="date"
+                      min={date}
+                      value={endDate}
+                      onChange={(event) => setEndDate(event.target.value)}
+                      className="reserve-input"
+                    />
+                  </Field>
+
+                  <Field
+                    label="Number of occurrences (max 52)"
+                    icon={<CalendarDays className="h-4 w-4" />}
+                  >
+                    <input
+                      type="number"
+                      min={1}
+                      max={52}
+                      value={occurrences}
+                      onChange={(event) =>
+                        setOccurrences(
+                          Math.min(52, Math.max(1, Number(event.target.value))),
+                        )
+                      }
+                      disabled={!!endDate}
+                      className="reserve-input disabled:opacity-40"
+                    />
+                  </Field>
+
+                  {previewDates.length > 0 && (
+                    <div className="mt-2">
+                      <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                        Preview ({previewDates.length} dates)
+                      </p>
+                      <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                        {previewDates.map((d) => (
+                          <span
+                            key={d}
+                            className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-zinc-400"
+                          >
+                            {d}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Guest Invitations */}
             <div className="mt-6">
               <div className="flex items-center gap-2 mb-3">
@@ -493,10 +654,16 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
             </div>
 
             <button
-              disabled={!selected || booking}
-              className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!selected || booking || retryAfter > 0}
+              className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
             >
-              {booking ? "Securing workspace..." : "Confirm reservation"}
+              {booking
+                ? "Securing workspace..."
+                : retryAfter > 0
+                  ? `Retry in ${retryAfter}s`
+                  : recurringEnabled
+                    ? `Confirm ${previewDates.length} recurring bookings`
+                    : "Confirm reservation"}
             </button>
           </form>
         </div>

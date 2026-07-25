@@ -84,7 +84,7 @@ export function NoiseMeter({ onMeasured }: Props) {
     setResult(null);
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      let stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: false,
           noiseSuppression: false,
@@ -105,7 +105,7 @@ export function NoiseMeter({ onMeasured }: Props) {
       }
 
       const audioContext = new AudioContextClass();
-      const source = audioContext.createMediaStreamSource(stream);
+      let source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
 
       analyser.fftSize = 2048;
@@ -122,7 +122,13 @@ export function NoiseMeter({ onMeasured }: Props) {
           "visibilitychange",
           handleVisibilityChange,
         );
-        cancelAnimationFrame(animationFrame);
+        navigator.mediaDevices.removeEventListener(
+          "devicechange",
+          handleDeviceChange,
+        );
+        if (typeof globalThis.cancelAnimationFrame === "function") {
+          globalThis.cancelAnimationFrame(animationFrame);
+        }
         try {
           source.disconnect();
         } catch {}
@@ -134,6 +140,45 @@ export function NoiseMeter({ onMeasured }: Props) {
           audioContext.close().catch(() => {});
         }
       };
+
+      const handleDeviceChange = async () => {
+        if (!audioContext || audioContext.state === "closed") return;
+
+        try {
+          if (audioContext.state !== "running") {
+            await audioContext.resume();
+          }
+
+          const track = stream.getAudioTracks()[0];
+          if (track && track.readyState === "ended") {
+            const newStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+              },
+            });
+
+            try {
+              source.disconnect();
+            } catch {}
+
+            stream = newStream;
+            source = audioContext.createMediaStreamSource(stream);
+            source.connect(analyser);
+          }
+        } catch (error) {
+          console.error(
+            "Failed to recover audio context after device change:",
+            error,
+          );
+        }
+      };
+
+      navigator.mediaDevices.addEventListener(
+        "devicechange",
+        handleDeviceChange,
+      );
 
       const handleVisibilityChange = () => {
         if (document.hidden) {
@@ -164,7 +209,7 @@ export function NoiseMeter({ onMeasured }: Props) {
         if (lastTickTime !== null) {
           const delta = now - lastTickTime;
           if (delta < targetFrameInterval) {
-            animationFrame = requestAnimationFrame(tick);
+            animationFrame = globalThis.requestAnimationFrame(tick);
             return;
           }
           lastTickTime = now - (delta % targetFrameInterval);
@@ -238,7 +283,7 @@ export function NoiseMeter({ onMeasured }: Props) {
           }
         }
 
-        animationFrame = requestAnimationFrame(tick);
+        animationFrame = globalThis.requestAnimationFrame(tick);
       };
 
       setTimeout(() => {

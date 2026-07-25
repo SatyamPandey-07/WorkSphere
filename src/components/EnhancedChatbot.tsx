@@ -495,7 +495,10 @@ export function EnhancedChatbot({
         const data = await res.json();
         setFavorites(
           new Set<string>(
-            data.favorites?.map((f: { venueId: string }) => f.venueId) || [],
+            data.favorites?.map(
+              (f: { venuePlaceId?: string; venueId: string }) =>
+                f.venuePlaceId || f.venueId,
+            ) || [],
           ),
         );
       }

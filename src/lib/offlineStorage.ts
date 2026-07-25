@@ -216,15 +216,16 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
           receiptStore.createIndex("createdAt", "createdAt", { unique: false });
         }
 
- feat/1628-offline-favorites-sync
         // Pending favorites store
         if (!database.objectStoreNames.contains("pendingFavorites")) {
           database.createObjectStore("pendingFavorites", {
+            keyPath: "id",
+          });
+        }
 
         // Preference reranking cache store
         if (!database.objectStoreNames.contains("preference_rankings")) {
           database.createObjectStore("preference_rankings", {
- main
             keyPath: "id",
           });
         }

@@ -92,6 +92,7 @@ type DelaySocket = {
   __lastCloseReason?: string | null;
   __offlineActionsQueue?: string[];
   __offlineCrdtQueue?: any[];
+  __worksphereForceReconnect?: () => void;
 };
 /** Swap in jittered backoff on a live PartySocket instance (idempotent). */
 export function attachJitteredBackoff<T extends object>(socket: T): T {

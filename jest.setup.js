@@ -1,6 +1,15 @@
 require("@testing-library/jest-dom");
 const { TextEncoder, TextDecoder } = require("util");
 const { webcrypto } = require("crypto");
+
+// Mock import.meta for Jest CommonJS environment
+if (typeof globalThis !== "undefined") {
+  Object.defineProperty(globalThis, "import.meta", {
+    value: { url: "file:///" },
+    configurable: true,
+    writable: true,
+  });
+}
 // jsdom doesn't provide these globals; Node's implementations are drop-in
 // replacements and let us test Edge-runtime-style code (e.g. src/lib/csrf.ts)
 // under the standard jsdom test environment.
@@ -208,4 +217,30 @@ global.IntersectionObserver = class IntersectionObserver {
   unobserve() {}
   disconnect() {}
 };
+
+// Mock Audio for JSDOM testing environment
+if (typeof global.window !== "undefined") {
+  global.window.Audio = class {
+    constructor() {}
+    play() {
+      return Promise.resolve();
+    }
+    pause() {}
+    load() {}
+  };
+
+  Object.defineProperty(global.window.CSSStyleDeclaration.prototype, "scrollbarGutter", {
+    writable: true,
+    value: "",
+  });
+
+  const originalGetComputedStyle = global.window.getComputedStyle;
+  global.window.getComputedStyle = function (elt, ...args) {
+    const style = originalGetComputedStyle.call(this, elt, ...args);
+    if (elt.style && elt.style.scrollbarGutter) {
+      style.scrollbarGutter = elt.style.scrollbarGutter;
+    }
+    return style;
+  };
+}
 

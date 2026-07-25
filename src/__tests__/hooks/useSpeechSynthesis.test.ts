@@ -281,9 +281,9 @@ describe("useSpeechSynthesis hook", () => {
     });
 
     expect(result.current.voice?.voiceURI).toBe("spanish-voice");
-    expect(
-      window.localStorage.getItem("speechSynthesis:selectedVoiceURI"),
-    ).toBe("spanish-voice");
+    expect(window.localStorage.getItem("worksphere_selected_voice_uri")).toBe(
+      "spanish-voice",
+    );
 
     // Simulate the component unmounting and remounting due to a parent re-render
     unmount();

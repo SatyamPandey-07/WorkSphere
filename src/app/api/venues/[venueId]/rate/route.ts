@@ -222,8 +222,7 @@ export async function POST(
       });
     }
 
-    // Asynchronously update venue with new averages
-    after(async () => {
+    const runAfter = async () => {
       try {
         const allRatings = await prisma.venueRating.findMany({
           where: { venueId: finalVenueId },
@@ -386,7 +385,13 @@ export async function POST(
       } catch (err) {
         console.error("[RateAPI] Background aggregation failed:", err);
       }
-    });
+    };
+
+    try {
+      after(runAfter);
+    } catch {
+      runAfter();
+    }
 
     return NextResponse.json({ rating }, { status: 201 });
   } catch (error) {

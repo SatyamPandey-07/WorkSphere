@@ -29,11 +29,15 @@ export function persistVoiceURI(uri: string | null): void {
 
 export function splitTextIntoSentences(text: string): string[] {
   if (!text) return [];
-  // Split on sentence boundaries (. ! ?) while preserving reasonable chunks
-  const raw = text.split(/(?<=[.!?])\s+/);
-  return raw
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  // Strip UI components <ui-component ... />
+  const cleanText = text
+    .replace(/<ui-component\s+name="[^"]+"\s+props='[^']+'\s*\/>/g, "")
+    .trim();
+  if (!cleanText) return [];
+
+  // Split on sentence boundaries (. ! ?) avoiding numbered list prefixes like "1."
+  const sentences = cleanText.split(/(?<=[!?])\s+|(?<=(?<!\b\d+)\.)\s+/g);
+  return sentences.map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
 export interface UseSpeechSynthesisOptions {
@@ -75,7 +79,7 @@ export function useSpeechSynthesis(
   const options: UseSpeechSynthesisOptions =
     typeof textToSpeakDefaultOrOptions === "string"
       ? { textToSpeakDefault: textToSpeakDefaultOrOptions, ...optionsParam }
-      : (textToSpeakDefaultOrOptions || {});
+      : textToSpeakDefaultOrOptions || {};
 
   const {
     textToSpeakDefault = "",
@@ -95,8 +99,12 @@ export function useSpeechSynthesis(
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voice, setVoiceState] = useState<SpeechSynthesisVoice | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
-  const [speakingSentenceIndex, setSpeakingSentenceIndex] = useState<number | null>(null);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(
+    null,
+  );
+  const [speakingSentenceIndex, setSpeakingSentenceIndex] = useState<
+    number | null
+  >(null);
 
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const utterancesRef = useRef<SpeechSynthesisUtterance[]>([]);

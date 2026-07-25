@@ -13,7 +13,7 @@ let socketOpts: {
   onMessage?: (event: { data: string }) => void;
 } = {};
 
-jest.mock("partysocket/react", () => ({
+jest.mock("@/hooks/usePartySocketReconnect", () => ({
   __esModule: true,
   default: jest.fn((opts: typeof socketOpts) => {
     socketOpts = opts;

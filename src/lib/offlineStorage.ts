@@ -23,6 +23,63 @@ userDoc.on("update", async (update: Uint8Array) => {
 const DB_NAME = "worksphere-offline";
 const DB_VERSION = 6;
 
+/**
+ * Execute an operation with exponential backoff retry if a DatabaseLockedError or lock contention error occurs.
+ */
+export async function executeWithRetry<T>(
+  fn: () => Promise<T>,
+  retries = 3,
+  delayMs = 100,
+): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < retries - 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, delayMs * Math.pow(2, i)),
+        );
+      }
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Leader-election Web Lock: only ONE tab across all open windows runs the callback.
+ * Other tabs skip (non-blocking) because the IndexedDB data is shared — the leader's
+ * writes are visible to all tabs on the same origin (#1072).
+ *
+ * Returns `true` if this tab won the election and the callback ran; `false` if
+ * another tab already holds the lock and work was skipped.
+ */
+export async function withLeaderLock<T>(
+  lockName: string,
+  callback: () => Promise<T>,
+): Promise<{ acquired: boolean; result?: T }> {
+  if (
+    typeof navigator !== "undefined" &&
+    "locks" in navigator &&
+    navigator.locks?.request
+  ) {
+    try {
+      return await navigator.locks.request(
+        lockName,
+        { ifAvailable: true },
+        async (lock) => {
+          if (!lock) return { acquired: false };
+          return { acquired: true, result: await callback() };
+        },
+      );
+    } catch {
+      return { acquired: false, result: await callback() };
+    }
+  }
+  return { acquired: false, result: await callback() };
+}
+
 export interface OfflineVenue {
   id: string;
   name: string;

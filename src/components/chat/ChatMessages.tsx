@@ -27,7 +27,11 @@ import {
   Check,
   Clock,
   Trash2,
+  Building2,
+  Navigation,
 } from "lucide-react";
+import { usePreferenceReranking } from "@/hooks/usePreferenceReranking";
+import { RecommendedBadge } from "@/components/RecommendedBadge";
 import { RefObject, useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
@@ -130,6 +134,7 @@ interface VenueChatCardProps {
   isSelected?: boolean;
   compareDisabled?: boolean;
   onToggleCompare?: (venue: Venue) => void;
+  isRecommended?: boolean;
 }
 
 export function VenueChatCard({
@@ -147,6 +152,7 @@ export function VenueChatCard({
   isSelected,
   compareDisabled,
   onToggleCompare,
+  isRecommended,
 }: VenueChatCardProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
@@ -240,11 +246,12 @@ export function VenueChatCard({
 
           <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <CategoryIcon className={`w-3.5 h-3.5 ${iconColor} shrink-0`} />
                 <h4 className="font-bold text-xs text-zinc-900 dark:text-zinc-50 truncate uppercase tracking-tight">
                   {venue.name}
                 </h4>
+                {isRecommended && <RecommendedBadge />}
                 {venue.score != null && (
                   <span className="text-[10px] font-black text-blue-600 bg-blue-50 dark:bg-blue-950/30 px-1 py-0.5 rounded">
                     {Math.round(venue.score * 10)}%
@@ -474,10 +481,11 @@ export function VenueChatCard({
               <CategoryIcon className={`w-5 h-5 ${iconColor}`} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                 <h4 className="font-black text-sm text-zinc-900 dark:text-zinc-50 truncate uppercase tracking-tight">
                   {venue.name}
                 </h4>
+                {isRecommended && <RecommendedBadge />}
               </div>
 
               {venue.address && (
@@ -704,6 +712,9 @@ export function VenueListings({
 
   const [selectedVenues, setSelectedVenues] = useState<Venue[]>([]);
 
+  // Apply preference reranking
+  const { rerankedResults } = usePreferenceReranking(venues);
+
   // INFINITE SCROLL STATES
   const [visibleCount, setVisibleCount] = useState(5);
   const [isFetchingNextPage, setIsFetchingNextPage] = useState(false);
@@ -723,10 +734,12 @@ export function VenueListings({
       (entries) => {
         if (entries[0].isIntersecting && !isFetchingNextPage) {
           // If we have more venues locally, mock the pagination load
-          if (visibleCount < venues.length) {
+          if (visibleCount < rerankedResults.length) {
             setIsFetchingNextPage(true);
             timeoutId = setTimeout(() => {
-              setVisibleCount((prev) => Math.min(prev + 5, venues.length));
+              setVisibleCount((prev) =>
+                Math.min(prev + 5, rerankedResults.length),
+              );
               setIsFetchingNextPage(false);
             }, 800);
           }
@@ -748,7 +761,13 @@ export function VenueListings({
       observer.disconnect();
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [visibleCount, venues.length, isFetchingNextPage, onLoadMore]);
+  }, [
+    visibleCount,
+    venues.length,
+    rerankedResults.length,
+    isFetchingNextPage,
+    onLoadMore,
+  ]);
 
   const handleToggleCompare = (venue: Venue) => {
     setSelectedVenues((prev) => {
@@ -769,7 +788,7 @@ export function VenueListings({
   ) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      const nextIndex = Math.min(index + 1, venues.length - 1);
+      const nextIndex = Math.min(index + 1, rerankedResults.length - 1);
       const nextEl = containerRef.current?.querySelector(
         `[data-index="${nextIndex}"]`,
       ) as HTMLElement;
@@ -791,7 +810,7 @@ export function VenueListings({
     <div className="space-y-3 pl-2" ref={containerRef}>
       <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2 mb-1">
         <p className="text-[10px] uppercase font-black tracking-widest text-zinc-400">
-          Recommended Venues ({venues.length})
+          Recommended Venues ({rerankedResults.length})
         </p>
         <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-inner">
           <button
@@ -821,7 +840,7 @@ export function VenueListings({
         </div>
       </div>
 
-      {venues.length === 0 ? (
+      {rerankedResults.length === 0 ? (
         <EmptyState
           illustration="search"
           message="No venues found"
@@ -830,7 +849,7 @@ export function VenueListings({
       ) : (
         <LayoutGroup id="venue-listings">
           <VenueGrid viewMode={viewMode}>
-            {venues.slice(0, visibleCount).map((venue, index) => (
+            {rerankedResults.slice(0, visibleCount).map((venue, index) => (
               <SubgridCell key={venue.id}>
                 {/* 
                   Measurement Container Pattern for Issue #1037:
@@ -849,6 +868,7 @@ export function VenueListings({
                   >
                     <VenueChatCard
                       venue={venue}
+                      isRecommended={(venue as any).isRecommended}
                       isFavorited={favorites.has(venue.id)}
                       onGetDirections={onGetDirections}
                       onToggleFavorite={onToggleFavorite}

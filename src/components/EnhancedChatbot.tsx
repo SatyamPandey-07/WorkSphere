@@ -18,6 +18,7 @@ import {
   trackError,
   trackAgentPerformance,
 } from "@/lib/analytics";
+import { calculateHaversineDistance } from "@/lib/utils";
 import {
   saveFavoriteOffline,
   saveSearchOffline,
@@ -81,8 +82,8 @@ interface Filters {
   singleOriginBeans?: boolean;
   specialtyEspresso?: boolean;
   oatAlmondMilk?: boolean;
-  pourOverAvailable?: boolean;
   musicStyle?: "all" | "lofi" | "classical_jazz" | "no_music";
+  distanceRadius?: number;
   [key: string]: unknown;
 }
 
@@ -184,6 +185,7 @@ export function EnhancedChatbot({
     return counts;
   }, [messages]);
   const [showFilters, setShowFilters] = useState(false);
+  const [distanceRadius, setDistanceRadius] = useState<number>(0);
   const [showHistory, setShowHistory] = useState(false);
   const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
   const [bookingVenue, setBookingVenue] = useState<Venue | null>(null);
@@ -899,6 +901,20 @@ export function EnhancedChatbot({
                   });
                 }
 
+                let finalVenues = metadata.venues ?? [];
+                if (distanceRadius > 0 && location) {
+                  finalVenues = finalVenues.filter((v: Venue) => {
+                    const d = calculateHaversineDistance(
+                      location.lat,
+                      location.lng,
+                      v.lat,
+                      v.lng,
+                    );
+                    return d <= distanceRadius;
+                  });
+                }
+                metadata.venues = finalVenues;
+
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
@@ -993,7 +1009,7 @@ export function EnhancedChatbot({
         try {
           const cached = await getSearchOffline(userMessage);
           if (cached) {
-            const venues: Venue[] = cached.results.map((v) => ({
+            let venues: Venue[] = cached.results.map((v) => ({
               id: v.id,
               name: v.name,
               lat: v.latitude,
@@ -1001,6 +1017,18 @@ export function EnhancedChatbot({
               category: v.category ?? "coworking_space",
               address: v.address,
             }));
+
+            if (distanceRadius > 0 && location) {
+              venues = venues.filter((v) => {
+                const d = calculateHaversineDistance(
+                  location.lat,
+                  location.lng,
+                  v.lat,
+                  v.lng,
+                );
+                return d <= distanceRadius;
+              });
+            }
 
             setMessages((prev) => [
               ...prev,
@@ -1111,7 +1139,7 @@ export function EnhancedChatbot({
         onOpenVenueSubmission={() => setShowVenueSubmission(true)}
         userLocation={location}
         onLocationChange={handleLocationChange}
-        filters={filters}
+        filters={{ ...filters, distanceRadius }}
         showFilters={showFilters}
         setShowFilters={setShowFilters}
         onToggleFilter={(key) => toggleFilter(key as keyof Filters)}
@@ -1172,6 +1200,8 @@ export function EnhancedChatbot({
         isLoading={isLoading}
         onInputChange={handleInputChange}
         onSubmit={handleSubmit}
+        distanceRadius={distanceRadius}
+        onDistanceChange={setDistanceRadius}
       />
 
       {typingUsers.length > 0 && (

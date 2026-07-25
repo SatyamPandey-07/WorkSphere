@@ -154,6 +154,7 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
 
       if (msg.kind === "viewer-ready" && isHost && localStreamRef.current) {
         if (msg.to && msg.to !== userId) return;
+        cleanupPeer(msg.from);
         const pc = ensurePeer(msg.from, true);
         try {
           const offer = await pc.createOffer();
@@ -216,6 +217,12 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
     startClosed: !roomId,
     query: token ? { token } : undefined,
     onOpen() {
+      if (userId) {
+        const peerIds = [...peersRef.current.keys()];
+        for (const id of peerIds) {
+          cleanupPeer(id);
+        }
+      }
       // Late joiners: poke the host in case a share is already running.
       if (userId && !isHost) {
         sendSignal({ kind: "viewer-ready" });

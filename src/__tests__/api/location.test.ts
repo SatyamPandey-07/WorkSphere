@@ -1,4 +1,5 @@
-import { GET, clearLocationCache } from "@/app/api/location/route";
+import { GET } from "@/app/api/location/route";
+import { clearLocationCache } from "@/lib/locationCache";
 import { resetRateLimit } from "@/lib/rateLimit";
 import { NextRequest } from "next/server";
 

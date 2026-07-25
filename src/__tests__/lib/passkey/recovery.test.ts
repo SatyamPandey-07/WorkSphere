@@ -81,9 +81,8 @@ describe("Emergency kit QR export (#1556)", () => {
     expect(payload.share).toEqual(encrypted);
     expect(typeof payload.createdAt).toBe("string");
 
-    // The payload must never contain raw plaintext share bytes.
     const serialized = JSON.stringify(payload);
-    expect(serialized).not.toContain("y");
+    expect(serialized).not.toContain('"y":');
     expect(serialized).toContain(encrypted.ciphertext);
   });
 

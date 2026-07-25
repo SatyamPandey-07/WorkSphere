@@ -47,8 +47,8 @@ export function useLayoutOptimizer() {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const workerRef = useRef<Worker | null>(null);
-  const requestIdRef = useRef(0);
-  const activeRequestIdRef = useRef<number | null>(null);
+  const sequenceIdRef = useRef(0);
+  const activeSequenceIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (typeof Worker === "undefined") {
@@ -66,7 +66,10 @@ export function useLayoutOptimizer() {
     worker.onmessage = (event: MessageEvent<LayoutWorkerResponse>) => {
       const message = event.data;
 
-      if (message.requestId !== activeRequestIdRef.current) {
+      if (
+        activeSequenceIdRef.current !== null &&
+        message.sequenceId < activeSequenceIdRef.current
+      ) {
         return;
       }
 
@@ -77,20 +80,20 @@ export function useLayoutOptimizer() {
         setError(message.error);
       }
 
-      activeRequestIdRef.current = null;
+      activeSequenceIdRef.current = null;
       setIsOptimizing(false);
     };
 
     worker.onerror = () => {
       setError("The layout optimization worker stopped unexpectedly.");
-      activeRequestIdRef.current = null;
+      activeSequenceIdRef.current = null;
       setIsOptimizing(false);
     };
 
     return () => {
       worker.terminate();
       workerRef.current = null;
-      activeRequestIdRef.current = null;
+      activeSequenceIdRef.current = null;
     };
   }, []);
 
@@ -107,14 +110,14 @@ export function useLayoutOptimizer() {
         ? new Float32Array(request.floorPlanGrid)
         : Float32Array.from(request.floorPlanGrid);
 
-    const requestId = ++requestIdRef.current;
-    activeRequestIdRef.current = requestId;
+    const sequenceId = ++sequenceIdRef.current;
+    activeSequenceIdRef.current = sequenceId;
     setIsOptimizing(true);
     setError(null);
 
     const message: LayoutWorkerRequest = {
       type: "OPTIMIZE",
-      requestId,
+      sequenceId,
       payload: {
         floorPlanGridBuffer: floorPlanGrid.buffer as ArrayBuffer,
         width: request.width,

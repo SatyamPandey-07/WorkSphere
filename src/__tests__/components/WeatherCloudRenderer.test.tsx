@@ -1,6 +1,7 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, renderHook } from "@testing-library/react";
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
+import { useCloudRenderer } from "@/hooks/useCloudRenderer";
 import * as weatherUtils from "@/utils/weatherToCloudDensity";
 
 // ---------- WebGL 2 mock ----------
@@ -55,6 +56,42 @@ beforeAll(() => {
 });
 
 // ---------- Tests ----------
+
+describe("useCloudRenderer performance optimizations (Issue #1548)", () => {
+  let canvasRef: React.RefObject<HTMLCanvasElement>;
+
+  beforeEach(() => {
+    // Create a mock canvas element to satisfy the hook's requirements
+    const canvas = document.createElement("canvas");
+    canvas.getContext = jest.fn().mockReturnValue(null);
+    canvasRef = { current: canvas };
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("should attach and detach visibilitychange listeners for tab throttling", () => {
+    const addEventListenerSpy = jest.spyOn(document, "addEventListener");
+    const removeEventListenerSpy = jest.spyOn(document, "removeEventListener");
+
+    const { unmount } = renderHook(() => useCloudRenderer(canvasRef));
+
+    // Verify Requirement 2: The hook listens for tab backgrounding
+    expect(addEventListenerSpy).toHaveBeenCalledWith(
+      "visibilitychange",
+      expect.any(Function),
+    );
+
+    unmount();
+
+    // Verify memory leak prevention on unmount
+    expect(removeEventListenerSpy).toHaveBeenCalledWith(
+      "visibilitychange",
+      expect.any(Function),
+    );
+  });
+});
 
 describe("WeatherCloudRenderer Component", () => {
   test("renders 3D Volumetric Weather overlay badge", () => {

@@ -65,6 +65,7 @@ describe("WebGPUFloorPlanRenderer Context Loss & Recovery", () => {
 
     const mockDevice = {
       lost: lostPromise,
+      addEventListener: jest.fn(),
       createShaderModule: jest.fn().mockReturnValue({}),
       createRenderPipeline: jest.fn().mockReturnValue({
         getBindGroupLayout: jest.fn().mockReturnValue({}),

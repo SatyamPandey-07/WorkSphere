@@ -216,7 +216,12 @@ export function usePreferenceReranking<
           }
         } catch (e) {
           console.error("[usePreferenceReranking] Corrupt cache, clearing", e);
-          await clearPreferenceRanking().catch(() => {});
+          const clearPromise = clearPreferenceRanking();
+          if (clearPromise && typeof clearPromise.catch === "function") {
+            await clearPromise.catch(() => {});
+          } else {
+            await clearPromise;
+          }
         }
       }
 

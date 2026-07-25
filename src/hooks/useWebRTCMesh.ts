@@ -394,9 +394,23 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
   const startBitrateLoop = useCallback(() => {
     if (bitrateTimerRef.current) clearInterval(bitrateTimerRef.current);
-    bitrateTimerRef.current = setInterval(() => {
+    bitrateTimerRef.current = setInterval(async () => {
+      let worstTierLabel: "high" | "medium" | "low" | null = null;
       for (const pc of peersRef.current.values()) {
-        void adaptVideoBitrate(pc);
+        const tier = await adaptVideoBitrate(pc);
+        if (tier) {
+          if (tier.label === "low") worstTierLabel = "low";
+          else if (tier.label === "medium" && worstTierLabel !== "low") {
+            worstTierLabel = "medium";
+          } else if (!worstTierLabel) {
+            worstTierLabel = "high";
+          }
+        }
+      }
+      if (worstTierLabel === "low") {
+        setNetworkQuality("poor");
+      } else if (worstTierLabel === "medium") {
+        setNetworkQuality((prev) => (prev === "poor" ? "poor" : "fair"));
       }
     }, 4000);
   }, []);

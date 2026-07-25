@@ -21,11 +21,7 @@ userDoc.on("update", async (update: Uint8Array) => {
 });
 
 const DB_NAME = "worksphere-offline";
- feat/1628-offline-favorites-sync
 const DB_VERSION = 6;
-
-const DB_VERSION = 5;
- main
 
 export interface OfflineVenue {
   id: string;
@@ -163,15 +159,16 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
           receiptStore.createIndex("createdAt", "createdAt", { unique: false });
         }
 
- feat/1628-offline-favorites-sync
         // Pending favorites store
         if (!database.objectStoreNames.contains("pendingFavorites")) {
           database.createObjectStore("pendingFavorites", {
+            keyPath: "id",
+          });
+        }
 
         // Preference reranking cache store
         if (!database.objectStoreNames.contains("preference_rankings")) {
           database.createObjectStore("preference_rankings", {
- main
             keyPath: "id",
           });
         }
@@ -329,7 +326,7 @@ export async function saveSearchOffline(
 ): Promise<void> {
   // Leader-election: if another tab is already caching results for this same
   // query, skip this write — the IndexedDB data is shared per-origin (#1072).
-  const { acquired } = await withLeaderLock(
+  const { acquired } = await (window as any).withLeaderLock(
     `worksphere-search-cache-${query.trim().toLowerCase().slice(0, 64)}`,
     async () => {
       return withWebLock(async () => {

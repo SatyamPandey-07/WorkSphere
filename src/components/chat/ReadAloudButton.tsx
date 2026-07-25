@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useRef } from "react";
 import { Volume2, Square, VolumeX } from "lucide-react";
 import { useSpeechSynthesis, SPEED_OPTIONS } from "@/hooks/useSpeechSynthesis";
 
@@ -11,24 +11,53 @@ function Tooltip({
   children: React.ReactNode;
   text: string;
 }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [position, setPosition] = useState<'top' | 'bottom'>('top');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseEnter = () => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      // Position tooltip below if near the top edge (e.g., < 50px space)
+      if (rect.top < 50) {
+        setPosition('bottom');
+      } else {
+        setPosition('top');
+      }
+    }
+    setIsVisible(true);
+  };
+
+  const handleMouseLeave = () => {
+    setIsVisible(false);
+  };
+
+  const handleTouchStart = () => {
+    // Hide tooltip on touch events to prevent screen clutter on mobile devices
+    setIsVisible(false);
+  };
+
   return (
-    <div className="relative inline-flex items-center group">
+    <div 
+      ref={containerRef}
+      className="relative inline-flex items-center"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocus={handleMouseEnter}
+      onBlur={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+    >
       {children}
 
       <div
-        className="
+        data-testid="tooltip"
+        className={`
           pointer-events-none
           absolute
           left-1/2
           -translate-x-1/2
-            max-[380px]:left-0
-            max-[380px]:translate-x-0
-           top-full
-          mt-2
-          sm:top-auto
-          sm:bottom-full
-          sm:mb-2
-          sm:mt-0
+          max-[380px]:left-0
+          max-[380px]:translate-x-0
           z-50
           w-max
           max-w-[calc(100vw-1rem)]
@@ -40,12 +69,11 @@ function Tooltip({
           py-1
           text-xs
           text-white
-          opacity-0
           transition-opacity
           duration-150
-          group-hover:opacity-100
-          group-focus-within:opacity-100
-        "
+          ${isVisible ? "opacity-100" : "opacity-0"}
+          ${position === 'bottom' ? "top-full mt-2" : "bottom-full mb-2"}
+        `}
       >
         {text}
       </div>

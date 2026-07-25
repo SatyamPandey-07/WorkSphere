@@ -146,11 +146,10 @@ function ToastItem({
   toast: Toast;
   onRemove: (id: string) => void;
 }) {
-  const [isHovered, setIsHovered] = useState(false);
   const [countdown, setCountdown] = useState<number | undefined>(
     toast.countdown,
   );
-  
+
   // Track pointer over and focus within separately as suggested by CodeRabbit
   const [isPointerOver, setIsPointerOver] = useState(false);
   const [isFocusedWithin, setIsFocusedWithin] = useState(false);

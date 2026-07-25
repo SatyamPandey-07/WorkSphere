@@ -434,7 +434,7 @@ export function VenueDetailDialog({
           setLeaderboard(lbData.leaderboard || []);
         }
         if (metricsRes.ok) {
-          const data = await response.json();
+          const data = await metricsRes.json();
           setVoteMetrics(() => ({
             wifi: {
               confidenceScore: 100,
@@ -1685,14 +1685,24 @@ export function VenueDetailDialog({
                   </h4>
                   <div className="space-y-1.5">
                     {leaderboard.map((entry: any, idx: number) => (
-                      <div key={entry.userId} className="flex items-center justify-between text-xs">
+                      <div
+                        key={entry.userId}
+                        className="flex items-center justify-between text-xs"
+                      >
                         <div className="flex items-center gap-2">
-                          <span className="w-4 text-center text-[10px] font-mono text-zinc-500">{idx + 1}.</span>
-                          <span className="font-medium text-zinc-300">{entry.name || "Anonymous"}</span>
-                          {entry.accurateVotes >= 10 && <BadgeCheck className="w-3 h-3 text-amber-400" />}
+                          <span className="w-4 text-center text-[10px] font-mono text-zinc-500">
+                            {idx + 1}.
+                          </span>
+                          <span className="font-medium text-zinc-300">
+                            {entry.name || "Anonymous"}
+                          </span>
+                          {entry.accurateVotes >= 10 && (
+                            <BadgeCheck className="w-3 h-3 text-amber-400" />
+                          )}
                         </div>
                         <span className="font-mono text-zinc-500 text-[10px]">
-                          {entry.totalVotes} vote{entry.totalVotes !== 1 ? "s" : ""}
+                          {entry.totalVotes} vote
+                          {entry.totalVotes !== 1 ? "s" : ""}
                         </span>
                       </div>
                     ))}

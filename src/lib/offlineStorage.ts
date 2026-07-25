@@ -38,7 +38,9 @@ export async function executeWithRetry<T>(
     } catch (err) {
       lastError = err;
       if (i < retries - 1) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs * Math.pow(2, i)));
+        await new Promise((resolve) =>
+          setTimeout(resolve, delayMs * Math.pow(2, i)),
+        );
       }
     }
   }

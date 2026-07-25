@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Globe } from "lucide-react";
 
 interface TimezoneClockProps {
   /** IANA timezone string e.g. "America/New_York", "Asia/Kolkata" */
-  timezone: string;
+  timeZone: string;
   /** Optional label shown next to the clock (e.g. venue city name) */
   label?: string;
 }
@@ -14,7 +14,7 @@ interface TimezoneClockProps {
  * TimezoneClock — displays a live, localized clock for a given IANA timezone.
  * Updates every second via setInterval. Cleans up on unmount.
  */
-export function TimezoneClock({ timezone, label }: TimezoneClockProps) {
+export function TimezoneClock({ timeZone, label }: TimezoneClockProps) {
   const [time, setTime] = useState<string>("");
   const [tzAbbr, setTzAbbr] = useState<string>("");
   const [isValid, setIsValid] = useState(true);
@@ -26,7 +26,7 @@ export function TimezoneClock({ timezone, label }: TimezoneClockProps) {
 
         // Format the time in the venue's local timezone
         const timeFormatter = new Intl.DateTimeFormat("en-US", {
-          timeZone: timezone,
+          timeZone,
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
@@ -35,14 +35,14 @@ export function TimezoneClock({ timezone, label }: TimezoneClockProps) {
 
         // Extract the timezone abbreviation (e.g. "EST", "IST")
         const abbrFormatter = new Intl.DateTimeFormat("en-US", {
-          timeZone: timezone,
+          timeZone,
           timeZoneName: "short",
         });
 
         const formattedTime = timeFormatter.format(now);
         const parts = abbrFormatter.formatToParts(now);
         const abbr =
-          parts.find((p) => p.type === "timeZoneName")?.value ?? timezone;
+          parts.find((p) => p.type === "timeZoneName")?.value ?? timeZone;
 
         setTime(formattedTime);
         setTzAbbr(abbr);
@@ -51,7 +51,7 @@ export function TimezoneClock({ timezone, label }: TimezoneClockProps) {
         // Invalid timezone string — show a graceful fallback
         setIsValid(false);
         setTime("--:--:-- --");
-        setTzAbbr(timezone);
+        setTzAbbr(timeZone);
       }
     };
 
@@ -59,7 +59,7 @@ export function TimezoneClock({ timezone, label }: TimezoneClockProps) {
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [timezone]);
+  }, [timeZone]);
 
   if (!isValid) return null;
 

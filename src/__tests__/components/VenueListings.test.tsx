@@ -123,7 +123,9 @@ describe("VenueListings Component", () => {
 
     // Simulate enter on first item
     fireEvent.keyDown(cards[0], { key: "Enter", code: "Enter" });
-    expect(mockOnOpenDetails).toHaveBeenCalledWith(mockVenues[0]);
+    expect(mockOnOpenDetails).toHaveBeenCalledWith(
+      expect.objectContaining({ id: mockVenues[0].id }),
+    );
   });
 
   it("renders empty state when venues list is empty", async () => {

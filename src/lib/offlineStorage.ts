@@ -4,6 +4,7 @@
  * Integrated with Yjs for CRDT-based offline state mutation and background sync.
  */
 import * as Y from "yjs";
+import { withWebLock } from "./webLock";
 
 // Initialize global Y.Doc for user state
 export const userDoc = new Y.Doc();
@@ -20,66 +21,30 @@ userDoc.on("update", async (update: Uint8Array) => {
 });
 
 const DB_NAME = "worksphere-offline";
-const DB_VERSION = 5;
-
-const IDB_STORAGE_LOCK = "worksphere-offline-storage-lock";
+const DB_VERSION = 6;
 
 /**
  * Execute an operation with exponential backoff retry if a DatabaseLockedError or lock contention error occurs.
  */
 export async function executeWithRetry<T>(
-  operation: () => Promise<T>,
-  maxRetries = 3,
-  delayMs = 50,
+  fn: () => Promise<T>,
+  retries = 3,
+  delayMs = 100,
 ): Promise<T> {
-  let attempt = 0;
-  while (true) {
+  let lastError: unknown;
+  for (let i = 0; i < retries; i++) {
     try {
-      return await operation();
-    } catch (err: any) {
-      attempt++;
-      const isLockedError =
-        err?.name === "DatabaseLockedError" ||
-        err?.name === "AbortError" ||
-        err?.name === "UnknownError" ||
-        (err?.message && String(err.message).toLowerCase().includes("lock"));
-
-      if (isLockedError && attempt <= maxRetries) {
-        await new Promise((res) =>
-          setTimeout(res, delayMs * Math.pow(2, attempt - 1)),
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < retries - 1) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, delayMs * Math.pow(2, i)),
         );
-        continue;
       }
-      throw err;
     }
   }
-}
-
-/**
- * Web Locks API wrapper to serialize IndexedDB transactions across concurrent tabs (#910, #1279)
- */
-export async function withWebLock<T>(
-  callback: () => Promise<T>,
-  lockName = IDB_STORAGE_LOCK,
-): Promise<T> {
-  const runner = async () => {
-    if (
-      typeof navigator !== "undefined" &&
-      "locks" in navigator &&
-      navigator.locks?.request
-    ) {
-      try {
-        return await navigator.locks.request(lockName, async () => {
-          return callback();
-        });
-      } catch {
-        return callback();
-      }
-    }
-    return callback();
-  };
-
-  return executeWithRetry(runner);
+  throw lastError;
 }
 
 /**
@@ -112,7 +77,7 @@ export async function withLeaderLock<T>(
       return { acquired: false, result: await callback() };
     }
   }
-  return { acquired: true, result: await callback() };
+  return { acquired: false, result: await callback() };
 }
 
 export interface OfflineVenue {
@@ -249,6 +214,13 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
           });
           receiptStore.createIndex("status", "status", { unique: false });
           receiptStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
+        // Pending favorites store
+        if (!database.objectStoreNames.contains("pendingFavorites")) {
+          database.createObjectStore("pendingFavorites", {
+            keyPath: "id",
+          });
         }
 
         // Preference reranking cache store
@@ -1054,5 +1026,85 @@ export async function clearPreferenceRanking(): Promise<void> {
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
     });
+  });
+}
+
+export interface PendingFavorite {
+  id: string;
+  venueId: string;
+  action: "add" | "remove";
+  timestamp: number;
+}
+
+export async function queuePendingFavorite(
+  venueId: string,
+  action: "add" | "remove",
+): Promise<void> {
+  const database = await initOfflineDB();
+
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(["pendingFavorites"], "readwrite");
+    const store = transaction.objectStore("pendingFavorites");
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const existing = (request.result as PendingFavorite[]).filter(
+        (a) => a.venueId === venueId,
+      );
+
+      // If opposite action exists, delete it. Only latest action matters.
+      existing.forEach((a) => store.delete(a.id));
+
+      store.add({
+        id: crypto.randomUUID(),
+        venueId,
+        action,
+        timestamp: Date.now(),
+      });
+    };
+    request.onerror = () => reject(request.error);
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+
+  if ("serviceWorker" in navigator && "SyncManager" in window) {
+    try {
+      const swRegistration = await navigator.serviceWorker.ready;
+      await (swRegistration as any).sync.register("sync-favorites");
+    } catch (err) {
+      console.error("Background Sync registration failed:", err);
+    }
+  }
+}
+
+export async function getPendingFavorites(): Promise<PendingFavorite[]> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(["pendingFavorites"], "readonly");
+    const store = transaction.objectStore("pendingFavorites");
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const actions = (request.result as PendingFavorite[]).sort(
+        (a, b) => a.timestamp - b.timestamp,
+      );
+      resolve(actions);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function removePendingFavorite(id: string): Promise<void> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(["pendingFavorites"], "readwrite");
+    const store = transaction.objectStore("pendingFavorites");
+    const request = store.delete(id);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
   });
 }

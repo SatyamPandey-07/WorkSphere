@@ -66,4 +66,48 @@ describe("apiFetch client wrapper", () => {
 
     window.removeEventListener("rate-limit-triggered", eventListener);
   });
+
+  it("should parse HTTP Date format in Retry-After header", async () => {
+    const futureDate = new Date(Date.now() + 45000).toUTCString();
+    const mockResponse = new Response("rate limited", {
+      status: 429,
+      headers: new Headers({
+        "Retry-After": futureDate,
+      }),
+    });
+    global.fetch = jest.fn().mockResolvedValue(mockResponse);
+
+    const eventListener = jest.fn();
+    window.addEventListener("rate-limit-triggered", eventListener);
+
+    await apiFetch("/api/chat");
+
+    expect(eventListener).toHaveBeenCalled();
+    const event = eventListener.mock.calls[0][0] as CustomEvent;
+    expect(event.detail.retryAfter).toBeGreaterThanOrEqual(44);
+    expect(event.detail.retryAfter).toBeLessThanOrEqual(46);
+
+    window.removeEventListener("rate-limit-triggered", eventListener);
+  });
+
+  it("should fallback to json body retry_after when headers are missing", async () => {
+    const mockResponse = new Response(JSON.stringify({ retry_after: 25 }), {
+      status: 429,
+      headers: new Headers({
+        "Content-Type": "application/json",
+      }),
+    });
+    global.fetch = jest.fn().mockResolvedValue(mockResponse);
+
+    const eventListener = jest.fn();
+    window.addEventListener("rate-limit-triggered", eventListener);
+
+    await apiFetch("/api/chat");
+
+    expect(eventListener).toHaveBeenCalled();
+    const event = eventListener.mock.calls[0][0] as CustomEvent;
+    expect(event.detail.retryAfter).toBe(25);
+
+    window.removeEventListener("rate-limit-triggered", eventListener);
+  });
 });

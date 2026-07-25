@@ -8,7 +8,7 @@ const groq = new Groq({
 });
 
 const MAX_TOKENS_PER_COMPRESSED = 500;
-const MAX_MESSAGES_PER_COMPRESSED = 20;
+const _MAX_MESSAGES_PER_COMPRESSED = 20;
 const SIMILARITY_THRESHOLD = 0.82;
 
 const hnswIndexes = new Map<string, HNSWIndex>();
@@ -25,9 +25,7 @@ function estimateTokens(text: string): number {
 }
 
 async function compressWithLLM(chunks: ContextChunk[]): Promise<string> {
-  const transcript = chunks
-    .map((c) => `${c.role}: ${c.content}`)
-    .join("\n");
+  const transcript = chunks.map((c) => `${c.role}: ${c.content}`).join("\n");
 
   const completion = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
@@ -52,8 +50,7 @@ Output ONLY the compressed summary, no additional text.`,
   });
 
   return (
-    completion.choices[0]?.message?.content?.trim() ||
-    "No summary generated."
+    completion.choices[0]?.message?.content?.trim() || "No summary generated."
   );
 }
 
@@ -74,7 +71,10 @@ export async function compressConversationChunk(
       tokenCount,
     };
 
-    if (currentTokens + tokenCount > MAX_TOKENS_PER_COMPRESSED && currentBatch.length > 0) {
+    if (
+      currentTokens + tokenCount > MAX_TOKENS_PER_COMPRESSED &&
+      currentBatch.length > 0
+    ) {
       currentBatch.push(chunk);
       const summary = await compressWithLLM(currentBatch);
       const embedding = await generateEmbedding(summary);
@@ -106,7 +106,11 @@ export async function compressConversationChunk(
   }
 
   const fullSummary = await compressWithLLM(
-    chunks.map((c) => ({ role: c.role, content: c.content })),
+    chunks.map((c) => ({
+      role: c.role,
+      content: c.content,
+      tokenCount: c.tokenCount,
+    })),
   );
   const fullEmbedding = await generateEmbedding(fullSummary);
 

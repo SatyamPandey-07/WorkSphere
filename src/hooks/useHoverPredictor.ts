@@ -36,7 +36,19 @@ export function useHoverPredictor({
     (e: MouseEvent) => {
       if (hasPredictedRef.current) return;
 
-      const newPoint = { x: e.clientX, y: e.clientY, time: Date.now() };
+      const newPoint = {
+        x: e.clientX,
+        y: e.clientY,
+        time: Date.now(),
+      };
+
+      // First mouse movement: initialize previous point and exit.
+      // No velocity can be calculated yet.
+      if (pointsRef.current.length === 0) {
+        pointsRef.current = [newPoint];
+        return;
+      }
+
       pointsRef.current.push(newPoint);
 
       // Keep only last 5 points

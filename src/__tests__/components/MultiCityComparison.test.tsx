@@ -107,4 +107,76 @@ describe("MultiCityComparison Component (#860)", () => {
       expect(createObjectURLMock).toHaveBeenCalled();
     });
   });
+  it("shows a green badge when average WiFi speed is above 100 Mbps", async () => {
+    render(<MultiCityComparison initialVenues={mockVenues} />);
+
+    const badge = await screen.findByTestId("average-wifi-speed-badge");
+
+    expect(badge).toHaveTextContent("160 Mbps");
+    expect(badge).toHaveAttribute(
+      "aria-label",
+      "Average WiFi speed 160 Mbps, Fast",
+    );
+    expect(badge).toHaveClass("text-emerald-700");
+  });
+
+  it("shows a yellow badge when average WiFi speed is above 30 Mbps and at most 100 Mbps", async () => {
+    const moderateVenues = [
+      {
+        ...mockVenues[0],
+        wifiSpeed: 40,
+      },
+      {
+        ...mockVenues[1],
+        wifiSpeed: 80,
+      },
+    ];
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ venues: moderateVenues }),
+    });
+
+    render(<MultiCityComparison initialVenues={moderateVenues} />);
+
+    const badge = await screen.findByTestId("average-wifi-speed-badge");
+
+    expect(badge).toHaveTextContent("60 Mbps");
+    expect(badge).toHaveAttribute(
+      "aria-label",
+      "Average WiFi speed 60 Mbps, Moderate",
+    );
+    expect(badge).toHaveClass("text-amber-700");
+  });
+
+  it("updates the badge when selected city filters change", async () => {
+    const dynamicVenues = [
+      {
+        ...mockVenues[0],
+        wifiSpeed: 20,
+      },
+      {
+        ...mockVenues[1],
+        wifiSpeed: 220,
+      },
+    ];
+
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      json: async () => ({ venues: dynamicVenues }),
+    });
+
+    render(<MultiCityComparison initialVenues={dynamicVenues} />);
+
+    const badge = await screen.findByTestId("average-wifi-speed-badge");
+    expect(badge).toHaveTextContent("120 Mbps");
+    expect(badge).toHaveClass("text-emerald-700");
+
+    fireEvent.click(screen.getByRole("button", { name: "Tokyo" }));
+
+    await waitFor(() => {
+      expect(badge).toHaveTextContent("20 Mbps");
+      expect(badge).toHaveClass("text-zinc-600");
+    });
+  });
 });

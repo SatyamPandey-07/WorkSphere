@@ -11,6 +11,13 @@ jest.mock("@/lib/analytics", () => ({
 // Mock canvas-confetti
 jest.mock("canvas-confetti", () => jest.fn());
 
+// Mock ReceiptVerificationModal to bypass import.meta.url issues
+jest.mock("@/components/receipt/ReceiptVerificationModal", () => ({
+  ReceiptVerificationModal: function MockReceiptVerificationModal() {
+    return <div data-testid="mock-receipt-modal" />;
+  },
+}));
+
 // Mock GuestsInput
 jest.mock("@/components/GuestsInput", () => {
   return function MockGuestsInput() {
@@ -43,7 +50,12 @@ describe("BookingModal", () => {
 
   it("renders the booking details step when open in booking mode", () => {
     render(
-      <BookingModal isOpen={true} onClose={mockOnClose} venue={mockVenue} mode="booking" />,
+      <BookingModal
+        isOpen={true}
+        onClose={mockOnClose}
+        venue={mockVenue}
+        mode="booking"
+      />,
     );
 
     expect(screen.getByText("Secure Booking")).toBeInTheDocument();
@@ -53,7 +65,12 @@ describe("BookingModal", () => {
 
   it("calls onClose when close button is clicked", () => {
     render(
-      <BookingModal isOpen={true} onClose={mockOnClose} venue={mockVenue} mode="booking" />,
+      <BookingModal
+        isOpen={true}
+        onClose={mockOnClose}
+        venue={mockVenue}
+        mode="booking"
+      />,
     );
 
     const closeButton = screen.getByRole("button", { name: /close dialog/i });

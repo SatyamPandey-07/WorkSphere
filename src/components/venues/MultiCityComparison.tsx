@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
   Globe,
@@ -29,6 +29,45 @@ const DEFAULT_CITIES = [
   "Singapore",
   "Paris",
 ];
+
+interface WifiSpeedBadgeDetails {
+  label: string;
+  className: string;
+}
+
+function getWifiSpeedBadgeDetails(
+  averageSpeed: number | null,
+): WifiSpeedBadgeDetails {
+  if (averageSpeed === null) {
+    return {
+      label: "WiFi speed unavailable",
+      className:
+        "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+    };
+  }
+
+  if (averageSpeed > 100) {
+    return {
+      label: "Fast",
+      className:
+        "border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
+    };
+  }
+
+  if (averageSpeed > 30) {
+    return {
+      label: "Moderate",
+      className:
+        "border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
+    };
+  }
+
+  return {
+    label: "Limited",
+    className:
+      "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  };
+}
 
 interface MultiCityComparisonProps {
   initialVenues?: Venue[];
@@ -68,7 +107,9 @@ export function MultiCityComparison({
         selectedCities,
         venues,
       });
-      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], {
+        type: "application/pdf",
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -159,6 +200,30 @@ export function MultiCityComparison({
     });
   };
 
+  const selectedCityVenues = useMemo(
+    () =>
+      venues.filter((venue) =>
+        selectedCities.some((city) =>
+          venue.address?.toLowerCase().includes(city.toLowerCase()),
+        ),
+      ),
+    [selectedCities, venues],
+  );
+
+  const averageWifiSpeed = useMemo(() => {
+    const wifiSpeeds = selectedCityVenues
+      .map((venue) => venue.wifiSpeed)
+      .filter((speed): speed is number => speed != null && speed > 0);
+
+    if (wifiSpeeds.length === 0) return null;
+
+    return Math.round(
+      wifiSpeeds.reduce((total, speed) => total + speed, 0) / wifiSpeeds.length,
+    );
+  }, [selectedCityVenues]);
+
+  const wifiSpeedBadge = getWifiSpeedBadgeDetails(averageWifiSpeed);
+
   // Metric averages per city
   const getCityMetrics = (cityVenues: Venue[]) => {
     if (cityVenues.length === 0) return null;
@@ -201,9 +266,33 @@ export function MultiCityComparison({
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-xs font-bold font-mono text-zinc-500">
-            <SlidersHorizontal className="w-4 h-4 text-blue-500" />
-            <span>{selectedCities.length} Cities Active</span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex items-center gap-2 text-xs font-bold font-mono text-zinc-500">
+              <SlidersHorizontal className="w-4 h-4 text-blue-500" />
+              <span>{selectedCities.length} Cities Active</span>
+            </div>
+
+            <div
+              data-testid="average-wifi-speed-badge"
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold ${wifiSpeedBadge.className}`}
+              title={
+                averageWifiSpeed === null
+                  ? "No WiFi speed measurements are available for the selected cities"
+                  : `Average WiFi speed across selected cities: ${averageWifiSpeed} Mbps`
+              }
+              aria-label={
+                averageWifiSpeed === null
+                  ? "Average WiFi speed unavailable"
+                  : `Average WiFi speed ${averageWifiSpeed} Mbps, ${wifiSpeedBadge.label}`
+              }
+            >
+              <Wifi className="h-3.5 w-3.5" aria-hidden="true" />
+              <span>
+                {averageWifiSpeed === null
+                  ? "WiFi N/A"
+                  : `${averageWifiSpeed} Mbps`}
+              </span>
+            </div>
           </div>
           <button
             type="button"

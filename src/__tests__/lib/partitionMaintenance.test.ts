@@ -1,56 +1,184 @@
-import { autoCreateUpcomingPartitions } from "../../lib/partitionMaintenance";
 import { prisma } from "@/lib/prisma";
+import {
+  archiveExpiredPushNotificationPartitions,
+  autoCreateUpcomingPartitions,
+  getPartitionRetentionCutoff,
+  getPushNotificationPartitionName,
+  isPartitionExpired,
+  listPushNotificationPartitions,
+  parsePushNotificationPartitionMonth,
+} from "@/lib/partitionMaintenance";
+
+const executeRawUnsafe = jest.fn();
+const queryRawUnsafe = jest.fn();
+const transactionExecuteRawUnsafe = jest.fn();
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
-    $executeRawUnsafe: jest.fn(),
+    $executeRawUnsafe: (...args: unknown[]) => executeRawUnsafe(...args),
+    $queryRawUnsafe: (...args: unknown[]) => queryRawUnsafe(...args),
+    $transaction: jest.fn(
+      async (
+        callback: (transaction: {
+          $executeRawUnsafe: (...args: unknown[]) => Promise<number>;
+        }) => Promise<unknown>,
+      ) =>
+        callback({
+          $executeRawUnsafe: (...args: unknown[]) =>
+            transactionExecuteRawUnsafe(...args),
+        }),
+    ),
   },
 }));
 
-describe("autoCreateUpcomingPartitions", () => {
+describe("partition naming and retention helpers", () => {
+  it("formats and parses canonical monthly partition names", () => {
+    const date = new Date("2026-07-15T10:00:00.000Z");
+
+    expect(getPushNotificationPartitionName(date)).toBe(
+      "PushNotificationLog_y2026m07",
+    );
+    expect(
+      parsePushNotificationPartitionMonth("PushNotificationLog_y2026m07"),
+    ).toEqual(new Date("2026-07-01T00:00:00.000Z"));
+  });
+
+  it("rejects malformed or unrelated partition names", () => {
+    expect(
+      parsePushNotificationPartitionMonth("PushNotificationLog_y2026m13"),
+    ).toBeNull();
+    expect(parsePushNotificationPartitionMonth("User_y2026m07")).toBeNull();
+  });
+
+  it("keeps the current month and previous five months for six-month retention", () => {
+    const now = new Date("2026-07-25T00:00:00.000Z");
+
+    expect(getPartitionRetentionCutoff(now, 6)).toEqual(
+      new Date("2026-02-01T00:00:00.000Z"),
+    );
+    expect(isPartitionExpired("PushNotificationLog_y2026m01", now, 6)).toBe(
+      true,
+    );
+    expect(isPartitionExpired("PushNotificationLog_y2026m02", now, 6)).toBe(
+      false,
+    );
+  });
+
+  it("validates the configured retention period", () => {
+    expect(() =>
+      getPartitionRetentionCutoff(new Date("2026-07-25T00:00:00.000Z"), 0),
+    ).toThrow("retentionMonths must be a positive integer");
+  });
+});
+
+describe("listPushNotificationPartitions", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it("executes partition creation query 3 times with monthly intervals", async () => {
-    (prisma.$executeRawUnsafe as jest.Mock).mockResolvedValue(1);
+  it("returns attached monthly child partitions", async () => {
+    queryRawUnsafe.mockResolvedValue([
+      { name: "PushNotificationLog_y2026m01" },
+      { name: "PushNotificationLog_y2026m02" },
+    ]);
 
-    const now = new Date();
-    const result = await autoCreateUpcomingPartitions();
+    await expect(listPushNotificationPartitions()).resolves.toEqual([
+      "PushNotificationLog_y2026m01",
+      "PushNotificationLog_y2026m02",
+    ]);
+    expect(queryRawUnsafe).toHaveBeenCalledTimes(1);
+  });
+});
 
-    // Verify it generated 3 partitions
-    expect(result).toHaveLength(3);
-    expect(prisma.$executeRawUnsafe).toHaveBeenCalledTimes(3);
-
-    // Verify the query format on the first partition
-    const firstQuery = (prisma.$executeRawUnsafe as jest.Mock).mock.calls[0][0];
-    expect(firstQuery).toContain("CREATE TABLE IF NOT EXISTS");
-    expect(firstQuery).toContain('PARTITION OF "PushNotificationLog"');
-    expect(firstQuery).toContain("FOR VALUES FROM");
-
-    // Verify the months match the current, next, and following month sequence
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-
-    const currentPartition = `PushNotificationLog_y${year}m${String(month).padStart(2, "0")}`;
-    expect(result[0]).toBe(currentPartition);
-
-    const nextDate = new Date(year, month, 1);
-    const nextPartition = `PushNotificationLog_y${nextDate.getFullYear()}m${String(nextDate.getMonth() + 1).padStart(2, "0")}`;
-    expect(result[1]).toBe(nextPartition);
-
-    const afterNextDate = new Date(year, month + 1, 1);
-    const afterNextPartition = `PushNotificationLog_y${afterNextDate.getFullYear()}m${String(afterNextDate.getMonth() + 1).padStart(2, "0")}`;
-    expect(result[2]).toBe(afterNextPartition);
+describe("archiveExpiredPushNotificationPartitions", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    transactionExecuteRawUnsafe.mockResolvedValue(0);
   });
 
-  it("propagates database execution errors", async () => {
-    const dbError = new Error("Connection failed");
-    (prisma.$executeRawUnsafe as jest.Mock).mockRejectedValueOnce(dbError);
+  it("detaches expired partitions and moves them to the archive schema", async () => {
+    queryRawUnsafe.mockResolvedValue([
+      { name: "PushNotificationLog_y2025m12" },
+      { name: "PushNotificationLog_y2026m01" },
+      { name: "PushNotificationLog_y2026m02" },
+      { name: "PushNotificationLog_y2026m07" },
+    ]);
 
-    await expect(autoCreateUpcomingPartitions()).rejects.toThrow(
-      "Connection failed",
+    const result = await archiveExpiredPushNotificationPartitions({
+      now: new Date("2026-07-25T00:00:00.000Z"),
+      retentionMonths: 6,
+    });
+
+    expect(result.archived).toEqual([
+      {
+        name: "PushNotificationLog_y2025m12",
+        archivedSchema: "push_notification_archive",
+      },
+      {
+        name: "PushNotificationLog_y2026m01",
+        archivedSchema: "push_notification_archive",
+      },
+    ]);
+    expect(result.retained).toEqual([
+      "PushNotificationLog_y2026m02",
+      "PushNotificationLog_y2026m07",
+    ]);
+
+    expect(transactionExecuteRawUnsafe).toHaveBeenCalledWith(
+      'CREATE SCHEMA IF NOT EXISTS "push_notification_archive"',
     );
-    expect(prisma.$executeRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(transactionExecuteRawUnsafe).toHaveBeenCalledWith(
+      'ALTER TABLE "PushNotificationLog" DETACH PARTITION "PushNotificationLog_y2026m01"',
+    );
+    expect(transactionExecuteRawUnsafe).toHaveBeenCalledWith(
+      'ALTER TABLE "PushNotificationLog_y2026m01" SET SCHEMA "push_notification_archive"',
+    );
+  });
+
+  it("does not open a transaction when no partition has expired", async () => {
+    queryRawUnsafe.mockResolvedValue([
+      { name: "PushNotificationLog_y2026m02" },
+      { name: "PushNotificationLog_y2026m07" },
+    ]);
+
+    await expect(
+      archiveExpiredPushNotificationPartitions({
+        now: new Date("2026-07-25T00:00:00.000Z"),
+      }),
+    ).resolves.toEqual({
+      archived: [],
+      retained: [
+        "PushNotificationLog_y2026m02",
+        "PushNotificationLog_y2026m07",
+      ],
+    });
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("autoCreateUpcomingPartitions", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    executeRawUnsafe.mockResolvedValue(0);
+  });
+
+  it("creates current and next two monthly partitions", async () => {
+    const result = await autoCreateUpcomingPartitions(
+      new Date("2026-12-15T00:00:00.000Z"),
+    );
+
+    expect(result).toEqual([
+      "PushNotificationLog_y2026m12",
+      "PushNotificationLog_y2027m01",
+      "PushNotificationLog_y2027m02",
+    ]);
+    expect(executeRawUnsafe).toHaveBeenCalledTimes(3);
+    expect(executeRawUnsafe.mock.calls[1][0]).toContain(
+      'PARTITION OF "PushNotificationLog"',
+    );
+    expect(executeRawUnsafe.mock.calls[1][0]).toContain(
+      "2027-01-01T00:00:00.000Z",
+    );
   });
 });

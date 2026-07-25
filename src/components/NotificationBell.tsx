@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Bell, Check, Inbox, Calendar, Zap, Wifi } from "lucide-react";
+import {
+  Bell,
+  Check,
+  Inbox,
+  Calendar,
+  Zap,
+  Wifi,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import Link from "next/link";
 
 interface NotificationItem {
@@ -17,7 +26,19 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+    if (typeof window === "undefined") return true;
+
+    const saved = localStorage.getItem("notification-sound-enabled");
+    return saved === null ? true : saved === "true";
+  });
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const previousUnreadCount = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    audioRef.current = new Audio("/sounds/notification-chime.mp3");
+  }, []);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -39,6 +60,18 @@ export function NotificationBell() {
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
+  useEffect(() => {
+    if (
+      unreadCount > previousUnreadCount.current &&
+      soundEnabled &&
+      audioRef.current
+    ) {
+      audioRef.current.play().catch(() => {});
+    }
+
+    previousUnreadCount.current = unreadCount;
+  }, [unreadCount, soundEnabled]);
+
   // Handle outside clicks to close the dropdown
   useEffect(() => {
     if (!isOpen) return;
@@ -53,6 +86,13 @@ export function NotificationBell() {
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [isOpen]);
+  const toggleSound = () => {
+    const next = !soundEnabled;
+
+    setSoundEnabled(next);
+
+    localStorage.setItem("notification-sound-enabled", String(next));
+  };
 
   const markAllAsRead = async () => {
     try {
@@ -137,15 +177,32 @@ export function NotificationBell() {
             <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
               Notifications
             </h3>
-            {unreadCount > 0 && (
+
+            <div className="flex items-center gap-2">
               <button
-                onClick={markAllAsRead}
-                className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-indigo-500 hover:text-indigo-400 cursor-pointer"
+                onClick={toggleSound}
+                className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                title={
+                  soundEnabled ? "Mute notifications" : "Unmute notifications"
+                }
               >
-                <Check className="w-3 h-3" />
-                Read All
+                {soundEnabled ? (
+                  <Volume2 className="w-4 h-4" />
+                ) : (
+                  <VolumeX className="w-4 h-4" />
+                )}
               </button>
-            )}
+
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllAsRead}
+                  className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-indigo-500 hover:text-indigo-400 cursor-pointer"
+                >
+                  <Check className="w-3 h-3" />
+                  Read All
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800 scrollbar-thin">

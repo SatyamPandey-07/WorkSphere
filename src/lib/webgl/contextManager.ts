@@ -6,6 +6,9 @@
  * WebGL buffer attributes upon context restoration.
  */
 
+import { allocateCanvasDrawingBuffer } from "./canvasBufferSize";
+import { WebGLContextRecoveryManager } from "./WebGLContextRecoveryManager";
+
 export interface WebGLBufferAttributes {
   positionBuffer?: WebGLBuffer | null;
   colorBuffer?: WebGLBuffer | null;
@@ -15,7 +18,14 @@ export interface WebGLBufferAttributes {
 export function reinitializeWebGLBuffers(
   gl: WebGLRenderingContext | WebGL2RenderingContext,
   points: Array<[number, number, number?]>,
+  canvas?: HTMLCanvasElement,
 ): WebGLBufferAttributes {
+  // High-DPI recovery: size the drawing buffer with devicePixelRatio (#1030)
+  if (canvas) {
+    const { width, height } = allocateCanvasDrawingBuffer(canvas);
+    gl.viewport(0, 0, width, height);
+  }
+
   const positionBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 
@@ -26,8 +36,6 @@ export function reinitializeWebGLBuffers(
 
   return { positionBuffer };
 }
-
-import { WebGLContextRecoveryManager } from "./WebGLContextRecoveryManager";
 
 export function attachWebGLContextRecovery(
   canvas: HTMLCanvasElement,

@@ -57,7 +57,10 @@ export async function pingEndpoint(url: string): Promise<boolean> {
   try {
     const res = await fetch(`${url}/health`, {
       method: "GET",
-      signal: AbortSignal.timeout(3000),
+      signal:
+        typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(3000)
+          : undefined,
     });
 
     return res.ok;

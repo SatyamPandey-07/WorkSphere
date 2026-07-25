@@ -5,14 +5,14 @@ import {
 
 describe("WebGPUFloorPlanRenderer Context Loss & Recovery", () => {
   let canvas: HTMLCanvasElement;
-  let sampleData: FloorPlanData;
+  let _sampleData: FloorPlanData;
 
   beforeEach(() => {
     canvas = document.createElement("canvas");
     canvas.width = 800;
     canvas.height = 450;
 
-    sampleData = {
+    _sampleData = {
       width: 10,
       depth: 10,
       height: 3,
@@ -124,7 +124,13 @@ describe("WebGPUFloorPlanRenderer Context Loss & Recovery", () => {
     expect(success).toBe(true);
     expect(renderer.getIsDeviceLost()).toBe(false);
 
-    renderer.loadFloorPlan(sampleData);
+    const mockMesh = {
+      vertices: new Float32Array(0),
+      indices: new Uint16Array(0),
+      vertexCount: 0,
+      indexCount: 0,
+    };
+    renderer.loadFloorPlanMesh(mockMesh);
 
     // Simulate device loss (e.g. system sleep)
     resolveDeviceLost!({

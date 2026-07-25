@@ -1,170 +1,48 @@
-/**
- * Federated Preference Re-ranking Engine (#1270)
- *
- * Client-side hook that computes 5-cluster centroids from local amenity
- * preference vectors, calculates Euclidean distance between the user's
- * centroid and venue amenity vectors, and re-sorts search API results
- * without transmitting any user data to the server.
- */
-
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { Venue } from "@/components/chat/ChatMessages";
 import {
-  type AmenityVector,
-  type ClusterCentroids,
-  KMEANS_DIMENSIONS,
-  NUM_CLUSTERS,
-  SERVER_SCORE_WEIGHT,
-  CLIENT_SCORE_WEIGHT,
-  CENTROID_STORAGE_VERSION,
-} from "@/lib/kmeans/types";
-import { getKMeansClustering } from "@/lib/kmeans/kmeans";
-import {
-  euclideanDistance,
-  nearestCentroidIndex,
-} from "@/lib/kmeans/mathUtils";
-import { venueToVector } from "@/lib/kmeans/vectorUtils";
-import {
-  savePreferenceRanking,
-  getPreferenceRanking,
-  clearPreferenceRanking,
-} from "@/lib/offlineStorage";
+  UserHistoryItem,
+  buildUserPreferenceVector,
+} from "@/lib/preferenceVector";
+import { rerankVenues, RerankedVenue } from "@/lib/recommendation";
 
-// ============================================================
-// Types
-// ============================================================
+const MOCK_HISTORY: UserHistoryItem[] = [
+  {
+    venue: {
+      id: "mock-1",
+      name: "Quiet Cafe",
+      lat: 0,
+      lng: 0,
+      category: "cafe",
+      wifi: true,
+      noiseLevel: "quiet",
+      hasOutlets: true,
+    },
+    weight: 1.5,
+  },
+  {
+    venue: {
+      id: "mock-2",
+      name: "Tech Hub",
+      lat: 0,
+      lng: 0,
+      category: "coworking",
+      wifi: true,
+      noiseLevel: "moderate",
+      hasOutlets: true,
+    },
+    weight: 1.0,
+  },
+];
 
-export interface PreferenceVector {
-  readonly id: string;
-  readonly vector: AmenityVector;
-}
+export function usePreferenceReranking(results: Venue[]) {
+  const [personalizationEnabled, setPersonalizationEnabled] = useState(false);
 
-export interface RerankedVenue<T = Record<string, unknown>> {
-  readonly original: T;
-  readonly id: string;
-  readonly serverScore: number;
-  readonly clientScore: number;
-  readonly blendedScore: number;
-  readonly nearestCluster: number;
-  readonly distanceToCentroid: number;
-}
-
-export interface UsePreferenceRerankingOptions {
-  /** Maximum number of clusters to compute (default: 5) */
-  k?: number;
-  /** Weight for server-side score in the blended ranking (default: 0.6) */
-  serverWeight?: number;
-  /** Weight for client-side preference score (default: 0.4) */
-  clientWeight?: number;
-  /** Debounce ms for centroid recomputation (default: 500) */
-  debounceMs?: number;
-}
-
-export interface UsePreferenceRerankingReturn<T> {
-  /** Whether the clustering engine is initialized and ready */
-  isReady: boolean;
-  /** Current centroid data, null if not yet computed */
-  centroids: ClusterCentroids | null;
-  /** Whether centroids are currently being recomputed */
-  isRecomputing: boolean;
-  /** The re-ranked results, empty if no venues provided */
-  rankedResults: Array<RerankedVenue<T>>;
-  /** Re-rank a set of venues against current centroids */
-  rankVenues: (venues: T[]) => Promise<Array<RerankedVenue<T>>>;
-  /** Force a recompute of centroids from current preference vectors */
-  recompute: () => Promise<void>;
-  /** Update the preference vectors (e.g. when favorites change) */
-  setPreferences: (prefs: PreferenceVector[]) => void;
-  /** Clean up the worker */
-  terminate: () => void;
-}
-
-// ============================================================
-// Storage key for offline centroid caching
-// ============================================================
-
-const PREFERENCE_STORAGE_KEY = "worksphere:preference-centroids";
-
-// ============================================================
-// Hook
-// ============================================================
-
-export function usePreferenceReranking<
-  T extends { id: string; score?: number },
->(
-  preferences: PreferenceVector[],
-  options: UsePreferenceRerankingOptions = {},
-): UsePreferenceRerankingReturn<T> {
-  const {
-    k = NUM_CLUSTERS,
-    serverWeight = SERVER_SCORE_WEIGHT,
-    clientWeight = CLIENT_SCORE_WEIGHT,
-    debounceMs = 500,
-  } = options;
-
-  const [centroids, setCentroids] = useState<ClusterCentroids | null>(null);
-  const [isReady, setIsReady] = useState(false);
-  const [isRecomputing, setIsRecomputing] = useState(false);
-  const [rankedResults, setRankedResults] = useState<Array<RerankedVenue<T>>>(
-    [],
-  );
-
-  const preferencesRef = useRef(preferences);
-  const engineRef = useRef(getKMeansClustering());
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastVenuesRef = useRef<T[]>([]);
-
+  // Load user preference on mount
   useEffect(() => {
-    preferencesRef.current = preferences;
-  }, [preferences]);
-
-  useEffect(() => {
-    const engine = engineRef.current;
-    return () => {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      engine.terminate();
-    };
-  }, []);
-
-  // Load cached centroids from localStorage on mount
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(PREFERENCE_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as ClusterCentroids;
-        if (
-          parsed &&
-          parsed.centroids &&
-          parsed.k === k &&
-          parsed.version === CENTROID_STORAGE_VERSION
-        ) {
-          setCentroids(parsed);
-          setIsReady(true);
-        }
-      }
-    } catch {
-      // ignore parse errors
-    }
-  }, [k]);
-
-  const recompute = useCallback(async () => {
-    setIsRecomputing(true);
-    try {
-      const engine = engineRef.current;
-      const vectors = preferencesRef.current.map((p) => p.vector);
-      const result = await engine.computeClusters(vectors);
-      setCentroids(result);
-      setIsReady(true);
-
-      // Persist to localStorage
-      try {
-        localStorage.setItem(PREFERENCE_STORAGE_KEY, JSON.stringify(result));
-      } catch {
-        // ignore quota errors
-      }
-    } catch (err) {
-      console.error("[usePreferenceReranking] Recompute failed:", err);
-    } finally {
-      setIsRecomputing(false);
+    const stored = localStorage.getItem("ai_personalization_enabled");
+    if (stored !== null) {
+      setPersonalizationEnabled(stored === "true");
     }
   }, []);
 
@@ -317,18 +195,24 @@ export function usePreferenceReranking<
     preferencesRef.current = prefs;
   }, []);
 
-  const terminate = useCallback(() => {
-    engineRef.current.terminate();
-  }, []);
+  const userVector = useMemo(() => {
+    return buildUserPreferenceVector(MOCK_HISTORY);
+  }, []); // Recompute if history changes (in a real app)
+
+  const rerankedResults = useMemo(() => {
+    if (!personalizationEnabled) {
+      // Just map to RerankedVenue shape without changing order
+      return results.map(
+        (v) =>
+          ({ ...v, similarityScore: 0, isRecommended: false }) as RerankedVenue,
+      );
+    }
+    return rerankVenues(results, userVector);
+  }, [results, userVector, personalizationEnabled]);
 
   return {
-    isReady,
-    centroids,
-    isRecomputing,
-    rankedResults,
-    rankVenues,
-    recompute,
-    setPreferences,
-    terminate,
+    rerankedResults,
+    personalizationEnabled,
+    togglePersonalization,
   };
 }

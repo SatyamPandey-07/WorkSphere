@@ -14,6 +14,7 @@ import {
   Loader2,
   SlidersHorizontal,
   FileDown,
+  Filter,
 } from "lucide-react";
 import { Venue } from "@/components/chat/ChatMessages";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
@@ -39,6 +40,61 @@ const DEFAULT_CITIES = [
   "Singapore",
   "Paris",
 ];
+
+export interface AmenityFilterOption {
+  id: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+export const AMENITY_FILTERS: AmenityFilterOption[] = [
+  { id: "wifi", label: "Wi-Fi", icon: Wifi },
+  { id: "quiet", label: "Quiet", icon: Volume2 },
+  { id: "outlets", label: "Power Outlets", icon: Zap },
+];
+
+function parseCitiesFromParams(params: URLSearchParams): string[] {
+  const citiesParam = params.get("cities");
+  if (citiesParam) {
+    const parsed = citiesParam
+      .split(",")
+      .map((c) => c.trim())
+      .filter(Boolean);
+    if (parsed.length > 0) return parsed;
+  }
+  return ["San Francisco", "Tokyo"];
+}
+
+function parseFiltersFromParams(params: URLSearchParams): string[] {
+  const filtersParam = params.get("filters");
+  const active: string[] = [];
+  if (filtersParam) {
+    const parsed = filtersParam
+      .split(",")
+      .map((f) => f.trim())
+      .filter(Boolean);
+    parsed.forEach((f) => {
+      const lower = f.toLowerCase();
+      if (lower.includes("wifi") || lower.includes("wi-fi"))
+        active.push("wifi");
+      else if (lower.includes("quiet")) active.push("quiet");
+      else if (lower.includes("outlet") || lower.includes("power"))
+        active.push("outlets");
+      else active.push(f);
+    });
+  }
+  if (params.get("wifi") === "true" && !active.includes("wifi"))
+    active.push("wifi");
+  if (params.get("quiet") === "true" && !active.includes("quiet"))
+    active.push("quiet");
+  if (
+    (params.get("outlets") === "true" || params.get("hasOutlets") === "true") &&
+    !active.includes("outlets")
+  ) {
+    active.push("outlets");
+  }
+  return Array.from(new Set(active));
+}
 
 interface WifiSpeedBadgeDetails {
   label: string;
@@ -132,17 +188,17 @@ export function MultiCityComparison({
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [selectedCities, setSelectedCities] = useState<string[]>(() => {
-    const citiesParam = searchParams.get("cities");
-    if (citiesParam) {
-      const parsed = citiesParam
-        .split(",")
-        .map((c) => c.trim())
-        .filter(Boolean);
-      if (parsed.length > 0) return parsed;
-    }
-    return ["San Francisco", "Tokyo"];
-  });
+  const [selectedCities, setSelectedCities] = useState<string[]>(() =>
+    parseCitiesFromParams(searchParams),
+  );
+
+  const [selectedFilters, setSelectedFilters] = useState<string[]>(() =>
+    parseFiltersFromParams(searchParams),
+  );
+
+  const [prevParamsString, setPrevParamsString] = useState(() =>
+    searchParams.toString(),
+  );
 
   const [availableCities, setAvailableCities] =
     useState<string[]>(DEFAULT_CITIES);
@@ -151,6 +207,91 @@ export function MultiCityComparison({
   const [loading, setLoading] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
+
+  // Sync URL search params whenever selectedCities or selectedFilters changes
+  const updateUrlParams = useCallback(
+    (cities: string[], filters: string[]) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (cities.length > 0) {
+        params.set("cities", cities.join(","));
+      } else {
+        params.delete("cities");
+      }
+
+      if (filters.length > 0) {
+        params.set("filters", filters.join(","));
+      } else {
+        params.delete("filters");
+        params.delete("wifi");
+        params.delete("quiet");
+        params.delete("outlets");
+        params.delete("hasOutlets");
+      }
+
+      const newQuery = params.toString();
+      const navigate = router.replace || router.push;
+      navigate(newQuery ? `?${newQuery}` : window.location.pathname, {
+        scroll: false,
+      });
+    },
+    [router, searchParams],
+  );
+
+  // Synchronize state on browser back/forward navigation when searchParams update externally
+  useEffect(() => {
+    const currentParamsString = searchParams.toString();
+    if (currentParamsString !== prevParamsString) {
+      setPrevParamsString(currentParamsString);
+      const urlCities = parseCitiesFromParams(searchParams);
+      const urlFilters = parseFiltersFromParams(searchParams);
+      setSelectedCities(urlCities);
+      setSelectedFilters(urlFilters);
+    }
+  }, [searchParams, prevParamsString]);
+
+  const toggleCity = (city: string) => {
+    const nextCities = selectedCities.includes(city)
+      ? selectedCities.filter((c) => c !== city)
+      : [...selectedCities, city];
+    setSelectedCities(nextCities);
+    updateUrlParams(nextCities, selectedFilters);
+  };
+
+  const removeCity = (city: string) => {
+    const nextCities = selectedCities.filter((c) => c !== city);
+    setSelectedCities(nextCities);
+    updateUrlParams(nextCities, selectedFilters);
+  };
+
+  const toggleFilter = (filterId: string) => {
+    const nextFilters = selectedFilters.includes(filterId)
+      ? selectedFilters.filter((f) => f !== filterId)
+      : [...selectedFilters, filterId];
+    setSelectedFilters(nextFilters);
+    updateUrlParams(selectedCities, nextFilters);
+  };
+
+  const removeFilterChip = (filterId: string) => {
+    const nextFilters = selectedFilters.filter((f) => f !== filterId);
+    setSelectedFilters(nextFilters);
+    updateUrlParams(selectedCities, nextFilters);
+  };
+
+  const handleAddCustomCity = (e: React.FormEvent) => {
+    e.preventDefault();
+    const city = customCityInput.trim();
+    if (!city) return;
+
+    if (!availableCities.includes(city)) {
+      setAvailableCities((prev) => [...prev, city]);
+    }
+    if (!selectedCities.includes(city)) {
+      const nextCities = [...selectedCities, city];
+      setSelectedCities(nextCities);
+      updateUrlParams(nextCities, selectedFilters);
+    }
+    setCustomCityInput("");
+  };
 
   const handleExportPdfReport = async () => {
     if (selectedCities.length === 0) return;
@@ -311,47 +452,6 @@ export function MultiCityComparison({
       setIsExportingChartPdf(false);
     }
   };
-
-  // Sync URL search params whenever selectedCities changes
-  const updateUrlParams = useCallback(
-    (cities: string[]) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (cities.length > 0) {
-        params.set("cities", cities.join(","));
-      } else {
-        params.delete("cities");
-      }
-      router.replace(`?${params.toString()}`, { scroll: false });
-    },
-    [router, searchParams],
-  );
-
-  const toggleCity = (city: string) => {
-    setSelectedCities((prev) => {
-      const next = prev.includes(city)
-        ? prev.filter((c) => c !== city)
-        : [...prev, city];
-      updateUrlParams(next);
-      return next;
-    });
-  };
-
-  const handleAddCustomCity = (e: React.FormEvent) => {
-    e.preventDefault();
-    const city = customCityInput.trim();
-    if (!city) return;
-
-    if (!availableCities.includes(city)) {
-      setAvailableCities((prev) => [...prev, city]);
-    }
-    if (!selectedCities.includes(city)) {
-      const next = [...selectedCities, city];
-      setSelectedCities(next);
-      updateUrlParams(next);
-    }
-    setCustomCityInput("");
-  };
-
   // Fetch venues for selected cities
   useEffect(() => {
     let isMounted = true;
@@ -379,11 +479,22 @@ export function MultiCityComparison({
     };
   }, [selectedCities]);
 
-  // Filter helper matching venue address or city string
+  // Filter helper matching venue address, city string, and active amenity filters
   const getVenuesForCity = (city: string) => {
     return venues.filter((venue) => {
       if (!venue.address) return false;
-      return venue.address.toLowerCase().includes(city.toLowerCase());
+      const matchesCity = venue.address
+        .toLowerCase()
+        .includes(city.toLowerCase());
+      if (!matchesCity) return false;
+
+      if (selectedFilters.includes("wifi") && !venue.wifi) return false;
+      if (selectedFilters.includes("quiet") && venue.noiseLevel !== "quiet")
+        return false;
+      if (selectedFilters.includes("outlets") && !venue.hasOutlets)
+        return false;
+
+      return true;
     });
   };
 
@@ -498,36 +609,131 @@ export function MultiCityComparison({
         </div>
       </div>
 
-      {/* Multi-Select City Filter Bar */}
-      <div className="p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60">
-        <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-3">
-          Select Cities to Compare
-        </label>
+      {/* Multi-Select City & Amenity Filter Bar */}
+      <div className="p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/60 space-y-4">
+        {/* City Filter Selection */}
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-3">
+            Select Cities to Compare
+          </label>
 
-        <div className="flex flex-wrap gap-2 mb-4">
-          {availableCities.map((city) => {
-            const isSelected = selectedCities.includes(city);
-            return (
-              <button
-                key={city}
-                type="button"
-                onClick={() => toggleCity(city)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  isSelected
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 ring-2 ring-blue-500/30 scale-[1.02]"
-                    : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-blue-500/50"
-                }`}
-              >
-                {isSelected ? (
-                  <Check className="w-3.5 h-3.5" />
-                ) : (
-                  <Plus className="w-3.5 h-3.5 text-zinc-400" />
-                )}
-                <span>{city}</span>
-              </button>
-            );
-          })}
+          <div className="flex flex-wrap gap-2 mb-3">
+            {availableCities.map((city) => {
+              const isSelected = selectedCities.includes(city);
+              return (
+                <button
+                  key={city}
+                  type="button"
+                  onClick={() => toggleCity(city)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    isSelected
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 ring-2 ring-blue-500/30 scale-[1.02]"
+                      : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-blue-500/50"
+                  }`}
+                >
+                  {isSelected ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : (
+                    <Plus className="w-3.5 h-3.5 text-zinc-400" />
+                  )}
+                  <span>{city}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
+
+        {/* Amenity Filter Selection */}
+        <div>
+          <label className="block text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 mb-2">
+            Filter by Workspace Amenity
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {AMENITY_FILTERS.map((filter) => {
+              const isSelected = selectedFilters.includes(filter.id);
+              const Icon = filter.icon;
+              return (
+                <button
+                  key={filter.id}
+                  type="button"
+                  data-testid={`filter-chip-${filter.id}`}
+                  onClick={() => toggleFilter(filter.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    isSelected
+                      ? "bg-emerald-600 text-white shadow-md shadow-emerald-500/20 ring-2 ring-emerald-500/30 scale-[1.02]"
+                      : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 hover:border-emerald-500/50"
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{filter.label}</span>
+                  {isSelected && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Remove ${filter.label} filter`}
+                      data-testid={`remove-filter-chip-${filter.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFilterChip(filter.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.stopPropagation();
+                          removeFilterChip(filter.id);
+                        }
+                      }}
+                      className="ml-1 p-0.5 rounded-full hover:bg-emerald-700/80 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Active Filter Badges Bar with Reactive Dismiss Button */}
+        {selectedFilters.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-blue-500/5 border border-blue-500/10">
+            <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1">
+              <Filter className="w-3 h-3 text-blue-500" />
+              Active Filters:
+            </span>
+            {selectedFilters.map((filterId) => {
+              const filterDef = AMENITY_FILTERS.find((f) => f.id === filterId);
+              const label = filterDef ? filterDef.label : filterId;
+              return (
+                <span
+                  key={filterId}
+                  data-testid={`active-badge-${filterId}`}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800"
+                >
+                  <span>{label}</span>
+                  <button
+                    type="button"
+                    data-testid={`remove-active-badge-${filterId}`}
+                    aria-label={`Remove ${label} filter badge`}
+                    onClick={() => removeFilterChip(filterId)}
+                    className="p-0.5 rounded-md hover:bg-blue-200 dark:hover:bg-blue-900 transition-colors text-blue-600 dark:text-blue-400"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFilters([]);
+                updateUrlParams(selectedCities, []);
+              }}
+              className="text-[11px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 underline ml-auto"
+            >
+              Clear All Filters
+            </button>
+          </div>
+        )}
 
         {/* Custom City Tag Input */}
         <form onSubmit={handleAddCustomCity} className="flex gap-2 max-w-md">
@@ -582,7 +788,7 @@ export function MultiCityComparison({
                     </h3>
                   </div>
                   <button
-                    onClick={() => toggleCity(city)}
+                    onClick={() => removeCity(city)}
                     className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-800"
                     title={`Remove ${city}`}
                   >

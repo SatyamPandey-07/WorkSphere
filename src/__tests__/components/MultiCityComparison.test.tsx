@@ -9,12 +9,13 @@ jest.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams("cities=San%20Francisco,Tokyo"),
   useRouter: () => ({
     replace: mockReplace,
+    push: mockReplace,
   }),
 }));
 
 global.fetch = jest.fn();
 
-describe("MultiCityComparison Component (#860)", () => {
+describe("MultiCityComparison Component (#860 / #1753)", () => {
   const mockVenues = [
     {
       id: "v1",
@@ -108,6 +109,7 @@ describe("MultiCityComparison Component (#860)", () => {
       expect(createObjectURLMock).toHaveBeenCalled();
     });
   });
+
   it("shows a green badge when average WiFi speed is above 100 Mbps", async () => {
     render(<MultiCityComparison initialVenues={mockVenues} />);
 
@@ -179,6 +181,45 @@ describe("MultiCityComparison Component (#860)", () => {
       expect(badge).toHaveTextContent("20 Mbps");
       expect(badge).toHaveClass("text-zinc-600");
     });
+  });
+
+  it("updates URL query parameters when amenity filter chips are added and removed (#1753)", async () => {
+    render(<MultiCityComparison initialVenues={mockVenues} />);
+
+    // Click to add Wi-Fi amenity filter chip
+    const wifiChip = screen.getByTestId("filter-chip-wifi");
+    fireEvent.click(wifiChip);
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      expect.stringContaining("filters=wifi"),
+      expect.anything(),
+    );
+
+    // Verify active badge appears
+    expect(screen.getByTestId("active-badge-wifi")).toBeInTheDocument();
+
+    // Click remove button on active Wi-Fi badge
+    const removeBadgeBtn = screen.getByTestId("remove-active-badge-wifi");
+    fireEvent.click(removeBadgeBtn);
+
+    // URL search params should be updated removing 'wifi'
+    expect(mockReplace).toHaveBeenLastCalledWith(
+      expect.not.stringContaining("filters=wifi"),
+      expect.anything(),
+    );
+    expect(screen.queryByTestId("active-badge-wifi")).not.toBeInTheDocument();
+  });
+
+  it("updates URL query parameters when removing a city chip (#1753)", async () => {
+    render(<MultiCityComparison initialVenues={mockVenues} />);
+
+    // Click Tokyo city button to toggle off
+    fireEvent.click(screen.getByRole("button", { name: "Tokyo" }));
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      expect.not.stringContaining("Tokyo"),
+      expect.anything(),
+    );
   });
 });
 

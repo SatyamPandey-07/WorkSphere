@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 // We leave this imported just in case, but we are ignoring it for the bypass
-import { useUser } from "@clerk/nextjs"; 
+// import { useUser } from "@clerk/nextjs"; 
 import { ReactiveUserButton } from "@/components/ReactiveUserButton";
 import { Coffee, LayoutGrid, Menu, Shield, X } from "lucide-react";
 import Image from "next/image";

@@ -876,7 +876,7 @@ export function VenueDetailDialog({
         }}
       />
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom-12 zoom-in-95 duration-500 bg-zinc-900 supports-[backdrop-filter]:bg-white/[0.08] supports-[backdrop-filter]:backdrop-blur-[20px] glass-animated-border"
+        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom-12 zoom-in-95 duration-500 bg-zinc-900 supports-[backdrop-filter]:bg-white/[0.08] supports-[backdrop-filter]:backdrop-blur-[20px] glass-animated-border flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {wifiLowConfidence && (
@@ -925,7 +925,7 @@ export function VenueDetailDialog({
           </div>
         )}
 
-        <div className="relative h-64 sm:h-80 w-full overflow-hidden">
+        <div className="relative h-64 sm:h-80 w-full overflow-hidden shrink-0">
           {photoLoading ? (
             <div className="w-full h-full bg-black/40 animate-pulse" />
           ) : (
@@ -986,7 +986,7 @@ export function VenueDetailDialog({
           </div>
         </div>
 
-        <div className="flex border-b border-white/10 bg-transparent px-8 py-3 gap-6">
+        <div className="flex border-b border-white/10 bg-transparent px-8 py-3 gap-6 shrink-0">
           {[
             { id: "overview", label: "Overview" },
             { id: "reviews", label: t("venue.reviews") },
@@ -1008,7 +1008,7 @@ export function VenueDetailDialog({
 
         {/* Content Section */}
 
-        <div className="p-8 bg-transparent overflow-y-auto max-h-[calc(90vh-320px)] text-zinc-100">
+        <div className="p-8 bg-transparent overflow-y-auto flex-1 min-h-0 text-zinc-100">
           {activeTab === "overview" && (
             <>
               {/* Photo Gallery Thumbnails */}

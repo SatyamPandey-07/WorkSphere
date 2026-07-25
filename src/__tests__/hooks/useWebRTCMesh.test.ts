@@ -1,5 +1,6 @@
 import { renderHook, act } from "@testing-library/react";
 import { useWebRTCMesh } from "@/hooks/useWebRTCMesh";
+import { adaptVideoBitrate } from "@/lib/screenShareBitrate";
 
 // Mock Clerk
 jest.mock("@clerk/nextjs", () => ({
@@ -73,6 +74,26 @@ class MockAudioContext {
 (global as any).AudioContext = MockAudioContext;
 (global as any).webkitAudioContext = MockAudioContext;
 
+class MockRTCPeerConnection {
+  onicecandidate: any = null;
+  ontrack: any = null;
+  oniceconnectionstatechange: any = null;
+  onnegotiationneeded: any = null;
+  iceConnectionState = "connected";
+  signalingState = "stable";
+
+  getSenders = jest.fn().mockReturnValue([]);
+  getStats = jest.fn().mockResolvedValue(new Map());
+  addTrack = jest.fn();
+  close = jest.fn();
+  setLocalDescription = jest.fn().mockResolvedValue(undefined);
+  setRemoteDescription = jest.fn().mockResolvedValue(undefined);
+  createOffer = jest.fn().mockResolvedValue({ type: "offer", sdp: "sdp" });
+  createAnswer = jest.fn().mockResolvedValue({ type: "answer", sdp: "sdp" });
+  addIceCandidate = jest.fn().mockResolvedValue(undefined);
+}
+(global as any).RTCPeerConnection = MockRTCPeerConnection;
+
 describe("useWebRTCMesh Bandwidth Probing", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -144,6 +165,42 @@ describe("useWebRTCMesh Bandwidth Probing", () => {
     // Now it should be good
     expect(result.current.networkQuality).toBe("good");
     expect(mockApplyConstraints).toHaveBeenCalledWith({ sampleRate: 48000 });
+  });
+
+  it("periodically triggers adaptVideoBitrate and handles low quality transport tiers", async () => {
+    (adaptVideoBitrate as jest.Mock).mockResolvedValue({
+      maxBitrate: 400_000,
+      audioMaxBitrate: 16_000,
+      label: "low",
+    });
+
+    const { result } = renderHook(() =>
+      useWebRTCMesh({ roomId: "test-room", userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await result.current.toggleAudio();
+    });
+
+    // Simulate remote peer joining
+    act(() => {
+      mockSocketOnMessage({
+        data: JSON.stringify({
+          type: "webrtc-signal",
+          kind: "peer-join",
+          from: "user-2",
+        }),
+      });
+    });
+
+    // Advance 4000ms to trigger bitrate timer
+    await act(async () => {
+      jest.advanceTimersByTime(4000);
+    });
+
+    // Expect network quality to transition to poor when transport tier is low
+    expect(result.current.networkQuality).toBe("poor");
+    expect(mockApplyConstraints).toHaveBeenCalledWith({ sampleRate: 16000 });
   });
 });
 

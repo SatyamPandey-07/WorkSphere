@@ -116,6 +116,8 @@ export async function GET() {
 
         const lvlInfo = calculateLevel(totalXp);
 
+        const accurateVotes = user.accurateVotes;
+
         const badges = [
             {
                 id: "wifi_scout",
@@ -143,6 +145,15 @@ export async function GET() {
                 progress: Math.min(nightOwlReviewsCount, 1),
                 target: 1,
                 icon: "moon"
+            },
+            {
+                id: "verified_explorer",
+                name: "Verified Explorer",
+                description: "Made 10+ accurate amenity votes matching community consensus.",
+                earned: accurateVotes >= 10,
+                progress: Math.min(accurateVotes, 10),
+                target: 10,
+                icon: "compass"
             }
         ];
 
@@ -182,7 +193,8 @@ export async function GET() {
                     venuesAddedCount,
                     speedtestsCount,
                     uniqueCafesBooked,
-                    nightOwlReviewsCount
+                    nightOwlReviewsCount,
+                    accurateVotes
                 },
                 badges
             },

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { SignIn, useClerk } from "@clerk/nextjs";
+import { SignIn } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -14,7 +14,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  ShieldCheck,
 } from "lucide-react";
 import { PasskeySignInButton } from "./PasskeySignInButton";
 import { PasskeyFrameNotice } from "@/components/PasskeyFrameNotice";
@@ -95,7 +94,9 @@ export function SignInClient() {
         <div className="w-full space-y-4">
           <PasskeySignInButton />
           <div className="relative my-4 text-center text-xs text-zinc-500 uppercase tracking-wider">
-            <span className="bg-zinc-950 px-2 text-zinc-400">or sign in with credentials</span>
+            <span className="bg-zinc-950 px-2 text-zinc-400">
+              or sign in with credentials
+            </span>
           </div>
 
           <SignIn
@@ -140,7 +141,9 @@ export function SignInClient() {
         /* Fallback Interactive Sign In Form */
         <div className="w-full bg-zinc-900/80 backdrop-blur-xl border border-zinc-800/90 shadow-2xl rounded-2xl p-6 sm:p-8 space-y-6">
           <div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">Sign In to WorkSphere</h2>
+            <h2 className="text-2xl font-bold text-white tracking-tight">
+              Sign In to WorkSphere
+            </h2>
             <p className="text-sm text-zinc-400 mt-1">
               Enter your account details or try a instant demo login below.
             </p>
@@ -158,7 +161,9 @@ export function SignInClient() {
           {demoSuccess && (
             <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center gap-2.5">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
-              <span>Authentication successful! Redirecting to workspace finder...</span>
+              <span>
+                Authentication successful! Redirecting to workspace finder...
+              </span>
             </div>
           )}
 
@@ -199,7 +204,11 @@ export function SignInClient() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 transition-colors"
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -221,7 +230,9 @@ export function SignInClient() {
           </form>
 
           <div className="relative text-center text-xs text-zinc-500 uppercase tracking-wider my-2">
-            <span className="bg-zinc-900 px-2 text-zinc-400">or quick access</span>
+            <span className="bg-zinc-900 px-2 text-zinc-400">
+              or quick access
+            </span>
           </div>
 
           <button
@@ -238,7 +249,10 @@ export function SignInClient() {
 
       <p className="text-center text-sm text-zinc-400">
         Don&apos;t have an account?{" "}
-        <Link href="/sign-up" className="font-semibold text-blue-400 hover:text-blue-300 transition-colors">
+        <Link
+          href="/sign-up"
+          className="font-semibold text-blue-400 hover:text-blue-300 transition-colors"
+        >
           Sign up free
         </Link>
       </p>

@@ -102,7 +102,7 @@ describe("useLayoutOptimizer", () => {
     act(() => {
       worker.emitMessage({
         type: "SUCCESS",
-        requestId: request.requestId,
+        sequenceId: request.sequenceId,
         payload: {
           deskCoordinatesBuffer: desks.buffer,
           quietZoneCoordinatesBuffer: quietZones.buffer,
@@ -146,7 +146,7 @@ describe("useLayoutOptimizer", () => {
     act(() => {
       worker.emitMessage({
         type: "ERROR",
-        requestId: request.requestId,
+        sequenceId: request.sequenceId,
         error: "Invalid floor-plan dimensions.",
       });
     });
@@ -184,12 +184,60 @@ describe("useLayoutOptimizer", () => {
     act(() => {
       worker.emitMessage({
         type: "ERROR",
-        requestId: firstRequest.requestId,
+        sequenceId: firstRequest.sequenceId,
         error: "Stale error",
       });
     });
 
     expect(result.current.error).toBeNull();
+    expect(result.current.isOptimizing).toBe(true);
+  });
+
+  it("ignores out-of-order SUCCESS layout messages", () => {
+    const { result } = renderHook(() => useLayoutOptimizer());
+    const worker = MockWorker.instances[0];
+
+    act(() => {
+      // First request (sequenceId 1)
+      result.current.optimize({
+        floorPlanGrid: [0],
+        width: 1,
+        height: 1,
+        deskCount: 1,
+        powerOutlets: [],
+      });
+
+      // Second request (sequenceId 2)
+      result.current.optimize({
+        floorPlanGrid: [0, 0, 0, 0],
+        width: 2,
+        height: 2,
+        deskCount: 1,
+        powerOutlets: [],
+      });
+    });
+
+    const firstRequest = worker.postMessage.mock
+      .calls[0][0] as LayoutWorkerRequest;
+
+    act(() => {
+      // Respond to the first request (out-of-order because we already sent request 2)
+      const desks = new Float32Array([1, 2, 0]);
+      const quietZones = new Float32Array([5, 6, 2]);
+
+      worker.emitMessage({
+        type: "SUCCESS",
+        sequenceId: firstRequest.sequenceId,
+        payload: {
+          deskCoordinatesBuffer: desks.buffer,
+          quietZoneCoordinatesBuffer: quietZones.buffer,
+          score: 0.8,
+        },
+      });
+    });
+
+    // Should ignore the first request's SUCCESS and still be optimizing the second one
+    expect(result.current.recommendation).toBeNull();
     expect(result.current.isOptimizing).toBe(true);
   });
 });

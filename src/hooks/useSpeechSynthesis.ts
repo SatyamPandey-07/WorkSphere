@@ -176,16 +176,42 @@ export function useSpeechSynthesis(
     return currentVoices.find((v) => v.voiceURI === uri) || voice;
   }, [voice]);
 
+  const cleanupUtterance = useCallback(
+    (utterance: SpeechSynthesisUtterance) => {
+      utterance.onstart = null;
+      utterance.onend = null;
+      utterance.onerror = null;
+      utterance.onpause = null;
+      utterance.onresume = null;
+    },
+    [],
+  );
+
+  const removeUtterance = useCallback(
+    (utterance: SpeechSynthesisUtterance) => {
+      cleanupUtterance(utterance);
+      utterancesRef.current = utterancesRef.current.filter(
+        (u) => u !== utterance,
+      );
+    },
+    [cleanupUtterance],
+  );
+
   const cancel = useCallback(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      if (utteranceRef.current) {
+        cleanupUtterance(utteranceRef.current);
+        utteranceRef.current = null;
+      }
+      utterancesRef.current.forEach(cleanupUtterance);
+      utterancesRef.current = [];
       window.speechSynthesis.cancel();
       setIsSpeaking(false);
       setIsPaused(false);
       setSpeakingMessageId(null);
       setSpeakingSentenceIndex(null);
-      utterancesRef.current = [];
     }
-  }, []);
+  }, [cleanupUtterance]);
 
   const stopSpeech = useCallback(() => {
     cancel();
@@ -240,6 +266,10 @@ export function useSpeechSynthesis(
       utterance.onend = () => {
         setIsSpeaking(false);
         setIsPaused(false);
+        if (utteranceRef.current === utterance) {
+          cleanupUtterance(utterance);
+          utteranceRef.current = null;
+        }
         onEnd?.();
       };
 
@@ -247,6 +277,10 @@ export function useSpeechSynthesis(
         setIsSpeaking(false);
         setIsPaused(false);
         setError(event.error || "Speech synthesis error occurred.");
+        if (utteranceRef.current === utterance) {
+          cleanupUtterance(utterance);
+          utteranceRef.current = null;
+        }
         onError?.(event);
       };
 
@@ -261,7 +295,16 @@ export function useSpeechSynthesis(
       utteranceRef.current = utterance;
       window.speechSynthesis.speak(utterance);
     },
-    [rate, pitch, resolveVoice, lang, onStart, onEnd, onError],
+    [
+      rate,
+      pitch,
+      resolveVoice,
+      lang,
+      onStart,
+      onEnd,
+      onError,
+      cleanupUtterance,
+    ],
   );
 
   const speakMessage = useCallback(
@@ -292,6 +335,7 @@ export function useSpeechSynthesis(
           if (idx === 0) onStart?.();
         };
         utterance.onend = () => {
+          removeUtterance(utterance);
           if (idx === sentences.length - 1) {
             setIsSpeaking(false);
             setIsPaused(false);
@@ -301,6 +345,7 @@ export function useSpeechSynthesis(
           }
         };
         utterance.onerror = (event) => {
+          removeUtterance(utterance);
           setIsSpeaking(false);
           setIsPaused(false);
           setSpeakingMessageId(null);
@@ -313,7 +358,16 @@ export function useSpeechSynthesis(
       utterancesRef.current = utterances;
       utterances.forEach((u) => window.speechSynthesis.speak(u));
     },
-    [stopSpeech, rate, pitch, resolveVoice, onStart, onEnd, onError],
+    [
+      stopSpeech,
+      rate,
+      pitch,
+      resolveVoice,
+      onStart,
+      onEnd,
+      onError,
+      removeUtterance,
+    ],
   );
 
   const setRate = useCallback(
@@ -335,11 +389,9 @@ export function useSpeechSynthesis(
 
   useEffect(() => {
     return () => {
-      if (typeof window !== "undefined" && "speechSynthesis" in window) {
-        window.speechSynthesis.cancel();
-      }
+      cancel();
     };
-  }, []);
+  }, [cancel]);
 
   return {
     isSupported,

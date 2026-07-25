@@ -49,10 +49,17 @@ const isPublicRoute = createRouteMatcher([
 // Routes exempt from CSRF validation even though they're mutating — webhooks are
 // authenticated via their own provider signature (Stripe/Clerk/etc.), not a browser
 // session, so there's no browser-held CSRF cookie to check against.
-const isCsrfExemptRoute = createRouteMatcher([
+const isCsrfExemptMatcher = createRouteMatcher([
   "/api/webhook(.*)",
   "/api/auth/csrf-token",
 ]);
+
+export function isCsrfExemptRoute(req: any): boolean {
+  const url = new URL(req.url);
+  const path = url.pathname;
+  const staticAssetRegex = /\.(png|jpg|jpeg|gif|svg|mp3|wav|ico|css|js)$/i;
+  return isCsrfExemptMatcher(req) || staticAssetRegex.test(path);
+}
 
 const isAdminRoute = createRouteMatcher(["/admin(.*)", "/api/admin(.*)"]);
 

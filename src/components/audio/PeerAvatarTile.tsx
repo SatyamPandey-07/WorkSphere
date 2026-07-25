@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import { AudioLevelIndicator } from "./AudioLevelIndicator";
-
+import { usePeakDecayLevel } from "@/hooks/usePeakDecayLevel";
 type PeerAvatarTileProps = {
   /** Unique peer identifier */
   peerId: string;
@@ -41,9 +41,12 @@ export function PeerAvatarTile({
   isSpeaking = false,
   actions,
 }: PeerAvatarTileProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  // Attach media stream to video element
+<AudioLevelIndicator
+        level={smoothedAudioLevel}
+        size={88}
+        strokeWidth={3}
+        muted={!audioEnabled}
+      >  // Attach media stream to video element
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;

@@ -196,7 +196,7 @@ describe("RemoteListenerInterpolator", () => {
     expect(history).toHaveLength(1);
   });
 
-  it("interpolates position linearly between timestamps", () => {
+  it("interpolates position using cubic Hermite spline for smooth transitions", () => {
     const interpolator = new RemoteListenerInterpolator(4);
 
     const update1: SpatialListenerUpdate = {
@@ -211,16 +211,67 @@ describe("RemoteListenerInterpolator", () => {
     const update2: SpatialListenerUpdate = {
       type: "spatial_listener_update",
       userId: "user-1",
-      position: { x: 10, y: 0, z: 20 },
-      forward: { x: 0, y: 0, z: 1 },
+      position: { x: 10, y: 0, z: 10 },
+      forward: { x: 0, y: 0, z: -1 },
       up: { x: 0, y: 1, z: 0 },
       timestamp: 2000,
     };
 
+    const update3: SpatialListenerUpdate = {
+      type: "spatial_listener_update",
+      userId: "user-1",
+      position: { x: 30, y: 0, z: 30 },
+      forward: { x: 0, y: 0, z: -1 },
+      up: { x: 0, y: 1, z: 0 },
+      timestamp: 3000,
+    };
+
     interpolator.applyUpdate(update1, mockRouter);
     interpolator.applyUpdate(update2, mockRouter);
+    interpolator.applyUpdate(update3, mockRouter);
 
+    // Hermite spline at midpoint 1500 accounts for acceleration/velocities
     const mid = interpolator.interpolate("user-1", 1500);
-    expect(mid?.position).toEqual({ x: 5, y: 0, z: 10 });
+    expect(mid?.position.x).toBeCloseTo(4.375);
+    expect(mid?.position.z).toBeCloseTo(4.375);
+  });
+
+  it("clamps spatial position and orientation values within safe limits", () => {
+    const interpolator = new RemoteListenerInterpolator(4);
+
+    const update: SpatialListenerUpdate = {
+      type: "spatial_listener_update",
+      userId: "user-1",
+      position: { x: 250, y: -150, z: 10 },
+      forward: { x: 1.5, y: -2.0, z: 0 },
+      up: { x: 0, y: 1, z: 0 },
+      timestamp: 1000,
+    };
+
+    interpolator.applyUpdate(update, mockRouter);
+
+    expect(mockRouter.updatePeerPosition).toHaveBeenCalledWith(
+      "user-1",
+      100,
+      -100,
+      10,
+    );
+
+    const history = interpolator.getHistory("user-1");
+    expect(history?.[0].position).toEqual({ x: 100, y: -100, z: 10 });
+  });
+
+  it("registers window resize listener on setup and removes it on dispose", () => {
+    const addSpy = jest.spyOn(window, "addEventListener");
+    const removeSpy = jest.spyOn(window, "removeEventListener");
+
+    const interpolator = new RemoteListenerInterpolator();
+    expect(addSpy).toHaveBeenCalledWith("resize", expect.any(Function));
+
+    interpolator.dispose();
+    expect(removeSpy).toHaveBeenCalledWith("resize", expect.any(Function));
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
   });
 });

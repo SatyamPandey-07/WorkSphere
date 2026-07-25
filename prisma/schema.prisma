@@ -58,6 +58,19 @@ model User {
   lastCheckInDate    String? // stored as "YYYY-MM-DD" UTC
   passkeys           PasskeyCredential[]
   isVerifiedStudent  Boolean            @default(false)
+  accurateVotes      Int                @default(0)
+  badges             UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeType String
+  awardedAt DateTime @default(now())
+
+  @@unique([userId, badgeType])
+  @@index([userId])
 }
 
 model Venue {
@@ -129,7 +142,7 @@ model VenueRating {
   userId             String
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId            String
-  venue              Venue    @relation(fields: [venueId], references: [id])
+  venue              Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
   wifiQuality        Int // 1-5
   hasOutlets         Boolean
   singleOriginBeans  Boolean  @default(false)
@@ -168,7 +181,7 @@ model Favorite {
   userId    String
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String
-  venue     Venue         @relation(fields: [venueId], references: [id])
+  venue     Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
   notes     String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
@@ -220,7 +233,7 @@ model Booking {
   userId             String
   user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId            String
-  venue              Venue          @relation(fields: [venueId], references: [id])
+  venue              Venue          @relation(fields: [venueId], references: [id], onDelete: Cascade)
   date               String
   time               String
   customerEmail      String
@@ -267,6 +280,8 @@ enum GuestStatus {
   SENT
   FAILED
   CANCELLED
+  ACCEPTED
+  DECLINED
 }
 
 enum BookingStatus {
@@ -470,7 +485,7 @@ model FlaggedItem {
   reason       String
   status       FlagStatus @default(PENDING)
   reportedById String
-  reportedBy   User       @relation(fields: [reportedById], references: [id])
+  reportedBy   User       @relation(fields: [reportedById], references: [id], onDelete: Cascade)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
@@ -481,7 +496,7 @@ model FlaggedItem {
 model AdminAuditLog {
   id         String   @id @default(cuid())
   adminId    String
-  admin      User     @relation(fields: [adminId], references: [id])
+  admin      User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
   action     String
   entityType String
   entityId   String
@@ -682,7 +697,7 @@ model PushSubscription {
 }
 
 model PushNotificationLog {
-  id        String   @id @default(cuid())
+  id        String   @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String?
@@ -693,6 +708,7 @@ model PushNotificationLog {
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
+  @@id([id, createdAt])
   @@index([createdAt])
   @@index([status])
 }

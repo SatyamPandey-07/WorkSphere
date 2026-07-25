@@ -8,6 +8,7 @@ interface SeatCheckin {
   venueId: string;
   capacity: number;
   checkedInAt: number;
+  version: number;
 }
 
 // Venues we don't have real capacity data for yet still need a sensible
@@ -27,10 +28,40 @@ export default class WorkspaceServer implements Party.Server {
   // keyed by connection id so we can always find & clear a user's previous
   // check-in on check-in/checkout/disconnect without scanning every venue.
   private seatCheckins = new Map<string, SeatCheckin>();
+  private seatCheckinLocks = new Set<string>(); // Prevents concurrent ops per connection
   private serverEpoch = Date.now();
   private sequenceId = 0;
 
-  constructor(readonly room: Party.Room) {}
+  private heartbeatInterval?: ReturnType<typeof setInterval>;
+  private connectionStates = new Map<
+    string,
+    { lastPong: number; name?: string }
+  >();
+
+  constructor(readonly room: Party.Room) {
+    this.heartbeatInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [connId, state] of this.connectionStates.entries()) {
+        const conn = this.room.getConnection(connId);
+        if (!conn) {
+          this.connectionStates.delete(connId);
+          continue;
+        }
+
+        if (now - state.lastPong > 30000) {
+          if (state.name) {
+            this.room.broadcast(
+              JSON.stringify({ type: "peer-leave", name: state.name }),
+            );
+          }
+          conn.close();
+          this.connectionStates.delete(connId);
+        } else if (now - state.lastPong >= 10000) {
+          conn.send(JSON.stringify({ type: "ping" }));
+        }
+      }
+    }, 10000);
+  }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
     const url = new URL(ctx.request.url);
@@ -106,13 +137,21 @@ export default class WorkspaceServer implements Party.Server {
       readOnly: isViewer,
     });
 
+    this.connectionStates.set(conn.id, { lastPong: Date.now() });
+
     // Also handle simple presence via standard WebSockets
-    conn.addEventListener("message", (event) => {
+    conn.addEventListener("message", (event: { data: unknown }) => {
       try {
-        const data = JSON.parse(event.data as string);
+        const raw = event.data as string;
+        if (raw.length > 10_240) return;
+
+        const data = JSON.parse(raw);
         if (data.type === "presence" || data.type === "cursor") {
-          // Broadcast presence/cursor to everyone else in the room
-          this.room.broadcast(event.data as string, [conn.id]);
+          const state = conn.state as { userId?: string } | null;
+          if (!state?.userId || data.userId !== state.userId) return;
+          if (typeof data.venueId !== "string") return;
+
+          this.room.broadcast(raw, [conn.id]);
         }
       } catch {
         // Not JSON or other error, handled by Yjs
@@ -139,6 +178,21 @@ export default class WorkspaceServer implements Party.Server {
           }),
         );
         return;
+      }
+
+      if (parsed.type === "pong") {
+        const state = this.connectionStates.get(sender.id);
+        if (state) {
+          state.lastPong = Date.now();
+        }
+        return;
+      }
+
+      if (parsed.type === "cursor" && parsed.name) {
+        const state = this.connectionStates.get(sender.id);
+        if (state) {
+          state.name = parsed.name;
+        }
       }
 
       if (
@@ -208,6 +262,7 @@ export default class WorkspaceServer implements Party.Server {
   // Clear a disconnecting user's seat check-in so they don't count toward
   // a venue's availability after they've left (#703).
   onClose(conn: Party.Connection) {
+    this.connectionStates.delete(conn.id);
     this.handleSeatCheckout(conn);
   }
 
@@ -216,30 +271,81 @@ export default class WorkspaceServer implements Party.Server {
     venueId: string,
     capacity?: unknown,
   ) {
-    const previous = this.seatCheckins.get(conn.id);
-    const resolvedCapacity =
-      typeof capacity === "number" && capacity > 0
-        ? capacity
-        : (previous?.capacity ?? DEFAULT_SEAT_CAPACITY);
+    const maxRetries = 3;
+    const connId = conn.id;
 
-    this.seatCheckins.set(conn.id, {
-      venueId,
-      capacity: resolvedCapacity,
-      checkedInAt: Date.now(),
-    });
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      // Per-connection lock to prevent interleaved operations
+      if (this.seatCheckinLocks.has(connId)) {
+        // Another operation for this connection is in flight - wait and retry
+        // In practice PartyKit processes sequentially, but this guards against edge cases
+        continue;
+      }
 
-    this.broadcastSeatUpdate(venueId);
-    // Also refresh the venue they just left, if any, since its count dropped.
-    if (previous && previous.venueId !== venueId) {
-      this.broadcastSeatUpdate(previous.venueId);
+      this.seatCheckinLocks.add(connId);
+      try {
+        const previous = this.seatCheckins.get(connId);
+        const expectedVersion = previous?.version ?? 0;
+        const resolvedCapacity =
+          typeof capacity === "number" && capacity > 0
+            ? capacity
+            : (previous?.capacity ?? DEFAULT_SEAT_CAPACITY);
+
+        const newCheckin: SeatCheckin = {
+          venueId,
+          capacity: resolvedCapacity,
+          checkedInAt: Date.now(),
+          version: expectedVersion + 1,
+        };
+
+        // Optimistic lock: verify no concurrent modification
+        const current = this.seatCheckins.get(connId);
+        if (current && current.version !== expectedVersion) {
+          continue; // Retry - concurrent modification detected
+        }
+
+        this.seatCheckins.set(connId, newCheckin);
+
+        this.broadcastSeatUpdate(venueId);
+        if (previous && previous.venueId !== venueId) {
+          this.broadcastSeatUpdate(previous.venueId);
+        }
+        return;
+      } finally {
+        this.seatCheckinLocks.delete(connId);
+      }
     }
+    console.error("[Seat] Max retries exceeded for checkin", connId);
   }
 
   private handleSeatCheckout(conn: Party.Connection) {
-    const previous = this.seatCheckins.get(conn.id);
-    if (!previous) return;
-    this.seatCheckins.delete(conn.id);
-    this.broadcastSeatUpdate(previous.venueId);
+    const maxRetries = 3;
+    const connId = conn.id;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      if (this.seatCheckinLocks.has(connId)) {
+        continue;
+      }
+
+      this.seatCheckinLocks.add(connId);
+      try {
+        const previous = this.seatCheckins.get(connId);
+        if (!previous) return;
+
+        // Optimistic lock check
+        const current = this.seatCheckins.get(connId);
+        if (current && current.version !== previous.version) {
+          continue; // Retry
+        }
+
+        this.seatCheckins.delete(connId);
+        this.broadcastSeatUpdate(previous.venueId);
+        return;
+      } finally {
+        this.seatCheckinLocks.delete(connId);
+      }
+    }
+    console.error("[Seat] Max retries exceeded for checkout", connId);
   }
 
   private countForVenue(venueId: string): number {

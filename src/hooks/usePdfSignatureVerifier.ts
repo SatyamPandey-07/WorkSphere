@@ -1,22 +1,15 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import {
-  extractSignatures,
-  getSignedBytes,
-} from "@/lib/pdf-verify/pdfSignatureExtractor";
-import { fetchCaRootsPem } from "@/lib/pdf-verify/caRoots";
 import type {
   PdfSignatureInfo,
   SignatureVerificationResult,
   VerificationStatus,
-  ByteRange,
-  WorkerRequest,
-  WorkerResponse,
 } from "@/types/pdfSignature";
 
 export interface UsePdfSignatureVerifierReturn {
   status: VerificationStatus;
+  progress: number;
   signatures: PdfSignatureInfo[];
   result: SignatureVerificationResult | null;
   error: string | null;
@@ -24,120 +17,35 @@ export interface UsePdfSignatureVerifierReturn {
   reset: () => void;
 }
 
-let workerInstance: Worker | null = null;
-let workerReady = false;
-let initPromise: Promise<void> | null = null;
-
-function getWorker(): Worker | null {
-  if (typeof window === "undefined" || typeof Worker === "undefined")
-    return null;
-  if (!workerInstance) {
-    try {
-      const baseUrl =
-        typeof document !== "undefined"
-          ? document.baseURI
-          : "http://localhost/";
-      workerInstance = new Worker(
-        new URL("/workers/pdfVerify.worker.js", baseUrl),
-        { type: "module" },
-      );
-    } catch {
-      return null;
-    }
-  }
-  return workerInstance;
-}
-
-async function initWorker(): Promise<void> {
-  if (workerReady) return;
-  if (initPromise) return initPromise;
-
-  initPromise = new Promise<void>((resolve, reject) => {
-    const worker = getWorker();
-    if (!worker) {
-      resolve();
-      return;
-    }
-    const id = crypto.randomUUID();
-
-    const handler = (e: MessageEvent<WorkerResponse>) => {
-      if (e.data.id !== id) return;
-      worker.removeEventListener("message", handler);
-
-      if (e.data.action === "ready") {
-        workerReady = true;
-        resolve();
-      } else {
-        reject(new Error(e.data.error || "Worker init failed"));
-      }
-    };
-
-    worker.addEventListener("message", handler);
-
-    const wasmUrl = "/pdf-verify.js";
-    worker.postMessage({
-      action: "init",
-      id,
-      payload: { wasmUrl },
-    } satisfies WorkerRequest);
-  });
-
-  return initPromise;
-}
-
-function verifyInWorker(
-  pdfBytes: Uint8Array,
-  cmsBlob: Uint8Array,
-  byteRange: ByteRange,
-  caRoots: string,
-): Promise<SignatureVerificationResult> {
-  return new Promise((resolve, reject) => {
-    const worker = getWorker();
-    if (!worker) {
-      reject(new Error("Worker not supported"));
-      return;
-    }
-    const id = crypto.randomUUID();
-
-    const handler = (e: MessageEvent<WorkerResponse>) => {
-      if (e.data.id !== id) return;
-      worker.removeEventListener("message", handler);
-
-      if (e.data.action === "result" && e.data.result) {
-        resolve(e.data.result);
-      } else {
-        reject(new Error(e.data.error || "Verification failed"));
-      }
-    };
-
-    worker.addEventListener("message", handler);
-
-    worker.postMessage({
-      action: "verify",
-      id,
-      payload: { pdfBytes, cmsBlob, byteRange, caRoots },
-    } satisfies WorkerRequest);
-  });
-}
-
 export function usePdfSignatureVerifier(): UsePdfSignatureVerifierReturn {
   const [status, setStatus] = useState<VerificationStatus>("idle");
+  const [progress, setProgress] = useState(0);
   const [signatures, setSignatures] = useState<PdfSignatureInfo[]>([]);
   const [result, setResult] = useState<SignatureVerificationResult | null>(
     null,
   );
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef(false);
+  const workerRef = useRef<Worker | null>(null);
 
   useEffect(() => {
     return () => {
       abortRef.current = true;
+      if (workerRef.current) {
+        workerRef.current.terminate();
+        workerRef.current = null;
+      }
     };
   }, []);
 
   const reset = useCallback(() => {
     abortRef.current = true;
+    if (workerRef.current) {
+      workerRef.current.terminate();
+      workerRef.current = null;
+    }
     setStatus("idle");
+    setProgress(0);
     setSignatures([]);
     setResult(null);
     setError(null);
@@ -146,43 +54,92 @@ export function usePdfSignatureVerifier(): UsePdfSignatureVerifierReturn {
   const verify = useCallback(async (file: File) => {
     abortRef.current = false;
     setStatus("loading");
+    setProgress(0);
     setResult(null);
     setError(null);
     setSignatures([]);
 
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      if (abortRef.current) return;
-
-      const pdfBytes = new Uint8Array(arrayBuffer);
-      const foundSignatures = extractSignatures(pdfBytes);
-
-      if (foundSignatures.length === 0) {
-        setStatus("unsigned");
-        return;
+      if (workerRef.current) {
+        workerRef.current.terminate();
       }
 
-      setSignatures(foundSignatures);
-      setStatus("verifying");
-
-      await initWorker();
-      if (abortRef.current) return;
-
-      const sig = foundSignatures[0];
-      const signedBytes = getSignedBytes(pdfBytes, sig.byteRange);
-      const caRoots = await fetchCaRootsPem();
-
-      const verifyResult = await verifyInWorker(
-        signedBytes,
-        sig.contents,
-        sig.byteRange,
-        caRoots,
+      const worker = new Worker(
+        new URL("../workers/pdfSignature.worker.ts", import.meta.url),
+        { type: "module" },
       );
+      workerRef.current = worker;
 
-      if (abortRef.current) return;
+      worker.onmessage = (event) => {
+        if (abortRef.current) return;
 
-      setResult(verifyResult);
-      setStatus(verifyResult.valid ? "verified" : "invalid");
+        const {
+          type,
+          progress: p,
+          signatures: sigs,
+          results,
+          error: err,
+        } = event.data;
+
+        if (type === "progress") {
+          setProgress(p);
+          if (p === 50) {
+            setStatus("verifying");
+          }
+        } else if (type === "result") {
+          if (sigs && sigs.length === 0) {
+            setStatus("unsigned");
+            worker.terminate();
+            workerRef.current = null;
+            return;
+          }
+          if (results && results.length > 0) {
+            const firstResult = results[0];
+            setSignatures(results.map((r: any) => r.signature));
+            setResult(firstResult.result);
+            setStatus(firstResult.result.valid ? "verified" : "invalid");
+          }
+          worker.terminate();
+          workerRef.current = null;
+        } else if (type === "error") {
+          setError(err || "Verification failed");
+          setStatus("error");
+          worker.terminate();
+          workerRef.current = null;
+        }
+      };
+
+      worker.onerror = (e) => {
+        if (abortRef.current) return;
+        setError("Worker error: " + e.message);
+        setStatus("error");
+        worker.terminate();
+        workerRef.current = null;
+      };
+
+      const chunkSize = 1024 * 1024; // 1 MB
+      const totalBytes = file.size;
+
+      for (let i = 0; i < totalBytes; i += chunkSize) {
+        if (abortRef.current) break;
+        const blob = file.slice(i, i + chunkSize);
+        const arrayBuffer = await blob.arrayBuffer();
+
+        worker.postMessage(
+          {
+            type: "chunk",
+            payload: { chunk: arrayBuffer },
+          },
+          [arrayBuffer],
+        );
+
+        const currentProgress = Math.floor(((i + blob.size) / totalBytes) * 40); // 0-40% for loading
+        setProgress(currentProgress);
+      }
+
+      if (!abortRef.current) {
+        worker.postMessage({ type: "verify" });
+      }
     } catch (err) {
       if (abortRef.current) return;
       const msg = err instanceof Error ? err.message : String(err);
@@ -191,5 +148,5 @@ export function usePdfSignatureVerifier(): UsePdfSignatureVerifierReturn {
     }
   }, []);
 
-  return { status, signatures, result, error, verify, reset };
+  return { status, progress, signatures, result, error, verify, reset };
 }

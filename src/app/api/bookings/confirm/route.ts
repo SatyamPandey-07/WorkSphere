@@ -8,10 +8,38 @@ import "@/core/subscribers/discord";
 import "@/core/subscribers/whatsapp";
 import "@/core/subscribers/guests";
 import "@/core/subscribers/telegram";
+import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 
 export async function POST(req: Request) {
   try {
     const { userId } = await auth();
+    const forwarded = req.headers.get("x-forwarded-for");
+    const identifier = `book:${userId || forwarded?.split(",")[0] || "anonymous"}`;
+
+    if (!(await rateLimit(identifier, 5))) {
+      const info = await getRateLimitInfo(identifier, 5);
+      const retryAfter = info?.resetTime
+        ? Math.ceil((info.resetTime - Date.now()) / 1000)
+        : 60;
+      const resetTimeSec = info?.resetTime
+        ? Math.ceil(info.resetTime / 1000)
+        : Math.ceil((Date.now() + 60000) / 1000);
+
+      return NextResponse.json(
+        {
+          error:
+            "Rate limit exceeded. Please wait before making more bookings.",
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(retryAfter),
+            "X-RateLimit-Reset": String(resetTimeSec),
+          },
+        },
+      );
+    }
+
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

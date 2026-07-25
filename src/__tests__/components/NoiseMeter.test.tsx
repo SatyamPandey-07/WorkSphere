@@ -36,16 +36,12 @@ describe("NoiseMeter Component & 60fps Audio Throttling", () => {
     jest.clearAllMocks();
     jest.useFakeTimers();
 
-    rafCallback = null;
-    rafId = 0;
-
-    global.requestAnimationFrame = jest.fn((cb: FrameRequestCallback) => {
+    globalThis.requestAnimationFrame = jest.fn((cb: FrameRequestCallback) => {
       rafCallback = cb;
       rafId++;
       return rafId;
     });
-
-    global.cancelAnimationFrame = jest.fn();
+    globalThis.cancelAnimationFrame = jest.fn();
 
     const mockStream = { getTracks: () => [{ stop: jest.fn() }] };
     mockGetUserMedia.mockResolvedValue(mockStream);
@@ -214,14 +210,12 @@ describe("NoiseMeter Component & 60fps Audio Throttling", () => {
       createMediaStreamSource: jest
         .fn()
         .mockReturnValue({ connect: jest.fn(), disconnect: jest.fn() }),
-      createAnalyser: jest
-        .fn()
-        .mockReturnValue({
-          fftSize: 2048,
-          smoothingTimeConstant: 0.25,
-          disconnect: jest.fn(),
-          getFloatTimeDomainData: jest.fn(),
-        }),
+      createAnalyser: jest.fn().mockReturnValue({
+        fftSize: 2048,
+        smoothingTimeConstant: 0.25,
+        disconnect: jest.fn(),
+        getFloatTimeDomainData: jest.fn(),
+      }),
       close: jest.fn().mockResolvedValue(undefined),
       resume: mockResume,
       state: "suspended",

@@ -165,56 +165,71 @@ export async function POST(request: NextRequest) {
   const skippedDates: string[] = [];
 
   for (const bookingDate of dates) {
-    const existingBookings = await prisma.booking.findMany({
-      where: {
+    const result = await prisma.$transaction(async (tx: any) => {
+      await tx.$executeRawUnsafe(
+        `SELECT id FROM "VenueSeat" WHERE id = $1 FOR UPDATE`,
         seatId,
-        date: bookingDate,
-        status: {
-          in: ["CONFIRMED", "PENDING"],
+      );
+
+      const existingBookings = await tx.booking.findMany({
+        where: {
+          seatId,
+          date: bookingDate,
+          status: {
+            in: ["CONFIRMED", "PENDING"],
+          },
         },
-      },
-      select: {
-        time: true,
-        duration: true,
-      },
+        select: {
+          time: true,
+          duration: true,
+        },
+      });
+
+      const conflict = existingBookings.some(
+        (booking: { time: string; duration: number | null }) =>
+          overlaps(booking.time, booking.duration ?? 60, time, duration),
+      );
+
+      if (conflict) {
+        return { conflict: true as const };
+      }
+
+      const confirmationId = `WS-#${Math.floor(100000 + Math.random() * 900000)}`;
+
+      const booking = await tx.booking.create({
+        data: {
+          userId,
+          venueId,
+          seatId,
+          seatNumber: seat.seatNumber,
+          duration,
+          amenitiesNeeded,
+          date: bookingDate,
+          time,
+          customerEmail:
+            typeof body.customerEmail === "string"
+              ? body.customerEmail
+              : "guest@worksphere.local",
+          customerPhone:
+            typeof body.customerPhone === "string" ? body.customerPhone : null,
+          confirmationId,
+          status: "CONFIRMED",
+        },
+      });
+
+      return { conflict: false as const, booking, confirmationId };
     });
 
-    const conflict = existingBookings.some(
-      (booking: { time: string; duration: number | null }) =>
-        overlaps(booking.time, booking.duration ?? 60, time, duration),
-    );
-
-    if (conflict) {
+    if (result.conflict) {
       skippedDates.push(bookingDate);
       continue;
     }
 
-    const confirmationId = `WS-#${Math.floor(100000 + Math.random() * 900000)}`;
-
-    const booking = await prisma.booking.create({
-      data: {
-        userId,
-        venueId,
-        seatId,
-        seatNumber: seat.seatNumber,
-        duration,
-        amenitiesNeeded,
-        date: bookingDate,
-        time,
-        customerEmail:
-          typeof body.customerEmail === "string"
-            ? body.customerEmail
-            : "guest@worksphere.local",
-        customerPhone:
-          typeof body.customerPhone === "string" ? body.customerPhone : null,
-        confirmationId,
-        status: "CONFIRMED",
-      },
-    });
+    const { booking, confirmationId } = result;
 
     createdBookings.push({
       date: bookingDate,
-      confirmationId: booking.id,
+      confirmationId,
       status: "CONFIRMED",
     });
 

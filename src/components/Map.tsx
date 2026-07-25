@@ -19,6 +19,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
+import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import {
   useSeatAvailability,
@@ -470,29 +471,6 @@ const Map = ({
   const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay()); // 0=Sun
   const [selectedHour, setSelectedHour] = useState<number>(
     new Date().getHours(),
-  );
-
-  // Memoized event handlers for all interactive markers to prevent react-leaflet
-  // from removing and re-adding event listeners on every render.
-  const markerEventHandlers = useMemo(
-    () => ({
-      keydown: (e: any) => {
-        if (e.originalEvent.key === "Enter" || e.originalEvent.key === " ") {
-          e.originalEvent.preventDefault();
-          e.target.openPopup();
-        }
-      },
-      add: (e: any) => {
-        const el = e.target.getElement();
-        if (el) {
-          const name = e.target.options.title || "Map marker";
-          el.setAttribute("aria-label", name);
-          el.setAttribute("role", "button");
-          el.setAttribute("tabindex", "0");
-        }
-      },
-    }),
-    [],
   );
 
   // Real-time seat availability (#703) — PartyKit presence layer that
@@ -992,6 +970,15 @@ const Map = ({
           margin: 12px 16px;
         }
         
+        /* Focus-visible ring for keyboard-navigated markers */
+        .venue-marker:focus-visible,
+        .destination-marker:focus-visible,
+        .custom-user-marker:focus-visible {
+          outline: 2px solid #3b82f6;
+          outline-offset: 2px;
+          border-radius: 50%;
+        }
+
         /* Floating toggle position above canvas layers */
         .map-noise-toggle {
           position: absolute;
@@ -1029,6 +1016,11 @@ const Map = ({
         }}
       />
 
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {spiderfiedMarkers.length > 0
+          ? `${spiderfiedMarkers.length} venue${spiderfiedMarkers.length === 1 ? "" : "s"} on map. Use Tab to navigate markers, Enter to open details.`
+          : "No venues on map"}
+      </div>
       <MapContainer
         center={center}
         zoom={13}
@@ -1137,21 +1129,13 @@ const Map = ({
         <WebGLContextWatcher />
 
         {customIcon && (
-          <Marker
+          <AccessibleMarker
             position={center}
             icon={customIcon}
-            title="Your location"
-            alt="Your location"
-            keyboard={true}
-            eventHandlers={markerEventHandlers}
+            name="Your location"
           >
-            <Popup
-              autoPanPaddingTopLeft={[20, 90]}
-              autoPanPaddingBottomRight={[20, 20]}
-            >
-              You are here!
-            </Popup>
-          </Marker>
+            <div className="text-sm text-white">You are here!</div>
+          </AccessibleMarker>
         )}
         <MapEvents onMouseMove={throttledBroadcast} />
         {Object.entries(mapCursors).map(([userId, cursor]) => {
@@ -1166,19 +1150,28 @@ const Map = ({
             />
           );
         })}
-        {spiderfiedMarkers.map((marker) => (
-          <Marker
-            key={marker.id}
-            position={[marker.renderedLat, marker.renderedLng]}
-            icon={marker.id.includes("dest") ? destinationIcon : venueIcon}
-            title={marker.name}
-            alt={marker.name}
-            keyboard={true}
-            eventHandlers={markerEventHandlers}
-          >
-            <Popup
-              autoPanPaddingTopLeft={[20, 90]}
-              autoPanPaddingBottomRight={[20, 20]}
+        {spiderfiedMarkers.map((marker) => {
+          const isDest = marker.id.includes("dest");
+          const seat = !isDest ? getAvailability(marker.id) : null;
+          const isCheckedInHere = !isDest && checkedInVenueId === marker.id;
+          const telemetry = !isDest
+            ? {
+                seatCount: seat?.count,
+                seatCapacity: seat?.capacity,
+                isCheckedIn: isCheckedInHere,
+                isConnected: isSeatSocketConnected,
+              }
+            : undefined;
+
+          return (
+            <AccessibleMarker
+              key={marker.id}
+              position={[marker.renderedLat, marker.renderedLng]}
+              icon={isDest ? destinationIcon : venueIcon}
+              name={marker.name}
+              category={marker.category}
+              isDestination={isDest}
+              telemetryData={telemetry}
             >
               <div className="text-sm">
                 <div className="font-semibold text-white">{marker.name}</div>
@@ -1190,14 +1183,12 @@ const Map = ({
                     {marker.address}
                   </div>
                 )}
-                {!marker.id.includes("dest") &&
+                {!isDest &&
                   (() => {
-                    const seat = getAvailability(marker.id);
-                    const isCheckedInHere = checkedInVenueId === marker.id;
                     const seatTextColor =
-                      seat.status === "red"
+                      seat!.status === "red"
                         ? "text-red-400"
-                        : seat.status === "yellow"
+                        : seat!.status === "yellow"
                           ? "text-yellow-400"
                           : "text-green-400";
                     return (
@@ -1206,7 +1197,7 @@ const Map = ({
                           className={`text-[10px] font-medium ${seatTextColor}`}
                         >
                           {isSeatSocketConnected
-                            ? `${seat.count}/${seat.capacity} checked in`
+                            ? `${seat!.count}/${seat!.capacity} checked in`
                             : "Connecting…"}
                         </span>
                         <button
@@ -1246,9 +1237,9 @@ const Map = ({
               >
                 ➕ Add to Workday Timeline
               </button>
-            </Popup>
-          </Marker>
-        ))}
+            </AccessibleMarker>
+          );
+        })}
 
         {/* Render OSRM Optimized Multi-Stop Routing Layer Geometry */}
         {optimizedRoute &&

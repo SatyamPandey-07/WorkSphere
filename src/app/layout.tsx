@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import "./globals.css";
 
@@ -19,9 +19,10 @@ const THEME_INIT_SCRIPT = `
 (function () {
   try {
     var stored = localStorage.getItem("worksphere-theme");
+    var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     var theme = stored === "light" || stored === "dark" || stored === "cyberpunk"
       ? stored
-      : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      : (prefersDark ? "dark" : "light");
 
     var root = document.documentElement;
     root.classList.remove("dark", "cyberpunk");
@@ -33,6 +34,19 @@ const THEME_INIT_SCRIPT = `
     }
 
     root.style.colorScheme = theme === "light" ? "light" : "dark";
+
+    // ─── Inline background/foreground to prevent white flash ───
+    // Set colors directly on <html> before external CSS loads
+    if (theme === "dark") {
+      root.style.backgroundColor = "#0a0a0a";
+      root.style.color = "#ededed";
+    } else if (theme === "cyberpunk") {
+      root.style.backgroundColor = "#090014";
+      root.style.color = "#f4f4ff";
+    } else {
+      root.style.backgroundColor = "#ffffff";
+      root.style.color = "#171717";
+    }
 
     if (document.cookie.indexOf("worksphere-theme=") === -1) {
       document.cookie =
@@ -118,9 +132,13 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const publishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const publishableKey =
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
+    "pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ";
 
   const cookieStore = await cookies();
+  const headersList = await headers();
+  const nonce = headersList.get("x-csp-nonce") ?? "";
   const storedTheme = cookieStore.get("worksphere-theme")?.value;
   const theme: "light" | "dark" | "cyberpunk" =
     storedTheme === "dark" ||
@@ -176,13 +194,14 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <script
+          id="theme-init"
+          nonce={nonce}
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
         <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <script
-          id="theme-init"
-          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
-        />
       </head>
 
       <body

@@ -51,4 +51,30 @@ describe("GET /api/venues with multi-city filter (#860)", () => {
       }),
     );
   });
+
+  it("filters venues matching specified cities parameter with mixed casing", async () => {
+    (prisma.venue.count as jest.Mock).mockResolvedValue(1);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([
+      { id: "v1", name: "SF Cafe", address: "Market St, San Francisco" },
+    ]);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues?cities=sAn%20FRANcisco,TOKYO",
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.venues).toHaveLength(1);
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { address: { contains: "sAn FRANcisco", mode: "insensitive" } },
+            { address: { contains: "TOKYO", mode: "insensitive" } },
+          ],
+        }),
+      }),
+    );
+  });
 });

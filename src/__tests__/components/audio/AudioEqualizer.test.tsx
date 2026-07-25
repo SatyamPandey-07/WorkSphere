@@ -51,6 +51,16 @@ const mockAudioContext = {
     frequency: {
       setValueAtTime: jest.fn(),
     },
+    Q: {
+      value: 1.0,
+      setValueAtTime: jest.fn(),
+    },
+    gain: {
+      setValueAtTime: jest.fn(),
+      setTargetAtTime: jest.fn(),
+      linearRampToValueAtTime: jest.fn(),
+      value: 0,
+    },
   })),
   destination: {},
   currentTime: 0,
@@ -61,7 +71,9 @@ const mockAudioContext = {
 };
 
 beforeAll(() => {
-  global.AudioContext = jest.fn().mockImplementation(() => mockAudioContext) as any;
+  global.AudioContext = jest
+    .fn()
+    .mockImplementation(() => mockAudioContext) as any;
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: jest.fn().mockImplementation((query) => ({
@@ -107,5 +119,76 @@ describe("AudioEqualizer Component (#859)", () => {
 
     // Cafe Chatter preset becomes active
     expect(cafeBtn).toHaveClass("bg-indigo-600");
+  });
+
+  it("renders EQ preset selector with default Flat", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+    expect(select).toBeInTheDocument();
+    expect(select.value).toBe("flat");
+  });
+
+  it("contains all EQ presets in dropdown", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+    const options = Array.from(select.options).map((o) => o.value);
+
+    expect(options).toContain("flat");
+    expect(options).toContain("bass-boost");
+    expect(options).toContain("vocal-enhancer");
+    expect(options).toContain("treble-boost");
+    expect(options).toContain("warm");
+    expect(options).toContain("custom");
+    expect(options).toHaveLength(6);
+  });
+
+  it("updates EQ preset on selection", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+
+    fireEvent.change(select, { target: { value: "bass-boost" } });
+    expect(select.value).toBe("bass-boost");
+
+    fireEvent.change(select, { target: { value: "vocal-enhancer" } });
+    expect(select.value).toBe("vocal-enhancer");
+  });
+
+  it("displays correct label for each EQ preset option", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+    const optionLabels = Array.from(select.options).map((o) => o.text);
+
+    expect(optionLabels).toContain("Flat");
+    expect(optionLabels).toContain("Bass Boost");
+    expect(optionLabels).toContain("Vocal Enhancer");
+    expect(optionLabels).toContain("Treble Boost");
+    expect(optionLabels).toContain("Warm");
+  });
+
+  it("updates BiquadFilterNode gain in real-time with smooth audio param ramping when dragging EQ sliders (#1392)", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    // Start playing audio so initAudio creates BiquadFilterNode cascade
+    const playButton = screen.getByTitle("Listen to Ambience");
+    fireEvent.click(playButton);
+
+    const slider60Hz = screen.getByRole("slider", { name: "60Hz Gain" });
+    expect(slider60Hz).toBeInTheDocument();
+
+    fireEvent.change(slider60Hz, { target: { value: "6" } });
+    expect(screen.getByText("+6 dB")).toBeInTheDocument();
+
+    const slider1kHz = screen.getByRole("slider", { name: "1kHz Gain" });
+    fireEvent.change(slider1kHz, { target: { value: "-4" } });
+    expect(screen.getByText("-4 dB")).toBeInTheDocument();
+
+    // Reset EQ
+    const resetBtn = screen.getByTitle("Reset all EQ gains to 0 dB");
+    fireEvent.click(resetBtn);
+    expect(screen.getAllByText("0 dB")).toHaveLength(5);
   });
 });

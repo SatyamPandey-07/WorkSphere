@@ -24,12 +24,63 @@ To keep the repository clean and manageable, please follow this flow:
 
 1. **Fork** the repository and clone it locally.
 2. **Create a branch** using a descriptive naming convention:
-   - `feature/your-feature-name` for new features.
-   - `bugfix/issue-description` for bug fixes.
-   - `docs/topic-name` for documentation updates.
+    - `feature/your-feature-name` for new features.
+    - `bugfix/issue-description` for bug fixes.
+    - `docs/topic-name` for documentation updates.
 3. **Write code** and ensure all [testing](#3-testing-conventions-jest--rtl) and [pre-commit checks](#5-pre-commit-quality-verification-checklist) pass.
-4. **Commit** your changes with clear, structured commit messages (e.g., `feat: add map route coordinates validation`).
-5. **Push** to your fork and open a **Pull Request (PR)** against the `main` branch.
+4. **Commit** your changes with clear, structured commit messages (e.g., `feat: add map route coordinates validation`). See below for detailed commit formatting rules.
+5. **Push** to your fork and open a **Pull Request (PR)** against the `main` branch. Ensure the PR title adheres to the strict formatting rules outlined in Section 1.2.
+
+### 1.1 Issue Assignment & Claiming Policy
+* **Claiming an Issue**: Contributor issue tracking is claim-based. Find any unassigned, open issue and post a comment containing exactly:
+  ```text
+  /claim
+  ```
+  The `@github-actions` bot will automatically verify your eligibility, assign the issue to you, and label it as `in-progress`.
+* **Issue Assignment SLA**: Once assigned, you have exactly **6 days** to implement the changes and open a pull request. If the 6-day threshold is breached without a linked PR or a requested extension (noted via a progress comment on the issue), the bot will automatically unassign you to keep the project active.
+* **Maximum Assigned Issue Cap**: To ensure fair work distribution across the community, contributors are restricted to a maximum of **10 active assigned issues** at any single time. The bot will reject claims if your active assigned count is 10 or more.
+
+### 1.2 Pull Request Naming Conventions
+All pull request titles must match the following structured, machine-parseable format:
+```text
+<type>: <short description> (closes #<issue_number>)
+```
+
+Use the table below to select the appropriate `<type>` prefix:
+
+| PR Prefix Type | When to Use | Example |
+| :--- | :--- | :--- |
+| **`feat`** | Adding a new capability or feature to the workspace | `feat: integrate Pexels API cache lookup` |
+| **`fix`** | Resolving a bug, runtime crash, or styling defect | `fix: prevent leaflet null coordinates map crash` |
+| **`docs`** | Updating instructions, manuals, or API guides | `docs: add noise telemetry ingestion guide` |
+| **`style`** | Code formatting changes (Prettier updates, spaces, semi-colons) | `style: run Prettier formatting across components` |
+| **`refactor`** | Restructuring code without changing its functional behavior | `refactor: modularize telemetry calculation checks` |
+| **`perf`** | Code changes targeting loading speed, latency, or memory usage | `perf: compress spatial indices for faster maps` |
+| **`test`** | Writing unit tests, RTL mocks, or Playwright E2E files | `test: add unit coverage for favorites handler` |
+| **`build`** | Changing build scripts, Next.js configurations, or webpack configs | `build: upgrade Next.js to version 15.5.x` |
+| **`ci`** | Modifying GitHub Actions workflows or Vercel build configs | `ci: adjust check runner permissions` |
+| **`chore`** | Updating dependencies, post-installs, or workspace tasks | `chore: clean up lockfiles and unused deps` |
+| **`revert`** | Reverting a previous commit that caused regressions | `revert: rollback rating distribution safari patch` |
+
+*Note: The `(closes #<issue_number>)` suffix is mandatory and must match the issue being resolved. For example:*
+`fix: handle geolocation access permission denied error gracefully (closes #100)`
+
+### 1.3 Clean & Modular Commit Guidelines
+* **Atomic Scope**: Commits must be atomic. Keep changes focused on a single file or a single structural component. Avoid mixing backend optimizations with unrelated styling patches.
+* **Commit Naming conventions**: Follow standard Conventional Commits rules. Write messages in the imperative, present tense (e.g., `add map layers` rather than `added map layers` or `adds map layers`).
+* **Continuous Build Integrity**: Do not push intermediate commits that fail compilation or break the development server. The repository requires a stable main branch at all times.
+
+### 1.4 AI Coding Assistant & Subagent Guidelines
+If you are developing using AI coding assistants (such as Cursor, Gemini, or custom terminal subagents):
+1. **Pre-Flight Local Validations**: You must run type compilation and local tests *prior* to committing code. Agent-generated code frequently contains bad TS imports, outdated package usage, or broken React Hooks bindings.
+   ```bash
+   npx tsc --noEmit
+   npm test
+   npm run build
+   ```
+2. **Design Fidelity**: Agents must not use placeholder files or basic UI layouts. Verify that all agent modifications comply with the colors, themes, spacing, and transition classes specified in the [Design System Guide](docs/DESIGN_SYSTEM_GUIDE.md).
+3. **No Unrequested Refactoring**: Do not allow AI tools to refactor or rewrite files outside the target scope of the issue. This creates massive diffs and complicates PR reviews.
+4. **JSDoc & Comments Retention**: Ensure the assistant does not clean up or delete existing codebase comments, JSDoc annotations, or architecture docs unless explicitly requested.
 
 ---
 

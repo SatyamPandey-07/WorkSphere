@@ -1,31 +1,145 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Play, Pause, Volume2, VolumeX, Radio, Settings } from "lucide-react";
+import {
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Radio,
+  Settings,
+  RotateCcw,
+} from "lucide-react";
 
 type SoundPreset = "jazz" | "cafe" | "library";
 
-interface AudioEqualizerProps {
-  venueName?: string;
+export type EqPresetName =
+  "flat" | "bass-boost" | "vocal-enhancer" | "treble-boost" | "warm" | "custom";
+
+export interface EqPreset {
+  label: string;
+  gains: number[];
 }
 
-export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps) {
+export const EQ_BANDS: number[] = [60, 250, 1000, 4000, 12000];
+export const EQ_BAND_LABELS: string[] = [
+  "60Hz",
+  "250Hz",
+  "1kHz",
+  "4kHz",
+  "12kHz",
+];
+
+export const EQ_PRESETS: Record<EqPresetName, EqPreset> = {
+  flat: {
+    label: "Flat",
+    gains: [0, 0, 0, 0, 0],
+  },
+  "bass-boost": {
+    label: "Bass Boost",
+    gains: [5, 3, 0, 0, 0],
+  },
+  "vocal-enhancer": {
+    label: "Vocal Enhancer",
+    gains: [-2, -1, 3, 2, 0],
+  },
+  "treble-boost": {
+    label: "Treble Boost",
+    gains: [0, 0, 0, 3, 5],
+  },
+  warm: {
+    label: "Warm",
+    gains: [3, 2, 1, -1, -2],
+  },
+  custom: {
+    label: "Custom",
+    gains: [0, 0, 0, 0, 0],
+  },
+};
+
+export interface AudioEqualizerProps {
+  venueName?: string;
+  initialGains?: number[];
+  onGainChange?: (bandIndex: number, newGain: number) => void;
+  sampleRate?: number;
+}
+
+// Helper: Create Pink Noise Buffer
+function createPinkNoiseBuffer(ctx: AudioContext) {
+  const bufferSize = 2 * ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const output = buffer.getChannelData(0);
+  let b0 = 0,
+    b1 = 0,
+    b2 = 0,
+    b3 = 0,
+    b4 = 0,
+    b5 = 0,
+    b6 = 0;
+
+  for (let i = 0; i < bufferSize; i++) {
+    const white = Math.random() * 2 - 1;
+    b0 = 0.99886 * b0 + white * 0.0555179;
+    b1 = 0.99332 * b1 + white * 0.0750759;
+    b2 = 0.969 * b2 + white * 0.153852;
+    b3 = 0.8665 * b3 + white * 0.3104856;
+    b4 = 0.55 * b4 + white * 0.5329522;
+    b5 = -0.7616 * b5 - white * 0.016898;
+    output[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+    output[i] *= 0.11;
+    b6 = white * 0.115926;
+  }
+  return buffer;
+}
+
+// Helper: Create Brown Noise Buffer
+function createBrownNoiseBuffer(ctx: AudioContext) {
+  const bufferSize = 2 * ctx.sampleRate;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const output = buffer.getChannelData(0);
+  let lastOut = 0.0;
+
+  for (let i = 0; i < bufferSize; i++) {
+    const white = Math.random() * 2 - 1;
+    output[i] = (lastOut + 0.02 * white) / 1.02;
+    lastOut = output[i];
+    output[i] *= 3.5;
+  }
+  return buffer;
+}
+
+export function AudioEqualizer({
+  venueName = "Workspace",
+  initialGains,
+  onGainChange,
+  sampleRate: _sampleRate = 44100,
+}: AudioEqualizerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [preset, setPreset] = useState<SoundPreset>("jazz");
+  const [eqPreset, setEqPreset] = useState<EqPresetName>("flat");
   const [volume, setVolume] = useState(0.5);
   const [muted, setMuted] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [bandGains, setBandGains] = useState<number[]>(
+    initialGains || [0, 0, 0, 0, 0],
+  );
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
+  const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const jazzCleanupRef = useRef<(() => void) | null>(null);
-  const [frequencies, setFrequencies] = useState<number[]>(new Array(12).fill(10));
+  const [frequencies, setFrequencies] = useState<number[]>(
+    new Array(12).fill(10),
+  );
 
   // Detect prefers-reduced-motion on mount
   useEffect(() => {
-    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    if (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function"
+    ) {
       const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
       setReducedMotion(mediaQuery.matches);
       const listener = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
@@ -34,10 +148,33 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
     }
   }, []);
 
-  // Initialize Audio Context on demand
-  const initAudio = () => {
+  // Load from Local Storage on Mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedPreset = window.localStorage.getItem(
+        "webrtc_eq_preset",
+      ) as EqPresetName;
+      const savedGains = window.localStorage.getItem("webrtc_eq_gains");
+
+      if (savedPreset && EQ_PRESETS[savedPreset]) {
+        setEqPreset(savedPreset);
+      }
+
+      if (savedGains) {
+        try {
+          setBandGains(JSON.parse(savedGains));
+        } catch {}
+      } else if (savedPreset && savedPreset !== "custom") {
+        setBandGains(EQ_PRESETS[savedPreset].gains);
+      }
+    }
+  }, []);
+
+  // Initialize Audio Context and BiquadFilterNode EQ chain on demand
+  const initAudio = useCallback(() => {
     if (audioContextRef.current) return;
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    const AudioContextClass =
+      window.AudioContext || (window as any).webkitAudioContext;
     const ctx = new AudioContextClass();
     const masterGain = ctx.createGain();
     const analyser = ctx.createAnalyser();
@@ -46,48 +183,47 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
     masterGain.connect(analyser);
     analyser.connect(ctx.destination);
 
+    // Build 5-band BiquadFilterNode cascade
+    const filters: BiquadFilterNode[] = EQ_BANDS.map((freq, i) => {
+      const filter = ctx.createBiquadFilter();
+      if (i === 0) {
+        filter.type = "lowshelf";
+      } else if (i === EQ_BANDS.length - 1) {
+        filter.type = "highshelf";
+      } else {
+        filter.type = "peaking";
+        if ("Q" in filter && filter.Q) {
+          if (typeof filter.Q.setValueAtTime === "function") {
+            filter.Q.setValueAtTime(1.4, ctx.currentTime);
+          } else {
+            filter.Q.value = 1.4;
+          }
+        }
+      }
+      if (
+        filter.frequency &&
+        typeof filter.frequency.setValueAtTime === "function"
+      ) {
+        filter.frequency.setValueAtTime(freq, ctx.currentTime);
+      }
+      if (filter.gain && typeof filter.gain.setValueAtTime === "function") {
+        filter.gain.setValueAtTime(bandGains[i] ?? 0, ctx.currentTime);
+      }
+      return filter;
+    });
+
+    for (let i = 0; i < filters.length - 1; i++) {
+      filters[i].connect(filters[i + 1]);
+    }
+    if (filters.length > 0) {
+      filters[filters.length - 1].connect(masterGain);
+    }
+
     audioContextRef.current = ctx;
     masterGainRef.current = masterGain;
+    eqFiltersRef.current = filters;
     analyserRef.current = analyser;
-  };
-
-  // Helper: Create Pink Noise Buffer
-  const createPinkNoiseBuffer = (ctx: AudioContext) => {
-    const bufferSize = 2 * ctx.sampleRate;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const output = buffer.getChannelData(0);
-    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
-
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      b0 = 0.99886 * b0 + white * 0.0555179;
-      b1 = 0.99332 * b1 + white * 0.0750759;
-      b2 = 0.96900 * b2 + white * 0.1538520;
-      b3 = 0.86650 * b3 + white * 0.3104856;
-      b4 = 0.55000 * b4 + white * 0.5329522;
-      b5 = -0.7616 * b5 - white * 0.0168980;
-      output[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
-      output[i] *= 0.11;
-      b6 = white * 0.115926;
-    }
-    return buffer;
-  };
-
-  // Helper: Create Brown Noise Buffer
-  const createBrownNoiseBuffer = (ctx: AudioContext) => {
-    const bufferSize = 2 * ctx.sampleRate;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const output = buffer.getChannelData(0);
-    let lastOut = 0.0;
-
-    for (let i = 0; i < bufferSize; i++) {
-      const white = Math.random() * 2 - 1;
-      output[i] = (lastOut + 0.02 * white) / 1.02;
-      lastOut = output[i];
-      output[i] *= 3.5;
-    }
-    return buffer;
-  };
+  }, [bandGains]);
 
   // Play Sound Logic
   const stopPlayingNodes = useCallback(() => {
@@ -106,42 +242,117 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
 
   const stopPlaying = useCallback(() => {
     stopPlayingNodes();
-    if (audioContextRef.current && audioContextRef.current.state !== "suspended") {
+    if (
+      audioContextRef.current &&
+      audioContextRef.current.state !== "suspended"
+    ) {
       audioContextRef.current.suspend();
     }
   }, [stopPlayingNodes]);
+
+  // Handle Real-Time Gain Slider Drag with Smooth Audio Parameter Ramping
+  const handleBandGainChange = (index: number, newGain: number) => {
+    setEqPreset("custom");
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("webrtc_eq_preset", "custom");
+    }
+
+    setBandGains((prev) => {
+      const next = [...prev];
+      next[index] = newGain;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("webrtc_eq_gains", JSON.stringify(next));
+      }
+      return next;
+    });
+
+    if (onGainChange) {
+      onGainChange(index, newGain);
+    }
+
+    const filter = eqFiltersRef.current[index];
+    if (filter && filter.gain && audioContextRef.current) {
+      const now = audioContextRef.current.currentTime;
+      if (typeof filter.gain.setTargetAtTime === "function") {
+        // Smooth audio param ramp to eliminate audio pops and clicks
+        filter.gain.setTargetAtTime(newGain, now, 0.015);
+      } else if (typeof filter.gain.linearRampToValueAtTime === "function") {
+        filter.gain.setValueAtTime(filter.gain.value ?? 0, now);
+        filter.gain.linearRampToValueAtTime(newGain, now + 0.03);
+      } else if (typeof filter.gain.setValueAtTime === "function") {
+        filter.gain.setValueAtTime(newGain, now);
+      }
+    }
+  };
+
+  const handleEqPresetChange = (presetName: EqPresetName) => {
+    setEqPreset(presetName);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("webrtc_eq_preset", presetName);
+    }
+
+    if (presetName !== "custom") {
+      const gains = EQ_PRESETS[presetName].gains;
+      setBandGains(gains);
+
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("webrtc_eq_gains", JSON.stringify(gains));
+      }
+
+      if (audioContextRef.current) {
+        const now = audioContextRef.current.currentTime;
+        eqFiltersRef.current.forEach((filter, i) => {
+          if (filter && filter.gain) {
+            const targetGain = gains[i] ?? 0;
+            if (typeof filter.gain.setTargetAtTime === "function") {
+              filter.gain.setTargetAtTime(targetGain, now, 0.015);
+            } else if (typeof filter.gain.setValueAtTime === "function") {
+              filter.gain.setValueAtTime(targetGain, now);
+            }
+          }
+        });
+      }
+    }
+  };
+
+  const handleResetEq = () => {
+    handleEqPresetChange("flat");
+  };
 
   // Play Sound Logic
   const startPlaying = useCallback(() => {
     initAudio();
     const ctx = audioContextRef.current!;
     const masterGain = masterGainRef.current!;
+    const audioEntryPoint = eqFiltersRef.current[0] || masterGain;
 
     if (ctx.state === "suspended") {
       ctx.resume();
     }
 
-    // Stop existing source/jazz notes
     stopPlayingNodes();
 
     if (preset === "cafe") {
-      // Cafe Chatter
       const buffer = createPinkNoiseBuffer(ctx);
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.loop = true;
 
-      // Filter to simulate muffled chatter
       const filter = ctx.createBiquadFilter();
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(800, ctx.currentTime);
+      if (
+        filter.frequency &&
+        typeof filter.frequency.setValueAtTime === "function"
+      ) {
+        filter.frequency.setValueAtTime(800, ctx.currentTime);
+      }
 
       source.connect(filter);
-      filter.connect(masterGain);
+      filter.connect(audioEntryPoint);
       source.start();
       sourceNodeRef.current = source;
     } else if (preset === "library") {
-      // Library Silence (Brown Noise + filter for HVAC hum)
       const buffer = createBrownNoiseBuffer(ctx);
       const source = ctx.createBufferSource();
       source.buffer = buffer;
@@ -149,23 +360,31 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
 
       const filter = ctx.createBiquadFilter();
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(150, ctx.currentTime);
+      if (
+        filter.frequency &&
+        typeof filter.frequency.setValueAtTime === "function"
+      ) {
+        filter.frequency.setValueAtTime(150, ctx.currentTime);
+      }
 
       source.connect(filter);
-      filter.connect(masterGain);
+      filter.connect(audioEntryPoint);
       source.start();
       sourceNodeRef.current = source;
     } else if (preset === "jazz") {
-      // Soft Jazz synthesizer chords
       const notes = [
-        [174.61, 220.00, 261.63, 329.63], // Fmaj7
-        [196.00, 233.08, 293.66, 349.23], // Gmin7
-        [220.00, 261.63, 329.63, 392.00], // Amin7
+        [174.61, 220.0, 261.63, 329.63], // Fmaj7
+        [196.0, 233.08, 293.66, 349.23], // Gmin7
+        [220.0, 261.63, 329.63, 392.0], // Amin7
       ];
       let chordIdx = 0;
 
       const playChord = () => {
-        if (!audioContextRef.current || audioContextRef.current.state === "suspended") return;
+        if (
+          !audioContextRef.current ||
+          audioContextRef.current.state === "suspended"
+        )
+          return;
         const now = ctx.currentTime;
         const chord = notes[chordIdx];
         chordIdx = (chordIdx + 1) % notes.length;
@@ -174,15 +393,30 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
           const osc = ctx.createOscillator();
           const oscGain = ctx.createGain();
           osc.type = "sine";
-          osc.frequency.setValueAtTime(freq, now);
+          if (
+            osc.frequency &&
+            typeof osc.frequency.setValueAtTime === "function"
+          ) {
+            osc.frequency.setValueAtTime(freq, now);
+          }
 
-          // Pad envelope: soft attack & long release
-          oscGain.gain.setValueAtTime(0, now);
-          oscGain.gain.linearRampToValueAtTime(0.04, now + 1.5);
-          oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 4.8);
+          if (
+            oscGain.gain &&
+            typeof oscGain.gain.setValueAtTime === "function"
+          ) {
+            oscGain.gain.setValueAtTime(0, now);
+            if (typeof oscGain.gain.linearRampToValueAtTime === "function") {
+              oscGain.gain.linearRampToValueAtTime(0.04, now + 1.5);
+            }
+            if (
+              typeof oscGain.gain.exponentialRampToValueAtTime === "function"
+            ) {
+              oscGain.gain.exponentialRampToValueAtTime(0.0001, now + 4.8);
+            }
+          }
 
           osc.connect(oscGain);
-          oscGain.connect(masterGain);
+          oscGain.connect(audioEntryPoint);
           osc.start(now);
           osc.stop(now + 5.0);
         });
@@ -192,9 +426,8 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
       const interval = setInterval(playChord, 5000);
       jazzCleanupRef.current = () => clearInterval(interval);
     }
-  }, [preset, stopPlayingNodes]);
+  }, [preset, initAudio, stopPlayingNodes]);
 
-  // Toggle Action
   const togglePlay = () => {
     if (isPlaying) {
       stopPlaying();
@@ -204,7 +437,6 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
     }
   };
 
-  // Handle Preset or Volume changes
   useEffect(() => {
     if (isPlaying) {
       startPlaying();
@@ -212,15 +444,16 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
   }, [preset, isPlaying, startPlaying]);
 
   useEffect(() => {
-    if (masterGainRef.current) {
-      masterGainRef.current.gain.setValueAtTime(
-        muted ? 0 : volume,
-        audioContextRef.current ? audioContextRef.current.currentTime : 0,
-      );
+    if (masterGainRef.current && masterGainRef.current.gain) {
+      if (typeof masterGainRef.current.gain.setValueAtTime === "function") {
+        masterGainRef.current.gain.setValueAtTime(
+          muted ? 0 : volume,
+          audioContextRef.current ? audioContextRef.current.currentTime : 0,
+        );
+      }
     }
   }, [volume, muted]);
 
-  // Clean up on unmount
   useEffect(() => {
     return () => {
       stopPlayingNodes();
@@ -230,7 +463,6 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
     };
   }, [stopPlayingNodes]);
 
-  // Visualizer Animation Loop
   useEffect(() => {
     let animFrame: number;
     let interval: NodeJS.Timeout;
@@ -240,7 +472,6 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
       const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
       analyserRef.current.getByteFrequencyData(dataArray);
 
-      // Downsample data points for 12 display bars
       const nextFrequencies = Array.from({ length: 12 }, (_, i) => {
         const val = dataArray[i * 2] || 0;
         return Math.max(5, Math.min(100, (val / 255) * 100));
@@ -250,7 +481,6 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
 
     if (isPlaying) {
       if (reducedMotion) {
-        // Reduced motion: update very slowly for accessibility/performance
         interval = setInterval(updateFrequencies, 350);
       } else {
         const loop = () => {
@@ -302,7 +532,7 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
       </div>
 
       {/* Controller & Equalizer Visualizer */}
-      <div className="flex flex-col sm:flex-row items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/5">
+      <div className="flex flex-col sm:flex-row items-center gap-4 bg-white/5 p-4 rounded-xl border border-white/5 mb-4">
         <button
           onClick={togglePlay}
           className={`p-3 rounded-full flex items-center justify-center transition-all ${
@@ -318,6 +548,26 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
             <Play className="w-5 h-5 fill-current ml-0.5" />
           )}
         </button>
+
+        {/* EQ Preset Selector */}
+        <select
+          value={eqPreset}
+          onChange={(e) => handleEqPresetChange(e.target.value as EqPresetName)}
+          className="text-xs font-semibold bg-white/5 border border-white/10 text-zinc-200 rounded-lg px-2 py-1.5 outline-none focus:border-indigo-500 transition-colors cursor-pointer appearance-none"
+          title="Equalizer Preset"
+        >
+          {(Object.entries(EQ_PRESETS) as [EqPresetName, EqPreset][]).map(
+            ([key, { label }]) => (
+              <option
+                key={key}
+                value={key}
+                className="bg-zinc-900 text-zinc-100"
+              >
+                {label}
+              </option>
+            ),
+          )}
+        </select>
 
         {/* Equalizer Frequency Bars */}
         <div className="flex-1 flex items-end justify-center gap-[4px] h-12 px-2 bg-black/20 rounded-lg overflow-hidden border border-white/5">
@@ -358,6 +608,48 @@ export function AudioEqualizer({ venueName = "Workspace" }: AudioEqualizerProps)
             }}
             className="w-16 h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
           />
+        </div>
+      </div>
+
+      {/* 5-Band BiquadFilterNode Equalizer Controls */}
+      <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300">
+            5-Band Acoustic Equalizer
+          </span>
+          <button
+            onClick={handleResetEq}
+            className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white transition-colors"
+            title="Reset all EQ gains to 0 dB"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>Reset EQ</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-5 gap-2 text-center">
+          {EQ_BAND_LABELS.map((label, idx) => (
+            <div key={label} className="flex flex-col items-center gap-1.5">
+              <span className="text-[10px] font-mono text-zinc-400">
+                {label}
+              </span>
+              <input
+                type="range"
+                min="-12"
+                max="12"
+                step="0.5"
+                aria-label={`${label} Gain`}
+                value={bandGains[idx]}
+                onChange={(e) =>
+                  handleBandGainChange(idx, parseFloat(e.target.value))
+                }
+                className="w-full h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
+              />
+              <span className="text-[9px] font-mono text-indigo-400">
+                {bandGains[idx] > 0 ? `+${bandGains[idx]}` : bandGains[idx]} dB
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 

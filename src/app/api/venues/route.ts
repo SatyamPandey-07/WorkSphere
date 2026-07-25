@@ -5,6 +5,7 @@ import {
   venueSearchSchema,
   venueCreateSchema,
   validateRequest,
+  type VenueSearch,
 } from "@/lib/validations";
 import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
@@ -16,6 +17,34 @@ import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 // burst-tolerant ceiling — generous enough for fast typing, still low enough to stop
 // scripted abuse. See #717.
 const VENUE_SEARCH_RATE_LIMIT = 60;
+
+interface VenueSearchData {
+  lat: number;
+  lng: number;
+  radius: number;
+  category?: string;
+  wifi?: boolean;
+  outlets?: boolean;
+  quiet?: boolean;
+  ergonomic?: boolean;
+  outletDensity?: string;
+  wifiSpeedBand?: string;
+  hasPhoneBooths?: boolean;
+  hasNoMusic?: boolean;
+  hasQuietZone?: boolean;
+  hasAncHeadsetRental?: boolean;
+  lighting?: string;
+  petsAllowedIndoors?: boolean;
+  patioOnly?: boolean;
+  waterBowlsProvided?: boolean;
+  dogFriendly?: boolean;
+  catsAllowed?: boolean;
+  singleOriginBeans?: boolean;
+  specialtyEspresso?: boolean;
+  oatAlmondMilk?: boolean;
+  pourOverAvailable?: boolean;
+  musicStyle?: string;
+}
 
 // GET /api/venues - Search venues
 export async function GET(req: NextRequest) {
@@ -137,7 +166,7 @@ export async function GET(req: NextRequest) {
         rawData[key] = val;
       }
     }
-    const validation = validateRequest(venueSearchSchema, rawData);
+    const validation = validateRequest<VenueSearch>(venueSearchSchema, rawData);
 
     if (!validation.success) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
@@ -169,7 +198,7 @@ export async function GET(req: NextRequest) {
       oatAlmondMilk,
       pourOverAvailable,
       musicStyle,
-    } = validation.data;
+    } = validation.data as unknown as VenueSearchData;
 
     // Simple bounding box search (for PostgreSQL without PostGIS)
     // Approximate: 1 degree ≈ 111km

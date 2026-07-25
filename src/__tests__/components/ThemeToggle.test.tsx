@@ -11,13 +11,15 @@ describe("ThemeToggle", () => {
     );
 
     const svgs = container.querySelectorAll("svg");
-    const classes = Array.from(svgs).map((el) => el.getAttribute("class") || "");
+    const classes = Array.from(svgs).map(
+      (el) => el.getAttribute("class") || "",
+    );
 
     expect(classes.some((c) => c.includes("dark:hidden"))).toBe(true);
     expect(classes.some((c) => c.includes("dark:block"))).toBe(true);
 
     expect(
-      screen.getByRole("button", { name: /switch to light mode/i }),
+      screen.getByRole("switch", { name: /switch to light mode/i }),
     ).toBeInTheDocument();
   });
 });

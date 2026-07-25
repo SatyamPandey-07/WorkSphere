@@ -3,6 +3,23 @@ import { NextRequest } from "next/server";
 
 describe("GET /api/location — Multi-Provider Geolocation & Fallback (#1113)", () => {
   const originalFetch = global.fetch;
+  const originalAbortSignalTimeout = AbortSignal.timeout;
+
+  beforeAll(() => {
+    if (!AbortSignal.timeout) {
+      AbortSignal.timeout = jest.fn(() => {
+        const controller = new AbortController();
+        return controller.signal;
+      }) as any;
+    }
+  });
+
+  afterAll(() => {
+    if (!originalAbortSignalTimeout) {
+      // @ts-expect-error - JSDOM Node environment may not have AbortSignal.timeout
+      delete AbortSignal.timeout;
+    }
+  });
 
   afterEach(() => {
     global.fetch = originalFetch;

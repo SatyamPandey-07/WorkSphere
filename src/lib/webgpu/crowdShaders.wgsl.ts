@@ -14,6 +14,116 @@
 
 const _AGENT_STRIDE = 32; // bytes per agent (must match WGSL)
 
+// ── Density Compute Shader ─────────────────────────────────────────
+export const densityComputeShader = /* wgsl */ `
+struct DensityParams {
+  agentCount: u32,
+  gridWidth: u32,
+  gridHeight: u32,
+  worldWidth: f32,
+  worldHeight: f32,
+  decay: f32,
+  densityMultiplier: f32,
+  pad1: f32,
+};
+
+struct Agent {
+  position: vec2<f32>,
+  velocity: vec2<f32>,
+  targetIdx: i32,
+  state: u32,
+  pad: vec2<f32>,
+};
+
+@group(0) @binding(0) var<uniform> params: DensityParams;
+@group(0) @binding(1) var<storage, read> agents: array<Agent>;
+@group(0) @binding(2) var<storage, read_write> densityGrid: array<f32>;
+
+@compute @workgroup_size(256)
+fn cs_density(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let id = gid.x;
+
+  // First thread: zero out the grid
+  if (id == 0u) {
+    let totalCells = params.gridWidth * params.gridHeight;
+    for (var i = 0u; i < totalCells; i = i + 1u) {
+      densityGrid[i] = densityGrid[i] * params.decay;
+    }
+  }
+
+  // Wait for the grid to be zeroed before accumulating
+  workgroupBarrier();
+
+  if (id >= params.agentCount) { return; }
+
+  let agent = agents[id];
+  if (agent.state != 0u) { return; }
+
+  // Map world position to grid cell
+  let gx = u32(clamp(agent.position.x / params.worldWidth * f32(params.gridWidth), 0.0, f32(params.gridWidth) - 1.0));
+  let gy = u32(clamp(agent.position.y / params.worldHeight * f32(params.gridHeight), 0.0, f32(params.gridHeight) - 1.0));
+  let cellIdx = gy * params.gridWidth + gx;
+
+  // Accumulate density (atomic not available in base WGSL, use read_write)
+  densityGrid[cellIdx] = densityGrid[cellIdx] + params.densityMultiplier;
+}
+`;
+
+// ── Heatmap Render Shader ──────────────────────────────────────────
+export const heatmapVertexShader = /* wgsl */ `
+@vertex
+fn vs_fullscreen(@builtin(vertex_index) vertexIndex: u32) -> @builtin(position) vec4<f32> {
+  var pos = array<vec2<f32>, 3>(
+    vec2<f32>(-1.0, -1.0),
+    vec2<f32>( 3.0, -1.0),
+    vec2<f32>(-1.0,  3.0),
+  );
+  return vec4<f32>(pos[vertexIndex], 0.0, 1.0);
+}
+`;
+
+export const heatmapFragmentShader = /* wgsl */ `
+struct HeatmapParams {
+  gridWidth: u32,
+  gridHeight: u32,
+  maxDensity: f32,
+  opacity: f32,
+};
+
+@group(0) @binding(0) var<uniform> params: HeatmapParams;
+@group(0) @binding(1) var densityTex: texture_2d<f32>;
+@group(0) @binding(2) var densitySampler: sampler;
+
+fn heatmapColor(t: f32) -> vec3<f32> {
+  // Blue -> Cyan -> Green -> Yellow -> Red
+  var color: vec3<f32>;
+  if (t < 0.25) {
+    color = mix(vec3<f32>(0.0, 0.0, 0.3), vec3<f32>(0.0, 0.5, 0.8), t / 0.25);
+  } else if (t < 0.5) {
+    color = mix(vec3<f32>(0.0, 0.5, 0.8), vec3<f32>(0.0, 0.9, 0.3), (t - 0.25) / 0.25);
+  } else if (t < 0.75) {
+    color = mix(vec3<f32>(0.0, 0.9, 0.3), vec3<f32>(1.0, 0.9, 0.0), (t - 0.5) / 0.25);
+  } else {
+    color = mix(vec3<f32>(1.0, 0.9, 0.0), vec3<f32>(1.0, 0.1, 0.0), (t - 0.75) / 0.25);
+  }
+  return color;
+}
+
+@fragment
+fn fs_heatmap(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+  let uv = fragCoord.xy / vec2<f32>(f32(params.gridWidth) * 4.0, f32(params.gridHeight) * 4.0);
+  let density = textureSample(densityTex, densitySampler, uv).r;
+  let t = clamp(density / max(params.maxDensity, 1.0), 0.0, 1.0);
+
+  if (t < 0.01) {
+    discard;
+  }
+
+  let color = heatmapColor(t);
+  return vec4<f32>(color, t * params.opacity);
+}
+`;
+
 // ── Compute Shader: Boids + Pathfinding ─────────────────────────────
 export const computeShader = /* wgsl */ `
 struct SimParams {
@@ -69,9 +179,11 @@ fn clampVec2(v: vec2<f32>, maxLen: f32) -> vec2<f32> {
 fn agentSeparation(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32> {
   var force = vec2<f32>(0.0, 0.0);
   var count = 0u;
+  let totalAgents = min(params.agentCount, arrayLength(&agentsIn));
+  if (id >= totalAgents) { return force; }
   let pos = agents[id].position;
 
-  for (var i = 0u; i < params.agentCount; i = i + 1u) {
+  for (var i = 0u; i < totalAgents; i = i + 1u) {
     if (i == id) { continue; }
     let other = agents[i];
     if (other.state != 0u) { continue; }
@@ -95,9 +207,11 @@ fn agentSeparation(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32
 fn agentAlignment(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32> {
   var avgVel = vec2<f32>(0.0, 0.0);
   var count = 0u;
+  let totalAgents = min(params.agentCount, arrayLength(&agentsIn));
+  if (id >= totalAgents) { return avgVel; }
   let pos = agents[id].position;
 
-  for (var i = 0u; i < params.agentCount; i = i + 1u) {
+  for (var i = 0u; i < totalAgents; i = i + 1u) {
     if (i == id) { continue; }
     let other = agents[i];
     if (other.state != 0u) { continue; }
@@ -121,9 +235,11 @@ fn agentAlignment(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32>
 fn agentCohesion(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32> {
   var center = vec2<f32>(0.0, 0.0);
   var count = 0u;
+  let totalAgents = min(params.agentCount, arrayLength(&agentsIn));
+  if (id >= totalAgents) { return center; }
   let pos = agents[id].position;
 
-  for (var i = 0u; i < params.agentCount; i = i + 1u) {
+  for (var i = 0u; i < totalAgents; i = i + 1u) {
     if (i == id) { continue; }
     let other = agents[i];
     if (other.state != 0u) { continue; }
@@ -147,7 +263,8 @@ fn agentCohesion(id: u32, agents: array<Agent>, params: SimParams) -> vec2<f32> 
 }
 
 fn pathfindingForce(agent: Agent, params: SimParams) -> vec2<f32> {
-  if (agent.targetIdx < 0 || agent.targetIdx >= i32(params.exitCount)) {
+  let totalExits = min(params.exitCount, arrayLength(&exits));
+  if (agent.targetIdx < 0 || u32(agent.targetIdx) >= totalExits) {
     return vec2<f32>(0.0, 0.0);
   }
 
@@ -180,8 +297,9 @@ fn wallCollisionForce(agent: Agent, params: SimParams) -> vec2<f32> {
   var force = vec2<f32>(0.0, 0.0);
   let pos = agent.position;
   let wallRepelDist = 0.8;
+  let totalWalls = min(params.wallCount, arrayLength(&walls));
 
-  for (var i = 0u; i < params.wallCount; i = i + 1u) {
+  for (var i = 0u; i < totalWalls; i = i + 1u) {
     let wall = walls[i];
     let ab = wall.b - wall.a;
     let ap = pos - wall.a;
@@ -201,7 +319,8 @@ fn wallCollisionForce(agent: Agent, params: SimParams) -> vec2<f32> {
 @compute @workgroup_size(256)
 fn cs_main(@builtin(global_invocation_id) gid: vec3<u32>) {
   let id = gid.x;
-  if (id >= params.agentCount) { return; }
+  let totalAgents = min(params.agentCount, arrayLength(&agentsIn));
+  if (id >= totalAgents) { return; }
 
   let agent = agentsIn[id];
 

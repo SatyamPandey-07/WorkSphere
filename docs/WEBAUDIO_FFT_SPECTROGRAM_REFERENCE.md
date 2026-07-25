@@ -1,687 +1,1594 @@
-# WebAudio FFT & Spectrogram Reference
+# WebAudio FFT Spectrogram Mathematical Reference
 
-This document serves as the technical source of truth for the real-time audio visualization, digital signal processing (DSP), and WebAssembly (WASM) systems implemented within the WorkSphere repository. It is written for frontend developers, DSP engineers, and system architects maintaining the audio infrastructure.
+This reference explains the mathematics used to convert Web Audio frequency
+data into spectrum bars and scrolling spectrogram pixels in WorkSphere.
 
----
+It covers:
 
-## Overview
+- discrete Fourier transform and FFT bin interpretation;
+- Hann ("Hanning") and four-term Blackman–Harris windows;
+- frequency resolution and bin-to-frequency conversion;
+- decibel normalization;
+- canvas bar-height and spectrogram-row mapping;
+- implementation guidance for `AnalyserNode`;
+- common numerical and rendering mistakes.
 
-WorkSphere provides high-performance audio monitoring, digital filtering, and real-time noise analysis capabilities. The architecture is split between:
-1. **Web Audio Analyser Subsystem**: Captures microphone input, performs Fast Fourier Transform (FFT) analysis on the main thread, and visualizes waveform and spectrogram data via HTML5 Canvas.
-2. **WebAssembly SIMD DSP Subsystem**: Implements a custom low-latency C++ noise-suppression engine inside an `AudioWorkletProcessor` with hardware-accelerated SIMD instructions.
-3. **Ambience preview generator**: Synthesizes and filters noise profiles and instruments locally to test workspace acoustics.
-4. **WASM-Accelerated 10-Band Biquad IIR Equalizer**: cascading multi-band filtering of audio blocks.
+The repository currently uses:
 
----
-
-## Repository Implementation Summary
-
-The codebase contains the following source files comprising the audio pipeline:
-
-| Source File | Environment | Purpose | Key API & Technology |
-| :--- | :--- | :--- | :--- |
-| [`NoiseMeter.tsx`](file:///c:/Codes/WorkSphere/src/components/noise/NoiseMeter.tsx) | Browser (Client) | UI component that measures microphone noise for 5 seconds and renders a live oscilloscope waveform. | `AudioContext`, `AnalyserNode`, `getFloatTimeDomainData()`, `CanvasRenderingContext2D`, `Float32Array` |
-| [`NoiseSpectrogram.tsx`](file:///c:/Codes/WorkSphere/src/components/noise/NoiseSpectrogram.tsx) | Browser (Client) | UI component displaying a real-time 60fps frequency spectrum bar chart and rolling waterfall spectrogram. | `AnalyserNode`, `getFloatFrequencyData()`, `CanvasRenderingContext2D`, `ImageData` |
-| [`EnhancedNoiseMeter.tsx`](file:///c:/Codes/WorkSphere/src/components/noise/EnhancedNoiseMeter.tsx) | Browser (Client) | UI component orchestrating the WebAssembly SIMD real-time noise suppression monitoring. | `audioDSPManager.ts`, `CanvasRenderingContext2D`, `Float32Array` |
-| [`AudioEqualizer.tsx`](file:///c:/Codes/WorkSphere/src/components/audio/AudioEqualizer.tsx) | Browser (Client) | Ambience preview component synthesizing Pink Noise, Brown Noise, and Fmaj7/Gmin7/Amin7 chords. | `OscillatorNode`, `AudioBufferSourceNode`, `BiquadFilterNode`, `GainNode`, `AnalyserNode`, `getByteFrequencyData()` |
-| [`useAudioEqualizer.ts`](file:///c:/Codes/WorkSphere/src/hooks/useAudioEqualizer.ts) | Browser (Client) | Custom React hook managing the state of the 10-band WASM equalizer. | `EqBand`, `FrequencyResponse`, `initEqualizer`, `processAudioBlock` |
-| [`useWebRTCMesh.ts`](file:///c:/Codes/WorkSphere/src/hooks/useWebRTCMesh.ts) | Browser (Client) | Custom React hook managing WebRTC connections and remote peer voice activity level monitoring. | `RTCPeerConnection`, `AnalyserNode`, `getByteFrequencyData()` |
-| [`noiseProcessor.ts`](file:///c:/Codes/WorkSphere/src/lib/wasm/noiseProcessor.ts) | JS Bridge | Interface to the `noise-processor.wasm` module for fast root-mean-square (RMS) computations. | `WebAssembly.Memory`, 8-byte aligned `malloc`/`free`, `Float32Array` buffer view offsets |
-| [`audioDSPManager.ts`](file:///c:/Codes/WorkSphere/src/lib/wasm/audioDSPManager.ts) | JS Manager | Controls the initialization, audio node routing, and message port commands of the WASM SIMD AudioWorklet. | `AudioContext`, `AudioWorkletNode`, `MediaStreamAudioSourceNode` |
-| [`audioDSPWorklet.js`](file:///c:/Codes/WorkSphere/src/lib/wasm/audioDSPWorklet.js) | AudioWorklet Thread | The AudioWorkletProcessor instantiating the WASM DSP engine, executing buffer processing, and reporting live RMS. | `AudioWorkletProcessor`, WebAssembly SIMD support probing, 16-byte memory alignment |
-| [`audioEqualizer.ts`](file:///c:/Codes/WorkSphere/src/lib/wasm/audioEqualizer.ts) | JS Bridge | Interface to `audio-equalizer.wasm` for multi-band Biquad IIR filter cascade configuration and response curves. | `peakingCoefficients` computation, log-frequency band response estimation |
-| [`audio_dsp.cpp`](file:///c:/Codes/WorkSphere/wasm/audio-dsp/audio_dsp.cpp) | C++ (WASM Target) | Implements a 1024-point FFT with Emscripten SIMD vector operations, Hann windowing, and Wiener spectral gating. | `wasm_simd128.h`, Cooley-Tukey Radix-2 FFT, Overlap-Add (OLA) reconstruction, 16-byte alignments |
-| [`noise-processor.wat`](file:///c:/Codes/WorkSphere/wasm/noise-processor.wat) | WAT (WASM Target) | Hand-crafted WebAssembly Text source code that calculates raw RMS metrics using 8-byte aligned heap offsets. | `f32.load`, `f32.sqrt`, 8-byte-aligned `malloc`/`free` implementation |
-| [`audio-equalizer.wat`](file:///c:/Codes/WorkSphere/wasm/audio-equalizer.wat) | WAT (WASM Target) | Hand-crafted WebAssembly Text source code that processes cascaded Biquad filtering. | `malloc`, `free`, `processBlock`, Biquad Direct Form II structure |
-| [`audio-equalizer-processor.js`](file:///c:/Codes/WorkSphere/public/audio-equalizer-processor.js) | AudioWorklet Thread | AudioWorkletProcessor executing the Biquad cascade WASM on 128-frame blocks. | `AudioWorkletProcessor`, WebAssembly instance, block memory buffer passing |
-
----
-
-## Audio Architecture
-
-WorkSphere splits audio processes into three structural models:
-
-```mermaid
-graph TD
-    subgraph Subsystem1 [1. Main-Thread Analyser & Visualizer]
-        Mic1[Microphone Source] --> SourceNode1[MediaStreamAudioSourceNode]
-        SourceNode1 --> AnalyserNode1["AnalyserNode (fftSize: 2048)"]
-        AnalyserNode1 --> Pass["Pass-through (Not connected to Destination)"]
-        AnalyserNode1 -.->|getFloatTimeDomainData| Osc[Canvas Oscilloscope]
-        AnalyserNode1 -.->|getFloatFrequencyData| Spec[Canvas Spectrogram]
-    end
-
-    subgraph Subsystem2 [2. AudioWorklet WASM SIMD DSP Engine]
-        Mic2[Microphone Source] --> SourceNode2[MediaStreamAudioSourceNode]
-        SourceNode2 --> AWNode["AudioWorkletNode (audio-dsp-processor)"]
-        AWNode --> Dest[AudioContext.destination]
-        AWNode -.->|PostMessage RMS| UIRender[Enhanced UI Monitor]
-    end
-
-    subgraph Subsystem3 [3. Ambience Synth & Biquad Cascades]
-        Gen[Pink/Brown Noise Buffer or Oscillators] --> Biquad["BiquadFilterNode (Lowpass)"]
-        Biquad --> Gain[GainNode]
-        Gain --> AnalyserNode3["AnalyserNode (fftSize: 64)"]
-        AnalyserNode3 --> Dest
-        AnalyserNode3 -.->|getByteFrequencyData| Bars[12-Bar Equalizer Canvas]
-    end
+```ts
+export const FFT_SIZE = 2048;
 ```
 
----
+and normalizes frequency-domain decibel values through:
 
-## Audio Graph Pipeline
+```ts
+normalizeBinDb(dbfs, minDb, maxDb);
+```
 
-### 1. Main-Thread Analyser Subsystem
-This pipeline is non-audible (it does not connect to `audioContext.destination`) and is solely used to extract diagnostic waveforms and spectrum records.
+from:
 
 ```text
-[ Hardware Microphone ]
-           │
-           ▼ (getUserMedia)
-[ MediaStream (echoCancellation: false, noiseSuppression: false, autoGainControl: false) ]
-           │
-           ▼ (createMediaStreamSource)
-[ MediaStreamAudioSourceNode ]
-           │
-           ▼ (connect)
-[ AnalyserNode (fftSize: 2048, smoothingTimeConstant: 0.25 | 0.7, minDecibels: -100, maxDecibels: -10) ]
-```
-
-### 2. AudioWorklet WASM SIMD DSP Pipeline
-This pipeline processes microphone inputs in real-time, executing adaptive spectral noise suppression, and routes the denoised stream directly to the local output.
-
-```text
-[ Hardware Microphone ]
-           │
-           ▼ (getUserMedia: 48000Hz, mono channel)
-[ MediaStream ]
-           │
-           ▼ (createMediaStreamSource)
-[ MediaStreamAudioSourceNode ]
-           │
-           ▼ (connect)
-[ AudioWorkletNode ("audio-dsp-processor") ]
-           │
-           ▼ (connect)
-[ AudioContext.destination ]
-```
-
-### 3. Ambient Synthesizer Subsystem
-This pipeline generates pink/brown noise and synthesized musical pad chords, routing them through filters and gain nodes to output speakers.
-
-```text
-[ AudioBufferSourceNode ] (Pink/Brown Noise) ─┐
-                                               ├──> [ BiquadFilterNode (Lowpass) ] ──> [ GainNode ] ──> [ AnalyserNode (fftSize: 64) ] ──> [ AudioContext.destination ]
-[ OscillatorNode ] (Sine chord notes) ────────┘
+src/lib/noise/fftSpectrogram.ts
 ```
 
 ---
 
-## Web Audio Nodes
+## 1. Signal model
 
-The specific nodes instantiated across the codebase are analyzed below:
+A browser microphone or other `AudioNode` produces a discrete-time sequence:
 
-### MediaStreamAudioSourceNode
-- **Purpose**: Feeds microphone streams captured via standard web media devices into the audio processing environment.
-- **Inputs**: None (interface node wrapped around `MediaStream`).
-- **Outputs**: Single audio channel stream.
-- **Configuration**: Instantiated via `audioContext.createMediaStreamSource(stream)`.
-- **Performance Implications**: Minimum resource usage. Runs in browser native memory.
+\[
+x[n], \qquad n = 0,1,\ldots,N-1
+\]
 
-### AnalyserNode
-- **Purpose**: Extracts real-time time-domain waveforms and frequency spectra without modifying the pass-through audio signal.
-- **Inputs**: 1 mono or stereo stream.
-- **Outputs**: 1 mono or stereo stream (unmodified).
-- **Configuration**:
-  - `fftSize`: `2048` in `NoiseMeter` / `NoiseSpectrogram`, `256` in `useWebRTCMesh`, `64` in `AudioEqualizer`.
-  - `smoothingTimeConstant`: `0.25` (NoiseMeter) or `0.7` (NoiseSpectrogram).
-  - `minDecibels` / `maxDecibels`: `-100` / `-10` (NoiseSpectrogram).
-- **Performance Implications**: Performing FFT on the main thread carries CPU overhead. Large FFT sizes (e.g., 2048) must be pooled responsibly, and calls to query buffers (`getFloatFrequencyData`, etc.) should be throttled.
+where:
 
-### BiquadFilterNode
-- **Purpose**: Applies analog-style IIR filtering to noise buffers in the synthesizer.
-- **Inputs**: Single audio channel stream.
-- **Outputs**: Filtered single audio channel stream.
-- **Configuration**: lowpass filter. Frequency set dynamically (e.g., `800 Hz` for Cafe Chatter pink noise, `150 Hz` for HVAC hum brown noise).
-- **Performance Implications**: Native C++ filter implementation in the browser audio thread. Negligible CPU load.
+- \(x[n]\) is the sampled audio amplitude;
+- \(N\) is the FFT size;
+- \(f_s\) is the sample rate in hertz.
 
-### GainNode
-- **Purpose**: Adjusts signal amplitude (volume control) and shapes envelopes.
-- **Inputs**: Audio stream.
-- **Outputs**: Attenuated/amplified audio stream.
-- **Configuration**: Gain parameter set dynamically from volume levels or envelopes (e.g. Fmaj7 chords in `AudioEqualizer` use pad envelopes via linear and exponential ramps).
-- **Performance Implications**: Extremely lightweight gain multiplication.
+For a common Web Audio sample rate:
 
-### OscillatorNode
-- **Purpose**: Synthesizes periodic audio waveforms (sine waves).
-- **Inputs**: None.
-- **Outputs**: Raw sine wave.
-- **Configuration**: Type `sine`. Frequencies mapped dynamically (e.g., chords Fmaj7 `[174.61, 220.00, 261.63, 329.63]` Hz, Gmin7, Amin7).
-- **Performance Implications**: Native browser thread oscillator synthesis. Very low overhead.
+\[
+f_s = 48{,}000\ \text{Hz}
+\]
 
-### AudioBufferSourceNode
-- **Purpose**: Plays back pre-allocated audio sample arrays.
-- **Inputs**: None (reads from an internal memory buffer).
-- **Outputs**: Audio stream.
-- **Configuration**: Loops continuously (`loop = true`) with custom pink/brown noise buffers synthesized on initialization.
-- **Performance Implications**: Lightweight; buffer memory is allocated once on initialization.
+and the WorkSphere FFT size:
 
-### AudioWorkletNode
-- **Purpose**: Runs custom, JavaScript/WebAssembly audio processing scripts inside the audio thread.
-- **Inputs**: 1 channel.
-- **Outputs**: 1 channel.
-- **Configuration**: Loaded with `"audio-dsp-processor"`. Uses a custom WASM binary for processing.
-- **Performance Implications**: Extremely high performance with sub-2ms latency. Operates off the main thread, bypassing JS execution bottlenecks.
+\[
+N = 2048
+\]
+
+the analysis window duration is:
+
+\[
+T = \frac{N}{f_s}
+= \frac{2048}{48000}
+\approx 0.04267\ \text{s}
+= 42.67\ \text{ms}
+\]
+
+A larger FFT gives narrower frequency bins, but represents a longer section of
+audio and therefore reacts more slowly to rapid changes.
 
 ---
 
-## AudioContext Lifecycle
+## 2. Discrete Fourier transform
 
-The initialization and teardown lifecycles of `AudioContext` are strictly managed across components to respect browser restrictions, recover on device state changes, and avoid memory leaks.
+The discrete Fourier transform of a frame \(x[n]\) is:
 
-```mermaid
-stateDiagram-v2
-    [*] --> Uninitialized
-    Uninitialized --> Suspended : Click / Touch Gesture (initAudio)
-    Suspended --> Running : resume()
-    Running --> Suspended : suspend()
-    Running --> Closed : close() / Visibility Hidden
-    Suspended --> Closed : close()
-    Closed --> [*]
-```
+\[
+X[k] =
+\sum_{n=0}^{N-1}
+x[n]\,
+e^{-j 2\pi kn/N}
+\]
 
-### 1. Autoplay and User-Gesture Gating
-Browsers restrict programmatic instantiation of `AudioContext` without user interaction.
-- In `NoiseMeter.tsx` and `NoiseSpectrogram.tsx`, the `AudioContext` is created inside user-action functions (`measure()` and `start()`) triggered by button clicks.
-- In `AudioEqualizer.tsx`, the `initAudio()` helper is gated behind the play button click.
+where:
 
-### 2. Device Changes (`devicechange`)
-When a hardware device (e.g. plugging/unplugging headphones) causes a state update:
-- `NoiseMeter.tsx` registers a listener on `navigator.mediaDevices`:
-  ```typescript
-  navigator.mediaDevices.addEventListener("devicechange", handleDeviceChange);
-  ```
-- If the current track is marked as `ended` during a device change, `handleDeviceChange` re-acquires a fresh microphone stream using `getUserMedia`, disconnects the old source node, instantiates a new source node, and connects it to the analyser.
+- \(k\) is the frequency-bin index;
+- \(j = \sqrt{-1}\);
+- \(X[k]\) is a complex value containing amplitude and phase.
 
-### 3. Visibility Change Handling
-To prevent active audio capture and processing while the user is in a background tab:
-- Components register a listener on `document.addEventListener("visibilitychange")`.
-- If `document.hidden` becomes true, the system terminates the animation frame loop, disconnects audio nodes, calls `audioContext.close()` to close the context, and stops all track devices via `track.stop()`. It also resets WebAssembly buffers by calling `resetNoiseProcessor()`.
+A fast Fourier transform is an efficient algorithm for computing the same DFT.
+It does not change the mathematical result.
 
-### 4. Cleanup and Teardown
-To prevent memory leaks and dangling hardware handlers:
-- A `cleanupRef` stores the teardown function which:
-  - Cancels animation frames (`cancelAnimationFrame`).
-  - Disconnects all nodes (e.g. `source.disconnect()`, `analyser.disconnect()`, `workletNode.disconnect()`).
-  - Stops all MediaStream tracks:
-    ```typescript
-    stream.getTracks().forEach((track) => track.stop());
-    ```
-  - Closes the `AudioContext` instance.
+For real-valued audio, the positive-frequency spectrum contains:
+
+\[
+\frac{N}{2}
+\]
+
+bins in Web Audio's `AnalyserNode.frequencyBinCount`.
+
+For:
+
+\[
+N = 2048
+\]
+
+Web Audio exposes:
+
+\[
+\text{frequencyBinCount} = 1024
+\]
+
+positive-frequency bins.
 
 ---
 
-## AnalyserNode Configuration
+## 3. Frequency resolution
 
-The `AnalyserNode` parameters dictate the spectral density and response profile:
+The spacing between adjacent FFT bins is:
 
-| Parameter | Configuration | Engineering Rationale |
-| :--- | :--- | :--- |
-| `fftSize` | `2048` | Chosen for the visualizer to provide a detailed 1024-bin spectrum, resolving narrow bands. |
-| `smoothingTimeConstant` | `0.25` (waveform), `0.7` (waterfall) | A low value (`0.25`) responds rapidly to transients for live waveforms. A higher value (`0.7`) smooths frequency bins over frames to produce visually readable waterfall tracks. |
-| `minDecibels` | `-100` | Extends the noise floor deep enough to visualize whispering and low-intensity background hums. |
-| `maxDecibels` | `-10` | Caps the top end of the analyzer slightly below 0 dBFS to prevent clipping calculations from washing out hot colors on the spectrogram. |
+\[
+\Delta f = \frac{f_s}{N}
+\]
 
----
+where:
 
-## FFT Implementation
+- \(\Delta f\) is frequency resolution in hertz per bin;
+- \(f_s\) is the sample rate;
+- \(N\) is the FFT size.
 
-WorkSphere contains two distinct Fast Fourier Transform implementations:
+For \(f_s = 48{,}000\) Hz and \(N = 2048\):
 
-```mermaid
-classDiagram
-    class WebAudioAnalyserNode {
-        <<Implicit Browser Implementation>>
-        +fftSize : 2048
-        +frequencyBinCount : 1024
-        +windowing : Blackman Window
-        +thread : Browser Audio Rendering Thread
-        +output : Float32Array (dBFS)
-    }
-    class WebAssemblySIMDEngine {
-        <<C++ Cooley-Tukey Radix-2>>
-        +fftSize : 1024
-        +frequencyBinCount : 513
-        +windowing : Hann Window
-        +thread : AudioWorklet Thread
-        +output : Overlap-Add PCM
-    }
-```
+\[
+\Delta f =
+\frac{48000}{2048}
+= 23.4375\ \text{Hz/bin}
+\]
 
-### 1. Web Audio AnalyserNode FFT
-- **FFT Size**: 2048 samples.
-- **Frequency Bin Count**: 1024 bins.
-- **Windowing**: Implements a Blackman window natively in the browser.
-- **Data Access**: Queried via `getFloatFrequencyData` which populates a `Float32Array` with values in dBFS.
+The center frequency represented by bin \(k\) is:
 
-### 2. Custom WebAssembly C++ SIMD FFT
-- **FFT Size**: 1024 samples (defined as `FFT_SIZE 1024` in `audio_dsp.cpp`).
-- **Frequency Bin Count**: 513 bins (`NUM_BINS` is `HALF_FFT + 1`).
-- **Hop Size**: 256 samples (`HOP_SIZE 256`, 75% overlap).
-- **Windowing**: Explicitly applies a Hann window to input real channels.
-- **Algorithm**: In-place Cooley-Tukey Radix-2 FFT with bit-reversal permutation.
-- **Acceleration**: Emscripten-compiled 128-bit SIMD (`wasm_simd128.h`) vectorizes butterfly calculations:
-  - Probes hardware support by compiling a test binary byte payload (`[0x00, 0x61, 0x73, 0x6d, ...]`).
-  - Automatically falls back to scalar calculations if hardware SIMD fails or on ARM32 architectures where 128-bit memory instructions trap.
+\[
+f_k = k\Delta f
+= k\frac{f_s}{N}
+\]
 
----
+Examples:
 
-## Frequency Bin Mathematics
+| Bin \(k\) | Frequency at 48 kHz and FFT 2048 |
+| --------: | -------------------------------: |
+|         0 |                             0 Hz |
+|         1 |                       23.4375 Hz |
+|        10 |                       234.375 Hz |
+|        43 |                     1007.8125 Hz |
+|       100 |                       2343.75 Hz |
+|       512 |                        12,000 Hz |
+|      1023 |                   23,976.5625 Hz |
 
-The relationship between the discrete FFT bins and physical audio frequencies is governed by the sample rate and the FFT size.
+The Nyquist frequency is:
 
-### Core DSP Formulas
+\[
+f_{\text{Nyquist}} = \frac{f_s}{2}
+\]
 
-$$\text{Frequency Resolution } (\Delta f) = \frac{\text{Sample Rate}}{\text{FFT Size}}$$
+For a 48 kHz context:
 
-$$\text{Nyquist Frequency} = \frac{\text{Sample Rate}}{2}$$
+\[
+f_{\text{Nyquist}} = 24{,}000\ \text{Hz}
+\]
 
-$$\text{Bin Center Frequency } (f_{\text{bin}}) = \text{bin} \times \Delta f$$
+### TypeScript helpers
 
-### Concrete Bin Frequency Mapping Tables
+```ts
+export function frequencyResolution(
+  sampleRate: number,
+  fftSize: number,
+): number {
+  if (!Number.isFinite(sampleRate) || sampleRate <= 0) {
+    throw new RangeError("sampleRate must be positive");
+  }
 
-#### Table 1: Visualizer Subsystem Configuration (FFT Size = 2048)
-- Sample Rate: $48000\text{ Hz}$
-- $\Delta f = 48000 / 2048 = 23.4375\text{ Hz}$
-- Nyquist Frequency: $24000\text{ Hz}$
+  if (!Number.isInteger(fftSize) || fftSize <= 0) {
+    throw new RangeError("fftSize must be a positive integer");
+  }
 
-| Bin Index | Calculation | Center Frequency | Audio Band / Description |
-| :--- | :--- | :--- | :--- |
-| **0** | $0 \times 23.4375\text{ Hz}$ | $0.0\text{ Hz}$ | DC Offset (Direct Current) |
-| **1** | $1 \times 23.4375\text{ Hz}$ | $23.44\text{ Hz}$ | Sub-bass range limit |
-| **10** | $10 \times 23.4375\text{ Hz}$ | $234.38\text{ Hz}$ | Low midrange boundary |
-| **42** | $42 \times 23.4375\text{ Hz}$ | $984.38\text{ Hz}$ | Midrange frequency ($1\text{ kHz}$) |
-| **200** | $200 \times 23.4375\text{ Hz}$ | $4687.50\text{ Hz}$ | Presence band range |
-| **1023** | $1023 \times 23.4375\text{ Hz}$ | $23976.56\text{ Hz}$ | Nyquist limit boundary |
+  return sampleRate / fftSize;
+}
 
-#### Table 2: WebAssembly DSP Configuration (FFT Size = 1024)
-- Sample Rate: $48000\text{ Hz}$
-- $\Delta f = 48000 / 1024 = 46.875\text{ Hz}$
-- Nyquist Frequency: $24000\text{ Hz}$
+export function frequencyForBin(
+  binIndex: number,
+  sampleRate: number,
+  fftSize: number,
+): number {
+  return binIndex * frequencyResolution(sampleRate, fftSize);
+}
 
-| Bin Index | Calculation | Center Frequency | Audio Band / Description |
-| :--- | :--- | :--- | :--- |
-| **0** | $0 \times 46.875\text{ Hz}$ | $0.0\text{ Hz}$ | DC Offset |
-| **1** | $1 \times 46.875\text{ Hz}$ | $46.88\text{ Hz}$ | Sub-bass |
-| **10** | $10 \times 46.875\text{ Hz}$ | $468.75\text{ Hz}$ | Midrange lower boundary |
-| **21** | $21 \times 46.875\text{ Hz}$ | $984.38\text{ Hz}$ | Midrange center ($1\text{ kHz}$) |
-| **100** | $100 \times 46.875\text{ Hz}$ | $4687.50\text{ Hz}$ | High frequencies / presence |
-| **512** | $512 \times 46.875\text{ Hz}$ | $24000.00\text{ Hz}$ | Nyquist limit boundary |
+export function binForFrequency(
+  frequencyHz: number,
+  sampleRate: number,
+  fftSize: number,
+): number {
+  const maxBin = fftSize / 2 - 1;
+  const rawBin = Math.round(
+    frequencyHz / frequencyResolution(sampleRate, fftSize),
+  );
 
-#### Table 3: Equalizer Analysis Subsystem (FFT Size = 64)
-- Sample Rate: $44100\text{ Hz}$
-- $\Delta f = 44100 / 64 = 689.0625\text{ Hz}$
-- Nyquist Frequency: $22050\text{ Hz}$
-
-| Bin Index | Calculation | Center Frequency | Audio Band / Description |
-| :--- | :--- | :--- | :--- |
-| **0** | $0 \times 689.0625\text{ Hz}$ | $0.0\text{ Hz}$ | DC Offset |
-| **1** | $1 \times 689.0625\text{ Hz}$ | $689.06\text{ Hz}$ | Bass-to-mid crossover |
-| **2** | $2 \times 689.0625\text{ Hz}$ | $1378.13\text{ Hz}$ | Center Midrange |
-| **10** | $10 \times 689.0625\text{ Hz}$ | $6890.63\text{ Hz}$ | High treble |
-| **31** | $31 \times 689.0625\text{ Hz}$ | $21360.94\text{ Hz}$ | Upper hearing boundary |
-
----
-
-## Windowing Strategy
-
-To prevent spectral leakage (artifacts caused by slicing continuous signals into blocks), windowing is applied.
-
-### Hann Window
-For the C++ WASM DSP subsystem, the Hann window coefficients are precomputed during setup:
-
-$$w[n] = 0.5 \times \left(1 - \cos\left(\frac{2 \pi n}{N - 1}\right)\right), \quad 0 \le n < N$$
-
-```cpp
-for (int i = 0; i < FFT_SIZE; i++) {
-    hann_window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * (float)i / (float)(FFT_SIZE - 1)));
+  return Math.max(0, Math.min(maxBin, rawBin));
 }
 ```
 
-### Overlap-Add (OLA)
-To reconstruct continuous time-domain PCM output without block edge clicks, the WASM DSP engine uses **75% overlap** (1024 FFT size, 256-sample hop size):
-1. Raw input buffers are copied into a sliding queue: `input_buffer + buffer_pos`.
-2. The Hann window is applied before FFT.
-3. Filtering/gating is performed in the frequency domain.
-4. Output real numbers are computed via IFFT and multiplied by the Hann window again: `output_buffer[i] += real[i] * hann_window[i]`.
-5. The processed hop block is shifted out, and the output buffer is advanced by 256 samples.
+Usage:
 
----
+```ts
+const resolution = frequencyResolution(
+  audioContext.sampleRate,
+  analyser.fftSize,
+);
 
-## Frequency Resolution
-
-There is a fundamental DSP trade-off between **Frequency Resolution** and **Time Resolution (Latency)**:
-
-- **2048 FFT Size**: $\Delta f \approx 23.4\text{ Hz}$. Excellent frequency resolution (high-precision spectrogram visualization), but introduces an inherent block latency of $\approx 42.7\text{ ms}$. This is acceptable for visualization where visual feedback matches auditory perception with a slight buffer delay.
-- **1024 FFT Size**: $\Delta f \approx 46.9\text{ Hz}$. Standard balance for real-time DSP, with a block processing time of $\approx 21.3\text{ ms}$.
-- **256/64 FFT Size**: $\Delta f \approx 172.3\text{ Hz}$ / $689.1\text{ Hz}$. Poor frequency resolution, but ultra-low block latency ($\approx 5.3\text{ ms}$ / $1.4\text{ ms}$). This is used in WebRTC peer level monitors and the Equalizer preview.
-
----
-
-## Decibel Mathematics
-
-Real-time audio processing arrays represent raw sound pressure amplitudes. These must be mathematically mapped to logarithmic decibel formats for humans.
-
-### 1. Root Mean Square (RMS) Calculation
-The RMS amplitude of a block of $N$ PCM samples is defined as:
-
-$$\text{RMS} = \sqrt{\frac{1}{N} \sum_{i=0}^{N-1} x[i]^2}$$
-
-This calculation is implemented in C++ (WASM DSP) using vectorized SIMD addition:
-```cpp
-v128_t v = wasm_v128_load(&samples[i]);
-vsum = wasm_f32x4_add(vsum, wasm_f32x4_mul(v, v));
-```
-It is also implemented in WebAssembly Text format for the general noise monitor:
-```wat
-(f32.sqrt (f32.div (local.get $sum) (f32.convert_i32_u (local.get $length))))
+const oneKilohertzBin = binForFrequency(
+  1000,
+  audioContext.sampleRate,
+  analyser.fftSize,
+);
 ```
 
-### 2. Logarithmic Decibels relative to Full Scale (dBFS)
-Since digital audio amplitudes peak at $\pm 1.0$, the logarithmic scale is negative:
+---
 
-$$\text{dB}_{\text{FS}} = 20 \log_{10}(\text{RMS})$$
+## 4. Why window functions are needed
 
-To avoid mathematical poles (e.g. $\log_{10}(0)$), a lower boundary clamp is enforced:
-- If $\text{RMS} \le 0.00001$, the converter returns $20\text{ dB}$.
+The FFT assumes the observed frame repeats periodically.
 
-### 3. Normalized Sound Display Scale
-To display decibels on standard UI gauges, negative dBFS bounds ($[-100, 0]$ dBFS) are shifted to standard sound pressure levels ($[20, 120]$ dB):
+When the beginning and end of the frame do not meet smoothly, the repeated
+signal contains a discontinuity. That discontinuity spreads energy into nearby
+frequency bins. This effect is called spectral leakage.
 
-$$\text{dB}_{\text{display}} = \max\left(20, \min\left(120, \frac{\text{round}((\text{dB}_{\text{FS}} + 100) \times 10)}{10}\right)\right)$$
+Before the FFT, multiply each sample by a window:
 
-### 4. Peak and Average Level Calculations (from Frequency Bins)
-In the spectrogram subsystem, dB readings are calculated directly from frequency bin magnitudes:
-- **Peak Level**: Extracts the maximum value in the bins:
-  $$\text{Peak}_{\text{display}} = \max\left(20, \min\left(120, \frac{\text{round}((\text{Peak}_{\text{dBFS}} + 100) \times 10)}{10}\right)\right)$$
-- **Average Level**: To avoid erratic readouts from single spikes, the average of the loudest 8 bins is taken:
-  $$\text{Average}_{\text{display}} = \max\left(20, \min\left(120, \frac{\text{round}((\text{Avg}_{\text{dBFS}} + 100) \times 10)}{10}\right)\right)$$
+\[
+x_w[n] = x[n]w[n]
+\]
+
+where:
+
+- \(x[n]\) is the original sample;
+- \(w[n]\) is the window coefficient;
+- \(x_w[n]\) is the windowed sample.
+
+A window reduces boundary discontinuities but introduces trade-offs:
+
+- main-lobe width controls how closely spaced tones can be distinguished;
+- side-lobe level controls leakage from strong frequencies into weak ones;
+- coherent gain changes measured amplitude;
+- equivalent noise bandwidth affects noise-floor measurements.
+
+No window is best for every use case.
 
 ---
 
-## Canvas Rendering Pipeline
+## 5. Hann window
 
-HTML5 Canvas contexts render the visual representations of active waves and histories.
+The issue calls this a "Hanning" window. The mathematically established name is
+the **Hann window**; "Hanning" is a commonly used informal variant.
 
-### 1. Oscilloscope Visualizer (`NoiseMeter.tsx`)
-Renders time-domain samples as a continuous wave:
-- **Input**: A `Float32Array` containing 2048 sample points.
-- **Canvas Dimensions**: $400 \times 80$.
-- **X Coordinate**: Linearly increments by step: `sliceWidth = width / samples.length`.
-- **Y Coordinate**: Maps value ($[-1.0, 1.0]$) to canvas height:
-  $$y = \frac{v \times h}{2} + \frac{h}{2}$$
-- **Styling**: Changes stroke color based on current decibels (emerald `< 50`, amber `[50, 70)`, rose `>= 70`).
+For \(N\) samples:
 
-### 2. Frequency Spectrum Bars (`NoiseSpectrogram.tsx`)
-Renders frequency-domain buckets as vertical bars:
-- **Input**: Bins array containing 1024 bins.
-- **Canvas Dimensions**: $640 \times 120$.
-- **Downsampling**: Renders a subset of 96 bins for visual readability: `step = (bins.length - 1) / 96`.
-- **Normalization**: Bins are normalized between min/max decibel bounds ($-100$ to $-10$ dBFS):
-  $$t = \frac{\text{dbfs} - \text{minDb}}{\text{maxDb} - \text{minDb}}$$
-- **Color**: Mapped to an RGB gradient palette.
+\[
+w_{\text{Hann}}[n]
+=
 
----
+\frac{1}{2}
+\left(
+1 -
+\cos
+\left(
+\frac{2\pi n}{N-1}
+\right)
+\right)
+\]
 
-## Spectrogram Waterfall Algorithm
+for:
 
-The spectrogram waterfall visualizes a historical rolling heatmap of frequency-domain intensities:
+\[
+0 \le n \le N-1
+\]
 
-```mermaid
-sequenceDiagram
-    participant B as Bins Array
-    participant C as Canvas Context
-    participant ID as Image Data Shift Buffer
-    participant Stripe as ImageData Stripe (1px wide)
+Equivalent form:
 
-    Loop Every Frame (~16.67ms)
-        C ->> ID: getRawImagePixels (1, 0, width-1, height)
-        C ->> C: putImagePixels (ID, 0, 0)
-        B ->> Stripe: Compute vertical pixel stripe color values (Y-axis)
-        Note over Stripe: Low frequencies mapped to bottom (height-1)
-        Note over Stripe: High frequencies mapped to top (0)
-        C ->> C: putImagePixels (Stripe, width-1, 0)
-    end
+\[
+w_{\text{Hann}}[n]
+=
+
+0.5 -
+0.5
+\cos
+\left(
+\frac{2\pi n}{N-1}
+\right)
+\]
+
+Properties:
+
+- both endpoints approach zero;
+- substantially reduces leakage compared with a rectangular window;
+- offers a useful balance between frequency resolution and leakage;
+- is a common default for real-time audio visualizations.
+
+### TypeScript implementation
+
+```ts
+export function createHannWindow(size: number): Float32Array {
+  if (!Number.isInteger(size) || size < 2) {
+    throw new RangeError("Window size must be an integer >= 2");
+  }
+
+  const window = new Float32Array(size);
+
+  for (let n = 0; n < size; n += 1) {
+    window[n] = 0.5 - 0.5 * Math.cos((2 * Math.PI * n) / (size - 1));
+  }
+
+  return window;
+}
 ```
 
-### Waterfall Rendering Step-by-Step
-1. **Column Shifting**: The history is shifted left by 1 pixel. This is accomplished by copying the existing image context shifted right by 1 pixel, and writing it back to index 0:
-   ```typescript
-   const image = ctx.getImageData(1, 0, width - 1, height);
-   ctx.putImageData(image, 0, 0);
-   ```
-2. **Stripe Allocation**: A 1-pixel-wide vertical image buffer is created:
-   ```typescript
-   const col = ctx.createImageData(1, height);
-   ```
-3. **Stripe Mapping**: The vertical loop maps pixel coordinates ($y$) to frequency bin indices. Low frequencies are mapped to the bottom of the canvas ($y = \text{height} - 1$), and high frequencies to the top ($y = 0$):
-   $$\text{binIndex} = 1 + \left\lfloor \frac{\text{height} - 1 - y}{\text{height}} \times \text{usableBins} \right\rfloor$$
-4. **Color Mapping**: The raw value `bins[binIndex]` is normalized to $t \in [0, 1]$ via `normalizeBinDb` and converted to RGB color components using the `spectrogramColor(t)` palette function:
-   - **Segment 1** ($t < 0.33$): Cold colors (Deep Blue to Cyan)
-     - $R = 10 + 20 \times \frac{t}{0.33}$
-     - $G = 20 + 100 \times \frac{t}{0.33}$
-     - $B = 80 + 120 \times \frac{t}{0.33}$
-   - **Segment 2** ($0.33 \le t < 0.66$): Warm colors (Cyan/Purple to Red)
-     - $R = 30 + 220 \times \frac{t - 0.33}{0.33}$
-     - $G = 120 + 80 \times \frac{t - 0.33}{0.33}$
-     - $B = 200 - 160 \times \frac{t - 0.33}{0.33}$
-   - **Segment 3** ($t \ge 0.66$): Hot colors (Orange to White/Yellow)
-     - $R = 250$
-     - $G = 200 - 160 \times \frac{t - 0.66}{0.34}$
-     - $B = 40 - 20 \times \frac{t - 0.66}{0.34}$
-5. **Alpha Layer**: Alpha channel bytes are set to 255 (opaque).
-6. **Drawing**: The updated vertical stripe is drawn onto the right edge of the canvas:
-   ```typescript
-   ctx.putImageData(col, width - 1, 0);
-   ```
+Apply it:
+
+```ts
+export function applyWindow(
+  samples: Float32Array,
+  window: Float32Array,
+): Float32Array {
+  if (samples.length !== window.length) {
+    throw new RangeError("Samples and window must have equal lengths");
+  }
+
+  const output = new Float32Array(samples.length);
+
+  for (let n = 0; n < samples.length; n += 1) {
+    output[n] = samples[n] * window[n];
+  }
+
+  return output;
+}
+```
+
+### Hann coherent gain
+
+A window attenuates a tone's measured amplitude.
+
+Coherent gain is:
+
+\[
+G_c =
+\frac{1}{N}
+\sum_{n=0}^{N-1}
+w[n]
+\]
+
+For a Hann window, it approaches:
+
+\[
+G_c \approx 0.5
+\]
+
+When accurate amplitude measurement is required, compensate approximately by:
+
+\[
+A_{\text{corrected}}
+=
+
+\frac{A_{\text{measured}}}{G_c}
+\]
+
+A visualization does not always need coherent-gain compensation, provided its
+display scale is intentionally calibrated.
 
 ---
 
-## Animation Loop
+## 6. Four-term Blackman–Harris window
 
-The rendering loops are implemented in React components using `requestAnimationFrame` (rAF).
+A common four-term Blackman–Harris window is:
 
-### 1. Delta-Time Throttling
-To prevent visual distortion, high CPU usage, and audio buffer overruns on high-refresh-rate monitors (120Hz/144Hz ProMotion screens), rAF frame rates are throttled to exactly 60fps (16.67ms interval):
-```typescript
-const targetFrameInterval = 1000 / 60; // ~16.67ms
-const tick = (timestamp) => {
-  if (lastTick !== null) {
-    const delta = timestamp - lastTick;
-    if (delta < targetFrameInterval) {
-      raf = requestAnimationFrame(tick);
+\[
+w_{\text{BH}}[n]
+=
+
+a_0
+-
+
+a_1\cos(\theta_n) +
+a_2\cos(2\theta_n)
+-
+
+a_3\cos(3\theta_n)
+\]
+
+where:
+
+\[
+\theta_n =
+\frac{2\pi n}{N-1}
+\]
+
+and the standard coefficients are:
+
+\[
+a_0 = 0.35875
+\]
+
+\[
+a_1 = 0.48829
+\]
+
+\[
+a_2 = 0.14128
+\]
+
+\[
+a_3 = 0.01168
+\]
+
+Therefore:
+
+\[
+\begin{aligned}
+w_{\text{BH}}[n]
+={}&
+0.35875
+-
+
+0.48829\cos(\theta_n)
+\\
+&+
+0.14128\cos(2\theta_n)
+-
+
+0.01168\cos(3\theta_n)
+\end{aligned}
+\]
+
+Properties:
+
+- much lower side lobes than Hann;
+- better at revealing weak signals near a strong tone;
+- wider main lobe;
+- lower effective frequency separation;
+- greater amplitude attenuation.
+
+### TypeScript implementation
+
+```ts
+export function createBlackmanHarrisWindow(size: number): Float32Array {
+  if (!Number.isInteger(size) || size < 2) {
+    throw new RangeError("Window size must be an integer >= 2");
+  }
+
+  const a0 = 0.35875;
+  const a1 = 0.48829;
+  const a2 = 0.14128;
+  const a3 = 0.01168;
+
+  const window = new Float32Array(size);
+
+  for (let n = 0; n < size; n += 1) {
+    const theta = (2 * Math.PI * n) / (size - 1);
+
+    window[n] =
+      a0 -
+      a1 * Math.cos(theta) +
+      a2 * Math.cos(2 * theta) -
+      a3 * Math.cos(3 * theta);
+  }
+
+  return window;
+}
+```
+
+### Choosing between Hann and Blackman–Harris
+
+| Requirement                           | Suggested window                           |
+| ------------------------------------- | ------------------------------------------ |
+| General live spectrum or spectrogram  | Hann                                       |
+| Balanced time and frequency response  | Hann                                       |
+| Detect weak tones beside strong tones | Blackman–Harris                            |
+| Lowest practical side-lobe leakage    | Blackman–Harris                            |
+| Separate two nearby frequencies       | Hann may preserve more apparent separation |
+| Accurate amplitude measurement        | Either, with coherent-gain correction      |
+
+For WorkSphere's live environmental-noise visualization, Hann is normally the
+simpler default. Blackman–Harris is useful when leakage suppression matters
+more than narrow frequency discrimination.
+
+---
+
+## 7. Web Audio `AnalyserNode` behavior
+
+Create and configure an analyser:
+
+```ts
+const analyser = audioContext.createAnalyser();
+
+analyser.fftSize = 2048;
+analyser.minDecibels = -100;
+analyser.maxDecibels = -10;
+analyser.smoothingTimeConstant = 0.8;
+```
+
+Read floating-point spectrum data:
+
+```ts
+const bins = new Float32Array(analyser.frequencyBinCount);
+
+analyser.getFloatFrequencyData(bins);
+```
+
+Each value represents a frequency-bin magnitude in decibels, generally dBFS.
+
+Important:
+
+```text
+bins.length === analyser.frequencyBinCount
+bins.length === analyser.fftSize / 2
+```
+
+With an FFT size of 2048:
+
+```text
+bins.length === 1024
+```
+
+### Decibels and amplitude
+
+For an amplitude ratio:
+
+\[
+L_{\text{dB}}
+=
+
+20\log_{10}
+\left(
+\frac{A}{A_{\text{ref}}}
+\right)
+\]
+
+Recover the amplitude ratio:
+
+\[
+\frac{A}{A_{\text{ref}}}
+=
+
+10^{L_{\text{dB}}/20}
+\]
+
+For a power ratio:
+
+\[
+L_{\text{dB}}
+=
+
+10\log_{10}
+\left(
+\frac{P}{P_{\text{ref}}}
+\right)
+\]
+
+Web Audio spectrum values are already expressed in decibels. A renderer
+normally maps those values into a chosen display interval instead of converting
+them back to linear amplitude.
+
+### dBFS is not sound-pressure level
+
+`getFloatFrequencyData()` does not directly provide calibrated acoustic dB SPL.
+
+It provides a digital level relative to full scale. WorkSphere may map this to a
+friendlier display scale, but that mapping is approximate unless microphone,
+device gain, and acoustic reference pressure are calibrated.
+
+Do not label uncalibrated dBFS values as laboratory-accurate dB SPL.
+
+---
+
+## 8. Normalizing decibel values
+
+WorkSphere uses this linear normalization:
+
+\[
+t =
+\operatorname{clamp}
+\left(
+\frac{dB - dB_{\min}}
+{dB_{\max} - dB_{\min}},
+0,
+1
+\right)
+\]
+
+where:
+
+- \(dB\) is the raw bin value;
+- \(dB_{\min}\) is the visible floor;
+- \(dB_{\max}\) is the visible ceiling;
+- \(t\) is normalized intensity.
+
+Repository implementation:
+
+```ts
+export function normalizeBinDb(
+  dbfs: number,
+  minDb = -100,
+  maxDb = -10,
+): number {
+  if (!Number.isFinite(dbfs)) {
+    return 0;
+  }
+
+  return Math.min(1, Math.max(0, (dbfs - minDb) / (maxDb - minDb)));
+}
+```
+
+Examples using \(-100\) to \(-10\) dB:
+
+| Raw value | Normalized intensity |
+| --------: | -------------------: |
+|   -100 dB |                    0 |
+|  -77.5 dB |                 0.25 |
+|    -55 dB |                  0.5 |
+|  -32.5 dB |                 0.75 |
+|    -10 dB |                    1 |
+
+### Defensive version
+
+```ts
+export function normalizeDecibels(
+  db: number,
+  minDb: number,
+  maxDb: number,
+): number {
+  if (
+    !Number.isFinite(db) ||
+    !Number.isFinite(minDb) ||
+    !Number.isFinite(maxDb) ||
+    maxDb <= minDb
+  ) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(1, (db - minDb) / (maxDb - minDb)));
+}
+```
+
+---
+
+## 9. Converting decibels to canvas bar heights
+
+For a canvas plot height \(H\):
+
+\[
+h = tH
+\]
+
+where:
+
+- \(t\) is normalized intensity;
+- \(h\) is bar height in pixels.
+
+Canvas coordinates increase downward, so the bar's top coordinate is:
+
+\[
+y = H - h
+\]
+
+### TypeScript helper
+
+```ts
+export function decibelsToBarHeight(
+  db: number,
+  canvasHeight: number,
+  minDb = -100,
+  maxDb = -10,
+): number {
+  if (!Number.isFinite(canvasHeight) || canvasHeight <= 0) {
+    return 0;
+  }
+
+  const intensity = normalizeDecibels(db, minDb, maxDb);
+
+  return intensity * canvasHeight;
+}
+```
+
+### Drawing spectrum bars
+
+```ts
+export function drawSpectrumBars(input: {
+  context: CanvasRenderingContext2D;
+  bins: Float32Array;
+  width: number;
+  height: number;
+  minDb?: number;
+  maxDb?: number;
+}) {
+  const { context, bins, width, height, minDb = -100, maxDb = -10 } = input;
+
+  context.clearRect(0, 0, width, height);
+
+  if (bins.length === 0) {
+    return;
+  }
+
+  const barWidth = width / bins.length;
+
+  for (let index = 0; index < bins.length; index += 1) {
+    const barHeight = decibelsToBarHeight(bins[index], height, minDb, maxDb);
+
+    const x = index * barWidth;
+    const y = height - barHeight;
+
+    context.fillRect(x, y, Math.max(1, barWidth), barHeight);
+  }
+}
+```
+
+### Numerical example
+
+Given:
+
+```text
+raw bin = -55 dB
+minimum = -100 dB
+maximum = -10 dB
+canvas height = 240 px
+```
+
+Normalize:
+
+\[
+t =
+\frac{-55 - (-100)}
+{-10 - (-100)}
+=
+
+\frac{45}{90}
+=
+
+0.5
+\]
+
+Height:
+
+\[
+h = 0.5 \times 240 = 120\ \text{px}
+\]
+
+Top position:
+
+\[
+y = 240 - 120 = 120\ \text{px}
+\]
+
+---
+
+## 10. Nonlinear visual scaling
+
+A linear mapping in decibel space is already perceptually useful because
+decibels are logarithmic.
+
+Additional contrast curves may improve visibility.
+
+### Gamma curve
+
+\[
+t_{\gamma} = t^\gamma
+\]
+
+- \(\gamma < 1\) brightens quiet values;
+- \(\gamma > 1\) emphasizes strong values.
+
+```ts
+export function applyIntensityGamma(intensity: number, gamma = 0.7): number {
+  const clamped = Math.max(0, Math.min(1, intensity));
+
+  return clamped ** gamma;
+}
+```
+
+Use carefully. The color legend and interpretation must match the applied
+curve.
+
+---
+
+## 11. Spectrogram rendering
+
+A spectrogram typically maps:
+
+- horizontal axis: time;
+- vertical axis: frequency;
+- color: spectral magnitude.
+
+Two common orientations are:
+
+```text
+new time enters from the right
+frequency increases upward
+```
+
+or:
+
+```text
+new time enters from the bottom
+frequency increases horizontally
+```
+
+WorkSphere's color helper maps normalized intensity to a cold-to-hot RGB value:
+
+```ts
+spectrogramColor(t);
+```
+
+### Shift-left waterfall
+
+```ts
+export function drawSpectrogramColumn(input: {
+  context: CanvasRenderingContext2D;
+  bins: Float32Array;
+  width: number;
+  height: number;
+  minDb?: number;
+  maxDb?: number;
+  colorForIntensity: (intensity: number) => [number, number, number];
+}) {
+  const {
+    context,
+    bins,
+    width,
+    height,
+    minDb = -100,
+    maxDb = -10,
+    colorForIntensity,
+  } = input;
+
+  if (bins.length === 0 || width <= 0 || height <= 0) {
+    return;
+  }
+
+  context.drawImage(
+    context.canvas,
+    1,
+    0,
+    width - 1,
+    height,
+    0,
+    0,
+    width - 1,
+    height,
+  );
+
+  const image = context.createImageData(1, height);
+
+  for (let y = 0; y < height; y += 1) {
+    const frequencyRatio = 1 - y / Math.max(1, height - 1);
+
+    const binIndex = Math.min(
+      bins.length - 1,
+      Math.floor(frequencyRatio * bins.length),
+    );
+
+    const intensity = normalizeDecibels(bins[binIndex], minDb, maxDb);
+
+    const [red, green, blue] = colorForIntensity(intensity);
+
+    const offset = y * 4;
+
+    image.data[offset] = red;
+    image.data[offset + 1] = green;
+    image.data[offset + 2] = blue;
+    image.data[offset + 3] = 255;
+  }
+
+  context.putImageData(image, width - 1, 0);
+}
+```
+
+This places low frequencies near the bottom and high frequencies near the top.
+
+---
+
+## 12. Mapping a pixel row to frequency
+
+For a linear frequency axis with zero hertz at the bottom:
+
+\[
+r =
+1 -
+\frac{y}{H-1}
+\]
+
+\[
+f(y) =
+r\frac{f_s}{2}
+\]
+
+where:
+
+- \(y = 0\) is the top;
+- \(H\) is canvas height;
+- \(r\) is normalized frequency;
+- \(f_s/2\) is Nyquist frequency.
+
+Helper:
+
+```ts
+export function frequencyForCanvasY(
+  y: number,
+  canvasHeight: number,
+  sampleRate: number,
+): number {
+  if (canvasHeight <= 1) {
+    return 0;
+  }
+
+  const ratio = 1 - Math.max(0, Math.min(1, y / (canvasHeight - 1)));
+
+  return ratio * (sampleRate / 2);
+}
+```
+
+---
+
+## 13. Logarithmic frequency axes
+
+Human hearing and musical pitch are often clearer on a logarithmic axis.
+
+For visible frequency limits:
+
+\[
+f_{\min} > 0
+\]
+
+\[
+f_{\max} \le \frac{f_s}{2}
+\]
+
+map a vertical ratio \(r\) to frequency:
+
+\[
+f(r)
+=
+
+f_{\min}
+\left(
+\frac{f_{\max}}{f_{\min}}
+\right)^r
+\]
+
+where \(0 \le r \le 1\).
+
+TypeScript:
+
+```ts
+export function logarithmicFrequency(
+  ratio: number,
+  minFrequency: number,
+  maxFrequency: number,
+): number {
+  const normalized = Math.max(0, Math.min(1, ratio));
+
+  return minFrequency * (maxFrequency / minFrequency) ** normalized;
+}
+```
+
+Convert frequency to a fractional bin:
+
+\[
+k =
+\frac{fN}{f_s}
+\]
+
+```ts
+export function fractionalBinForFrequency(
+  frequency: number,
+  sampleRate: number,
+  fftSize: number,
+): number {
+  return (frequency * fftSize) / sampleRate;
+}
+```
+
+Use interpolation between adjacent bins for smoother results:
+
+```ts
+export function interpolateBin(
+  bins: Float32Array,
+  fractionalIndex: number,
+): number {
+  if (bins.length === 0) {
+    return -Infinity;
+  }
+
+  const bounded = Math.max(0, Math.min(bins.length - 1, fractionalIndex));
+
+  const lower = Math.floor(bounded);
+  const upper = Math.min(bins.length - 1, lower + 1);
+  const fraction = bounded - lower;
+
+  return bins[lower] * (1 - fraction) + bins[upper] * fraction;
+}
+```
+
+A logarithmic display must not begin at 0 Hz because the logarithm of zero is
+undefined. A practical lower bound is commonly 20 Hz.
+
+---
+
+## 14. Canvas width and bin aggregation
+
+A 1024-bin spectrum may be drawn on a canvas narrower than 1024 pixels.
+
+Do not blindly draw 1024 overlapping one-pixel bars. Aggregate bins into pixel
+columns.
+
+For a canvas width \(W\), the bin interval for column \(x\) is approximately:
+
+\[
+k_{\text{start}}
+=
+
+\left\lfloor
+\frac{xB}{W}
+\right\rfloor
+\]
+
+\[
+k_{\text{end}}
+=
+
+\left\lfloor
+\frac{(x+1)B}{W}
+\right\rfloor
+\]
+
+where \(B\) is the number of frequency bins.
+
+```ts
+export function aggregateBinsByPixel(
+  bins: Float32Array,
+  pixelWidth: number,
+): Float32Array {
+  if (pixelWidth <= 0) {
+    return new Float32Array();
+  }
+
+  const output = new Float32Array(pixelWidth);
+
+  for (let x = 0; x < pixelWidth; x += 1) {
+    const start = Math.floor((x * bins.length) / pixelWidth);
+
+    const end = Math.max(
+      start + 1,
+      Math.floor(((x + 1) * bins.length) / pixelWidth),
+    );
+
+    let peak = -Infinity;
+
+    for (let index = start; index < Math.min(end, bins.length); index += 1) {
+      peak = Math.max(peak, bins[index]);
+    }
+
+    output[x] = Number.isFinite(peak) ? peak : -Infinity;
+  }
+
+  return output;
+}
+```
+
+Peak aggregation preserves narrow spectral components. Mean or RMS aggregation
+may produce a smoother noise-density display.
+
+---
+
+## 15. High-DPI canvas handling
+
+CSS pixels and device pixels differ on high-density displays.
+
+```ts
+export function resizeCanvasForDisplay(canvas: HTMLCanvasElement): {
+  width: number;
+  height: number;
+} {
+  const bounds = canvas.getBoundingClientRect();
+
+  const ratio = window.devicePixelRatio || 1;
+
+  const width = Math.max(1, Math.round(bounds.width * ratio));
+
+  const height = Math.max(1, Math.round(bounds.height * ratio));
+
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+
+  return {
+    width,
+    height,
+  };
+}
+```
+
+Use the actual backing-store dimensions for pixel rendering.
+
+---
+
+## 16. Temporal smoothing
+
+Web Audio provides:
+
+```ts
+analyser.smoothingTimeConstant;
+```
+
+Its range is:
+
+```text
+0 to 1
+```
+
+Conceptually, smoothed spectrum data follows an exponential relationship:
+
+\[
+S_t[k]
+=
+
+\alpha S_{t-1}[k] +
+(1-\alpha)X_t[k]
+\]
+
+where:
+
+- \(X_t[k]\) is the current spectral value;
+- \(S_t[k]\) is the smoothed value;
+- \(\alpha\) is the smoothing coefficient.
+
+Higher values:
+
+- make the display steadier;
+- retain peaks longer;
+- respond more slowly.
+
+Lower values:
+
+- respond quickly;
+- appear more animated;
+- may flicker.
+
+Suggested visualization starting point:
+
+```ts
+analyser.smoothingTimeConstant = 0.8;
+```
+
+Tune using actual UI behavior.
+
+---
+
+## 17. Frame rate and analysis overlap
+
+WorkSphere currently defines:
+
+```ts
+export const TARGET_FPS = 60;
+export const FRAME_INTERVAL_MS = 1000 / TARGET_FPS;
+```
+
+At 60 frames per second:
+
+\[
+\text{frame interval}
+=
+
+\frac{1000}{60}
+\approx
+16.67\ \text{ms}
+\]
+
+With a 2048-point FFT at 48 kHz, the FFT window covers approximately 42.67 ms.
+Successive display frames therefore contain overlapping analysis history.
+
+This is normal. Display frame rate and FFT time-span are independent settings.
+
+A rendering loop should prevent duplicate work:
+
+```ts
+let previousTime = 0;
+
+function render(now: number) {
+  requestAnimationFrame(render);
+
+  if (now - previousTime < FRAME_INTERVAL_MS) {
+    return;
+  }
+
+  previousTime = now;
+
+  analyser.getFloatFrequencyData(bins);
+  drawFrame(bins);
+}
+
+requestAnimationFrame(render);
+```
+
+---
+
+## 18. Color normalization
+
+WorkSphere uses:
+
+```ts
+spectrogramColor(intensity);
+```
+
+with normalized intensity:
+
+\[
+0 \le t \le 1
+\]
+
+Interpretation:
+
+```text
+0 → cold / weak
+1 → hot / strong
+```
+
+Color should encode the same normalized range used by the legend.
+
+Example:
+
+```ts
+const intensity = normalizeBinDb(
+  bins[index],
+  analyser.minDecibels,
+  analyser.maxDecibels,
+);
+
+const [red, green, blue] = spectrogramColor(intensity);
+
+context.fillStyle = `rgb(${red} ${green} ${blue})`;
+```
+
+Do not use raw negative decibel values directly as RGB components.
+
+---
+
+## 19. Numerical edge cases
+
+### `-Infinity`
+
+An analyser may return `-Infinity` for bins with no measurable energy.
+
+Map it to zero intensity:
+
+```ts
+if (!Number.isFinite(db)) {
+  return 0;
+}
+```
+
+### Invalid decibel bounds
+
+Require:
+
+\[
+dB_{\max} > dB_{\min}
+\]
+
+Otherwise normalization divides by zero or reverses the scale.
+
+### Empty bin arrays
+
+Return without rendering or draw a cleared state.
+
+### Zero-size canvas
+
+Do not divide by canvas dimensions unless they are positive.
+
+### Clamping
+
+Clamp intensity:
+
+\[
+0 \le t \le 1
+\]
+
+to prevent invalid pixel heights and colors.
+
+---
+
+## 20. Complete spectrum renderer
+
+```ts
+import { normalizeBinDb, spectrogramColor } from "@/lib/noise/fftSpectrogram";
+
+type SpectrumRendererOptions = {
+  analyser: AnalyserNode;
+  canvas: HTMLCanvasElement;
+};
+
+export function createSpectrumRenderer(options: SpectrumRendererOptions) {
+  const { analyser, canvas } = options;
+
+  const context = canvas.getContext("2d");
+
+  if (!context) {
+    throw new Error("2D canvas context unavailable");
+  }
+
+  const bins = new Float32Array(analyser.frequencyBinCount);
+
+  let animationFrame = 0;
+  let stopped = false;
+
+  function draw() {
+    if (stopped) {
       return;
     }
-    lastTick = timestamp - (delta % targetFrameInterval);
-  } else {
-    lastTick = timestamp;
+
+    animationFrame = requestAnimationFrame(draw);
+
+    analyser.getFloatFrequencyData(bins);
+
+    const width = canvas.width;
+    const height = canvas.height;
+
+    context.clearRect(0, 0, width, height);
+
+    const visibleBins = aggregateBinsByPixel(bins, Math.max(1, width));
+
+    for (let x = 0; x < visibleBins.length; x += 1) {
+      const intensity = normalizeBinDb(
+        visibleBins[x],
+        analyser.minDecibels,
+        analyser.maxDecibels,
+      );
+
+      const barHeight = intensity * height;
+
+      const [red, green, blue] = spectrogramColor(intensity);
+
+      context.fillStyle = `rgb(${red} ${green} ${blue})`;
+
+      context.fillRect(x, height - barHeight, 1, barHeight);
+    }
   }
-  // Execute analysis and render canvas...
-  raf = requestAnimationFrame(tick);
-};
-```
 
-### 2. State Isolation
-React state updates are separated from the render loop. State updates (`setLiveDb`) are only triggered during active frame rendering. The canvas context draws using direct reference hooks (`spectrumRef.current`), bypassing React render trees to achieve high rendering performance.
+  draw();
 
----
-
-## React Integration
-
-Components leverage hooks and refs to bridge the React lifecycle with the imperative Web Audio and Canvas APIs:
-
-- **Refs for Persistent State**: Refs (`canvasRef`, `cleanupRef`, `audioContextRef`, `sourceNodeRef`, `analyserRef`) store native audio instances and callback contexts across renders without triggering React updates.
-- **Dynamic Initialization**: Audio graphs are initialized dynamically inside a start/measure action rather than on component mount.
-- **Teardown on Unmount**: React cleanup functions are registered inside `useEffect` on mount to call the current `cleanupRef` callback and close any active `AudioContext` instances.
-- **Accessibility Integration**: In `AudioEqualizer.tsx`, the system queries the media query for motion configuration:
-  ```typescript
-  const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-  ```
-  If reduced motion is active, the system skips the high-fps `requestAnimationFrame` loop entirely. Instead, it falls back to a slow polling loop using `setInterval` updating at a 350ms interval.
-
----
-
-## Memory Management
-
-Because real-time audio applications process thousands of blocks per minute, preventing memory leaks, garbage collection (GC) thrashing, and pointer alignment issues is paramount.
-
-### 1. WASM Memory Alignment (Issue #1039 Fix)
-On 32-bit ARM Chrome (such as on older Android devices), creating a `TypedArray` view (e.g. `Float32Array`) on a misaligned WebAssembly heap pointer causes a hardware trap, crashing the browser tab.
-- **Universal 8-Byte Alignment**: WebAssembly bump allocators (`malloc` in WAT) round up the requested allocation size to the next multiple of 8:
-  $$\text{alignedSize} = (\text{size} + 7) \ \& \ \sim 7$$
-- **Byte Offset Construction**: In JavaScript, when instantiating TypedArrays pointing to the WASM memory buffer, passing memory indices is unsafe. The byte-offset constructor must be used:
-  ```typescript
-  // CORRECT: Passes byte offset directly; the runtime validates alignment.
-  const view = new Float32Array(wasm.memory.buffer, cachedBufferPtr, samples.length);
-  ```
-
-### 2. WASM 128-bit SIMD Vector Alignment (Issue #1080 Fix)
-WASM 128-bit SIMD operations (`wasm_v128_load` / `wasm_v128_store` in the DSP module) require 16-byte alignment. If a pointer is not 16-byte aligned, the instruction traps on 64-bit ARM Android Chrome.
-- **Universal 16-Byte Alignment**: The C++ and AudioWorklet allocations enforce 16-byte alignment:
-  $$\text{alignedSize} = (\text{size} + 15) \ \& \ \sim 15$$
-- **Guard Validation**: In `audioDSPWorklet.js`, the code asserts pointer alignment before execution:
-  ```javascript
-  if (this.inputBufferPtr % 16 !== 0 || this.outputBufferPtr % 16 !== 0) {
-      throw new RangeError("[AudioDSP] WASM malloc returned misaligned pointer");
-  }
-  ```
-
-### 3. Buffer Allocation Caching
-Allocating and freeing memory blocks on every audio frame causes memory fragmentation and triggers heavy GC cycles.
-- **Allocation Caching**: `noiseProcessor.ts` uses a persistent cache:
-  ```typescript
-  let cachedBufferPtr: number | null = null;
-  let cachedBufferSize = 0;
-  ```
-  The pointer is allocated once. A new allocation only occurs if a larger block size is requested.
-- **Heap Reset**: During teardown, `resetNoiseProcessor()` frees the pointer and rewinds the allocator bump pointer using `resetHeap()`.
-
----
-
-## Performance Optimizations
-
-1. **WASM Acceleration**: Intensive calculations (RMS calculations and Biquad filtering) are performed in compiled WebAssembly.
-2. **Buffer Caching**: Reuses WASM memory pointers for sequential audio frames, eliminating malloc overhead.
-3. **Delta-Time Throttling**: Limits frame updates to 60fps, preventing CPU spikes on high-refresh-rate screens.
-4. **Reduced Motion Mode**: Bypasses the 60fps canvas loop on devices with motion restrictions, lowering CPU usage.
-5. **No React Rerenders for Canvas**: Canvas drawings are performed directly using DOM references (`canvasRef.current.getContext`) without updating React states.
-
----
-
-## Known Limitations
-
-- **Synchronous Canvas Scrolling**: The waterfall spectrogram shifts columns using `getImageData` and `putImageData`. Because this executes on the CPU on the main thread, it is a performance bottleneck for large canvases.
-- **React State Overheads**: Live dB values are stored in React states (`setLiveDb`), which triggers React components to rerender at 60fps.
-- **GC Overhead from Sorting**: To compute averages, `averageDbFromFrequencyBins` creates a new array and sorts it:
-  ```typescript
-  const sorted = Array.from(bins).filter(v => Number.isFinite(v)).sort((a, b) => b - a);
-  ```
-  Doing this at 60fps generates 1024-element float arrays that trigger the garbage collector.
-
----
-
-## Future Improvements
-
-1. **OffscreenCanvas**: Offload canvas rendering to a Web Worker using `transferControlToOffscreen()` to free up the main thread.
-2. **WebGL Spectrogram**: Use a WebGL shader to copy columns and color pixels, moving rendering to the GPU.
-3. **Pre-allocated Sorting Buffer**: Implement an in-place sorting algorithm or maintain a pre-allocated index buffer to avoid garbage collection overhead during bin averaging.
-
----
-
-## Appendix: Verified Code Implementations
-
-### WASM RMS Calculator (`noise-processor.wat`)
-```wat
-(module
-  (memory (export "memory") 1)
-  (global $heapPtr (mut i32) (i32.const 1024))
-
-  (func (export "malloc") (param $size i32) (result i32)
-    (local $ptr i32)
-    (local $alignedSize i32)
-    (local.set $alignedSize (i32.and (i32.add (local.get $size) (i32.const 7)) (i32.const -8)))
-    (local.set $ptr (global.get $heapPtr))
-    (global.set $heapPtr (i32.add (global.get $heapPtr) (local.get $alignedSize)))
-    (local.get $ptr)
-  )
-
-  (func (export "free") (param $ptr i32) (param $size i32)
-    (local $alignedSize i32)
-    (local.set $alignedSize (i32.and (i32.add (local.get $size) (i32.const 7)) (i32.const -8)))
-    (if (i32.eq (i32.add (local.get $ptr) (local.get $alignedSize)) (global.get $heapPtr))
-      (then (global.set $heapPtr (local.get $ptr)))
-    )
-  )
-
-  (func (export "computeRMS") (param $ptr i32) (param $length i32) (result f32)
-    (local $sum f32)
-    (local $i i32)
-    (local $sample f32)
-    (local $byteOffset i32)
-    (local.set $sum (f32.const 0))
-    (local.set $i (i32.const 0))
-    (block $end
-      (loop $loop
-        (br_if $end (i32.ge_u (local.get $i) (local.get $length)))
-        (local.set $byteOffset (i32.add (local.get $ptr) (i32.shl (local.get $i) (i32.const 2))))
-        (local.set $sample (f32.load (local.get $byteOffset)))
-        (local.set $sum (f32.add (local.get $sum) (f32.mul (local.get $sample) (local.get $sample))))
-        (local.set $i (i32.add (local.get $i) (i32.const 1)))
-        (br $loop)
-      )
-    )
-    (f32.sqrt (f32.div (local.get $sum) (f32.convert_i32_u (local.get $length))))
-  )
-)
-```
-
-### WASM Alignment Helper (`noiseProcessor.ts`)
-```typescript
-function align8(n: number): number {
-  return (n + 7) & ~7;
-}
-
-function assertAligned(ptr: number, alignment: number): void {
-  if (ptr % alignment !== 0) {
-    throw new RangeError(
-      `[noiseProcessor] WASM malloc returned a misaligned pointer: ` +
-      `0x${ptr.toString(16)} is not ${alignment}-byte aligned.`
-    );
-  }
+  return () => {
+    stopped = true;
+    cancelAnimationFrame(animationFrame);
+  };
 }
 ```
 
-### WASM Vector Alignment and Probing (`audioDSPWorklet.js`)
-```javascript
-align16(n) {
-  return (n + 15) & ~15;
-}
+---
 
-static async probeSIMDSupport() {
-  try {
-    const testBytes = new Uint8Array([
-      0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60,
-      0x00, 0x01, 0x7b, 0x03, 0x02, 0x01, 0x00, 0x07, 0x08, 0x01, 0x04, 0x74,
-      0x65, 0x73, 0x74, 0x00, 0x00, 0x0a, 0x16, 0x01, 0x14, 0x00, 0xfd, 0x0c,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x0b,
-    ]);
-    const mod = await WebAssembly.compile(testBytes);
-    const inst = await WebAssembly.instantiate(mod);
-    inst.exports.test();
-    return true;
-  } catch {
-    return false;
-  }
-}
+## 21. Testing the mathematics
+
+Recommended unit tests:
+
+```ts
+describe("FFT mathematical helpers", () => {
+  it("calculates frequency resolution", () => {
+    expect(frequencyResolution(48_000, 2048)).toBeCloseTo(23.4375, 6);
+  });
+
+  it("maps a 1 kHz tone near bin 43", () => {
+    expect(binForFrequency(1000, 48_000, 2048)).toBe(43);
+  });
+
+  it("maps the decibel midpoint to half height", () => {
+    expect(decibelsToBarHeight(-55, 240, -100, -10)).toBeCloseTo(120, 6);
+  });
+
+  it("creates Hann endpoints near zero", () => {
+    const window = createHannWindow(2048);
+
+    expect(window[0]).toBeCloseTo(0, 6);
+
+    expect(window[window.length - 1]).toBeCloseTo(0, 6);
+  });
+
+  it("creates Blackman-Harris endpoints near zero", () => {
+    const window = createBlackmanHarrisWindow(2048);
+
+    expect(window[0]).toBeCloseTo(0.00006, 5);
+
+    expect(window[window.length - 1]).toBeCloseTo(0.00006, 5);
+  });
+});
 ```
+
+### Visual test signals
+
+Test with:
+
+- a single 1 kHz sine wave;
+- two closely spaced tones;
+- a strong tone beside a weak tone;
+- white noise;
+- pink noise;
+- silence;
+- an impulse;
+- live microphone speech.
+
+Expected 1 kHz location at 48 kHz and FFT 2048:
+
+\[
+k =
+\frac{1000 \times 2048}{48000}
+\approx 42.67
+\]
+
+Therefore the peak should appear near bin 43.
+
+---
+
+## 22. Common mistakes
+
+### Using `frequencyBinCount` as the FFT size
+
+Incorrect:
+
+```ts
+const resolution = sampleRate / analyser.frequencyBinCount;
+```
+
+Correct:
+
+```ts
+const resolution = sampleRate / analyser.fftSize;
+```
+
+`frequencyBinCount` is half the FFT size.
+
+### Treating dBFS as calibrated dB SPL
+
+A browser analyser is not an acoustic sound-level meter without calibration.
+
+### Forgetting the inverted canvas Y axis
+
+Correct:
+
+```ts
+const y = canvas.height - barHeight;
+```
+
+### Rendering more bars than pixels
+
+Aggregate bins when the canvas is narrower than the spectrum.
+
+### Applying a second window to `AnalyserNode` output
+
+`getFloatFrequencyData()` already returns analysed frequency data. Window
+functions apply to time-domain samples before FFT computation. Do not multiply
+frequency bins by a time-domain window.
+
+### Inventing FFT latency from frame rate
+
+FFT window duration is:
+
+\[
+N/f_s
+\]
+
+not:
+
+\[
+1/\text{display FPS}
+\]
+
+### Ignoring device-pixel ratio
+
+A canvas that is not resized for its backing resolution may appear blurry.
+
+---
+
+## 23. Recommended WorkSphere defaults
+
+```ts
+analyser.fftSize = 2048;
+analyser.minDecibels = -100;
+analyser.maxDecibels = -10;
+analyser.smoothingTimeConstant = 0.8;
+```
+
+For a 48 kHz device:
+
+```text
+Frequency resolution: 23.4375 Hz/bin
+Positive-frequency bins: 1024
+Nyquist frequency: 24 kHz
+FFT time span: 42.67 ms
+```
+
+Recommended visualization choices:
+
+| Concern                       | Recommendation                   |
+| ----------------------------- | -------------------------------- |
+| Window for custom FFT         | Hann                             |
+| Leakage-sensitive diagnostics | Four-term Blackman–Harris        |
+| Raw spectrum source           | `getFloatFrequencyData()`        |
+| Decibel normalization         | Clamp linearly in dB space       |
+| Bar height                    | `normalized × canvasHeight`      |
+| Bar top                       | `canvasHeight - barHeight`       |
+| Spectrogram color             | `spectrogramColor(normalized)`   |
+| Narrow canvases               | Aggregate bins by pixel          |
+| Frequency labels              | Use `bin × sampleRate / fftSize` |
+| High-DPI display              | Resize backing canvas            |
+| Uncalibrated input            | Label as relative/digital level  |
+
+---
+
+## 24. Review checklist
+
+### Mathematics
+
+- [ ] Frequency resolution uses `sampleRate / fftSize`.
+- [ ] Bin frequency uses `binIndex * sampleRate / fftSize`.
+- [ ] Positive-frequency bin count uses `fftSize / 2`.
+- [ ] Nyquist frequency uses `sampleRate / 2`.
+- [ ] Window equations use `N - 1` consistently.
+- [ ] Windowing occurs before a custom FFT.
+- [ ] Decibel values are normalized with valid bounds.
+
+### Rendering
+
+- [ ] Canvas height is positive.
+- [ ] Non-finite bins map safely to zero intensity.
+- [ ] Pixel heights are clamped.
+- [ ] Canvas Y inversion is handled.
+- [ ] High-DPI backing resolution is configured.
+- [ ] Bins are aggregated when necessary.
+- [ ] Color and height use the same intensity scale.
+
+### Interpretation
+
+- [ ] dBFS is not presented as calibrated dB SPL.
+- [ ] FFT resolution is distinguished from visual frame rate.
+- [ ] Window trade-offs are explained.
+- [ ] Amplitude correction is applied only when required.
+- [ ] Logarithmic axes avoid zero frequency.
+
+---
+
+## 25. Summary
+
+For a Web Audio analyser:
+
+\[
+\Delta f =
+\frac{f_s}{N}
+\]
+
+\[
+f_k =
+k\frac{f_s}{N}
+\]
+
+For decibel rendering:
+
+\[
+t =
+\operatorname{clamp}
+\left(
+\frac{dB-dB_{\min}}
+{dB_{\max}-dB_{\min}},
+0,
+1
+\right)
+\]
+
+\[
+h = tH
+\]
+
+\[
+y = H-h
+\]
+
+Use the Hann window for a balanced general-purpose custom FFT and the
+four-term Blackman–Harris window when strong leakage suppression is more
+important than narrow main-lobe width.

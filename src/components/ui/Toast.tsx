@@ -20,6 +20,7 @@ interface Toast {
     label: string;
     onClick: () => void;
   };
+  countdown?: number;
 }
 
 interface ToastContextValue {
@@ -27,6 +28,7 @@ interface ToastContextValue {
     message: string,
     type?: ToastType,
     action?: { label: string; onClick: () => void },
+    countdown?: number,
   ) => void;
 }
 
@@ -50,9 +52,29 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       message: string,
       type: ToastType = "success",
       action?: { label: string; onClick: () => void },
+      countdown?: number,
     ) => {
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setToasts((prev) => [...prev, { id, message, type, action }]);
+      setToasts((prev) => {
+        if (countdown !== undefined && message.includes("Rate limit")) {
+          const existingIndex = prev.findIndex(
+            (t) =>
+              t.countdown !== undefined && t.message.includes("Rate limit"),
+          );
+          if (existingIndex !== -1) {
+            const updated = [...prev];
+            updated[existingIndex] = {
+              ...updated[existingIndex],
+              countdown: Math.max(
+                updated[existingIndex].countdown || 0,
+                countdown,
+              ),
+            };
+            return updated;
+          }
+        }
+        return [...prev, { id, message, type, action, countdown }];
+      });
     },
     [],
   );
@@ -60,6 +82,31 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
+
+  useEffect(() => {
+    const handleRateLimit = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        retryAfter: number;
+        endpoint: string;
+      }>;
+      const retryAfter = customEvent.detail?.retryAfter || 60;
+      addToast(
+        "Rate limit reached. Try again in {countdown} seconds",
+        "error",
+        undefined,
+        retryAfter,
+      );
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("rate-limit-triggered", handleRateLimit);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("rate-limit-triggered", handleRateLimit);
+      }
+    };
+  }, [addToast]);
 
   return (
     <ToastContext.Provider value={{ toast: addToast }}>
@@ -89,6 +136,9 @@ function ToastContainer({
   );
 }
 
+/** Auto-dismiss timeout in milliseconds. */
+const TOAST_DURATION_MS = 4000;
+
 function ToastItem({
   toast,
   onRemove,
@@ -96,12 +146,42 @@ function ToastItem({
   toast: Toast;
   onRemove: (id: string) => void;
 }) {
+  const [countdown, setCountdown] = useState<number | undefined>(
+    toast.countdown,
+  );
+
+  // Track pointer over and focus within separately as suggested by CodeRabbit
+  const [isPointerOver, setIsPointerOver] = useState(false);
+  const [isFocusedWithin, setIsFocusedWithin] = useState(false);
+  const isInteracting = isPointerOver || isFocusedWithin;
+
   useEffect(() => {
+    if (toast.countdown === undefined) return;
+    setCountdown(toast.countdown);
+  }, [toast.countdown]);
+
+  useEffect(() => {
+    if (countdown === undefined) return;
+    if (countdown <= 0) {
+      onRemove(toast.id);
+      return;
+    }
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev !== undefined ? prev - 1 : undefined));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [countdown, toast.id, onRemove]);
+
+  useEffect(() => {
+    if (toast.countdown !== undefined) return;
+    if (isInteracting) return;
+
     const timer = setTimeout(() => {
       onRemove(toast.id);
-    }, 4000);
+    }, TOAST_DURATION_MS);
+
     return () => clearTimeout(timer);
-  }, [toast.id, onRemove]);
+  }, [toast.id, onRemove, toast.countdown, isInteracting]);
 
   const Icon =
     toast.type === "success"
@@ -116,6 +196,13 @@ function ToastItem({
         ? "text-red-500"
         : "text-amber-500";
 
+  const displayMessage =
+    countdown !== undefined
+      ? toast.message
+          .replace("{countdown}", String(countdown))
+          .replace("1 seconds", "1 second")
+      : toast.message;
+
   return (
     <div
       role="status"
@@ -124,10 +211,19 @@ function ToastItem({
         "bg-white/90 dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800",
         "animate-in slide-in-from-right-full fade-in duration-300",
       )}
+      onMouseEnter={() => setIsPointerOver(true)}
+      onMouseLeave={() => setIsPointerOver(false)}
+      onFocus={() => setIsFocusedWithin(true)}
+      onBlur={(e) => {
+        // If the new focus target is still inside this toast, don't clear the focus state
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          setIsFocusedWithin(false);
+        }
+      }}
     >
       <Icon className={cn("w-4 h-4 shrink-0", iconColor)} aria-hidden="true" />
       <div className="flex-1 flex flex-col items-start text-sm text-zinc-700 dark:text-zinc-300">
-        <span className="font-medium">{toast.message}</span>
+        <span className="font-medium">{displayMessage}</span>
         {toast.action && (
           <button
             type="button"

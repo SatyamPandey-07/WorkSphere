@@ -1,11 +1,24 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
 
-export function StudentDiscountVerification() {
+interface StudentDiscountVerificationProps {
+  /** Called after the proof is accepted and the user is verified server-side. */
+  onVerified?: () => void;
+}
+
+function createZkpWorker(): Worker {
+  return new Worker(
+    new URL("../../workers/zkpWorker.ts", import.meta.url),
+  );
+}
+
+export function StudentDiscountVerification({
+  onVerified,
+}: StudentDiscountVerificationProps) {
   const [studentId, setStudentId] = useState("");
   const [isProving, setIsProving] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -13,27 +26,36 @@ export function StudentDiscountVerification() {
   const [error, setError] = useState<string | null>(null);
 
   const workerRef = useRef<Worker | null>(null);
-
+  const onVerifiedRef = useRef(onVerified);
   useEffect(() => {
-    // Initialize worker
-    workerRef.current = new Worker(
-      new URL("../../workers/zkpWorker.ts", import.meta.url),
-    );
+    onVerifiedRef.current = onVerified;
+  });
 
-    workerRef.current.onmessage = async (e) => {
+  const terminateWorker = useCallback(() => {
+    if (workerRef.current) {
+      workerRef.current.terminate();
+      workerRef.current = null;
+    }
+  }, []);
+
+  const spawnWorker = useCallback(() => {
+    terminateWorker();
+    const worker = createZkpWorker();
+
+    worker.onmessage = async (e) => {
       const { type, proof, publicSignals, error: workerError } = e.data;
 
-      setIsProving(false);
-
       if (type === "error") {
+        setIsProving(false);
         setError(workerError || "Failed to generate zero-knowledge proof");
+        // Terminate the worker after failure so snarkjs WASM resources are freed
+        terminateWorker();
         return;
       }
 
       if (type === "success") {
         setIsVerifying(true);
         try {
-          // Send proof to API
           const response = await fetch("/api/user/verify-student", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -47,18 +69,34 @@ export function StudentDiscountVerification() {
           }
 
           setIsSuccess(true);
+          onVerifiedRef.current?.();
         } catch (err: any) {
           setError(err.message);
+          // Terminate the worker after API failure to free resources
+          terminateWorker();
         } finally {
+          setIsProving(false);
           setIsVerifying(false);
         }
       }
     };
 
-    return () => {
-      workerRef.current?.terminate();
+    worker.onerror = () => {
+      setIsProving(false);
+      setError("Worker crashed during proof generation");
+      terminateWorker();
     };
-  }, []);
+
+    workerRef.current = worker;
+    return worker;
+  }, [terminateWorker]);
+
+  useEffect(() => {
+    spawnWorker();
+    return () => {
+      terminateWorker();
+    };
+  }, [spawnWorker, terminateWorker]);
 
   const handleVerify = () => {
     if (!studentId) return;
@@ -66,8 +104,13 @@ export function StudentDiscountVerification() {
     setIsProving(true);
 
     try {
-      const t = BigInt(studentId.replace(/\D/g, "") || "0"); // Extract numbers
+      const t = BigInt(studentId.replace(/\D/g, "") || "0");
       const expectedCommit = (t * t + BigInt(5) * t + BigInt(17)).toString();
+
+      // If worker was terminated (after previous error), respawn it
+      if (!workerRef.current) {
+        spawnWorker();
+      }
 
       workerRef.current?.postMessage({
         identityToken: t.toString(),

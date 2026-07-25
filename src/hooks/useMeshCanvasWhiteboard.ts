@@ -6,6 +6,10 @@ import * as Y from "yjs";
 import YProvider from "y-partykit/provider";
 import { FailoverSyncManager } from "@/lib/edge/failoverSync";
 import { useMeshDataChannels } from "@/hooks/useMeshDataChannels";
+import {
+  compressYjsUpdate,
+  decompressYjsUpdate,
+} from "@/lib/crdt/yjsCompression";
 import type {
   ToolType,
   ShapeData,
@@ -77,7 +81,9 @@ export function useMeshCanvasWhiteboard(
     const doc = docRef.current;
     if (!doc) return;
     try {
-      Y.applyUpdate(doc, new Uint8Array(data), "mesh");
+      const rawUpdate = new Uint8Array(data);
+      const decompressed = decompressYjsUpdate(rawUpdate);
+      Y.applyUpdate(doc, decompressed, "mesh");
     } catch (err) {
       console.warn("Failed to apply mesh update from", peerId, err);
     }
@@ -94,7 +100,7 @@ export function useMeshCanvasWhiteboard(
 
     if (typeof getToken === "function") {
       getToken()
-        .then((t) => setToken(t ?? null))
+        .then((t: any) => setToken(t ?? null))
         .catch(() => setToken(null));
     }
   }, [canvasId, getToken]);
@@ -106,6 +112,9 @@ export function useMeshCanvasWhiteboard(
     const doc = new Y.Doc();
     docRef.current = doc;
     let newProvider: YProvider | null = null;
+    let handleStatus: (({ status }: { status: string }) => void) | null = null;
+    let handleSync: ((synced: boolean) => void) | null = null;
+
     try {
       newProvider = new YProvider(PARTYKIT_HOST, roomId, doc, {
         params: token ? { token } : {},
@@ -121,7 +130,7 @@ export function useMeshCanvasWhiteboard(
         },
       });
 
-      newProvider.on("status", ({ status }: { status: string }) => {
+      handleStatus = ({ status }: { status: string }) => {
         if (status === "disconnected") {
           failoverSync.handleDisconnect();
           setIsConnected(false);
@@ -133,13 +142,16 @@ export function useMeshCanvasWhiteboard(
           };
           failoverSync.handleConnect(sendFn, roomId);
         }
-      });
+      };
 
-      newProvider.on("sync", (synced: boolean) => {
+      handleSync = (synced: boolean) => {
         if (synced && failoverSync.getStatus() !== "syncing_snapshot") {
           setIsConnected(true);
         }
-      });
+      };
+
+      newProvider.on("status", handleStatus);
+      newProvider.on("sync", handleSync);
     } catch (err) {
       console.warn("YProvider connection initialization deferred:", err);
     }
@@ -170,7 +182,8 @@ export function useMeshCanvasWhiteboard(
     const sendToAll = mesh.sendToAll;
     const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
       if (origin === "mesh") return;
-      sendToAll(update.buffer as ArrayBuffer);
+      const compressed = compressYjsUpdate(update);
+      sendToAll(compressed.buffer as ArrayBuffer);
     };
     doc.on("update", handleDocUpdate);
     unsubDocUpdateRef.current = () => {
@@ -187,7 +200,10 @@ export function useMeshCanvasWhiteboard(
 
     const handleAwarenessChange = () => {
       if (!awareness) return;
-      const states = Array.from(awareness.getStates().entries());
+      const states = Array.from(awareness.getStates().entries()) as [
+        number,
+        any,
+      ][];
       const cursors: RemoteCursor[] = [];
       for (const [clientId, state] of states) {
         if (clientId === awareness.clientID) continue;
@@ -211,7 +227,11 @@ export function useMeshCanvasWhiteboard(
       awareness?.off("change", handleAwarenessChange);
       unsubDocUpdateRef.current?.();
       um.destroy();
-      newProvider?.disconnect();
+      if (newProvider) {
+        if (handleStatus) newProvider.off("status", handleStatus);
+        if (handleSync) newProvider.off("sync", handleSync);
+        newProvider.disconnect();
+      }
       doc.destroy();
       shapesRef.current = null;
       docRef.current = null;
@@ -268,6 +288,25 @@ export function useMeshCanvasWhiteboard(
     [localUserId],
   );
 
+  const deleteShape = useCallback(
+    (id: string) => {
+      const shapes = shapesRef.current;
+      const doc = docRef.current;
+      if (!shapes || !doc) return;
+
+      doc.transact(() => {
+        for (let i = 0; i < shapes.length; i++) {
+          const map = shapes.get(i);
+          if (map.get("id") === id) {
+            shapes.delete(i, 1);
+            break;
+          }
+        }
+      }, localUserId);
+    },
+    [localUserId],
+  );
+
   const undo = useCallback(() => {
     undoManagerRef.current?.undo();
   }, []);
@@ -299,6 +338,7 @@ export function useMeshCanvasWhiteboard(
   return {
     addShape,
     updateShape,
+    deleteShape,
     shapeSnapshots,
     remoteCursors,
     tool,

@@ -90,32 +90,41 @@ export function subscribeAvatarUpdated(
 | **Context Invalidation**                | Mutates global React Context or state store.                                                                        | Triggers recursive re-renders down every sub-tree consuming the user context.                                                  |
 | **Event-Driven (`ReactiveUserButton`)** | Dispatches `worksphere:avatar-updated` `CustomEvent`. `ReactiveUserButton` intercepts and updates local `useState`. | **Isolated Component Mutation**: Only the avatar image element re-renders. All sibling/parent layout trees remain undisturbed. |
 
-### 3.2 Component Implementation Flow
+### 3.2 Component Implementation Flow (Mermaid Sequence Diagram)
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant CAU as CustomAvatarUpload
+    participant Clerk as Clerk API / Storage
+    participant W as window (Event Bus)
+    participant RUB as ReactiveUserButton
+
+    U->>CAU: Selects new profile picture
+    CAU->>Clerk: Uploads image file
+    Clerk-->>CAU: 200 OK (Returns new image URL)
+    CAU->>W: dispatchAvatarUpdated(userId, newUrl)
+    Note over W: Emits CustomEvent: worksphere:avatar-updated
+    W->>RUB: Intercepts event via subscribeAvatarUpdated()
+    Note over RUB: Checks if detail.userId === local userId
+    RUB->>RUB: setAvatarUrl(detail.avatarUrl)
+    RUB-->>U: Updates local avatar image instantly (No page reload)
 ```
-+--------------------------+          1. Upload Avatar           +-----------------------------+
-| CustomAvatarUpload       | ----------------------------------> | Clerk API / Storage Backend |
-+--------------------------+                                     +-----------------------------+
-             |                                                                 |
-             | 2. Call dispatchAvatarUpdated(userId, newUrl)                   | 200 OK
-             v                                                                 v
-+--------------------------+
-| window.dispatchEvent     | --- [CustomEvent: "worksphere:avatar-updated"]
-+--------------------------+
-             |
-             | 3. Intercept via subscribeAvatarUpdated
-             v
-+----------------------------------------------------------------------------------------------+
-| ReactiveUserButton Component                                                                 |
-|                                                                                              |
-|  useEffect(() => {                                                                           |
-|    return subscribeAvatarUpdated((detail) => {                                               |
-|      if (detail.userId === userId) {                                                         |
-|        setAvatarUrl(detail.avatarUrl); // <-- Localized state update (Zero page re-render)  |
-|      }                                                                                       |
-|    });                                                                                       |
-|  }, [userId]);                                                                               |
-+----------------------------------------------------------------------------------------------+
+
+### 3.3 Forcing Image Cache Invalidation
+
+When a user uploads a new avatar, the browser might aggressively cache the old image if the storage URL remains identical. To solve this, `ReactiveUserButton` uses the `timestamp` included in the event payload to forcefully invalidate the browser cache by appending it as a query parameter.
+
+```typescript
+// Inside ReactiveUserButton.tsx
+subscribeAvatarUpdated((detail) => {
+  if (detail.userId === userId) {
+    // Append the timestamp to bypass the browser's aggressive image caching
+    const cacheBustedUrl = `${detail.avatarUrl}?t=${detail.timestamp}`;
+    setAvatarUrl(cacheBustedUrl);
+  }
+});
 ```
 
 ---
@@ -155,7 +164,9 @@ export function UserHeaderBadge({ userId, defaultAvatar }: { userId: string; def
     const unsubscribe = subscribeAvatarUpdated((detail: AvatarUpdatedDetail) => {
       // Filter by target userId to ensure multi-user safety
       if (detail.userId === userId && detail.avatarUrl) {
-        setAvatarUrl(detail.avatarUrl);
+        // Implement cache busting
+        const cacheBustedUrl = `${detail.avatarUrl}?t=${detail.timestamp}`;
+        setAvatarUrl(cacheBustedUrl);
       }
     });
 
@@ -180,3 +191,4 @@ export function UserHeaderBadge({ userId, defaultAvatar }: { userId: string; def
 1. **Clean Architecture**: Decouples UI display components from avatar mutation components.
 2. **Sub-millisecond Reactivity**: Updates avatar thumbnails instantaneously across the page header, sidebar, and map markers.
 3. **Zero Layout Thrashing**: Eliminates full-page re-renders and server component re-validation cycles.
+4. **Cache Safe**: Built-in cache busting ensures the UI always displays the freshest image data.

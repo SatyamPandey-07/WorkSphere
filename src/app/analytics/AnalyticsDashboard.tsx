@@ -154,16 +154,123 @@ export default function AnalyticsDashboard() {
 
   if (loading && !data) {
     return (
-      <div className="min-h-screen bg-white dark:bg-zinc-950 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <RefreshCw className="w-12 h-12 accent-text animate-spin" />
-          <div className="text-center">
-            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500">
-              Decrypting Neural Identity...
-            </p>
-            <p className="text-[8px] font-bold text-zinc-400 mt-2 uppercase tracking-widest animate-pulse">
-              Syncing Cloud Ledger
-            </p>
+      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 font-sans p-6 md:p-12">
+        <div className="max-w-7xl mx-auto space-y-12">
+          {/* Header Skeleton */}
+          <div className="flex flex-col md:flex-row justify-between gap-8">
+            <div className="space-y-4">
+              <div className="w-24 h-4 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+              <div className="flex items-center gap-4">
+                <div className="w-20 h-20 rounded-[2rem] bg-zinc-200 dark:bg-zinc-800 animate-pulse"></div>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <div className="w-24 h-4 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                    <div className="w-12 h-4 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                  </div>
+                  <div className="w-64 h-10 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                  <div className="w-40 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                </div>
+              </div>
+            </div>
+            <div className="hidden lg:flex items-center gap-3">
+              <div className="w-14 h-14 rounded-2xl bg-zinc-200 dark:bg-zinc-800 animate-pulse"></div>
+              <div className="h-10 w-px bg-zinc-200 dark:bg-zinc-800 mx-2"></div>
+              <div className="space-y-2 text-right">
+                <div className="w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse ml-auto"></div>
+                <div className="w-12 h-8 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse ml-auto"></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Grid Skeleton */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-[2.5rem] shadow-sm"
+              >
+                <div className="w-16 h-16 rounded-2xl bg-zinc-200 dark:bg-zinc-800 animate-pulse mb-6"></div>
+                <div className="w-20 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse mb-3"></div>
+                <div className="w-16 h-8 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+              </div>
+            ))}
+          </div>
+
+          {/* Progress Card Skeleton */}
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-[2.5rem] shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6">
+              <div className="space-y-3">
+                <div className="flex gap-3">
+                  <div className="w-20 h-5 rounded-full bg-zinc-200 dark:bg-zinc-800 animate-pulse"></div>
+                  <div className="w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse mt-1"></div>
+                </div>
+                <div className="w-64 h-8 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+              </div>
+              <div className="space-y-3 md:text-right">
+                <div className="w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse md:ml-auto"></div>
+                <div className="flex flex-wrap gap-4">
+                  <div className="w-20 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                  <div className="w-20 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                  <div className="w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                </div>
+              </div>
+            </div>
+            <div className="w-full h-4 bg-zinc-200 dark:bg-zinc-800 rounded-full animate-pulse"></div>
+          </div>
+
+          {/* Lists Skeleton */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+            <div className="lg:col-span-2 space-y-6">
+              <div className="flex justify-between items-center">
+                <div className="w-48 h-6 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                <div className="w-24 h-4 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+              </div>
+              <div className="grid gap-4">
+                {[1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] p-6 flex flex-col md:flex-row gap-6 justify-between"
+                  >
+                    <div className="flex gap-5">
+                      <div className="w-16 h-16 rounded-[1.25rem] bg-zinc-200 dark:bg-zinc-800 animate-pulse"></div>
+                      <div className="space-y-2 py-1">
+                        <div className="w-32 h-5 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                        <div className="w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                      </div>
+                    </div>
+                    <div className="flex gap-6 items-center">
+                      <div className="space-y-2 text-right">
+                        <div className="w-20 h-4 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse ml-auto"></div>
+                        <div className="w-16 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse ml-auto"></div>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="w-12 h-12 rounded-2xl bg-zinc-200 dark:bg-zinc-800 animate-pulse"></div>
+                        <div className="w-12 h-12 rounded-2xl bg-zinc-200 dark:bg-zinc-800 animate-pulse"></div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-8">
+              <div>
+                <div className="w-32 h-4 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse mb-6"></div>
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-4 rounded-2xl flex gap-3"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-zinc-200 dark:bg-zinc-800 animate-pulse"></div>
+                      <div className="space-y-2 py-1 flex-1">
+                        <div className="w-24 h-4 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                        <div className="w-16 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -601,6 +708,26 @@ export default function AnalyticsDashboard() {
                             >
                               <path
                                 d="M12 3C10.8251 4.17493 10.1762 5.76045 10.1762 7.41727C10.1762 9.07409 10.8251 10.6596 12 11.8345C10.2223 11.954 8.46823 11.3644 7.15949 10.2078C5.85074 9.05121 5.09341 7.42398 5.07019 5.71536C5.04698 4.00673 5.76001 2.36199 7.03714 1.1766C4.84656 2.01254 3.06456 3.65484 2.03666 5.78523C1.00876 7.91563 0.814324 10.3601 1.491 12.6457C2.16768 14.9312 3.6631 16.8778 5.68725 18.1077C7.7114 19.3377 10.1066 19.7523 12.41 19.2711C14.7134 18.79 16.7454 17.4514 18.1132 15.5146C19.481 13.5779 20.076 11.2037 19.7828 8.85236C19.4897 6.50106 18.3308 4.3648 16.5305 2.85764C14.7302 1.35048 12.4287 0.591079 10.072 0.725998C10.7485 1.40879 11.4552 2.16239 12 3Z"
+                                fill="currentColor"
+                              />
+                            </svg>
+                          )}
+                          {badge.icon === "compass" && (
+                            <svg
+                              className="w-8 h-8 text-amber-500"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <circle
+                                cx="12"
+                                cy="12"
+                                r="9"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              />
+                              <path
+                                d="M12 8L10 16L12 14L14 16L12 8Z"
                                 fill="currentColor"
                               />
                             </svg>

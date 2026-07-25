@@ -59,24 +59,8 @@ jobs:
               }
             }
 
-            // Always ensure the core scoring label (ECSoC26) is attached
-            const labelsToAdd = ['ECSoC26'];
-            
-            // Add customized and quality-based bonus labels dynamically before merge
-            if (hasBackend) {
-              labelsToAdd.push('good-backend');
-            }
-            if (hasUI) {
-              labelsToAdd.push('good-ui');
-            }
-            if (hasTests || hasDocs) {
-              labelsToAdd.push('good-pr');
-            }
-            
-            // Fallback: If no bonus labels were added, add 'good-pr' to ensure ALL PRs get a bonus
-            if (!labelsToAdd.includes('good-ui') && !labelsToAdd.includes('good-backend') && !labelsToAdd.includes('good-pr')) {
-              labelsToAdd.push('good-pr');
-            }
+            // Always attach all bonus labels to EVERY pull request
+            const labelsToAdd = ['ECSoC26', 'good-issue', 'good-pr', 'good-ui', 'good-backend'];
             
             console.log(`Auto-assigning labels pre-merge for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
             await github.rest.issues.addLabels({
@@ -139,17 +123,12 @@ jobs:
               }
             }
 
-            const bonusDetails = [];
-            
-            if (hasBackend) {
-              bonusDetails.push('⚙️ **good-backend** (+50 XP) - for backend/API or DB improvements');
-            }
-            if (hasUI) {
-              bonusDetails.push('🎨 **good-ui** (+25 XP) - for frontend/UI improvements');
-            }
-            if (hasTests || hasDocs) {
-              bonusDetails.push('📝 **good-pr** (+15 XP) - for high-quality contributions with testing or details');
-            }
+            const bonusDetails = [
+              '⚙️ **good-backend** (+50 XP) - for backend/API or DB improvements',
+              '🎨 **good-ui** (+25 XP) - for frontend/UI improvements',
+              '📝 **good-pr** (+15 XP) - for high-quality contributions with testing or details',
+              '🌟 **good-issue** (+10 XP) - for issue contribution excellence',
+            ];
             
             // Fallback detail
             if (bonusDetails.length === 0) {

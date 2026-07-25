@@ -1059,7 +1059,10 @@ self.addEventListener("push", (event) => {
       data = event.data.json();
     } catch {
       try {
-        const textPayload = typeof event.data.text === "function" ? event.data.text() : String(event.data);
+        const textPayload =
+          typeof event.data.text === "function"
+            ? event.data.text()
+            : String(event.data);
         try {
           data = JSON.parse(textPayload);
         } catch {
@@ -1090,11 +1093,14 @@ self.addEventListener("push", (event) => {
     ],
   };
 
-  const swRegistration = (typeof self !== "undefined" && self && self.registration)
-    ? self.registration
-    : (typeof globalThis !== "undefined" && globalThis.self && globalThis.self.registration)
-      ? globalThis.self.registration
-      : null;
+  const swRegistration =
+    typeof self !== "undefined" && self && self.registration
+      ? self.registration
+      : typeof globalThis !== "undefined" &&
+          globalThis.self &&
+          globalThis.self.registration
+        ? globalThis.self.registration
+        : null;
   if (swRegistration && swRegistration.showNotification) {
     event.waitUntil(
       swRegistration.showNotification(data.title || "WorkSphere", options),

@@ -1787,8 +1787,9 @@ export function VenueDetailDialog({
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="text-xs font-bold text-zinc-200 uppercase">
-                          {review.user?.firstName || "Nomad"}{" "}
-                          {review.user?.lastName || "Scout"}
+                          {review.user
+                            ? `${review.user.firstName || "Nomad"} ${review.user.lastName || "Scout"}`
+                            : "Anonymous"}
                         </span>
                         <div className="flex items-center gap-1.5 mt-1 text-[9px] font-mono text-zinc-400">
                           <span>

@@ -74,7 +74,11 @@ export function usePreferenceReranking(results: Venue[]) {
       if (!personalizationEnabled) {
         return (venuesToRank || []).map(
           (v) =>
-            ({ ...v, similarityScore: 0, isRecommended: false }) as RerankedVenue,
+            ({
+              ...v,
+              similarityScore: 0,
+              isRecommended: false,
+            }) as RerankedVenue,
         );
       }
       return rerankVenues(venuesToRank || [], userVector);

@@ -14,6 +14,7 @@ import { CurrencyProvider } from "@/context/CurrencyContext";
 import { SyncManager } from "../hooks/usePWA";
 import { ToastProvider } from "../components/ui/Toast";
 import { PWAUpdateListener } from "../components/PWAUpdateListener";
+import { KeyboardShortcutsModal } from "../components/KeyboardShortcutsModal";
 
 const THEME_INIT_SCRIPT = `
 (function () {
@@ -162,6 +163,7 @@ export default async function RootLayout({
         <ToastProvider>
           <CurrencyProvider>
             <PWAUpdateListener />
+            <KeyboardShortcutsModal />
             <I18nProvider>{children}</I18nProvider>
           </CurrencyProvider>
         </ToastProvider>

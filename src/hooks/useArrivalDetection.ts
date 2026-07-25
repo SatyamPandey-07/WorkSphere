@@ -13,6 +13,7 @@ export interface UseArrivalDetectionOptions {
   venueName?: string;
   latitude?: number;
   longitude?: number;
+  altitude?: number;
   geofenceRadius?: number;
   beacon?: VenueBeaconConfig;
   onArrived?: () => void;
@@ -38,6 +39,8 @@ export function getDistanceInMeters(
   lon1: number,
   lat2: number,
   lon2: number,
+  alt1?: number | null,
+  alt2?: number,
 ): number {
   const R = 6371e3; // Earth radius in meters
   const phi1 = (lat1 * Math.PI) / 180;
@@ -53,7 +56,19 @@ export function getDistanceInMeters(
       Math.sin(deltaLambda / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-  return R * c;
+  const d2d = R * c;
+
+  if (
+    alt1 !== undefined &&
+    alt1 !== null &&
+    alt2 !== undefined &&
+    alt2 !== null
+  ) {
+    const deltaAlt = alt1 - alt2;
+    return Math.sqrt(d2d * d2d + deltaAlt * deltaAlt);
+  }
+
+  return d2d;
 }
 
 // Overload signatures
@@ -102,6 +117,7 @@ export function useArrivalDetection(
     venueId,
     latitude,
     longitude,
+    altitude,
     geofenceRadius = 50,
     beacon,
     onArrived,
@@ -143,10 +159,21 @@ export function useArrivalDetection(
     }
 
     const handleSuccess = (position: GeolocationPosition) => {
-      const { latitude: lat1, longitude: lon1 } = position.coords;
+      const {
+        latitude: lat1,
+        longitude: lon1,
+        altitude: alt1,
+      } = position.coords;
       setCurrentCoords({ latitude: lat1, longitude: lon1 });
 
-      const dist = getDistanceInMeters(lat1, lon1, latitude, longitude);
+      const dist = getDistanceInMeters(
+        lat1,
+        lon1,
+        latitude,
+        longitude,
+        alt1,
+        altitude,
+      );
       setDistanceToVenue(dist);
 
       const inside = dist <= geofenceRadius;
@@ -174,7 +201,7 @@ export function useArrivalDetection(
     return () => {
       navigator.geolocation.clearWatch(watchId);
     };
-  }, [isVectorMode, latitude, longitude, geofenceRadius, onArrived]);
+  }, [isVectorMode, latitude, longitude, altitude, geofenceRadius, onArrived]);
 
   // 3. Web Bluetooth Scanning callback
   const scanBluetooth = useCallback(async () => {

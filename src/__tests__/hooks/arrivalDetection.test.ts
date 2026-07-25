@@ -225,5 +225,69 @@ describe("useArrivalDetection", () => {
         "Geolocation error: User denied location authorization",
       );
     });
+
+    it("incorporates altitude delta for high-altitude geofence calculations", () => {
+      const highAltitudeOptions = {
+        ...venueOptions,
+        altitude: 1500,
+      };
+
+      const { result } = renderHook(() =>
+        useArrivalDetection(highAltitudeOptions),
+      );
+
+      act(() => {
+        watchPositionSuccessCallback({
+          coords: {
+            latitude: 40.7128,
+            longitude: -74.006,
+            altitude: 1550,
+            accuracy: 5,
+          },
+        });
+      });
+
+      expect(result.current.distanceToVenue).toBeCloseTo(50);
+      expect(result.current.inGeofence).toBe(true);
+
+      act(() => {
+        watchPositionSuccessCallback({
+          coords: {
+            latitude: 40.7128,
+            longitude: -74.006,
+            altitude: 1560,
+            accuracy: 5,
+          },
+        });
+      });
+
+      expect(result.current.distanceToVenue).toBeCloseTo(60);
+      expect(result.current.inGeofence).toBe(false);
+    });
+
+    it("falls back to 2D distance calculation when user altitude is not available", () => {
+      const highAltitudeOptions = {
+        ...venueOptions,
+        altitude: 1500,
+      };
+
+      const { result } = renderHook(() =>
+        useArrivalDetection(highAltitudeOptions),
+      );
+
+      act(() => {
+        watchPositionSuccessCallback({
+          coords: {
+            latitude: 40.7128,
+            longitude: -74.006,
+            altitude: null,
+            accuracy: 5,
+          },
+        });
+      });
+
+      expect(result.current.distanceToVenue).toBeCloseTo(0);
+      expect(result.current.inGeofence).toBe(true);
+    });
   });
 });

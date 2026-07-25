@@ -12,6 +12,7 @@ import {
   Landmark,
   Calendar,
   Clock,
+  AlertTriangle,
   User,
   Download,
   MapPin,
@@ -72,7 +73,7 @@ export function BookingModal({
   mode = "booking",
 }: BookingModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const _retryAfter = useRateLimit("book");
+  const retryAfter = useRateLimit("book");
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
   >("details");
@@ -483,6 +484,11 @@ export function BookingModal({
       const responseData = await response.json();
 
       if (!response.ok) {
+        if (response.status === 429) {
+          setIsSubmitting(false);
+          setStep("details");
+          return;
+        }
         throw new Error(
           responseData.details ||
             responseData.error ||
@@ -1029,9 +1035,27 @@ export function BookingModal({
                 </div>
               </div>
 
+              {retryAfter > 0 && (
+                <div className="flex items-center gap-2.5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 animate-in slide-in-from-top-2 duration-300">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-wider">
+                      Rate Limit Reached
+                    </p>
+                    <p className="text-[11px] font-mono font-semibold mt-0.5">
+                      Retry in{" "}
+                      <span className="tabular-nums tracking-tight">
+                        {retryAfter}s
+                      </span>
+                    </p>
+                  </div>
+                  <Clock className="w-4 h-4 shrink-0 animate-pulse" />
+                </div>
+              )}
+
               <button
                 onClick={handleBooking}
-                disabled={isSubmitting}
+                disabled={isSubmitting || retryAfter > 0}
                 className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white font-black uppercase tracking-widest py-6 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-2xl shadow-green-500/20 hover:scale-[1.02] disabled:hover:scale-100 transition-all active:scale-95 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (

@@ -29,6 +29,8 @@ export async function POST(req: Request) {
         {
           error:
             "Rate limit exceeded. Please wait before making more bookings.",
+          retryAfterSeconds: retryAfter,
+          retryAfter,
         },
         {
           status: 429,

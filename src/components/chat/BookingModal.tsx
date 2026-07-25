@@ -114,6 +114,9 @@ export function BookingModal({
   };
 
   const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
     const shouldClose = shouldCloseFromBackdrop(
       pointerDownStartedOnBackdrop.current,
       isModalBackdropClick(event),

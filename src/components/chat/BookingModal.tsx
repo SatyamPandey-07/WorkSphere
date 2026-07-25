@@ -34,7 +34,11 @@ import { ReceiptVerificationModal } from "@/components/receipt/ReceiptVerificati
 
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
-import { shouldCloseFromBackdrop } from "@/lib/modal-interactions";
+import {
+  handleModalBackdropClick,
+  isModalBackdropClick,
+  shouldCloseFromBackdrop,
+} from "@/lib/modal-interactions";
 import { apiFetch } from "@/lib/apiClient";
 import { useRateLimit } from "@/hooks/useRateLimit";
 
@@ -66,7 +70,7 @@ export function BookingModal({
   mode = "booking",
 }: BookingModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const retryAfter = useRateLimit("book");
+  const _retryAfter = useRateLimit("book");
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
   >("details");
@@ -106,19 +110,17 @@ export function BookingModal({
   const pointerDownStartedOnBackdrop = useRef(false);
 
   const handleBackdropPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    pointerDownStartedOnBackdrop.current = event.target === event.currentTarget;
+    pointerDownStartedOnBackdrop.current = isModalBackdropClick(event);
   };
 
   const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
-    const clickEndedOnBackdrop = event.target === event.currentTarget;
+    const shouldClose = shouldCloseFromBackdrop(
+      pointerDownStartedOnBackdrop.current,
+      isModalBackdropClick(event),
+    );
 
-    if (
-      shouldCloseFromBackdrop(
-        pointerDownStartedOnBackdrop.current,
-        clickEndedOnBackdrop,
-      )
-    ) {
-      onClose();
+    if (shouldClose) {
+      handleModalBackdropClick(event, onClose);
     }
 
     pointerDownStartedOnBackdrop.current = false;

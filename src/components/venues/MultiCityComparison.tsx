@@ -18,6 +18,7 @@ import {
 import { Venue } from "@/components/chat/ChatMessages";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { generateMultiCityPdfReport } from "@/lib/multiCityPdfExport";
+import { VenueSearchDrawer } from "./VenueSearchDrawer";
 
 const DEFAULT_CITIES = [
   "San Francisco",
@@ -60,6 +61,22 @@ export function MultiCityComparison({
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
 
+  // Mobile Filter Drawer States
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [filterSearchText, setFilterSearchText] = useState("");
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const [filterNoiseLevel, setFilterNoiseLevel] = useState("all");
+  const [filterPriceRange, setFilterPriceRange] = useState("all");
+  const [filterCategory, setFilterCategory] = useState("all");
+
+  const handleClearFilters = useCallback(() => {
+    setFilterSearchText("");
+    setSelectedAmenities([]);
+    setFilterNoiseLevel("all");
+    setFilterPriceRange("all");
+    setFilterCategory("all");
+  }, []);
+
   const handleExportPdfReport = async () => {
     if (selectedCities.length === 0) return;
     setIsExportingPdf(true);
@@ -68,7 +85,9 @@ export function MultiCityComparison({
         selectedCities,
         venues,
       });
-      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: "application/pdf" });
+      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], {
+        type: "application/pdf",
+      });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -415,6 +434,23 @@ export function MultiCityComparison({
           onToggleFavorite={() => {}}
         />
       )}
+
+      {/* Mobile Venue Search & Filter Drawer */}
+      <VenueSearchDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        searchText={filterSearchText}
+        onSearchChange={setFilterSearchText}
+        selectedAmenities={selectedAmenities}
+        onAmenitiesChange={setSelectedAmenities}
+        noiseLevel={filterNoiseLevel}
+        onNoiseLevelChange={setFilterNoiseLevel}
+        priceRange={filterPriceRange}
+        onPriceRangeChange={setFilterPriceRange}
+        category={filterCategory}
+        onCategoryChange={setFilterCategory}
+        onClearFilters={handleClearFilters}
+      />
     </section>
   );
 }

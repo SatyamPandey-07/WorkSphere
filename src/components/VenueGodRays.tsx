@@ -56,7 +56,13 @@ export function VenueGodRays({
 
   const sunPos = useMemo(() => {
     if (typeof lat !== "number" || typeof lng !== "number") {
-      return { sunX: 0.75, sunY: 0.85, isAboveHorizon: true };
+      return {
+        sunX: 0.75,
+        sunY: 0.85,
+        isAboveHorizon: true,
+        altitude: 0,
+        azimuth: 0,
+      };
     }
     const pos = calculateSunPosition(lat, lng);
     const sunX = Math.cos((pos.azimuth * Math.PI) / 180) * 0.4 + 0.5;
@@ -65,6 +71,8 @@ export function VenueGodRays({
       sunX: Math.max(0.05, Math.min(0.95, sunX)),
       sunY: Math.max(0.05, Math.min(0.95, sunY)),
       isAboveHorizon: pos.isAboveHorizon,
+      altitude: pos.altitude,
+      azimuth: pos.azimuth,
     };
   }, [lat, lng]);
 
@@ -151,12 +159,16 @@ export function VenueGodRays({
             </button>
           </div>
         </div>
-
-        <div className="flex items-end justify-between gap-3">
+        <div className="flex items-end justify-between">
           <div className="bg-black/65 backdrop-blur-xl border border-white/10 p-2.5 rounded-xl text-white text-[10px]">
             <p className="font-bold text-amber-200">Volumetric Light Shafts</p>
+
             <p className="text-zinc-400 mt-0.5">
-              32-sample radial blur with procedural noise perturbation
+              Elevation: {sunPos.altitude.toFixed(1)}°
+            </p>
+
+            <p className="text-zinc-400">
+              Azimuth: {sunPos.azimuth.toFixed(1)}°
             </p>
             <div className="flex items-center gap-2 mt-2 pointer-events-auto">
               <label className="text-zinc-500 text-[9px] uppercase tracking-wider shrink-0">

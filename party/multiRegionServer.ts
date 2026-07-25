@@ -108,6 +108,7 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
     this.stateSync.setBroadcastFn((message) => {
       this.room.broadcast(message);
     });
+    this.stateSync.startSync();
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
@@ -208,12 +209,18 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
     // Handle presence/cursor messages with cross-region sync
     conn.addEventListener("message", (event: { data: unknown }) => {
       try {
-        const data = JSON.parse(event.data as string);
+        const raw = event.data as string;
+        if (raw.length > 10_240) return;
+
+        const data = JSON.parse(raw);
 
         if (data.type === "presence" || data.type === "cursor") {
-          this.room.broadcast(event.data as string, [conn.id]);
+          const state = conn.state as { userId?: string } | null;
+          if (!state?.userId || data.userId !== state.userId) return;
+          if (typeof data.venueId !== "string") return;
 
-          // Update cross-region state
+          this.room.broadcast(raw, [conn.id]);
+
           if (data.type === "cursor" && data.venueId) {
             this.stateSync.updatePresence(
               conn.id,
@@ -224,6 +231,8 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
         }
 
         if (data.type === "cross_region_sync") {
+          if (!data.sourceRegion || typeof data.sourceRegion !== "string")
+            return;
           const remoteState = this.stateSync.deserializeState(
             data.state as string,
           );

@@ -161,7 +161,9 @@ export function buildVenueSearchSchema() {
     if (config.type === "boolean") {
       shape[key] = z.coerce.boolean().optional();
     } else if (config.type === "enum" && config.values) {
-      shape[key] = z.enum(config.values as [string, ...string[]]).optional();
+      shape[key] = z
+        .enum(config.values as unknown as [string, ...string[]])
+        .optional();
     }
   }
 

@@ -23,6 +23,17 @@ export interface SunPosition {
   normalizedAltitude: number;
 }
 
+/** Result of a patio shade calculation for a given venue orientation. */
+export interface PatioShadeResult {
+  /** Sun altitude in degrees at the requested moment. */
+  altitude: number;
+  /** Sun azimuth in degrees at the requested moment. */
+  azimuth: number;
+  /** Angle in degrees between the sun's azimuth and the patio's facing direction. */
+  angleFromOrientation: number;
+  /** Estimated percentage of the patio seating area left in shade, 0–100. */
+  shadePercentage: number;
+}
 /**
  * Return the 1-based day-of-year for the given date.
  *
@@ -145,8 +156,80 @@ export function calculateSunPosition(
   return {
     altitude,
     azimuth,
-    // Sun is considered visible once it rises above astronomical twilight.
     isAboveHorizon: altitude > -6,
     normalizedAltitude,
+  };
+}
+
+/**
+ * Estimate the percentage of a patio that is shaded, based on solar
+ * altitude/azimuth and the direction the patio's shade structure faces.
+ *
+ * This is a simplified model intended for UI shade previews, not a precise
+ * architectural shadow simulation:
+ *   - If the sun is below the horizon, the patio is fully "shaded" (dark),
+ *     so we return 100%.
+ *   - The closer the sun's azimuth is to the venue's orientation (i.e. the
+ *     sun is shining directly toward the open side of the patio), the less
+ *     shade coverage there is.
+ *   - Low sun altitude (near sunrise/sunset) produces longer shadows, which
+ *     increases shade coverage even when the angle lines up.
+ *
+ * @param lat - Latitude in decimal degrees (positive = north).
+ * @param lon - Longitude in decimal degrees (positive = east).
+ * @param date - JS `Date` object (defaults to `new Date()`), read in UTC.
+ * @param venueOrientation - Compass bearing in degrees [0, 360) that the
+ *   patio's open side faces (0 = north, 90 = east, 180 = south, 270 = west).
+ * @returns A {@link PatioShadeResult} describing the sun position and the
+ *          estimated shade percentage.
+ */
+export function getPatioShadePercentage(
+  lat: number,
+  lon: number,
+  date: Date = new Date(),
+  venueOrientation: number = 180,
+): PatioShadeResult {
+  const { altitude, azimuth, isAboveHorizon } = calculateSunPosition(
+    lat,
+    lon,
+    date,
+  );
+
+  if (!isAboveHorizon) {
+    return {
+      altitude,
+      azimuth,
+      angleFromOrientation: 180,
+      shadePercentage: 100,
+    };
+  }
+
+  // Smallest angular difference between sun azimuth and patio orientation,
+  // normalised to [0, 180].
+  let angleFromOrientation = Math.abs(azimuth - venueOrientation) % 360;
+  if (angleFromOrientation > 180) {
+    angleFromOrientation = 360 - angleFromOrientation;
+  }
+
+  // Direct-sun factor: 0 when the sun faces straight into the patio
+  // (angleFromOrientation = 0), 1 when the sun is behind the patio
+  // structure (angleFromOrientation = 180).
+  const angleFactor = angleFromOrientation / 180;
+
+  // Low-altitude factor: sun near the horizon casts long shadows that add
+  // extra shade coverage regardless of angle. Full effect below 10°,
+  // tapering off to no extra effect by 60° and above.
+  const altitudeFactor = 1 - Math.max(0, Math.min(1, (altitude - 10) / 50));
+
+  // Blend the two factors: angle dominates, low sun angle adds a boost.
+  const rawShade = angleFactor * 0.7 + altitudeFactor * 0.3;
+
+  const shadePercentage = Math.round(Math.max(0, Math.min(1, rawShade)) * 100);
+
+  return {
+    altitude,
+    azimuth,
+    angleFromOrientation,
+    shadePercentage,
   };
 }

@@ -23,7 +23,7 @@ struct DensityParams {
   worldWidth: f32,
   worldHeight: f32,
   decay: f32,
-  pad0: f32,
+  densityMultiplier: f32,
   pad1: f32,
 };
 
@@ -65,7 +65,7 @@ fn cs_density(@builtin(global_invocation_id) gid: vec3<u32>) {
   let cellIdx = gy * params.gridWidth + gx;
 
   // Accumulate density (atomic not available in base WGSL, use read_write)
-  densityGrid[cellIdx] = densityGrid[cellIdx] + 1.0;
+  densityGrid[cellIdx] = densityGrid[cellIdx] + params.densityMultiplier;
 }
 `;
 

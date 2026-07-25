@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, Download, Sparkles } from "lucide-react";
+import { purgeStaleWeights } from "@/lib/federated/weightDb";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -71,6 +72,12 @@ export function useSyncWorker() {
 export function SyncManager() {
   useSyncWorker();
   usePeriodicAvailabilitySync();
+
+  useEffect(() => {
+    // Non-blocking purge of stale federated learning model weights on startup
+    purgeStaleWeights().catch(() => {});
+  }, []);
+
   return null;
 }
 

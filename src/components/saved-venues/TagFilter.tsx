@@ -21,6 +21,7 @@ export function TagFilter({
   const [search, setSearch] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const uniqueTags = useMemo(() => {
     const seen = new Map<string, FavoriteTag>();
@@ -91,14 +92,28 @@ export function TagFilter({
           <div className="relative mb-2">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
             <input
+              ref={inputRef}
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search tags..."
-              className="w-full pl-8 pr-3 py-1.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:border-[var(--primary-accent)] focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-1 dark:focus:ring-offset-zinc-900 text-zinc-900 dark:text-white placeholder:text-zinc-400"
+              className="w-full pl-8 pr-8 py-1.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:border-[var(--primary-accent)] focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-1 dark:focus:ring-offset-zinc-900 text-zinc-900 dark:text-white placeholder:text-zinc-400"
               aria-label="Search tags"
               autoFocus
             />
+            {search && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  inputRef.current?.focus();
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)]"
+                aria-label="Clear search"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <div className="max-h-48 overflow-y-auto space-y-0.5">

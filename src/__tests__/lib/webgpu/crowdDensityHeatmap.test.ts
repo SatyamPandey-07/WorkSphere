@@ -6,7 +6,7 @@ import {
   agentVertexShader,
   agentFragmentShader,
 } from "@/lib/webgpu/crowdShaders.wgsl";
-
+import { CrowdSimulationEngine } from "@/lib/webgpu/crowdSimulation";
 describe("Crowd Density Heatmap Shaders (#1267)", () => {
   describe("densityComputeShader", () => {
     it("exports a non-empty WGSL string", () => {
@@ -116,8 +116,63 @@ describe("Crowd Density Heatmap Shaders (#1267)", () => {
         expect(s.length).toBeGreaterThan(50);
       }
 
-      // Density shader is distinct from boids compute shader
+// Density shader is distinct from boids compute shader
       expect(densityComputeShader).not.toBe(computeShader);
     });
+  });
+});
+
+describe("Adaptive density heatmap tile caching (#1557)", () => {
+  function createEngine() {
+    const canvas = { width: 100, height: 100 } as unknown as HTMLCanvasElement;
+    return new CrowdSimulationEngine(canvas, {
+      agentCount: 10,
+      worldWidth: 50,
+      worldHeight: 50,
+      exitPositions: [[25, 0]],
+      wallSegments: [],
+    });
+  }
+
+  it("keeps viewport velocity at zero when the viewport does not change", () => {
+    const engine = createEngine();
+    engine.updateViewport(10, 10, 1);
+    engine.updateViewport(10, 10, 1);
+
+    expect((engine as any).viewportVelocity).toBeCloseTo(0);
+  });
+
+  it("registers non-zero viewport velocity on pan or zoom", () => {
+    const engine = createEngine();
+    engine.updateViewport(0, 0, 1);
+    engine.updateViewport(5, 0, 1);
+
+    expect((engine as any).viewportVelocity).toBeGreaterThan(0);
+  });
+
+  it("invalidates the density texture cache when occupancy changes", () => {
+    const engine = createEngine();
+
+    (engine as any).isDensityTextureCacheValid = true;
+    (engine as any).updateOccupancyState(0);
+    expect((engine as any).isDensityTextureCacheValid).toBe(false);
+
+    (engine as any).isDensityTextureCacheValid = true;
+    (engine as any).updateOccupancyState(0);
+    expect((engine as any).isDensityTextureCacheValid).toBe(true);
+
+    (engine as any).updateOccupancyState(2);
+    expect((engine as any).isDensityTextureCacheValid).toBe(false);
+  });
+
+  it("resets cache state on reset()", () => {
+    const engine = createEngine();
+    (engine as any).isDensityTextureCacheValid = true;
+    (engine as any).lastOccupancyCount = 5;
+
+    engine.reset();
+
+    expect((engine as any).isDensityTextureCacheValid).toBe(false);
+    expect((engine as any).lastOccupancyCount).toBe(-1);
   });
 });

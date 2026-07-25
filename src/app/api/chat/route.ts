@@ -749,15 +749,26 @@ export async function POST(req: Request) {
     // Rate limiting (now async)
     if (!(await rateLimit(identifier, 10))) {
       const info = await getRateLimitInfo(identifier, 10);
+      const retryAfter = info?.resetTime
+        ? Math.ceil((info.resetTime - Date.now()) / 1000)
+        : 60;
+      const resetTimeSec = info?.resetTime
+        ? Math.ceil(info.resetTime / 1000)
+        : Math.ceil((Date.now() + 60000) / 1000);
+
       return Response.json(
         {
           error:
             "Rate limit exceeded. Please wait before sending more messages.",
-          retryAfter: info?.resetTime
-            ? Math.ceil((info.resetTime - Date.now()) / 1000)
-            : 60,
+          retryAfter,
         },
-        { status: 429 },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(retryAfter),
+            "X-RateLimit-Reset": String(resetTimeSec),
+          },
+        },
       );
     }
 

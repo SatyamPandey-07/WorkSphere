@@ -102,7 +102,10 @@ export function VenueCard({
       if (venue.id) {
         router.prefetch(`/venues/${venue.id}`);
       }
-      if (typeof navigator !== "undefined" && navigator.serviceWorker?.controller) {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.serviceWorker?.controller
+      ) {
         navigator.serviceWorker.controller.postMessage({
           type: "PREFETCH_VENUE",
           payload: {
@@ -355,7 +358,8 @@ export function VenueCard({
     }
   };
 
-  const displayRating = enrichData?.rating || venue.rating;
+  const displayRating =
+    enrichData?.rating ?? venue.rating ?? 0;
   const photos = enrichData?.photos || [];
   const amenities = enrichData?.amenities;
 
@@ -534,16 +538,20 @@ export function VenueCard({
 
         {/* Rating & Category */}
         <div className="flex items-center gap-3 mb-3">
-          {displayRating && (
-            <div className="flex items-center gap-1">
-              <Star className="w-4 h-4 text-yellow-500 fill-current shrink-0" />
-              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                {typeof displayRating === "number"
-                  ? displayRating.toFixed(1)
-                  : displayRating}
-              </span>
-            </div>
-          )}
+          <div className="flex items-center gap-1">
+            <Star
+              className={`w-4 h-4 shrink-0 ${
+                displayRating > 0
+                  ? "text-yellow-500 fill-current"
+                  : "text-zinc-300 dark:text-zinc-600"
+              }`}
+            />
+            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+              {isNaN(Number(displayRating))
+                ? "0.0"
+                : Number(displayRating).toFixed(1)}
+            </span>
+          </div>
           {venue.category && (
             <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300">
               {venue.category}
@@ -562,19 +570,25 @@ export function VenueCard({
             {amenities.wifi && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <Wifi className="w-3 h-3 shrink-0" />
-                <span>WiFi Verified</span>
+                <span className="truncate max-w-[200px]" title="WiFi Verified">
+                  WiFi Verified
+                </span>
               </div>
             )}
             {amenities.outdoor_seating && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <TreePine className="w-3 h-3 shrink-0" />
-                <span>Outdoor</span>
+                <span className="truncate max-w-[200px]" title="Outdoor">
+                  Outdoor
+                </span>
               </div>
             )}
             {amenities.wheelchair && (
               <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
                 <Accessibility className="w-3 h-3 shrink-0" />
-                <span>Accessible</span>
+                <span className="truncate max-w-[200px]" title="Accessible">
+                  Accessible
+                </span>
               </div>
             )}
           </div>
@@ -614,11 +628,12 @@ export function VenueCard({
 
               return (
                 <span
-                  className={`px-2 py-0.5 rounded-full font-semibold ${
+                  className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
                     isOpen
                       ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                       : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                   }`}
+                  title={isOpen ? "Open Now" : "Closed"}
                 >
                   {isOpen ? "Open Now" : "Closed"}
                 </span>
@@ -644,7 +659,10 @@ export function VenueCard({
                 }`}
               >
                 <Wifi className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`WiFi (${voteMetrics.wifi.confidenceScore}%)`}
+                >
                   WiFi ({voteMetrics.wifi.confidenceScore}%)
                 </span>
 
@@ -675,7 +693,10 @@ export function VenueCard({
                 }`}
               >
                 <Zap className="w-3.5 h-3.5 text-yellow-500 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`Outlets (${voteMetrics.outlets.confidenceScore}%)`}
+                >
                   Outlets ({voteMetrics.outlets.confidenceScore}%)
                 </span>
 
@@ -706,7 +727,10 @@ export function VenueCard({
                 }`}
               >
                 <Accessibility className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`Ergonomic (${voteMetrics.ergonomic.confidenceScore}%)`}
+                >
                   Ergonomic ({voteMetrics.ergonomic.confidenceScore}%)
                 </span>
 
@@ -737,7 +761,10 @@ export function VenueCard({
                 }`}
               >
                 <VolumeX className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`Silent Room (${voteMetrics.silentRoom.confidenceScore}%)`}
+                >
                   Silent Room ({voteMetrics.silentRoom.confidenceScore}%)
                 </span>
 
@@ -768,7 +795,10 @@ export function VenueCard({
                 }`}
               >
                 <Calendar className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`Study Tables (${voteMetrics.studyTable.confidenceScore}%)`}
+                >
                   Study Tables ({voteMetrics.studyTable.confidenceScore}%)
                 </span>
 
@@ -799,7 +829,10 @@ export function VenueCard({
                 }`}
               >
                 <Printer className="w-3.5 h-3.5 text-cyan-500 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`Scanners/Printers (${voteMetrics.scanner.confidenceScore}%)`}
+                >
                   Scanners/Printers ({voteMetrics.scanner.confidenceScore}%)
                 </span>
 
@@ -830,7 +863,10 @@ export function VenueCard({
                 }`}
               >
                 <Car className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`Street Parking (${voteMetrics.freeStreetParking.confidenceScore}%)`}
+                >
                   Street Parking (
                   {voteMetrics.freeStreetParking.confidenceScore}%)
                 </span>
@@ -864,7 +900,10 @@ export function VenueCard({
                 }`}
               >
                 <CircleDollarSign className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`Paid Garage (${voteMetrics.paidGarage.confidenceScore}%)`}
+                >
                   Paid Garage ({voteMetrics.paidGarage.confidenceScore}%)
                 </span>
 
@@ -895,7 +934,10 @@ export function VenueCard({
                 }`}
               >
                 <Bike className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`Bicycle Rack (${voteMetrics.bicycleRack.confidenceScore}%)`}
+                >
                   Bicycle Rack ({voteMetrics.bicycleRack.confidenceScore}%)
                 </span>
 
@@ -926,7 +968,10 @@ export function VenueCard({
                 }`}
               >
                 <Shield className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`Moto Parking (${voteMetrics.secureMotorcycleParking.confidenceScore}%)`}
+                >
                   Moto Parking (
                   {voteMetrics.secureMotorcycleParking.confidenceScore}%)
                 </span>
@@ -962,7 +1007,10 @@ export function VenueCard({
                 }`}
               >
                 <PawPrint className="w-3.5 h-3.5 text-orange-500 shrink-0" />
-                <span className="font-medium font-mono text-[11px]">
+                <span
+                  className="font-medium font-mono text-[11px] truncate max-w-[200px]"
+                  title={`Pets Allowed (${voteMetrics.petsAllowedIndoors.confidenceScore}%)`}
+                >
                   Pets Allowed ({voteMetrics.petsAllowedIndoors.confidenceScore}
                   %)
                 </span>
@@ -999,7 +1047,10 @@ export function VenueCard({
                       : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <span>
+                <span
+                  className="truncate max-w-[200px]"
+                  title={`🐶 Dog Friendly ${voteMetrics.dogFriendly.upvotes >= 5 ? "⭐ " : ""}(${voteMetrics.dogFriendly.confidenceScore}%)`}
+                >
                   🐶 Dog Friendly {voteMetrics.dogFriendly.upvotes >= 5 && "⭐"}{" "}
                   ({voteMetrics.dogFriendly.confidenceScore}%)
                 </span>
@@ -1032,7 +1083,10 @@ export function VenueCard({
                       : "border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
                 }`}
               >
-                <span>
+                <span
+                  className="truncate max-w-[200px]"
+                  title={`🐱 Cats Allowed ${voteMetrics.catsAllowed.upvotes >= 5 ? "⭐ " : ""}(${voteMetrics.catsAllowed.confidenceScore}%)`}
+                >
                   🐱 Cats Allowed {voteMetrics.catsAllowed.upvotes >= 5 && "⭐"}{" "}
                   ({voteMetrics.catsAllowed.confidenceScore}%)
                 </span>
@@ -1059,8 +1113,10 @@ export function VenueCard({
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-violet-500/30 bg-violet-500/10 text-xs text-violet-700 dark:text-violet-300"
                 title="Active noise-cancelling headsets are available to rent"
               >
-                <Headphones className="w-3.5 h-3.5" />
-                <span>ANC Headset Rental</span>
+                <Headphones className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate max-w-[200px]">
+                  ANC Headset Rental
+                </span>
               </div>
             )}
 
@@ -1076,7 +1132,12 @@ export function VenueCard({
                         : "text-red-600"
                   }`}
                 />
-                <span className="capitalize">{venue.noiseLevel}</span>
+                <span
+                  className="capitalize truncate max-w-[200px]"
+                  title={venue.noiseLevel}
+                >
+                  {venue.noiseLevel}
+                </span>
                 <AmbientSoundPlayer noiseLevel={venue.noiseLevel} />
               </div>
             )}
@@ -1084,14 +1145,20 @@ export function VenueCard({
             {venue.lighting && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">
                 <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span className="capitalize">
+                <span
+                  className="capitalize truncate max-w-[200px]"
+                  title={venue.lighting.replace("_", " ")}
+                >
                   {venue.lighting.replace("_", " ")}
                 </span>
               </div>
             )}
 
             {venue.distance && (
-              <div className="text-xs text-zinc-500 self-center ml-auto font-medium">
+              <div
+                className="text-xs text-zinc-500 self-center ml-auto font-medium truncate max-w-[100px]"
+                title={venue.distance}
+              >
                 📏 {venue.distance}
               </div>
             )}
@@ -1103,14 +1170,21 @@ export function VenueCard({
           {venue.wifiQuality && venue.wifiQuality >= 3 && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Wifi className="w-4 h-4 text-blue-600 shrink-0" />
-              <span>WiFi {venue.wifiQuality}/5</span>
+              <span
+                className="truncate max-w-[200px]"
+                title={`WiFi ${venue.wifiQuality}/5`}
+              >
+                WiFi {venue.wifiQuality}/5
+              </span>
             </div>
           )}
           {venue.hasOutlets &&
             (!venue.powerTypes || venue.powerTypes.length === 0) && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
                 <Zap className="w-4 h-4 text-yellow-600 shrink-0" />
-                <span>Outlets</span>
+                <span className="truncate max-w-[200px]" title="Outlets">
+                  Outlets
+                </span>
               </div>
             )}
           {venue.hasOutlets &&
@@ -1118,7 +1192,9 @@ export function VenueCard({
             venue.powerTypes.includes("ac_wall") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
                 <Plug className="w-4 h-4 text-yellow-600 shrink-0" />
-                <span>AC Outlets</span>
+                <span className="truncate max-w-[200px]" title="AC Outlets">
+                  AC Outlets
+                </span>
               </div>
             )}
           {venue.hasOutlets &&
@@ -1126,7 +1202,9 @@ export function VenueCard({
             venue.powerTypes.includes("usb_c") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
                 <Smartphone className="w-4 h-4 text-blue-500 shrink-0" />
-                <span>USB-C PD</span>
+                <span className="truncate max-w-[200px]" title="USB-C PD">
+                  USB-C PD
+                </span>
               </div>
             )}
           {venue.hasOutlets &&
@@ -1134,14 +1212,16 @@ export function VenueCard({
             venue.powerTypes.includes("wireless") && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
                 <BatteryCharging className="w-4 h-4 text-green-500 shrink-0" />
-                <span>Wireless</span>
+                <span className="truncate max-w-[200px]" title="Wireless">
+                  Wireless
+                </span>
               </div>
             )}
           {venue.hasOutlets &&
             venue.outletDensity &&
             venue.outletDensity !== "none" && (
               <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-                <span>
+                <span className="truncate max-w-[200px]">
                   {venue.outletDensity === "every_table" && "🔋 Every Table"}
                   {venue.outletDensity === "some_tables" && "🔌 Some Tables"}
                   {venue.outletDensity === "wall_seats" && "🔌 Wall Seats Only"}
@@ -1150,7 +1230,12 @@ export function VenueCard({
             )}
           {venue.outletLocations && venue.outletLocations.length > 0 && (
             <div className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
-              <span>
+              <span
+                className="truncate max-w-[200px]"
+                title={venue.outletLocations
+                  .map((l) => l.replace("_", " "))
+                  .join(", ")}
+              >
                 🗺️{" "}
                 {venue.outletLocations
                   .map((l) => l.replace("_", " "))
@@ -1161,56 +1246,88 @@ export function VenueCard({
 
           {venue.patioOnly && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span>🌿 Patio Only</span>
+              <span className="truncate max-w-[200px]" title="Patio Only">
+                🌿 Patio Only
+              </span>
             </div>
           )}
 
           {venue.waterBowlsProvided && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span>💧 Water Bowls</span>
+              <span className="truncate max-w-[200px]" title="Water Bowls">
+                💧 Water Bowls
+              </span>
             </div>
           )}
           {venue.singleOriginBeans && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span>☕ Single-Origin</span>
+              <span className="truncate max-w-[200px]" title="Single-Origin">
+                ☕ Single-Origin
+              </span>
             </div>
           )}
 
           {venue.specialtyEspresso && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span>⚙️ Specialty Espresso</span>
+              <span
+                className="truncate max-w-[200px]"
+                title="Specialty Espresso"
+              >
+                ⚙️ Specialty Espresso
+              </span>
             </div>
           )}
 
           {venue.oatAlmondMilk && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span>🥛 Oat/Almond Milk</span>
+              <span className="truncate max-w-[200px]" title="Oat/Almond Milk">
+                🥛 Oat/Almond Milk
+              </span>
             </div>
           )}
 
           {venue.pourOverAvailable && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span>🫖 Pour Over</span>
+              <span className="truncate max-w-[200px]" title="Pour Over">
+                🫖 Pour Over
+              </span>
             </div>
           )}
           {venue.musicStyle === "lofi" && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span>🎵 Lo-Fi/Chill Beats</span>
+              <span
+                className="truncate max-w-[200px]"
+                title="Lo-Fi/Chill Beats"
+              >
+                🎵 Lo-Fi/Chill Beats
+              </span>
             </div>
           )}
           {venue.musicStyle === "classical_jazz" && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span>🎷 Classical/Jazz Background</span>
+              <span
+                className="truncate max-w-[200px]"
+                title="Classical/Jazz Background"
+              >
+                🎷 Classical/Jazz Background
+              </span>
             </div>
           )}
           {(venue.musicStyle === "no_music" || venue.hasNoMusic) && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span>🔇 No Music Played</span>
+              <span className="truncate max-w-[200px]" title="No Music Played">
+                🔇 No Music Played
+              </span>
             </div>
           )}
           {venue.hasPhoneBooths && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
-              <span>📞 Soundproof Booths Available</span>
+              <span
+                className="truncate max-w-[200px]"
+                title="Soundproof Booths Available"
+              >
+                📞 Soundproof Booths Available
+              </span>
             </div>
           )}
           {/* Noise level row — Issue #701: ambient audio preview */}
@@ -1225,20 +1342,31 @@ export function VenueCard({
                       : "text-red-600"
                 }`}
               />
-              <span className="capitalize">{venue.noiseLevel}</span>
+              <span
+                className="capitalize truncate max-w-[200px]"
+                title={venue.noiseLevel}
+              >
+                {venue.noiseLevel}
+              </span>
               <AmbientSoundPlayer noiseLevel={venue.noiseLevel} />
             </div>
           )}
           {venue.lighting && (
             <div className="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300">
               <Sun className="w-4 h-4 text-amber-500 shrink-0" />
-              <span className="capitalize">
+              <span
+                className="capitalize truncate max-w-[200px]"
+                title={venue.lighting.replace("_", " ")}
+              >
                 {venue.lighting.replace("_", " ")}
               </span>
             </div>
           )}
           {venue.distance && (
-            <div className="text-xs text-zinc-600 dark:text-zinc-400">
+            <div
+              className="text-xs text-zinc-600 dark:text-zinc-400 truncate max-w-[100px]"
+              title={venue.distance}
+            >
               📏 {venue.distance}
             </div>
           )}

@@ -32,6 +32,9 @@ import {
   ChevronRight,
   Share,
   Check,
+  BarChart3,
+  Trophy,
+  BadgeCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
@@ -48,6 +51,7 @@ import { useTranslation } from "react-i18next";
 
 import { Venue } from "./ChatMessages";
 import { RatingDistribution } from "./RatingDistribution";
+import { AmenityVoteBreakdownModal } from "./AmenityVoteBreakdownModal";
 import { NoiseReportingWidget } from "@/components/noise/NoiseReportingWidget";
 import { AudioEqualizer } from "@/components/audio/AudioEqualizer";
 
@@ -101,6 +105,9 @@ export function VenueDetailDialog({
     "wifi" | "outlets" | "noise" | null
   >(null);
   const [copied, setCopied] = useState(false);
+  // Floor plan seat selection state (used by floor plan component when rendered)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
 
   const handleShare = () => {
     if (!venue) return;
@@ -201,6 +208,9 @@ export function VenueDetailDialog({
   }, [previewPhoto]);
   const [wifiPredictions, setWifiPredictions] = useState<any[]>([]);
   const [occupancyData, setOccupancyData] = useState<any[]>([]);
+  const [showVoteBreakdown, setShowVoteBreakdown] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<any[]>([]);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   // Quick Save state
   const [quickSaveLoading, setQuickSaveLoading] = useState(false);
@@ -415,9 +425,16 @@ export function VenueDetailDialog({
     const venueId = venue.id;
     async function loadVoteMetrics() {
       try {
-        const response = await fetch(`/api/venues/${venueId}/amenity-votes`);
-        if (response.ok) {
-          const data = await response.json();
+        const [metricsRes, leaderboardRes] = await Promise.all([
+          fetch(`/api/venues/${venueId}/amenity-votes`),
+          fetch(`/api/venues/${venueId}/amenity-votes/leaderboard`),
+        ]);
+        if (leaderboardRes.ok) {
+          const lbData = await leaderboardRes.json();
+          setLeaderboard(lbData.leaderboard || []);
+        }
+        if (metricsRes.ok) {
+          const data = await metricsRes.json();
           setVoteMetrics(() => ({
             wifi: {
               confidenceScore: 100,
@@ -695,6 +712,20 @@ export function VenueDetailDialog({
         .catch((err) => console.error(err));
     }
   }, [venue, isOpen, activeTab]);
+
+  // Effect 4: Reset floor plan seat selection on dialog close
+  useEffect(() => {
+    if (!isOpen) {
+      // Reset selected seat ID
+      setSelectedSeatId(null);
+
+      // Clear any active CSS classes from SVG seat elements
+      const seats = document.querySelectorAll(".floor-plan-seat.active");
+      seats.forEach((seat) => {
+        seat.classList.remove("active");
+      });
+    }
+  }, [isOpen]);
 
   const compressImage = (file: File): Promise<Blob> => {
     return new Promise((resolve) => {
@@ -1629,6 +1660,56 @@ export function VenueDetailDialog({
                 </div>
               </div>
 
+              <div className="flex gap-2 pt-4 mt-2 border-t border-white/10">
+                <button
+                  onClick={() => setShowVoteBreakdown(true)}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-black/30 hover:bg-black/50 border border-white/10 text-zinc-300 hover:text-white font-bold text-[10px] uppercase tracking-widest py-2.5 px-3 rounded-xl transition-all active:scale-[0.98]"
+                >
+                  <BarChart3 className="w-3.5 h-3.5" />
+                  Vote Breakdown
+                </button>
+                <button
+                  onClick={() => setShowLeaderboard(!showLeaderboard)}
+                  className="flex-1 flex items-center justify-center gap-1.5 bg-black/30 hover:bg-black/50 border border-white/10 text-zinc-300 hover:text-white font-bold text-[10px] uppercase tracking-widest py-2.5 px-3 rounded-xl transition-all active:scale-[0.98]"
+                >
+                  <Trophy className="w-3.5 h-3.5" />
+                  Leaderboard
+                </button>
+              </div>
+
+              {showLeaderboard && leaderboard.length > 0 && (
+                <div className="bg-black/30 border border-white/10 rounded-xl p-4 mt-2 space-y-2">
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 flex items-center gap-1.5">
+                    <Trophy className="w-3 h-3 text-amber-400" />
+                    Top Voters
+                  </h4>
+                  <div className="space-y-1.5">
+                    {leaderboard.map((entry: any, idx: number) => (
+                      <div
+                        key={entry.userId}
+                        className="flex items-center justify-between text-xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="w-4 text-center text-[10px] font-mono text-zinc-500">
+                            {idx + 1}.
+                          </span>
+                          <span className="font-medium text-zinc-300">
+                            {entry.name || "Anonymous"}
+                          </span>
+                          {entry.accurateVotes >= 10 && (
+                            <BadgeCheck className="w-3 h-3 text-amber-400" />
+                          )}
+                        </div>
+                        <span className="font-mono text-zinc-500 text-[10px]">
+                          {entry.totalVotes} vote
+                          {entry.totalVotes !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col gap-3 pt-6 border-t border-white/10 mt-6">
                 <button
                   onClick={() => onGetDirections(venue)}
@@ -1843,6 +1924,12 @@ export function VenueDetailDialog({
           )}
         </div>
       </div>
+
+      <AmenityVoteBreakdownModal
+        metrics={voteMetrics}
+        isOpen={showVoteBreakdown}
+        onClose={() => setShowVoteBreakdown(false)}
+      />
 
       {previewPhoto && (
         <div

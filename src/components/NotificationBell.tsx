@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Bell, Check, Inbox, Calendar, Zap, Wifi } from "lucide-react";
+import {
+  Bell,
+  Check,
+  Inbox,
+  Calendar,
+  Zap,
+  Wifi,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import Link from "next/link";
 
 interface NotificationItem {
@@ -17,9 +26,21 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [soundEnabled, setSoundEnabled] = useState(() => {
+  if (typeof window === "undefined") return true;
 
-  const fetchNotifications = useCallback(async () => {
+  const saved = localStorage.getItem("notification-sound-enabled");
+  return saved === null ? true : saved === "true";
+});
+  const dropdownRef = useRef<HTMLDivElement>(null);
+const previousUnreadCount = useRef(0);
+const audioRef = useRef<HTMLAudioElement | null>(null);
+
+useEffect(() => {
+  audioRef.current = new Audio("/sounds/notification-chime.mp3");
+}, []);
+
+const fetchNotifications = useCallback(async () => {
     try {
       const res = await fetch("/api/user/notifications", { cache: "no-store" });
       if (res.ok) {
@@ -39,17 +60,42 @@ export function NotificationBell() {
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
+  useEffect(() => {
+  if (
+    unreadCount > previousUnreadCount.current &&
+    soundEnabled &&
+    audioRef.current
+  ) {
+    audioRef.current.play().catch(() => {});
+  }
+
+  previousUnreadCount.current = unreadCount;
+}, [unreadCount, soundEnabled]);
+
   // Handle outside clicks to close the dropdown
   useEffect(() => {
     if (!isOpen) return;
     const handlePointerDown = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(e.target as Node)
+      ) {
         setIsOpen(false);
       }
     };
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [isOpen]);
+  const toggleSound = () => {
+  const next = !soundEnabled;
+
+  setSoundEnabled(next);
+
+  localStorage.setItem(
+    "notification-sound-enabled",
+    String(next)
+  );
+};
 
   const markAllAsRead = async () => {
     try {
@@ -60,9 +106,7 @@ export function NotificationBell() {
       });
       if (res.ok) {
         setUnreadCount(0);
-        setNotifications((prev) =>
-          prev.map((n) => ({ ...n, read: true }))
-        );
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       }
     } catch (e) {
       console.error("Failed to mark notifications as read:", e);
@@ -80,9 +124,12 @@ export function NotificationBell() {
 
   const getNotificationIcon = (title: string, body: string) => {
     const combined = `${title} ${body}`.toLowerCase();
-    if (combined.includes("seat") || combined.includes("available")) return <Zap className="w-4 h-4 text-orange-400" />;
-    if (combined.includes("booking") || combined.includes("reservation")) return <Calendar className="w-4 h-4 text-blue-400" />;
-    if (combined.includes("wifi") || combined.includes("internet")) return <Wifi className="w-4 h-4 text-emerald-400" />;
+    if (combined.includes("seat") || combined.includes("available"))
+      return <Zap className="w-4 h-4 text-orange-400" />;
+    if (combined.includes("booking") || combined.includes("reservation"))
+      return <Calendar className="w-4 h-4 text-blue-400" />;
+    if (combined.includes("wifi") || combined.includes("internet"))
+      return <Wifi className="w-4 h-4 text-emerald-400" />;
     return <Bell className="w-4 h-4 text-indigo-400" />;
   };
 
@@ -94,7 +141,10 @@ export function NotificationBell() {
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `${diffHours}h ago`;
-    return new Date(dateStr).toLocaleDateString([], { month: "short", day: "numeric" });
+    return new Date(dateStr).toLocaleDateString([], {
+      month: "short",
+      day: "numeric",
+    });
   };
 
   return (
@@ -107,8 +157,10 @@ export function NotificationBell() {
             : "bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white"
         }`}
         title="Notifications"
-        aria-expanded={isOpen}
         aria-label="Open notifications menu"
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        aria-controls="notification-drawer"
       >
         <Bell className="w-4 h-4" />
         {unreadCount > 0 && (
@@ -119,21 +171,40 @@ export function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-[60] overflow-hidden animate-in slide-in-from-top-2 duration-150">
+        <div
+          id="notification-drawer"
+          role="menu"
+          className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-[60] overflow-hidden animate-in slide-in-from-top-2 duration-150"
+        >
           <div className="flex items-center justify-between p-4 border-b border-zinc-100 dark:border-zinc-800">
-            <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
-              Notifications
-            </h3>
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllAsRead}
-                className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-indigo-500 hover:text-indigo-400 cursor-pointer"
-              >
-                <Check className="w-3 h-3" />
-                Read All
-              </button>
-            )}
-          </div>
+  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
+    Notifications
+  </h3>
+
+  <div className="flex items-center gap-2">
+    <button
+      onClick={toggleSound}
+      className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
+      title={soundEnabled ? "Mute notifications" : "Unmute notifications"}
+    >
+      {soundEnabled ? (
+        <Volume2 className="w-4 h-4" />
+      ) : (
+        <VolumeX className="w-4 h-4" />
+      )}
+    </button>
+
+    {unreadCount > 0 && (
+      <button
+        onClick={markAllAsRead}
+        className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-indigo-500 hover:text-indigo-400 cursor-pointer"
+      >
+        <Check className="w-3 h-3" />
+        Read All
+      </button>
+    )}
+  </div>
+</div>
 
           <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800 scrollbar-thin">
             {notifications.length > 0 ? (
@@ -141,7 +212,9 @@ export function NotificationBell() {
                 <div
                   key={n.id}
                   className={`p-4 flex gap-3 transition-colors ${
-                    !n.read ? "bg-indigo-500/5 dark:bg-indigo-500/10" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                    !n.read
+                      ? "bg-indigo-500/5 dark:bg-indigo-500/10"
+                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                   }`}
                 >
                   <div className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 shrink-0 self-start">

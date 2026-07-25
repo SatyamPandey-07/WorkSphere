@@ -29,6 +29,7 @@ export interface RemoteCursor {
 export interface CanvasWhiteboardState {
   addShape: (shape: ShapeData) => void;
   updateShape: (id: string, updates: Partial<ShapeData>) => void;
+  deleteShape?: (id: string) => void;
   shapeSnapshots: ShapeData[];
   remoteCursors: RemoteCursor[];
   tool: ToolType;
@@ -197,7 +198,10 @@ export function useCanvasWhiteboard(
 
     const handleAwarenessChange = () => {
       if (!awareness) return;
-      const states = Array.from(awareness.getStates().entries()) as [number, any][];
+      const states = Array.from(awareness.getStates().entries()) as [
+        number,
+        any,
+      ][];
       const cursors: RemoteCursor[] = [];
       for (const [clientId, state] of states) {
         if (clientId === awareness.clientID) continue;
@@ -221,9 +225,9 @@ export function useCanvasWhiteboard(
       awareness?.off("change", handleAwarenessChange);
       um.destroy();
       if (newProvider) {
-        if (handleStatus && typeof newProvider.off === "function") newProvider.off("status", handleStatus);
-        if (handleSync && typeof newProvider.off === "function") newProvider.off("sync", handleSync);
-        if (typeof newProvider.disconnect === "function") newProvider.disconnect();
+        if (handleStatus) newProvider.off("status", handleStatus);
+        if (handleSync) newProvider.off("sync", handleSync);
+        newProvider.disconnect();
       }
       doc.destroy();
       shapesRef.current = null;

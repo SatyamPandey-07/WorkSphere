@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { queueOfflineFavorite } from "@/lib/offlineStore";
+import { queuePendingFavorite } from "@/lib/offlineStorage";
 
 export function useFavorites(venueId: string, initialIsFavorited: boolean) {
   const [isFavorited, setIsFavorited] = useState(initialIsFavorited);
@@ -28,7 +28,7 @@ export function useFavorites(venueId: string, initialIsFavorited: boolean) {
     // 1. Optimistic Update: Change the layout heart state instantly
     setIsFavorited(nextState);
 
-    const actionType = nextState ? "ADD" : "REMOVE";
+    const actionType = nextState ? "add" : "remove";
 
     if (isOnline) {
       try {
@@ -41,12 +41,12 @@ export function useFavorites(venueId: string, initialIsFavorited: boolean) {
         if (!response.ok) throw new Error("Network response failed");
       } catch {
         console.warn("Live fallback failed. Reverting to offline queue logic.");
-        await queueOfflineFavorite(venueId, actionType);
+        await queuePendingFavorite(venueId, actionType);
         window.dispatchEvent(new CustomEvent("trigger-sync"));
       }
     } else {
       // 2. Offline Fallback: Queue up operation for Background Sync processing
-      await queueOfflineFavorite(venueId, actionType);
+      await queuePendingFavorite(venueId, actionType);
       window.dispatchEvent(new CustomEvent("trigger-sync"));
     }
   };

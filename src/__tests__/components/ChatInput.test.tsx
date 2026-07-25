@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ChatInput } from "../../components/chat/ChatMessages";
 import "@testing-library/jest-dom";
 
@@ -150,7 +150,7 @@ describe("ChatInput keyboard inset", () => {
     Object.defineProperty(window, "visualViewport", {
       configurable: true,
       value: {
-        height: 500,
+        height: 100,
         offsetTop: 0,
         addEventListener: (type: string, cb: () => void) => {
           listeners[type] = listeners[type] || [];
@@ -180,7 +180,66 @@ describe("ChatInput keyboard inset", () => {
       />,
     );
 
+    act(() => {
+      listeners["resize"]?.forEach((cb) => cb());
+    });
+
     const wrap = container.firstChild as HTMLElement;
-    expect(wrap.style.paddingBottom).toContain("300px");
+    expect(wrap.getAttribute("data-keyboard-inset")).toBe("700");
+  });
+});
+
+describe("ChatInput Ctrl+K shortcut badge", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("shows Ctrl+K badge in the empty search bar on non-Apple platforms", () => {
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      value: "Win32",
+    });
+
+    render(
+      <ChatInput
+        input=""
+        isLoading={false}
+        onInputChange={jest.fn()}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTitle("Focus search")).toHaveTextContent("Ctrl+K");
+  });
+
+  it("shows ⌘K badge on Apple platforms", () => {
+    Object.defineProperty(navigator, "platform", {
+      configurable: true,
+      value: "MacIntel",
+    });
+
+    render(
+      <ChatInput
+        input=""
+        isLoading={false}
+        onInputChange={jest.fn()}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByTitle("Focus search")).toHaveTextContent("⌘K");
+  });
+
+  it("hides the shortcut badge when the search input has text", () => {
+    render(
+      <ChatInput
+        input="quiet cafe"
+        isLoading={false}
+        onInputChange={jest.fn()}
+        onSubmit={jest.fn()}
+      />,
+    );
+
+    expect(screen.queryByTitle("Focus search")).not.toBeInTheDocument();
   });
 });

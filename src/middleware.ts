@@ -10,10 +10,11 @@ import {
 } from "./lib/csrf";
 
 function generateCsp(nonce: string): string {
+  const isDev = process.env.NODE_ENV === "development";
   return [
     `base-uri 'self'`,
     `default-src 'self'`,
-    `script-src 'self' 'nonce-${nonce}' https://cdn.clerk.com`,
+    `script-src 'self' 'nonce-${nonce}' https://cdn.clerk.com ${isDev ? "'unsafe-eval' https://*.clerk.accounts.dev" : ""}`,
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `font-src 'self' https://fonts.gstatic.com data:`,
     `img-src 'self' https://images.unsplash.com https://*.unsplash.com https://res.cloudinary.com data: blob:`,
@@ -108,6 +109,10 @@ async function applyCsrfProtection(
 }
 
 export default function middleware(request: any, event: any) {
+  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY =
+      "pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ";
+  }
   const clerkMw = clerkMiddleware(async (auth, req) => {
     if (!isPublicRoute(req)) {
       await auth.protect();

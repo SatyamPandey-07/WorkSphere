@@ -125,17 +125,12 @@ function getDirectionsUrl(lat: number, lng: number): string {
 /**
  * Generates a unique UID for an ICS event.
  */
-export function generateIcsUid(bookingId: string, guestEmail: string): string {
-  const hash = `${bookingId}-${guestEmail}-${Date.now()}`;
-  // Simple deterministic hash for uniqueness
-  let hashVal = 0;
-  for (let i = 0; i < hash.length; i++) {
-    const char = hash.charCodeAt(i);
-    hashVal = (hashVal << 5) - hashVal + char;
-    hashVal |= 0; // Convert to 32bit integer
-  }
-  const hexHash = Math.abs(hashVal).toString(16).padStart(8, "0");
-  return `worksphere-guest-${bookingId.substring(0, 8)}-${hexHash}@worksphere.io`;
+export function generateIcsUid(
+  _bookingId: string,
+  _guestEmail: string,
+): string {
+  const uuid = crypto.randomUUID();
+  return `worksphere-guest-${uuid}@worksphere.io`;
 }
 
 /**

@@ -146,9 +146,13 @@ export class CrowdSimulationEngine {
   private context: GPUCanvasContext | null = null;
   private isDeviceLost = false;
 
+  // Dynamic Buffer Allocation Capacity Management
+  private allocatedCapacity = 10000;
+
   // Pipelines
   private computePipeline: GPURenderPipeline | null = null;
   private renderPipeline: GPURenderPipeline | null = null;
+  private computeBindGroupLayout: GPUBindGroupLayout | null = null;
 
   // Buffers (ping-pong)
   private agentBufferA: GPUBuffer | null = null;
@@ -178,10 +182,18 @@ export class CrowdSimulationEngine {
   private heatmapPipeline: GPURenderPipeline | null = null;
   private heatmapBindGroup: GPUBindGroup | null = null;
   private heatmapTexture: GPUTexture | null = null;
-  private densityBindGroup: GPUBindGroup | null = null;
+private densityBindGroup: GPUBindGroup | null = null;
   private maxDensity = 1;
   private readonly DENSITY_GRID_SIZE = 64;
 
+  // Adaptive heatmap tile caching: skip recomputing the density texture
+  // when the map viewport isn't moving and occupancy hasn't changed.
+  private lastViewportX = 0;
+  private lastViewportY = 0;
+  private lastViewportZoom = 1;
+  private viewportVelocity = 0;
+  private lastOccupancyCount = -1;
+  private isDensityTextureCacheValid = false;
   // Exit + wall buffers
   private exitBuffer: GPUBuffer | null = null;
   private wallBuffer: GPUBuffer | null = null;
@@ -214,6 +226,8 @@ export class CrowdSimulationEngine {
       agentScale: 0.15,
       ...config,
     };
+
+    this.allocatedCapacity = Math.max(config.agentCount, 10000);
 
     // Initialize agent data on CPU
     this.agents = new Float32Array(config.agentCount * 8); // 8 floats per agent
@@ -314,13 +328,179 @@ export class CrowdSimulationEngine {
     }
   }
 
+  public getAllocatedCapacity(): number {
+    return this.allocatedCapacity;
+  }
+
+  public getCapacityThreshold(): number {
+    return Math.floor(this.allocatedCapacity * 0.8);
+  }
+
+  public isReallocationNeeded(newAgentCount: number): boolean {
+    return newAgentCount >= this.allocatedCapacity * 0.8;
+  }
+
+  public async ensureCapacity(targetAgentCount: number): Promise<boolean> {
+    if (!this.isReallocationNeeded(targetAgentCount)) {
+      return true;
+    }
+    const newCapacity = Math.max(Math.ceil(targetAgentCount * 1.5), 10000);
+    return this.reallocateBuffers(newCapacity);
+  }
+
+  public async reallocateBuffers(newCapacity: number): Promise<boolean> {
+    this.allocatedCapacity = newCapacity;
+    if (!this.device) return true;
+
+    const agentSize = newCapacity * AGENT_STRIDE;
+    const maxBindingSize =
+      this.device.limits?.maxStorageBufferBindingSize || 134217728;
+    const maxBufferSize = this.device.limits?.maxBufferSize || 268435456;
+
+    if (agentSize > maxBindingSize || agentSize > maxBufferSize) {
+      console.warn(
+        `[CrowdSim] Reallocation size ${agentSize} bytes exceeds WebGPU limits`,
+      );
+      return false;
+    }
+
+    try {
+      const oldBufferA = this.agentBufferA;
+      const oldBufferB = this.agentBufferB;
+
+      this.agentBufferA = this.device.createBuffer({
+        size: agentSize,
+        usage:
+          BufferUsage.STORAGE | BufferUsage.COPY_SRC | BufferUsage.COPY_DST,
+      });
+      this.agentBufferB = this.device.createBuffer({
+        size: agentSize,
+        usage:
+          BufferUsage.STORAGE | BufferUsage.COPY_SRC | BufferUsage.COPY_DST,
+      });
+
+      this.device.queue.writeBuffer(this.agentBufferA!, 0, this.agents as any);
+
+      this.recreateBindGroups();
+
+      oldBufferA?.destroy();
+      oldBufferB?.destroy();
+
+      this.allocatedCapacity = newCapacity;
+      return true;
+    } catch (err) {
+      console.error("[CrowdSim] Dynamic buffer reallocation failed:", err);
+      return false;
+    }
+  }
+
+  public async setAgentCount(newCount: number): Promise<boolean> {
+    const success = await this.ensureCapacity(newCount);
+    if (!success) return false;
+
+    const oldCount = this.config.agentCount;
+    const oldAgents = this.agents;
+    this.config.agentCount = newCount;
+    this.agents = new Float32Array(newCount * 8);
+
+    const copyCount = Math.min(oldAgents.length, this.agents.length);
+    this.agents.set(oldAgents.subarray(0, copyCount));
+
+    if (newCount > oldCount) {
+      this.spawnNewAgents(oldCount, newCount);
+    }
+
+    if (this.device && this.agentBufferA) {
+      this.device.queue.writeBuffer(this.agentBufferA, 0, this.agents as any);
+    }
+
+    return true;
+  }
+
+  private spawnNewAgents(startIndex: number, endIndex: number): void {
+    const { worldWidth, worldHeight, exitPositions } = this.config;
+    const data = this.agents;
+
+    for (let i = startIndex; i < endIndex; i++) {
+      const offset = i * 8;
+      let x: number, y: number;
+      do {
+        x = Math.random() * worldWidth * 0.8 + worldWidth * 0.1;
+        y = Math.random() * worldHeight * 0.8 + worldHeight * 0.1;
+      } while (
+        exitPositions.some(([ex, ey]) => Math.hypot(x - ex, y - ey) < 2)
+      );
+
+      data[offset + 0] = x;
+      data[offset + 1] = y;
+      data[offset + 2] = 0;
+      data[offset + 3] = 0;
+      data[offset + 4] = this.findNearestExit(x, y);
+      data[offset + 5] = 0;
+      data[offset + 6] = 0;
+      data[offset + 7] = 0;
+    }
+  }
+
+  private recreateBindGroups(): void {
+    if (!this.device || !this.computeBindGroupLayout || !this.renderPipeline)
+      return;
+
+    this.computeBindGroupA = this.device.createBindGroup({
+      layout: this.computeBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.computeUniformBuffer! } },
+        { binding: 1, resource: { buffer: this.agentBufferA! } },
+        { binding: 2, resource: { buffer: this.agentBufferB! } },
+        { binding: 3, resource: { buffer: this.exitBuffer! } },
+        { binding: 4, resource: { buffer: this.wallBuffer! } },
+        { binding: 5, resource: this.distanceTexture!.createView() },
+        { binding: 6, resource: this.distanceSampler! },
+      ],
+    });
+
+    this.computeBindGroupB = this.device.createBindGroup({
+      layout: this.computeBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.computeUniformBuffer! } },
+        { binding: 1, resource: { buffer: this.agentBufferB! } },
+        { binding: 2, resource: { buffer: this.agentBufferA! } },
+        { binding: 3, resource: { buffer: this.exitBuffer! } },
+        { binding: 4, resource: { buffer: this.wallBuffer! } },
+        { binding: 5, resource: this.distanceTexture!.createView() },
+        { binding: 6, resource: this.distanceSampler! },
+      ],
+    });
+
+    const renderBindGroupLayout = this.renderPipeline.getBindGroupLayout(0);
+
+    this.renderBindGroupA = this.device.createBindGroup({
+      layout: renderBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.renderUniformBuffer! } },
+        { binding: 1, resource: { buffer: this.agentBufferA! } },
+      ],
+    });
+
+    this.renderBindGroupB = this.device.createBindGroup({
+      layout: renderBindGroupLayout,
+      entries: [
+        { binding: 0, resource: { buffer: this.renderUniformBuffer! } },
+        { binding: 1, resource: { buffer: this.agentBufferB! } },
+      ],
+    });
+
+    this.updateDensityBindGroup();
+  }
+
   private async createBuffers(): Promise<void> {
     if (!this.device) return;
 
-    const { agentCount, exitPositions, wallSegments } = this.config;
+    const { exitPositions, wallSegments } = this.config;
+    this.allocatedCapacity = Math.max(this.config.agentCount, 10000);
 
     // Validate memory limits
-    const agentSize = agentCount * AGENT_STRIDE;
+    const agentSize = this.allocatedCapacity * AGENT_STRIDE;
     const maxBindingSize =
       this.device.limits?.maxStorageBufferBindingSize || 134217728;
     const maxBufferSize = this.device.limits?.maxBufferSize || 268435456;
@@ -346,8 +526,6 @@ export class CrowdSimulationEngine {
 
     // Upload initial agent data
     this.device.queue.writeBuffer(this.agentBufferA!, 0, this.agents as any);
-
-    // Compute uniform buffer (18 * 4 = 72 bytes, padded to 80)
     this.computeUniformBuffer = this.device.createBuffer({
       size: 80,
       usage: BufferUsage.UNIFORM | BufferUsage.COPY_DST,
@@ -497,7 +675,7 @@ export class CrowdSimulationEngine {
       code: computeShader,
     });
 
-    const computeBindGroupLayout = this.device.createBindGroupLayout({
+    this.computeBindGroupLayout = this.device.createBindGroupLayout({
       entries: [
         {
           binding: 0,
@@ -538,7 +716,7 @@ export class CrowdSimulationEngine {
     });
 
     const computePipelineLayout = this.device.createPipelineLayout({
-      bindGroupLayouts: [computeBindGroupLayout],
+      bindGroupLayouts: [this.computeBindGroupLayout],
     });
 
     // WebGPU compute pipeline creation
@@ -561,7 +739,7 @@ export class CrowdSimulationEngine {
 
       // Create bind groups (ping-pong)
       this.computeBindGroupA = this.device.createBindGroup({
-        layout: computeBindGroupLayout,
+        layout: this.computeBindGroupLayout,
         entries: [
           { binding: 0, resource: { buffer: this.computeUniformBuffer! } },
           { binding: 1, resource: { buffer: this.agentBufferA! } },
@@ -574,7 +752,7 @@ export class CrowdSimulationEngine {
       });
 
       this.computeBindGroupB = this.device.createBindGroup({
-        layout: computeBindGroupLayout,
+        layout: this.computeBindGroupLayout,
         entries: [
           { binding: 0, resource: { buffer: this.computeUniformBuffer! } },
           { binding: 1, resource: { buffer: this.agentBufferB! } },
@@ -934,10 +1112,20 @@ export class CrowdSimulationEngine {
         computePass.end();
       }
 
+// Adaptive caching: only stationary viewport + unchanged occupancy
+      // counts as "safe to reuse" the existing density texture.
+      const isViewportStationary = this.viewportVelocity < 1e-4;
+      const canUseCachedDensityTexture =
+        isViewportStationary && this.isDensityTextureCacheValid;
+
       // ── Compute Pass: Density accumulation ──
       const densityPipeline = (this as unknown as { _densityPipeline: unknown })
         ._densityPipeline;
-      if (densityPipeline && this.densityBindGroup) {
+      if (
+        densityPipeline &&
+        this.densityBindGroup &&
+        !canUseCachedDensityTexture
+      ) {
         const densityPass = commandEncoder.beginComputePass();
         densityPass.setPipeline(densityPipeline as GPUComputePipeline);
         densityPass.setBindGroup(0, this.densityBindGroup);
@@ -947,8 +1135,11 @@ export class CrowdSimulationEngine {
       }
 
       // ── Copy density buffer → density texture ──
-      if (this.densityBuffer && this.densityTexture) {
-        const gridW = this.DENSITY_GRID_SIZE;
+      if (
+        this.densityBuffer &&
+        this.densityTexture &&
+        !canUseCachedDensityTexture
+      ) {        const gridW = this.DENSITY_GRID_SIZE;
         const bytesPerRow = gridW * 4;
         const alignedBytesPerRow = Math.ceil(bytesPerRow / 256) * 256;
 
@@ -983,11 +1174,12 @@ export class CrowdSimulationEngine {
           },
         );
 
-        // We'll destroy staging after submit
+// We'll destroy staging after submit
         (this as unknown as { _stagingBuffer: GPUBuffer })._stagingBuffer =
           stagingBuffer;
-      }
 
+        this.isDensityTextureCacheValid = true;
+      }
       // ── Render Pass: Agents ──
       const textureView = this.context.getCurrentTexture().createView();
 
@@ -1101,7 +1293,7 @@ export class CrowdSimulationEngine {
         p.worldWidth,
         p.worldHeight,
         0.92, // decay factor per frame (smooth trailing)
-        0,
+        1.5, // densityMultiplier
         0,
       ]),
     );
@@ -1176,14 +1368,14 @@ export class CrowdSimulationEngine {
         readback.unmap();
         readback.destroy();
 
-        // Count evacuated
+// Count evacuated
         let evacuated = 0;
         for (let i = 0; i < this.config.agentCount; i++) {
           if (this.agents[i * 8 + 5] === 1) evacuated++;
         }
 
-        this.onFrameCallback?.(this.agents, evacuated);
-      });
+        this.updateOccupancyState(evacuated);
+        this.onFrameCallback?.(this.agents, evacuated);      });
     } catch {
       // Silently fail — readback is non-critical
     }
@@ -1211,19 +1403,48 @@ export class CrowdSimulationEngine {
     }
   }
 
-  onFrame(callback: (agents: Float32Array, evacuated: number) => void): void {
+onFrame(callback: (agents: Float32Array, evacuated: number) => void): void {
     this.onFrameCallback = callback;
   }
 
-  reset(): void {
+  /**
+   * Report the current map viewport (pan position + zoom level) so the
+   * engine can detect when the view is stationary and skip recomputing
+   * the density heatmap texture that frame.
+   */
+  updateViewport(x: number, y: number, zoom: number): void {
+    const dx = x - this.lastViewportX;
+    const dy = y - this.lastViewportY;
+    const dz = zoom - this.lastViewportZoom;
+    this.viewportVelocity = Math.hypot(dx, dy) + Math.abs(dz);
+
+    this.lastViewportX = x;
+    this.lastViewportY = y;
+    this.lastViewportZoom = zoom;
+  }
+
+  /**
+   * Tell the engine how many agents currently occupy the venue. When this
+   * changes, the cached density texture is invalidated even if the
+   * viewport is otherwise stationary.
+   */
+  private updateOccupancyState(evacuated: number): void {
+    const occupancyCount = this.config.agentCount - evacuated;
+    if (occupancyCount !== this.lastOccupancyCount) {
+      this.lastOccupancyCount = occupancyCount;
+      this.isDensityTextureCacheValid = false;
+    }
+  }
+reset(): void {
     this.spawnAgents();
     if (this.device && this.agentBufferA) {
       this.device.queue.writeBuffer(this.agentBufferA, 0, this.agents as any);
     }
     this.currentReadBuffer = 0;
     this.time = 0;
+    this.lastOccupancyCount = -1;
+    this.isDensityTextureCacheValid = false;
   }
-
   private cleanupGPUResources(): void {
     this.agentBufferA?.destroy();
     this.agentBufferB?.destroy();

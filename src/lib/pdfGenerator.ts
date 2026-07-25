@@ -441,3 +441,199 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
 
   return await pdfDoc.save();
 }
+
+export async function generateGuestListPdf(
+  booking: any,
+  guests: any[],
+): Promise<Uint8Array> {
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.registerFontkit(fontkit);
+
+  const regularFontPath = path.join(
+    process.cwd(),
+    "public",
+    "fonts",
+    "NotoSans-Regular.ttf",
+  );
+  const boldFontPath = path.join(
+    process.cwd(),
+    "public",
+    "fonts",
+    "NotoSans-Bold.ttf",
+  );
+
+  let font: any;
+  let boldFont: any;
+
+  try {
+    const [regularFontBytes, boldFontBytes] = await Promise.all([
+      fs.promises.readFile(regularFontPath),
+      fs.promises.readFile(boldFontPath),
+    ]);
+    font = await pdfDoc.embedFont(regularFontBytes);
+    boldFont = await pdfDoc.embedFont(boldFontBytes);
+  } catch {
+    font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  }
+
+  const customerName = booking.user
+    ? `${booking.user.firstName || ""} ${booking.user.lastName || ""}`.trim()
+    : booking.customerEmail || "N/A";
+
+  const addPage = (pageNum: number, totalPages: number) => {
+    const page = pdfDoc.addPage([595, 842]);
+    const { width, height } = page.getSize();
+    let yPosition = height - 50;
+
+    const drawText = (text: string, options: PDFPageDrawTextOptions) => {
+      const sanitized = sanitizeMathSymbols(text);
+      try {
+        page.drawText(sanitized, options);
+      } catch {
+        const strictText = sanitized.replace(/[^\x20-\x7E]/g, "");
+        try {
+          page.drawText(strictText, options);
+        } catch {}
+      }
+    };
+
+    // Header blue bar
+    page.drawRectangle({
+      x: 0,
+      y: height - 10,
+      width,
+      height: 10,
+      color: rgb(0.23, 0.51, 0.96),
+    });
+    yPosition -= 40;
+
+    // Header content
+    drawText("GUEST LIST", {
+      x: 50,
+      y: yPosition,
+      size: 24,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
+
+    drawText(booking.venue?.name || "Verified Workspace", {
+      x: 400,
+      y: yPosition + 5,
+      size: 14,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    });
+
+    yPosition -= 20;
+
+    drawText(
+      `CONFIRMATION ID: ${booking.confirmationId || "WS-#" + booking.id}`,
+      {
+        x: 50,
+        y: yPosition,
+        size: 10,
+        font,
+        color: rgb(0.3, 0.3, 0.3),
+      },
+    );
+
+    drawText(`EVENT DATE: ${booking.date} @ ${booking.time}`, {
+      x: 400,
+      y: yPosition,
+      size: 10,
+      font,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+
+    yPosition -= 15;
+
+    drawText(`HOST: ${customerName}`, {
+      x: 50,
+      y: yPosition,
+      size: 10,
+      font,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+
+    yPosition -= 30;
+
+    // Footer
+    const timestamp = new Date().toISOString();
+    drawText(`Generated on ${timestamp}`, {
+      x: 50,
+      y: 30,
+      size: 8,
+      font,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+
+    drawText(`Page ${pageNum} of ${totalPages}`, {
+      x: 500,
+      y: 30,
+      size: 8,
+      font,
+      color: rgb(0.5, 0.5, 0.5),
+    });
+
+    return { page, drawText, yPosition };
+  };
+
+  // Pagination logic
+  const itemsPerPage = 30;
+  const totalPages = Math.max(1, Math.ceil(guests.length / itemsPerPage));
+
+  for (let p = 0; p < totalPages; p++) {
+    const { page, drawText, yPosition: initialY } = addPage(p + 1, totalPages);
+    let currentY = initialY;
+
+    // Table Header
+    drawText("Name", { x: 50, y: currentY, size: 10, font: boldFont });
+    drawText("Email", { x: 200, y: currentY, size: 10, font: boldFont });
+    drawText("Phone", { x: 380, y: currentY, size: 10, font: boldFont });
+    drawText("Status", { x: 480, y: currentY, size: 10, font: boldFont });
+
+    currentY -= 15;
+
+    page.drawLine({
+      start: { x: 50, y: currentY + 5 },
+      end: { x: 545, y: currentY + 5 },
+      thickness: 1,
+      color: rgb(0.8, 0.8, 0.8),
+    });
+
+    currentY -= 10;
+
+    // Table Rows
+    const startIndex = p * itemsPerPage;
+    const pageGuests = guests.slice(startIndex, startIndex + itemsPerPage);
+
+    for (const guest of pageGuests) {
+      drawText(guest.name || "N/A", { x: 50, y: currentY, size: 9, font });
+
+      // truncate email if too long
+      const email = guest.email || "N/A";
+      const displayEmail =
+        email.length > 28 ? email.substring(0, 25) + "..." : email;
+      drawText(displayEmail, { x: 200, y: currentY, size: 9, font });
+
+      drawText(guest.phone || "N/A", { x: 380, y: currentY, size: 9, font });
+
+      let statusColor = rgb(0.5, 0.5, 0.5);
+      if (guest.status === "ACCEPTED") statusColor = rgb(0.1, 0.6, 0.1);
+      if (guest.status === "DECLINED") statusColor = rgb(0.8, 0.1, 0.1);
+
+      drawText(guest.status || "PENDING", {
+        x: 480,
+        y: currentY,
+        size: 9,
+        font: boldFont,
+        color: statusColor,
+      });
+
+      currentY -= 20;
+    }
+  }
+
+  return await pdfDoc.save();
+}

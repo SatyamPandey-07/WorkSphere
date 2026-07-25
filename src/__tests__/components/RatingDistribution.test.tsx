@@ -28,7 +28,7 @@ describe("RatingDistribution", () => {
     expect(screen.getByText("5 Stars")).toBeInTheDocument();
     expect(screen.getAllByText("50% (1)").length).toBeGreaterThan(0);
 
-    const bars = container.querySelectorAll("[style*='scaleX']");
-    expect(bars.length).toBeGreaterThan(0);
+    const circles = container.querySelectorAll("circle");
+    expect(circles.length).toBeGreaterThan(0);
   });
 });

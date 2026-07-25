@@ -32,7 +32,36 @@ export default class WorkspaceServer implements Party.Server {
   private serverEpoch = Date.now();
   private sequenceId = 0;
 
-  constructor(readonly room: Party.Room) {}
+  private heartbeatInterval?: ReturnType<typeof setInterval>;
+  private connectionStates = new Map<
+    string,
+    { lastPong: number; name?: string }
+  >();
+
+  constructor(readonly room: Party.Room) {
+    this.heartbeatInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [connId, state] of this.connectionStates.entries()) {
+        const conn = this.room.getConnection(connId);
+        if (!conn) {
+          this.connectionStates.delete(connId);
+          continue;
+        }
+
+        if (now - state.lastPong > 30000) {
+          if (state.name) {
+            this.room.broadcast(
+              JSON.stringify({ type: "peer-leave", name: state.name }),
+            );
+          }
+          conn.close();
+          this.connectionStates.delete(connId);
+        } else if (now - state.lastPong >= 10000) {
+          conn.send(JSON.stringify({ type: "ping" }));
+        }
+      }
+    }, 10000);
+  }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
     const url = new URL(ctx.request.url);
@@ -108,13 +137,21 @@ export default class WorkspaceServer implements Party.Server {
       readOnly: isViewer,
     });
 
+    this.connectionStates.set(conn.id, { lastPong: Date.now() });
+
     // Also handle simple presence via standard WebSockets
     conn.addEventListener("message", (event: { data: unknown }) => {
       try {
-        const data = JSON.parse(event.data as string);
+        const raw = event.data as string;
+        if (raw.length > 10_240) return;
+
+        const data = JSON.parse(raw);
         if (data.type === "presence" || data.type === "cursor") {
-          // Broadcast presence/cursor to everyone else in the room
-          this.room.broadcast(event.data as string, [conn.id]);
+          const state = conn.state as { userId?: string } | null;
+          if (!state?.userId || data.userId !== state.userId) return;
+          if (typeof data.venueId !== "string") return;
+
+          this.room.broadcast(raw, [conn.id]);
         }
       } catch {
         // Not JSON or other error, handled by Yjs
@@ -141,6 +178,21 @@ export default class WorkspaceServer implements Party.Server {
           }),
         );
         return;
+      }
+
+      if (parsed.type === "pong") {
+        const state = this.connectionStates.get(sender.id);
+        if (state) {
+          state.lastPong = Date.now();
+        }
+        return;
+      }
+
+      if (parsed.type === "cursor" && parsed.name) {
+        const state = this.connectionStates.get(sender.id);
+        if (state) {
+          state.name = parsed.name;
+        }
       }
 
       if (
@@ -210,6 +262,7 @@ export default class WorkspaceServer implements Party.Server {
   // Clear a disconnecting user's seat check-in so they don't count toward
   // a venue's availability after they've left (#703).
   onClose(conn: Party.Connection) {
+    this.connectionStates.delete(conn.id);
     this.handleSeatCheckout(conn);
   }
 

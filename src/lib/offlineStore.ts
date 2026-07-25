@@ -1,3 +1,5 @@
+export { withWebLock } from "./webLock";
+import { withWebLock } from "./webLock";
 const STORE_NAME = "favorites-outbox";
 const CHECKIN_STORE_NAME = "checkins-outbox";
 export const TAG_STORE_NAME = "favorite-tags-outbox";
@@ -11,32 +13,6 @@ const DB_NAME = "WorkSphereOfflineDB";
  * dropped. (Issue #712)
  */
 export const MAX_SYNC_RETRIES = 3;
-
-const IDB_LOCK_NAME = "worksphere-offline-store-lock";
-
-/**
- * Web Locks API wrapper to serialize IndexedDB transactions across multiple concurrent browser tabs.
- * Prevents IndexedDB transaction deadlock during offline outbox sync (#910).
- */
-export async function withWebLock<T>(
-  callback: () => Promise<T>,
-  lockName = IDB_LOCK_NAME,
-): Promise<T> {
-  if (
-    typeof navigator !== "undefined" &&
-    "locks" in navigator &&
-    navigator.locks?.request
-  ) {
-    try {
-      return await navigator.locks.request(lockName, async () => {
-        return callback();
-      });
-    } catch {
-      return callback();
-    }
-  }
-  return callback();
-}
 
 export interface OfflineAction {
   id?: number;
@@ -192,7 +168,8 @@ export function getDB(): Promise<IDBDatabase> {
 
 /**
  * Pushes a target action into the client IndexedDB transaction queue.
- * Wrapped with Web Locks API to serialize multi-tab storage access (#910).
+ * Wrapped with Web Locks API to serialize multi-tab storage access (#910),
+ * now sharing the same lock as offlineStorage.ts (fix for #829).
  */
 export async function queueOfflineFavorite(
   venueId: string,
@@ -231,8 +208,15 @@ export async function queueOfflineFavorite(
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to queue offline action:", err);
+      if (
+        err.name === "SecurityError" ||
+        String(err.message).includes("SecurityError")
+      ) {
+        return;
+      }
+      throw err; // let the caller (UI / service worker) know the write did not happen
     }
   });
 }
@@ -296,6 +280,41 @@ export async function incrementRetryCount(id: number): Promise<number | null> {
 }
 
 /**
+ * Restores a failed payload back into the queue by resetting its retryCount to 0.
+ * This ensures network-disconnected items are not penalized with retry exhaustion
+ * and are re-attempted on the next sync cycle without data loss.
+ *
+ * Returns `true` if the item was found and restored, `false` if the item no longer exists.
+ */
+export async function restoreFailedPayload(id: number): Promise<boolean> {
+  return withWebLock(async () => {
+    try {
+      const db = await getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, "readwrite");
+        const store = tx.objectStore(STORE_NAME);
+        const getRequest = store.get(id);
+
+        getRequest.onsuccess = () => {
+          const existing = getRequest.result as OfflineAction | undefined;
+          if (!existing) {
+            resolve(false);
+            return;
+          }
+          store.put({ ...existing, retryCount: 0 });
+          tx.oncomplete = () => resolve(true);
+        };
+        getRequest.onerror = () => reject(getRequest.error);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (err) {
+      console.error("Failed to restore failed payload:", err);
+      return false;
+    }
+  });
+}
+
+/**
  * Clears an action from the store once it has been processed
  */
 export async function dequeueOfflineAction(id: number): Promise<void> {
@@ -349,6 +368,7 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
       });
     } catch (err) {
       console.error("Failed to queue offline check-in:", err);
+      throw err; // let the caller (UI / service worker) know the write did not happen
     }
   });
 }

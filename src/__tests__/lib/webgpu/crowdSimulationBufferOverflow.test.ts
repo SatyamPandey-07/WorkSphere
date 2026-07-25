@@ -2,9 +2,13 @@ import {
   CrowdSimulationEngine,
   type SimulationConfig,
 } from "../../../lib/webgpu/crowdSimulation";
+import {
+  CrowdFallbackRenderer,
+  createCrowdSimulatorWithFallback,
+} from "../../../lib/webgpu/crowdFallback";
 import { computeShader } from "../../../lib/webgpu/crowdShaders.wgsl";
 
-describe("WebGPU Crowd Simulation Buffer Overflow & Fallback Suite (#1282)", () => {
+describe("WebGPU Crowd Simulation Buffer Overflow & Fallback Suite", () => {
   let mockCanvas: HTMLCanvasElement;
   let baseConfig: SimulationConfig;
 
@@ -16,7 +20,7 @@ describe("WebGPU Crowd Simulation Buffer Overflow & Fallback Suite (#1282)", () 
     } as unknown as HTMLCanvasElement;
 
     baseConfig = {
-      agentCount: 25000,
+      agentCount: 5000,
       worldWidth: 100,
       worldHeight: 100,
       exitPositions: [[10, 10]],
@@ -28,6 +32,24 @@ describe("WebGPU Crowd Simulation Buffer Overflow & Fallback Suite (#1282)", () 
     expect(computeShader).toContain("arrayLength(&agentsIn)");
     expect(computeShader).toContain("arrayLength(&exits)");
     expect(computeShader).toContain("arrayLength(&walls)");
+  });
+
+  it("calculates 80% capacity threshold and triggers buffer reallocation when agent count exceeds 80%", async () => {
+    const engine = new CrowdSimulationEngine(mockCanvas, baseConfig);
+
+    expect(engine.getAllocatedCapacity()).toBe(10000);
+    expect(engine.getCapacityThreshold()).toBe(8000);
+
+    // Below 80% threshold (e.g. 7000 agents)
+    expect(engine.isReallocationNeeded(7000)).toBe(false);
+
+    // Exceeding 80% threshold (e.g. 8500 agents)
+    expect(engine.isReallocationNeeded(8500)).toBe(true);
+
+    const isReallocated = await engine.reallocateBuffers(20000);
+    expect(isReallocated).toBe(true);
+    expect(engine.getAllocatedCapacity()).toBe(20000);
+    expect(engine.getCapacityThreshold()).toBe(16000);
   });
 
   it("rejects initialization and falls back gracefully when agent payload exceeds GPU buffer limits", async () => {
@@ -66,5 +88,21 @@ describe("WebGPU Crowd Simulation Buffer Overflow & Fallback Suite (#1282)", () 
     const success = await engine.initialize();
 
     expect(success).toBe(false);
+  });
+
+  it("falls back automatically to CPU renderer when WebGPU device creation fails", async () => {
+    Object.defineProperty(navigator, "gpu", {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+
+    const result = await createCrowdSimulatorWithFallback(
+      mockCanvas,
+      baseConfig,
+    );
+
+    expect(result.isWebGPU).toBe(false);
+    expect(result.engine).toBeInstanceOf(CrowdFallbackRenderer);
   });
 });

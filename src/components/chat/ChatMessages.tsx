@@ -1,5 +1,6 @@
 "use client";
 
+import { useRateLimit } from "@/hooks/useRateLimit";
 import {
   BookOpen,
   Brain,
@@ -27,7 +28,10 @@ import {
   Check,
   Clock,
   Trash2,
+  X,
 } from "lucide-react";
+import { usePreferenceReranking } from "@/hooks/usePreferenceReranking";
+import { RecommendedBadge } from "@/components/RecommendedBadge";
 import { RefObject, useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
@@ -132,6 +136,7 @@ interface VenueChatCardProps {
   isSelected?: boolean;
   compareDisabled?: boolean;
   onToggleCompare?: (venue: Venue) => void;
+  isRecommended?: boolean;
 }
 
 export function VenueChatCard({
@@ -149,6 +154,7 @@ export function VenueChatCard({
   isSelected,
   compareDisabled,
   onToggleCompare,
+  isRecommended,
 }: VenueChatCardProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
@@ -242,11 +248,12 @@ export function VenueChatCard({
 
           <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <CategoryIcon className={`w-3.5 h-3.5 ${iconColor} shrink-0`} />
                 <h4 className="font-bold text-xs text-zinc-900 dark:text-zinc-50 truncate uppercase tracking-tight">
                   {venue.name}
                 </h4>
+                {isRecommended && <RecommendedBadge />}
                 {venue.score != null && (
                   <span className="text-[10px] font-black text-blue-600 bg-blue-50 dark:bg-blue-950/30 px-1 py-0.5 rounded">
                     {Math.round(venue.score * 10)}%
@@ -476,10 +483,11 @@ export function VenueChatCard({
               <CategoryIcon className={`w-5 h-5 ${iconColor}`} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                 <h4 className="font-black text-sm text-zinc-900 dark:text-zinc-50 truncate uppercase tracking-tight">
                   {venue.name}
                 </h4>
+                {isRecommended && <RecommendedBadge />}
               </div>
 
               {venue.address && (
@@ -706,6 +714,9 @@ export function VenueListings({
 
   const [selectedVenues, setSelectedVenues] = useState<Venue[]>([]);
 
+  // Apply preference reranking
+  const { rerankedResults } = usePreferenceReranking(venues);
+
   // INFINITE SCROLL STATES
   const [visibleCount, setVisibleCount] = useState(5);
   const [isFetchingNextPage, setIsFetchingNextPage] = useState(false);
@@ -725,10 +736,12 @@ export function VenueListings({
       (entries) => {
         if (entries[0].isIntersecting && !isFetchingNextPage) {
           // If we have more venues locally, mock the pagination load
-          if (visibleCount < venues.length) {
+          if (visibleCount < rerankedResults.length) {
             setIsFetchingNextPage(true);
             timeoutId = setTimeout(() => {
-              setVisibleCount((prev) => Math.min(prev + 5, venues.length));
+              setVisibleCount((prev) =>
+                Math.min(prev + 5, rerankedResults.length),
+              );
               setIsFetchingNextPage(false);
             }, 800);
           }
@@ -750,7 +763,13 @@ export function VenueListings({
       observer.disconnect();
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [visibleCount, venues.length, isFetchingNextPage, onLoadMore]);
+  }, [
+    visibleCount,
+    venues.length,
+    rerankedResults.length,
+    isFetchingNextPage,
+    onLoadMore,
+  ]);
 
   const handleToggleCompare = (venue: Venue) => {
     setSelectedVenues((prev) => {
@@ -771,7 +790,7 @@ export function VenueListings({
   ) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      const nextIndex = Math.min(index + 1, venues.length - 1);
+      const nextIndex = Math.min(index + 1, rerankedResults.length - 1);
       const nextEl = containerRef.current?.querySelector(
         `[data-index="${nextIndex}"]`,
       ) as HTMLElement;
@@ -793,7 +812,7 @@ export function VenueListings({
     <div className="space-y-3 pl-2" ref={containerRef}>
       <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2 mb-1">
         <p className="text-[10px] uppercase font-black tracking-widest text-zinc-400">
-          Recommended Venues ({venues.length})
+          Recommended Venues ({rerankedResults.length})
         </p>
         <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-inner">
           <button
@@ -823,7 +842,7 @@ export function VenueListings({
         </div>
       </div>
 
-      {venues.length === 0 ? (
+      {rerankedResults.length === 0 ? (
         <EmptyState
           illustration="search"
           message="No venues found"
@@ -832,7 +851,7 @@ export function VenueListings({
       ) : (
         <LayoutGroup id="venue-listings">
           <VenueGrid viewMode={viewMode}>
-            {venues.slice(0, visibleCount).map((venue, index) => (
+            {rerankedResults.slice(0, visibleCount).map((venue, index) => (
               <SubgridCell key={venue.id}>
                 {/* 
                   Measurement Container Pattern for Issue #1037:
@@ -851,6 +870,7 @@ export function VenueListings({
                   >
                     <VenueChatCard
                       venue={venue}
+                      isRecommended={(venue as any).isRecommended}
                       isFavorited={favorites.has(venue.id)}
                       onGetDirections={onGetDirections}
                       onToggleFavorite={onToggleFavorite}
@@ -1205,10 +1225,18 @@ export function ChatInput({
   const MAX_CHARS = 2000;
   const charCount = safeInput.length;
   const isOverLimit = charCount > MAX_CHARS;
+  const retryAfter = useRateLimit("chat");
 
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [isFocused, setIsFocused] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
+  const [shortcutLabel, setShortcutLabel] = useState("Ctrl+K");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleClear = () => {
+    onInputChange("");
+    inputRef.current?.focus();
+  };
 
   useEffect(() => {
     const history = localStorage.getItem("ws-recent-searches");
@@ -1219,6 +1247,15 @@ export function ChatInput({
         console.error(e);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    const isApple =
+      typeof navigator !== "undefined" &&
+      /Mac|iPhone|iPad|iPod/i.test(
+        navigator.platform || navigator.userAgent || "",
+      );
+    setShortcutLabel(isApple ? "⌘K" : "Ctrl+K");
   }, []);
 
   // Keep the composer above the iOS soft keyboard / browser chrome.
@@ -1352,6 +1389,7 @@ export function ChatInput({
 
   return (
     <div
+      data-keyboard-inset={keyboardInset}
       className="relative p-4 bg-white dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 pb-[max(1rem,env(safe-area-inset-bottom))]"
       style={
         keyboardInset > 0
@@ -1445,18 +1483,40 @@ export function ChatInput({
         >
           <Mic className="w-5 h-5" />
         </button>
-        <input
-          type="text"
-          value={safeInput}
-          onChange={(e) => onInputChange(e.target.value ?? "")}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
-          placeholder={
-            isListening ? "Listening…" : "Where's the focus mode hotspot?"
-          }
-          disabled={isLoading}
-          className="flex-1 px-4 py-3 bg-transparent text-zinc-900 dark:text-zinc-50 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 text-sm font-bold"
-        />
+        <div className="relative flex min-w-0 flex-1 items-center">
+          <input
+            ref={inputRef}
+            type="text"
+            value={safeInput}
+            onChange={(e) => onInputChange(e.target.value ?? "")}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            placeholder={
+              isListening ? "Listening…" : "Where's the focus mode hotspot?"
+            }
+            disabled={isLoading || retryAfter > 0}
+            className="w-full bg-transparent px-4 py-3 pr-16 text-sm font-bold text-zinc-900 placeholder:text-zinc-500 focus:placeholder-transparent focus:outline-none disabled:opacity-50 dark:text-zinc-50"
+          />
+          {safeInput.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClear}
+              className="absolute right-2 p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              aria-label="Clear search"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          {!safeInput.trim() && (
+            <kbd
+              className="pointer-events-none absolute right-2 hidden select-none rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-semibold tracking-wide text-zinc-400 shadow-sm sm:inline-block dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-500"
+              aria-hidden="true"
+              title="Focus search"
+            >
+              {shortcutLabel}
+            </kbd>
+          )}
+        </div>
 
         {/* ── Microphone button ──────────────────────────────────────────── */}
         <button
@@ -1479,11 +1539,15 @@ export function ChatInput({
         {/* ── Send button ────────────────────────────────────────────────── */}
         <button
           type="submit"
-          disabled={isLoading || !input.trim() || isOverLimit}
-          className="p-3 bg-[var(--primary-accent)] cursor-pointer hover:opacity-90 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group"
+          disabled={isLoading || !input.trim() || isOverLimit || retryAfter > 0}
+          className="p-3 bg-[var(--primary-accent)] cursor-pointer hover:opacity-90 text-white rounded-xl disabled:opacity-30 transition-all active:scale-95 shadow-lg group flex items-center justify-center gap-1.5"
         >
           {isLoading ? (
             <Loader2 className="w-5 h-5 animate-spin" />
+          ) : retryAfter > 0 ? (
+            <span className="text-xs font-black whitespace-nowrap px-1">
+              Retry in {retryAfter}s
+            </span>
           ) : (
             <Send className="w-5 h-5 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
           )}

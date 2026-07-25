@@ -1,9 +1,122 @@
+/**
+ * # WebRTC Peer-to-Peer Mesh Networking Architecture
+ *
+ * ## 1. Executive Summary
+ *
+ * The `useWebRTCMesh.ts` hook implements a robust, client-side peer-to-peer (P2P) mesh networking topology. It is designed to support real-time audio, video, and screen-sharing streams for up to 6 concurrent participants (1 local + 5 remote).
+ *
+ * Instead of relying on an expensive centralized Selective Forwarding Unit (SFU) or Multipoint Control Unit (MCU), this architecture utilizes a decentralized **Mesh Topology**. Every participant establishes a direct `RTCPeerConnection` with every other participant in the room.
+ *
+ * To establish these direct connections, the clients use a centralized WebSocket signaling server (powered by PartyKit) exclusively for the initial exchange of Session Description Protocol (SDP) offers, answers, and Interactive Connectivity Establishment (ICE) candidates.
+ *
+ * ---
+ *
+ * ## 2. Perfect Negotiation & Signaling Flow
+ *
+ * The architecture implements the **Perfect Negotiation** pattern to prevent state collisions when two peers attempt to connect or upgrade streams simultaneously. It assigns roles:
+ * *   **Initiator (Polite Peer):** The peer who receives the `peer-join` event and initiates the connection. Will yield (rollback) if a collision occurs.
+ * *   **Receiver (Impolite Peer):** The peer who just joined. Will ignore conflicting offers and prioritize its own state.
+ *
+ * ### 2.1 WebRTC Connection Sequence Diagram
+ *
+ * ```mermaid
+ * sequenceDiagram
+ *     autonumber
+ *     participant P1 as Peer 1 (Local/Initiator)
+ *     participant Sig as Signaling Server (PartyKit)
+ *     participant P2 as Peer 2 (Remote/Receiver)
+ *     participant STUN as Google STUN Server
+ *
+ *     Note over P1, P2: 1. Peer Discovery
+ *     P2->>Sig: { type: "webrtc-signal", kind: "peer-join" }
+ *     Sig->>P1: Forwards "peer-join" to all room members
+ *
+ *     Note over P1: P1 marks self as "Polite" (Initiator)
+ *     P1->>P1: createOffer() & setLocalDescription()
+ *     P1->>Sig: { kind: "offer", sdp: RTCSessionDescription }
+ *     Sig->>P2: Forwards Offer
+ *
+ *     Note over P2: P2 marks self as "Impolite"
+ *     P2->>P2: setRemoteDescription(Offer)
+ *     P2->>P2: createAnswer() & setLocalDescription()
+ *     P2->>Sig: { kind: "answer", sdp: RTCSessionDescription }
+ *     Sig->>P1: Forwards Answer
+ *     P1->>P1: setRemoteDescription(Answer)
+ *
+ *     Note over P1, P2: 2. ICE Candidate Gathering & Exchange
+ *     par ICE Gathering
+ *         P1->>STUN: Request Public IP/Port
+ *         STUN-->>P1: Returns Server Reflexive Candidate
+ *         P1->>Sig: { kind: "ice", candidate: RTCIceCandidate }
+ *         Sig->>P2: Forwards ICE Candidate
+ *         P2->>P2: addIceCandidate()
+ *     and
+ *         P2->>STUN: Request Public IP/Port
+ *         STUN-->>P2: Returns Server Reflexive Candidate
+ *         P2->>Sig: { kind: "ice", candidate: RTCIceCandidate }
+ *         Sig->>P1: Forwards ICE Candidate
+ *         P1->>P1: addIceCandidate()
+ *     end
+ *
+ *     Note over P1, P2: 3. Direct P2P Connection Established
+ *     P1<-->>P2: Encrypted Media Tracks (SRTP) & Data flowing
+ * ```
+ *
+ * ---
+ *
+ * ## 3. Data Channel Fallback & Recovery Protocol
+ *
+ * Because P2P connections are subject to unpredictable NAT strictness, aggressive corporate firewalls, and network changes (e.g., switching from Wi-Fi to Cellular), the architecture employs strict lifecycle monitoring and fallback mechanisms.
+ *
+ * ### 3.1 Connection State Monitoring
+ * The `useWebRTCMesh` hook constantly listens to the `oniceconnectionstatechange` event. If a peer's connection state transitions to `"disconnected"` or `"failed"`, the `cleanupPeer()` routine is immediately triggered to prevent memory leaks and ghost audio.
+ *
+ * ### 3.2 Signaling Relay Fallback (The WebRTC Fallback Protocol)
+ * When direct P2P connections fail, the architecture relies on the following fallback tiers:
+ *
+ * 1.  **STUN Fallback:** The primary resolution uses `stun:stun.l.google.com:19302` to traverse standard NATs by discovering the public IP.
+ * 2.  **TURN Fallback (Future Expansion):** For symmetric NATs where STUN fails, the `RTCPeerConnection` configuration can be injected with TURN (Traversal Using Relays around NAT) credentials. This routes the media through a secure external server.
+ * 3.  **Application State Fallback (PartyKit WebSocket):** While media tracks require WebRTC, critical application state (like text chat, mute toggles, and participant presence) does not rely on `RTCDataChannel`. Instead, the architecture safely falls back to using the persistent WebSocket connection (`socketRef.current.send()`). This ensures that even if a strict firewall blocks UDP media traffic, users remain visible and can communicate via text.
+ *
+ * ---
+ *
+ * ## 4. Security & Encryption Practices (DTLS/SRTP)
+ *
+ * Security is not an afterthought in this mesh architecture; it is strictly enforced by WebRTC specifications and browser constraints.
+ *
+ * ### 4.1 Datagram Transport Layer Security (DTLS)
+ * All data exchanged between peers is end-to-end encrypted. WebRTC absolutely prohibits unencrypted connections.
+ * *   During the SDP Offer/Answer phase, peers exchange **DTLS fingerprints**.
+ * *   Once ICE candidates establish a network path, a DTLS handshake is performed directly between the peers.
+ * *   This ensures that even though the signaling server (PartyKit) facilitates the connection, it **cannot** decrypt the media or data flowing between peers.
+ *
+ * ### 4.2 Secure Real-time Transport Protocol (SRTP)
+ * Once the DTLS handshake is complete, the encryption keys are extracted to set up SRTP.
+ * *   **Media Privacy:** All audio (`localStream`), video, and screen-sharing (`localScreenStream`) tracks are routed through SRTP.
+ * *   **Integrity Verification:** SRTP provides message authentication, ensuring that an attacker cannot inject or modify video/audio packets in transit without immediately invalidating the connection.
+ *
+ * ### 4.3 Signaling Security
+ * *   The PartyKit signaling WebSocket operates exclusively over **WSS (WebSocket Secure)**, protected by TLS.
+ * *   Connections to the signaling room require a Clerk authentication token (`query: token ? { token } : undefined`). The server rejects unauthorized sockets, preventing unauthorized users from joining the mesh or observing SDP traffic.
+ *
+ * ---
+ *
+ * ## 5. Network Telemetry & Quality Adaptation
+ *
+ * The architecture does not blindly stream data. It constantly profiles the connection health:
+ *
+ * 1.  **Round Trip Time (RTT) EMA:** The hook fires a signaling ping every 2000ms. It calculates an Exponential Moving Average (EMA) of the RTT to determine network quality (`good`, `fair`, `poor`).
+ * 2.  **Audio Downsampling:** If the network is classified as `"poor"` (RTT > 300ms), the local audio track constraints are dynamically degraded to a 16kHz sample rate to conserve bandwidth, restoring to 48kHz when the connection stabilizes.
+ * 3.  **Video Bitrate Adaptation:** A background loop (`adaptVideoBitrate`) cycles every 4000ms, commanding the RTCPeerConnections to dynamically adjust video encoding parameters based on available bandwidth.
+ */
+
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "partysocket/react";
 import { adaptVideoBitrate } from "@/lib/screenShareBitrate";
+import { calculateRMS, rmsToDecibels } from "@/lib/audio";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
@@ -71,14 +184,21 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
   // Audio context for monitoring levels
   const audioContextRef = useRef<AudioContext | null>(null);
   const analysersRef = useRef<
-    Map<string, { analyser: AnalyserNode; dataArray: Uint8Array }>
+    Map<
+      string,
+      {
+        source: MediaStreamAudioSourceNode;
+        analyser: AnalyserNode;
+        dataArray: Float32Array;
+      }
+    >
   >(new Map());
+  const emaDecibelsRef = useRef<Map<string, number>>(new Map());
 
-  // Intervals
+  // Intervals / Animations
   const bitrateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioLevelTimerRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
+  const audioAnimationRef = useRef<number | null>(null);
+  const lastFrameTimeRef = useRef<number>(0);
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rttEmaRef = useRef<number>(0);
 
@@ -123,11 +243,32 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       return next;
     });
 
-    analysersRef.current.delete(peerId);
+    const monitoring = analysersRef.current.get(peerId);
+    if (monitoring) {
+      try {
+        monitoring.source.disconnect();
+        monitoring.analyser.disconnect();
+      } catch {}
+      analysersRef.current.delete(peerId);
+    }
+    emaDecibelsRef.current.delete(peerId);
   }, []);
 
   const setupAudioMonitoring = useCallback(
     (peerId: string, stream: MediaStream) => {
+      if (stream.getAudioTracks().length === 0) {
+        const existing = analysersRef.current.get(peerId);
+        if (existing) {
+          try {
+            existing.source.disconnect();
+            existing.analyser.disconnect();
+          } catch {}
+          analysersRef.current.delete(peerId);
+        }
+        emaDecibelsRef.current.delete(peerId);
+        return;
+      }
+
       if (!audioContextRef.current) {
         audioContextRef.current = new (
           window.AudioContext || (window as any).webkitAudioContext
@@ -139,16 +280,23 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
         audioCtx.resume();
       }
 
-      if (stream.getAudioTracks().length === 0) return;
+      const existing = analysersRef.current.get(peerId);
+      if (existing) {
+        try {
+          existing.source.disconnect();
+          existing.analyser.disconnect();
+        } catch {}
+        analysersRef.current.delete(peerId);
+      }
 
       try {
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 256;
         source.connect(analyser);
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const dataArray = new Float32Array(analyser.fftSize);
 
-        analysersRef.current.set(peerId, { analyser, dataArray });
+        analysersRef.current.set(peerId, { source, analyser, dataArray });
       } catch (e) {
         console.warn("Could not setup audio monitoring for peer", peerId, e);
       }
@@ -254,26 +402,53 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
   }, []);
 
   const startAudioMonitoringLoop = useCallback(() => {
-    if (audioLevelTimerRef.current) clearInterval(audioLevelTimerRef.current);
-    audioLevelTimerRef.current = setInterval(() => {
-      const newLevels: Record<string, number> = {};
+    if (audioAnimationRef.current) {
+      cancelAnimationFrame(audioAnimationRef.current);
+      audioAnimationRef.current = null;
+    }
 
-      for (const [
-        peerId,
-        { analyser, dataArray },
-      ] of analysersRef.current.entries()) {
-        analyser.getByteFrequencyData(dataArray as any);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
+    const TARGET_FPS = 60;
+    const FRAME_INTERVAL = 1000 / TARGET_FPS; // ~16.67ms
+    const alpha = 0.2; // Exponential Moving Average smoothing factor
+
+    const tick = (timestamp: number) => {
+      const elapsed = timestamp - lastFrameTimeRef.current;
+
+      if (elapsed >= FRAME_INTERVAL) {
+        lastFrameTimeRef.current = timestamp - (elapsed % FRAME_INTERVAL);
+
+        if (analysersRef.current.size > 0) {
+          const newLevels: Record<string, number> = {};
+
+          for (const [
+            peerId,
+            { analyser, dataArray },
+          ] of analysersRef.current.entries()) {
+            analyser.getFloatTimeDomainData(dataArray as any);
+            const rms = calculateRMS(dataArray as any);
+            const rawDb = rmsToDecibels(rms); // 30 dB (silence) to 120 dB
+
+            // Apply Exponential Moving Average (EMA) with alpha = 0.2
+            const prevDb = emaDecibelsRef.current.get(peerId);
+            const emaDb =
+              prevDb === undefined
+                ? rawDb
+                : alpha * rawDb + (1 - alpha) * prevDb;
+            emaDecibelsRef.current.set(peerId, emaDb);
+
+            // Convert decibels (30..90 dB range) to normalized 0..1 scale
+            const normalizedLevel = Math.max(0, Math.min(1, (emaDb - 30) / 60));
+            newLevels[peerId] = normalizedLevel;
+          }
+
+          setAudioLevels(newLevels);
         }
-        const average = sum / dataArray.length;
-        // Normalize 0-1
-        newLevels[peerId] = Math.min(1, average / 128);
       }
 
-      setAudioLevels(newLevels);
-    }, 100);
+      audioAnimationRef.current = requestAnimationFrame(tick);
+    };
+
+    audioAnimationRef.current = requestAnimationFrame(tick);
   }, []);
 
   const startPingLoop = useCallback(() => {
@@ -396,16 +571,28 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     startAudioMonitoringLoop();
     startPingLoop();
     const peersMap = peersRef.current;
+    const analysersMap = analysersRef.current;
+    const emaDecibelsMap = emaDecibelsRef.current;
 
     return () => {
       if (bitrateTimerRef.current) clearInterval(bitrateTimerRef.current);
-      if (audioLevelTimerRef.current) clearInterval(audioLevelTimerRef.current);
+      if (audioAnimationRef.current)
+        cancelAnimationFrame(audioAnimationRef.current);
       if (pingTimerRef.current) clearInterval(pingTimerRef.current);
 
       const currentPeers = Array.from(peersMap.keys());
       for (const id of currentPeers) {
         cleanupPeer(id);
       }
+
+      for (const [, { source, analyser }] of analysersMap.entries()) {
+        try {
+          source.disconnect();
+          analyser.disconnect();
+        } catch {}
+      }
+      analysersMap.clear();
+      emaDecibelsMap.clear();
 
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localScreenStreamRef.current?.getTracks().forEach((t) => t.stop());

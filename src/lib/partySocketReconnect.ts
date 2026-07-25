@@ -98,7 +98,7 @@ export function attachJitteredBackoff<T extends object>(socket: T): T {
   const s = socket as T & DelaySocket;
   if (s.__worksphereJitter) return socket;
 
-let pendingTimeoutId: any = null;
+  let pendingTimeoutId: any = null;
   let pendingResolve: (() => void) | null = null;
   s.__worksphereState = ConnectionState.CLOSED;
   s.__lastCloseCode = null;
@@ -110,7 +110,7 @@ let pendingTimeoutId: any = null;
     return jitteredReconnectDelay(this._retryCount);
   };
 
-s._wait = function (this: any) {
+  s._wait = function (this: any) {
     if (pendingTimeoutId) {
       clearTimeout(pendingTimeoutId);
     }
@@ -138,7 +138,7 @@ s._wait = function (this: any) {
       this._connect();
     }
   };
-const originalClearTimeouts = s._clearTimeouts;
+  const originalClearTimeouts = s._clearTimeouts;
   s._clearTimeouts = function (this: any) {
     if (pendingTimeoutId) {
       clearTimeout(pendingTimeoutId);
@@ -149,7 +149,7 @@ const originalClearTimeouts = s._clearTimeouts;
       originalClearTimeouts.call(this);
     }
   };
-const originalDisconnect = s._disconnect;
+  const originalDisconnect = s._disconnect;
   s._disconnect = function (this: any, code?: number, reason?: string) {
     s.__worksphereState = ConnectionState.CLOSED;
     if (pendingTimeoutId) {

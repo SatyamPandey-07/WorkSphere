@@ -31,7 +31,6 @@ export async function POST(req: NextRequest) {
     await ensureUserExists(userId);
 
     const body = await req.json();
- feat/1628-offline-favorites-sync
     const operations: SyncOperation[] = body.operations || [];
 
     if (!operations || !Array.isArray(operations)) {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
+import { apiFetch } from "@/lib/apiClient";
 import { motion, AnimatePresence } from "framer-motion";
 import { useMultiplayerSession } from "@/hooks/useRealTime";
 import { VenueRatingDialog } from "./VenueRatingDialog";
@@ -167,6 +168,21 @@ export function EnhancedChatbot({
     {},
   );
   const [filters, setFilters] = useState<Filters>({});
+  const categoryCounts = useMemo(() => {
+    const counts = { cafe: 0, coworking: 0, library: 0 };
+    const latestWithVenues = [...messages]
+      .reverse()
+      .find((m) => m.venues && m.venues.length > 0);
+    const venues = latestWithVenues?.venues ?? [];
+    venues.forEach((v) => {
+      const cat = (v.category || "").toLowerCase();
+      if (cat === "cafe") counts.cafe += 1;
+      else if (cat === "library") counts.library += 1;
+      else if (cat === "coworking_space" || cat === "coworking")
+        counts.coworking += 1;
+    });
+    return counts;
+  }, [messages]);
   const [showFilters, setShowFilters] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
@@ -244,6 +260,19 @@ export function EnhancedChatbot({
           if (onMapUpdate && data.update) {
             onMapUpdate(data.update);
           }
+        } else if (data.type === "ping") {
+          socket.send(
+            JSON.stringify({
+              type: "pong",
+              timestamp: data.timestamp || Date.now(),
+            }),
+          );
+        } else if (data.type === "peer-leave") {
+          setCursors((prev) => {
+            const next = { ...prev };
+            if (data.name) delete next[data.name];
+            return next;
+          });
         }
       } catch (e) {
         console.error("Failed to parse WebSocket message:", e);
@@ -499,7 +528,10 @@ export function EnhancedChatbot({
         const data = await res.json();
         setFavorites(
           new Set<string>(
-            data.favorites?.map((f: { venueId: string }) => f.venueId) || [],
+            data.favorites?.map(
+              (f: { venuePlaceId?: string; venueId: string }) =>
+                f.venuePlaceId || f.venueId,
+            ) || [],
           ),
         );
       }
@@ -771,14 +803,12 @@ export function EnhancedChatbot({
       name: user?.firstName || "Anonymous",
     };
 
-
     setMessages((prev) => {
       if (prev.some((m) => m.id === newUserMessage.id)) return prev;
       return [...prev, newUserMessage];
     });
 
     setMessages((prev) => [...prev, newUserMessage]);
-
 
     if (socket && roomId) {
       sendSocketMessage(
@@ -792,7 +822,7 @@ export function EnhancedChatbot({
 
     try {
       const startTime = Date.now();
-      const response = await fetch("/api/chat", {
+      const response = await apiFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -822,20 +852,6 @@ export function EnhancedChatbot({
       }
 
       const assistantMessageId = (Date.now() + 1).toString();
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === assistantMessageId)) return prev;
-        return [
-          ...prev,
-          {
-            id: assistantMessageId,
-            role: "assistant",
-            content: "",
-            isStreaming: true,
-          },
-        ];
-      });
-
-      const assistantMessageId = nextMsgId();
       setMessages((prev) => [
         ...prev,
         {
@@ -845,7 +861,6 @@ export function EnhancedChatbot({
           isStreaming: true,
         },
       ]);
-
 
       setIsLoading(false);
 
@@ -1092,6 +1107,7 @@ export function EnhancedChatbot({
       </AnimatePresence>
 
       <ChatHeader
+        categoryCounts={categoryCounts}
         onOpenVenueSubmission={() => setShowVenueSubmission(true)}
         userLocation={location}
         onLocationChange={handleLocationChange}

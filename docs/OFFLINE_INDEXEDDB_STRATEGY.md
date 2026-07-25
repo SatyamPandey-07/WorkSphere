@@ -61,44 +61,123 @@ Dedicated outbox queues for specific user actions.
 
 ---
 
-## Store Schemas
+## Visual Object Store Schema Mapping
 
-### `venues` and `favorites` Store
+The visual matrix below summarizes all IndexedDB databases, object stores, primary keys, secondary indexes, and data retention policies across WorkSphere:
 
-| Field                    | Type   | Purpose                                     |
-| ------------------------ | ------ | ------------------------------------------- |
-| `id`                     | string | Unique identifier for the venue             |
-| `name`                   | string | Name of the venue                           |
-| `latitude` / `longitude` | number | Geolocation coordinates                     |
-| `savedAt`                | number | Timestamp used for cache eviction / sorting |
-| `type` / `category`      | string | Filtering criteria                          |
+```
++---------------------------------------------------------------------------------------------------------+
+|                                    INDEXEDDB STORAGE MAP & RETENTION                                     |
++----------------------+--------------------+-------------------+-------------------+---------------------+
+| Database Name        | Object Store Name  | Primary Key       | Secondary Indexes | Retention Policy    |
++----------------------+--------------------+-------------------+-------------------+---------------------+
+| worksphere-offline   | venues             | id (string)       | type, savedAt     | LRU / 7-Day Purge   |
+| worksphere-offline   | favorites          | id (string)       | savedAt           | Permanent until del |
+| worksphere-offline   | searches           | query (string)    | timestamp         | Max 15 items / 24h  |
+| worksphere-offline   | pendingActions     | id (autoIncrement)| timestamp         | Purged on sync ok   |
+| worksphere-offline   | imageCacheLRU      | url (string)      | lastAccessed      | LRU Max 20MB Cap    |
+| worksphere-offline   | receiptExports     | bookingId (string)| status, createdAt | 30-Day Auto Purge   |
+| WorkSphereOfflineDB  | favorites-outbox   | id (autoIncrement)| venueId           | Max 3 Retries/Purge |
+| WorkSphereOfflineDB  | checkins-outbox    | id (autoIncrement)| venueId, timestamp| Max 3 Retries/Purge |
++----------------------+--------------------+-------------------+-------------------+---------------------+
+```
 
-### `searches` Store
+---
 
-| Field       | Type   | Purpose                             |
-| ----------- | ------ | ----------------------------------- |
-| `query`     | string | The search text input (Primary Key) |
-| `results`   | array  | Array of `OfflineVenue` objects     |
-| `timestamp` | number | Timestamp of the search             |
+## Store Schemas & Definitions
 
-### `pendingActions` Store
+### 1. `venues` Store (`worksphere-offline`)
 
-| Field                        | Type   | Purpose                                                            |
-| ---------------------------- | ------ | ------------------------------------------------------------------ |
-| `id`                         | number | Auto-incremented primary key                                       |
-| `type`                       | string | Action type (e.g., `favorite`, `crdt-sync`, `conversation-rename`) |
-| `venueId` / `conversationId` | string | Target entity identifier                                           |
-| `data`                       | any    | Serialized payload or CRDT update                                  |
-| `timestamp`                  | number | Time the action was queued                                         |
+- **Primary Key**: `id` (string)
+- **Indexes**: `type` (non-unique), `savedAt` (non-unique)
+- **Schema Definition**:
+  | Field       | Type     | Required | Description                                              |
+  | :---------- | :------- | :------- | :------------------------------------------------------- |
+  | `id`        | `string` | Yes      | Unique venue primary key identifier                      |
+  | `name`      | `string` | Yes      | Human-readable venue name                                |
+  | `latitude`  | `number` | Yes      | Geolocation latitude coordinate                          |
+  | `longitude` | `number` | Yes      | Geolocation longitude coordinate                         |
+  | `type`      | `string` | Yes      | Venue category filter (`quiet`, `collaborative`, `cafe`) |
+  | `savedAt`   | `number` | Yes      | UTC epoch timestamp when cached locally                  |
 
-### `receiptExports` Store
+### 2. `favorites` Store (`worksphere-offline`)
 
-| Field       | Type        | Purpose                                                   |
-| ----------- | ----------- | --------------------------------------------------------- |
-| `bookingId` | string      | Primary Key                                               |
-| `filename`  | string      | File name for the exported PDF                            |
-| `status`    | string      | Sync status (`pending`, `downloading`, `ready`, `failed`) |
-| `pdf`       | ArrayBuffer | Binary content of the fetched PDF                         |
+- **Primary Key**: `id` (string)
+- **Indexes**: `savedAt` (non-unique)
+- **Schema Definition**:
+  | Field     | Type     | Required | Description                                 |
+  | :-------- | :------- | :------- | :------------------------------------------ |
+  | `id`      | `string` | Yes      | Venue primary key tagged as favorite        |
+  | `name`    | `string` | Yes      | Venue display name                          |
+  | `savedAt` | `number` | Yes      | UTC epoch timestamp added to user favorites |
+
+### 3. `searches` Store (`worksphere-offline`)
+
+- **Primary Key**: `query` (string)
+- **Indexes**: `timestamp` (non-unique)
+- **Schema Definition**:
+  | Field       | Type                  | Required | Description                               |
+  | :---------- | :-------------------- | :------- | :---------------------------------------- |
+  | `query`     | `string`              | Yes      | Text search query key                     |
+  | `results`   | `Array<OfflineVenue>` | Yes      | Pre-rendered search results payload       |
+  | `timestamp` | `number`              | Yes      | Execution timestamp for 24-hour TTL check |
+
+### 4. `pendingActions` Store (`worksphere-offline`)
+
+- **Primary Key**: `id` (autoIncrement number)
+- **Indexes**: None
+- **Schema Definition**:
+  | Field            | Type     | Required | Description                                                    |
+  | :--------------- | :------- | :------- | :------------------------------------------------------------- |
+  | `id`             | `number` | Yes      | Auto-incrementing primary key                                  |
+  | `type`           | `string` | Yes      | Mutation type (`crdt-sync`, `conversation-rename`, `favorite`) |
+  | `venueId`        | `string` | No       | Target venue ID payload                                        |
+  | `conversationId` | `string` | No       | Target conversation ID payload                                 |
+  | `data`           | `any`    | No       | Serialized state change delta payload                          |
+  | `timestamp`      | `number` | Yes      | Queue insertion timestamp                                      |
+
+### 5. `receiptExports` Store (`worksphere-offline`)
+
+- **Primary Key**: `bookingId` (string)
+- **Indexes**: `status` (non-unique), `createdAt` (non-unique)
+- **Schema Definition**:
+  | Field       | Type          | Required | Description                                                 |
+  | :---------- | :------------ | :------- | :---------------------------------------------------------- |
+  | `bookingId` | `string`      | Yes      | Booking transaction ID                                      |
+  | `filename`  | `string`      | Yes      | Target PDF receipt export file name                         |
+  | `status`    | `string`      | Yes      | Export status (`pending`, `downloading`, `ready`, `failed`) |
+  | `pdf`       | `ArrayBuffer` | No       | Compiled PDF receipt binary blob                            |
+  | `createdAt` | `number`      | Yes      | Creation timestamp for 30-day retention                     |
+
+### 6. Outbox Stores (`WorkSphereOfflineDB`)
+
+- **Stores**: `favorites-outbox`, `checkins-outbox`
+- **Primary Key**: `id` (autoIncrement number)
+- **Schema Definition**:
+  | Field        | Type     | Required | Description                                     |
+  | :----------- | :------- | :------- | :---------------------------------------------- |
+  | `id`         | `number` | Yes      | Auto-incrementing queue item ID                 |
+  | `venueId`    | `string` | Yes      | Target venue ID for check-in or favorite action |
+  | `action`     | `string` | No       | Outbox action (`ADD` or `REMOVE`)               |
+  | `timestamp`  | `number` | Yes      | Outbox entry creation epoch                     |
+  | `retryCount` | `number` | No       | Incremental failure count (Max 3 retries)       |
+
+---
+
+## Data Retention Policies
+
+1. **Venue Cache Retention**:
+   - **TTL Expiration**: Cached venues remain valid for 7 days (`MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1000`).
+   - **Purging Mechanism**: `cleanupOldData()` iterates through the `venues` store during idle browser intervals and deletes records where `Date.now() - savedAt > 7 days`.
+2. **Search Cache Retention**:
+   - **TTL Expiration**: Search query entries older than 24 hours (`24 * 60 * 60 * 1000`) are treated as stale on lookup and return `null`.
+   - **Capacity Cap**: Cached searches are capped at the 15 most recent entries (`MAX_SEARCH_HISTORY = 15`). Older entries are purged automatically.
+3. **Image LRU Cache Retention**:
+   - **Byte Storage Cap**: Capped at 20 MB (`MAX_CACHE_BYTES = 20 * 1024 * 1024`).
+   - **LRU Eviction**: When a `QuotaExceededError` occurs, `enforceImageCacheQuota()` sorts images by `lastAccessed` index and deletes the oldest entries until storage drops below the limit.
+4. **Outbox Action Retention**:
+   - **Sync Lifetime**: Queued outbox actions persist until HTTP 200 OK verification, after which they are deleted immediately.
+   - **Max Retry Eviction**: Actions failing 3 consecutive sync attempts (`retryCount >= 3`) are marked as failed and evicted to prevent queue blockage.
 
 ---
 

@@ -13,6 +13,8 @@ import {
   WebGPUFloorPlanRenderer,
   type FloorPlanData,
 } from "@/lib/webgpu/floorPlanRenderer";
+import { allocateCanvasDrawingBuffer } from "@/lib/webgl/canvasBufferSize";
+import { attachWebGLContextRecovery } from "@/lib/webgl/contextManager";
 
 interface FloorPlan3DProps {
   venueId: string;
@@ -31,6 +33,7 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
     const canvas = canvasRef.current;
     const renderer = new WebGPUFloorPlanRenderer(canvas);
     rendererRef.current = renderer;
+    let detachRecovery: (() => void) | null = null;
 
     renderer.initialize().then((success) => {
       if (success) {
@@ -39,10 +42,15 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
         renderer.startRenderLoop();
       } else {
         renderWebGLFallback(canvas, data);
+        // Reallocate DPR-correct buffers after context loss on Retina (#1030)
+        detachRecovery = attachWebGLContextRecovery(canvas, () => {
+          renderWebGLFallback(canvas, data);
+        });
       }
     });
 
     return () => {
+      detachRecovery?.();
       renderer.destroy();
     };
   }, [data]);
@@ -184,22 +192,22 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
                   })`,
                 }}
               />
-              <span className="text-[9px] text-zinc-400">{label}</span>
+              <span className="text-[9px] text-zinc-200">{label}</span>
             </div>
           ))}
           <div className="flex items-center gap-1.5">
             <Power className="w-2.5 h-2.5 text-yellow-400" />
-            <span className="text-[9px] text-zinc-400">Power Outlet</span>
+            <span className="text-[9px] text-zinc-200">Power Outlet</span>
           </div>
         </div>
 
         {/* Stats overlay */}
         <div className="absolute top-3 right-3 bg-zinc-900/90 backdrop-blur-sm rounded-lg p-2 space-y-1">
-          <p className="text-[9px] text-zinc-400">
+          <p className="text-[9px] text-zinc-200">
             <span className="text-white font-bold">{powerSeats}</span> seats
             with power
           </p>
-          <p className="text-[9px] text-zinc-400">
+          <p className="text-[9px] text-zinc-200">
             <span className="text-white font-bold">{quietSeats}</span> quiet
             zone seats
           </p>
@@ -207,7 +215,7 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
       </div>
 
       <div className="p-3 text-center">
-        <p className="text-[10px] text-zinc-400">
+        <p className="text-[10px] text-zinc-200">
           Drag to rotate • Scroll to zoom •{" "}
           {useWebGPU
             ? "Hardware-accelerated via WebGPU"
@@ -224,6 +232,14 @@ function renderWebGLFallback(
 ): void {
   const gl = canvas.getContext("webgl2");
   if (!gl) return;
+
+  // CSS size × devicePixelRatio so Retina restores are sharp (#1030)
+  const { width, height } = allocateCanvasDrawingBuffer(
+    canvas,
+    canvas.clientWidth || 800,
+    canvas.clientHeight || 450,
+  );
+  gl.viewport(0, 0, width, height);
 
   gl.clearColor(0.08, 0.08, 0.1, 1.0);
   gl.enable(gl.DEPTH_TEST);

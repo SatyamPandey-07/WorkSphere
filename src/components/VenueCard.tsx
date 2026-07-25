@@ -358,7 +358,7 @@ export function VenueCard({
     }
   };
 
-  const displayRating = enrichData?.rating || venue.rating;
+  const displayRating = enrichData?.rating ?? venue.rating ?? 0;
   const photos = enrichData?.photos || [];
   const amenities = enrichData?.amenities;
 
@@ -537,16 +537,23 @@ export function VenueCard({
 
         {/* Rating & Category */}
         <div className="flex items-center gap-3 mb-3">
-          {displayRating && (
-            <div className="flex items-center gap-1">
-              <Star className="w-4 h-4 text-yellow-500 fill-current shrink-0" />
-              <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                {typeof displayRating === "number"
-                  ? displayRating.toFixed(1)
-                  : displayRating}
-              </span>
-            </div>
-          )}
+          <div
+            className="inline-flex items-center gap-1 font-medium text-amber-500 dark:text-amber-400"
+            data-testid="star-rating-container"
+          >
+            <Star
+              className={`w-4 h-4 shrink-0 ${
+                displayRating > 0
+                  ? "text-amber-500 fill-amber-500 dark:text-amber-400 dark:fill-amber-400"
+                  : "text-zinc-400 dark:text-zinc-500"
+              }`}
+            />
+            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+              {isNaN(Number(displayRating))
+                ? "0.0"
+                : Number(displayRating).toFixed(1)}
+            </span>
+          </div>
           {venue.category && (
             <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300">
               {venue.category}

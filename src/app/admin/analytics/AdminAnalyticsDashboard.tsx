@@ -9,6 +9,7 @@ import {
   Bot,
   CalendarDays,
   Download,
+  FileText,
   Gauge,
   RefreshCw,
   Search,
@@ -16,6 +17,8 @@ import {
   Star,
   Users,
 } from "lucide-react";
+import { downloadAnalyticsCSV } from "@/lib/adminAnalyticsCsvExport";
+import { downloadAnalyticsPDF } from "@/lib/adminAnalyticsPdfExport";
 import {
   Area,
   AreaChart,
@@ -101,56 +104,29 @@ function MetricCard({
     </article>
   );
 }
-
-function exportVenueCSV(data: AnalyticsData): void {
-  const rows = data.venueLeaderboard.map((venue) => ({
-    Timestamp: data.generatedAt,
-    "Venue ID": venue.id,
-    "Venue Name": `"${venue.name.replace(/"/g, '""')}"`,
-    Category: `"${venue.category}"`,
-    "Visitor Count": venue.views,
-    Bookings: venue.bookings,
-    Rating: venue.rating.toFixed(1),
-    Score: venue.score,
-  }));
-
-  const headers = [
-    "Timestamp",
-    "Venue ID",
-    "Venue Name",
-    "Category",
-    "Visitor Count",
-    "Bookings",
-    "Rating",
-    "Score",
-  ];
-
-  const csvContent = [
-    headers.join(","),
-    ...rows.map((row) =>
-      headers
-        .map((header) => String(row[header as keyof typeof row]))
-        .join(","),
-    ),
-  ].join("\n");
-
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `venue-analytics-${data.range}-${new Date(data.generatedAt).toISOString().slice(0, 10)}.csv`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
-}
-
 export default function AdminAnalyticsDashboard() {
   const [range, setRange] = useState<RangeKey>("30d");
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+
+  const handleExportCSV = () => {
+    if (!data) return;
+    downloadAnalyticsCSV(data);
+  };
+
+  const handleExportPDF = async () => {
+    if (!data || isExportingPdf) return;
+    setIsExportingPdf(true);
+    try {
+      await downloadAnalyticsPDF(data);
+    } catch (err) {
+      console.error("PDF export failed:", err);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
 
   async function loadAnalytics(selectedRange: RangeKey) {
     setLoading(true);
@@ -255,13 +231,27 @@ export default function AdminAnalyticsDashboard() {
             </button>
 
             <button
-              onClick={() => data && exportVenueCSV(data)}
+              onClick={handleExportCSV}
               disabled={!data || loading}
               className="inline-flex items-center gap-2 rounded-2xl border border-violet-400/20 bg-violet-500/10 px-4 py-2.5 text-sm font-medium text-violet-200 transition hover:bg-violet-500/20 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-              aria-label="Export venue analytics to CSV"
+              aria-label="Export workspace analytics to CSV"
             >
               <Download className="h-4 w-4" />
               Export CSV
+            </button>
+
+            <button
+              onClick={handleExportPDF}
+              disabled={!data || loading || isExportingPdf}
+              className="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-2.5 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Export workspace analytics report to PDF"
+            >
+              {isExportingPdf ? (
+                <RefreshCw className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileText className="h-4 w-4" />
+              )}
+              Export PDF
             </button>
           </div>
         </header>
@@ -545,9 +535,23 @@ export default function AdminAnalyticsDashboard() {
                       {venue.bookings}
                     </td>
                     <td className="px-3 py-4">
-                      <span className="inline-flex items-center gap-1 text-amber-300">
-                        <Star className="h-4 w-4 fill-current" />
-                        {venue.rating.toFixed(1)}
+                      <span
+                        className={`inline-flex items-center gap-1 ${
+                          (venue.rating ?? 0) > 0
+                            ? "text-amber-300"
+                            : "text-zinc-500"
+                        }`}
+                      >
+                        <Star
+                          className={`h-4 w-4 ${
+                            (venue.rating ?? 0) > 0
+                              ? "fill-current"
+                              : "text-zinc-500"
+                          }`}
+                        />
+                        {venue.rating != null && !isNaN(venue.rating)
+                          ? venue.rating.toFixed(1)
+                          : "0.0"}
                       </span>
                     </td>
                     <td className="px-3 py-4 font-medium text-violet-300">

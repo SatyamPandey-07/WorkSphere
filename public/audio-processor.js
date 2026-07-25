@@ -77,6 +77,12 @@ class HRTFProcessor extends AudioWorkletProcessor {
     this.totalUnderruns = 0;
     this.totalFramesProcessed = 0;
 
+    // Spatial parameters
+    this.azimuth = 0.0;
+    this.elevation = 0.0;
+    this.distance = 1.0;
+    this.simdEnabled = 1;
+
     // Port message handler
     this.port.onmessage = this.handleMessage.bind(this);
   }
@@ -115,6 +121,55 @@ class HRTFProcessor extends AudioWorkletProcessor {
         if (frameSize) this.frameSize = frameSize;
         this.port.postMessage({ type: "CONFIGURED" });
         break;
+
+      case "UPDATE_SPATIAL": {
+        const { azimuth, elevation, distance } = event.data;
+        if (typeof azimuth === "number") this.azimuth = azimuth;
+        if (typeof elevation === "number") this.elevation = elevation;
+        if (typeof distance === "number") this.distance = distance;
+        break;
+      }
+
+      case "SET_SIMD_ENABLED": {
+        const { enabled } = event.data;
+        this.simdEnabled = enabled ? 1 : 0;
+        if (
+          this.wasm &&
+          this.wasm.exports &&
+          typeof this.wasm.exports.set_hrtf_simd_enabled === "function"
+        ) {
+          this.wasm.exports.set_hrtf_simd_enabled(this.simdEnabled);
+        } else if (
+          this.wasm &&
+          typeof this.wasm._set_hrtf_simd_enabled === "function"
+        ) {
+          this.wasm._set_hrtf_simd_enabled(this.simdEnabled);
+        }
+        break;
+      }
+
+      case "SET_ROOM_PARAMETERS": {
+        const { width, length, height, absorption } = event.data;
+        if (
+          this.wasm &&
+          this.wasm.exports &&
+          typeof this.wasm.exports.set_room_parameters === "function"
+        ) {
+          this.wasm.exports.set_room_parameters(
+            width,
+            length,
+            height,
+            absorption,
+          );
+        } else if (
+          this.wasm &&
+          typeof this.wasm._set_room_parameters === "function"
+        ) {
+          this.wasm._set_room_parameters(width, length, height, absorption);
+        }
+        this.port.postMessage({ type: "ROOM_PARAMETERS_UPDATED" });
+        break;
+      }
     }
   }
 
@@ -173,16 +228,27 @@ class HRTFProcessor extends AudioWorkletProcessor {
       exports: instance.exports,
     };
     this.engine = {
-      processAudio: (inputPtr, outputPtr, numSamples, azimuth, elevation) => {
-        if (instance.exports.process_hrtf_block) {
-          instance.exports.process_hrtf_block(
+      processAudio: (
+        inputPtr,
+        leftOutputPtr,
+        rightOutputPtr,
+        numSamples,
+        azimuth,
+        elevation,
+        distance,
+      ) => {
+        const fn =
+          instance.exports.process_hrtf_block ||
+          instance.exports._process_hrtf_block;
+        if (fn) {
+          fn(
             inputPtr,
-            outputPtr,
-            null,
+            leftOutputPtr,
+            rightOutputPtr,
             numSamples,
             azimuth,
             elevation,
-            1.0,
+            distance,
           );
         }
       },
@@ -196,18 +262,26 @@ class HRTFProcessor extends AudioWorkletProcessor {
 
     // Free previous allocations if any
     if (this.inputHeapPtr && wasmModule._free) {
-      wasmModule._free(this.inputHeapPtr, this.heapSize);
+      wasmModule._free(this.inputHeapPtr);
     }
-    if (this.outputHeapPtr && wasmModule._free) {
-      wasmModule._free(this.outputHeapPtr, this.heapSize);
+    if (this.leftOutputHeapPtr && wasmModule._free) {
+      wasmModule._free(this.leftOutputHeapPtr);
+    }
+    if (this.rightOutputHeapPtr && wasmModule._free) {
+      wasmModule._free(this.rightOutputHeapPtr);
     }
 
     this.heapSize = byteSize;
     this.inputHeapPtr = wasmModule._malloc(byteSize);
-    this.outputHeapPtr = wasmModule._malloc(byteSize);
+    this.leftOutputHeapPtr = wasmModule._malloc(byteSize);
+    this.rightOutputHeapPtr = wasmModule._malloc(byteSize);
 
     // Verify 16-byte alignment for SIMD
-    if (this.inputHeapPtr % 16 !== 0 || this.outputHeapPtr % 16 !== 0) {
+    if (
+      this.inputHeapPtr % 16 !== 0 ||
+      this.leftOutputHeapPtr % 16 !== 0 ||
+      this.rightOutputHeapPtr % 16 !== 0
+    ) {
       this.port.postMessage({
         type: "WARNING",
         message:
@@ -218,14 +292,16 @@ class HRTFProcessor extends AudioWorkletProcessor {
 
   process(inputs, outputs) {
     const output = outputs[0];
-    if (!output || !output[0]) return true;
+    if (!output || !output[0] || !output[1]) return true;
 
-    const channel = output[0];
-    const channelLength = channel.length;
+    const leftChannel = output[0];
+    const rightChannel = output[1];
+    const channelLength = leftChannel.length;
 
     // If WASM or ring buffer not ready, output silence
     if (!this.wasmReady || !this.bufferReady || !this.ringBuffer) {
-      channel.fill(0);
+      leftChannel.fill(0);
+      rightChannel.fill(0);
       return true;
     }
 
@@ -239,10 +315,10 @@ class HRTFProcessor extends AudioWorkletProcessor {
     this.totalFramesProcessed++;
 
     // Read audio from ring buffer
-    const samplesRead = this.ringBuffer.pop(channel);
+    const samplesRead = this.ringBuffer.pop(leftChannel);
 
     if (samplesRead === 0) {
-      // Underrun: channel is already zero-filled by pop()
+      // Underrun: leftChannel is already zero-filled by pop()
       this.consecutiveUnderruns++;
       this.totalUnderruns++;
 
@@ -259,6 +335,7 @@ class HRTFProcessor extends AudioWorkletProcessor {
           timestamp: currentTime,
         });
       }
+      rightChannel.fill(0);
     } else {
       this.consecutiveUnderruns = 0;
     }
@@ -268,40 +345,53 @@ class HRTFProcessor extends AudioWorkletProcessor {
       samplesRead > 0 &&
       this.wasm &&
       this.inputHeapPtr &&
-      this.outputHeapPtr
+      this.leftOutputHeapPtr &&
+      this.rightOutputHeapPtr
     ) {
       try {
         // Copy input to WASM heap
         this.wasm.HEAPF32.set(
-          channel,
+          leftChannel,
           this.inputHeapPtr / Float32Array.BYTES_PER_ELEMENT,
         );
 
-        // Apply HRTF spatialization (azimuth=0, elevation=0 for center test tone)
+        // Apply HRTF spatialization (using dynamic values)
         if (this.engine && this.engine.processAudio) {
           this.engine.processAudio(
             this.inputHeapPtr,
-            this.outputHeapPtr,
+            this.leftOutputHeapPtr,
+            this.rightOutputHeapPtr,
             channelLength,
-            0.0, // azimuth: center
-            0.0, // elevation: ear level
+            this.azimuth ?? 0.0,
+            this.elevation ?? 0.0,
+            this.distance ?? 1.0,
           );
         }
 
         // Read processed output from WASM heap
-        const processedView = new Float32Array(
+        const processedLeftView = new Float32Array(
           this.wasm.HEAPF32.buffer,
-          this.outputHeapPtr,
+          this.leftOutputHeapPtr,
           channelLength,
         );
-        channel.set(processedView);
+        const processedRightView = new Float32Array(
+          this.wasm.HEAPF32.buffer,
+          this.rightOutputHeapPtr,
+          channelLength,
+        );
+        leftChannel.set(processedLeftView);
+        rightChannel.set(processedRightView);
       } catch (err) {
         // WASM processing failed — keep whatever we have (soft fail)
         this.port.postMessage({
           type: "ERROR",
           error: `WASM process error: ${err.message}`,
         });
+        rightChannel.fill(0);
       }
+    } else if (samplesRead > 0) {
+      // Fallback: if WASM/heap pointers not ready but samples were read, output mono on both
+      rightChannel.set(leftChannel);
     }
 
     // Report fill level periodically (every 100 frames ~ every 2 seconds)

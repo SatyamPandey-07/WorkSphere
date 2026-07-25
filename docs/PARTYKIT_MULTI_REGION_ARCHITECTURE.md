@@ -202,7 +202,98 @@ async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
 
 ---
 
-## 6. Presence & Real-Time Performance Benchmarks
+## 6. Multi-Region Reconnection & Failover Protocol
+
+### 6.1 Reconnection Sequence Diagram
+
+The following Mermaid sequence diagram details the client edge server reconnect loop, heartbeat ping/pong mechanism, failover node selection, and state recovery handshake:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Client as PartySocket Client
+    participant Primary as Primary Edge Server (us-east)
+    participant Geo as Edge Geo-Router
+    participant Fallback as Failover Edge Server (us-west)
+    participant DO as Durable Object State Store
+
+    Note over Client,Primary: Normal Operation & Heartbeat Monitoring
+    loop Every 5000ms Interval
+        Client->>Primary: JSON { type: "ping" }
+        Primary-->>Client: JSON { type: "pong", region: "us-east" }
+        Client->>Client: Evaluate RTT (e.g. 15ms < 100ms threshold)
+    end
+
+    Note over Client,Primary: Network Degradation / Server Outage Detected
+    Client->>Primary: JSON { type: "ping" }
+    Note over Primary: Connection Drops / Ping Timeout (>3000ms)
+    Client->>Client: Trigger Connection Disconnect (State: "connecting")
+
+    Note over Client,Geo: Multi-Region Edge Router Failover
+    Client->>Geo: Request Best Available Edge Node (Client Geo/Latency Rules)
+    Geo-->>Client: Return Failover Node Endpoint (us-west.worksphere.partykit.dev)
+
+    Note over Client,Fallback: Failover Reconnection & State Recovery
+    Client->>Fallback: WSS Connect ?token=<jwt>&region=us-west
+    Fallback->>Fallback: Verify JWT & Connection Handshake
+    Fallback-->>Client: WebSocket Open Established (State: "syncing_snapshot")
+
+    Client->>Fallback: JSON { type: "request_room_snapshot", roomId: "workspace-101" }
+    Fallback->>DO: Fetch Unified Room State & Sync Deltas
+    DO-->>Fallback: Return Room Snapshot + Unapplied Deltas
+    Fallback-->>Client: JSON { type: "room_snapshot_response", payload: StateRecoveryPayload }
+
+    Client->>Client: Reconcile State & Replay Post-Disconnect Deltas
+    Client->>Client: Transition State to "synced"
+```
+
+### 6.2 Heartbeat Ping Intervals & Timeout Thresholds
+
+To maintain high availability and enable rapid failover detection, `useMultiRegion` (`src/hooks/useMultiRegion.ts`) and `FailoverSyncManager` (`src/lib/edge/failoverSync.ts`) strictly enforce the following heartbeat parameters:
+
+| Parameter                        | Value             | Description                                                                                           |
+| :------------------------------- | :---------------- | :---------------------------------------------------------------------------------------------------- |
+| **Heartbeat Ping Interval**      | $5,000\text{ms}$  | Client transmits periodic `{ type: "ping" }` control frames to active regional edge node.             |
+| **Pong Response Timeout**        | $3,000\text{ms}$  | Maximum duration allowed for server `{ type: "pong" }` before marking heartbeat attempt degraded.     |
+| **Primary Region Latency Cap**   | $100\text{ms}$    | If `roundTripTime >= 100ms`, client marks node degraded and prepares failover routing.                |
+| **Failover Node Exclusion Cap**  | $200\text{ms}$    | Node candidate filter excludes any regional server exhibiting `latencyMs >= 200ms`.                   |
+| **Snapshot Fetch Timeout**       | $3,000\text{ms}$  | Max wait duration for `room_snapshot_response` before falling back to draining buffered local deltas. |
+| **Presence TTL Stale Threshold** | $30,000\text{ms}$ | Inactive client presence records unupdated for $>30\text{s}$ are automatically purged from memory.    |
+
+### 6.3 State Recovery Payload Structure
+
+During failover reconnection, the edge server transmits a state recovery payload (`room_snapshot_response`) allowing the reconnected client to reconcile room state without data loss:
+
+```typescript
+export interface StateRecoveryPayload {
+  type: "room_snapshot_response";
+  snapshotId: string; // Unique UUID for snapshot idempotency
+  timestamp: number; // Server UTC Epoch timestamp (ms)
+  roomId: string; // Target workspace / venue room identifier
+  coveredRevision: number; // Incremental state revision sequence number
+  venues: Array<{
+    venueId: string;
+    capacity: number;
+    checkedInUsers: Array<{
+      userId: string;
+      region: Region;
+      cursor: { x: number; y: number } | null;
+      lastUpdate: number; // LWW timestamp resolution
+    }>;
+    status: "green" | "yellow" | "red";
+  }>;
+  crdtStateVector?: string; // Base64 encoded Yjs state vector for delta reconciliation
+  unappliedDeltas: Array<{
+    senderId: string;
+    timestamp: number;
+    delta: string; // Base64 encoded update payload
+  }>;
+}
+```
+
+---
+
+## 7. Presence & Real-Time Performance Benchmarks
 
 Performance testing evaluated WebSocket message delivery latency under simulated multi-region load.
 
@@ -225,7 +316,7 @@ Performance testing evaluated WebSocket message delivery latency under simulated
 
 ---
 
-## 7. Verification & Operational Testing
+## 8. Verification & Operational Testing
 
 To verify PartyKit server behavior and edge routing logic:
 

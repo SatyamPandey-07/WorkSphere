@@ -36,6 +36,31 @@ static int simd_enabled = 1;
 static float ref_distance = 1.0f;
 static float max_distance = 100.0f;
 
+// ─── Room Acoustic Parameters & FDN Reverberator State ────────────────────────
+static float g_room_width = 10.0f;     // meters
+static float g_room_length = 12.0f;    // meters
+static float g_room_height = 3.0f;     // meters
+static float g_room_absorption = 0.2f; // 0.0 (reflective) to 1.0 (anechoic)
+
+#define FDN_NUM_DELAYS 4
+#define FDN_MAX_DELAY_LEN 4096
+
+static float fdn_delay_buffers[FDN_NUM_DELAYS][FDN_MAX_DELAY_LEN];
+static int fdn_write_indices[FDN_NUM_DELAYS] = {0, 0, 0, 0};
+static float fdn_damp_states[FDN_NUM_DELAYS] = {0.0f, 0.0f, 0.0f, 0.0f};
+
+// Base prime delay lengths in samples at 48kHz
+static const int FDN_BASE_DELAYS[FDN_NUM_DELAYS] = {967, 1201, 1453, 1787};
+
+static int get_fdn_delay_length(int index) {
+  float room_scale = (g_room_width + g_room_length + g_room_height) / 25.0f;
+  if (room_scale < 0.2f) room_scale = 0.2f;
+  if (room_scale > 2.5f) room_scale = 2.5f;
+  int len = (int)(FDN_BASE_DELAYS[index] * room_scale);
+  if (len >= FDN_MAX_DELAY_LEN) len = FDN_MAX_DELAY_LEN - 1;
+  return len;
+}
+
 // ─── Synthetic HRTF Impulse Response Generator ────────────────────────────────
 /**
  * Computes synthetic left and right ear HRTF FIR impulse response filters
@@ -176,9 +201,99 @@ static void convolve_fir_scalar(
     }
 }
 
+// ─── Early Reflections & FDN Reverberator ─────────────────────────────────────
+static void process_early_reflections_and_fdn(
+    const float* input,
+    int num_samples,
+    float* left_output,
+    float* right_output,
+    float distance
+) {
+    if (g_room_absorption >= 0.99f) {
+        return; // Anechoic room — skip reflections
+    }
+
+    const float reflection_reflectivity = (1.0f - g_room_absorption) * 0.4f;
+    const float reverb_mix = (1.0f - g_room_absorption) * 0.25f;
+
+    // 6-Wall Early Reflection Delays & Attenuation
+    const float wall_distances[6] = {
+        g_room_width * 0.5f, g_room_width * 0.5f,
+        g_room_length * 0.5f, g_room_length * 0.5f,
+        g_room_height * 0.5f, g_room_height * 0.5f
+    };
+
+    for (int n = 0; n < num_samples; n++) {
+        float in_sample = input[n];
+        float early_refl = 0.0f;
+
+        for (int w = 0; w < 6; w++) {
+            int delay_samples = (int)((wall_distances[w] / SPEED_OF_SOUND) * SAMPLE_RATE);
+            if (delay_samples > 0 && n - delay_samples >= 0) {
+                early_refl += input[n - delay_samples] * reflection_reflectivity;
+            }
+        }
+
+        // FDN Late Reverberation Processing
+        float delay_outputs[FDN_NUM_DELAYS];
+        for (int i = 0; i < FDN_NUM_DELAYS; i++) {
+            int len = get_fdn_delay_length(i);
+            int read_idx = (fdn_write_indices[i] - len + FDN_MAX_DELAY_LEN) % FDN_MAX_DELAY_LEN;
+            float raw_delay = fdn_delay_buffers[i][read_idx];
+
+            // Lowpass damping filter
+            fdn_damp_states[i] = raw_delay * (1.0f - g_room_absorption) + fdn_damp_states[i] * g_room_absorption;
+            delay_outputs[i] = fdn_damp_states[i];
+        }
+
+        // Householder Feedback Matrix A = I - (2/N)*1*1^T
+        float sum_delay = delay_outputs[0] + delay_outputs[1] + delay_outputs[2] + delay_outputs[3];
+        float feedback_gain = (1.0f - g_room_absorption) * 0.7f;
+
+        for (int i = 0; i < FDN_NUM_DELAYS; i++) {
+            float fdn_in = (in_sample + early_refl) * 0.25f + (delay_outputs[i] - 0.5f * sum_delay) * feedback_gain;
+            fdn_delay_buffers[i][fdn_write_indices[i]] = fdn_in;
+            fdn_write_indices[i] = (fdn_write_indices[i] + 1) % FDN_MAX_DELAY_LEN;
+        }
+
+        // Stereo FDN Late Reverb Mix
+        float late_left = (delay_outputs[0] + delay_outputs[2]) * 0.5f * reverb_mix;
+        float late_right = (delay_outputs[1] + delay_outputs[3]) * 0.5f * reverb_mix;
+
+        left_output[n] += (early_refl * 0.3f + late_left);
+        right_output[n] += (early_refl * 0.3f + late_right);
+    }
+}
+
 // ─── Exported C WebAssembly API Functions ─────────────────────────────────────
 
 extern "C" {
+
+/**
+ * Updates room dimensions and wall surface absorption coefficient.
+ * @param width Room width in meters
+ * @param length Room length in meters
+ * @param height Room height in meters
+ * @param absorption Surface absorption coefficient (0.0 = reflective, 1.0 = anechoic)
+ */
+__attribute__((used))
+void set_room_parameters(float width, float length, float height, float absorption) {
+    if (width > 0.0f) g_room_width = width;
+    if (length > 0.0f) g_room_length = length;
+    if (height > 0.0f) g_room_height = height;
+    if (absorption >= 0.0f && absorption <= 1.0f) g_room_absorption = absorption;
+}
+
+/**
+ * Reads current room dimension and surface absorption parameters.
+ */
+__attribute__((used))
+void get_room_parameters(float* width, float* length, float* height, float* absorption) {
+    if (width) *width = g_room_width;
+    if (length) *length = g_room_length;
+    if (height) *height = g_room_height;
+    if (absorption) *absorption = g_room_absorption;
+}
 
 /**
  * Allocates a 16-byte aligned scratch buffer in the WebAssembly heap
@@ -220,12 +335,13 @@ void set_hrtf_simd_enabled(int enabled) {
  * Main HRTF Processing Entrypoint
  *
  * Processes a mono PCM input block and writes binaural (left & right) spatialized audio
- * using HRTF impulse response FIR convolution, ITD/ILD panning, and distance attenuation.
+ * using HRTF impulse response FIR convolution, ITD/ILD panning, distance attenuation,
+ * early reflections, and Feedback Delay Network (FDN) late reverberation.
  *
  * @param input Pointer to mono Float32 input samples in WASM heap
  * @param left_output Pointer to left ear Float32 output buffer in WASM heap
  * @param right_output Pointer to right ear Float32 output buffer in WASM heap
- * @param num_samples Number of audio samples in the block (e.g. 128 or 256)
+ * @param num_samples Number of audio samples in the block (e.g. 64, 128, or 256)
  * @param azimuth Horizontal angle relative to head (-180 to +180 degrees)
  * @param elevation Vertical angle relative to head (-90 to +90 degrees)
  * @param distance Distance from listener in meters (> 0)
@@ -273,7 +389,12 @@ int process_hrtf_block(
         right_output[i] *= dist_gain;
     }
 
+    // Process early reflections & FDN late reverberation
+    process_early_reflections_and_fdn(input, num_samples, left_output, right_output, safe_distance);
+
     return 0;
 }
+
+} // extern "C"
 
 } // extern "C"

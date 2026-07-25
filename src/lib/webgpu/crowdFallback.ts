@@ -6,9 +6,37 @@
  * Capped at 10,000 agents for performance.
  */
 
-import type { SimulationConfig } from "./crowdSimulation";
+import {
+  CrowdSimulationEngine,
+  type SimulationConfig,
+} from "./crowdSimulation";
 
 const MAX_FALLBACK_AGENTS = 10000;
+
+export async function createCrowdSimulatorWithFallback(
+  canvas: HTMLCanvasElement,
+  config: SimulationConfig,
+): Promise<{
+  engine: CrowdSimulationEngine | CrowdFallbackRenderer;
+  isWebGPU: boolean;
+}> {
+  try {
+    const engine = new CrowdSimulationEngine(canvas, config);
+    const success = await engine.initialize();
+    if (success) {
+      return { engine, isWebGPU: true };
+    }
+  } catch (error) {
+    console.warn(
+      "[CrowdSim] WebGPU initialization failed, falling back to WebGL2/CPU:",
+      error,
+    );
+  }
+
+  const fallback = new CrowdFallbackRenderer(canvas, config);
+  fallback.initialize();
+  return { engine: fallback, isWebGPU: false };
+}
 
 // Simple 2D Boids + pathfinding on CPU
 interface CpuAgent {
@@ -266,7 +294,9 @@ export class CrowdFallbackRenderer {
     );
 
     // Initialize density grid
-    this.densityGrid = new Float32Array(this.DENSITY_GRID_SIZE * this.DENSITY_GRID_SIZE);
+    this.densityGrid = new Float32Array(
+      this.DENSITY_GRID_SIZE * this.DENSITY_GRID_SIZE,
+    );
 
     // Create density texture
     this.densityTexture = gl.createTexture();
@@ -393,7 +423,8 @@ export class CrowdFallbackRenderer {
 
   private renderHeatmap(): void {
     const gl = this.gl;
-    if (!gl || !this.heatmapProgram || !this.densityTexture || !this.quadBuffer) return;
+    if (!gl || !this.heatmapProgram || !this.densityTexture || !this.quadBuffer)
+      return;
 
     // Upload density data to texture
     gl.bindTexture(gl.TEXTURE_2D, this.densityTexture);
@@ -431,10 +462,7 @@ export class CrowdFallbackRenderer {
       gl.getUniformLocation(this.heatmapProgram, "uMaxDensity"),
       this.maxDensity,
     );
-    gl.uniform1f(
-      gl.getUniformLocation(this.heatmapProgram, "uOpacity"),
-      0.6,
-    );
+    gl.uniform1f(gl.getUniformLocation(this.heatmapProgram, "uOpacity"), 0.6);
 
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disable(gl.BLEND);

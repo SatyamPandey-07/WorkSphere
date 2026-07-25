@@ -26,7 +26,7 @@ RUN emcc hrtf_engine.cpp \
     -O3 \
     -msimd128 \
     -s WASM=1 \
-    -s EXPORTED_FUNCTIONS='["_malloc_scratch_buffer", "_free_scratch_buffer", "_process_hrtf_block", "_set_hrtf_simd_enabled", "_malloc", "_free"]' \
+    -s EXPORTED_FUNCTIONS='["_malloc_scratch_buffer", "_free_scratch_buffer", "_process_hrtf_block", "_set_hrtf_simd_enabled", "_set_room_parameters", "_get_room_parameters", "_malloc", "_free"]' \
     -s EXPORTED_RUNTIME_METHODS='["cwrap", "setValue", "getValue", "HEAPF32"]' \
     -s INITIAL_MEMORY=6553600 \
     -s ALLOW_MEMORY_GROWTH=1 \

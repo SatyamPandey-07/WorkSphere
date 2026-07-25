@@ -36,6 +36,7 @@ export function useSpatialAudio({
   const [isReady, setIsReady] = useState(false);
   const [contextState, setContextState] =
     useState<AudioContextState>("suspended");
+  const [remoteListeners, setRemoteListeners] = useState<string[]>([]);
 
   const routerRef = useRef<SpatialAudioRouter | null>(null);
   const interpolatorRef = useRef<RemoteListenerInterpolator | null>(null);
@@ -116,6 +117,19 @@ export function useSpatialAudio({
     }
   }, [peerPositions, isReady]);
 
+  // Sync remote listener IDs from interpolator to state
+  const syncRemoteListeners = useCallback(() => {
+    const interpolator = interpolatorRef.current;
+    if (!interpolator) return;
+    setRemoteListeners((prev) => {
+      const next = interpolator.getUserIds();
+      if (prev.length === next.length && prev.every((id, i) => id === next[i])) {
+        return prev;
+      }
+      return next;
+    });
+  }, []);
+
   // 4. Handle incoming spatial listener update messages
   const handleIncomingMessage = useCallback((data: unknown) => {
     if (!data || typeof data !== "object") return;
@@ -143,6 +157,13 @@ export function useSpatialAudio({
       }
     }
   }, []);
+
+  // Sync remote listeners after every incoming message batch
+  useEffect(() => {
+    if (!isReady) return;
+    const interval = setInterval(syncRemoteListeners, 1000);
+    return () => clearInterval(interval);
+  }, [isReady, syncRemoteListeners]);
 
   // 5. Broadcast local listener coordinates to PartySocket at 20 Hz
   useEffect(() => {
@@ -221,6 +242,7 @@ export function useSpatialAudio({
   return {
     isReady,
     contextState,
+    remoteListeners,
     resumeAudioContext,
     attachRemoteTrack,
     detachPeer,

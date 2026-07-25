@@ -6,6 +6,10 @@ import * as Y from "yjs";
 import YProvider from "y-partykit/provider";
 import { FailoverSyncManager } from "@/lib/edge/failoverSync";
 import { useMeshDataChannels } from "@/hooks/useMeshDataChannels";
+import {
+  compressYjsUpdate,
+  decompressYjsUpdate,
+} from "@/lib/crdt/yjsCompression";
 import type {
   ToolType,
   ShapeData,
@@ -77,7 +81,9 @@ export function useMeshCanvasWhiteboard(
     const doc = docRef.current;
     if (!doc) return;
     try {
-      Y.applyUpdate(doc, new Uint8Array(data), "mesh");
+      const rawUpdate = new Uint8Array(data);
+      const decompressed = decompressYjsUpdate(rawUpdate);
+      Y.applyUpdate(doc, decompressed, "mesh");
     } catch (err) {
       console.warn("Failed to apply mesh update from", peerId, err);
     }
@@ -94,7 +100,7 @@ export function useMeshCanvasWhiteboard(
 
     if (typeof getToken === "function") {
       getToken()
-        .then((t) => setToken(t ?? null))
+        .then((t: any) => setToken(t ?? null))
         .catch(() => setToken(null));
     }
   }, [canvasId, getToken]);
@@ -176,7 +182,8 @@ export function useMeshCanvasWhiteboard(
     const sendToAll = mesh.sendToAll;
     const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
       if (origin === "mesh") return;
-      sendToAll(update.buffer as ArrayBuffer);
+      const compressed = compressYjsUpdate(update);
+      sendToAll(compressed.buffer as ArrayBuffer);
     };
     doc.on("update", handleDocUpdate);
     unsubDocUpdateRef.current = () => {
@@ -193,7 +200,10 @@ export function useMeshCanvasWhiteboard(
 
     const handleAwarenessChange = () => {
       if (!awareness) return;
-      const states = Array.from(awareness.getStates().entries()) as [number, any][];
+      const states = Array.from(awareness.getStates().entries()) as [
+        number,
+        any,
+      ][];
       const cursors: RemoteCursor[] = [];
       for (const [clientId, state] of states) {
         if (clientId === awareness.clientID) continue;
@@ -218,9 +228,9 @@ export function useMeshCanvasWhiteboard(
       unsubDocUpdateRef.current?.();
       um.destroy();
       if (newProvider) {
-        if (handleStatus && typeof newProvider.off === "function") newProvider.off("status", handleStatus);
-        if (handleSync && typeof newProvider.off === "function") newProvider.off("sync", handleSync);
-        if (typeof newProvider.disconnect === "function") newProvider.disconnect();
+        if (handleStatus) newProvider.off("status", handleStatus);
+        if (handleSync) newProvider.off("sync", handleSync);
+        newProvider.disconnect();
       }
       doc.destroy();
       shapesRef.current = null;
@@ -278,6 +288,25 @@ export function useMeshCanvasWhiteboard(
     [localUserId],
   );
 
+  const deleteShape = useCallback(
+    (id: string) => {
+      const shapes = shapesRef.current;
+      const doc = docRef.current;
+      if (!shapes || !doc) return;
+
+      doc.transact(() => {
+        for (let i = 0; i < shapes.length; i++) {
+          const map = shapes.get(i);
+          if (map.get("id") === id) {
+            shapes.delete(i, 1);
+            break;
+          }
+        }
+      }, localUserId);
+    },
+    [localUserId],
+  );
+
   const undo = useCallback(() => {
     undoManagerRef.current?.undo();
   }, []);
@@ -309,6 +338,7 @@ export function useMeshCanvasWhiteboard(
   return {
     addShape,
     updateShape,
+    deleteShape,
     shapeSnapshots,
     remoteCursors,
     tool,

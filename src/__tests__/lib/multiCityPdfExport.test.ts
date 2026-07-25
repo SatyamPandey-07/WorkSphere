@@ -70,4 +70,29 @@ describe("MultiCity PDF Export Utility (src/lib/multiCityPdfExport.ts)", () => {
     const doc = await PDFDocument.load(pdfBytes);
     expect(doc.getPageCount()).toBeGreaterThanOrEqual(1);
   });
+
+  it("handles extremely long multilingual names (100+ characters) without throwing exceptions", async () => {
+    const longMultilingualVenue: Venue = {
+      id: "v-multilingual-long",
+      name: "Tokyo Super Multilingual Creative Space 東京コワーキングスペース & Tech Cafe & Innovation Hub - Shibuya Branch Center - ゲートウェイ 渋谷区 شيبويا",
+      address: "Shibuya, Tokyo",
+      lat: 35.6762,
+      lng: 139.6503,
+      category: "coworking",
+      wifiSpeed: 250,
+      hasOutlets: true,
+      noiseLevel: "quiet",
+    };
+
+    const pdfBytes = await generateMultiCityPdfReport({
+      selectedCities: ["Tokyo"],
+      venues: [...mockVenues, longMultilingualVenue],
+    });
+
+    expect(pdfBytes).toBeInstanceOf(Uint8Array);
+    expect(pdfBytes.length).toBeGreaterThan(100);
+
+    const doc = await PDFDocument.load(pdfBytes);
+    expect(doc.getPageCount()).toBeGreaterThanOrEqual(1);
+  });
 });

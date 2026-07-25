@@ -400,6 +400,44 @@ async function syncFavorites() {
   if (isSyncingFavorites) return;
   isSyncingFavorites = true;
   try {
+    const db = await openIndexedDB();
+
+    const pendingFavorites = await new Promise((resolve, reject) => {
+      const tx = db.transaction("pendingFavorites", "readonly");
+      const store = tx.objectStore("pendingFavorites");
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    if (pendingFavorites.length === 0) return;
+
+    // Sort by timestamp
+    pendingFavorites.sort((a, b) => a.timestamp - b.timestamp);
+
+    const operations = pendingFavorites.map((fav) => ({
+      venueId: fav.venueId,
+      action: fav.action,
+      timestamp: fav.timestamp,
+    }));
+
+    const response = await fetch("/api/favorites/tags/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operations }),
+    });
+
+    if (response.ok) {
+      // Clear all synced favorites
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction("pendingFavorites", "readwrite");
+        const store = tx.objectStore("pendingFavorites");
+        pendingFavorites.forEach((fav) => store.delete(fav.id));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
     await withIdbLock(async () => {
       const db = await openIndexedDB();
       const pendingFavorites = await getPendingActions(db, [
@@ -889,6 +927,14 @@ function openIndexedDB() {
           receiptStore.createIndex("createdAt", "createdAt", { unique: false });
         }
 
+        // Pending favorites store
+        if (!db.objectStoreNames.contains("pendingFavorites")) {
+          db.createObjectStore("pendingFavorites", {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
+
         // Availability deltas store for periodic background sync (Issue #1126)
         if (!db.objectStoreNames.contains("availabilityDeltas")) {
           const deltaStore = db.createObjectStore("availabilityDeltas", {
@@ -1006,13 +1052,26 @@ async function prefetchVenueData(venueId, position) {
 
 // Push notifications
 self.addEventListener("push", (event) => {
-  if (!event.data) return;
+  let data = {};
 
-  let data;
-  try {
-    data = event.data.json();
-  } catch {
-    data = { title: "WorkSphere", body: event.data.text() };
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch {
+      try {
+        const textPayload =
+          typeof event.data.text === "function"
+            ? event.data.text()
+            : String(event.data);
+        try {
+          data = JSON.parse(textPayload);
+        } catch {
+          data = { title: "WorkSphere", body: textPayload };
+        }
+      } catch {
+        data = {};
+      }
+    }
   }
 
   const isAvailability = data.tag?.startsWith("venue-availability-");
@@ -1034,9 +1093,19 @@ self.addEventListener("push", (event) => {
     ],
   };
 
-  event.waitUntil(
-    self.registration.showNotification(data.title || "WorkSphere", options),
-  );
+  const swRegistration =
+    typeof self !== "undefined" && self && self.registration
+      ? self.registration
+      : typeof globalThis !== "undefined" &&
+          globalThis.self &&
+          globalThis.self.registration
+        ? globalThis.self.registration
+        : null;
+  if (swRegistration && swRegistration.showNotification) {
+    event.waitUntil(
+      swRegistration.showNotification(data.title || "WorkSphere", options),
+    );
+  }
 });
 
 // Notification click handler — navigate to the target venue page

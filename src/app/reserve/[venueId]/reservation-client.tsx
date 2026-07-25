@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
+import FloorPlanViewer3D from "@/components/floorplan/FloorPlanViewer3D";
+import { apiFetch } from "@/lib/apiClient";
+import { useRateLimit } from "@/hooks/useRateLimit";
 
 type Seat = {
   id: string;
@@ -50,6 +53,7 @@ function todayString() {
 }
 
 export default function ReservationClient({ venue }: { venue: Venue }) {
+  const retryAfter = useRateLimit("book");
   const [date, setDate] = useState(todayString());
   const [time, setTime] = useState("09:00");
   const [duration, setDuration] = useState(60);
@@ -218,7 +222,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       body.occurrences = occurrences || null;
     }
 
-    const response = await fetch(endpoint, {
+    const response = await apiFetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -362,68 +366,17 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
               </button>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-white/10 bg-[#0b0b0f] p-4">
-              <svg viewBox="0 0 620 470" className="min-w-[620px]">
-                <rect
-                  x="10"
-                  y="10"
-                  width="600"
-                  height="450"
-                  rx="24"
-                  fill="#111116"
-                  stroke="#27272a"
-                />
-                <text x="35" y="45" fill="#71717a" fontSize="13">
-                  WORK FLOOR
-                </text>
-
-                <path d="M35 300 H585" stroke="#27272a" strokeDasharray="8 8" />
-                <text x="35" y="320" fill="#52525b" fontSize="11">
-                  COLLABORATION ZONE
-                </text>
-
-                {seats.map((seat) => {
-                  const active = seat.id === selectedSeat;
-                  const fill = !seat.available
-                    ? "#3f3f46"
-                    : active
-                      ? "#8b5cf6"
-                      : seat.type === "MEETING_ROOM"
-                        ? "#155e75"
-                        : "#166534";
-
-                  return (
-                    <g
-                      key={seat.id}
-                      onClick={() => seat.available && setSelectedSeat(seat.id)}
-                      className={
-                        seat.available ? "cursor-pointer" : "cursor-not-allowed"
-                      }
-                    >
-                      <rect
-                        x={seat.x}
-                        y={seat.y}
-                        width={seat.width}
-                        height={seat.height}
-                        rx="10"
-                        fill={fill}
-                        stroke={active ? "#c4b5fd" : "#52525b"}
-                        strokeWidth={active ? 3 : 1}
-                      />
-                      <text
-                        x={seat.x + seat.width / 2}
-                        y={seat.y + seat.height / 2 + 4}
-                        textAnchor="middle"
-                        fill="white"
-                        fontSize="12"
-                        fontWeight="600"
-                      >
-                        {seat.seatNumber}
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b0f]">
+              <FloorPlanViewer3D
+                seats={seats}
+                selectedSeat={selectedSeat}
+                onSelectSeat={(id) => {
+                  const seat = seats.find((s) => s.id === id);
+                  if (seat && seat.available) {
+                    setSelectedSeat(id);
+                  }
+                }}
+              />
             </div>
 
             <div className="mt-5 flex flex-wrap gap-4 text-xs text-zinc-400">
@@ -651,14 +604,16 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
             </div>
 
             <button
-              disabled={!selected || booking}
-              className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={!selected || booking || retryAfter > 0}
+              className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
             >
               {booking
                 ? "Securing workspace..."
-                : recurringEnabled
-                  ? `Confirm ${previewDates.length} recurring bookings`
-                  : "Confirm reservation"}
+                : retryAfter > 0
+                  ? `Retry in ${retryAfter}s`
+                  : recurringEnabled
+                    ? `Confirm ${previewDates.length} recurring bookings`
+                    : "Confirm reservation"}
             </button>
           </form>
         </div>

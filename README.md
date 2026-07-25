@@ -32,13 +32,72 @@
 >
 > You will have **6 days** to complete it! 🚀
 
-### 🚀 Contributors (All Active Rockstars)
+### 🚀 Contributors (59+ Active Rockstars)
 
-Automated contributor tracking synced directly via the GitHub API:
+Thanks to all **59+ contributors** building WorkSphere!
 
-[![WorkSphere Contributors](https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100&columns=10&v=57)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+<a href="https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors">
+  <a href="https://github.com/SatyamPandey-07"><img src="https://avatars.githubusercontent.com/u/186389297?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="SatyamPandey-07" title="SatyamPandey-07" /></a>
+  <a href="https://github.com/Ayush-0918"><img src="https://avatars.githubusercontent.com/u/184804819?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Ayush-0918" title="Ayush-0918" /></a>
+  <a href="https://github.com/SanjanaTech19"><img src="https://avatars.githubusercontent.com/u/235869546?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="SanjanaTech19" title="SanjanaTech19" /></a>
+  <a href="https://github.com/ErebAsh"><img src="https://avatars.githubusercontent.com/u/156138261?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="ErebAsh" title="ErebAsh" /></a>
+  <a href="https://github.com/zainabhina05-png"><img src="https://avatars.githubusercontent.com/u/233611462?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="zainabhina05-png" title="zainabhina05-png" /></a>
+  <a href="https://github.com/prasiddhi-105"><img src="https://avatars.githubusercontent.com/u/200559194?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="prasiddhi-105" title="prasiddhi-105" /></a>
+  <a href="https://github.com/sanskarcoder29"><img src="https://avatars.githubusercontent.com/u/235847249?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="sanskarcoder29" title="sanskarcoder29" /></a>
+  <a href="https://github.com/Pratyush-Panda-2006"><img src="https://avatars.githubusercontent.com/u/210313441?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Pratyush-Panda-2006" title="Pratyush-Panda-2006" /></a>
+  <a href="https://github.com/Vachhani-Tapan"><img src="https://avatars.githubusercontent.com/u/225343394?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Vachhani-Tapan" title="Vachhani-Tapan" /></a>
+  <a href="https://github.com/Babin123456"><img src="https://avatars.githubusercontent.com/u/265290994?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Babin123456" title="Babin123456" /></a>
+  <a href="https://github.com/sanjana2505006"><img src="https://avatars.githubusercontent.com/u/183577111?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="sanjana2505006" title="sanjana2505006" /></a>
+  <a href="https://github.com/Jivan-Patel"><img src="https://avatars.githubusercontent.com/u/225341922?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Jivan-Patel" title="Jivan-Patel" /></a>
+  <a href="https://github.com/Chirag1724"><img src="https://avatars.githubusercontent.com/u/197275459?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Chirag1724" title="Chirag1724" /></a>
+  <a href="https://github.com/Jidnyasa-P"><img src="https://avatars.githubusercontent.com/u/183466159?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Jidnyasa-P" title="Jidnyasa-P" /></a>
+  <a href="https://github.com/harshit-kumar-dev"><img src="https://avatars.githubusercontent.com/u/225372840?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="harshit-kumar-dev" title="harshit-kumar-dev" /></a>
+  <a href="https://github.com/apps/dependabot"><img src="https://avatars.githubusercontent.com/in/29110?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="dependabot[bot]" title="dependabot[bot]" /></a>
+  <a href="https://github.com/MILAN-123865"><img src="https://avatars.githubusercontent.com/u/196552402?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="MILAN-123865" title="MILAN-123865" /></a>
+  <a href="https://github.com/diksha78dev"><img src="https://avatars.githubusercontent.com/u/184750994?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="diksha78dev" title="diksha78dev" /></a>
+  <a href="https://github.com/rishab11250"><img src="https://avatars.githubusercontent.com/u/224525950?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="rishab11250" title="rishab11250" /></a>
+  <a href="https://github.com/Aditya8369"><img src="https://avatars.githubusercontent.com/u/178887069?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Aditya8369" title="Aditya8369" /></a>
+  <a href="https://github.com/shahkhushi0307"><img src="https://avatars.githubusercontent.com/u/247197666?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="shahkhushi0307" title="shahkhushi0307" /></a>
+  <a href="https://github.com/Prathvikmehra"><img src="https://avatars.githubusercontent.com/u/224969038?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Prathvikmehra" title="Prathvikmehra" /></a>
+  <a href="https://github.com/gauri9368gupta-maker"><img src="https://avatars.githubusercontent.com/u/256281044?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="gauri9368gupta-maker" title="gauri9368gupta-maker" /></a>
+  <a href="https://github.com/sumittiwari1302"><img src="https://avatars.githubusercontent.com/u/251316528?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="sumittiwari1302" title="sumittiwari1302" /></a>
+  <a href="https://github.com/Tanishkkkkk"><img src="https://avatars.githubusercontent.com/u/226301910?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Tanishkkkkk" title="Tanishkkkkk" /></a>
+  <a href="https://github.com/Huzaifaahmedbhutto"><img src="https://avatars.githubusercontent.com/u/259001188?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Huzaifaahmedbhutto" title="Huzaifaahmedbhutto" /></a>
+  <a href="https://github.com/Aryanbuha890"><img src="https://avatars.githubusercontent.com/u/273169945?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Aryanbuha890" title="Aryanbuha890" /></a>
+  <a href="https://github.com/Diwakar-odds"><img src="https://avatars.githubusercontent.com/u/170966675?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Diwakar-odds" title="Diwakar-odds" /></a>
+  <a href="https://github.com/revatikadam0607"><img src="https://avatars.githubusercontent.com/u/261348571?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="revatikadam0607" title="revatikadam0607" /></a>
+  <a href="https://github.com/khushimalani16"><img src="https://avatars.githubusercontent.com/u/269352454?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="khushimalani16" title="khushimalani16" /></a>
+  <a href="https://github.com/marisa-mmm"><img src="https://avatars.githubusercontent.com/u/203952873?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="marisa-mmm" title="marisa-mmm" /></a>
+  <a href="https://github.com/anshika-guleria"><img src="https://avatars.githubusercontent.com/u/111104918?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="anshika-guleria" title="anshika-guleria" /></a>
+  <a href="https://github.com/anushkanikam05"><img src="https://avatars.githubusercontent.com/u/251041306?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="anushkanikam05" title="anushkanikam05" /></a>
+  <a href="https://github.com/varshu55"><img src="https://avatars.githubusercontent.com/u/202724176?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="varshu55" title="varshu55" /></a>
+  <a href="https://github.com/csxark"><img src="https://avatars.githubusercontent.com/u/166234658?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="csxark" title="csxark" /></a>
+  <a href="https://github.com/harshith7002"><img src="https://avatars.githubusercontent.com/u/180102080?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="harshith7002" title="harshith7002" /></a>
+  <a href="https://github.com/Shruti070107"><img src="https://avatars.githubusercontent.com/u/218780746?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Shruti070107" title="Shruti070107" /></a>
+  <a href="https://github.com/khedkaravani-rgb"><img src="https://avatars.githubusercontent.com/u/276637444?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="khedkaravani-rgb" title="khedkaravani-rgb" /></a>
+  <a href="https://github.com/Ruchira807"><img src="https://avatars.githubusercontent.com/u/222549911?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Ruchira807" title="Ruchira807" /></a>
+  <a href="https://github.com/SoumalyaSaha"><img src="https://avatars.githubusercontent.com/u/191320906?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="SoumalyaSaha" title="SoumalyaSaha" /></a>
+  <a href="https://github.com/Aakansha-saroj-05"><img src="https://avatars.githubusercontent.com/u/180135448?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Aakansha-saroj-05" title="Aakansha-saroj-05" /></a>
+  <a href="https://github.com/Komal290106"><img src="https://avatars.githubusercontent.com/u/179382143?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Komal290106" title="Komal290106" /></a>
+  <a href="https://github.com/Vishvapatel2047"><img src="https://avatars.githubusercontent.com/u/218197129?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Vishvapatel2047" title="Vishvapatel2047" /></a>
+  <a href="https://github.com/Yuva-Deekshitha-N"><img src="https://avatars.githubusercontent.com/u/153242050?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Yuva-Deekshitha-N" title="Yuva-Deekshitha-N" /></a>
+  <a href="https://github.com/yashvi-3106"><img src="https://avatars.githubusercontent.com/u/187176611?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="yashvi-3106" title="yashvi-3106" /></a>
+  <a href="https://github.com/Daksh7785"><img src="https://avatars.githubusercontent.com/u/208130543?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Daksh7785" title="Daksh7785" /></a>
+  <a href="https://github.com/panditshubham766-dotcom"><img src="https://avatars.githubusercontent.com/u/233032889?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="panditshubham766-dotcom" title="panditshubham766-dotcom" /></a>
+  <a href="https://github.com/itsaditi05"><img src="https://avatars.githubusercontent.com/u/175183822?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="itsaditi05" title="itsaditi05" /></a>
+  <a href="https://github.com/Parshant-12"><img src="https://avatars.githubusercontent.com/u/167954691?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Parshant-12" title="Parshant-12" /></a>
+  <a href="https://github.com/RitikaSen27"><img src="https://avatars.githubusercontent.com/u/224510033?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="RitikaSen27" title="RitikaSen27" /></a>
+  <a href="https://github.com/Prathibha-ui"><img src="https://avatars.githubusercontent.com/u/271908347?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Prathibha-ui" title="Prathibha-ui" /></a>
+  <a href="https://github.com/Kruthica"><img src="https://avatars.githubusercontent.com/u/218139794?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Kruthica" title="Kruthica" /></a>
+  <a href="https://github.com/Falguni-105"><img src="https://avatars.githubusercontent.com/u/194253298?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Falguni-105" title="Falguni-105" /></a>
+  <a href="https://github.com/Gautam-Bharadwaj"><img src="https://avatars.githubusercontent.com/u/136326437?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="Gautam-Bharadwaj" title="Gautam-Bharadwaj" /></a>
+  <a href="https://github.com/piush365"><img src="https://avatars.githubusercontent.com/u/173165525?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="piush365" title="piush365" /></a>
+  <a href="https://github.com/sagar-18-07-2006"><img src="https://avatars.githubusercontent.com/u/203533113?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="sagar-18-07-2006" title="sagar-18-07-2006" /></a>
+  <a href="https://github.com/saurabhwagh01"><img src="https://avatars.githubusercontent.com/u/288387055?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="saurabhwagh01" title="saurabhwagh01" /></a>
+  <a href="https://github.com/SpiliosDimakopoulos"><img src="https://avatars.githubusercontent.com/u/150211937?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="SpiliosDimakopoulos" title="SpiliosDimakopoulos" /></a>
+  <a href="https://github.com/karrisanthoshigayatri"><img src="https://avatars.githubusercontent.com/u/268634585?v=4" width="48" height="48" style="border-radius: 50%; margin: 2px;" alt="karrisanthoshigayatri" title="karrisanthoshigayatri" /></a>
+</a>
 
----
 
 ## 📋 Table of Contents
 
@@ -392,7 +451,6 @@ The Upstash Redis variables are optional for local development. If UPSTASH_REDIS
 
 For production or multi-instance deployments, configuring Upstash Redis is recommended to ensure consistent rate limiting across application instances.
 
-
 ### Getting API Keys
 
 | Service      | URL                                           | Free Tier        | Required             |
@@ -439,8 +497,6 @@ For production or multi-instance deployments, configuring Upstash Redis is recom
 | `POST`   | `/api/webhook`            | Clerk webhook for user sync            |
 
 ---
-
-
 
 ## 🤖 Multi-Agent System
 

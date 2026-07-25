@@ -58,6 +58,19 @@ model User {
   lastCheckInDate    String? // stored as "YYYY-MM-DD" UTC
   passkeys           PasskeyCredential[]
   isVerifiedStudent  Boolean            @default(false)
+  accurateVotes      Int                @default(0)
+  badges             UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeType String
+  awardedAt DateTime @default(now())
+
+  @@unique([userId, badgeType])
+  @@index([userId])
 }
 
 model Venue {
@@ -267,6 +280,8 @@ enum GuestStatus {
   SENT
   FAILED
   CANCELLED
+  ACCEPTED
+  DECLINED
 }
 
 enum BookingStatus {

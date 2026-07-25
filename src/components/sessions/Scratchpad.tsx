@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import * as Y from "yjs";
 import usePartySocket from "partysocket/react";
 import { CryptoManager } from "@/lib/e2ee/CryptoManager";
 import { KeyStore } from "@/lib/e2ee/KeyStore";
-import { Lock, Unlock, Key, Loader2, Share2 } from "lucide-react";
+import { Unlock, Key, Loader2, Share2 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 import {
   generateKeyPair,
@@ -26,7 +26,7 @@ export default function Scratchpad({ sessionId }: Props) {
   const [isNegotiating, setIsNegotiating] = useState(false);
   const [text, setText] = useState("");
   const { toast } = useToast();
-  
+
   const clientId = useRef(crypto.randomUUID());
   const ecdhKeyPair = useRef<KeyPair | null>(null);
 
@@ -34,9 +34,12 @@ export default function Scratchpad({ sessionId }: Props) {
   const yTextRef = useRef<Y.Text | null>(null);
   const cryptoKeyRef = useRef<CryptoKey | null>(null);
   const isLocalUpdateRef = useRef(false);
-  const processedUpdatesRef = useRef<Set<string>>(new Set());
   const updateQueueRef = useRef<Uint8Array[]>([]);
   const isApplyingRef = useRef(false);
+  const socketRef = useRef<{
+    send: (data: string) => void;
+    readyState: number;
+  } | null>(null);
 
   const processQueue = () => {
     if (isApplyingRef.current || !docRef.current) return;
@@ -55,6 +58,37 @@ export default function Scratchpad({ sessionId }: Props) {
       isApplyingRef.current = false;
     }
   };
+
+  // Helper to send sync request with local state vector
+  const sendSyncRequest = useCallback(async () => {
+    const currentSocket = socketRef.current;
+    if (
+      !docRef.current ||
+      !cryptoKeyRef.current ||
+      !currentSocket ||
+      currentSocket.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
+
+    try {
+      const stateVector = Y.encodeStateVector(docRef.current);
+      const encryptedVector = await CryptoManager.encryptPayload(
+        cryptoKeyRef.current,
+        stateVector,
+      );
+
+      currentSocket.send(
+        JSON.stringify({
+          type: "sync-request",
+          clientId: clientId.current,
+          payload: encryptedVector,
+        }),
+      );
+    } catch (err) {
+      console.error("Failed to send sync request", err);
+    }
+  }, []);
 
   // Initialize Y.Doc
   useEffect(() => {
@@ -90,9 +124,65 @@ export default function Scratchpad({ sessionId }: Props) {
 
   const socket = usePartySocket({
     room: `session-scratchpad-${sessionId}`,
+    onOpen: () => {
+      sendSyncRequest();
+    },
     onMessage: async (e) => {
       try {
         const msg = JSON.parse(e.data);
+
+        // Handle incoming sync-request from a peer
+        if (
+          msg.type === "sync-request" &&
+          cryptoKeyRef.current &&
+          docRef.current
+        ) {
+          if (msg.clientId === clientId.current) return;
+
+          const { ciphertext, iv } = msg.payload;
+          const remoteVector = await CryptoManager.decryptPayload(
+            cryptoKeyRef.current,
+            ciphertext,
+            iv,
+          );
+
+          // Compute delta missing from remote peer's state vector
+          const delta = Y.encodeStateAsUpdate(docRef.current, remoteVector);
+          const encryptedDelta = await CryptoManager.encryptPayload(
+            cryptoKeyRef.current,
+            delta,
+          );
+
+          socket.send(
+            JSON.stringify({
+              type: "sync-response",
+              targetClientId: msg.clientId,
+              payload: encryptedDelta,
+            }),
+          );
+          return;
+        }
+
+        // Handle incoming sync-response from a peer
+        if (
+          msg.type === "sync-response" &&
+          msg.targetClientId === clientId.current &&
+          cryptoKeyRef.current &&
+          docRef.current
+        ) {
+          const { ciphertext, iv } = msg.payload;
+          const decryptedDelta = await CryptoManager.decryptPayload(
+            cryptoKeyRef.current,
+            ciphertext,
+            iv,
+          );
+
+          updateQueueRef.current.push(decryptedDelta);
+          isLocalUpdateRef.current = true;
+          processQueue();
+          isLocalUpdateRef.current = false;
+          return;
+        }
 
         // Handle incoming E2EE delta updates
         if (
@@ -107,16 +197,7 @@ export default function Scratchpad({ sessionId }: Props) {
             iv,
           );
 
-          const hash = Array.from(decryptedUpdate)
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join("");
-          if (processedUpdatesRef.current.has(hash)) {
-            return;
-          }
-          processedUpdatesRef.current.add(hash);
-
           updateQueueRef.current.push(decryptedUpdate);
-
           isLocalUpdateRef.current = true;
           processQueue();
           isLocalUpdateRef.current = false;
@@ -190,6 +271,10 @@ export default function Scratchpad({ sessionId }: Props) {
     },
   });
 
+  useEffect(() => {
+    socketRef.current = socket;
+  }, [socket]);
+
   // Start negotiation when socket is open
   useEffect(() => {
     if (
@@ -237,11 +322,6 @@ export default function Scratchpad({ sessionId }: Props) {
       if (isLocalUpdateRef.current || !cryptoKeyRef.current) return;
 
       try {
-        const hash = Array.from(update)
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join("");
-        processedUpdatesRef.current.add(hash);
-
         const encrypted = await CryptoManager.encryptPayload(
           cryptoKeyRef.current,
           update,
@@ -262,17 +342,36 @@ export default function Scratchpad({ sessionId }: Props) {
       doc.off("update", handleUpdate);
     };
   }, [socket, hasKey]);
+
+  // Re-sync on window focus or network reconnection (e.g. waking from sleep mode)
+  useEffect(() => {
+    const handleReconnect = () => {
+      sendSyncRequest();
+    };
+
+    window.addEventListener("focus", handleReconnect);
+    window.addEventListener("online", handleReconnect);
+
+    return () => {
+      window.removeEventListener("focus", handleReconnect);
+      window.removeEventListener("online", handleReconnect);
+    };
+  }, [sendSyncRequest]);
+
+  useEffect(() => {
+    if (hasKey) {
+      sendSyncRequest();
+    }
+  }, [hasKey, sendSyncRequest]);
   const handleShare = async () => {
-  try {
-    await navigator.clipboard.writeText(window.location.href);
-    toast("Scratchpad link copied to clipboard!", "success");
-  } catch (error) {
-    console.error("Failed to copy scratchpad link", error);
-    toast("Failed to copy scratchpad link.", "error");
-  }
-};
-
-
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast("Scratchpad link copied to clipboard!", "success");
+    } catch (error) {
+      console.error("Failed to copy scratchpad link", error);
+      toast("Failed to copy scratchpad link.", "error");
+    }
+  };
 
   const handleClearKey = async () => {
     await keyStore.deleteSessionKey(sessionId);
@@ -348,23 +447,22 @@ export default function Scratchpad({ sessionId }: Props) {
           <span className="text-sm font-medium">E2EE Scratchpad</span>
         </div>
         <div className="flex items-center gap-2">
-  <button
-    onClick={handleShare}
-    className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
-  >
-    <Share2 className="h-3 w-3" />
-    Share
-  </button>
+          <button
+            onClick={handleShare}
+            className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-primary focus:outline-none"
+          >
+            <Share2 className="h-3 w-3" />
+            Share
+          </button>
 
-  <button
-    onClick={handleClearKey}
-    className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1"
-  >
-    <Key className="h-3 w-3" />
-    Clear Key
-  </button>
-</div>
-        
+          <button
+            onClick={handleClearKey}
+            className="text-xs text-zinc-400 hover:text-zinc-200 flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-primary focus:outline-none"
+          >
+            <Key className="h-3 w-3" />
+            Clear Key
+          </button>
+        </div>
       </div>
       <div className="flex-1 p-4">
         <textarea

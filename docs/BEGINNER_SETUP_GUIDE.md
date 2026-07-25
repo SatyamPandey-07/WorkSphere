@@ -59,10 +59,10 @@ The PostgreSQL connection string used by Prisma.
 Example:
 
 ```env
-DATABASE_URL="postgresql://username:password@localhost:5432/worksphere?sslmode=require"
+DATABASE_URL="postgresql://username:password@localhost:5432/worksphere"
 ```
 
-If you are using a hosted provider such as Neon, Supabase, or Railway, paste the connection string from that provider instead.
+If you are using a hosted provider such as Neon, Supabase, or Railway, paste the connection string from that provider instead. Those providers may still require `?sslmode=require` depending on their connection settings.
 
 #### `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
 
@@ -82,7 +82,7 @@ The route used for the sign-up page.
 
 ### Optional variables
 
-These are not required for the app to start, but they enable more features:
+These are not required for the app to start, but they enable more features. Upstash Redis variables (`UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`) are strictly optional for local development. If omitted, Redis-backed features will fall back gracefully without blocking local app startup.
 
 ```env
 UPSTASH_REDIS_REST_URL="https://your-upstash-endpoint"
@@ -161,7 +161,14 @@ Recommended fixes:
 If `npm run dev` fails because port 3000 is busy, either stop the process using that port or start Next.js on a different port:
 
 ```bash
+# macOS / Linux / Git Bash:
 PORT=3001 npm run dev
+
+# Windows (PowerShell):
+$env:PORT=3001; npm run dev
+
+# Windows (CMD):
+set PORT=3001 && npm run dev
 ```
 
 To find the process using port 3000 on Linux:

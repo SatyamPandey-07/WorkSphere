@@ -9,18 +9,15 @@ if (typeof global.TextEncoder === "undefined") {
   global.TextDecoder = TextDecoder;
 }
 
- feat/1629-ambient-noise-meter
-const { ReadableStream, TransformStream } = require("stream/web");
 
 const { ReadableStream, TransformStream, WritableStream } = require("stream/web");
-main
+
 if (typeof global.ReadableStream === "undefined") {
   global.ReadableStream = ReadableStream;
 }
 if (typeof global.TransformStream === "undefined") {
   global.TransformStream = TransformStream;
 }
- feat/1629-ambient-noise-meter
 const { MessageChannel, MessagePort } = require("worker_threads");
 if (typeof global.MessageChannel === "undefined") {
   global.MessageChannel = MessageChannel;
@@ -35,12 +32,10 @@ if (typeof global.WritableStream === "undefined") {
   global.WritableStream = WritableStream;
 }
 
-const { MessageChannel, MessagePort } = require("worker_threads");
 if (typeof global.MessageChannel === "undefined") {
   global.MessageChannel = MessageChannel;
   global.MessagePort = MessagePort;
 }
- main
 /* eslint-disable @typescript-eslint/no-require-imports */
 const {
   Request: UndiciRequest,

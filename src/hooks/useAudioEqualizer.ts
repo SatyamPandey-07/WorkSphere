@@ -14,7 +14,7 @@ import {
 
 // Standard preset gain configurations (assuming 10-band EQ)
 export const AUDIO_PRESETS: Record<string, number[]> = {
-  "Flat": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  Flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
   "Voice Clarity": [-4, -2, 0, 2, 4, 4, 3, 1, 0, -2],
   "Noise Suppression": [-6, -6, -3, 0, 2, 2, 0, -3, -6, -6],
   "Bass Boost": [6, 5, 4, 2, 0, 0, 0, 0, 0, 0],
@@ -58,10 +58,10 @@ export function useAudioEqualizer(
     error: null,
     activePreset: "Flat",
   });
-  
+
   const [frequencyResponse, setFrequencyResponse] =
     useState<FrequencyResponse | null>(null);
-  
+
   const bandsRef = useRef(initialBands);
   const sampleRateRef = useRef(sampleRate);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -98,17 +98,17 @@ export function useAudioEqualizer(
         }
 
         bandsRef.current = setupBands;
-        
+
         if (mounted) {
-          setState((prev) => ({ 
-            ...prev, 
-            bands: setupBands, 
-            activePreset: savedPreset 
+          setState((prev) => ({
+            ...prev,
+            bands: setupBands,
+            activePreset: savedPreset,
           }));
         }
 
         await initEqualizer(setupBands, sampleRate);
-        
+
         if (mounted) {
           setState((prev) => ({ ...prev, isReady: true }));
           const resp = await getFrequencyResponse(setupBands, sampleRate);
@@ -173,19 +173,24 @@ export function useAudioEqualizer(
     }));
 
     bandsRef.current = updated;
-    setState((prev) => ({ 
-      ...prev, 
-      bands: updated, 
-      isProcessing: true, 
-      activePreset: presetName 
+    setState((prev) => ({
+      ...prev,
+      bands: updated,
+      isProcessing: true,
+      activePreset: presetName,
     }));
 
     try {
       // Sequentially update all nodes
       for (let i = 0; i < updated.length; i++) {
-        await updateBand(i, updated[i].frequency, updated[i].q, updated[i].gain);
+        await updateBand(
+          i,
+          updated[i].frequency,
+          updated[i].q,
+          updated[i].gain,
+        );
       }
-      
+
       const resp = await getFrequencyResponse(updated, sampleRateRef.current);
       setFrequencyResponse(resp);
     } catch (err) {
@@ -209,11 +214,11 @@ export function useAudioEqualizer(
       window.localStorage.setItem("eq_preset", "Custom");
     }
 
-    setState((prev) => ({ 
-      ...prev, 
-      bands: updated, 
-      isProcessing: true, 
-      activePreset: "Custom" 
+    setState((prev) => ({
+      ...prev,
+      bands: updated,
+      isProcessing: true,
+      activePreset: "Custom",
     }));
 
     try {
@@ -242,11 +247,11 @@ export function useAudioEqualizer(
         window.localStorage.setItem("eq_preset", "Custom");
       }
 
-      setState((prev) => ({ 
-        ...prev, 
-        bands: updated, 
+      setState((prev) => ({
+        ...prev,
+        bands: updated,
         isProcessing: true,
-        activePreset: "Custom" 
+        activePreset: "Custom",
       }));
 
       try {
@@ -269,16 +274,16 @@ export function useAudioEqualizer(
 
   const resetBands = useCallback(async () => {
     bandsRef.current = DEFAULT_BANDS;
-    
+
     if (typeof window !== "undefined") {
       window.localStorage.setItem("eq_preset", "Flat");
     }
-    
-    setState((prev) => ({ 
-      ...prev, 
-      bands: DEFAULT_BANDS, 
+
+    setState((prev) => ({
+      ...prev,
+      bands: DEFAULT_BANDS,
       isProcessing: true,
-      activePreset: "Flat"
+      activePreset: "Flat",
     }));
 
     try {

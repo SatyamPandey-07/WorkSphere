@@ -4,8 +4,8 @@
 
 WorkSphere uses IndexedDB for offline persistence. Multiple modules interact with offline data, including:
 
-* `src/lib/offlineStore.ts`
-* `src/lib/offlineStorage.ts`
+- `src/lib/offlineStore.ts`
+- `src/lib/offlineStorage.ts`
 
 These modules can perform writes to overlapping offline state. Because IndexedDB operations are asynchronous, concurrent read-modify-write operations can race with each other.
 
@@ -42,7 +42,7 @@ and the lock wrapper:
 export async function withWebLock<T>(
   callback: () => Promise<T>,
   lockName: string = OFFLINE_WRITE_LOCK,
-): Promise<T>
+): Promise<T>;
 ```
 
 The shared helper ensures that cooperating offline write paths use the same synchronization mechanism.
@@ -395,11 +395,11 @@ However, it does **not** provide an equivalent cross-tab serialization mechanism
 
 Therefore, when `navigator.locks` is unsupported:
 
-* The callback still executes.
-* No Web Lock is acquired.
-* The operation does not fail solely because Web Locks are unavailable.
-* The Web Locks-based mutual exclusion guarantee is unavailable.
-* Concurrent operations may execute without cross-tab serialization.
+- The callback still executes.
+- No Web Lock is acquired.
+- The operation does not fail solely because Web Locks are unavailable.
+- The Web Locks-based mutual exclusion guarantee is unavailable.
+- Concurrent operations may execute without cross-tab serialization.
 
 The fallback is intentional and should be understood as a compatibility path.
 
@@ -465,10 +465,10 @@ The caller receives the failure.
 
 The helper does not:
 
-* Swallow the callback error.
-* Treat the callback error as a Web Locks API failure.
-* Execute the callback a second time.
-* Retry the callback outside the lock.
+- Swallow the callback error.
+- Treat the callback error as a Web Locks API failure.
+- Execute the callback a second time.
+- Retry the callback outside the lock.
 
 This behaviour is intentional.
 
@@ -606,13 +606,13 @@ The following tests verify the Web Locks behaviour in a real browser.
 
 The tests cover:
 
-* Concurrent writes from multiple tabs.
-* Shared locking across modules.
-* Rapid concurrent writes.
-* Lock contention.
-* Error propagation.
-* Prevention of unlocked retries.
-* Unsupported Web Locks fallback.
+- Concurrent writes from multiple tabs.
+- Shared locking across modules.
+- Rapid concurrent writes.
+- Lock contention.
+- Error propagation.
+- Prevention of unlocked retries.
+- Unsupported Web Locks fallback.
 
 ---
 
@@ -787,10 +787,10 @@ Tab B: WRITE END
 
 If overlapping execution is observed, verify:
 
-* Both operations use `withWebLock`.
-* Both operations use the same lock name.
-* The Web Locks API is available.
-* The complete critical section is inside the callback.
+- Both operations use `withWebLock`.
+- Both operations use the same lock name.
+- The Web Locks API is available.
+- The complete critical section is inside the callback.
 
 Remove temporary logging after testing.
 
@@ -1044,7 +1044,7 @@ Do not create another independent Web Locks helper.
 For operations that must coordinate with existing offline writes, use:
 
 ```ts
-OFFLINE_WRITE_LOCK
+OFFLINE_WRITE_LOCK;
 ```
 
 or rely on the default `lockName` parameter.
@@ -1165,11 +1165,11 @@ The key rule is:
 
 When changing the offline write system, ensure that:
 
-* Related write paths use `withWebLock`.
-* Operations that need to serialize use the same lock name.
-* Complete read-modify-write sequences are inside the callback.
-* Callback errors propagate normally.
-* Retries re-enter through `withWebLock`.
-* New lock names are introduced only for intentionally separate synchronization domains.
+- Related write paths use `withWebLock`.
+- Operations that need to serialize use the same lock name.
+- Complete read-modify-write sequences are inside the callback.
+- Callback errors propagate normally.
+- Retries re-enter through `withWebLock`.
+- New lock names are introduced only for intentionally separate synchronization domains.
 
 The manual multi-tab tests in this document should be used to verify that the serialization boundary remains effective and that concurrent offline writes do not silently overwrite or remove previously queued state.

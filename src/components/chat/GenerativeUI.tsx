@@ -1,4 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
+import { z } from "zod";
 import dynamic from "next/dynamic";
 import {
   BarChart,
@@ -255,11 +256,47 @@ export function MessageRenderer({
     const componentName = match[1];
     let props = {};
     try {
-      // Decode HTML entities if AI escaped them
       const rawProps = match[2].replace(/&quot;/g, '"').replace(/&#x27;/g, "'");
       props = JSON.parse(rawProps);
     } catch {
       console.error("Failed to parse component props", match[2]);
+    }
+
+    const componentSchemas: Record<string, z.ZodTypeAny> = {
+      DataTable: z.object({
+        columns: z.array(z.string()),
+        data: z.array(z.record(z.string(), z.any())),
+      }),
+      DataChart: z.object({
+        type: z.enum(["bar", "line", "pie"]),
+        labels: z.array(z.string()),
+        datasets: z.array(
+          z.object({ label: z.string(), data: z.array(z.number()) }),
+        ),
+      }),
+      Map: z.object({
+        center: z.object({ lat: z.number(), lng: z.number() }),
+        markers: z.array(z.object({ lat: z.number(), lng: z.number() })),
+      }),
+    };
+
+    const schema = componentSchemas[componentName];
+    if (schema) {
+      const result = schema.safeParse(props);
+      if (!result.success) {
+        console.error(`Invalid props for ${componentName}:`, result.error);
+        parts.push(
+          <div
+            key={`invalid-${match.index}`}
+            className="text-red-500 text-xs mt-2"
+          >
+            Invalid {componentName} data
+          </div>,
+        );
+        lastIndex = regex.lastIndex;
+        continue;
+      }
+      props = result.data;
     }
 
     let ComponentToRender = null;

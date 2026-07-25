@@ -400,7 +400,6 @@ async function syncFavorites() {
   if (isSyncingFavorites) return;
   isSyncingFavorites = true;
   try {
- feat/1628-offline-favorites-sync
     const db = await openIndexedDB();
 
     const pendingFavorites = await new Promise((resolve, reject) => {
@@ -485,7 +484,7 @@ async function syncFavorites() {
           console.error("Failed to sync favorite:", error);
         }
       }
-    }); main
+    });
   } catch (error) {
     if (isNetworkError(error)) {
       console.warn(
@@ -852,13 +851,10 @@ function openIndexedDB() {
   return new Promise((resolve, reject) => {
     try {
       const request = indexedDB.open("worksphere-offline", 6);
- feat/1628-offline-favorites-sync
-
 
       request.onblocked = () => {
         console.warn("[SW] IndexedDB upgrade blocked");
       };
- main
 
       request.onerror = () => reject(request.error);
 
@@ -931,12 +927,12 @@ function openIndexedDB() {
           receiptStore.createIndex("createdAt", "createdAt", { unique: false });
         }
 
- feat/1628-offline-favorites-sync
         // Pending favorites store
         if (!db.objectStoreNames.contains("pendingFavorites")) {
           db.createObjectStore("pendingFavorites", {
             keyPath: "id",
           });
+        }
 
         // Availability deltas store for periodic background sync (Issue #1126)
         if (!db.objectStoreNames.contains("availabilityDeltas")) {
@@ -944,7 +940,6 @@ function openIndexedDB() {
             keyPath: "venueId",
           });
           deltaStore.createIndex("timestamp", "timestamp", { unique: false });
- main
         }
       };
     } catch (err) {
@@ -1056,13 +1051,19 @@ async function prefetchVenueData(venueId, position) {
 
 // Push notifications
 self.addEventListener("push", (event) => {
-  if (!event.data) return;
+  let data = {};
 
-  let data;
-  try {
-    data = event.data.json();
-  } catch {
-    data = { title: "WorkSphere", body: event.data.text() };
+  if (event.data) {
+    try {
+      const textPayload = event.data.text();
+      try {
+        data = JSON.parse(textPayload);
+      } catch {
+        data = { title: "WorkSphere", body: textPayload };
+      }
+    } catch {
+      data = {};
+    }
   }
 
   const isAvailability = data.tag?.startsWith("venue-availability-");

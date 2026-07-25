@@ -9,6 +9,7 @@ import I18nProvider from "../components/I18nProvider";
 import { ThemeProvider } from "../components/ThemeProvider";
 import { SoundProvider } from "../components/SoundProvider";
 import { ScrollProgress } from "../components/ui/ScrollProgress";
+import { ScrollToTopButton } from "../components/ui/ScrollToTopButton";
 import { CookieBanner } from "../components/CookieBanner";
 import { CurrencyProvider } from "@/context/CurrencyContext";
 import { SyncManager } from "../hooks/usePWA";
@@ -211,6 +212,7 @@ export default async function RootLayout({
         suppressHydrationWarning
       >
         <ScrollProgress />
+        <ScrollToTopButton />
         <SyncManager />
         {bodyContent}
         <CookieBanner />

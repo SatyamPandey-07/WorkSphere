@@ -169,7 +169,10 @@ export function VenueChatCard({
     });
 
     setPhotoLoading(true);
-    fetch(`/api/venues/${encodeURIComponent(venue.id)}/photo?${params}`)
+    fetch(`/api/venues/${encodeURIComponent(venue.id)}
+    </div>
+  );
+}/photo?${params}`)
       .then((response) => {
         if (!response.ok) {
           throw new Error("Failed to load venue photo");
@@ -1362,7 +1365,13 @@ export function ChatInput({
     if (errorMessage) triggerBanner();
   }, [errorMessage, triggerBanner]);
 
+  const showCharCounter = charCount > 800;
   let counterColor = "text-zinc-500 dark:text-zinc-400"; // gray
+  if (isOverLimit || charCount > 1000) {
+    counterColor = "text-red-500";
+  } else if (charCount >= MAX_CHARS - 200) {
+    counterColor = "text-yellow-500";
+  }
   if (isOverLimit) {
     counterColor = "text-red-500";
   } else if (charCount >= MAX_CHARS - 200) {
@@ -1554,13 +1563,15 @@ export function ChatInput({
         </button>
       </form>
 
-      <div className="mt-2 text-right">
-        <span
-          className={`text-xs font-semibold transition-colors ${counterColor}`}
-        >
-          {charCount}/{MAX_CHARS}
-        </span>
-      </div>
+      {showCharCounter && (
+        <div className="mt-2 text-right">
+          <span
+            className={`text-xs font-semibold transition-colors ${counterColor}`}
+          >
+            {charCount}/{MAX_CHARS}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

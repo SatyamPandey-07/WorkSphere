@@ -18,6 +18,16 @@ import {
 import { Venue } from "@/components/chat/ChatMessages";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { generateMultiCityPdfReport } from "@/lib/multiCityPdfExport";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
 const DEFAULT_CITIES = [
   "San Francisco",
@@ -67,6 +77,49 @@ function getWifiSpeedBadgeDetails(
     className:
       "border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   };
+}
+
+export function buildComparisonChartData(
+  selectedCities: string[],
+  venues: Venue[],
+): Array<{
+  city: string;
+  avgWifi: number;
+  quietPct: number;
+  outletPct: number;
+}> {
+  return selectedCities.map((city) => {
+    const cityVenues = venues.filter((v) =>
+      v.address?.toLowerCase().includes(city.toLowerCase()),
+    );
+    const total = cityVenues.length;
+
+    const wifiSpeeds = cityVenues
+      .map((v) => v.wifiSpeed)
+      .filter((s): s is number => typeof s === "number");
+    const avgWifi =
+      wifiSpeeds.length > 0
+        ? Math.round(wifiSpeeds.reduce((a, b) => a + b, 0) / wifiSpeeds.length)
+        : 0;
+
+    const quietPct =
+      total > 0
+        ? Math.round(
+            (cityVenues.filter((v) => v.noiseLevel === "quiet").length /
+              total) *
+              100,
+          )
+        : 0;
+
+    const outletPct =
+      total > 0
+        ? Math.round(
+            (cityVenues.filter((v) => v.hasOutlets).length / total) * 100,
+          )
+        : 0;
+
+    return { city, avgWifi, quietPct, outletPct };
+  });
 }
 
 interface MultiCityComparisonProps {
@@ -122,6 +175,140 @@ export function MultiCityComparison({
       console.error("Failed to generate PDF report:", err);
     } finally {
       setIsExportingPdf(false);
+    }
+  };
+
+  const [isExportingChartPdf, setIsExportingChartPdf] = useState(false);
+
+  const chartData = useMemo(
+    () => buildComparisonChartData(selectedCities, venues),
+    [selectedCities, venues],
+  );
+
+  const handleExportChartPdf = async () => {
+    if (chartData.length === 0) return;
+    setIsExportingChartPdf(true);
+    try {
+      const pdfDoc = await PDFDocument.create();
+      const page = pdfDoc.addPage([595, 420]);
+      const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      const fontReg = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const { width, height } = page.getSize();
+
+      // Title
+      page.drawText("WorkSphere — Venue Attribute Comparison", {
+        x: 40,
+        y: height - 40,
+        size: 14,
+        font,
+        color: rgb(0.1, 0.1, 0.1),
+      });
+      page.drawText(
+        `Cities: ${selectedCities.join(", ")}  •  Generated ${new Date().toLocaleDateString()}`,
+        {
+          x: 40,
+          y: height - 58,
+          size: 9,
+          font: fontReg,
+          color: rgb(0.45, 0.45, 0.45),
+        },
+      );
+
+      // Chart legend
+      const legendY = height - 80;
+      const legendItems = [
+        { label: "Avg WiFi (Mbps)", color: rgb(0.23, 0.51, 0.96) },
+        { label: "Quiet venues (%)", color: rgb(0.06, 0.73, 0.51) },
+        { label: "Outlets (%)", color: rgb(0.95, 0.62, 0.07) },
+      ];
+      legendItems.forEach((item, i) => {
+        const lx = 40 + i * 160;
+        page.drawRectangle({
+          x: lx,
+          y: legendY,
+          width: 12,
+          height: 10,
+          color: item.color,
+        });
+        page.drawText(item.label, {
+          x: lx + 16,
+          y: legendY + 1,
+          size: 8,
+          font: fontReg,
+          color: rgb(0.2, 0.2, 0.2),
+        });
+      });
+
+      // Bars
+      const chartTop = legendY - 20;
+      const chartBottom = 60;
+      const chartHeight = chartTop - chartBottom;
+      const groupWidth = (width - 80) / Math.max(chartData.length, 1);
+      const barWidth = Math.min(28, groupWidth / 4);
+      const maxWifi = Math.max(...chartData.map((d) => d.avgWifi), 1);
+
+      chartData.forEach((row, gi) => {
+        const gx = 40 + gi * groupWidth + groupWidth / 2 - barWidth * 2;
+
+        const bars = [
+          {
+            value: (row.avgWifi / maxWifi) * 100,
+            color: rgb(0.23, 0.51, 0.96),
+          },
+          { value: row.quietPct, color: rgb(0.06, 0.73, 0.51) },
+          { value: row.outletPct, color: rgb(0.95, 0.62, 0.07) },
+        ];
+
+        bars.forEach((bar, bi) => {
+          const bx = gx + bi * (barWidth + 4);
+          const bh = (bar.value / 100) * chartHeight;
+          page.drawRectangle({
+            x: bx,
+            y: chartBottom,
+            width: barWidth,
+            height: Math.max(bh, 1),
+            color: bar.color,
+          });
+        });
+
+        // City label
+        const labelX = gx + barWidth;
+        page.drawText(
+          row.city.length > 10 ? row.city.slice(0, 10) + "…" : row.city,
+          {
+            x: labelX,
+            y: chartBottom - 14,
+            size: 7,
+            font: fontReg,
+            color: rgb(0.3, 0.3, 0.3),
+          },
+        );
+      });
+
+      // Y-axis baseline
+      page.drawLine({
+        start: { x: 40, y: chartBottom },
+        end: { x: width - 40, y: chartBottom },
+        thickness: 0.5,
+        color: rgb(0.7, 0.7, 0.7),
+      });
+
+      const pdfBytes = await pdfDoc.save();
+      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], {
+        type: "application/pdf",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `worksphere-comparison-chart-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to export chart PDF:", err);
+    } finally {
+      setIsExportingChartPdf(false);
     }
   };
 
@@ -490,6 +677,78 @@ export function MultiCityComparison({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Attribute Comparison Chart ── */}
+      {chartData.length > 0 && (
+        <div
+          className="mt-6 rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/60"
+          aria-label="Venue attribute comparison chart"
+        >
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-tight text-zinc-900 dark:text-zinc-50">
+                Attribute Comparison
+              </p>
+              <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                Average WiFi speed (Mbps), quiet venues (%), outlets (%) by city
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleExportChartPdf}
+              disabled={isExportingChartPdf}
+              className="flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm transition-colors hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+              aria-label="Export chart as PDF"
+            >
+              <FileDown className="h-3.5 w-3.5" />
+              {isExportingChartPdf ? "Exporting…" : "Export Chart PDF"}
+            </button>
+          </div>
+
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart
+              data={chartData}
+              margin={{ top: 8, right: 16, left: 0, bottom: 4 }}
+            >
+              <XAxis
+                dataKey="city"
+                tick={{ fontSize: 11, fill: "currentColor" }}
+                className="text-zinc-600 dark:text-zinc-400"
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "currentColor" }}
+                className="text-zinc-600 dark:text-zinc-400"
+              />
+              <Tooltip
+                contentStyle={{
+                  fontSize: 12,
+                  borderRadius: "8px",
+                  border: "1px solid #e4e4e7",
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar
+                dataKey="avgWifi"
+                name="Avg WiFi (Mbps)"
+                fill="#3b82f6"
+                radius={[3, 3, 0, 0]}
+              />
+              <Bar
+                dataKey="quietPct"
+                name="Quiet venues (%)"
+                fill="#10b981"
+                radius={[3, 3, 0, 0]}
+              />
+              <Bar
+                dataKey="outletPct"
+                name="Outlets (%)"
+                fill="#f59e0b"
+                radius={[3, 3, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       )}
 

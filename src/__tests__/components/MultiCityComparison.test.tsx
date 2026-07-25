@@ -2,6 +2,7 @@ import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { MultiCityComparison } from "@/components/venues/MultiCityComparison";
+import { buildComparisonChartData } from "@/components/venues/MultiCityComparison";
 
 const mockReplace = jest.fn();
 jest.mock("next/navigation", () => ({
@@ -178,5 +179,65 @@ describe("MultiCityComparison Component (#860)", () => {
       expect(badge).toHaveTextContent("20 Mbps");
       expect(badge).toHaveClass("text-zinc-600");
     });
+  });
+});
+
+describe("buildComparisonChartData", () => {
+  it("computes avgWifi, quietPct, and outletPct correctly per city", () => {
+    const venues = [
+      {
+        id: "v1",
+        name: "Bay Hub",
+        address: "123 Market St, San Francisco, CA",
+        lat: 37.7749,
+        lng: -122.4194,
+        category: "cafe",
+        wifi: true,
+        wifiSpeed: 100,
+        hasOutlets: true,
+        noiseLevel: "quiet" as const,
+        score: 9.0,
+      },
+      {
+        id: "v2",
+        name: "Fog Office",
+        address: "456 Mission St, San Francisco, CA",
+        lat: 37.78,
+        lng: -122.41,
+        category: "coworking",
+        wifi: true,
+        wifiSpeed: 60,
+        hasOutlets: false,
+        noiseLevel: "moderate" as const,
+        score: 8.0,
+      },
+      {
+        id: "v3",
+        name: "Shibuya Desk",
+        address: "45 Shibuya Crossing, Tokyo, Japan",
+        lat: 35.6762,
+        lng: 139.6503,
+        category: "cafe",
+        wifi: true,
+        wifiSpeed: 200,
+        hasOutlets: true,
+        noiseLevel: "quiet" as const,
+        score: 9.8,
+      },
+    ];
+
+    const result = buildComparisonChartData(["San Francisco", "Tokyo"], venues);
+
+    expect(result).toHaveLength(2);
+
+    const sf = result.find((r) => r.city === "San Francisco")!;
+    expect(sf.avgWifi).toBe(80); // (100 + 60) / 2
+    expect(sf.quietPct).toBe(50); // 1 of 2 venues is quiet
+    expect(sf.outletPct).toBe(50); // 1 of 2 venues has outlets
+
+    const tokyo = result.find((r) => r.city === "Tokyo")!;
+    expect(tokyo.avgWifi).toBe(200);
+    expect(tokyo.quietPct).toBe(100);
+    expect(tokyo.outletPct).toBe(100);
   });
 });

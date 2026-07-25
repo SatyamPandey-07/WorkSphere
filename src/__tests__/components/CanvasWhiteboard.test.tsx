@@ -4,8 +4,8 @@ import { CanvasWhiteboard } from "@/components/whiteboard/CanvasWhiteboard";
 
 const mockUseCanvasWhiteboard = jest.fn();
 
-jest.mock("@/hooks/useCanvasWhiteboard", () => ({
-  useCanvasWhiteboard: (...args: unknown[]) => mockUseCanvasWhiteboard(...args),
+jest.mock("@/hooks/useMeshCanvasWhiteboard", () => ({
+  useMeshCanvasWhiteboard: (...args: unknown[]) => mockUseCanvasWhiteboard(...args),
 }));
 
 const mockGetContext = jest.fn();

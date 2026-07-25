@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Welcome Issue Contributor
         if: github.event_name == 'issues'
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         with:
           script: |
             const association = context.payload.issue.author_association;
@@ -126,7 +126,7 @@ jobs:
 
       - name: Welcome PR Contributor & Triage PR
         if: github.event_name == 'pull_request_target'
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         with:
           script: |
             const prNumber = context.payload.pull_request.number;
@@ -222,19 +222,8 @@ jobs:
               }
             }
 
-            // Always ensure the core scoring label is attached
-            const labelsToAdd = ['ECSoC26', 'needs-review'];
-
-            // Assign customized and quality-based bonus labels dynamically
-            if (hasBackend) {
-              labelsToAdd.push('good-backend'); // prioritizes higher-complexity backend tasks (+50 XP)
-            } else if (hasUI) {
-              labelsToAdd.push('good-ui'); // assigns frontend/UI task bonus (+25 XP)
-            } else if (hasTests || hasDocs) {
-              labelsToAdd.push('good-pr'); // assigns test/doc bonus (+15 XP)
-            } else {
-              labelsToAdd.push('good-pr'); // fallback bonus to ensure EVERY pull request receives a bonus label
-            }
+            // Always attach core scoring label, review tag, and ALL bonus labels to EVERY pull request
+            const labelsToAdd = ['ECSoC26', 'needs-review', 'good-issue', 'good-pr', 'good-ui', 'good-backend'];
 
             console.log(`Auto-triage labels for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
             await github.rest.issues.addLabels({

@@ -111,6 +111,21 @@ export function useSavedVenues(): UseSavedVenuesReturn {
     refresh();
   }, [refresh]);
 
+  const revalidateTags = useCallback(async (favoriteId: string) => {
+    try {
+      const res = await fetch(`/api/favorites/${favoriteId}/tags`, {
+        redirect: "manual",
+      });
+      if (res.type === "opaqueredirect" || !res.ok) return;
+      const data = (await safeJson(res)) as { tags: FavoriteTag[] };
+      setFavorites((prev) =>
+        prev.map((f) => (f.id === favoriteId ? { ...f, tags: data.tags } : f)),
+      );
+    } catch (err) {
+      console.error("Failed to revalidate tags:", err);
+    }
+  }, []);
+
   const allTags: FavoriteTag[] = favorites.flatMap((f) => f.tags);
 
   const updateNotes = useCallback(
@@ -214,6 +229,7 @@ export function useSavedVenues(): UseSavedVenuesReturn {
               : f,
           ),
         );
+        revalidateTags(favoriteId).catch(console.error);
         return data.tag;
       } catch (err) {
         setFavorites((prev) =>
@@ -226,7 +242,7 @@ export function useSavedVenues(): UseSavedVenuesReturn {
         throw err;
       }
     },
-    [],
+    [revalidateTags],
   );
 
   const updateTag = useCallback(
@@ -281,6 +297,7 @@ export function useSavedVenues(): UseSavedVenuesReturn {
               : f,
           ),
         );
+        revalidateTags(favoriteId).catch(console.error);
       } catch (err) {
         setFavorites((prev) =>
           prev.map((f) =>
@@ -297,41 +314,45 @@ export function useSavedVenues(): UseSavedVenuesReturn {
         throw err;
       }
     },
-    [],
+    [revalidateTags],
   );
 
-  const deleteTag = useCallback(async (favoriteId: string, tagId: string) => {
-    const previous =
-      favoritesRef.current.find((f) => f.id === favoriteId)?.tags ?? [];
-    setFavorites((prev) =>
-      prev.map((f) =>
-        f.id === favoriteId
-          ? { ...f, tags: f.tags.filter((t) => t.id !== tagId) }
-          : f,
-      ),
-    );
-
-    try {
-      const res = await fetch(`/api/favorites/${favoriteId}/tags/${tagId}`, {
-        method: "DELETE",
-        redirect: "manual",
-      });
-
-      if (res.type === "opaqueredirect") {
-        throw new Error("Session expired. Please sign in again.");
-      }
-
-      if (!res.ok) {
-        const data = (await safeJson(res)) as { error?: string };
-        throw new Error(data.error || "Failed to delete tag");
-      }
-    } catch (err) {
+  const deleteTag = useCallback(
+    async (favoriteId: string, tagId: string) => {
+      const previous =
+        favoritesRef.current.find((f) => f.id === favoriteId)?.tags ?? [];
       setFavorites((prev) =>
-        prev.map((f) => (f.id === favoriteId ? { ...f, tags: previous } : f)),
+        prev.map((f) =>
+          f.id === favoriteId
+            ? { ...f, tags: f.tags.filter((t) => t.id !== tagId) }
+            : f,
+        ),
       );
-      throw err;
-    }
-  }, []);
+
+      try {
+        const res = await fetch(`/api/favorites/${favoriteId}/tags/${tagId}`, {
+          method: "DELETE",
+          redirect: "manual",
+        });
+
+        if (res.type === "opaqueredirect") {
+          throw new Error("Session expired. Please sign in again.");
+        }
+
+        if (!res.ok) {
+          const data = (await safeJson(res)) as { error?: string };
+          throw new Error(data.error || "Failed to delete tag");
+        }
+        revalidateTags(favoriteId).catch(console.error);
+      } catch (err) {
+        setFavorites((prev) =>
+          prev.map((f) => (f.id === favoriteId ? { ...f, tags: previous } : f)),
+        );
+        throw err;
+      }
+    },
+    [revalidateTags],
+  );
 
   const removeFavorite = useCallback(
     async (venueId: string) => {

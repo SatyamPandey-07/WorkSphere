@@ -36,7 +36,7 @@ export async function GET(req: Request) {
         id: passkey.credentialId,
         transports: passkey.transports as AuthenticatorTransportFuture[],
       })),
-      attestationType: "none",
+      attestationType: "direct",
       authenticatorSelection: {
         residentKey: "preferred",
         userVerification: "preferred",

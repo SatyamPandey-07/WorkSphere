@@ -128,9 +128,6 @@ export function useSpeechRecognition(
 ): UseSpeechRecognitionReturn {
   const RecognitionCtor = useRef<SpeechRecognitionConstructor | null>(null);
   const recognitionRef = useRef<ISpeechRecognition | null>(null);
-  // Keep the mic MediaStream around so we can call track.stop() when
-  // dictation ends — otherwise repeated start/stop leaves tracks alive and
-  // the browser tab keeps showing the recording indicator.
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   const [isSupported, setIsSupported] = useState(false);
@@ -168,7 +165,7 @@ export function useSpeechRecognition(
       return;
     }
 
-    // Clean up any existing instance + tracks before starting a new one
+    // Clean up any existing instance before starting a new one
     if (recognitionRef.current) {
       recognitionRef.current.abort();
     }

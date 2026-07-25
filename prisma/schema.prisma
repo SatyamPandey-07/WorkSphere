@@ -47,6 +47,7 @@ model User {
   pushSubscriptions  PushSubscription[]
   pushNotificationLogs PushNotificationLog[]
   checkIns           CheckIn[]
+  xrAnchors          XRAnchor[]
   // ── Activity streak ────────────────────────────────────────────────────────
   // currentStreak:    consecutive days with at least one check-in
   // longestStreak:    all-time best streak for profile display
@@ -56,6 +57,20 @@ model User {
   longestStreak      Int                @default(0)
   lastCheckInDate    String? // stored as "YYYY-MM-DD" UTC
   passkeys           PasskeyCredential[]
+  isVerifiedStudent  Boolean            @default(false)
+  accurateVotes      Int                @default(0)
+  badges             UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeType String
+  awardedAt DateTime @default(now())
+
+  @@unique([userId, badgeType])
+  @@index([userId])
 }
 
 model Venue {
@@ -116,6 +131,7 @@ model Venue {
   currentOccupancy    Int                 @default(0)
   maxCapacity         Int                 @default(50)
   checkIns            CheckIn[]
+  xrAnchors           XRAnchor[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -126,7 +142,7 @@ model VenueRating {
   userId             String
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId            String
-  venue              Venue    @relation(fields: [venueId], references: [id])
+  venue              Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
   wifiQuality        Int // 1-5
   hasOutlets         Boolean
   singleOriginBeans  Boolean  @default(false)
@@ -165,7 +181,7 @@ model Favorite {
   userId    String
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String
-  venue     Venue         @relation(fields: [venueId], references: [id])
+  venue     Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
   notes     String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
@@ -217,7 +233,7 @@ model Booking {
   userId             String
   user               User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId            String
-  venue              Venue          @relation(fields: [venueId], references: [id])
+  venue              Venue          @relation(fields: [venueId], references: [id], onDelete: Cascade)
   date               String
   time               String
   customerEmail      String
@@ -232,11 +248,14 @@ model Booking {
   amenitiesNeeded    String[]       @default([])
   seat               VenueSeat?     @relation(fields: [seatId], references: [id])
   guests             BookingGuest[]
+  recurringGroupId   String?
+  frequency          String?
 
   @@index([userId])
   @@index([venueId])
   @@index([seatId])
   @@index([createdAt])
+  @@index([recurringGroupId])
 }
 
 model BookingGuest {
@@ -261,6 +280,8 @@ enum GuestStatus {
   SENT
   FAILED
   CANCELLED
+  ACCEPTED
+  DECLINED
 }
 
 enum BookingStatus {
@@ -399,9 +420,36 @@ model VenueSeat {
   updatedAt DateTime @updatedAt
 
   bookings Booking[]
+  xrAnchors XRAnchor[]
 
   @@unique([venueId, seatNumber])
   @@index([venueId])
+}
+
+
+model XRAnchor {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  seatId    String?
+  seat      VenueSeat? @relation(fields: [seatId], references: [id], onDelete: SetNull)
+  bookingId String?
+
+  anchorPersistId String  @unique
+  matrix          Float[]
+  label           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastTrackedAt   DateTime @default(now())
+
+  @@index([venueId])
+  @@index([userId])
+  @@index([seatId])
+  @@index([bookingId])
+  @@index([anchorPersistId])
 }
 
 model WifiTelemetry {
@@ -437,7 +485,7 @@ model FlaggedItem {
   reason       String
   status       FlagStatus @default(PENDING)
   reportedById String
-  reportedBy   User       @relation(fields: [reportedById], references: [id])
+  reportedBy   User       @relation(fields: [reportedById], references: [id], onDelete: Cascade)
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
@@ -448,7 +496,7 @@ model FlaggedItem {
 model AdminAuditLog {
   id         String   @id @default(cuid())
   adminId    String
-  admin      User     @relation(fields: [adminId], references: [id])
+  admin      User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
   action     String
   entityType String
   entityId   String
@@ -605,19 +653,21 @@ model CheckIn {
 }
 
 model PasskeyCredential {
-  id           String   @id @default(cuid())
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  credentialId String   @unique
-  publicKey    Bytes
-  counter      BigInt   @default(0)
-  transports   String[] @default([])
-  deviceType   String   @default("singleDevice")
-  backedUp     Boolean  @default(false)
-  name         String
-  aaguid       String?
-  createdAt    DateTime @default(now())
-  lastUsedAt   DateTime @default(now())
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId      String   @unique
+  publicKey         Bytes
+  counter           BigInt   @default(0)
+  transports        String[] @default([])
+  deviceType        String   @default("singleDevice")
+  backedUp          Boolean  @default(false)
+  name              String
+  aaguid            String?
+  attestationFormat String?
+  createdAt         DateTime @default(now())
+  lastUsedAt        DateTime @default(now())
+  expiresAt         DateTime
 
   @@index([userId])
 }
@@ -647,7 +697,7 @@ model PushSubscription {
 }
 
 model PushNotificationLog {
-  id        String   @id @default(cuid())
+  id        String   @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   venueId   String?
@@ -655,8 +705,10 @@ model PushNotificationLog {
   body      String
   status    String
   error     String?
+  read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
+  @@id([id, createdAt])
   @@index([createdAt])
   @@index([status])
 }
@@ -687,3 +739,4 @@ model FoodVote {
 
   @@unique([userId, validationId])
 }
+

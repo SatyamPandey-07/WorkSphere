@@ -26,11 +26,14 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { UserButton } from "@clerk/nextjs";
+import { ReactiveUserButton } from "@/components/ReactiveUserButton";
+import { NotificationBell } from "@/components/NotificationBell";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "../ThemeToggle";
 import { EmptyState } from "../ui/EmptyState";
+import { useCurrency } from "@/context/CurrencyContext";
+import usePartySocket from "partysocket/react";
 
 interface Conversation {
   id: string;
@@ -59,6 +62,7 @@ interface ChatHeaderProps {
     pourOverAvailable?: boolean;
     musicStyle?: "all" | "lofi" | "classical_jazz" | "no_music";
   };
+  categoryCounts?: { cafe: number; coworking: number; library: number };
   showFilters: boolean;
   setShowFilters: (show: boolean) => void;
   onToggleFilter: (filter: string) => void;
@@ -88,6 +92,7 @@ export function ChatHeader({
   userLocation,
   onLocationChange,
   filters,
+  categoryCounts = { cafe: 0, coworking: 0, library: 0 },
   showFilters,
   setShowFilters,
   onToggleFilter,
@@ -100,9 +105,7 @@ export function ChatHeader({
   onDeleteConversation,
   onRenameConversation,
   onShowBookings,
-
   roomId: _roomId,
-
   onShareSession,
 }: ChatHeaderProps) {
   const [isHubOpen, setIsHubOpen] = useState(false);
@@ -110,6 +113,48 @@ export function ChatHeader({
   const [renameValue, setRenameValue] = useState("");
   const filtersBtnRef = useRef<HTMLButtonElement>(null);
   const filtersPanelRef = useRef<HTMLDivElement>(null);
+
+  const { currency, setCurrency } = useCurrency();
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "reconnecting" | "offline"
+  >("offline");
+
+  const socket = usePartySocket({
+    host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
+    room: _roomId || "default",
+  });
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const updateStatus = () => {
+      switch (socket.readyState) {
+        case 0: // CONNECTING
+          setConnectionStatus("reconnecting");
+          break;
+        case 1: // OPEN
+          setConnectionStatus("connected");
+          break;
+        case 2: // CLOSING
+        case 3: // CLOSED
+        default:
+          setConnectionStatus("offline");
+          break;
+      }
+    };
+
+    updateStatus();
+
+    socket.addEventListener("open", updateStatus);
+    socket.addEventListener("close", updateStatus);
+    socket.addEventListener("error", updateStatus);
+
+    return () => {
+      socket.removeEventListener("open", updateStatus);
+      socket.removeEventListener("close", updateStatus);
+      socket.removeEventListener("error", updateStatus);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (!showFilters) return;
@@ -185,6 +230,21 @@ export function ChatHeader({
 
         {/* Main Actions Area */}
         <div className="flex-1 flex items-center justify-end gap-2">
+          {/* Currency Dropdown for Issue 707 */}
+          <select
+            value={currency}
+            onChange={(e) =>
+              setCurrency(e.target.value as "USD" | "EUR" | "GBP" | "INR")
+            }
+            aria-label="Currency"
+            className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-[10px] font-black uppercase tracking-widest text-zinc-700 dark:text-zinc-300 px-3 py-2 cursor-pointer hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-all outline-none"
+          >
+            <option value="USD">USD ($)</option>
+            <option value="EUR">EUR (€)</option>
+            <option value="GBP">GBP (£)</option>
+            <option value="INR">INR (₹)</option>
+          </select>
+
           {/* Global Hubs Dropdown */}
           <div className="relative">
             <button
@@ -248,8 +308,8 @@ export function ChatHeader({
 
           {/* Collections */}
           <Link
-            href="/collections"
             className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden sm:flex"
+            href="/collections"
             title="Collections"
           >
             <LayoutGrid className="w-4 h-4" />
@@ -292,8 +352,8 @@ export function ChatHeader({
 
           {/* Analytics Link */}
           <Link
-            href="/analytics"
             className="p-2 bg-zinc-100 cursor-pointer dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent)] hover:text-white transition-all active:scale-95 hidden lg:flex"
+            href="/analytics"
             title="Intelligence Dashboard"
           >
             <BarChart3 className="w-4 h-4" />
@@ -316,6 +376,8 @@ export function ChatHeader({
 
           <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800 mx-1 hidden sm:block" />
 
+          <NotificationBell />
+
           {/* User Profile */}
           <div className="flex items-center gap-2 p-1 pl-3 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl">
             <div className="hidden lg:block text-right">
@@ -326,7 +388,7 @@ export function ChatHeader({
                 PROFILE
               </div>
             </div>
-            <UserButton
+            <ReactiveUserButton
               userProfileMode="navigation"
               userProfileUrl="/user-profile"
             />
@@ -343,6 +405,41 @@ export function ChatHeader({
             className="mt-4 p-3.5 sm:p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-4 sm:gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl"
             onMouseDown={(e) => e.stopPropagation()}
           >
+            {/* Section 0: Venue Category Filters */}
+            <div>
+              <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
+                Venue Categories
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                >
+                  Cafes
+                  <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-orange-600 text-white text-[8px] font-black">
+                    {categoryCounts.cafe}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                >
+                  Coworking
+                  <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-orange-600 text-white text-[8px] font-black">
+                    {categoryCounts.coworking}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                >
+                  Libraries
+                  <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-orange-600 text-white text-[8px] font-black">
+                    {categoryCounts.library}
+                  </span>
+                </button>
+              </div>
+            </div>
             {/* Section 1: Standard Toggles */}
             <div>
               <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
@@ -587,9 +684,9 @@ export function ChatHeader({
             {conversations.length === 0 ? (
               <div className="p-4">
                 <EmptyState
+                  description="Your recent AI chat sessions will appear here once you start searching."
                   illustration="chat"
                   message="No history found"
-                  description="Your recent AI chat sessions will appear here once you start searching."
                 />
               </div>
             ) : (
@@ -677,11 +774,47 @@ export function ChatHeader({
       {/* Connection Indicator Bar */}
       <div className="mt-4 flex items-center justify-between px-1">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-              NEURAL LINK ACTIVE
-            </span>
+          <div
+            className="flex items-center gap-1.5"
+            role="status"
+            aria-live="polite"
+          >
+            {connectionStatus === "connected" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-green-700 dark:text-green-400">
+                  Connected
+                </span>
+                <span className="sr-only">PartyKit connection is stable</span>
+              </>
+            )}
+            {connectionStatus === "reconnecting" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-yellow-700 dark:text-yellow-400">
+                  Reconnecting
+                </span>
+                <span className="sr-only">PartyKit is reconnecting</span>
+              </>
+            )}
+            {connectionStatus === "offline" && (
+              <>
+                <div
+                  className="w-1.5 h-1.5 rounded-full bg-red-500"
+                  aria-hidden="true"
+                />
+                <span className="text-[10px] font-black uppercase tracking-widest text-red-700 dark:text-red-400">
+                  Offline
+                </span>
+                <span className="sr-only">PartyKit is offline</span>
+              </>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_5px_rgba(59,130,246,0.8)]" />
@@ -690,8 +823,8 @@ export function ChatHeader({
             </span>
           </div>
           <Link
-            href="/analytics"
             className="hidden lg:flex items-center gap-1.5 hover:opacity-70 transition-opacity"
+            href="/analytics"
           >
             <Activity className="w-3 h-3 text-zinc-400" />
             <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">

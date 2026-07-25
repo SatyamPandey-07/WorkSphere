@@ -48,9 +48,7 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
           if (success) {
             setUseWebGPU(true);
             renderer.loadFloorPlanMesh(webgpu);
-            // @ts-expect-error - Assuming startRenderLoop exists and was not removed
             if (typeof renderer.startRenderLoop === "function") {
-              // @ts-expect-error - startRenderLoop is potentially missing from typings
               renderer.startRenderLoop();
             }
           } else {
@@ -71,7 +69,6 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
     return () => {
       worker?.terminate();
       detachRecovery?.();
-      // @ts-expect-error - destroy might be missing from typings
       renderer.destroy();
     };
   }, [data]);

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rateLimit";
-import { LRUCache } from "@/lib/cache";
 
 const DEFAULT_LOCATION = {
   lat: 37.7749,
@@ -11,22 +10,7 @@ const DEFAULT_LOCATION = {
   source: "default",
 };
 
-export type LocationResult = {
-  lat: number;
-  lng: number;
-  city: string;
-  region: string;
-  country: string;
-  timezone?: string;
-  source: string;
-};
-
-const LOCATION_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const locationCache = new LRUCache<LocationResult>(1000, LOCATION_CACHE_TTL_MS);
-
-export function clearLocationCache(): void {
-  locationCache.clear();
-}
+import { LocationResult, locationCache } from "@/lib/locationCache";
 
 function isPrivateOrLoopbackIP(ip: string): boolean {
   if (
@@ -152,7 +136,9 @@ export async function GET(req: NextRequest) {
   try {
     const forwarded = req.headers.get("x-forwarded-for");
     const realIp = req.headers.get("x-real-ip");
-    const forwardedIp = forwarded ? forwarded.split(",")[0].trim() : (realIp || "");
+    const forwardedIp = forwarded
+      ? forwarded.split(",")[0].trim()
+      : realIp || "";
     const ip = forwardedIp || "127.0.0.1";
 
     // Rate limiting: 10 requests per minute per IP

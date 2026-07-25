@@ -265,3 +265,74 @@ describe("useWebRTCMesh Audio Level EMA Smoothing & Node Cleanup", () => {
     expect(localDisconnect).toHaveBeenCalled();
   });
 });
+
+describe("useWebRTCMesh Network Switch & Cleanup", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("cleans up stale ICE listeners and peer connections on network switch (peer-join)", async () => {
+    const pcInstances: MockRTCPeerConnection[] = [];
+    (global as any).RTCPeerConnection = class extends MockRTCPeerConnection {
+      constructor(_config?: any) {
+        super();
+        pcInstances.push(this);
+      }
+    };
+
+    renderHook(() => useWebRTCMesh({ roomId: "test-room", userId: "user-1" }));
+
+    // 1. Remote peer joins for the first time
+    act(() => {
+      mockSocketOnMessage({
+        data: JSON.stringify({
+          type: "webrtc-signal",
+          kind: "peer-join",
+          from: "user-2",
+        }),
+      });
+    });
+
+    expect(pcInstances).toHaveLength(1);
+    const firstPc = pcInstances[0];
+    expect(firstPc.onicecandidate).toBeDefined();
+    expect(firstPc.onicecandidate).not.toBeNull();
+
+    // 2. Network switch: remote peer reconnects and sends peer-join again
+    act(() => {
+      mockSocketOnMessage({
+        data: JSON.stringify({
+          type: "webrtc-signal",
+          kind: "peer-join",
+          from: "user-2",
+        }),
+      });
+    });
+
+    // Stale listener should be removed and connection closed
+    expect(firstPc.onicecandidate).toBeNull();
+    expect(firstPc.close).toHaveBeenCalledTimes(1);
+
+    // A new peer connection should be created
+    expect(pcInstances).toHaveLength(2);
+    const secondPc = pcInstances[1];
+    expect(secondPc.onicecandidate).not.toBeNull();
+    expect(secondPc).not.toBe(firstPc);
+
+    // 3. Multiple reconnect cycles
+    act(() => {
+      mockSocketOnMessage({
+        data: JSON.stringify({
+          type: "webrtc-signal",
+          kind: "peer-join",
+          from: "user-2",
+        }),
+      });
+    });
+
+    expect(secondPc.onicecandidate).toBeNull();
+    expect(secondPc.close).toHaveBeenCalledTimes(1);
+    expect(pcInstances).toHaveLength(3);
+    expect(pcInstances[2].onicecandidate).not.toBeNull();
+  });
+});

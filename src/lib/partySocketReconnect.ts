@@ -36,7 +36,7 @@
  */
 
 export const PARTY_SOCKET_RECONNECT_OPTIONS = {
-  maxRetries: 10,
+  maxRetries: 5,
   minReconnectionDelay: 1_000,
   maxReconnectionDelay: 30_000,
   reconnectionDelayGrowFactor: 2,
@@ -92,13 +92,14 @@ type DelaySocket = {
   __lastCloseReason?: string | null;
   __offlineActionsQueue?: string[];
   __offlineCrdtQueue?: any[];
+  __worksphereForceReconnect?: () => void;
 };
 /** Swap in jittered backoff on a live PartySocket instance (idempotent). */
 export function attachJitteredBackoff<T extends object>(socket: T): T {
   const s = socket as T & DelaySocket;
   if (s.__worksphereJitter) return socket;
 
-let pendingTimeoutId: any = null;
+  let pendingTimeoutId: any = null;
   let pendingResolve: (() => void) | null = null;
   s.__worksphereState = ConnectionState.CLOSED;
   s.__lastCloseCode = null;
@@ -110,7 +111,7 @@ let pendingTimeoutId: any = null;
     return jitteredReconnectDelay(this._retryCount);
   };
 
-s._wait = function (this: any) {
+  s._wait = function (this: any) {
     if (pendingTimeoutId) {
       clearTimeout(pendingTimeoutId);
     }
@@ -138,7 +139,7 @@ s._wait = function (this: any) {
       this._connect();
     }
   };
-const originalClearTimeouts = s._clearTimeouts;
+  const originalClearTimeouts = s._clearTimeouts;
   s._clearTimeouts = function (this: any) {
     if (pendingTimeoutId) {
       clearTimeout(pendingTimeoutId);
@@ -149,7 +150,7 @@ const originalClearTimeouts = s._clearTimeouts;
       originalClearTimeouts.call(this);
     }
   };
-const originalDisconnect = s._disconnect;
+  const originalDisconnect = s._disconnect;
   s._disconnect = function (this: any, code?: number, reason?: string) {
     s.__worksphereState = ConnectionState.CLOSED;
     if (pendingTimeoutId) {
@@ -241,6 +242,7 @@ const originalDisconnect = s._disconnect;
 
   if (typeof window !== "undefined") {
     window.addEventListener("online", () => {
+      s._retryCount = 0;
       if (s.__worksphereState !== ConnectionState.CONNECTED) {
         (s as any).__worksphereForceReconnect?.();
       }

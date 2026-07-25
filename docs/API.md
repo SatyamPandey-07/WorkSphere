@@ -13,19 +13,9 @@ WorkSphere uses **Clerk** for user authentication and session management.
 The web application automatically passes a session cookie (`__client`) with API requests.
 
 The Next.js middleware (`src/middleware.ts`) automatically:
-
 - Intercepts incoming requests
 - Authenticates the session
-
 - Attaches the user identity context
-
-## Custom API Client Authentication
-
-For custom API clients testing authenticated endpoints directly:
-
-**Header**
-
-- Attaches the authenticated user identity to the request context
 
 ## Custom API Client Authentication
 
@@ -33,24 +23,15 @@ For custom API clients testing authenticated endpoints directly, include the Cle
 
 ### Header Format
 
-
 ```http
 Authorization: Bearer <CLERK_JWT_SESSION_TOKEN>
 ```
-
-
-## Authentication Responses
-
-If an authenticated endpoint is called without a valid session or JWT:
-
-**HTTP Status**
 
 ## Authentication Failure Response
 
 If an authenticated endpoint is called without a valid session or JWT token, the server returns:
 
 **Status**
-
 
 ```http
 401 Unauthorized
@@ -68,18 +49,6 @@ If an authenticated endpoint is called without a valid session or JWT token, the
 
 # 2. Venues & Ratings API
 
-
-## Search Venues
-
-Retrieve a list of suitable remote workspaces within a specific geographic bounding box.
-
-### Endpoint
-
-```http
-GET /api/venues
-```
-
-
 ## Search Venues
 
 Retrieve a list of suitable remote workspaces within a specified geographic area.
@@ -92,7 +61,7 @@ GET /api/venues
 
 ### Authentication
 
-Public (Authentication Optional)
+Public (Session optional)
 
 ### Query Parameters
 
@@ -114,30 +83,9 @@ The venue search interface includes quick filter pills.
 #### Quiet Zone
 
 When the **Quiet Zone** pill is enabled:
-
 - The active search filter is updated.
 - The client automatically re-fetches venue data.
-- The API request includes:
-
-```text
-hasQuietZone=true
-```
-
-### Authentication
-
-Public (Session optional)
-
-### Query Parameters
-
-| Parameter | Type | Required | Default | Validation | Description |
-|-----------|------|----------|---------|------------|-------------|
-| `lat` | Float | ✅ Yes | — | -90 to 90 | Coordinate latitude |
-| `lng` | Float | ✅ Yes | — | -180 to 180 | Coordinate longitude |
-| `radius` | Integer | No | 5000 | 100–50000 meters | Approximate search radius |
-| `category` | String | No | — | `cafe`, `coworking`, `library`, `all` | Workspace category |
-| `wifi` | Boolean | No | — | `true` / `false` | Filter for high-speed Wi-Fi |
-| `outlets` | Boolean | No | — | `true` / `false` | Filter for power outlets |
-| `quiet` | Boolean | No | — | `true` / `false` | Filter for quiet venues |
+- The API request includes: `hasQuietZone=true`
 
 ### Success Response (200 OK)
 
@@ -156,10 +104,7 @@ Public (Session optional)
       "wifiQuality": 4,
       "hasOutlets": true,
       "noiseLevel": "quiet",
-
-
       "hasQuietZone": true,
-
       "crowdsourced": true,
       "createdAt": "2026-07-09T05:00:55.000Z",
       "updatedAt": "2026-07-10T10:00:00.000Z",
@@ -182,15 +127,9 @@ Public (Session optional)
 
 ---
 
-
-# Add Crowdsourced Venue
-
-Submit a new workspace venue suggested by the community.
-
 ## Add Crowdsourced Venue
 
 Submit a new remote workspace venue suggested by the community.
-
 
 ### Endpoint
 
@@ -200,12 +139,10 @@ POST /api/venues
 
 ### Authentication
 
-
 Required
 
 ### Request Body
 
-<<<<<<< HEAD
 | Field         | Type    | Required | Validation                     | Description          |
 | ------------- | ------- | -------- | ------------------------------ | -------------------- |
 | `placeId`     | String  | ✅ Yes   | Minimum 1 character            | Google Place ID      |
@@ -218,38 +155,6 @@ Required
 | `hasOutlets`  | Boolean | No       | —                              | Outlet availability  |
 | `noiseLevel`  | String  | No       | `quiet`, `moderate`, `loud`    | Ambient noise level  |
 | `rating`      | Float   | No       | —                              | Community rating     |
-=======
-| Field | Type | Required | Validation | Description |
-|------|------|----------|------------|-------------|
-| `placeId` | String | ✅ Yes | Minimum 1 character | Google Place ID |
-| `name` | String | ✅ Yes | 1–200 characters | Venue name |
-| `latitude` | Float | ✅ Yes | -90 to 90 | Latitude |
-| `longitude` | Float | ✅ Yes | -180 to 180 | Longitude |
-| `category` | String | ✅ Yes | `cafe`, `coworking`, `library` | Venue category |
-| `address` | String | No | Max 500 chars | Street address |
-| `wifiQuality` | Integer | No | 1–5 | Wi-Fi rating |
-| `hasOutlets` | Boolean | No | — | Outlet availability |
-| `noiseLevel` | String | No | `quiet`, `moderate`, `loud` | Noise level |
-| `rating` | Float | No | — | Community rating |
->>>>>>> main
-
-**Required**
-
-### Request Body
-
-| Field         | Type    | Required | Validation                     | Description          |
-| ------------- | ------- | -------- | ------------------------------ | -------------------- |
-| `placeId`     | String  | ✅ Yes   | Minimum 1 character            | Google Place ID      |
-| `name`        | String  | ✅ Yes   | 1–200 characters               | Venue name           |
-| `latitude`    | Float   | ✅ Yes   | `-90` to `90`                  | Latitude             |
-| `longitude`   | Float   | ✅ Yes   | `-180` to `180`                | Longitude            |
-| `category`    | String  | ✅ Yes   | `cafe`, `coworking`, `library` | Venue category       |
-| `address`     | String  | No       | Maximum 500 characters         | Physical address     |
-| `wifiQuality` | Integer | No       | `1–5`                          | Wi-Fi quality rating |
-| `hasOutlets`  | Boolean | No       | —                              | Outlet availability  |
-| `noiseLevel`  | String  | No       | `quiet`, `moderate`, `loud`    | Ambient noise level  |
-| `rating`      | Float   | No       | —                              | Community rating     |
-
 
 ### Success Response (201 Created)
 
@@ -276,19 +181,9 @@ Required
 
 ---
 
-
-# Submit Venue Rating
-
-Create or update a user's rating for a venue.
-
-Each user may submit **only one rating per venue**.
-
 ## Submit Venue Rating
 
-Add or update the authenticated user's rating for a venue.
-
-Each user can submit **only one rating per venue**.
-
+Add or update the authenticated user's rating for a venue. Each user can submit **only one rating per venue**.
 
 ### Endpoint
 
@@ -298,53 +193,30 @@ POST /api/venues/{venueId}/rate
 
 ### Authentication
 
-
 Required
-
-### Path Parameter
-
-| Parameter | Description |
-|-----------|-------------|
-
-**Required**
 
 ### Path Parameters
 
 | Parameter | Description                               |
 | --------- | ----------------------------------------- |
-<<<<<<< HEAD
-=======
-
->>>>>>> main
 | `venueId` | Internal database CUID or Google Place ID |
 
 ### Request Body
 
-<<<<<<< HEAD
-=======
-
-| Field | Type | Required | Validation | Description |
-|------|------|----------|------------|-------------|
-| `wifiQuality` | Integer | ✅ Yes | 1–5 | Wi-Fi assessment |
-| `hasOutlets` | Boolean | ✅ Yes | — | Outlet availability |
-| `noiseLevel` | String | ✅ Yes | `quiet`, `moderate`, `loud` | Ambient noise |
-| `comment` | String | No | Max 1000 chars | Review text |
-| `venue` | Object | No | — | Used when creating a venue dynamically |
-
-The optional `venue` object may contain:
-
->>>>>>> main
-| Field         | Type    | Required | Validation                  | Description                                                    |
-| ------------- | ------- | -------- | --------------------------- | -------------------------------------------------------------- |
-| `wifiQuality` | Integer | ✅ Yes   | `1–5`                       | Personal Wi-Fi assessment                                      |
-| `hasOutlets`  | Boolean | ✅ Yes   | —                           | Outlet availability                                            |
-| `noiseLevel`  | String  | ✅ Yes   | `quiet`, `moderate`, `loud` | Ambient noise                                                  |
-| `comment`     | String  | No       | Maximum 1000 characters     | Optional review                                                |
-| `venue`       | Object  | No       | —                           | Metadata used to create the venue if it does not already exist |
+| Field           | Type     | Required | Validation                                                         | Description                                                    |
+| --------------- | -------- | -------- | ------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `wifiQuality`   | Integer  | ✅ Yes   | `1–5`                                                              | Personal Wi-Fi assessment                                      |
+| `hasOutlets`    | Boolean  | ✅ Yes   | —                                                                  | Outlet availability                                            |
+| `noiseLevel`    | String   | ✅ Yes   | `quiet`, `moderate`, `loud`                                        | Ambient noise                                                  |
+| `comment`       | String   | No       | Maximum 1000 characters                                            | Optional review                                                |
+| `venue`         | Object   | No       | —                                                                  | Metadata used to create the venue if it does not already exist |
+| `outletDensity` | String   | No       | `every_table`, `some_tables`, `wall_seats`, `none`                | Density of outlets in the venue                                |
+| `lighting`      | String   | No       | `natural_daylight`, `warm_ambient`, `fluorescent`, `bright_white` | Type of lighting in the venue                                  |
+| `powerTypes`    | String[] | No       | `usb_c`, `ac_wall`, `wireless`                                     | Supported power outlet types                                   |
+| `wifiSpeed`     | Float    | No       | —                                                                  | Measured Wi-Fi speed in Mbps                                   |
+| `hasQuietZone`  | Boolean  | No       | —                                                                  | Indicates if the venue has quiet zones                         |
 
 The optional **venue** object may contain:
-
-
 - `name`
 - `lat`
 - `lng`
@@ -352,51 +224,31 @@ The optional **venue** object may contain:
 - `address`
 - `placeId`
 
-
-## Aggregate Recalculation
-
-After each rating submission, the venue's aggregated values are recalculated automatically:
-
-- **Wi-Fi Quality** → Rounded average of all ratings
-- **Has Outlets** → `true` if more than 50% of users confirm outlets
-- **Noise Level** → Most frequently submitted value
-
-### Accepted Enum Values
-
-| Field           | Accepted Values                                                   |
-| --------------- | ----------------------------------------------------------------- |
-| `noiseLevel`    | `quiet`, `moderate`, `loud`                                       |
-| `lighting`      | `natural_daylight`, `warm_ambient`, `fluorescent`, `bright_white` |
-| `outletDensity` | `every_table`, `some_tables`, `wall_seats`, `none`                |
-| `powerTypes`    | `usb_c`, `ac_wall`, `wireless`                                    |
-
-### Example Request
-
-{
-"wifiQuality": 5,
-"hasOutlets": true,
-"noiseLevel": "quiet",
-"comment": "Excellent workspace with reliable Wi-Fi.",
-"outletDensity": "every_table",
-"lighting": "natural_daylight",
-"powerTypes": ["ac_wall", "usb_c"],
-"wifiSpeed": 250,
-"hasQuietZone": true
-}
-
 ### Aggregate Recalculation
 
-After a rating is submitted, the venue's aggregate values are recalculated automatically.
+After a rating is submitted, the venue's aggregate values are recalculated automatically:
 
 | Field           | Calculation                                        |
 | --------------- | -------------------------------------------------- |
 | **wifiQuality** | Rounded average of all submitted ratings           |
 | **hasOutlets**  | `true` if more than 50% of ratings confirm outlets |
 | **noiseLevel**  | Most frequently submitted value                    |
-<<<<<<< HEAD
-=======
 
->>>>>>> main
+### Example Request
+
+```json
+{
+  "wifiQuality": 5,
+  "hasOutlets": true,
+  "noiseLevel": "quiet",
+  "comment": "Excellent workspace with reliable Wi-Fi.",
+  "outletDensity": "every_table",
+  "lighting": "natural_daylight",
+  "powerTypes": ["ac_wall", "usb_c"],
+  "wifiSpeed": 250,
+  "hasQuietZone": true
+}
+```
 
 ### Success Response (201 Created)
 
@@ -409,15 +261,11 @@ After a rating is submitted, the venue's aggregate values are recalculated autom
     "wifiQuality": 5,
     "hasOutlets": true,
     "noiseLevel": "quiet",
-
-    "comment": "Super fast fiber connection!",
-
+    "comment": "Excellent workspace with reliable Wi-Fi.",
     "outletDensity": "every_table",
     "lighting": "natural_daylight",
     "powerTypes": ["ac_wall", "usb_c"],
     "hasQuietZone": true,
-    "comment": "Excellent workspace with reliable Wi-Fi.",
-
     "createdAt": "2026-07-10T10:30:00.000Z"
   }
 }
@@ -425,15 +273,9 @@ After a rating is submitted, the venue's aggregate values are recalculated autom
 
 ---
 
-
-# Fetch User Venue Rating
-
-Retrieve the current user's rating for a venue.
-
 ## Fetch User Venue Rating
 
 Retrieve the authenticated user's existing rating for a venue.
-
 
 ### Endpoint
 
@@ -443,11 +285,7 @@ GET /api/venues/{venueId}/rate
 
 ### Authentication
 
-
 Required
-
-**Required**
-
 
 ### Success Response (User Has Rated)
 
@@ -490,11 +328,7 @@ POST /api/bookings/confirm
 
 ### Authentication
 
-
 Required
-
-**Required**
-
 
 ### Request Body
 
@@ -528,32 +362,17 @@ Required
 
 ### Side Effects
 
-
 Booking confirmation automatically performs the following actions:
-
-- Creates or updates the venue record if it does not already exist.
-- Creates a booking transaction associated with the authenticated user.
-- Generates an A4 PDF receipt using **pdf-lib**.
-- Sends the receipt as an email attachment using **nodemailer** with Gmail SMTP.
-
-
-Booking confirmation automatically performs the following actions:
-
 - Creates or updates the venue record if it does not already exist.
 - Creates a unique booking transaction associated with the authenticated user.
 - Generates an A4 PDF receipt using **pdf-lib**.
 - Sends the PDF receipt to the customer via **Nodemailer** using Gmail SMTP.
 
-
 ---
 
 ## Fetch Booking History
 
-
-Retrieve a chronological list of past and upcoming bookings made by the authenticated user.
-
 Retrieve a chronological list of all past and upcoming bookings for the authenticated user.
-
 
 ### Endpoint
 
@@ -563,11 +382,7 @@ GET /api/bookings/history
 
 ### Authentication
 
-
 Required
-
-**Required**
-
 
 ### Success Response (200 OK)
 
@@ -607,30 +422,9 @@ Export and download the raw booking transaction payload directly from the receip
 GET /api/receipts/{bookingId}
 ```
 
-
-> Alternatively, this may be triggered through the Receipt Modal Client Export.
-
 ### Authentication
 
 Required
-
-### Export Format
-
-| Property | Value |
-|----------|-------|
-| Payload | Pretty-printed JSON (`JSON.stringify(transactionPayload, null, 2)`) |
-| MIME Type | `application/json` |
-| Filename | `receipt-{bookingId}.json` |
-
-Example:
-
-```
-
-> Alternatively, this export may be triggered from the Receipt Modal client.
-
-### Authentication
-
-**Required**
 
 ### Export Format
 
@@ -641,9 +435,7 @@ Example:
 | Filename     | `receipt-{bookingId}.json`                                          |
 
 #### Example Filename
-
 ```text
-
 receipt-cldh3b89z000008j0g4z7t9p0.json
 ```
 
@@ -674,17 +466,7 @@ receipt-cldh3b89z000008j0g4z7t9p0.json
 
 # 4. Real-Time Server-Sent Events (SSE) Streams
 
-
-WorkSphere supports real-time updates using **Server-Sent Events (SSE)** over HTTP.
-
-This enables lightweight, one-way event streaming that works well on serverless platforms where WebSockets are unavailable.
-
----
-
-
-WorkSphere supports real-time updates through **Server-Sent Events (SSE)** over HTTP.
-
-SSE provides lightweight, one-way event streaming, making it well-suited for serverless deployments where WebSockets are unavailable.
+WorkSphere supports real-time updates through **Server-Sent Events (SSE)** over HTTP. SSE provides lightweight, one-way event streaming, making it well-suited for serverless deployments where WebSockets are unavailable.
 
 ---
 
@@ -698,7 +480,6 @@ Open a persistent HTTP connection to receive live broadcasts of venue reviews, e
 GET /api/venues/updates
 ```
 
-
 ### Response Headers
 
 ```http
@@ -709,79 +490,6 @@ Connection: keep-alive
 
 ### Query Parameters
 
-<<<<<<< HEAD
-=======
-| Parameter | Description |
-|-----------|-------------|
-| `venueId` | Filter updates for one or more venues. Multiple `venueId` parameters are allowed. |
-
-Example:
-
-```text
-/api/venues/updates?venueId=id1&venueId=id2
-```
-
----
-
-## Event Types
-
-### 1. Connection Established
-
-Sent immediately after a successful SSE connection.
-
-```text
-data: {
-  "type": "connected",
-  "timestamp": 1783634400000
-}
-```
-
----
-
-### 2. Heartbeat Event
-
-Sent every **30 seconds** to keep the connection alive and prevent proxies or load balancers from closing idle connections.
-
-```text
-data: {
-  "type": "heartbeat",
-  "count": 1,
-  "venueIds": [
-    "cldh1x89z000008j0g2z1g2p4"
-  ],
-  "timestamp": 1783634430000
-}
-```
-
----
-
-### 3. Venue Update Event
-
-Triggered whenever a venue is rated, edited, or updated.
-
-```text
-data: {
-  "type": "rating_updated",
-  "venueId": "cldh1x89z000008j0g2z1g2p4",
-  "data": {
-    "wifiQuality": 5,
-    "noiseLevel": "quiet"
-  },
-  "timestamp": 1783634450000
-}
-
-
-### Response Headers
-
-```http
-Content-Type: text/event-stream
-Cache-Control: no-cache
-Connection: keep-alive
-```
-
-### Query Parameters
-
->>>>>>> main
 | Parameter | Description                                                                         |
 | --------- | ----------------------------------------------------------------------------------- |
 | `venueId` | Filter updates for one or more venues. Multiple `venueId` parameters are supported. |
@@ -822,36 +530,19 @@ Broadcast whenever a user rates, edits, or updates a venue.
 
 ```text
 data: {"type":"rating_updated","venueId":"cldh1x89z000008j0g2z1g2p4","data":{"wifiQuality":5,"noiseLevel":"quiet"},"timestamp":1783634450000}
-
 ```
 
 ---
 
 ## Broadcast Venue Update
 
-
-Broadcast an update to all connected SSE clients.
-
-Typically invoked internally after venue updates or webhook events.
+Broadcast an update to all connected SSE clients. This endpoint is typically invoked internally after venue updates, webhook events, or user review submissions.
 
 ### Endpoint
 
 ```http
 POST /api/venues/updates
 ```
-
-
-
-Broadcast an update to all connected SSE clients.
-
-This endpoint is typically invoked internally after venue updates, webhook events, or user review submissions.
-
-### Endpoint
-
-```http
-POST /api/venues/updates
-```
-
 
 ### Authentication
 
@@ -892,11 +583,6 @@ Public
 
 ---
 
-<<<<<<< HEAD
-=======
-
-
->>>>>>> main
 ## 5. Amenity Voting API
 
 ### Vote on a Venue Amenity
@@ -956,8 +642,94 @@ Retrieves the total votes, confidence score, and hidden status for a venue's ame
 }
 ```
 
-<<<<<<< HEAD
-=======
+---
 
->>>>>>> main
+# 6. PDF Export APIs
+
+WorkSphere provides PDF generation endpoints and utilities to export detailed summaries of folders and side-by-side comparisons of workspaces across multiple cities.
+
+## Export Folder Summary PDF
+
+Generates and downloads a styled PDF summary of all workspaces within a specified folder, including crowdsourced metrics and user notes.
+
+### Endpoint
+
+```http
+GET /api/folders/[id]/export-pdf
+```
+
+### Authentication
+
+Required (Bearer Token or Clerk session cookie)
+
+### Path Parameters
+
+- `id` (String, Required): The unique ID of the folder to export.
+
+### Success Response (200 OK)
+
+- **Headers**:
+  - `Content-Type: application/pdf`
+  - `Content-Disposition: attachment; filename="collection-<slug>.pdf"`
+- **Body**: Binary PDF stream.
+
+### cURL Example
+
+```bash
+curl -X GET "https://worksphere.app/api/folders/cldh1x89z000008j0g2z1g2p4/export-pdf" \
+  -H "Authorization: Bearer <CLERK_JWT_SESSION_TOKEN>" \
+  --output folder_summary.pdf
+```
+
+### Expected Response
+
+A styled PDF report containing the folder's name, description, and list of venues with Wi-Fi quality, outlet availability, address, and personalized notes.
+
+---
+
+## Multi-City PDF Generation Engine
+
+WorkSphere supports a client-side comparison report engine utilizing `pdf-lib` to render A4 Landscape side-by-side columns comparing workspace suitability across global cities.
+
+### Input Schema (`generateMultiCityPdfReport`)
+
+```typescript
+export interface Venue {
+  id: string;
+  name: string;
+  wifiSpeed?: number | null;
+  wifiQuality?: number;
+  hasOutlets: boolean;
+  noiseLevel?: string | null;
+  address?: string;
+  category?: string;
+  lat: number;
+  lng: number;
+}
+
+export interface MultiCityPdfOptions {
+  selectedCities: string[];
+  venues: Venue[];
+}
+```
+
+### City Metric Computation Logic
+
+Before rendering, the engine filters the input `venues` array for each selected city using case-insensitive substring matching against the venue `address`. It then computes the following summary statistics:
+
+1. **Total Workspaces (`totalVenues`)**: Number of filtered venues for the city.
+2. **Average Wi-Fi Speed (`avgWifiSpeed`)**: Mean of all valid non-zero `wifiSpeed` values (rounded).
+3. **Quiet Ratio (`quietRatio`)**: Percentage of workspaces where `noiseLevel` is equal to `"quiet"`.
+4. **Power Outlet Density (`outletRatio` / `outletDensityPct`)**: Percentage of workspaces where `hasOutlets` is `true`.
+
+### Font Encodings & Layout Boundaries
+
+- **Fonts**: Uses standard Helvetica (`StandardFonts.Helvetica`) and Helvetica Bold (`StandardFonts.HelveticaBold`).
+- **Page Layout**: A4 Landscape layout (`[842, 595]` points).
+- **Margins**: Top margin of `40` points with a 6-point colored top accent bar (`rgb(0.15, 0.45, 0.95)`). Left/right margins are `40` points.
+- **Columns**: Support side-by-side rendering for up to 3 selected cities. Column width is computed as:
+  $$\text{colWidth} = \frac{\text{availableWidth} - \text{colGap} \times (N - 1)}{N}$$
+  where `availableWidth = 842 - 2 * 40 = 762`, `colGap = 16`, and $N = \min(\text{cities}.length, 3)$.
+- **Graphics Fallbacks**: Simple shapes (rectangles and lines) are drawn with solid colors as fallbacks if external image assets fail to load.
+
 # End of API Reference

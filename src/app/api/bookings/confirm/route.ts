@@ -29,6 +29,8 @@ export async function POST(req: Request) {
         {
           error:
             "Rate limit exceeded. Please wait before making more bookings.",
+          retryAfterSeconds: retryAfter,
+          retryAfter,
         },
         {
           status: 429,
@@ -135,7 +137,7 @@ export async function POST(req: Request) {
 
     // 2. Emit Booking Confirmed Event to handle Side-Effects (PDF, Email, Analytics)
     // --- ASYNC PDF FIX IMPLEMENTATION (#518) ---
-    after(async () => {
+    const runBackground = async () => {
       try {
         for (const booking of bookings) {
           await eventBus.emit("booking:confirmed", {
@@ -155,7 +157,13 @@ export async function POST(req: Request) {
       } catch (backgroundError) {
         console.error("[Background Event Bus Error]:", backgroundError);
       }
-    });
+    };
+
+    try {
+      after(runBackground);
+    } catch {
+      void runBackground();
+    }
     // --- END OF ASYNC PDF FIX ---
 
     return NextResponse.json({
@@ -167,14 +175,11 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("[Booking API Critical Failure]:", error);
 
-    // Catch standard Prisma unique constraint violations (P2002) cleanly
     if (error.code === "P2002" || error.message?.includes("COLLISION")) {
       return NextResponse.json(
         {
           success: false,
-          error:
-            "Reservation collision intercepted. Please try selecting another slot.",
-          details: error.message,
+          error: "This time slot was just booked. Please select another.",
         },
         { status: 409 },
       );
@@ -183,8 +188,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: "Internal systems error during confirmation",
-        details: error.message || String(error),
+        error: "Confirmation failed. Please try again.",
       },
       { status: 500 },
     );

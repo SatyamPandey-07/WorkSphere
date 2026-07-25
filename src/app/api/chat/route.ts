@@ -1131,11 +1131,28 @@ Address the user's query and include UI components if helpful.`;
             await prisma.message.create({
               data: { conversationId, role: "user", content: userMessage },
             });
+
+            const sanitized = fullContent.replace(
+              /<ui-component\s+name="([^"]+)"\s+props='([^']*)'\s*\/>/g,
+              (_, name, props) => {
+                const allowed = ["DataTable", "DataChart", "Map"];
+                if (!allowed.includes(name)) return "";
+                try {
+                  JSON.parse(
+                    props.replace(/&quot;/g, '"').replace(/&#x27;/g, "'"),
+                  );
+                  return _;
+                } catch {
+                  return "";
+                }
+              },
+            );
+
             await prisma.message.create({
               data: {
                 conversationId,
                 role: "assistant",
-                content: fullContent,
+                content: sanitized,
                 agentName: "ActionAgent",
               },
             });

@@ -424,7 +424,7 @@ export async function generateAnalyticsPdfReport(
 
 export function downloadAnalyticsPDF(data: AnalyticsExportData): Promise<Blob> {
   return generateAnalyticsPdfReport(data).then((pdfBytes) => {
-    const blob = new Blob([pdfBytes], { type: "application/pdf" });
+    const blob = new Blob([pdfBytes as any], { type: "application/pdf" });
 
     if (typeof window !== "undefined" && typeof document !== "undefined") {
       const url = URL.createObjectURL(blob);

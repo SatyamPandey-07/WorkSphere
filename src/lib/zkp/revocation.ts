@@ -3,7 +3,7 @@ import crypto from "crypto";
 // Simulated database of revoked credential hashes
 export const REVOKED_CREDENTIAL_HASHES: string[] = [
   "12345678901234567890", // dummy
-  "15241578750190521", // if student id is 12345678 => 12345678^2 + 5*12345678 + 17 = 15241578750190521
+  "152415827008091", // if student id is 12345678 => 12345678^2 + 5*12345678 + 17 = 152415827008091
 ];
 
 export function hashPair(left: string, right: string): string {

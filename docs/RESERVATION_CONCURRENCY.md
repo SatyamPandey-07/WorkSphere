@@ -81,17 +81,17 @@ Interactive transactions execute multiple database operations within a single tr
 The reservation endpoint uses the **Serializable** isolation level:
 
 ```ts
-Prisma.TransactionIsolationLevel.Serializable
+Prisma.TransactionIsolationLevel.Serializable;
 ```
 
 Serializable is PostgreSQL's strongest isolation level and ensures concurrent transactions behave as though they execute one after another.
 
 This helps prevent:
 
-* Dirty reads
-* Non-repeatable reads
-* Phantom reads
-* Race conditions during seat booking
+- Dirty reads
+- Non-repeatable reads
+- Phantom reads
+- Race conditions during seat booking
 
 Although Serializable transactions may occasionally abort due to serialization conflicts, the reservation endpoint automatically retries eligible transient failures.
 
@@ -136,8 +136,8 @@ These locks prevent other transactions from modifying the same seat records unti
 
 After acquiring locks, the endpoint loads the requested seat records and verifies that:
 
-* Every seat exists.
-* Every seat belongs to the requested venue.
+- Every seat exists.
+- Every seat belongs to the requested venue.
 
 If any requested seat cannot be found, the transaction stops immediately and returns an error instead of creating an incomplete reservation.
 
@@ -147,9 +147,9 @@ If any requested seat cannot be found, the transaction stops immediately and ret
 
 The transaction checks for existing bookings that:
 
-* Match one of the requested seat IDs.
-* Occur on the same date.
-* Have a status of `CONFIRMED` or `PENDING`.
+- Match one of the requested seat IDs.
+- Occur on the same date.
+- Have a status of `CONFIRMED` or `PENDING`.
 
 If an existing booking overlaps with the requested reservation time, the request is rejected with a conflict response.
 
@@ -169,10 +169,10 @@ Executing these operations within one transaction guarantees that either every b
 
 After the booking records are created successfully, Prisma commits the transaction. Once the commit completes:
 
-* Row locks are released.
-* Seat availability is updated.
-* Reservation events are published.
-* Guest processing can begin.
+- Row locks are released.
+- Seat availability is updated.
+- Reservation events are published.
+- Guest processing can begin.
 
 Publishing updates only after a successful commit ensures that other parts of the application receive notifications for confirmed reservations only.
 
@@ -223,8 +223,7 @@ Instead of retrying immediately, the reservation endpoint waits for a progressiv
 Current implementation:
 
 ```ts
-const backoff =
-  Math.pow(2, attempt) * 100 + Math.random() * 50;
+const backoff = Math.pow(2, attempt) * 100 + Math.random() * 50;
 ```
 
 Approximate retry delays are:
@@ -245,10 +244,10 @@ Deadlocks can occur when multiple transactions attempt to lock the same resource
 
 The reservation endpoint minimizes this risk by:
 
-* Sorting seat IDs before locking.
-* Acquiring locks in a consistent order.
-* Using Serializable transaction isolation.
-* Retrying transient transaction failures automatically.
+- Sorting seat IDs before locking.
+- Acquiring locks in a consistent order.
+- Using Serializable transaction isolation.
+- Retrying transient transaction failures automatically.
 
 Together, these strategies significantly reduce the likelihood of deadlocks while maintaining data consistency.
 
@@ -305,11 +304,11 @@ When the configured request limit is exceeded, the API responds with **HTTP 429 
 
 When modifying the reservation system, follow these guidelines:
 
-* Keep transactions as short as possible.
-* Acquire row locks before checking seat availability.
-* Preserve deterministic seat ID ordering.
-* Retry only transient database failures.
-* Keep the Serializable isolation level unless the reservation architecture changes.
+- Keep transactions as short as possible.
+- Acquire row locks before checking seat availability.
+- Preserve deterministic seat ID ordering.
+- Retry only transient database failures.
+- Keep the Serializable isolation level unless the reservation architecture changes.
 
 Following these practices helps maintain consistency while minimizing lock contention.
 
@@ -327,16 +326,16 @@ The concurrency implementation can be validated using concurrent booking request
 
 **Expected result**
 
-* One reservation succeeds.
-* The second request receives a **409 Conflict** response.
+- One reservation succeeds.
+- The second request receives a **409 Conflict** response.
 
 ### Multi-Seat Reservation Test
 
 Create a reservation containing multiple seats and verify that:
 
-* All requested seats are reserved.
-* A shared confirmation ID is generated.
-* No duplicate booking records are created.
+- All requested seats are reserved.
+- A shared confirmation ID is generated.
+- No duplicate booking records are created.
 
 ---
 
@@ -344,11 +343,11 @@ Create a reservation containing multiple seats and verify that:
 
 The reservation endpoint is designed to balance consistency and performance through several techniques:
 
-* Deduplicating seat identifiers.
-* Sorting seat IDs before locking.
-* Locking only the requested rows.
-* Using interactive Prisma transactions.
-* Retrying transient failures with exponential backoff.
+- Deduplicating seat identifiers.
+- Sorting seat IDs before locking.
+- Locking only the requested rows.
+- Using interactive Prisma transactions.
+- Retrying transient failures with exponential backoff.
 
 These measures reduce unnecessary contention while maintaining reliable reservation behavior.
 
@@ -360,12 +359,12 @@ The WorkSphere reservation system combines multiple concurrency control techniqu
 
 Key mechanisms include:
 
-* Prisma interactive transactions.
-* Serializable transaction isolation.
-* Deterministic seat ID sorting.
-* PostgreSQL `SELECT ... FOR UPDATE` row locking.
-* Booking conflict detection.
-* Automatic retries for transient database failures.
-* Exponential backoff with randomized jitter.
+- Prisma interactive transactions.
+- Serializable transaction isolation.
+- Deterministic seat ID sorting.
+- PostgreSQL `SELECT ... FOR UPDATE` row locking.
+- Booking conflict detection.
+- Automatic retries for transient database failures.
+- Exponential backoff with randomized jitter.
 
 Together, these techniques help prevent double-booking, reduce deadlocks, and maintain database consistency even when multiple users attempt to reserve the same seats simultaneously.

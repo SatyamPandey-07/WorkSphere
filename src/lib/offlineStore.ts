@@ -208,8 +208,14 @@ export async function queueOfflineFavorite(
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to queue offline action:", err);
+      if (
+        err.name === "SecurityError" ||
+        String(err.message).includes("SecurityError")
+      ) {
+        return;
+      }
       throw err; // let the caller (UI / service worker) know the write did not happen
     }
   });

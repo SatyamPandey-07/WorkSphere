@@ -1,48 +1,52 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
+import { prisma } from "@/lib/prisma";
 import { hasFolderAccess } from "@/lib/folders";
-import { encryptShareToken } from "@/lib/shareToken";
+import crypto from "crypto";
 
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
   try {
     const { userId } = await auth();
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { collectionId } = await req.json();
-    if (!collectionId) {
-      return NextResponse.json(
-        { error: "Missing collectionId" },
-        { status: 400 },
-      );
+    const body = await request.json();
+    const { folderId } = body;
+
+    if (!folderId) {
+      return NextResponse.json({ error: "Folder ID is required" }, { status: 400 });
     }
 
-    const { hasAccess, role } = await hasFolderAccess(collectionId, userId);
-
-    // Check if the user is the owner
-    if (!hasAccess || role !== "OWNER") {
-      return NextResponse.json(
-        { error: "Forbidden. Must be owner to share." },
-        { status: 403 },
-      );
+    const access = await hasFolderAccess(folderId, userId);
+    if (!access.folder) {
+      return NextResponse.json({ error: "Folder not found" }, { status: 404 });
     }
 
-    const token = encryptShareToken({
-      collectionId,
-      permission: "view",
-      issuedAt: Date.now(),
-    });
+    if (!access.hasAccess || (access.role !== "OWNER" && access.role !== "EDITOR")) {
+      return NextResponse.json({ error: "Only folder owners and editors can share" }, { status: 403 });
+    }
 
-    const url = new URL(req.url);
-    const shareUrl = `${url.origin}/collections/public/${token}`;
+    let token = access.folder.inviteToken;
+    if (!token) {
+      token = crypto.randomBytes(6).toString("hex");
+      await prisma.folder.update({
+        where: { id: folderId },
+        data: {
+          inviteToken: token,
+          isPublic: true,
+        },
+      });
+    } else if (!access.folder.isPublic) {
+      await prisma.folder.update({
+        where: { id: folderId },
+        data: { isPublic: true },
+      });
+    }
 
-    return NextResponse.json({ url: shareUrl });
+    return NextResponse.json({ success: true, token });
   } catch (error) {
-    console.error("Error creating share link:", error);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 },
-    );
+    console.error("POST /api/collections/public/share error:", error);
+    return NextResponse.json({ error: "Failed to generate share link" }, { status: 500 });
   }
 }

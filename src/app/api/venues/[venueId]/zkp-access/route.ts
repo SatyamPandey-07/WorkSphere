@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { isAllowedCommit, isPremiumVenue } from "@/lib/zkp/membership";
-import { verifyMembershipProof } from "@/lib/zkp/verify";
+import { verifyMembershipProof, isCommitmentRevoked } from "@/lib/zkp/verify";
 
 export const runtime = "nodejs";
 
@@ -15,6 +15,7 @@ const bodySchema = z.object({
     curve: z.string().optional(),
   }),
   publicSignals: z.array(z.string()).min(1),
+  witness: z.array(z.string()).optional(),
 });
 
 /**
@@ -66,6 +67,17 @@ export async function POST(
       { allowed: false, error: "Commitment is not a known member." },
       { status: 403 },
     );
+  }
+
+  const { witness } = parsed.data;
+  if (witness) {
+    const revoked = await isCommitmentRevoked(commit, witness);
+    if (revoked) {
+      return NextResponse.json(
+        { allowed: false, error: "Commitment has been revoked." },
+        { status: 403 },
+      );
+    }
   }
 
   let ok = false;

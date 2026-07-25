@@ -358,8 +358,7 @@ export function VenueCard({
     }
   };
 
-  const displayRating =
-    enrichData?.rating ?? venue.rating ?? 0;
+  const displayRating = enrichData?.rating ?? venue.rating ?? 0;
   const photos = enrichData?.photos || [];
   const amenities = enrichData?.amenities;
 
@@ -538,12 +537,15 @@ export function VenueCard({
 
         {/* Rating & Category */}
         <div className="flex items-center gap-3 mb-3">
-          <div className="flex items-center gap-1">
+          <div
+            className="inline-flex items-center gap-1 font-medium text-amber-500 dark:text-amber-400"
+            data-testid="star-rating-container"
+          >
             <Star
               className={`w-4 h-4 shrink-0 ${
                 displayRating > 0
-                  ? "text-yellow-500 fill-current"
-                  : "text-zinc-300 dark:text-zinc-600"
+                  ? "text-amber-500 fill-amber-500 dark:text-amber-400 dark:fill-amber-400"
+                  : "text-zinc-400 dark:text-zinc-500"
               }`}
             />
             <span className="text-sm font-medium text-zinc-900 dark:text-zinc-50">

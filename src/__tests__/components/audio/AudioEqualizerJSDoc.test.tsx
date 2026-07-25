@@ -1,10 +1,11 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, renderHook, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import {
   AudioEqualizer,
   type AudioEqualizerProps,
 } from "@/components/audio/AudioEqualizer";
+import { usePeakDecayLevel } from "@/hooks/usePeakDecayLevel";
 describe("AudioEqualizer JSDoc & Props Documentation (#1289)", () => {
   it("accepts initialGains, onGainChange, and sampleRate props without errors", () => {
     const handleGainChange = jest.fn();
@@ -18,7 +19,7 @@ describe("AudioEqualizer JSDoc & Props Documentation (#1289)", () => {
 
     render(<AudioEqualizer {...props} />);
 
-expect(screen.getByText("Acoustic Ambience Preview")).toBeInTheDocument();
+    expect(screen.getByText("Acoustic Ambience Preview")).toBeInTheDocument();
     expect(screen.getByText(/JSDoc Workspace/)).toBeInTheDocument();
   });
 });

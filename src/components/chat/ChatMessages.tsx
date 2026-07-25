@@ -30,6 +30,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { usePreferenceReranking } from "@/hooks/usePreferenceReranking";
+import { RecommendedBadge } from "@/components/RecommendedBadge";
 import { RefObject, useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
@@ -134,6 +136,7 @@ interface VenueChatCardProps {
   isSelected?: boolean;
   compareDisabled?: boolean;
   onToggleCompare?: (venue: Venue) => void;
+  isRecommended?: boolean;
 }
 
 export function VenueChatCard({
@@ -151,6 +154,7 @@ export function VenueChatCard({
   isSelected,
   compareDisabled,
   onToggleCompare,
+  isRecommended,
 }: VenueChatCardProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
@@ -244,11 +248,12 @@ export function VenueChatCard({
 
           <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <CategoryIcon className={`w-3.5 h-3.5 ${iconColor} shrink-0`} />
                 <h4 className="font-bold text-xs text-zinc-900 dark:text-zinc-50 truncate uppercase tracking-tight">
                   {venue.name}
                 </h4>
+                {isRecommended && <RecommendedBadge />}
                 {venue.score != null && (
                   <span className="text-[10px] font-black text-blue-600 bg-blue-50 dark:bg-blue-950/30 px-1 py-0.5 rounded">
                     {Math.round(venue.score * 10)}%
@@ -478,10 +483,11 @@ export function VenueChatCard({
               <CategoryIcon className={`w-5 h-5 ${iconColor}`} />
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
+              <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                 <h4 className="font-black text-sm text-zinc-900 dark:text-zinc-50 truncate uppercase tracking-tight">
                   {venue.name}
                 </h4>
+                {isRecommended && <RecommendedBadge />}
               </div>
 
               {venue.address && (
@@ -708,6 +714,9 @@ export function VenueListings({
 
   const [selectedVenues, setSelectedVenues] = useState<Venue[]>([]);
 
+  // Apply preference reranking
+  const { rerankedResults } = usePreferenceReranking(venues);
+
   // INFINITE SCROLL STATES
   const [visibleCount, setVisibleCount] = useState(5);
   const [isFetchingNextPage, setIsFetchingNextPage] = useState(false);
@@ -727,10 +736,12 @@ export function VenueListings({
       (entries) => {
         if (entries[0].isIntersecting && !isFetchingNextPage) {
           // If we have more venues locally, mock the pagination load
-          if (visibleCount < venues.length) {
+          if (visibleCount < rerankedResults.length) {
             setIsFetchingNextPage(true);
             timeoutId = setTimeout(() => {
-              setVisibleCount((prev) => Math.min(prev + 5, venues.length));
+              setVisibleCount((prev) =>
+                Math.min(prev + 5, rerankedResults.length),
+              );
               setIsFetchingNextPage(false);
             }, 800);
           }
@@ -752,7 +763,13 @@ export function VenueListings({
       observer.disconnect();
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [visibleCount, venues.length, isFetchingNextPage, onLoadMore]);
+  }, [
+    visibleCount,
+    venues.length,
+    rerankedResults.length,
+    isFetchingNextPage,
+    onLoadMore,
+  ]);
 
   const handleToggleCompare = (venue: Venue) => {
     setSelectedVenues((prev) => {
@@ -773,7 +790,7 @@ export function VenueListings({
   ) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      const nextIndex = Math.min(index + 1, venues.length - 1);
+      const nextIndex = Math.min(index + 1, rerankedResults.length - 1);
       const nextEl = containerRef.current?.querySelector(
         `[data-index="${nextIndex}"]`,
       ) as HTMLElement;
@@ -795,7 +812,7 @@ export function VenueListings({
     <div className="space-y-3 pl-2" ref={containerRef}>
       <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2 mb-1">
         <p className="text-[10px] uppercase font-black tracking-widest text-zinc-400">
-          Recommended Venues ({venues.length})
+          Recommended Venues ({rerankedResults.length})
         </p>
         <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-inner">
           <button
@@ -825,7 +842,7 @@ export function VenueListings({
         </div>
       </div>
 
-      {venues.length === 0 ? (
+      {rerankedResults.length === 0 ? (
         <EmptyState
           illustration="search"
           message="No venues found"
@@ -834,7 +851,7 @@ export function VenueListings({
       ) : (
         <LayoutGroup id="venue-listings">
           <VenueGrid viewMode={viewMode}>
-            {venues.slice(0, visibleCount).map((venue, index) => (
+            {rerankedResults.slice(0, visibleCount).map((venue, index) => (
               <SubgridCell key={venue.id}>
                 {/* 
                   Measurement Container Pattern for Issue #1037:
@@ -853,6 +870,7 @@ export function VenueListings({
                   >
                     <VenueChatCard
                       venue={venue}
+                      isRecommended={(venue as any).isRecommended}
                       isFavorited={favorites.has(venue.id)}
                       onGetDirections={onGetDirections}
                       onToggleFavorite={onToggleFavorite}
@@ -1091,7 +1109,10 @@ export function MessageList({
                           <div
                             className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] ${color}`}
                           >
-                            <Icon className="w-3 h-3" />
+                            {(() => {
+                              const AnyIcon = Icon as any;
+                              return <AnyIcon className="w-3 h-3" />;
+                            })()}
                             <span>
                               {step.agent} {skipped && "(Skipped)"}
                             </span>
@@ -1195,6 +1216,8 @@ interface ChatInputProps {
   isLoading: boolean;
   onInputChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
+  distanceRadius?: number;
+  onDistanceChange?: (radius: number) => void;
 }
 
 export function ChatInput({
@@ -1202,6 +1225,8 @@ export function ChatInput({
   isLoading,
   onInputChange,
   onSubmit,
+  distanceRadius = 0,
+  onDistanceChange,
 }: ChatInputProps) {
   const safeInput = input || "";
   const MAX_CHARS = 2000;
@@ -1465,6 +1490,28 @@ export function ChatInput({
         >
           <Mic className="w-5 h-5" />
         </button>
+
+        <div className="flex items-center border-r border-zinc-200 dark:border-zinc-700/50 pr-2 mr-2">
+          <select
+            value={distanceRadius}
+            onChange={(e) => onDistanceChange?.(Number(e.target.value))}
+            className="bg-transparent text-sm font-semibold text-zinc-600 dark:text-zinc-300 cursor-pointer focus:outline-none appearance-none pr-6 pl-2 relative"
+            style={{
+              backgroundImage: `url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2371717A%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E")`,
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 0.2rem top 50%",
+              backgroundSize: "0.65rem auto",
+            }}
+            title="Filter by distance"
+            aria-label="Filter by distance"
+          >
+            <option value={0}>Any</option>
+            <option value={1}>1 km</option>
+            <option value={5}>5 km</option>
+            <option value={10}>10 km</option>
+          </select>
+        </div>
+
         <div className="relative flex min-w-0 flex-1 items-center">
           <input
             ref={inputRef}

@@ -11,6 +11,7 @@ function Tooltip({
   children: React.ReactNode;
   text: string;
 }) {
+<<<<<<< HEAD
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<'top' | 'bottom'>('top');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -36,6 +37,17 @@ function Tooltip({
     // Hide tooltip on touch events to prevent screen clutter on mobile devices
     setIsVisible(false);
   };
+=======
+  const [isTouchDevice, setIsTouchDevice] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsTouchDevice("ontouchstart" in window);
+  }, []);
+
+  if (isTouchDevice) {
+    return <>{children}</>;
+  }
+>>>>>>> 265d1213ce3c52227532f93b9b6cae7b66c73474
 
   return (
     <div 

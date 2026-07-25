@@ -2,22 +2,21 @@
 
 import { useState } from "react";
 import Link from "next/link";
-// We leave this imported just in case, but we are ignoring it for the bypass
-// import { useUser } from "@clerk/nextjs"; 
+import { useUser } from "@clerk/nextjs"; 
 import { ReactiveUserButton } from "@/components/ReactiveUserButton";
 import { Coffee, LayoutGrid, Menu, Shield, X } from "lucide-react";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { OfflineSyncBadge } from "@/components/Header/OfflineSyncBadge";
 import { NotificationBell } from "@/components/NotificationBell";
+import { StreakBadge } from "@/components/Header/StreakBadge";
 
 interface TopNavProps {
   hideAuth?: boolean;
 }
 
 export function TopNav({ hideAuth = false }: TopNavProps) {
-  // 🚀 HARDCODED BYPASS: Forcing this to true so you can access the protected routes for screenshots!
-  // const { isSignedIn } = useUser();
-  const isSignedIn = true; 
+  const { isSignedIn } = useUser();
 
   console.log({
     hideAuth,
@@ -117,6 +116,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                     <Shield className="w-4 h-4" />
                     Admin
                   </Link>
+                  <StreakBadge />
                   <NotificationBell />
                   <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
                     <ReactiveUserButton

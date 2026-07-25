@@ -7,7 +7,7 @@ const getCrypto = () => {
   if (
     typeof globalThis !== "undefined" &&
     globalThis.crypto &&
-    globalThis.crypto.getRandomValues
+    typeof globalThis.crypto.getRandomValues === "function"
   ) {
     return globalThis.crypto;
   }
@@ -251,7 +251,10 @@ export function generateRecoveryQRCodeSVG(
 function encodeQRMatrix(data: string): boolean[][] {
   // Deterministic pseudo-random fill seeded from the data string, sized
   // to roughly scale with payload length like a real QR version would.
-  const size = Math.max(21, Math.min(41, 21 + Math.floor(data.length / 50) * 4));
+  const size = Math.max(
+    21,
+    Math.min(41, 21 + Math.floor(data.length / 50) * 4),
+  );
   const matrix: boolean[][] = Array.from({ length: size }, () =>
     new Array(size).fill(false),
   );
@@ -348,10 +351,13 @@ export async function generateEmergencyKitPDF(
     { x: 40, y, size: 9, font, color: rgb(0.3, 0.3, 0.3) },
   );
   y -= 12;
-  page.drawText(
-    "the encrypted text below in a secure password manager.",
-    { x: 40, y, size: 9, font, color: rgb(0.3, 0.3, 0.3) },
-  );
+  page.drawText("the encrypted text below in a secure password manager.", {
+    x: 40,
+    y,
+    size: 9,
+    font,
+    color: rgb(0.3, 0.3, 0.3),
+  });
   y -= 24;
 
   page.drawText("Encrypted share (base64):", {

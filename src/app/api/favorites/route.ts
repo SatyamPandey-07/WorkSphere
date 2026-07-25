@@ -19,7 +19,18 @@ export async function GET() {
     const favorites = await prisma.favorite.findMany({
       where: { userId },
       include: {
-        venue: true,
+        venue: {
+          select: {
+            id: true,
+            placeId: true,
+            name: true,
+            latitude: true,
+            longitude: true,
+            category: true,
+            address: true,
+            imageUrl: true,
+          },
+        },
         tags: {
           orderBy: { createdAt: "asc" },
         },
@@ -29,7 +40,12 @@ export async function GET() {
       },
     });
 
-    return NextResponse.json({ favorites });
+    return NextResponse.json({
+      favorites: favorites.map((f) => ({
+        ...f,
+        venuePlaceId: f.venue.placeId,
+      })),
+    });
   } catch (error) {
     console.error("GET /api/favorites error:", error);
     return NextResponse.json(

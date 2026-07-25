@@ -140,7 +140,8 @@ describe("AudioEqualizer Component (#859)", () => {
     expect(options).toContain("vocal-enhancer");
     expect(options).toContain("treble-boost");
     expect(options).toContain("warm");
-    expect(options).toHaveLength(5);
+    expect(options).toContain("custom");
+    expect(options).toHaveLength(6);
   });
 
   it("updates EQ preset on selection", () => {

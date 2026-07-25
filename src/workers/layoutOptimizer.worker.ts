@@ -16,7 +16,7 @@ export type LayoutRecommendation = {
 
 export type LayoutWorkerRequest = {
   type: "OPTIMIZE";
-  requestId: number;
+  sequenceId: number;
   payload: Omit<LayoutRequest, "floorPlanGrid"> & {
     floorPlanGridBuffer: ArrayBuffer;
   };
@@ -24,7 +24,7 @@ export type LayoutWorkerRequest = {
 
 export type LayoutWorkerSuccess = {
   type: "SUCCESS";
-  requestId: number;
+  sequenceId: number;
   payload: {
     deskCoordinatesBuffer: ArrayBuffer;
     quietZoneCoordinatesBuffer: ArrayBuffer;
@@ -34,7 +34,7 @@ export type LayoutWorkerSuccess = {
 
 export type LayoutWorkerFailure = {
   type: "ERROR";
-  requestId: number;
+  sequenceId: number;
   error: string;
 };
 
@@ -219,7 +219,7 @@ self.addEventListener(
 
       const response: LayoutWorkerSuccess = {
         type: "SUCCESS",
-        requestId: message.requestId,
+        sequenceId: message.sequenceId,
         payload: {
           deskCoordinatesBuffer: deskCoordinates.buffer as ArrayBuffer,
           quietZoneCoordinatesBuffer:
@@ -237,7 +237,7 @@ self.addEventListener(
     } catch (error) {
       const response: LayoutWorkerFailure = {
         type: "ERROR",
-        requestId: message.requestId,
+        sequenceId: message.sequenceId,
         error:
           error instanceof Error
             ? error.message

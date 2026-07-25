@@ -24,17 +24,25 @@ export class SpatialAudioRouter {
    * Update local AudioListener position in world space.
    */
   updateListenerPosition(x: number, y: number, z: number): void {
+    const clampPos = (v: number) =>
+      Math.max(
+        -100,
+        Math.min(100, Number.isNaN(v) || !Number.isFinite(v) ? 0 : v),
+      );
+    const cx = clampPos(x);
+    const cy = clampPos(y);
+    const cz = clampPos(z);
     const listener = this.ctx.listener;
     if ("positionX" in listener) {
-      listener.positionX.value = x;
-      listener.positionY.value = y;
-      listener.positionZ.value = z;
+      listener.positionX.value = cx;
+      listener.positionY.value = cy;
+      listener.positionZ.value = cz;
     } else if ("setPosition" in listener) {
       (
         listener as unknown as {
           setPosition: (x: number, y: number, z: number) => void;
         }
-      ).setPosition(x, y, z);
+      ).setPosition(cx, cy, cz);
     }
   }
 
@@ -49,14 +57,22 @@ export class SpatialAudioRouter {
     upY: number,
     upZ: number,
   ): void {
+    const clampOri = (v: number) =>
+      Math.max(-1, Math.min(1, Number.isNaN(v) || !Number.isFinite(v) ? 0 : v));
+    const cfx = clampOri(forwardX);
+    const cfy = clampOri(forwardY);
+    const cfz = clampOri(forwardZ);
+    const cux = clampOri(upX);
+    const cuy = clampOri(upY);
+    const cuz = clampOri(upZ);
     const listener = this.ctx.listener;
     if ("forwardX" in listener) {
-      listener.forwardX.value = forwardX;
-      listener.forwardY.value = forwardY;
-      listener.forwardZ.value = forwardZ;
-      listener.upX.value = upX;
-      listener.upY.value = upY;
-      listener.upZ.value = upZ;
+      listener.forwardX.value = cfx;
+      listener.forwardY.value = cfy;
+      listener.forwardZ.value = cfz;
+      listener.upX.value = cux;
+      listener.upY.value = cuy;
+      listener.upZ.value = cuz;
     } else if ("setOrientation" in listener) {
       (
         listener as unknown as {
@@ -69,7 +85,7 @@ export class SpatialAudioRouter {
             uz: number,
           ) => void;
         }
-      ).setOrientation(forwardX, forwardY, forwardZ, upX, upY, upZ);
+      ).setOrientation(cfx, cfy, cfz, cux, cuy, cuz);
     }
   }
 
@@ -117,20 +133,29 @@ export class SpatialAudioRouter {
     const chain = this.chains.get(peerId);
     if (!chain) return;
 
+    const clampPos = (v: number) =>
+      Math.max(
+        -100,
+        Math.min(100, Number.isNaN(v) || !Number.isFinite(v) ? 0 : v),
+      );
+    const cx = clampPos(x);
+    const cy = clampPos(y);
+    const cz = clampPos(z);
+
     if (
       typeof chain.panner.positionX === "object" &&
       chain.panner.positionX !== null &&
       "value" in chain.panner.positionX
     ) {
-      chain.panner.positionX.value = x;
-      chain.panner.positionY.value = y;
-      chain.panner.positionZ.value = z;
+      chain.panner.positionX.value = cx;
+      chain.panner.positionY.value = cy;
+      chain.panner.positionZ.value = cz;
     } else if ("setPosition" in chain.panner) {
       (
         chain.panner as unknown as {
           setPosition: (x: number, y: number, z: number) => void;
         }
-      ).setPosition(x, y, z);
+      ).setPosition(cx, cy, cz);
     }
   }
 
@@ -146,20 +171,26 @@ export class SpatialAudioRouter {
     const chain = this.chains.get(peerId);
     if (!chain) return;
 
+    const clampOri = (v: number) =>
+      Math.max(-1, Math.min(1, Number.isNaN(v) || !Number.isFinite(v) ? 0 : v));
+    const cox = clampOri(ox);
+    const coy = clampOri(oy);
+    const coz = clampOri(oz);
+
     if (
       typeof chain.panner.orientationX === "object" &&
       chain.panner.orientationX !== null &&
       "value" in chain.panner.orientationX
     ) {
-      chain.panner.orientationX.value = ox;
-      chain.panner.orientationY.value = oy;
-      chain.panner.orientationZ.value = oz;
+      chain.panner.orientationX.value = cox;
+      chain.panner.orientationY.value = coy;
+      chain.panner.orientationZ.value = coz;
     } else if ("setOrientation" in chain.panner) {
       (
         chain.panner as unknown as {
           setOrientation: (x: number, y: number, z: number) => void;
         }
-      ).setOrientation(ox, oy, oz);
+      ).setOrientation(cox, coy, coz);
     }
   }
 

@@ -7,12 +7,10 @@ import { TopNav } from "@/components/TopNav";
 import SiteFooter from "@/components/site-footer";
 import PremiumZkpGate from "@/components/venues/PremiumZkpGate";
 import { isPremiumVenue } from "@/lib/zkp/membership";
- feat/1625-noise-forecast
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
 import { NoiseForecastChart } from "@/components/noise/NoiseForecastChart";
 
 import { CollaborativeNotes } from "@/components/bookings/CollaborativeNotes"; // <-- 1. Imported your new component here!
- main
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -145,7 +143,6 @@ export default async function VenuePage({ params }: PageProps) {
                 </div>
               </div>
             )}
-
             <div className="grid grid-cols-2 gap-4">
               {venue.wifiQuality ? (
                 <div className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
@@ -174,15 +171,13 @@ export default async function VenuePage({ params }: PageProps) {
                 </div>
               ) : null}
             </div>
-
- feat/1625-noise-forecast
+            feat/1625-noise-forecast
             <div className="pt-2">
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
                 <span>Expected Noise Levels</span>
               </h3>
               <NoiseForecastChart venueId={venue.id} />
             </div>
-
             {/* Live WebGL 3D Volumetric Cloud Weather Visualizer for Outdoor Workspaces */}
             <div className="pt-2">
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
@@ -195,11 +190,12 @@ export default async function VenuePage({ params }: PageProps) {
                 interactive={true}
               />
             </div>
-
             {/* 2. Injected the CollaborativeNotes component here! */}
-            <CollaborativeNotes roomId={venue.id} placeholder={`Shared notes for ${venue.name}...`} />
- main
-
+            <CollaborativeNotes
+              roomId={venue.id}
+              placeholder={`Shared notes for ${venue.name}...`}
+            />
+            main
             <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800 space-y-4">
               {isPremiumVenue(venue) && (
                 <PremiumZkpGate venueId={venue.id} venueName={venue.name} />

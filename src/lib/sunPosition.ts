@@ -19,7 +19,7 @@ export interface SunPosition {
   azimuth: number;
   /** `true` when the sun is above astronomical twilight (altitude > −6°). */
   isAboveHorizon: boolean;
-/** Altitude normalised to [0, 1] for WebGL uniform interpolation. */
+  /** Altitude normalised to [0, 1] for WebGL uniform interpolation. */
   normalizedAltitude: number;
 }
 
@@ -153,6 +153,14 @@ export function calculateSunPosition(
   // Values below −10° (deep twilight) clamp to 0; above 90° clamp to 1.
   const normalizedAltitude = Math.max(0, Math.min(1, (altitude + 10) / 100));
 
+  return {
+    altitude,
+    azimuth,
+    isAboveHorizon: altitude > -6,
+    normalizedAltitude,
+  };
+}
+
 /**
  * Estimate the percentage of a patio that is shaded, based on solar
  * altitude/azimuth and the direction the patio's shade structure faces.
@@ -216,9 +224,7 @@ export function getPatioShadePercentage(
   // Blend the two factors: angle dominates, low sun angle adds a boost.
   const rawShade = angleFactor * 0.7 + altitudeFactor * 0.3;
 
-  const shadePercentage = Math.round(
-    Math.max(0, Math.min(1, rawShade)) * 100,
-  );
+  const shadePercentage = Math.round(Math.max(0, Math.min(1, rawShade)) * 100);
 
   return {
     altitude,

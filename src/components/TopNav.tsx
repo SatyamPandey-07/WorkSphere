@@ -7,11 +7,9 @@ import { ReactiveUserButton } from "@/components/ReactiveUserButton";
 import { Coffee, LayoutGrid, Menu, Shield, X } from "lucide-react";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
- feat/1628-offline-favorites-sync
 import { OfflineSyncBadge } from "@/components/Header/OfflineSyncBadge";
 
 import { NotificationBell } from "@/components/NotificationBell";
- main
 
 interface TopNavProps {
   hideAuth?: boolean;

@@ -116,6 +116,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "partysocket/react";
 import { adaptVideoBitrate } from "@/lib/screenShareBitrate";
+import { calculateRMS, rmsToDecibels } from "@/lib/audio";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
@@ -183,14 +184,21 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
   // Audio context for monitoring levels
   const audioContextRef = useRef<AudioContext | null>(null);
   const analysersRef = useRef<
-    Map<string, { analyser: AnalyserNode; dataArray: Uint8Array }>
+    Map<
+      string,
+      {
+        source: MediaStreamAudioSourceNode;
+        analyser: AnalyserNode;
+        dataArray: Float32Array;
+      }
+    >
   >(new Map());
+  const emaDecibelsRef = useRef<Map<string, number>>(new Map());
 
-  // Intervals
+  // Intervals / Animations
   const bitrateTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const audioLevelTimerRef = useRef<ReturnType<typeof setInterval> | null>(
-    null,
-  );
+  const audioAnimationRef = useRef<number | null>(null);
+  const lastFrameTimeRef = useRef<number>(0);
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const rttEmaRef = useRef<number>(0);
 
@@ -235,11 +243,32 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       return next;
     });
 
-    analysersRef.current.delete(peerId);
+    const monitoring = analysersRef.current.get(peerId);
+    if (monitoring) {
+      try {
+        monitoring.source.disconnect();
+        monitoring.analyser.disconnect();
+      } catch {}
+      analysersRef.current.delete(peerId);
+    }
+    emaDecibelsRef.current.delete(peerId);
   }, []);
 
   const setupAudioMonitoring = useCallback(
     (peerId: string, stream: MediaStream) => {
+      if (stream.getAudioTracks().length === 0) {
+        const existing = analysersRef.current.get(peerId);
+        if (existing) {
+          try {
+            existing.source.disconnect();
+            existing.analyser.disconnect();
+          } catch {}
+          analysersRef.current.delete(peerId);
+        }
+        emaDecibelsRef.current.delete(peerId);
+        return;
+      }
+
       if (!audioContextRef.current) {
         audioContextRef.current = new (
           window.AudioContext || (window as any).webkitAudioContext
@@ -251,16 +280,23 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
         audioCtx.resume();
       }
 
-      if (stream.getAudioTracks().length === 0) return;
+      const existing = analysersRef.current.get(peerId);
+      if (existing) {
+        try {
+          existing.source.disconnect();
+          existing.analyser.disconnect();
+        } catch {}
+        analysersRef.current.delete(peerId);
+      }
 
       try {
         const source = audioCtx.createMediaStreamSource(stream);
         const analyser = audioCtx.createAnalyser();
         analyser.fftSize = 256;
         source.connect(analyser);
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        const dataArray = new Float32Array(analyser.fftSize);
 
-        analysersRef.current.set(peerId, { analyser, dataArray });
+        analysersRef.current.set(peerId, { source, analyser, dataArray });
       } catch (e) {
         console.warn("Could not setup audio monitoring for peer", peerId, e);
       }
@@ -366,26 +402,53 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
   }, []);
 
   const startAudioMonitoringLoop = useCallback(() => {
-    if (audioLevelTimerRef.current) clearInterval(audioLevelTimerRef.current);
-    audioLevelTimerRef.current = setInterval(() => {
-      const newLevels: Record<string, number> = {};
+    if (audioAnimationRef.current) {
+      cancelAnimationFrame(audioAnimationRef.current);
+      audioAnimationRef.current = null;
+    }
 
-      for (const [
-        peerId,
-        { analyser, dataArray },
-      ] of analysersRef.current.entries()) {
-        analyser.getByteFrequencyData(dataArray as any);
-        let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          sum += dataArray[i];
+    const TARGET_FPS = 60;
+    const FRAME_INTERVAL = 1000 / TARGET_FPS; // ~16.67ms
+    const alpha = 0.2; // Exponential Moving Average smoothing factor
+
+    const tick = (timestamp: number) => {
+      const elapsed = timestamp - lastFrameTimeRef.current;
+
+      if (elapsed >= FRAME_INTERVAL) {
+        lastFrameTimeRef.current = timestamp - (elapsed % FRAME_INTERVAL);
+
+        if (analysersRef.current.size > 0) {
+          const newLevels: Record<string, number> = {};
+
+          for (const [
+            peerId,
+            { analyser, dataArray },
+          ] of analysersRef.current.entries()) {
+            analyser.getFloatTimeDomainData(dataArray);
+            const rms = calculateRMS(dataArray);
+            const rawDb = rmsToDecibels(rms); // 30 dB (silence) to 120 dB
+
+            // Apply Exponential Moving Average (EMA) with alpha = 0.2
+            const prevDb = emaDecibelsRef.current.get(peerId);
+            const emaDb =
+              prevDb === undefined
+                ? rawDb
+                : alpha * rawDb + (1 - alpha) * prevDb;
+            emaDecibelsRef.current.set(peerId, emaDb);
+
+            // Convert decibels (30..90 dB range) to normalized 0..1 scale
+            const normalizedLevel = Math.max(0, Math.min(1, (emaDb - 30) / 60));
+            newLevels[peerId] = normalizedLevel;
+          }
+
+          setAudioLevels(newLevels);
         }
-        const average = sum / dataArray.length;
-        // Normalize 0-1
-        newLevels[peerId] = Math.min(1, average / 128);
       }
 
-      setAudioLevels(newLevels);
-    }, 100);
+      audioAnimationRef.current = requestAnimationFrame(tick);
+    };
+
+    audioAnimationRef.current = requestAnimationFrame(tick);
   }, []);
 
   const startPingLoop = useCallback(() => {
@@ -508,16 +571,28 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     startAudioMonitoringLoop();
     startPingLoop();
     const peersMap = peersRef.current;
+    const analysersMap = analysersRef.current;
+    const emaDecibelsMap = emaDecibelsRef.current;
 
     return () => {
       if (bitrateTimerRef.current) clearInterval(bitrateTimerRef.current);
-      if (audioLevelTimerRef.current) clearInterval(audioLevelTimerRef.current);
+      if (audioAnimationRef.current)
+        cancelAnimationFrame(audioAnimationRef.current);
       if (pingTimerRef.current) clearInterval(pingTimerRef.current);
 
       const currentPeers = Array.from(peersMap.keys());
       for (const id of currentPeers) {
         cleanupPeer(id);
       }
+
+      for (const [, { source, analyser }] of analysersMap.entries()) {
+        try {
+          source.disconnect();
+          analyser.disconnect();
+        } catch {}
+      }
+      analysersMap.clear();
+      emaDecibelsMap.clear();
 
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localScreenStreamRef.current?.getTracks().forEach((t) => t.stop());

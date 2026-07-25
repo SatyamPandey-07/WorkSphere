@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs"; 
+import { useUser } from "@clerk/nextjs";
 import { ReactiveUserButton } from "@/components/ReactiveUserButton";
 import { Coffee, LayoutGrid, Menu, Shield, X } from "lucide-react";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { OfflineSyncBadge } from "@/components/Header/OfflineSyncBadge";
+
 import { NotificationBell } from "@/components/NotificationBell";
 import { StreakBadge } from "@/components/Header/StreakBadge";
 

@@ -11,19 +11,27 @@ function Tooltip({
   children: React.ReactNode;
   text: string;
 }) {
-<<<<<<< HEAD
   const [isVisible, setIsVisible] = useState(false);
-  const [position, setPosition] = useState<'top' | 'bottom'>('top');
+  const [position, setPosition] = useState<"top" | "bottom">("top");
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const [isTouchDevice, setIsTouchDevice] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsTouchDevice("ontouchstart" in window);
+  }, []);
+
+  if (isTouchDevice) {
+    return <>{children}</>;
+  }
 
   const handleMouseEnter = () => {
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      // Position tooltip below if near the top edge (e.g., < 50px space)
       if (rect.top < 50) {
-        setPosition('bottom');
+        setPosition("bottom");
       } else {
-        setPosition('top');
+        setPosition("top");
       }
     }
     setIsVisible(true);
@@ -34,23 +42,11 @@ function Tooltip({
   };
 
   const handleTouchStart = () => {
-    // Hide tooltip on touch events to prevent screen clutter on mobile devices
     setIsVisible(false);
   };
-=======
-  const [isTouchDevice, setIsTouchDevice] = React.useState(false);
-
-  React.useEffect(() => {
-    setIsTouchDevice("ontouchstart" in window);
-  }, []);
-
-  if (isTouchDevice) {
-    return <>{children}</>;
-  }
->>>>>>> 265d1213ce3c52227532f93b9b6cae7b66c73474
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="relative inline-flex items-center"
       onMouseEnter={handleMouseEnter}
@@ -84,7 +80,7 @@ function Tooltip({
           transition-opacity
           duration-150
           ${isVisible ? "opacity-100" : "opacity-0"}
-          ${position === 'bottom' ? "top-full mt-2" : "bottom-full mb-2"}
+          ${position === "bottom" ? "top-full mt-2" : "bottom-full mb-2"}
         `}
       >
         {text}

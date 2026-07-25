@@ -31,6 +31,8 @@ import confetti from "canvas-confetti";
 import { Venue } from "./ChatMessages";
 import { trackEvent } from "@/lib/analytics";
 import { ReceiptVerificationModal } from "@/components/receipt/ReceiptVerificationModal";
+import { SignatureVerificationBadge } from "@/components/receipt/SignatureVerificationBadge";
+import { usePdfSignatureVerifier } from "@/hooks/usePdfSignatureVerifier";
 
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
@@ -105,6 +107,11 @@ export function BookingModal({
   const [showLogo, setShowLogo] = useState(true);
   const [dateFilter, setDateFilter] = useState("all");
   const [verifyModalOpen, setVerifyModalOpen] = useState(false);
+  const [verificationStatuses, setVerificationStatuses] = useState<
+    Record<string, { status: string; result?: any }>
+  >({});
+  const [activeVerifyBookingId, setActiveVerifyBookingId] = useState<string | null>(null);
+  const { status: verifHookStatus, result: verifResult, error: verifError, verify, reset } = usePdfSignatureVerifier();
 
   const modalRef = useRef<HTMLDivElement>(null);
   const pointerDownStartedOnBackdrop = useRef(false);
@@ -231,10 +238,29 @@ export function BookingModal({
       setStep(mode === "history" ? "history" : "details");
       setGuests([]);
       setGuestInviteStatus("idle");
+      setVerificationStatuses({});
+      setActiveVerifyBookingId(null);
     } else if (mode === "history") {
       fetchHistory();
     }
   }, [isOpen, mode]);
+
+  useEffect(() => {
+    if (!activeVerifyBookingId) return;
+    if (verifHookStatus === "verified" || verifHookStatus === "invalid") {
+      setVerificationStatuses((prev) => ({
+        ...prev,
+        [activeVerifyBookingId]: { status: verifHookStatus, result: verifResult },
+      }));
+      setActiveVerifyBookingId(null);
+    } else if (verifHookStatus === "error" || verifError) {
+      setVerificationStatuses((prev) => ({
+        ...prev,
+        [activeVerifyBookingId]: { status: "error" },
+      }));
+      setActiveVerifyBookingId(null);
+    }
+  }, [verifHookStatus, verifResult, verifError, activeVerifyBookingId]);
 
   useEffect(() => {
     if (!isOpen || !modalRef.current) return;
@@ -340,6 +366,30 @@ export function BookingModal({
       window.open(url, "_blank");
     }
     setReceiptDialogBookingId(null);
+  };
+
+  const handleVerifyReceipt = async (bookingId: string) => {
+    setVerificationStatuses((prev) => ({
+      ...prev,
+      [bookingId]: { status: "verifying" },
+    }));
+    setActiveVerifyBookingId(bookingId);
+    reset();
+    try {
+      const response = await fetch(`/api/bookings/${bookingId}/download`);
+      if (!response.ok) throw new Error("Failed to download receipt");
+      const blob = await response.blob();
+      const file = new File([blob], `receipt-${bookingId}.pdf`, {
+        type: "application/pdf",
+      });
+      await verify(file);
+    } catch {
+      setActiveVerifyBookingId(null);
+      setVerificationStatuses((prev) => ({
+        ...prev,
+        [bookingId]: { status: "error" },
+      }));
+    }
   };
 
   const handleBulkExport = async (format: "pdf" | "csv") => {
@@ -646,6 +696,19 @@ export function BookingModal({
                             >
                               <Download className="w-3.5 h-3.5" />
                               Download Receipt
+                            </button>
+                            <button
+                              onClick={() => handleVerifyReceipt(booking.id)}
+                              className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-all"
+                            >
+                              <SignatureVerificationBadge
+                                status={
+                                  (verificationStatuses[booking.id]
+                                    ?.status as any) || "idle"
+                                }
+                                result={verificationStatuses[booking.id]?.result}
+                                className="!p-0 !border-0 !bg-transparent"
+                              />
                             </button>
                             <div className="flex gap-2">
                               <a

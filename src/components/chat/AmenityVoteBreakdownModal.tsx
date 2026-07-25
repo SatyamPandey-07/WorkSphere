@@ -94,12 +94,14 @@ export function AmenityVoteBreakdownModal({
           ) : (
             <>
               <div className="text-xs text-zinc-500 font-mono text-right">
-                {totalVotesAcrossAmenities} total vote{totalVotesAcrossAmenities !== 1 ? "s" : ""}
+                {totalVotesAcrossAmenities} total vote
+                {totalVotesAcrossAmenities !== 1 ? "s" : ""}
               </div>
 
               {entries.map(([key, metric]) => {
                 const total = metric.upvotes + metric.downvotes;
-                const upPercent = total > 0 ? (metric.upvotes / total) * 100 : 0;
+                const upPercent =
+                  total > 0 ? (metric.upvotes / total) * 100 : 0;
                 const barColor = AMENITY_COLORS[key] || "bg-blue-500";
                 const confidenceColor =
                   metric.confidenceScore >= 80
@@ -114,7 +116,9 @@ export function AmenityVoteBreakdownModal({
                       <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">
                         {AMENITY_LABELS[key] || key.replace(/_/g, " ")}
                       </span>
-                      <span className={`text-xs font-black font-mono ${confidenceColor}`}>
+                      <span
+                        className={`text-xs font-black font-mono ${confidenceColor}`}
+                      >
                         {metric.confidenceScore}% confidence
                       </span>
                     </div>
@@ -133,11 +137,15 @@ export function AmenityVoteBreakdownModal({
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-1.5 text-green-400">
                         <ThumbsUp className="w-3 h-3" />
-                        <span className="font-mono font-bold">{metric.upvotes}</span>
+                        <span className="font-mono font-bold">
+                          {metric.upvotes}
+                        </span>
                       </div>
                       <div className="flex items-center gap-1.5 text-red-400">
                         <ThumbsDown className="w-3 h-3" />
-                        <span className="font-mono font-bold">{metric.downvotes}</span>
+                        <span className="font-mono font-bold">
+                          {metric.downvotes}
+                        </span>
                       </div>
                     </div>
 

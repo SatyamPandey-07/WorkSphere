@@ -14,12 +14,7 @@ import {
 type SoundPreset = "jazz" | "cafe" | "library";
 
 export type EqPresetName =
-  | "flat"
-  | "bass-boost"
-  | "vocal-enhancer"
-  | "treble-boost"
-  | "warm"
-  | "custom";
+  "flat" | "bass-boost" | "vocal-enhancer" | "treble-boost" | "warm" | "custom";
 
 export interface EqPreset {
   label: string;
@@ -156,17 +151,19 @@ export function AudioEqualizer({
   // Load from Local Storage on Mount
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const savedPreset = window.localStorage.getItem("webrtc_eq_preset") as EqPresetName;
+      const savedPreset = window.localStorage.getItem(
+        "webrtc_eq_preset",
+      ) as EqPresetName;
       const savedGains = window.localStorage.getItem("webrtc_eq_gains");
-      
+
       if (savedPreset && EQ_PRESETS[savedPreset]) {
         setEqPreset(savedPreset);
       }
-      
+
       if (savedGains) {
         try {
           setBandGains(JSON.parse(savedGains));
-        } catch (e) {}
+        } catch {}
       } else if (savedPreset && savedPreset !== "custom") {
         setBandGains(EQ_PRESETS[savedPreset].gains);
       }
@@ -290,7 +287,7 @@ export function AudioEqualizer({
 
   const handleEqPresetChange = (presetName: EqPresetName) => {
     setEqPreset(presetName);
-    
+
     if (typeof window !== "undefined") {
       window.localStorage.setItem("webrtc_eq_preset", presetName);
     }

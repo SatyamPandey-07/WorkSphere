@@ -21,7 +21,12 @@ export async function GET(
     for (const v of validations) {
       for (const vote of v.votes) {
         if (!voterStats[vote.userId]) {
-          voterStats[vote.userId] = { upvotes: 0, downvotes: 0, total: 0, name: "Unknown" };
+          voterStats[vote.userId] = {
+            upvotes: 0,
+            downvotes: 0,
+            total: 0,
+            name: "Unknown",
+          };
         }
         if (vote.isUpvote) voterStats[vote.userId].upvotes++;
         else voterStats[vote.userId].downvotes++;
@@ -33,13 +38,20 @@ export async function GET(
     if (userIds.length > 0) {
       const users = await prisma.user.findMany({
         where: { id: { in: userIds } },
-        select: { id: true, firstName: true, lastName: true, accurateVotes: true },
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          accurateVotes: true,
+        },
       });
       const userMap = new Map(users.map((u) => [u.id, u]));
       for (const uid of userIds) {
         const u = userMap.get(uid);
-        voterStats[uid].name =
-          u ? `${u.firstName || "Anonymous"} ${u.lastName || ""}`.trim() || "Anonymous" : "Unknown";
+        voterStats[uid].name = u
+          ? `${u.firstName || "Anonymous"} ${u.lastName || ""}`.trim() ||
+            "Anonymous"
+          : "Unknown";
       }
     }
 
@@ -66,7 +78,10 @@ export async function GET(
 
     return NextResponse.json({ success: true, leaderboard });
   } catch (error: any) {
-    console.error("GET /api/venues/[venueId]/amenity-votes/leaderboard error:", error);
+    console.error(
+      "GET /api/venues/[venueId]/amenity-votes/leaderboard error:",
+      error,
+    );
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 },

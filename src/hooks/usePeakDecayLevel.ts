@@ -57,7 +57,6 @@ export function usePeakDecayLevel(rawLevel: number, decayMs = 300): number {
         cancelAnimationFrame(frameRef.current);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawLevel, decayMs]);
 
   return displayLevel;

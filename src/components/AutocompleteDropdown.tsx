@@ -197,7 +197,10 @@ export function AutocompleteDropdown({
     return filteredSuggestions.map((category) => (
       <div key={category.category} className="py-2">
         <div className="px-3 py-1.5 flex items-center gap-2">
-          <category.icon className="w-3.5 h-3.5 text-zinc-500" />
+          {(() => {
+            const Icon = category.icon as any;
+            return <Icon className="w-3.5 h-3.5 text-zinc-500" />;
+          })()}
           <span className="text-[10px] uppercase font-black tracking-widest text-zinc-500">
             {category.categoryLabel}
           </span>

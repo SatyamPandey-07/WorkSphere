@@ -1071,7 +1071,10 @@ export function MessageList({
                           <div
                             className={`flex items-center gap-2 font-black uppercase tracking-widest text-[10px] ${color}`}
                           >
-                            <Icon className="w-3 h-3" />
+                            {(() => {
+                              const AnyIcon = Icon as any;
+                              return <AnyIcon className="w-3 h-3" />;
+                            })()}
                             <span>
                               {step.agent} {skipped && "(Skipped)"}
                             </span>

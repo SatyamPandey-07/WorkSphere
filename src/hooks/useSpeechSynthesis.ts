@@ -4,6 +4,8 @@ export type SpeedOption = number;
 export const SPEED_OPTIONS: SpeedOption[] = [0.75, 1, 1.25, 1.5, 1.75, 2];
 
 const VOICE_STORAGE_KEY = "worksphere_selected_voice_uri";
+const AUTO_READ_STORAGE_KEY = "worksphere_auto_read";
+const RATE_STORAGE_KEY = "worksphere_speech_rate";
 
 export function getPersistedVoiceURI(): string | null {
   if (typeof window === "undefined") return null;
@@ -29,10 +31,13 @@ export function persistVoiceURI(uri: string | null): void {
 
 export function splitTextIntoSentences(text: string): string[] {
   if (!text) return [];
-  // Strip UI components <ui-component ... />
+
+  // Strip UI components <ui-component ... /> and markdown formatting for cleaner speech
   const cleanText = text
     .replace(/<ui-component\s+name="[^"]+"\s+props='[^']+'\s*\/>/g, "")
+    .replace(/[*#_`]/g, "")
     .trim();
+
   if (!cleanText) return [];
 
   // Split on sentence boundaries (. ! ?) avoiding numbered list prefixes like "1."
@@ -61,15 +66,19 @@ export interface UseSpeechSynthesisReturn {
   error: string | null;
   speakingMessageId: string | null;
   speakingSentenceIndex: number | null;
+  autoRead: boolean;
   speak: (textOverride?: string) => void;
-  speakMessage: (messageId: string, text: string) => void;
+  speakMessage: (textOrId: string, maybeText?: string) => void;
   cancel: () => void;
   stopSpeech: () => void;
+  stopSpeaking: () => void; // Alias for compatibility
   pause: () => void;
   resume: () => void;
   setRate: (rate: number) => void;
+  changeRate: (rate: number) => void; // Alias for compatibility
   setPitch: (pitch: number) => void;
   setVoice: (voice: SpeechSynthesisVoice | null) => void;
+  toggleAutoRead: () => void;
 }
 
 export function useSpeechSynthesis(
@@ -106,10 +115,24 @@ export function useSpeechSynthesis(
     number | null
   >(null);
 
+  // New Auto-read state
+  const [autoRead, setAutoRead] = useState(false);
+
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const utterancesRef = useRef<SpeechSynthesisUtterance[]>([]);
   const currentTextRef = useRef(textToSpeakDefault);
   const selectedVoiceURIRef = useRef(getPersistedVoiceURI());
+
+  // Initialize preferences from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedAutoRead = localStorage.getItem(AUTO_READ_STORAGE_KEY);
+      if (savedAutoRead) setAutoRead(savedAutoRead === "true");
+
+      const savedRate = localStorage.getItem(RATE_STORAGE_KEY);
+      if (savedRate) setRateState(parseFloat(savedRate));
+    }
+  }, []);
 
   useEffect(() => {
     currentTextRef.current = textToSpeakDefault;
@@ -159,6 +182,16 @@ export function useSpeechSynthesis(
       setIsSupported(false);
     }
   }, [lang]);
+
+  const toggleAutoRead = useCallback(() => {
+    setAutoRead((prev) => {
+      const newValue = !prev;
+      if (typeof window !== "undefined") {
+        localStorage.setItem(AUTO_READ_STORAGE_KEY, String(newValue));
+      }
+      return newValue;
+    });
+  }, []);
 
   const setVoice = useCallback((newVoice: SpeechSynthesisVoice | null) => {
     selectedVoiceURIRef.current = newVoice ? newVoice.voiceURI : null;
@@ -307,13 +340,18 @@ export function useSpeechSynthesis(
     ],
   );
 
+  // Overloaded to support both original (id, text) and new chatbot implementation (just text)
   const speakMessage = useCallback(
-    (messageId: string, text: string) => {
+    (textOrId: string, maybeText?: string) => {
       stopSpeech();
 
       if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         return;
       }
+
+      const text = maybeText !== undefined ? maybeText : textOrId;
+      const messageId =
+        maybeText !== undefined ? textOrId : `auto-msg-${Date.now()}`;
 
       const sentences = splitTextIntoSentences(text);
       if (sentences.length === 0) return;
@@ -375,6 +413,10 @@ export function useSpeechSynthesis(
       const clampedRate = Math.max(0.75, Math.min(2, newRate));
       setRateState(clampedRate);
 
+      if (typeof window !== "undefined") {
+        localStorage.setItem(RATE_STORAGE_KEY, String(clampedRate));
+      }
+
       if (isSpeaking) {
         speak(currentTextRef.current);
       }
@@ -404,14 +446,18 @@ export function useSpeechSynthesis(
     error,
     speakingMessageId,
     speakingSentenceIndex,
+    autoRead,
     speak,
     speakMessage,
     cancel,
     stopSpeech,
+    stopSpeaking: stopSpeech, // Alias to match EnhancedChatbot requirements
     pause,
     resume,
     setRate,
+    changeRate: setRate, // Alias to match EnhancedChatbot requirements
     setPitch,
     setVoice,
+    toggleAutoRead,
   };
 }

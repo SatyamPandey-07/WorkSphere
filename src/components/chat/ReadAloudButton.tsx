@@ -11,6 +11,16 @@ function Tooltip({
   children: React.ReactNode;
   text: string;
 }) {
+  const [isTouchDevice, setIsTouchDevice] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsTouchDevice("ontouchstart" in window);
+  }, []);
+
+  if (isTouchDevice) {
+    return <>{children}</>;
+  }
+
   return (
     <div className="relative inline-flex items-center group">
       {children}

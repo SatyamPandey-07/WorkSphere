@@ -9,7 +9,7 @@ interface StreakData {
   unlockedMilestones: number[];
 }
 
-export function StreakBadge() {
+export default function StreakBadge() {
   const [streakData, setStreakData] = useState<StreakData | null>(null);
 
   useEffect(() => {

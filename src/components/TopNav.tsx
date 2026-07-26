@@ -10,7 +10,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { OfflineSyncBadge } from "@/components/Header/OfflineSyncBadge";
 
 import { NotificationBell } from "@/components/NotificationBell";
-import { StreakBadge } from "@/components/Header/StreakBadge";
+import StreakBadge from "@/components/Header/StreakBadge";
 
 interface TopNavProps {
   hideAuth?: boolean;

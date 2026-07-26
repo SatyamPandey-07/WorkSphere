@@ -106,7 +106,7 @@
     "prettier": "^3.9.5",
     "tailwindcss": "^4",
     "ts-jest": "^29.4.12",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "undici": "^7.28.0",
     "wabt": "^1.0.39"
   },

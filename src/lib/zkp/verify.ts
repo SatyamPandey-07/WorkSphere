@@ -82,3 +82,13 @@ export async function verifyMembershipProof(
     await releaseCurve();
   }
 }
+
+export async function isCommitmentRevoked(
+  commitment: string,
+  witness: string[],
+): Promise<boolean> {
+  const { getCurrentMerkleRoot, verifyMerkleProof } =
+    await import("./revocation");
+  const root = await getCurrentMerkleRoot();
+  return verifyMerkleProof(commitment, witness, root);
+}

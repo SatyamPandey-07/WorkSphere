@@ -1056,14 +1056,21 @@ self.addEventListener("push", (event) => {
 
   if (event.data) {
     try {
-      const textPayload = event.data.text();
-      try {
-        data = JSON.parse(textPayload);
-      } catch {
-        data = { title: "WorkSphere", body: textPayload };
-      }
+      data = event.data.json();
     } catch {
-      data = {};
+      try {
+        const textPayload =
+          typeof event.data.text === "function"
+            ? event.data.text()
+            : String(event.data);
+        try {
+          data = JSON.parse(textPayload);
+        } catch {
+          data = { title: "WorkSphere", body: textPayload };
+        }
+      } catch {
+        data = {};
+      }
     }
   }
 
@@ -1086,9 +1093,19 @@ self.addEventListener("push", (event) => {
     ],
   };
 
-  event.waitUntil(
-    self.registration.showNotification(data.title || "WorkSphere", options),
-  );
+  const swRegistration =
+    typeof self !== "undefined" && self && self.registration
+      ? self.registration
+      : typeof globalThis !== "undefined" &&
+          globalThis.self &&
+          globalThis.self.registration
+        ? globalThis.self.registration
+        : null;
+  if (swRegistration && swRegistration.showNotification) {
+    event.waitUntil(
+      swRegistration.showNotification(data.title || "WorkSphere", options),
+    );
+  }
 });
 
 // Notification click handler — navigate to the target venue page

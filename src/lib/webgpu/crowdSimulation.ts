@@ -182,7 +182,7 @@ export class CrowdSimulationEngine {
   private heatmapPipeline: GPURenderPipeline | null = null;
   private heatmapBindGroup: GPUBindGroup | null = null;
   private heatmapTexture: GPUTexture | null = null;
-private densityBindGroup: GPUBindGroup | null = null;
+  private densityBindGroup: GPUBindGroup | null = null;
   private maxDensity = 1;
   private readonly DENSITY_GRID_SIZE = 64;
 
@@ -1112,7 +1112,7 @@ private densityBindGroup: GPUBindGroup | null = null;
         computePass.end();
       }
 
-// Adaptive caching: only stationary viewport + unchanged occupancy
+      // Adaptive caching: only stationary viewport + unchanged occupancy
       // counts as "safe to reuse" the existing density texture.
       const isViewportStationary = this.viewportVelocity < 1e-4;
       const canUseCachedDensityTexture =
@@ -1139,7 +1139,8 @@ private densityBindGroup: GPUBindGroup | null = null;
         this.densityBuffer &&
         this.densityTexture &&
         !canUseCachedDensityTexture
-      ) {        const gridW = this.DENSITY_GRID_SIZE;
+      ) {
+        const gridW = this.DENSITY_GRID_SIZE;
         const bytesPerRow = gridW * 4;
         const alignedBytesPerRow = Math.ceil(bytesPerRow / 256) * 256;
 
@@ -1174,7 +1175,7 @@ private densityBindGroup: GPUBindGroup | null = null;
           },
         );
 
-// We'll destroy staging after submit
+        // We'll destroy staging after submit
         (this as unknown as { _stagingBuffer: GPUBuffer })._stagingBuffer =
           stagingBuffer;
 
@@ -1368,14 +1369,15 @@ private densityBindGroup: GPUBindGroup | null = null;
         readback.unmap();
         readback.destroy();
 
-// Count evacuated
+        // Count evacuated
         let evacuated = 0;
         for (let i = 0; i < this.config.agentCount; i++) {
           if (this.agents[i * 8 + 5] === 1) evacuated++;
         }
 
         this.updateOccupancyState(evacuated);
-        this.onFrameCallback?.(this.agents, evacuated);      });
+        this.onFrameCallback?.(this.agents, evacuated);
+      });
     } catch {
       // Silently fail — readback is non-critical
     }
@@ -1403,7 +1405,7 @@ private densityBindGroup: GPUBindGroup | null = null;
     }
   }
 
-onFrame(callback: (agents: Float32Array, evacuated: number) => void): void {
+  onFrame(callback: (agents: Float32Array, evacuated: number) => void): void {
     this.onFrameCallback = callback;
   }
 
@@ -1435,7 +1437,7 @@ onFrame(callback: (agents: Float32Array, evacuated: number) => void): void {
       this.isDensityTextureCacheValid = false;
     }
   }
-reset(): void {
+  reset(): void {
     this.spawnAgents();
     if (this.device && this.agentBufferA) {
       this.device.queue.writeBuffer(this.agentBufferA, 0, this.agents as any);

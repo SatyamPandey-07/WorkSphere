@@ -105,7 +105,8 @@ export default class WorkspaceServer implements Party.Server {
         }
       } catch (err) {
         console.error("Token verification or DB fetch failed:", err);
-        isViewer = true;
+        conn.close(4001, "Unauthorized: Token expired");
+        return;
       }
     } else {
       isViewer = true;

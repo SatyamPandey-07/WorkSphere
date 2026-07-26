@@ -43,7 +43,11 @@ export async function GET() {
       },
     ];
 
-    return NextResponse.json({ success: true, accurateVotes: user.accurateVotes, badges });
+    return NextResponse.json({
+      success: true,
+      accurateVotes: user.accurateVotes,
+      badges,
+    });
   } catch (error: any) {
     console.error("GET /api/user/badges error:", error);
     return NextResponse.json(

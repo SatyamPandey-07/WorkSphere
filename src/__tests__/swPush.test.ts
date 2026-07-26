@@ -9,16 +9,21 @@ describe("Service Worker Push Notifications", () => {
     listeners = {};
     showNotificationMock = jest.fn();
 
+    const addEventListenerMock = jest.fn((event, callback) => {
+      if (!listeners[event]) listeners[event] = [];
+      listeners[event].push(callback);
+    });
+
     const originalSelf = (global as any).self;
+    const mockRegistration = {
+      showNotification: showNotificationMock,
+    };
+    (global as any).addEventListener = addEventListenerMock;
+    (global as any).registration = mockRegistration;
     (global as any).self = {
       ...originalSelf,
-      addEventListener: jest.fn((event, callback) => {
-        if (!listeners[event]) listeners[event] = [];
-        listeners[event].push(callback);
-      }),
-      registration: {
-        showNotification: showNotificationMock,
-      },
+      addEventListener: addEventListenerMock,
+      registration: mockRegistration,
       location: { origin: "http://localhost" },
       clients: {
         matchAll: jest.fn().mockResolvedValue([]),
@@ -66,6 +71,7 @@ describe("Service Worker Push Notifications", () => {
 
   afterEach(() => {
     delete (global as any).self;
+    delete (global as any).registration;
     delete (global as any).caches;
     delete (global as any).indexedDB;
     delete (global as any).fetch;

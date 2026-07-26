@@ -3,6 +3,10 @@
  *
  * Local CRDT deltas are queued while offline and flushed into the
  * live Y.Doc when PartyKit reconnects so concurrent edits aren't lost.
+ *
+ * #1555 – Outbox replay now detects merge conflicts so the UI can
+ * prompt the user with a "Keep Local / Use Remote" choice and show
+ * a notification toast after reconciliation.
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -18,6 +22,20 @@ export type NotesOutboxEntry = {
   roomId: string;
   update: number[];
   createdAt: number;
+};
+
+/** Describes a single outbox entry that conflicted with remote state. */
+export type NotesOutboxConflict = {
+  entry: NotesOutboxEntry;
+  textBefore: string;
+  textAfter: string;
+};
+
+export type FlushNotesOutboxResult = {
+  /** Number of non-conflicting entries that were applied. */
+  flushed: number;
+  /** Entries that overlapped with remote changes and need user resolution. */
+  conflicts: NotesOutboxConflict[];
 };
 
 interface NotesCrdtDB extends DBSchema {
@@ -98,19 +116,89 @@ export async function listNotesOutbox(
 }
 
 /**
- * Re-apply queued updates into the doc (no-ops if already integrated)
- * and clear the room's outbox after a successful PartyKit reconnect.
+ * Re-apply queued updates into the doc (no-ops if already integrated).
+ *
+ * Non-conflicting entries are applied immediately; entries that would
+ * modify text that was also changed remotely are returned as
+ * `conflicts` so the UI can prompt the user for resolution (#1555).
  */
 export async function flushNotesOutbox(
   roomId: string,
   doc: Y.Doc,
-): Promise<number> {
+): Promise<FlushNotesOutboxResult> {
   const db = await getNotesCrdtDb();
   const pending = await db.getAllFromIndex(OUTBOX_STORE, "by-room", roomId);
+  const conflicts: NotesOutboxConflict[] = [];
+  const entriesToFlush: NotesOutboxEntry[] = [];
+
   for (const entry of pending) {
-    Y.applyUpdate(doc, new Uint8Array(entry.update), "outbox-flush");
-    if (entry.id != null) await db.delete(OUTBOX_STORE, entry.id);
+    const entryDoc = new Y.Doc();
+    Y.applyUpdate(entryDoc, new Uint8Array(entry.update));
+    const entryText = entryDoc.getText("group-notes").toString();
+    entryDoc.destroy();
+
+    const testDoc = new Y.Doc();
+    Y.applyUpdate(testDoc, Y.encodeStateAsUpdate(doc));
+    const textBefore = testDoc.getText("group-notes").toString();
+    Y.applyUpdate(testDoc, new Uint8Array(entry.update));
+    const textAfter = testDoc.getText("group-notes").toString();
+    testDoc.destroy();
+
+    const isConflicting =
+      textBefore !== "" && textBefore !== entryText && textBefore !== textAfter;
+
+    if (!isConflicting) {
+      entriesToFlush.push(entry);
+    } else {
+      conflicts.push({
+        entry,
+        textBefore,
+        textAfter,
+      });
+    }
+  }
+
+  doc.transact(() => {
+    for (const entry of entriesToFlush) {
+      Y.applyUpdate(doc, new Uint8Array(entry.update), "outbox-flush");
+    }
+  }, "outbox-flush");
+
+  for (const entry of entriesToFlush) {
+    if (entry.id != null) {
+      await db.delete(OUTBOX_STORE, entry.id);
+    }
+  }
+
+  await saveNotesDocState(roomId, doc);
+  return { flushed: pending.length - conflicts.length, conflicts };
+}
+
+/**
+ * Apply all entries flagged as conflicts — user chose **Keep Local**.
+ */
+export async function resolveConflictsKeepLocal(
+  roomId: string,
+  doc: Y.Doc,
+  conflicts: NotesOutboxConflict[],
+): Promise<void> {
+  const db = await getNotesCrdtDb();
+  for (const c of conflicts) {
+    Y.applyUpdate(doc, new Uint8Array(c.entry.update), "outbox-flush");
+    if (c.entry.id != null) await db.delete(OUTBOX_STORE, c.entry.id);
   }
   await saveNotesDocState(roomId, doc);
-  return pending.length;
+}
+
+/**
+ * Discard conflicting entries — user chose **Use Remote**.
+ */
+export async function resolveConflictsUseRemote(
+  roomId: string,
+  conflicts: NotesOutboxConflict[],
+): Promise<void> {
+  const db = await getNotesCrdtDb();
+  for (const c of conflicts) {
+    if (c.entry.id != null) await db.delete(OUTBOX_STORE, c.entry.id);
+  }
 }

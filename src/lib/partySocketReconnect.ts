@@ -36,7 +36,7 @@
  */
 
 export const PARTY_SOCKET_RECONNECT_OPTIONS = {
-  maxRetries: 10,
+  maxRetries: 5,
   minReconnectionDelay: 1_000,
   maxReconnectionDelay: 30_000,
   reconnectionDelayGrowFactor: 2,
@@ -211,6 +211,7 @@ export function attachJitteredBackoff<T extends object>(socket: T): T {
   if (typeof s.addEventListener === "function") {
     s.addEventListener("open", () => {
       s.__worksphereState = ConnectionState.CONNECTED;
+      s._retryCount = 0;
       if (originalSend) {
         if (s.__offlineCrdtQueue && s.__offlineCrdtQueue.length > 0) {
           const crdtQueue = [...s.__offlineCrdtQueue];
@@ -242,6 +243,7 @@ export function attachJitteredBackoff<T extends object>(socket: T): T {
 
   if (typeof window !== "undefined") {
     window.addEventListener("online", () => {
+      s._retryCount = 0;
       if (s.__worksphereState !== ConnectionState.CONNECTED) {
         (s as any).__worksphereForceReconnect?.();
       }

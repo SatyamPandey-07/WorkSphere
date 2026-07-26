@@ -876,7 +876,7 @@ export function VenueDetailDialog({
         }}
       />
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom-12 zoom-in-95 duration-500 bg-zinc-900 supports-[backdrop-filter]:bg-white/[0.08] supports-[backdrop-filter]:backdrop-blur-[20px] glass-animated-border"
+        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom-12 zoom-in-95 duration-500 bg-zinc-900 supports-[backdrop-filter]:bg-white/[0.08] supports-[backdrop-filter]:backdrop-blur-[20px] glass-animated-border flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {wifiLowConfidence && (
@@ -925,7 +925,7 @@ export function VenueDetailDialog({
           </div>
         )}
 
-        <div className="relative h-64 sm:h-80 w-full overflow-hidden">
+        <div className="relative h-64 sm:h-80 w-full overflow-hidden shrink-0">
           {photoLoading ? (
             <div className="w-full h-full bg-black/40 animate-pulse" />
           ) : (
@@ -974,8 +974,11 @@ export function VenueDetailDialog({
                 </span>
               )}
             </div>
-            <h2 className="text-4xl font-black text-white tracking-tighter leading-none mb-1 text-shadow-lg">
-              {venue.name}
+            <h2 className="text-4xl font-black text-white tracking-tighter leading-none mb-1 text-shadow-lg flex items-center gap-2">
+              <span>{venue.name}</span>
+              {venue.isClaimed && (
+                <BadgeCheck className="w-6 h-6 text-green-400 shrink-0 pointer-events-auto" title="Verified Host" />
+              )}
             </h2>
             <div className="flex items-center gap-1.5 text-zinc-300 text-sm font-medium">
               <MapPin className="w-4 h-4 text-blue-400" />
@@ -986,7 +989,7 @@ export function VenueDetailDialog({
           </div>
         </div>
 
-        <div className="flex border-b border-white/10 bg-transparent px-8 py-3 gap-6">
+        <div className="flex border-b border-white/10 bg-transparent px-8 py-3 gap-6 shrink-0">
           {[
             { id: "overview", label: "Overview" },
             { id: "reviews", label: t("venue.reviews") },
@@ -1008,9 +1011,43 @@ export function VenueDetailDialog({
 
         {/* Content Section */}
 
-        <div className="p-8 bg-transparent overflow-y-auto max-h-[calc(90vh-320px)] text-zinc-100">
+        <div className="p-8 bg-transparent overflow-y-auto flex-1 min-h-0 text-zinc-100">
           {activeTab === "overview" && (
             <>
+              {/* Verified Host Pinned Message */}
+              {venue.isClaimed && venue.hostMessage && (
+                <div className="mb-6 p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 rounded-2xl shadow-sm">
+                  <div className="flex items-center gap-2 mb-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                    <BadgeCheck className="w-4 h-4" />
+                    <span>Message from Host</span>
+                  </div>
+                  <p className="text-zinc-200 text-sm italic font-medium">
+                    "{venue.hostMessage}"
+                  </p>
+                </div>
+              )}
+
+              {/* Unverified Claim Link */}
+              {!venue.isClaimed && (
+                <div className="mb-6 p-4 bg-zinc-800/40 border border-zinc-700/30 rounded-2xl flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-zinc-700/40 rounded-xl text-zinc-400">
+                      <Building2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-zinc-200">Own this business?</p>
+                      <p className="text-xs text-zinc-400">Claim it to update details and post host messages.</p>
+                    </div>
+                  </div>
+                  <a
+                    href={`/venue-admin?claimId=${venue.id}`}
+                    className="px-4 py-2 bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs rounded-xl shadow transition-all shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    Claim Listing
+                  </a>
+                </div>
+              )}
+
               {/* Photo Gallery Thumbnails */}
               {allPhotos.length > 1 && (
                 <div className="mb-8">
@@ -1787,8 +1824,9 @@ export function VenueDetailDialog({
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="text-xs font-bold text-zinc-200 uppercase">
-                          {review.user?.firstName || "Nomad"}{" "}
-                          {review.user?.lastName || "Scout"}
+                          {review.user
+                            ? `${review.user.firstName || "Nomad"} ${review.user.lastName || "Scout"}`
+                            : "Anonymous"}
                         </span>
                         <div className="flex items-center gap-1.5 mt-1 text-[9px] font-mono text-zinc-400">
                           <span>

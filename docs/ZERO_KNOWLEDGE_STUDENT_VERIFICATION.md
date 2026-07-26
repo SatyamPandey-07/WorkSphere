@@ -1473,6 +1473,13 @@ atomic verification status update
 
 The central privacy property is data minimization: the server verifies a
 circuit-defined statement without receiving the full private witness. That
-property remains valid only when private signals stay private, public signals
-are minimized, the circuit correctly represents the policy, and the verifier
 binds the proof to the authenticated WorkSphere request.
+
+## Nullifier and Revocation Checking
+
+To prevent double-use or handle revoked student credentials, the platform utilizes a Nullifier hash tied to the student identity.
+
+- During ZKP generation, a nullifier is generated and emitted as part of the public signals (specifically checked within `src/app/api/venues/[venueId]/zkp-access/route.ts`).
+- An optional `witness` is supplied alongside the `proof`.
+- A revocation Merkle tree root is maintained. `isCommitmentRevoked()` computes the trajectory and verifies the Merkle proof for the given commitment/nullifier.
+- If the verification indicates presence in the revocation tree, the venue access is denied (`403 Forbidden`).

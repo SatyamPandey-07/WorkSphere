@@ -34,13 +34,18 @@ describe("POST /api/venues/[venueId]/zkp-access", () => {
     });
 
     const { proof, publicSignals } = await proveMembership(42);
-    const req = new NextRequest("http://localhost/api/venues/venue-1/zkp-access", {
-      method: "POST",
-      body: JSON.stringify({ proof, publicSignals }),
-      headers: { "Content-Type": "application/json" },
-    });
+    const req = new NextRequest(
+      "http://localhost/api/venues/venue-1/zkp-access",
+      {
+        method: "POST",
+        body: JSON.stringify({ proof, publicSignals }),
+        headers: { "Content-Type": "application/json" },
+      },
+    );
 
-    const res = await POST(req, { params: Promise.resolve({ venueId: "venue-1" }) });
+    const res = await POST(req, {
+      params: Promise.resolve({ venueId: "venue-1" }),
+    });
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.allowed).toBe(true);
@@ -53,13 +58,48 @@ describe("POST /api/venues/[venueId]/zkp-access", () => {
       rating: 4.9,
     });
 
-    const req = new NextRequest("http://localhost/api/venues/venue-1/zkp-access", {
-      method: "POST",
-      body: JSON.stringify({ identityToken: "42" }),
-      headers: { "Content-Type": "application/json" },
-    });
+    const req = new NextRequest(
+      "http://localhost/api/venues/venue-1/zkp-access",
+      {
+        method: "POST",
+        body: JSON.stringify({ identityToken: "42" }),
+        headers: { "Content-Type": "application/json" },
+      },
+    );
 
-    const res = await POST(req, { params: Promise.resolve({ venueId: "venue-1" }) });
+    const res = await POST(req, {
+      params: Promise.resolve({ venueId: "venue-1" }),
+    });
     expect(res.status).toBe(400);
   });
+
+  it("denies access when the commitment has been revoked", async () => {
+    (prisma.venue.findUnique as jest.Mock).mockResolvedValue({
+      id: "venue-1",
+      category: "coworking_space",
+      rating: 4.9,
+    });
+
+    const { proof, publicSignals } = await proveMembership(12345678);
+    const { generateWitness } = await import("@/lib/zkp/revocation");
+    const commit = publicSignals[0];
+    const witness = generateWitness(commit);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues/venue-1/zkp-access",
+      {
+        method: "POST",
+        body: JSON.stringify({ proof, publicSignals, witness }),
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+    const res = await POST(req, {
+      params: Promise.resolve({ venueId: "venue-1" }),
+    });
+    expect(res.status).toBe(403);
+    const data = await res.json();
+    expect(data.allowed).toBe(false);
+    expect(data.error).toBe("Commitment has been revoked.");
+  }, 30000);
 });

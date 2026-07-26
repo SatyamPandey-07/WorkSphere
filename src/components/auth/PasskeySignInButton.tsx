@@ -57,11 +57,20 @@ export function PasskeySignInButton() {
       }
     } catch (err: unknown) {
       console.error("Passkey sign-in error:", err);
+      const name = err instanceof Error ? err.name : "";
       const message =
         err instanceof Error ? err.message : "Passkey authentication failed.";
-      if (!message.includes("cancelled") && !message.includes("abort")) {
-        setError(message);
+
+      if (
+        name === "NotAllowedError" ||
+        name === "AbortError" ||
+        message.toLowerCase().includes("cancelled") ||
+        message.toLowerCase().includes("abort")
+      ) {
+        return;
       }
+
+      setError(message);
     } finally {
       setLoading(false);
     }

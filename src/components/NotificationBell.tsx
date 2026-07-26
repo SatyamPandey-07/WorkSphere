@@ -27,20 +27,20 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(() => {
-  if (typeof window === "undefined") return true;
+    if (typeof window === "undefined") return true;
 
-  const saved = localStorage.getItem("notification-sound-enabled");
-  return saved === null ? true : saved === "true";
-});
+    const saved = localStorage.getItem("notification-sound-enabled");
+    return saved === null ? true : saved === "true";
+  });
   const dropdownRef = useRef<HTMLDivElement>(null);
-const previousUnreadCount = useRef(0);
-const audioRef = useRef<HTMLAudioElement | null>(null);
+  const previousUnreadCount = useRef(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-useEffect(() => {
-  audioRef.current = new Audio("/sounds/notification-chime.mp3");
-}, []);
+  useEffect(() => {
+    audioRef.current = new Audio("/sounds/notification-chime.mp3");
+  }, []);
 
-const fetchNotifications = useCallback(async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
       const res = await fetch("/api/user/notifications", { cache: "no-store" });
       if (res.ok) {
@@ -61,16 +61,16 @@ const fetchNotifications = useCallback(async () => {
   }, [fetchNotifications]);
 
   useEffect(() => {
-  if (
-    unreadCount > previousUnreadCount.current &&
-    soundEnabled &&
-    audioRef.current
-  ) {
-    audioRef.current.play().catch(() => {});
-  }
+    if (
+      unreadCount > previousUnreadCount.current &&
+      soundEnabled &&
+      audioRef.current
+    ) {
+      audioRef.current.play().catch(() => {});
+    }
 
-  previousUnreadCount.current = unreadCount;
-}, [unreadCount, soundEnabled]);
+    previousUnreadCount.current = unreadCount;
+  }, [unreadCount, soundEnabled]);
 
   // Handle outside clicks to close the dropdown
   useEffect(() => {
@@ -87,29 +87,34 @@ const fetchNotifications = useCallback(async () => {
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [isOpen]);
   const toggleSound = () => {
-  const next = !soundEnabled;
+    const next = !soundEnabled;
 
-  setSoundEnabled(next);
+    setSoundEnabled(next);
 
-  localStorage.setItem(
-    "notification-sound-enabled",
-    String(next)
-  );
-};
+    localStorage.setItem("notification-sound-enabled", String(next));
+  };
 
   const markAllAsRead = async () => {
+    const prevCount = unreadCount;
+    const prevNotifications = notifications;
+
+    setUnreadCount(0);
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+
     try {
       const res = await fetch("/api/user/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "markAsRead" }),
       });
-      if (res.ok) {
-        setUnreadCount(0);
-        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      if (!res.ok) {
+        setUnreadCount(prevCount);
+        setNotifications(prevNotifications);
       }
     } catch (e) {
       console.error("Failed to mark notifications as read:", e);
+      setUnreadCount(prevCount);
+      setNotifications(prevNotifications);
     }
   };
 
@@ -177,34 +182,36 @@ const fetchNotifications = useCallback(async () => {
           className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-[60] overflow-hidden animate-in slide-in-from-top-2 duration-150"
         >
           <div className="flex items-center justify-between p-4 border-b border-zinc-100 dark:border-zinc-800">
-  <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
-    Notifications
-  </h3>
+            <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
+              Notifications
+            </h3>
 
-  <div className="flex items-center gap-2">
-    <button
-      onClick={toggleSound}
-      className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
-      title={soundEnabled ? "Mute notifications" : "Unmute notifications"}
-    >
-      {soundEnabled ? (
-        <Volume2 className="w-4 h-4" />
-      ) : (
-        <VolumeX className="w-4 h-4" />
-      )}
-    </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={toggleSound}
+                className="p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                title={
+                  soundEnabled ? "Mute notifications" : "Unmute notifications"
+                }
+              >
+                {soundEnabled ? (
+                  <Volume2 className="w-4 h-4" />
+                ) : (
+                  <VolumeX className="w-4 h-4" />
+                )}
+              </button>
 
-    {unreadCount > 0 && (
-      <button
-        onClick={markAllAsRead}
-        className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-indigo-500 hover:text-indigo-400 cursor-pointer"
-      >
-        <Check className="w-3 h-3" />
-        Read All
-      </button>
-    )}
-  </div>
-</div>
+              {unreadCount > 0 && (
+                <button
+                  onClick={markAllAsRead}
+                  className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-indigo-500 hover:text-indigo-400 cursor-pointer"
+                >
+                  <Check className="w-3 h-3" />
+                  Read All
+                </button>
+              )}
+            </div>
+          </div>
 
           <div className="max-h-80 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-800 scrollbar-thin">
             {notifications.length > 0 ? (

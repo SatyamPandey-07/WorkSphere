@@ -6,6 +6,8 @@ import {
   resetNotesCrdtDbCache,
   saveNotesDocState,
   listNotesOutbox,
+  resolveConflictsKeepLocal,
+  resolveConflictsUseRemote,
 } from "@/lib/crdt/notesOutbox";
 
 type Row = Record<string, unknown>;
@@ -33,9 +35,11 @@ jest.mock("idb", () => ({
       if (store === "documents") return documents.get(key);
       return undefined;
     }),
-    getAllFromIndex: jest.fn(async (_store: string, _index: string, roomId: string) => {
-      return [...outbox.values()].filter((row) => row.roomId === roomId);
-    }),
+    getAllFromIndex: jest.fn(
+      async (_store: string, _index: string, roomId: string) => {
+        return [...outbox.values()].filter((row) => row.roomId === roomId);
+      },
+    ),
     delete: jest.fn(async (store: string, key: number) => {
       if (store === "outbox") outbox.delete(key);
     }),
@@ -73,9 +77,102 @@ describe("notesOutbox", () => {
     expect((await listNotesOutbox("room-2")).length).toBe(1);
 
     const peer = new Y.Doc();
-    const flushed = await flushNotesOutbox("room-2", peer);
-    expect(flushed).toBe(1);
+    const result = await flushNotesOutbox("room-2", peer);
+    expect(result.flushed).toBe(1);
+    expect(result.conflicts).toHaveLength(0);
     expect(peer.getText("group-notes").toString()).toBe("hello");
     expect((await listNotesOutbox("room-2")).length).toBe(0);
+  });
+
+  describe("conflict detection", () => {
+    it("detects no conflicts when remote state is unchanged", async () => {
+      const doc = new Y.Doc();
+      doc.getText("group-notes").insert(0, "base");
+      await enqueueNotesUpdate("conflict-room", Y.encodeStateAsUpdate(doc));
+
+      const receiver = new Y.Doc();
+      receiver.getText("group-notes").insert(0, "base");
+      const result = await flushNotesOutbox("conflict-room", receiver);
+      expect(result.flushed).toBe(1);
+      expect(result.conflicts).toHaveLength(0);
+    });
+
+    it("detects conflict when local edit overlaps with remote change", async () => {
+      const doc = new Y.Doc();
+      doc.getText("group-notes").insert(0, "Hello");
+
+      const update = Y.encodeStateAsUpdate(doc);
+      await enqueueNotesUpdate("conflict-room", update);
+
+      const receiver = new Y.Doc();
+      receiver.getText("group-notes").insert(0, "World");
+
+      const result = await flushNotesOutbox("conflict-room", receiver);
+      expect(result.flushed).toBe(0);
+      expect(result.conflicts).toHaveLength(1);
+      expect(result.conflicts[0].textBefore).toBe("World");
+      expect(result.conflicts[0].textAfter).toBe("HelloWorld");
+    });
+
+    it("applies only non-conflicting entries immediately", async () => {
+      const doc = new Y.Doc();
+      const update = Y.encodeStateAsUpdate(doc);
+      await enqueueNotesUpdate("clean-room", update);
+
+      const receiver = new Y.Doc();
+      const result = await flushNotesOutbox("clean-room", receiver);
+      expect(result.conflicts).toHaveLength(0);
+    });
+
+    it("returns empty result when outbox is empty", async () => {
+      const receiver = new Y.Doc();
+      const result = await flushNotesOutbox("empty-room", receiver);
+      expect(result.flushed).toBe(0);
+      expect(result.conflicts).toHaveLength(0);
+    });
+  });
+
+  describe("conflict resolution", () => {
+    it("resolveConflictsKeepLocal applies the conflicting entry", async () => {
+      const doc = new Y.Doc();
+      doc.getText("group-notes").insert(0, "Hello");
+
+      const update = Y.encodeStateAsUpdate(doc);
+      await enqueueNotesUpdate("resolve-room", update);
+
+      const receiver = new Y.Doc();
+      receiver.getText("group-notes").insert(0, "Remote ");
+
+      const result = await flushNotesOutbox("resolve-room", receiver);
+      expect(result.conflicts).toHaveLength(1);
+      expect(receiver.getText("group-notes").toString()).toBe("Remote ");
+
+      await resolveConflictsKeepLocal(
+        "resolve-room",
+        receiver,
+        result.conflicts,
+      );
+
+      expect(receiver.getText("group-notes").toString()).toBe("Remote Hello");
+      expect((await listNotesOutbox("resolve-room")).length).toBe(0);
+    });
+
+    it("resolveConflictsUseRemote discards the conflicting entry", async () => {
+      const doc = new Y.Doc();
+      doc.getText("group-notes").insert(0, "Hello");
+      const update = Y.encodeStateAsUpdate(doc);
+      await enqueueNotesUpdate("resolve-room", update);
+
+      const receiver = new Y.Doc();
+      receiver.getText("group-notes").insert(0, "Remote ");
+
+      const result = await flushNotesOutbox("resolve-room", receiver);
+      expect(result.conflicts).toHaveLength(1);
+
+      await resolveConflictsUseRemote("resolve-room", result.conflicts);
+
+      expect(receiver.getText("group-notes").toString()).toBe("Remote ");
+      expect((await listNotesOutbox("resolve-room")).length).toBe(0);
+    });
   });
 });

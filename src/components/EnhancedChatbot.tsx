@@ -168,6 +168,8 @@ export function EnhancedChatbot({
     {},
   );
   const [filters, setFilters] = useState<Filters>({});
+  const [filters, setFilters] = useState<Filters>({});
+  const [minutesToMeeting, setMinutesToMeeting] = useState<number | null>(null);
   const categoryCounts = useMemo(() => {
     const counts = { cafe: 0, coworking: 0, library: 0 };
     const latestWithVenues = [...messages]
@@ -1172,6 +1174,8 @@ export function EnhancedChatbot({
         isLoading={isLoading}
         onInputChange={handleInputChange}
         onSubmit={handleSubmit}
+        minutesToMeeting={minutesToMeeting}
+        onMinutesToMeetingChange={setMinutesToMeeting}
       />
 
       {typingUsers.length > 0 && (

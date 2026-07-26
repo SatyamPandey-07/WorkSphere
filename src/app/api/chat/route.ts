@@ -5,6 +5,7 @@ import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 import { triggerBackgroundMemorySync } from "@/lib/backgroundSync";
 import { chatRequestSchema, validateRequest } from "@/lib/validations";
 import { applyFilters } from "@/lib/filters";
+import { fetchOSRMRoute } from "@/lib/osrmService";
 import {
   checkSemanticCache,
   setSemanticCache,
@@ -783,6 +784,10 @@ export async function POST(req: Request) {
 
     const { messages, location, conversationId } = validation.data;
     const { filters } = body; // filters is optional, not in schema
+    const minutesToMeeting: number | null =
+      typeof body.minutesToMeeting === "number" && body.minutesToMeeting > 0
+        ? body.minutesToMeeting
+        : null;
 
     // Normalize location - use null if not valid
     const validLocation =
@@ -1005,12 +1010,50 @@ export async function POST(req: Request) {
         ? applyFilters(enrichedVenues, filters)
         : enrichedVenues;
 
+      // ====== STEP 3c: MEETING TIME CONSTRAINT (Hard Stop) ======
+
+      // ====== STEP 3c: MEETING TIME CONSTRAINT (Hard Stop) ======
+      // If the user gave a "minutes to next meeting" constraint, strictly
+      // discard any venue whose OSRM walking travel time doesn't leave at
+      // least a 15-minute buffer before the meeting starts.
+      let meetingConstrainedVenues = finalFilteredVenues;
+      if (minutesToMeeting !== null && validLocation) {
+        console.log(
+          `Applying hard meeting-time constraint: ${minutesToMeeting} mins`,
+        );
+        const budgetMinutes = minutesToMeeting - 15;
+        const withTravelTimes = await Promise.all(
+          finalFilteredVenues.map(async (venue: any) => {
+            try {
+              const route = await fetchOSRMRoute(
+                validLocation,
+                { lat: venue.lat, lng: venue.lng },
+                "walking",
+              );
+              const durationSeconds = route?.routes?.[0]?.duration;
+              if (typeof durationSeconds !== "number") return null;
+              const travelTimeMinutes = Math.round(durationSeconds / 60);
+              return { ...venue, travelTimeMinutes };
+            } catch (err) {
+              console.warn(
+                `OSRM travel time lookup failed for venue ${venue.id}:`,
+                err,
+              );
+              return null; // Can't verify travel time — drop it (strict filter)
+            }
+          }),
+        );
+        meetingConstrainedVenues = withTravelTimes.filter(
+          (v): v is any => v !== null && v.travelTimeMinutes <= budgetMinutes,
+        );
+      }
+
       if (orchestratorResult.complexity === "simple") {
         console.log("Bypassing Reasoning Agent for Simple query...");
         reasoningResult = {
           summary: "Here are some basic matches.",
           reasoning: "Simple query routing",
-          rankedVenues: finalFilteredVenues.map((v) => ({
+          rankedVenues: meetingConstrainedVenues.map((v) => ({
             ...v,
             score: 50,
             pros: [],
@@ -1028,7 +1071,7 @@ export async function POST(req: Request) {
         // ====== STEP 4: REASONING AGENT ======
         console.log("Running Reasoning Agent...");
         const reasoningStart = Date.now();
-        reasoningResult = reasoningAgent(finalFilteredVenues, {
+        reasoningResult = reasoningAgent(meetingConstrainedVenues, {
           workType: contextResult.parameters.workType,
           amenities: contextResult.parameters.amenities,
         });

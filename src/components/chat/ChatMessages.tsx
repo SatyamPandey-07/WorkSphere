@@ -1216,6 +1216,8 @@ interface ChatInputProps {
   isLoading: boolean;
   onInputChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
+  minutesToMeeting?: number | null;
+  onMinutesToMeetingChange?: (value: number | null) => void;
 }
 
 export function ChatInput({
@@ -1223,6 +1225,8 @@ export function ChatInput({
   isLoading,
   onInputChange,
   onSubmit,
+  minutesToMeeting = null,
+  onMinutesToMeetingChange,
 }: ChatInputProps) {
   const safeInput = input || "";
   const MAX_CHARS = 2000;
@@ -1452,7 +1456,49 @@ export function ChatInput({
           </motion.div>
         )}
       </AnimatePresence>
-
+      {/* ── Next Meeting time constraint (Hard Stop) ───────────────────── */}
+      {onMinutesToMeetingChange && (
+        <div className="mb-2 flex items-center gap-2">
+          <label
+            htmlFor="ws-minutes-to-meeting"
+            className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400 whitespace-nowrap"
+          >
+            Next Meeting In:
+          </label>
+          <input
+            id="ws-minutes-to-meeting"
+            type="number"
+            min={1}
+            max={480}
+            inputMode="numeric"
+            value={minutesToMeeting ?? ""}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (raw === "") {
+                onMinutesToMeetingChange(null);
+                return;
+              }
+              const parsed = parseInt(raw, 10);
+              onMinutesToMeetingChange(
+                Number.isNaN(parsed) || parsed <= 0 ? null : parsed,
+              );
+            }}
+            placeholder="mins"
+            className="w-16 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-2 py-1 text-xs font-bold text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-1 focus:ring-[var(--primary-accent)]"
+            aria-label="Minutes until next meeting"
+          />
+          {minutesToMeeting !== null && minutesToMeeting !== undefined && (
+            <button
+              type="button"
+              onClick={() => onMinutesToMeetingChange(null)}
+              className="text-[10px] font-bold text-zinc-400 hover:text-red-500 transition-colors"
+              aria-label="Clear meeting time constraint"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
       {/* ── Unsupported-browser / error banner ─────────────────────────── */}
       {showVoiceBanner && (
         <div

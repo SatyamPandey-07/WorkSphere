@@ -546,6 +546,7 @@ const Map = ({
   const [travelProfile, setTravelProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
+  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
 
   // OSRM Multi-Stop coordinate solver engine
   const calculateOptimizedRoute = async (venuesList = routingQueue) => {
@@ -1172,6 +1173,8 @@ const Map = ({
               category={marker.category}
               isDestination={isDest}
               telemetryData={telemetry}
+              zIndexOffset={selectedMarkerId === marker.id ? 1000 : 0}
+              onClick={() => setSelectedMarkerId(marker.id)}
             >
               <div className="text-sm">
                 <div className="font-semibold text-white">{marker.name}</div>

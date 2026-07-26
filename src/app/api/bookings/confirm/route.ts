@@ -137,7 +137,7 @@ export async function POST(req: Request) {
 
     // 2. Emit Booking Confirmed Event to handle Side-Effects (PDF, Email, Analytics)
     // --- ASYNC PDF FIX IMPLEMENTATION (#518) ---
-    after(async () => {
+    const runBackground = async () => {
       try {
         for (const booking of bookings) {
           await eventBus.emit("booking:confirmed", {
@@ -157,7 +157,13 @@ export async function POST(req: Request) {
       } catch (backgroundError) {
         console.error("[Background Event Bus Error]:", backgroundError);
       }
-    });
+    };
+
+    try {
+      after(runBackground);
+    } catch {
+      void runBackground();
+    }
     // --- END OF ASYNC PDF FIX ---
 
     return NextResponse.json({

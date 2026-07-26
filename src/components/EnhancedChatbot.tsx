@@ -11,6 +11,7 @@ import { BookingModal } from "./chat/BookingModal";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ShortcutsModal } from "./ui/ShortcutsModal";
 import { ChatInput, MessageList, Venue, Message } from "./chat/ChatMessages";
+import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
 import {
   trackSearch,
   trackVenueInteraction,
@@ -18,6 +19,7 @@ import {
   trackError,
   trackAgentPerformance,
 } from "@/lib/analytics";
+import { calculateHaversineDistance } from "@/lib/utils";
 import {
   saveFavoriteOffline,
   saveSearchOffline,
@@ -81,8 +83,8 @@ interface Filters {
   singleOriginBeans?: boolean;
   specialtyEspresso?: boolean;
   oatAlmondMilk?: boolean;
-  pourOverAvailable?: boolean;
   musicStyle?: "all" | "lofi" | "classical_jazz" | "no_music";
+  distanceRadius?: number;
   [key: string]: unknown;
 }
 
@@ -184,6 +186,7 @@ export function EnhancedChatbot({
     return counts;
   }, [messages]);
   const [showFilters, setShowFilters] = useState(false);
+  const [distanceRadius, setDistanceRadius] = useState<number>(0);
   const [showHistory, setShowHistory] = useState(false);
   const [ratingVenue, setRatingVenue] = useState<Venue | null>(null);
   const [bookingVenue, setBookingVenue] = useState<Venue | null>(null);
@@ -192,6 +195,19 @@ export function EnhancedChatbot({
   );
   const [showVenueSubmission, setShowVenueSubmission] = useState(false);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+
+  // Voice & Speech Synthesis
+  const {
+    isSpeaking,
+    autoRead,
+    rate,
+    toggleAutoRead,
+    changeRate,
+    speakMessage,
+    stopSpeaking,
+  } = useSpeechSynthesis();
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false);
+  const lastReadMsgId = useRef<string | null>(null);
 
   // Conversations & favorites
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -284,6 +300,22 @@ export function EnhancedChatbot({
   }, [socket, onMapUpdate]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-read completion tracking
+  useEffect(() => {
+    if (!autoRead) return;
+    const lastMsg = messages[messages.length - 1];
+    if (
+      lastMsg &&
+      lastMsg.role === "assistant" &&
+      !lastMsg.isStreaming &&
+      lastMsg.content &&
+      lastReadMsgId.current !== lastMsg.id
+    ) {
+      speakMessage(lastMsg.content);
+      lastReadMsgId.current = lastMsg.id;
+    }
+  }, [messages, autoRead, speakMessage]);
 
   // Geolocation fallback
   const getPreciseLocation = useCallback(() => {
@@ -790,6 +822,7 @@ export function EnhancedChatbot({
     setInput("");
     setError(null);
     setIsLoading(true);
+    stopSpeaking(); // Interrupt ongoing speech when user submits a new prompt
 
     let convId = currentConversationId;
     if (!convId && isSignedIn) {
@@ -899,6 +932,20 @@ export function EnhancedChatbot({
                   });
                 }
 
+                let finalVenues = metadata.venues ?? [];
+                if (distanceRadius > 0 && location) {
+                  finalVenues = finalVenues.filter((v: Venue) => {
+                    const d = calculateHaversineDistance(
+                      location.lat,
+                      location.lng,
+                      v.lat,
+                      v.lng,
+                    );
+                    return d <= distanceRadius;
+                  });
+                }
+                metadata.venues = finalVenues;
+
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === assistantMessageId
@@ -993,7 +1040,7 @@ export function EnhancedChatbot({
         try {
           const cached = await getSearchOffline(userMessage);
           if (cached) {
-            const venues: Venue[] = cached.results.map((v) => ({
+            let venues: Venue[] = cached.results.map((v) => ({
               id: v.id,
               name: v.name,
               lat: v.latitude,
@@ -1001,6 +1048,18 @@ export function EnhancedChatbot({
               category: v.category ?? "coworking_space",
               address: v.address,
             }));
+
+            if (distanceRadius > 0 && location) {
+              venues = venues.filter((v) => {
+                const d = calculateHaversineDistance(
+                  location.lat,
+                  location.lng,
+                  v.lat,
+                  v.lng,
+                );
+                return d <= distanceRadius;
+              });
+            }
 
             setMessages((prev) => [
               ...prev,
@@ -1111,7 +1170,7 @@ export function EnhancedChatbot({
         onOpenVenueSubmission={() => setShowVenueSubmission(true)}
         userLocation={location}
         onLocationChange={handleLocationChange}
-        filters={filters}
+        filters={{ ...filters, distanceRadius }}
         showFilters={showFilters}
         setShowFilters={setShowFilters}
         onToggleFilter={(key) => toggleFilter(key as keyof Filters)}
@@ -1167,11 +1226,74 @@ export function EnhancedChatbot({
         initialSuggestions={INITIAL_SUGGESTIONS}
       />
 
+      {/* Voice Control Settings Toggle Area */}
+      <div className="flex flex-col border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+        <div className="flex justify-between items-center px-4 py-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowVoiceSettings(!showVoiceSettings)}
+              className="text-xs text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 flex items-center gap-1 transition-colors"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 20a16 16 0 0 1-16-16 M12 20a16 16 0 0 0 16-16 M12 20v-16 M2 12h20 M4 8h16 M4 16h16" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+              Voice Settings
+            </button>
+            {isSpeaking && (
+              <button
+                onClick={stopSpeaking}
+                className="text-xs px-2 py-1 bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+              >
+                Stop Audio
+              </button>
+            )}
+          </div>
+          {showVoiceSettings && (
+            <div className="flex items-center gap-4 text-xs">
+              <label className="flex items-center gap-1 cursor-pointer text-zinc-700 dark:text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={autoRead}
+                  onChange={toggleAutoRead}
+                  className="rounded text-blue-500 focus:ring-blue-500 bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700"
+                />
+                Auto-read
+              </label>
+              <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
+                <span>Speed:</span>
+                <input
+                  type="range"
+                  min="0.75"
+                  max="2.0"
+                  step="0.25"
+                  value={rate}
+                  onChange={(e) => changeRate(parseFloat(e.target.value))}
+                  className="w-16 h-1 bg-zinc-300 rounded-lg appearance-none cursor-pointer dark:bg-zinc-700 accent-blue-500"
+                />
+                <span className="w-6">{rate}x</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
       <ChatInput
         input={input}
         isLoading={isLoading}
         onInputChange={handleInputChange}
         onSubmit={handleSubmit}
+        distanceRadius={distanceRadius}
+        onDistanceChange={setDistanceRadius}
       />
 
       {typingUsers.length > 0 && (

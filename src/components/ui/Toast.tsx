@@ -3,6 +3,7 @@
 import {
   useState,
   useEffect,
+  useRef,
   useCallback,
   createContext,
   useContext,
@@ -46,6 +47,7 @@ export function useToast(): ToastContextValue {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const recentMessagesRef = useRef<Map<string, number>>(new Map());
 
   const addToast = useCallback(
     (
@@ -54,7 +56,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       action?: { label: string; onClick: () => void },
       countdown?: number,
     ) => {
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const now = Date.now();
+      const lastSeen = recentMessagesRef.current.get(message);
+      if (countdown === undefined && lastSeen && now - lastSeen < 3000) {
+        return; // Suppress duplicate toast dispatch within 3-second window (#1748)
+      }
+      recentMessagesRef.current.set(message, now);
+
+      const id = `${now}-${Math.random().toString(36).slice(2, 9)}-${recentMessagesRef.current.size}`;
       setToasts((prev) => {
         if (countdown !== undefined && message.includes("Rate limit")) {
           const existingIndex = prev.findIndex(

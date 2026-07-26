@@ -5,6 +5,7 @@ import { useWebXR } from "@/hooks/useWebXR";
 import ARNavigation from "./ARNavigation";
 import CompassFallback from "./CompassFallback";
 import { View } from "lucide-react";
+import usePartySocket from "@/hooks/usePartySocketReconnect";
 
 interface SeatData {
   id: string;
@@ -37,6 +38,30 @@ export default function NavigationContainer({
   const [seats, setSeats] = useState<SeatData[]>([]);
   const [anchors, setAnchors] = useState<AnchorData[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const socket = usePartySocket({
+    host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
+    room: `venue-${venueId}`,
+    onMessage(event) {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "AnchorCreated" && data.anchor) {
+          setAnchors((prev) => {
+            if (prev.find((a) => a.id === data.anchor.id)) return prev;
+            return [data.anchor, ...prev];
+          });
+        } else if (data.type === "AnchorUpdated" && data.anchor) {
+          setAnchors((prev) =>
+            prev.map((a) => (a.id === data.anchor.id ? data.anchor : a)),
+          );
+        } else if (data.type === "AnchorDeleted" && data.id) {
+          setAnchors((prev) => prev.filter((a) => a.id !== data.id));
+        }
+      } catch {
+        // ignore parse errors
+      }
+    },
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -89,27 +114,47 @@ export default function NavigationContainer({
         });
         if (res.ok) {
           const { data: anchor } = await res.json();
-          setAnchors((prev) => [anchor, ...prev]);
+          setAnchors((prev) => {
+            if (prev.find((a) => a.id === anchor.id)) return prev;
+            return [anchor, ...prev];
+          });
+          socket.send(
+            JSON.stringify({
+              type: "AnchorCreated",
+              venueId,
+              anchor,
+            }),
+          );
         }
       } catch (err) {
         console.error("Failed to save anchor:", err);
       }
     },
-    [venueId],
+    [venueId, socket],
   );
 
-  const handleDeleteAnchor = useCallback(async (anchorDbId: string) => {
-    try {
-      const res = await fetch(`/api/ar/anchors/${anchorDbId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setAnchors((prev) => prev.filter((a) => a.id !== anchorDbId));
+  const handleDeleteAnchor = useCallback(
+    async (anchorDbId: string) => {
+      try {
+        const res = await fetch(`/api/ar/anchors/${anchorDbId}`, {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          setAnchors((prev) => prev.filter((a) => a.id !== anchorDbId));
+          socket.send(
+            JSON.stringify({
+              type: "AnchorDeleted",
+              venueId,
+              id: anchorDbId,
+            }),
+          );
+        }
+      } catch (err) {
+        console.error("Failed to delete anchor:", err);
       }
-    } catch (err) {
-      console.error("Failed to delete anchor:", err);
-    }
-  }, []);
+    },
+    [socket, venueId],
+  );
 
   const startAR = async () => {
     const newSession = await requestSession();

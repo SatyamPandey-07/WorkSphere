@@ -5,6 +5,14 @@
  */
 
 import { LRUCache } from "./cache";
+import { createHash } from "crypto";
+
+function deterministicId(lat: number, lng: number, name: string): string {
+  return createHash("sha256")
+    .update(`${lat}:${lng}:${name}`)
+    .digest("hex")
+    .slice(0, 16);
+}
 
 const UNSPLASH_ACCESS_KEY =
   process.env.UNSPLASH_ACCESS_KEY ||
@@ -130,7 +138,9 @@ export async function searchVenuesOSM(
         const elLon = el.center ? el.center.lon : el.lon;
 
         return {
-          id: `osm-${el.id}`,
+          id: el.id
+            ? `osm-${el.id}`
+            : `osm-${deterministicId(elLat, elLon, tags.name)}`,
           name: tags.name,
           location: {
             address: tags["addr:street"]
@@ -160,8 +170,13 @@ export async function searchVenuesOSM(
         };
       });
 
+    // Filter out venues likely in open water (island/archipelago fix)
+    const landVenues = venues.filter(
+      (v) => !isLikelyInWater(v.location.lat, v.location.lng, lat, lng),
+    );
+
     // Filter by query if provided
-    let finalResult = venues;
+    let finalResult = landVenues;
     if (query) {
       const q = query.toLowerCase();
       finalResult = venues.filter(
@@ -216,23 +231,26 @@ async function searchVenuesNominatim(
     const data = await response.json();
     console.log("[Nominatim] Found:", data.length, "results");
 
-    return data.map((place: any) => ({
-      id: `nom-${place.place_id}`,
-      name: place.display_name?.split(",")[0] || "Unknown Venue",
-      location: {
-        formatted_address: place.display_name,
-        lat: parseFloat(place.lat),
-        lng: parseFloat(place.lon),
-      },
-      categories: [{ name: "Café" }],
-      distance: calculateDistance(
-        lat,
-        lng,
-        parseFloat(place.lat),
-        parseFloat(place.lon),
-      ),
-      photos: [],
-    }));
+    return data.map((place: any) => {
+      const pLat = parseFloat(place.lat);
+      const pLon = parseFloat(place.lon);
+      const placeName = place.display_name?.split(",")[0] || "Unknown Venue";
+      const id = place.place_id
+        ? `nom-${place.place_id}`
+        : `nom-${deterministicId(pLat, pLon, placeName)}`;
+      return {
+        id,
+        name: placeName,
+        location: {
+          formatted_address: place.display_name,
+          lat: pLat,
+          lng: pLon,
+        },
+        categories: [{ name: "Café" }],
+        distance: calculateDistance(lat, lng, pLat, pLon),
+        photos: [],
+      };
+    });
   } catch (error) {
     console.error("[Nominatim] Error:", error);
     return [];
@@ -270,6 +288,53 @@ function calculateDistance(
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return Math.round(R * c);
+}
+
+/**
+ * Approximate water-body bounding boxes for major open-ocean regions.
+ * If a venue falls inside one of these AND is > maxInlandRadius meters
+ * from the search centre, it is almost certainly a false-positive marine
+ * coordinate and should be filtered out.
+ */
+const WATER_BODIES: Array<{
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}> = [
+  // North Pacific (between Hawaii & mainland)
+  { minLat: 20, maxLat: 40, minLng: -165, maxLng: -130 },
+  // South Pacific
+  { minLat: -30, maxLat: 0, minLng: -180, maxLng: -80 },
+  // North Atlantic
+  { minLat: 20, maxLat: 60, minLng: -60, maxLng: -10 },
+  // South Atlantic
+  { minLat: -40, maxLat: 0, minLng: -50, maxLng: 10 },
+  // Indian Ocean
+  { minLat: -30, maxLat: 10, minLng: 40, maxLng: 100 },
+];
+
+function isLikelyInWater(
+  lat: number,
+  lng: number,
+  centreLat: number,
+  centreLng: number,
+  maxInlandRadius = 15000,
+): boolean {
+  const distFromCentre = calculateDistance(centreLat, centreLng, lat, lng);
+  if (distFromCentre <= maxInlandRadius) return false;
+
+  for (const box of WATER_BODIES) {
+    if (
+      lat >= box.minLat &&
+      lat <= box.maxLat &&
+      lng >= box.minLng &&
+      lng <= box.maxLng
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 // =============================================================================
@@ -377,12 +442,10 @@ export async function searchAndEnrichVenues(
   // Return enriched + non-enriched venues
   return [
     ...enrichedVenues,
-    ...venues
-      .slice(5)
-      .map((v) => ({
-        ...v,
-        photos: getFallbackPhotos(v.categories[0]?.name || "Workspace"),
-      })),
+    ...venues.slice(5).map((v) => ({
+      ...v,
+      photos: getFallbackPhotos(v.categories[0]?.name || "Workspace"),
+    })),
   ];
 }
 

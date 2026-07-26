@@ -39,6 +39,12 @@ export default async function PublicCollectionPage({ params }: PublicCollectionP
     library: <BookOpen className="w-4 h-4 text-emerald-400" />,
   };
 
+  const categoryIcons: Record<string, React.ReactNode> = {
+    cafe: <Coffee className="w-4 h-4 text-amber-400" />,
+    coworking: <Building2 className="w-4 h-4 text-indigo-400" />,
+    library: <BookOpen className="w-4 h-4 text-emerald-400" />,
+  };
+
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-50 p-6 sm:p-10">
       <div className="max-w-6xl mx-auto space-y-10">

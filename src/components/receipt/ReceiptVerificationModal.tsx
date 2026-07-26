@@ -95,10 +95,7 @@ export function ReceiptVerificationModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 px-6 py-4">
-          <h3
-            id="receipt-verify-title"
-            className="flex items-center gap-2 text-base font-semibold"
-          >
+          <h3 id="receipt-verify-title" className="flex items-center gap-2 text-base font-semibold">
             <FileText size={18} />
             Verify PDF Receipt Signature
           </h3>

@@ -15,7 +15,10 @@ type SoundPreset = "jazz" | "cafe" | "library";
 
 export type EqPresetName =
   | "flat"
+  | "balanced"
+  | "speech-clarity"
   | "bass-boost"
+  | "music"
   | "vocal-enhancer"
   | "treble-boost"
   | "warm"
@@ -40,9 +43,21 @@ export const EQ_PRESETS: Record<EqPresetName, EqPreset> = {
     label: "Flat",
     gains: [0, 0, 0, 0, 0],
   },
+  balanced: {
+    label: "Balanced",
+    gains: [0, 0, 0, 0, 0],
+  },
+  "speech-clarity": {
+    label: "Speech Clarity",
+    gains: [-2, -1, 3, 2, 0],
+  },
   "bass-boost": {
     label: "Bass Boost",
     gains: [5, 3, 0, 0, 0],
+  },
+  music: {
+    label: "Music",
+    gains: [4, 1, -1, 2, 3],
   },
   "vocal-enhancer": {
     label: "Vocal Enhancer",

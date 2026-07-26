@@ -97,9 +97,7 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
         aria-labelledby="tax-export-title"
         className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
       >
-        <h2 id="tax-export-title" className="mb-4 text-lg font-semibold">
-          Export Tax Summary
-        </h2>
+        <h2 id="tax-export-title" className="mb-4 text-lg font-semibold">Export Tax Summary</h2>
 
         <div className="mb-4 flex gap-2">
           <button

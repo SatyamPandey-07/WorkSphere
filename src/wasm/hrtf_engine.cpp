@@ -120,14 +120,14 @@ static void convolve_fir_simd(
 
         int k = 0;
         for (; k <= filter_length - 4; k += 4) {
-            if (n - k >= 3) {
-                // Vectorized multiplication when 4 input samples are available
+            // Ensure all 4 input samples are within bounds: n-k-3 >= 0 and n-k < num_samples
+            if (n - k >= 3 && n - k < num_samples) {
                 v128_t in_v = wasm_v128_load(&input[n - k - 3]);
                 v128_t filt_v = wasm_v128_load(&filter[k]);
                 sum_v = wasm_f32x4_add(sum_v, wasm_f32x4_mul(in_v, filt_v));
             } else {
-                for (int scalar_k = k; scalar_k < k + 4; scalar_k++) {
-                    if (n - scalar_k >= 0) {
+                for (int scalar_k = k; scalar_k < k + 4 && scalar_k < filter_length; scalar_k++) {
+                    if (n - scalar_k >= 0 && n - scalar_k < num_samples) {
                         sum += input[n - scalar_k] * filter[scalar_k];
                     }
                 }
@@ -324,6 +324,33 @@ void free_scratch_buffer(void* ptr) {
 }
 
 /**
+ * Reallocates a scratch buffer when the audio frame size changes.
+ * Copies min(old_size, new_size) bytes from the old buffer to the new one.
+ */
+__attribute__((used))
+void* realloc_scratch_buffer(void* ptr, int old_size_bytes, int new_size_bytes) {
+    if (new_size_bytes <= 0) {
+        if (ptr) free(ptr);
+        return nullptr;
+    }
+    void* new_ptr = nullptr;
+    if (posix_memalign(&new_ptr, 16, (size_t)new_size_bytes) != 0) {
+        new_ptr = malloc((size_t)new_size_bytes);
+    }
+    if (new_ptr) {
+        std::memset(new_ptr, 0, (size_t)new_size_bytes);
+        if (ptr) {
+            int copy_size = old_size_bytes < new_size_bytes ? old_size_bytes : new_size_bytes;
+            if (copy_size > 0) {
+                std::memcpy(new_ptr, ptr, (size_t)copy_size);
+            }
+            free(ptr);
+        }
+    }
+    return new_ptr;
+}
+
+/**
  * Enables or disables SIMD vectorization at runtime.
  */
 __attribute__((used))
@@ -360,6 +387,29 @@ int process_hrtf_block(
         return -1;
     }
 
+    if (num_samples > MAX_BLOCK_SIZE) {
+        // Process in chunks of MAX_BLOCK_SIZE to prevent buffer overflow
+        int processed = 0;
+        while (processed < num_samples) {
+            int chunk = num_samples - processed;
+            if (chunk > MAX_BLOCK_SIZE) chunk = MAX_BLOCK_SIZE;
+
+            int result = process_hrtf_block(
+                input + processed,
+                left_output + processed,
+                right_output + processed,
+                chunk,
+                azimuth,
+                elevation,
+                distance
+            );
+            if (result != 0) return result;
+            processed += chunk;
+        }
+        return 0;
+    }
+
+    // Clamp block size to safe maximum for internal buffers
     if (num_samples > MAX_BLOCK_SIZE) {
         num_samples = MAX_BLOCK_SIZE;
     }

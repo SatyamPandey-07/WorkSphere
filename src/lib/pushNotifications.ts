@@ -1,5 +1,6 @@
 import webPush from "web-push";
 import { prisma } from "@/lib/prisma";
+import { resolveWebPushContentEncoding } from "@/lib/webPushContentEncoding";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "";
@@ -62,7 +63,16 @@ export async function sendPushNotification(
     };
 
     try {
-      await webPush.sendNotification(pushSubscription, notificationPayload);
+      // Safari iOS 17.4: aes128gcm decrypt fails → blank notifications (#1032).
+      // Prefer aesgcm for Apple/Safari; aes128gcm for other push services.
+      const contentEncoding = resolveWebPushContentEncoding({
+        endpoint: sub.endpoint,
+        userAgent: sub.userAgent,
+      });
+
+      await webPush.sendNotification(pushSubscription, notificationPayload, {
+        contentEncoding,
+      });
       await prisma.pushSubscription.update({
         where: { id: sub.id },
         data: { lastUsedAt: new Date() },

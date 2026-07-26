@@ -14,6 +14,7 @@ import {
   weatherToCloudUniforms,
   WeatherData,
 } from "@/utils/weatherToCloudDensity";
+import { logFpsTelemetry } from "@/lib/performanceTelemetry"; // <-- Added for Issue 1548
 
 export interface CloudRendererOptions {
   weatherData?: Partial<WeatherData> | null;
@@ -55,6 +56,21 @@ export function useCloudRenderer(
     qualityRef.current = quality;
   }, [quality]);
 
+  // Requirement 2: Throttle rendering loop when tab is backgrounded
+  const [isPaused, setIsPaused] = useState(false);
+  useEffect(() => {
+    const handleVisibilityChange = () => setIsPaused(document.hidden);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    handleVisibilityChange();
+    return () =>
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
+  // Requirement 1: Adaptive step ref so we don't trigger re-renders
+  const dynamicStepsRef = useRef(
+    quality === "high" ? 64 : quality === "low" ? 32 : 48,
+  );
+
   const initWebGL = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return false;
@@ -84,7 +100,6 @@ export function useCloudRenderer(
     setIsSupported(true);
     glRef.current = gl;
 
-    // Helper to compile individual shader
     const compileShader = (
       type: number,
       source: string,
@@ -111,9 +126,7 @@ export function useCloudRenderer(
       FRAGMENT_SHADER_SOURCE,
     );
 
-    if (!vertShader || !fragShader) {
-      return false;
-    }
+    if (!vertShader || !fragShader) return false;
 
     shadersRef.current = [vertShader, fragShader];
 
@@ -136,7 +149,6 @@ export function useCloudRenderer(
     programRef.current = program;
     gl.useProgram(program);
 
-    // Fullscreen quad positions
     const positions = new Float32Array([
       -1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1,
     ]);
@@ -156,7 +168,6 @@ export function useCloudRenderer(
     vaoRef.current = vao;
     bufferRef.current = positionBuffer;
 
-    // Store uniform locations
     const uniformNames = [
       "u_resolution",
       "u_time",
@@ -181,7 +192,6 @@ export function useCloudRenderer(
     return true;
   }, [canvasRef]);
 
-  // Clean WebGL resources
   const cleanupWebGL = useCallback(() => {
     const gl = glRef.current;
     if (gl) {
@@ -189,9 +199,7 @@ export function useCloudRenderer(
         gl.deleteProgram(programRef.current);
         programRef.current = null;
       }
-      for (const s of shadersRef.current) {
-        gl.deleteShader(s);
-      }
+      for (const s of shadersRef.current) gl.deleteShader(s);
       shadersRef.current = [];
 
       if (bufferRef.current) {
@@ -206,7 +214,6 @@ export function useCloudRenderer(
     }
   }, []);
 
-  // Main animation loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -214,22 +221,38 @@ export function useCloudRenderer(
     const initialized = initWebGL();
     if (!initialized) return;
 
-    // Attach Context Recovery
     const cleanupContextRecovery = attachWebGLContextRecovery(canvas, () => {
       initWebGL();
     });
 
     const startTime = performance.now();
+    let lastFrameTime = startTime;
     let frameCount = 0;
     let fpsTimer = startTime;
 
     const renderFrame = (now: number) => {
+      // Throttle rendering completely if the tab is hidden
+      if (isPaused) {
+        if (animate)
+          animFrameIdRef.current = requestAnimationFrame(renderFrame);
+        return;
+      }
+
+      const deltaTime = now - lastFrameTime;
+      lastFrameTime = now;
+
+      // Adaptive quality adjustment based on GPU frame time
+      if (deltaTime > 20.0) {
+        dynamicStepsRef.current = Math.max(16, dynamicStepsRef.current - 4);
+      } else if (deltaTime < 14.0) {
+        dynamicStepsRef.current = Math.min(64, dynamicStepsRef.current + 1);
+      }
+
       const gl = glRef.current;
       const program = programRef.current;
       const vao = vaoRef.current;
 
       if (gl && program && vao && canvas) {
-        // Handle canvas resolution scaling
         const displayWidth = Math.floor(canvas.clientWidth * resolutionScale);
         const displayHeight = Math.floor(canvas.clientHeight * resolutionScale);
 
@@ -244,13 +267,7 @@ export function useCloudRenderer(
 
         const timeInSeconds = (now - startTime) / 1000.0;
         const u = uniformsRef.current;
-
-        // Calculate uniforms from weather ref
         const uniforms = weatherToCloudUniforms(weatherDataRef.current);
-
-        // Quality step scaling
-        const q = qualityRef.current;
-        const maxSteps = q === "high" ? 64 : q === "low" ? 32 : 48;
         const stepSize = 0.12;
 
         if (u.u_resolution)
@@ -261,9 +278,11 @@ export function useCloudRenderer(
         if (u.u_humidity) gl.uniform1f(u.u_humidity, uniforms.humidity);
         if (u.u_rainFactor) gl.uniform1f(u.u_rainFactor, uniforms.rainFactor);
         if (u.u_windSpeed) gl.uniform1f(u.u_windSpeed, uniforms.windSpeed);
-        if (u.u_maxSteps) gl.uniform1i(u.u_maxSteps, maxSteps);
-        if (u.u_stepSize) gl.uniform1f(u.u_stepSize, stepSize);
 
+        // Pass our newly adaptive steps to the shader
+        if (u.u_maxSteps) gl.uniform1i(u.u_maxSteps, dynamicStepsRef.current);
+
+        if (u.u_stepSize) gl.uniform1f(u.u_stepSize, stepSize);
         if (u.u_lightDir) gl.uniform3fv(u.u_lightDir, uniforms.lightDir);
         if (u.u_lightColor) gl.uniform3fv(u.u_lightColor, uniforms.lightColor);
         if (u.u_skyTopColor)
@@ -273,10 +292,20 @@ export function useCloudRenderer(
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-        // FPS calculation
+        // FPS and Telemetry calculation
         frameCount++;
         if (now - fpsTimer >= 1000) {
-          setFps(Math.round((frameCount * 1000) / (now - fpsTimer)));
+          const currentFps = Math.round((frameCount * 1000) / (now - fpsTimer));
+          setFps(currentFps);
+
+          // Requirement 3: Telemetry logging every 1 second
+          logFpsTelemetry({
+            fps: currentFps,
+            frameTimeMs: deltaTime,
+            raymarchSteps: dynamicStepsRef.current,
+            timestamp: Date.now(),
+          });
+
           frameCount = 0;
           fpsTimer = now;
         }
@@ -300,7 +329,7 @@ export function useCloudRenderer(
       cleanupContextRecovery();
       cleanupWebGL();
     };
-  }, [canvasRef, initWebGL, cleanupWebGL, animate, resolutionScale]);
+  }, [canvasRef, initWebGL, cleanupWebGL, animate, resolutionScale, isPaused]);
 
   return {
     isSupported,

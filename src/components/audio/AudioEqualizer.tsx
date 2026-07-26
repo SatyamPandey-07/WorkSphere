@@ -9,6 +9,8 @@ import {
   Radio,
   Settings,
   RotateCcw,
+  BatteryLow,
+  Battery,
 } from "lucide-react";
 
 type SoundPreset = "jazz" | "cafe" | "library";
@@ -133,6 +135,9 @@ export function AudioEqualizer({
   const [frequencies, setFrequencies] = useState<number[]>(
     new Array(12).fill(10),
   );
+  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
+  const [batteryCharging, setBatteryCharging] = useState(true);
+  const batteryAutoPausedRef = useRef(false);
 
   // Detect prefers-reduced-motion on mount
   useEffect(() => {
@@ -146,6 +151,35 @@ export function AudioEqualizer({
       mediaQuery.addEventListener("change", listener);
       return () => mediaQuery.removeEventListener("change", listener);
     }
+  }, []);
+
+  // Monitor battery status for low-power auto-pause
+  useEffect(() => {
+    let battery: any = null;
+    const updateBattery = (b: any) => {
+      setBatteryLevel(b.level);
+      setBatteryCharging(b.charging);
+    };
+
+    if (typeof navigator !== "undefined" && "getBattery" in navigator) {
+      (navigator as any).getBattery().then((b: any) => {
+        battery = b;
+        updateBattery(b);
+        b.addEventListener("levelchange", () => updateBattery(b));
+        b.addEventListener("chargingchange", () => updateBattery(b));
+      });
+    }
+
+    return () => {
+      if (battery) {
+        battery.removeEventListener("levelchange", () =>
+          updateBattery(battery),
+        );
+        battery.removeEventListener("chargingchange", () =>
+          updateBattery(battery),
+        );
+      }
+    };
   }, []);
 
   // Load from Local Storage on Mount
@@ -249,6 +283,24 @@ export function AudioEqualizer({
       audioContextRef.current.suspend();
     }
   }, [stopPlayingNodes]);
+
+  // Auto-pause sampling when battery is critical and unplugged
+  useEffect(() => {
+    if (
+      batteryLevel !== null &&
+      batteryLevel < 0.15 &&
+      !batteryCharging &&
+      isPlaying &&
+      !batteryAutoPausedRef.current
+    ) {
+      batteryAutoPausedRef.current = true;
+      stopPlaying();
+      setIsPlaying(false);
+    }
+    if (batteryCharging && batteryAutoPausedRef.current) {
+      batteryAutoPausedRef.current = false;
+    }
+  }, [batteryLevel, batteryCharging, isPlaying, stopPlaying]);
 
   // Handle Real-Time Gain Slider Drag with Smooth Audio Parameter Ramping
   const handleBandGainChange = (index: number, newGain: number) => {
@@ -658,6 +710,19 @@ export function AudioEqualizer({
           <Settings className="w-3.5 h-3.5" />
           <span className="text-[9px] uppercase tracking-wider font-bold">
             Reduced Motion Active
+          </span>
+        </div>
+      )}
+      {batteryLevel !== null && (
+        <div className="flex items-center gap-1.5 mt-2 justify-end opacity-40">
+          {batteryLevel < 0.15 && !batteryCharging ? (
+            <BatteryLow className="w-3.5 h-3.5 text-amber-400" />
+          ) : (
+            <Battery className="w-3.5 h-3.5" />
+          )}
+          <span className="text-[9px] uppercase tracking-wider font-bold">
+            {Math.round(batteryLevel * 100)}%
+            {batteryCharging ? " Charging" : ""}
           </span>
         </div>
       )}

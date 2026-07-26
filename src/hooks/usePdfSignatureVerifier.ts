@@ -32,8 +32,17 @@ export function usePdfSignatureVerifier(): UsePdfSignatureVerifierReturn {
     return () => {
       abortRef.current = true;
       if (workerRef.current) {
-        workerRef.current.terminate();
-        workerRef.current = null;
+        try {
+          workerRef.current.postMessage({ type: "terminate" });
+        } catch {
+          // Worker may already be dead
+        }
+        setTimeout(() => {
+          if (workerRef.current) {
+            workerRef.current.terminate();
+            workerRef.current = null;
+          }
+        }, 100);
       }
     };
   }, []);
@@ -41,8 +50,15 @@ export function usePdfSignatureVerifier(): UsePdfSignatureVerifierReturn {
   const reset = useCallback(() => {
     abortRef.current = true;
     if (workerRef.current) {
-      workerRef.current.terminate();
-      workerRef.current = null;
+      try {
+        workerRef.current.postMessage({ type: "terminate" });
+      } catch {
+        // Ignore
+      }
+      setTimeout(() => {
+        workerRef.current?.terminate();
+        workerRef.current = null;
+      }, 100);
     }
     setStatus("idle");
     setProgress(0);

@@ -134,3 +134,18 @@ describe("getSignedBytes", () => {
     expect(result.length).toBe(0);
   });
 });
+
+it("returns empty array when ByteRange exceeds PDF bounds", () => {
+  const data = new Uint8Array([1, 2, 3, 4, 5]);
+
+  const byteRange = {
+    offset1: 0,
+    length1: 3,
+    offset2: 20,
+    length2: 5,
+  };
+
+  const result = getSignedBytes(data, byteRange);
+
+  expect(result.length).toBe(0);
+});

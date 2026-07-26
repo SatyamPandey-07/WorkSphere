@@ -1,6 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { recordApiLatency } from "./lib/performanceTelemetry";
 import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
@@ -18,8 +17,8 @@ function generateCsp(nonce: string): string {
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `font-src 'self' https://fonts.gstatic.com data:`,
     `img-src 'self' https://images.unsplash.com https://*.unsplash.com https://res.cloudinary.com data: blob:`,
-    `connect-src 'self' https://*.clerk.com https://api.groq.com https://router.project-osrm.org wss://*.partykit.dev`,
-    `frame-src 'self' https://*.clerk.com`,
+    `connect-src 'self' https://*.clerk.com https://*.clerk.accounts.dev https://api.groq.com https://router.project-osrm.org wss://*.partykit.dev`,
+    `frame-src 'self' https://*.clerk.com https://*.clerk.accounts.dev`,
     `worker-src 'self' blob:`,
     `object-src 'none'`,
   ].join("; ");
@@ -49,10 +48,17 @@ const isPublicRoute = createRouteMatcher([
 // Routes exempt from CSRF validation even though they're mutating — webhooks are
 // authenticated via their own provider signature (Stripe/Clerk/etc.), not a browser
 // session, so there's no browser-held CSRF cookie to check against.
-const isCsrfExemptRoute = createRouteMatcher([
+const isCsrfExemptMatcher = createRouteMatcher([
   "/api/webhook(.*)",
   "/api/auth/csrf-token",
 ]);
+
+export function isCsrfExemptRoute(req: any): boolean {
+  const url = new URL(req.url);
+  const path = url.pathname;
+  const staticAssetRegex = /\.(png|jpg|jpeg|gif|svg|mp3|wav|ico|css|js)$/i;
+  return isCsrfExemptMatcher(req) || staticAssetRegex.test(path);
+}
 
 const isAdminRoute = createRouteMatcher(["/admin(.*)", "/api/admin(.*)"]);
 
@@ -152,19 +158,6 @@ export default function middleware(request: any, event: any) {
     requestHeaders.set("x-pathname", req.nextUrl.pathname);
     const nonce = crypto.randomUUID();
     requestHeaders.set("x-csp-nonce", nonce);
-    const start = Date.now();
-    requestHeaders.set("x-request-start", String(start));
-
-    const region =
-      req.headers.get("x-vercel-ip-country") ||
-      req.headers.get("x-vercel-edge-region") ||
-      "local";
-
-    recordApiLatency(
-      req.nextUrl.pathname,
-      Math.max(5, Date.now() - start),
-      region,
-    );
 
     const res = NextResponse.next({
       request: {

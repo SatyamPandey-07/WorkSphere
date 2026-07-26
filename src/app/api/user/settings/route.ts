@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@prisma/client";
 
 export async function GET() {
   try {
@@ -122,6 +123,59 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error("POST /api/user/settings error:", error);
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
+  }
+}
+
+export async function PATCH(req: Request) {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const allowedKeys = [
+      "phoneNumber",
+      "smsAlertsEnabled",
+      "whatsappWebhookUrl",
+      "notificationStart",
+      "notificationEnd",
+      "timezone",
+    ] as const;
+
+    const dataToUpdate: Prisma.UserUpdateInput = {};
+    for (const key of allowedKeys) {
+      if (key in body) {
+        (dataToUpdate as any)[key] =
+          body[key] ?? (key === "smsAlertsEnabled" ? false : null);
+      }
+    }
+
+    if (Object.keys(dataToUpdate).length === 0) {
+      return NextResponse.json({ error: "No valid fields" }, { status: 400 });
+    }
+
+    const updated = await prisma.user.upsert({
+      where: { id: userId },
+      create: { id: userId, ...(dataToUpdate as any) },
+      update: dataToUpdate,
+    });
+
+    return NextResponse.json({
+      success: true,
+      phoneNumber: updated.phoneNumber || "",
+      smsAlertsEnabled: updated.smsAlertsEnabled,
+      whatsappWebhookUrl: updated.whatsappWebhookUrl || "",
+      notificationStart: updated.notificationStart || "",
+      notificationEnd: updated.notificationEnd || "",
+      timezone: updated.timezone || "UTC",
+    });
+  } catch (error: any) {
+    console.error("PATCH /api/user/settings error:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
       { status: 500 },

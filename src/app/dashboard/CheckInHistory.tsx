@@ -111,7 +111,7 @@ export function CheckInHistory() {
 
                     {/* Live localized clock for the venue's timezone */}
                     {checkIn.timezone && (
-                      <TimezoneClock timezone={checkIn.timezone} />
+                      <TimezoneClock timeZone={checkIn.timezone} />
                     )}
                   </div>
 

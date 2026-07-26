@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { X, Upload, FileText, AlertCircle } from "lucide-react";
 import { usePdfSignatureVerifier } from "@/hooks/usePdfSignatureVerifier";
 import { SignatureVerificationBadge } from "./SignatureVerificationBadge";
@@ -67,6 +67,19 @@ export function ReceiptVerificationModal({
     setSelectedFile(null);
   }, [reset]);
 
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        handleClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, handleClose]);
+
   if (!open) return null;
 
   return (
@@ -75,11 +88,14 @@ export function ReceiptVerificationModal({
       onClick={handleClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="receipt-verify-title"
         className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-lg shadow-xl overflow-y-auto max-h-[80vh]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 px-6 py-4">
-          <h3 className="flex items-center gap-2 text-base font-semibold">
+          <h3 id="receipt-verify-title" className="flex items-center gap-2 text-base font-semibold">
             <FileText size={18} />
             Verify PDF Receipt Signature
           </h3>

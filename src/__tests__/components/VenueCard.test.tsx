@@ -162,4 +162,10 @@ describe("VenueCard", () => {
     await renderVenueCard(venueNoId);
     expect(mockPrefetch).not.toHaveBeenCalled();
   });
+
+  it("renders a verified host badge when isClaimed is true", async () => {
+    const claimedVenue = { ...mockVenue, isClaimed: true };
+    await renderVenueCard(claimedVenue);
+    expect(screen.getByTitle("Verified Host")).toBeInTheDocument();
+  });
 });

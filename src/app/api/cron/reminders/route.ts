@@ -71,14 +71,6 @@ export async function POST(req: Request) {
     let smsSent = 0;
 
     for (const session of sessions) {
-      const redisKey = `session-reminder:${session.id}`;
-      if (redis) {
-        const alreadySent = await redis.get(redisKey);
-        if (alreadySent) continue;
-        // Mark as sent in Redis immediately to prevent duplicate runs
-        await redis.set(redisKey, "sent", { ex: 3600 }); // Expire key in 1 hour
-      }
-
       // Compile lists of recipients
       const recipients = [
         {
@@ -131,6 +123,20 @@ export async function POST(req: Request) {
       const workSphereLink = `https://work-sphere-one.vercel.app/ai?venue=${session.venue.id}`;
 
       for (const recipient of recipients) {
+        // Per-recipient idempotency key
+        const recipientRedisKey = `session-reminder:${session.id}:${recipient.email}`;
+        if (redis) {
+          try {
+            const alreadySent = await redis.get(recipientRedisKey);
+            if (alreadySent) continue;
+          } catch (e) {
+            console.warn(
+              `[Reminders Cron] Redis get error for recipient ${recipient.email}:`,
+              e,
+            );
+          }
+        }
+
         // Check daily notification time window constraints
         if (
           !isWithinNotificationWindow(
@@ -145,6 +151,8 @@ export async function POST(req: Request) {
           );
           continue;
         }
+
+        let dispatchedToRecipient = false;
 
         // 1. Dispatch Email Reminder
         if (transporter && recipient.email) {
@@ -172,6 +180,7 @@ export async function POST(req: Request) {
               `,
             });
             emailsSent++;
+            dispatchedToRecipient = true;
             console.log(
               `[Reminders Cron] Email dispatched to ${recipient.email}`,
             );
@@ -196,6 +205,7 @@ export async function POST(req: Request) {
               from: TWILIO_PHONE_NUMBER,
             });
             smsSent++;
+            dispatchedToRecipient = true;
             console.log(
               `[Reminders Cron] SMS dispatched to ${recipient.phoneNumber}`,
             );
@@ -203,6 +213,18 @@ export async function POST(req: Request) {
             console.error(
               `[Reminders Cron] Twilio error for ${recipient.phoneNumber}:`,
               smsErr,
+            );
+          }
+        }
+
+        // Mark recipient as notified in Redis AFTER successful dispatch
+        if (redis && dispatchedToRecipient) {
+          try {
+            await redis.set(recipientRedisKey, "sent", { ex: 3600 });
+          } catch (e) {
+            console.warn(
+              `[Reminders Cron] Redis set error for recipient ${recipient.email}:`,
+              e,
             );
           }
         }

@@ -144,7 +144,7 @@ export default function FloorPlanViewer3D({
                 x={seat.x + seat.width / 2}
                 y={seat.y + seat.height / 2 + 4}
                 textAnchor="middle"
-                fill="#ffffff"
+                fill="#000000"
                 fontSize="11"
                 fontWeight="bold"
                 className="pointer-events-none"

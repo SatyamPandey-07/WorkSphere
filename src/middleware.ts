@@ -18,8 +18,8 @@ function generateCsp(nonce: string): string {
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `font-src 'self' https://fonts.gstatic.com data:`,
     `img-src 'self' https://images.unsplash.com https://*.unsplash.com https://res.cloudinary.com data: blob:`,
-    `connect-src 'self' https://*.clerk.com https://api.groq.com https://router.project-osrm.org wss://*.partykit.dev`,
-    `frame-src 'self' https://*.clerk.com`,
+    `connect-src 'self' https://*.clerk.com https://*.clerk.accounts.dev https://api.groq.com https://router.project-osrm.org wss://*.partykit.dev`,
+    `frame-src 'self' https://*.clerk.com https://*.clerk.accounts.dev`,
     `worker-src 'self' blob:`,
     `object-src 'none'`,
   ].join("; ");

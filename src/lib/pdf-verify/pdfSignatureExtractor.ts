@@ -157,10 +157,25 @@ export function extractSignatures(pdfBytes: Uint8Array): PdfSignatureInfo[] {
   return signatures;
 }
 
+function isValidByteRange(pdfBytes: Uint8Array, byteRange: ByteRange): boolean {
+  return (
+    byteRange.offset1 >= 0 &&
+    byteRange.length1 >= 0 &&
+    byteRange.offset2 >= 0 &&
+    byteRange.length2 >= 0 &&
+    byteRange.offset1 + byteRange.length1 <= pdfBytes.length &&
+    byteRange.offset2 + byteRange.length2 <= pdfBytes.length
+  );
+}
+
 export function getSignedBytes(
   pdfBytes: Uint8Array,
   byteRange: ByteRange,
 ): Uint8Array {
+  if (!isValidByteRange(pdfBytes, byteRange)) {
+    return new Uint8Array(0);
+  }
+
   const totalLength = byteRange.length1 + byteRange.length2;
   const result = new Uint8Array(totalLength);
   result.set(

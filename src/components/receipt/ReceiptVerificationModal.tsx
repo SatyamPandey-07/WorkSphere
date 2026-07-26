@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { X, Upload, FileText, AlertCircle } from "lucide-react";
 import { usePdfSignatureVerifier } from "@/hooks/usePdfSignatureVerifier";
 import { SignatureVerificationBadge } from "./SignatureVerificationBadge";

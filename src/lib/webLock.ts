@@ -33,8 +33,41 @@ export async function withWebLock<T>(
     return callback();
   }
 
-  // No try/catch here: if `callback` throws, that rejection should
-  // propagate to the caller as-is. Swallowing it and re-running the
-  // callback outside the lock reintroduces the exact race we're fixing.
-  return navigator.locks.request(lockName, async () => callback());
+  let executed = false;
+
+  const runOnce = async (): Promise<T> => {
+    if (executed) {
+      return undefined as unknown as T;
+    }
+    executed = true;
+    return callback();
+  };
+
+  return new Promise<T>((resolve, reject) => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    const lockPromise = navigator.locks.request(lockName, async () => {
+      clearTimeout(timeoutId);
+      return runOnce();
+    });
+
+    const timeoutPromise = new Promise<T>((_, timeoutReject) => {
+      timeoutId = setTimeout(() => {
+        timeoutReject(new Error("LOCK_TIMEOUT"));
+      }, 5000);
+    });
+
+    Promise.race([lockPromise, timeoutPromise])
+      .then(resolve)
+      .catch((err) => {
+        if (err instanceof Error && err.message === "LOCK_TIMEOUT") {
+          runOnce().then(resolve).catch(reject);
+        } else {
+          reject(err);
+        }
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
+      });
+  });
 }

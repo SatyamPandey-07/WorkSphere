@@ -17,6 +17,7 @@ export class HeatDiffusionFallback {
   private program: WebGLProgram | null = null;
   private texture: WebGLTexture | null = null;
   private vao: WebGLVertexArrayObject | null = null;
+  private vbo: WebGLBuffer | null = null;
 
   private config: Required<
     Pick<
@@ -83,16 +84,19 @@ export class HeatDiffusionFallback {
     gl.attachShader(program, fs);
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      console.warn("[HeatDiffusionFallback] link failed", gl.getProgramInfoLog(program));
+      console.warn(
+        "[HeatDiffusionFallback] link failed",
+        gl.getProgramInfoLog(program),
+      );
       return false;
     }
     this.program = program;
 
     const verts = new Float32Array([-1, -1, 3, -1, -1, 3]);
-    const vbo = gl.createBuffer();
+    this.vbo = gl.createBuffer();
     this.vao = gl.createVertexArray();
     gl.bindVertexArray(this.vao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
     const loc = gl.getAttribLocation(program, "a_pos");
     gl.enableVertexAttribArray(loc);
@@ -128,17 +132,37 @@ export class HeatDiffusionFallback {
 
   stop(): void {
     this.running = false;
-    if (this.raf) cancelAnimationFrame(this.raf);
-    this.raf = 0;
+    cancelAnimationFrame(this.raf);
   }
 
-  step(): void {
-    const input = this.ping ? this.gridA : this.gridB;
-    const output = this.ping ? this.gridB : this.gridA;
-    stepHeatDiffusion(input, output, this.config);
-    this.uploadTexture(output);
-    this.draw();
+  destroy(): void {
+    this.stop();
+    const gl = this.gl;
+    if (gl) {
+      if (this.texture) gl.deleteTexture(this.texture);
+      if (this.program) gl.deleteProgram(this.program);
+      if (this.vao) gl.deleteVertexArray(this.vao);
+      if (this.vbo) gl.deleteBuffer(this.vbo);
+    }
+    this.gl = null;
+  }
+
+  private step(): void {
+    const src = this.ping ? this.gridA : this.gridB;
+    const dst = this.ping ? this.gridB : this.gridA;
+
+    stepHeatDiffusion(src, dst, {
+      width: this.config.width,
+      height: this.config.height,
+      alpha: this.config.alpha,
+      dt: this.config.dt,
+      ambient: this.config.ambient,
+      sensors: this.config.sensors,
+    });
+
     this.ping = !this.ping;
+    this.uploadTexture(dst);
+    this.draw();
   }
 
   private uploadTexture(grid: Float32Array): void {
@@ -163,7 +187,7 @@ export class HeatDiffusionFallback {
     if (!gl || !this.program || !this.vao || !this.texture) return;
 
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(0.08, 0.09, 0.11, 1);
+    gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
@@ -184,15 +208,6 @@ export class HeatDiffusionFallback {
     );
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
-
-  destroy(): void {
-    this.stop();
-    const gl = this.gl;
-    if (gl && this.texture) gl.deleteTexture(this.texture);
-    if (gl && this.program) gl.deleteProgram(this.program);
-    if (gl && this.vao) gl.deleteVertexArray(this.vao);
-    this.gl = null;
-  }
 }
 
 function compile(
@@ -205,7 +220,10 @@ function compile(
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.warn("[HeatDiffusionFallback] shader error", gl.getShaderInfoLog(shader));
+    console.warn(
+      "[HeatDiffusionFallback] shader error",
+      gl.getShaderInfoLog(shader),
+    );
     gl.deleteShader(shader);
     return null;
   }
@@ -214,9 +232,25 @@ function compile(
 
 function defaultSensors(width: number, height: number): HvacSensor[] {
   return [
-    { x: Math.floor(width * 0.2), y: Math.floor(height * 0.2), temperature: 28 },
-    { x: Math.floor(width * 0.75), y: Math.floor(height * 0.3), temperature: 19 },
-    { x: Math.floor(width * 0.5), y: Math.floor(height * 0.7), temperature: 26 },
-    { x: Math.floor(width * 0.15), y: Math.floor(height * 0.8), temperature: 21 },
+    {
+      x: Math.floor(width * 0.2),
+      y: Math.floor(height * 0.2),
+      temperature: 28,
+    },
+    {
+      x: Math.floor(width * 0.75),
+      y: Math.floor(height * 0.3),
+      temperature: 19,
+    },
+    {
+      x: Math.floor(width * 0.5),
+      y: Math.floor(height * 0.7),
+      temperature: 26,
+    },
+    {
+      x: Math.floor(width * 0.15),
+      y: Math.floor(height * 0.8),
+      temperature: 21,
+    },
   ];
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useUser, useAuth } from "@clerk/nextjs";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import { useTheme } from "./ThemeProvider";
 import {
   MapContainer,
@@ -254,14 +254,14 @@ const createCursorIcon = (avatarUrl: string, name: string) => {
   if (avatarUrl && avatarUrl !== "default" && avatarUrl.startsWith("http")) {
     html = `
       <div class="map-cursor-container">
-        <div class="map-cursor-avatar" style="background-image: url(${avatarUrl})"></div>
+        <div class="map-cursor-avatar" style="background-image: url(${avatarUrl})" width="32" height="32"></div>
         <div class="map-cursor-label">${name}</div>
       </div>
     `;
   } else {
     html = `
       <div class="map-cursor-container">
-        <div class="map-cursor-avatar-default"></div>
+        <div class="map-cursor-avatar-default" width="16" height="16"></div>
         <div class="map-cursor-label">${name}</div>
       </div>
     `;
@@ -317,6 +317,25 @@ function WebGLContextWatcher() {
 
   return null;
 }
+
+const MemoizedCursorMarker = memo(function MemoizedCursorMarker({
+  userId,
+  cursor,
+}: {
+  userId: string;
+  cursor: { lat: number; lng: number; name: string; avatar: string };
+}) {
+  const presenceIcon = createCursorIcon(cursor.avatar, cursor.name);
+  if (!presenceIcon) return null;
+  return (
+    <Marker
+      key={`presence-${userId}`}
+      position={[cursor.lat, cursor.lng]}
+      icon={presenceIcon}
+      interactive={false}
+    />
+  );
+});
 
 const Map = ({
   location,
@@ -546,6 +565,7 @@ const Map = ({
   const [travelProfile, setTravelProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
+  const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
 
   // OSRM Multi-Stop coordinate solver engine
   const calculateOptimizedRoute = async (venuesList = routingQueue) => {
@@ -769,9 +789,9 @@ const Map = ({
     let html: string;
 
     if (iconUrl && iconUrl !== "default") {
-      html = `<div class="image-marker" style="background-image: url(${iconUrl})"></div>`;
+      html = `<div class="image-marker" style="background-image: url(${iconUrl})" width="40" height="40"></div>`;
     } else {
-      html = `<div class="default-dot-marker"></div>`;
+      html = `<div class="default-dot-marker" width="20" height="20"></div>`;
     }
 
     return L.divIcon({
@@ -1138,18 +1158,9 @@ const Map = ({
           </AccessibleMarker>
         )}
         <MapEvents onMouseMove={throttledBroadcast} />
-        {Object.entries(mapCursors).map(([userId, cursor]) => {
-          const presenceIcon = createCursorIcon(cursor.avatar, cursor.name);
-          if (!presenceIcon) return null;
-          return (
-            <Marker
-              key={`presence-${userId}`}
-              position={[cursor.lat, cursor.lng]}
-              icon={presenceIcon}
-              interactive={false}
-            />
-          );
-        })}
+        {Object.entries(mapCursors).map(([userId, cursor]) => (
+          <MemoizedCursorMarker key={userId} userId={userId} cursor={cursor} />
+        ))}
         {spiderfiedMarkers.map((marker) => {
           const isDest = marker.id.includes("dest");
           const seat = !isDest ? getAvailability(marker.id) : null;
@@ -1172,6 +1183,8 @@ const Map = ({
               category={marker.category}
               isDestination={isDest}
               telemetryData={telemetry}
+              zIndexOffset={selectedMarkerId === marker.id ? 1000 : 0}
+              onClick={() => setSelectedMarkerId(marker.id)}
             >
               <div className="text-sm">
                 <div className="font-semibold text-white">{marker.name}</div>

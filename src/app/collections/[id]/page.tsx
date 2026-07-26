@@ -13,12 +13,20 @@ import {
   Loader2,
   Globe,
   FileDown,
+  Link2,
 } from "lucide-react";
 
 import usePartySocket from "@/hooks/usePartySocketReconnect";
 import Image from "next/image";
 import { ComparisonTool } from "@/components/collections/ComparisonTool";
 import { EmptyState } from "@/components/ui/EmptyState";
+
+interface ShortLink {
+  id: string;
+  shortCode: string;
+  expiresAt: string | null;
+  createdAt: string;
+}
 
 export default function FolderDetailsPage({
   params,
@@ -41,6 +49,86 @@ export default function FolderDetailsPage({
   const [copiedLink, setCopiedLink] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+
+  // Short Link states
+  const [shortLinks, setShortLinks] = useState<ShortLink[]>([]);
+  const [generatingShortLink, setGeneratingShortLink] = useState(false);
+  const [customShortCode, setCustomShortCode] = useState("");
+  const [shortLinkExpiration, setShortLinkExpiration] = useState<
+    "24h" | "7d" | "never"
+  >("never");
+  const [shortLinkError, setShortLinkError] = useState<string | null>(null);
+  const [copiedShortCode, setCopiedShortCode] = useState<string | null>(null);
+
+  const fetchShortLinks = useCallback(async () => {
+    if (!id || userRole === "VIEWER") return;
+    try {
+      const res = await fetch(`/api/folders/${id}/short-links`);
+      const data = await res.json();
+      if (data.success) {
+        setShortLinks(data.shortLinks || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch short links", e);
+    }
+  }, [id, userRole]);
+
+  useEffect(() => {
+    if (userRole && userRole !== "VIEWER") {
+      fetchShortLinks();
+    }
+  }, [fetchShortLinks, userRole]);
+
+  const handleGenerateShortLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGeneratingShortLink(true);
+    setShortLinkError(null);
+    try {
+      const res = await fetch(`/api/folders/${id}/short-links`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customCode: customShortCode || null,
+          expiration: shortLinkExpiration,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCustomShortCode("");
+        setShortLinkExpiration("never");
+        // Reload folder details if visibility changed
+        if (!folder || !folder.isPublic || !folder.inviteToken) {
+          fetchFolder();
+        }
+        fetchShortLinks();
+      } else {
+        setShortLinkError(data.error || "Failed to generate short link");
+      }
+    } catch (err) {
+      console.error(err);
+      setShortLinkError("An error occurred. Please try again.");
+    } finally {
+      setGeneratingShortLink(false);
+    }
+  };
+
+  const handleRevokeShortLink = async (linkId: string) => {
+    try {
+      const res = await fetch(`/api/folders/${id}/short-links/${linkId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchShortLinks();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to revoke short link");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("An error occurred. Please try again.");
+    }
+  };
+
   const [filters, setFilters] = useState({
     hasOutlets: false,
     wifiQualityMin: false,

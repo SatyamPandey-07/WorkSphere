@@ -1,6 +1,5 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-import { recordApiLatency } from "./lib/performanceTelemetry";
 import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
@@ -159,19 +158,6 @@ export default function middleware(request: any, event: any) {
     requestHeaders.set("x-pathname", req.nextUrl.pathname);
     const nonce = crypto.randomUUID();
     requestHeaders.set("x-csp-nonce", nonce);
-    const start = Date.now();
-    requestHeaders.set("x-request-start", String(start));
-
-    const region =
-      req.headers.get("x-vercel-ip-country") ||
-      req.headers.get("x-vercel-edge-region") ||
-      "local";
-
-    recordApiLatency(
-      req.nextUrl.pathname,
-      Math.max(5, Date.now() - start),
-      region,
-    );
 
     const res = NextResponse.next({
       request: {

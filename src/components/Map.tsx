@@ -782,6 +782,29 @@ const Map = ({
     });
   }, [iconUrl]);
 
+  // Memoize the rendered CircleMarker JSX to prevent unnecessary SVG re-renders
+  // and micro-flickering on every Map.tsx update (e.g. cursor socket events)
+  const memoizedSeatRings = useMemo(() => {
+    return spiderfiedMarkers
+      .filter((marker) => !marker.id.includes("dest"))
+      .map((marker) => {
+        const seat = getAvailability(marker.id);
+        return (
+          <CircleMarker
+            key={`seat-ring-${marker.id}`}
+            center={[marker.renderedLat, marker.renderedLng]}
+            radius={16}
+            pathOptions={{
+              color: SEAT_RING_COLORS[seat.status],
+              weight: 3,
+              opacity: 0.9,
+              fillOpacity: 0,
+            }}
+          />
+        );
+      });
+  }, [spiderfiedMarkers, getAvailability]);
+
   const center: [number, number] = [latitude, longitude];
   const tileUrl =
     theme === "light"
@@ -1096,26 +1119,7 @@ const Map = ({
           </LayersControl.Overlay>
 
           <LayersControl.Overlay name="Seat Availability">
-            <LayerGroup>
-              {spiderfiedMarkers
-                .filter((marker) => !marker.id.includes("dest"))
-                .map((marker) => {
-                  const seat = getAvailability(marker.id);
-                  return (
-                    <CircleMarker
-                      key={`seat-ring-${marker.id}`}
-                      center={[marker.renderedLat, marker.renderedLng]}
-                      radius={16}
-                      pathOptions={{
-                        color: SEAT_RING_COLORS[seat.status],
-                        weight: 3,
-                        opacity: 0.9,
-                        fillOpacity: 0,
-                      }}
-                    />
-                  );
-                })}
-            </LayerGroup>
+            <LayerGroup>{memoizedSeatRings}</LayerGroup>
           </LayersControl.Overlay>
         </LayersControl>
 
@@ -1124,6 +1128,7 @@ const Map = ({
         <ZoomWatcher
           onZoomSettled={handleZoomSettled}
           onZoomStart={handleZoomStart}
+          delay={250}
         />
         <ResizeWatcher />
         <WebGLContextWatcher />

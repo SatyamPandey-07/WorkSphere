@@ -5,6 +5,14 @@
  */
 
 import { LRUCache } from "./cache";
+import { createHash } from "crypto";
+
+function deterministicId(lat: number, lng: number, name: string): string {
+  return createHash("sha256")
+    .update(`${lat}:${lng}:${name}`)
+    .digest("hex")
+    .slice(0, 16);
+}
 
 const UNSPLASH_ACCESS_KEY =
   process.env.UNSPLASH_ACCESS_KEY ||
@@ -130,7 +138,9 @@ export async function searchVenuesOSM(
         const elLon = el.center ? el.center.lon : el.lon;
 
         return {
-          id: `osm-${el.id}`,
+          id: el.id
+            ? `osm-${el.id}`
+            : `osm-${deterministicId(elLat, elLon, tags.name)}`,
           name: tags.name,
           location: {
             address: tags["addr:street"]
@@ -216,23 +226,26 @@ async function searchVenuesNominatim(
     const data = await response.json();
     console.log("[Nominatim] Found:", data.length, "results");
 
-    return data.map((place: any) => ({
-      id: `nom-${place.place_id}`,
-      name: place.display_name?.split(",")[0] || "Unknown Venue",
-      location: {
-        formatted_address: place.display_name,
-        lat: parseFloat(place.lat),
-        lng: parseFloat(place.lon),
-      },
-      categories: [{ name: "Café" }],
-      distance: calculateDistance(
-        lat,
-        lng,
-        parseFloat(place.lat),
-        parseFloat(place.lon),
-      ),
-      photos: [],
-    }));
+    return data.map((place: any) => {
+      const pLat = parseFloat(place.lat);
+      const pLon = parseFloat(place.lon);
+      const placeName = place.display_name?.split(",")[0] || "Unknown Venue";
+      const id = place.place_id
+        ? `nom-${place.place_id}`
+        : `nom-${deterministicId(pLat, pLon, placeName)}`;
+      return {
+        id,
+        name: placeName,
+        location: {
+          formatted_address: place.display_name,
+          lat: pLat,
+          lng: pLon,
+        },
+        categories: [{ name: "Café" }],
+        distance: calculateDistance(lat, lng, pLat, pLon),
+        photos: [],
+      };
+    });
   } catch (error) {
     console.error("[Nominatim] Error:", error);
     return [];
@@ -377,12 +390,10 @@ export async function searchAndEnrichVenues(
   // Return enriched + non-enriched venues
   return [
     ...enrichedVenues,
-    ...venues
-      .slice(5)
-      .map((v) => ({
-        ...v,
-        photos: getFallbackPhotos(v.categories[0]?.name || "Workspace"),
-      })),
+    ...venues.slice(5).map((v) => ({
+      ...v,
+      photos: getFallbackPhotos(v.categories[0]?.name || "Workspace"),
+    })),
   ];
 }
 

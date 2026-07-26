@@ -533,7 +533,7 @@ export function BookingModal({
 
   return (
     <div
-      className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/90 animate-in fade-in duration-300 backdrop-blur-sm"
+      className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/60 animate-in fade-in duration-300 backdrop-blur-md"
       onPointerDown={handleBackdropPointerDown}
       onClick={handleBackdropClick}
     >

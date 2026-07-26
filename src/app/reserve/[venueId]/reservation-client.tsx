@@ -390,10 +390,10 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   const fill = !seat.available
                     ? "#3f3f46"
                     : active
-                      ? "#8b5cf6"
+                      ? "#7c3aed"
                       : seat.type === "MEETING_ROOM"
-                        ? "#155e75"
-                        : "#166534";
+                        ? "#06b6d4"
+                        : "#22c55e";
 
                   return (
                     <g
@@ -410,14 +410,20 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                         height={seat.height}
                         rx="10"
                         fill={fill}
-                        stroke={active ? "#c4b5fd" : "#52525b"}
+                        stroke={
+                          active
+                            ? "#c4b5fd"
+                            : !seat.available
+                              ? "#71717a"
+                              : fill
+                        }
                         strokeWidth={active ? 3 : 1}
                       />
                       <text
                         x={seat.x + seat.width / 2}
                         y={seat.y + seat.height / 2 + 4}
                         textAnchor="middle"
-                        fill="white"
+                        fill={!seat.available || active ? "#ffffff" : "#000000"}
                         fontSize="12"
                         fontWeight="600"
                       >
@@ -430,9 +436,9 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
             </div>
 
             <div className="mt-5 flex flex-wrap gap-4 text-xs text-zinc-400">
-              <Legend color="bg-green-800" label="Available desk" />
-              <Legend color="bg-cyan-800" label="Available room" />
-              <Legend color="bg-violet-500" label="Selected" />
+              <Legend color="bg-green-500" label="Available desk" />
+              <Legend color="bg-cyan-500" label="Available room" />
+              <Legend color="bg-violet-600" label="Selected" />
               <Legend color="bg-zinc-700" label="Taken" />
             </div>
           </section>

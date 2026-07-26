@@ -60,7 +60,7 @@
     "react-is": "^19.2.8",
     "react-joyride": "^3.2.0",
     "react-leaflet": "^5.0.0",
-    "recharts": "^3.9.2",
+    "recharts": "^3.10.1",
     "snarkjs": "^0.7.6",
     "svix": "^1.96.1",
     "tailwind-merge": "^3.6.0",

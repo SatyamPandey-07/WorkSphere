@@ -160,8 +160,13 @@ export async function searchVenuesOSM(
         };
       });
 
+    // Filter out venues likely in open water (island/archipelago fix)
+    const landVenues = venues.filter(
+      (v) => !isLikelyInWater(v.location.lat, v.location.lng, lat, lng),
+    );
+
     // Filter by query if provided
-    let finalResult = venues;
+    let finalResult = landVenues;
     if (query) {
       const q = query.toLowerCase();
       finalResult = venues.filter(
@@ -272,6 +277,53 @@ function calculateDistance(
   return Math.round(R * c);
 }
 
+/**
+ * Approximate water-body bounding boxes for major open-ocean regions.
+ * If a venue falls inside one of these AND is > maxInlandRadius meters
+ * from the search centre, it is almost certainly a false-positive marine
+ * coordinate and should be filtered out.
+ */
+const WATER_BODIES: Array<{
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+}> = [
+  // North Pacific (between Hawaii & mainland)
+  { minLat: 20, maxLat: 40, minLng: -165, maxLng: -130 },
+  // South Pacific
+  { minLat: -30, maxLat: 0, minLng: -180, maxLng: -80 },
+  // North Atlantic
+  { minLat: 20, maxLat: 60, minLng: -60, maxLng: -10 },
+  // South Atlantic
+  { minLat: -40, maxLat: 0, minLng: -50, maxLng: 10 },
+  // Indian Ocean
+  { minLat: -30, maxLat: 10, minLng: 40, maxLng: 100 },
+];
+
+function isLikelyInWater(
+  lat: number,
+  lng: number,
+  centreLat: number,
+  centreLng: number,
+  maxInlandRadius = 15000,
+): boolean {
+  const distFromCentre = calculateDistance(centreLat, centreLng, lat, lng);
+  if (distFromCentre <= maxInlandRadius) return false;
+
+  for (const box of WATER_BODIES) {
+    if (
+      lat >= box.minLat &&
+      lat <= box.maxLat &&
+      lng >= box.minLng &&
+      lng <= box.maxLng
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // =============================================================================
 // Unsplash API (FREE, needs key but no credit card)
 // =============================================================================
@@ -377,12 +429,10 @@ export async function searchAndEnrichVenues(
   // Return enriched + non-enriched venues
   return [
     ...enrichedVenues,
-    ...venues
-      .slice(5)
-      .map((v) => ({
-        ...v,
-        photos: getFallbackPhotos(v.categories[0]?.name || "Workspace"),
-      })),
+    ...venues.slice(5).map((v) => ({
+      ...v,
+      photos: getFallbackPhotos(v.categories[0]?.name || "Workspace"),
+    })),
   ];
 }
 

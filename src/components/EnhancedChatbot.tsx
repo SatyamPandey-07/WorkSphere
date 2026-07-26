@@ -121,7 +121,7 @@ export function EnhancedChatbot({
 }: EnhancedChatbotProps) {
   const { isSignedIn, user } = useUser();
 
-  const { socket } = useMultiplayerSession(roomId || null);
+  const { socket, isHydrated } = useMultiplayerSession(roomId || null);
   const sendSocketMessage = useCallback(
     (data: string) => {
       if (socket && socket.readyState === 1) {
@@ -216,9 +216,10 @@ export function EnhancedChatbot({
   >(null);
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
-  // Throttled mouse tracking
+  // Throttled mouse tracking — only after hydration so WS traffic cannot
+  // interleave with App Router streaming chunks (#1033)
   useEffect(() => {
-    if (!socket || !roomId) return;
+    if (!isHydrated || !socket || !roomId) return;
 
     let lastSend = 0;
     const handleMouseMove = (e: MouseEvent) => {
@@ -239,11 +240,11 @@ export function EnhancedChatbot({
 
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [socket, roomId, user, sendSocketMessage]);
+  }, [isHydrated, socket, roomId, user, sendSocketMessage]);
 
-  // Handle incoming presence
+  // Handle incoming presence — defer listeners until hydration completes (#1033)
   useEffect(() => {
-    if (!socket) return;
+    if (!isHydrated || !socket) return;
 
     const onMessage = (event: MessageEvent) => {
       try {
@@ -297,7 +298,7 @@ export function EnhancedChatbot({
 
     socket.addEventListener("message", onMessage);
     return () => socket.removeEventListener("message", onMessage);
-  }, [socket, onMapUpdate]);
+  }, [isHydrated, socket, onMapUpdate]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 

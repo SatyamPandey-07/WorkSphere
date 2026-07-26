@@ -13,12 +13,20 @@ import {
   Loader2,
   Globe,
   FileDown,
+  Link2,
 } from "lucide-react";
 
 import usePartySocket from "@/hooks/usePartySocketReconnect";
 import Image from "next/image";
 import { ComparisonTool } from "@/components/collections/ComparisonTool";
 import { EmptyState } from "@/components/ui/EmptyState";
+
+interface ShortLink {
+  id: string;
+  shortCode: string;
+  expiresAt: string | null;
+  createdAt: string;
+}
 
 export default function FolderDetailsPage({
   params,
@@ -41,6 +49,86 @@ export default function FolderDetailsPage({
   const [copiedLink, setCopiedLink] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportingPdf, setExportingPdf] = useState(false);
+
+  // Short Link states
+  const [shortLinks, setShortLinks] = useState<ShortLink[]>([]);
+  const [generatingShortLink, setGeneratingShortLink] = useState(false);
+  const [customShortCode, setCustomShortCode] = useState("");
+  const [shortLinkExpiration, setShortLinkExpiration] = useState<
+    "24h" | "7d" | "never"
+  >("never");
+  const [shortLinkError, setShortLinkError] = useState<string | null>(null);
+  const [copiedShortCode, setCopiedShortCode] = useState<string | null>(null);
+
+  const fetchShortLinks = useCallback(async () => {
+    if (!id || userRole === "VIEWER") return;
+    try {
+      const res = await fetch(`/api/folders/${id}/short-links`);
+      const data = await res.json();
+      if (data.success) {
+        setShortLinks(data.shortLinks || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch short links", e);
+    }
+  }, [id, userRole]);
+
+  useEffect(() => {
+    if (userRole && userRole !== "VIEWER") {
+      fetchShortLinks();
+    }
+  }, [fetchShortLinks, userRole]);
+
+  const handleGenerateShortLink = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGeneratingShortLink(true);
+    setShortLinkError(null);
+    try {
+      const res = await fetch(`/api/folders/${id}/short-links`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customCode: customShortCode || null,
+          expiration: shortLinkExpiration,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCustomShortCode("");
+        setShortLinkExpiration("never");
+        // Reload folder details if visibility changed
+        if (!folder || !folder.isPublic || !folder.inviteToken) {
+          fetchFolder();
+        }
+        fetchShortLinks();
+      } else {
+        setShortLinkError(data.error || "Failed to generate short link");
+      }
+    } catch (err) {
+      console.error(err);
+      setShortLinkError("An error occurred. Please try again.");
+    } finally {
+      setGeneratingShortLink(false);
+    }
+  };
+
+  const handleRevokeShortLink = async (linkId: string) => {
+    try {
+      const res = await fetch(`/api/folders/${id}/short-links/${linkId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchShortLinks();
+      } else {
+        const data = await res.json();
+        alert(data.error || "Failed to revoke short link");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("An error occurred. Please try again.");
+    }
+  };
+
   const [filters, setFilters] = useState({
     hasOutlets: false,
     wifiQualityMin: false,
@@ -163,7 +251,7 @@ export default function FolderDetailsPage({
           inviteToken: data.token,
           isPublic: true,
         }));
-        
+
         const shareUrl = `${window.location.origin}/collections/public/${data.token}`;
         await navigator.clipboard.writeText(shareUrl);
         setCopiedLink(true);
@@ -546,7 +634,9 @@ export default function FolderDetailsPage({
                         title="Copy to clipboard"
                       >
                         {copiedLink ? (
-                          <span className="text-[10px] text-emerald-500 font-bold">Copied</span>
+                          <span className="text-[10px] text-emerald-500 font-bold">
+                            Copied
+                          </span>
                         ) : (
                           <Copy className="w-3.5 h-3.5" />
                         )}
@@ -554,6 +644,133 @@ export default function FolderDetailsPage({
                     </div>
                   </div>
                 )}
+
+                <div className="mt-4 border-t border-zinc-200 dark:border-zinc-800 pt-4 space-y-3">
+                  <p className="text-xs font-semibold text-zinc-900 dark:text-white flex items-center gap-1.5">
+                    <Link2 className="w-3.5 h-3.5 text-indigo-500" />
+                    Create Short URL with Expiration
+                  </p>
+
+                  <form
+                    onSubmit={handleGenerateShortLink}
+                    className="space-y-2"
+                  >
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <input
+                          type="text"
+                          placeholder="Custom alias (optional)"
+                          value={customShortCode}
+                          onChange={(e) => setCustomShortCode(e.target.value)}
+                          className="w-full text-xs rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 outline-none focus:border-indigo-500 focus:bg-white dark:focus:bg-zinc-900"
+                        />
+                      </div>
+                      <div className="w-[110px]">
+                        <select
+                          value={shortLinkExpiration}
+                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                            setShortLinkExpiration(
+                              e.target.value as "24h" | "7d" | "never",
+                            )
+                          }
+                          className="w-full text-xs rounded-xl border border-zinc-200 bg-zinc-50 px-2 py-2 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400 outline-none focus:border-indigo-500"
+                        >
+                          <option value="never">Never</option>
+                          <option value="24h">24 Hours</option>
+                          <option value="7d">7 Days</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {shortLinkError && (
+                      <p className="text-[10px] text-rose-500 font-medium px-1">
+                        {shortLinkError}
+                      </p>
+                    )}
+
+                    {!folder.isPublic && (
+                      <p className="text-[10px] text-amber-500 font-medium px-1">
+                        Note: Generating a short link will allow temporary
+                        public access to this private collection until the link
+                        expires.
+                      </p>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={generatingShortLink}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl text-xs transition-all disabled:opacity-50 active:scale-[0.99]"
+                    >
+                      {generatingShortLink ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        "Generate Short Link"
+                      )}
+                    </button>
+                  </form>
+
+                  {/* Short links list */}
+                  {shortLinks.length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-900">
+                      <p className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider">
+                        Active Short Links
+                      </p>
+                      <div className="max-h-[150px] overflow-y-auto space-y-2 pr-1">
+                        {shortLinks.map((link) => {
+                          const shortUrl = `${window.location.origin}/s/${link.shortCode}`;
+                          return (
+                            <div
+                              key={link.id}
+                              className="flex items-center justify-between text-xs p-2 rounded-xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-250 dark:border-zinc-900"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <p className="font-semibold text-zinc-900 dark:text-white truncate">
+                                  /s/{link.shortCode}
+                                </p>
+                                <p className="text-[9px] text-zinc-500">
+                                  {link.expiresAt
+                                    ? `Expires: ${new Date(link.expiresAt).toLocaleDateString()}`
+                                    : "Never expires"}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1 ml-2">
+                                <button
+                                  onClick={async () => {
+                                    await navigator.clipboard.writeText(
+                                      shortUrl,
+                                    );
+                                    setCopiedShortCode(link.shortCode);
+                                    setTimeout(
+                                      () => setCopiedShortCode(null),
+                                      2000,
+                                    );
+                                  }}
+                                  className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-zinc-600 dark:text-zinc-400 transition-colors"
+                                  title="Copy short link"
+                                >
+                                  {copiedShortCode === link.shortCode ? (
+                                    <span className="text-[9px] text-emerald-500 font-bold">
+                                      Copied
+                                    </span>
+                                  ) : (
+                                    <Copy className="w-3 h-3" />
+                                  )}
+                                </button>
+                                <button
+                                  onClick={() => handleRevokeShortLink(link.id)}
+                                  className="p-1 hover:bg-rose-100 dark:hover:bg-rose-950/40 rounded text-rose-500 hover:text-rose-700 transition-colors"
+                                  title="Revoke short link"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {(!folder.inviteToken || !folder.isPublic) && (
                   <button

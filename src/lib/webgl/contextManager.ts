@@ -42,6 +42,7 @@ export function attachWebGLContextRecovery(
   onRestoreCallback?: (
     gl: WebGLRenderingContext | WebGL2RenderingContext,
   ) => void,
+  onLostCallback?: () => void,
 ): () => void {
   const manager = new WebGLContextRecoveryManager(canvas, {
     onRestore: (gl) => {
@@ -49,6 +50,7 @@ export function attachWebGLContextRecovery(
         onRestoreCallback(gl);
       }
     },
+    onLost: onLostCallback,
   });
   return () => manager.destroy();
 }

@@ -70,9 +70,27 @@ export function DecibelMeterModal({
     };
   }, [stop]);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && status !== "submitting") {
+        stop();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [stop, onClose, status]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col relative">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="decibel-meter-title"
+        className="bg-white dark:bg-zinc-900 rounded-2xl max-w-md w-full shadow-2xl overflow-hidden flex flex-col relative"
+      >
         <button
           onClick={() => {
             stop();
@@ -80,6 +98,7 @@ export function DecibelMeterModal({
           }}
           className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
           disabled={status === "submitting"}
+          aria-label="Close modal"
         >
           <X className="w-5 h-5" />
         </button>
@@ -89,7 +108,7 @@ export function DecibelMeterModal({
             <Mic className="w-8 h-8" />
           </div>
 
-          <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">
+          <h2 id="decibel-meter-title" className="text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">
             Measure Ambient Noise
           </h2>
 

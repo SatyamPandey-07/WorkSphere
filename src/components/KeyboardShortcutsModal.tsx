@@ -11,6 +11,7 @@ const SHORTCUTS = [
 ];
 
 export default function KeyboardShortcutsModal() {
+export function KeyboardShortcutsModal() {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {

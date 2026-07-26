@@ -87,9 +87,23 @@ describe("ReadAloudButton UI component", () => {
     expect(
       screen.getByRole("button", { name: /Read message aloud/i }),
     ).toBeInTheDocument();
+
     expect(
       screen.getByRole("combobox", { name: /Playback speed/i }),
     ).toBeInTheDocument();
+  });
+
+  it("does not render tooltip on touch devices", () => {
+    Object.defineProperty(window, "ontouchstart", {
+      value: jest.fn(),
+      configurable: true,
+    });
+
+    render(<ReadAloudButton text="Sample text to read" />);
+
+    expect(screen.queryByText("Read aloud")).not.toBeInTheDocument();
+
+    delete (window as Partial<Window>).ontouchstart;
   });
 
   it("includes 1x, 1.25x, and 1.5x speed options in the dropdown", () => {

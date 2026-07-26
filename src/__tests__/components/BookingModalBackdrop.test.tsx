@@ -8,6 +8,8 @@ const mockVenue = {
   category: "Coworking",
   address: "100 Tech Blvd",
   price: 25,
+  lat: 0,
+  lng: 0,
 };
 
 describe("BookingModal Backdrop & Input Propagation (#1749)", () => {

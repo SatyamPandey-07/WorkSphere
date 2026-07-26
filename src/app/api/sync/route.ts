@@ -59,19 +59,20 @@ export async function POST(req: NextRequest) {
       for (const checkIn of checkIns) {
         if (!checkIn.venueId || !checkIn.timestamp) continue;
 
+        const now = new Date();
         await prisma.checkIn.upsert({
           where: {
             userId_venueId: { userId, venueId: checkIn.venueId },
           },
           update: {
-            createdAt: new Date(checkIn.timestamp),
-            expiresAt: new Date(checkIn.timestamp + 4 * 60 * 60 * 1000),
+            createdAt: now,
+            expiresAt: new Date(now.getTime() + 4 * 60 * 60 * 1000),
           },
           create: {
             userId,
             venueId: checkIn.venueId,
-            createdAt: new Date(checkIn.timestamp),
-            expiresAt: new Date(checkIn.timestamp + 4 * 60 * 60 * 1000),
+            createdAt: now,
+            expiresAt: new Date(now.getTime() + 4 * 60 * 60 * 1000),
           },
         });
       }

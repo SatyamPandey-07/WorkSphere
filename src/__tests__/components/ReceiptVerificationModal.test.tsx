@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom";
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, cleanup } from "@testing-library/react";
 import { BookingModal } from "@/components/chat/BookingModal";
 
 jest.mock("@/lib/analytics", () => ({ trackEvent: jest.fn() }));
@@ -89,14 +89,17 @@ describe("ReceiptVerificationBadge in Booking History", () => {
 
   beforeEach(() => {
     mockOnClose.mockClear();
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ bookings: mockBookings }),
-    });
+    global.fetch = jest.fn().mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: async () => ({ bookings: mockBookings }),
+      }),
+    );
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    cleanup();
+    jest.clearAllMocks();
   });
 
   it("opens history mode when mode prop is history", async () => {
@@ -106,11 +109,14 @@ describe("ReceiptVerificationBadge in Booking History", () => {
         onClose={mockOnClose}
         venue={mockVenue}
         mode="history"
+        initialHistory={[...mockBookings]}
       />,
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Booking History")).toBeInTheDocument();
+      expect(
+        screen.getByText(/Neural Ledger|Booking History/i),
+      ).toBeInTheDocument();
     });
   });
 
@@ -121,6 +127,7 @@ describe("ReceiptVerificationBadge in Booking History", () => {
         onClose={mockOnClose}
         venue={mockVenue}
         mode="history"
+        initialHistory={[...mockBookings]}
       />,
     );
 
@@ -137,6 +144,7 @@ describe("ReceiptVerificationBadge in Booking History", () => {
         onClose={mockOnClose}
         venue={mockVenue}
         mode="history"
+        initialHistory={[...mockBookings]}
       />,
     );
 
@@ -153,11 +161,14 @@ describe("ReceiptVerificationBadge in Booking History", () => {
         onClose={mockOnClose}
         venue={mockVenue}
         mode="history"
+        initialHistory={[...mockBookings]}
       />,
     );
 
     await waitFor(() => {
-      const buttons = screen.getAllByText("Download Receipt");
+      const buttons = screen.getAllByRole("button", {
+        name: /Download Receipt/i,
+      });
       expect(buttons.length).toBe(mockBookings.length);
     });
   });

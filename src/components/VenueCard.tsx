@@ -28,6 +28,7 @@ import {
   Bike,
   Shield,
   PawPrint,
+  BadgeCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
@@ -507,7 +508,10 @@ export function VenueCard({
         <div className="flex items-start justify-between mb-2 mt-4">
           <div className="flex-1">
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-              {venue.name}
+              <span>{venue.name}</span>
+              <span title="Verified Host">
+                <BadgeCheck className="w-4 h-4 text-green-500 shrink-0" />
+              </span>
               {isLoading && (
                 <Loader2 className="w-3 h-3 animate-spin accent-text shrink-0" />
               )}

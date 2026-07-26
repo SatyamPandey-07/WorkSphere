@@ -63,6 +63,114 @@ describe("Shamir's Secret Sharing (2-of-3)", () => {
     expect(decrypted.x).toBe(1);
     expect(decrypted.y).toEqual(share.y);
   });
+
+  it("recovers original secret with reversed share order (2, 1)", () => {
+    const secret = new Uint8Array([128, 64, 32, 16, 8]);
+    const [s1, s2] = splitSecret(secret);
+
+    const recovered = recoverSecret(s2, s1);
+    expect(recovered).toEqual(secret);
+  });
+
+  it("works for a single-byte secret", () => {
+    const secret = new Uint8Array([0xff]);
+    const [s1, _s2, s3] = splitSecret(secret);
+    expect(recoverSecret(s1, s3)).toEqual(secret);
+  });
+
+  it("works for an all-zeros secret", () => {
+    const secret = new Uint8Array(16);
+    const [s1, s2] = splitSecret(secret);
+    expect(recoverSecret(s1, s2)).toEqual(secret);
+  });
+
+  it("works for large (256 byte) secrets", () => {
+    const secret = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) secret[i] = i;
+    const [s1, _s2, s3] = splitSecret(secret);
+    expect(recoverSecret(s1, s3)).toEqual(secret);
+  });
+
+  it("assigns correct x coordinates (1, 2, 3)", () => {
+    const secret = new Uint8Array([42, 99]);
+    const shares = splitSecret(secret);
+    expect(shares[0].x).toBe(1);
+    expect(shares[1].x).toBe(2);
+    expect(shares[2].x).toBe(3);
+  });
+
+  it("throws when shares have the same x coordinate", () => {
+    const secret = new Uint8Array([1, 2, 3]);
+    const [s1] = splitSecret(secret);
+    const dup = { x: s1.x, y: new Uint8Array(s1.y) };
+
+    expect(() => recoverSecret(s1, dup)).toThrow(
+      "Shares must have different X coordinates",
+    );
+  });
+
+  it("throws when share lengths differ", () => {
+    const share1 = { x: 1, y: new Uint8Array([1, 2, 3]) };
+    const share2 = { x: 2, y: new Uint8Array([4, 5]) };
+
+    expect(() => recoverSecret(share1, share2)).toThrow(
+      "Share lengths must match",
+    );
+  });
+});
+
+describe("AES-GCM share encryption edge cases", () => {
+  it("decryption with wrong key fails", async () => {
+    const secret = new Uint8Array([99, 88, 77]);
+    const [share] = splitSecret(secret);
+    const rightKey = await globalThis.crypto.subtle.generateKey(
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"],
+    );
+    const wrongKey = await globalThis.crypto.subtle.generateKey(
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"],
+    );
+
+    const encrypted = await encryptShare(share, rightKey);
+    await expect(decryptShare(encrypted, wrongKey)).rejects.toThrow();
+  });
+
+  it("encrypted share fields are base64 strings", async () => {
+    const secret = new Uint8Array([1, 2, 3]);
+    const [share] = splitSecret(secret);
+    const key = await globalThis.crypto.subtle.generateKey(
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"],
+    );
+
+    const enc = await encryptShare(share, key);
+    const b64Re = /^[A-Za-z0-9+/=]+$/;
+    expect(enc.iv).toMatch(b64Re);
+    expect(enc.ciphertext).toMatch(b64Re);
+  });
+
+  it("full round-trip: split → encrypt → decrypt → recover", async () => {
+    const key = await globalThis.crypto.subtle.generateKey(
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"],
+    );
+    const secret = new Uint8Array([5, 10, 15, 20, 25]);
+    const [s1, s2, _s3] = splitSecret(secret);
+
+    const enc1 = await encryptShare(s1, key);
+    const enc2 = await encryptShare(s2, key);
+
+    const dec1 = await decryptShare(enc1, key);
+    const dec2 = await decryptShare(enc2, key);
+
+    const recovered = recoverSecret(dec1, dec2);
+    expect(recovered).toEqual(secret);
+  });
 });
 
 describe("Emergency kit QR export (#1556)", () => {
@@ -139,5 +247,19 @@ describe("Emergency kit QR export (#1556)", () => {
     const header = Buffer.from(pdfBytes.slice(0, 5)).toString("utf-8");
     expect(header).toBe("%PDF-");
     expect(pdfBytes.length).toBeGreaterThan(100);
+  });
+
+  it("label is optional in emergency kit payload", async () => {
+    const key = await globalThis.crypto.subtle.generateKey(
+      { name: "AES-GCM", length: 256 },
+      true,
+      ["encrypt", "decrypt"],
+    );
+    const share = { x: 1, y: new Uint8Array([5, 10, 15]) };
+    const encrypted = await encryptShare(share, key);
+
+    const payload = buildEmergencyKitPayload(encrypted);
+    expect(payload.label).toBeUndefined();
+    expect(new Date(payload.createdAt).getTime()).not.toBeNaN();
   });
 });

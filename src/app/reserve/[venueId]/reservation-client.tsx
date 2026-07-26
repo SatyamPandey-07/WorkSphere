@@ -371,6 +371,10 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                 seats={seats}
                 selectedSeat={selectedSeat}
                 onSelectSeat={(id) => {
+                  if (id === null) {
+                    setSelectedSeat(null);
+                    return;
+                  }
                   const seat = seats.find((s) => s.id === id);
                   if (seat && seat.available) {
                     setSelectedSeat(id);

@@ -298,3 +298,29 @@ export async function getPerformanceSummary(): Promise<PerformanceSummary> {
 
   return buildSummaryFromSamples([...memSamples]);
 }
+
+// ─── WebGL Cloud FPS Telemetry (Issue #1548) ─────────────────────────────────
+
+export interface FpsTelemetryData {
+  fps: number;
+  frameTimeMs: number;
+  raymarchSteps: number;
+  timestamp: number;
+}
+
+export function logFpsTelemetry(data: FpsTelemetryData) {
+  // Log locally in development
+  if (process.env.NODE_ENV === "development") {
+    console.debug(
+      `[Telemetry] FPS: ${data.fps.toFixed(1)} | Frame Time: ${data.frameTimeMs.toFixed(2)}ms | Steps: ${data.raymarchSteps}`,
+    );
+  }
+
+  // Push to global telemetry queue if available
+  if (typeof window !== "undefined" && (window as any).WorkSphereTelemetry) {
+    (window as any).WorkSphereTelemetry.track(
+      "cloud_renderer_performance",
+      data,
+    );
+  }
+}

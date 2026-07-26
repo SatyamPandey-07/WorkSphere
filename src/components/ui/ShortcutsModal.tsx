@@ -10,6 +10,19 @@ interface ShortcutsModalProps {
 }
 
 export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -29,6 +42,10 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 12 }}
             transition={{ type: "spring", duration: 0.4 }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shortcuts-modal-title"
+            aria-describedby="shortcuts-modal-description"
             className="relative w-full max-w-lg overflow-hidden rounded-3xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-2xl p-6 z-10 text-zinc-900 dark:text-zinc-50"
           >
             {/* Header */}
@@ -38,8 +55,8 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
                   <Keyboard className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold">Keyboard Shortcuts</h2>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  <h2 id="shortcuts-modal-title" className="text-lg font-bold">Keyboard Shortcuts</h2>
+                  <p id="shortcuts-modal-description" className="text-xs text-zinc-500 dark:text-zinc-400">
                     Use these hotkeys to navigate WorkSphere faster
                   </p>
                 </div>

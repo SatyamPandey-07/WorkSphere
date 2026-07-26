@@ -68,7 +68,7 @@
     "three": "^0.185.1",
     "twilio": "^6.0.2",
     "web-push": "^3.6.7",
-    "xml-crypto": "^3.2.0",
+    "xml-crypto": "^6.1.2",
     "y-partykit": "^0.0.33",
     "y-protocols": "^1.0.7",
     "yjs": "^13.6.31",

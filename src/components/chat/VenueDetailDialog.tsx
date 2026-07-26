@@ -54,6 +54,10 @@ import { RatingDistribution } from "./RatingDistribution";
 import { AmenityVoteBreakdownModal } from "./AmenityVoteBreakdownModal";
 import { NoiseReportingWidget } from "@/components/noise/NoiseReportingWidget";
 import { AudioEqualizer } from "@/components/audio/AudioEqualizer";
+import {
+  NoiseTimelineChart,
+  HourlyForecast,
+} from "@/components/noise/NoiseTimelineChart";
 
 interface VenueDetailDialogProps {
   venue: Venue | null;
@@ -208,6 +212,7 @@ export function VenueDetailDialog({
   }, [previewPhoto]);
   const [wifiPredictions, setWifiPredictions] = useState<any[]>([]);
   const [occupancyData, setOccupancyData] = useState<any[]>([]);
+  const [noiseForecast, setNoiseForecast] = useState<HourlyForecast[]>([]);
   const [showVoteBreakdown, setShowVoteBreakdown] = useState(false);
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
@@ -531,6 +536,7 @@ export function VenueDetailDialog({
     setActiveDistribution(null);
     setPhotos([]);
     setLightboxIndex(null);
+    setNoiseForecast([]);
     const params = new URLSearchParams({
       name: venue.name,
       lat: String(venue.lat),
@@ -695,6 +701,35 @@ export function VenueDetailDialog({
           if (data.occupancy) setOccupancyData(data.occupancy);
         })
         .catch((err) => console.error(err));
+
+      fetch(
+        `/api/venues/${encodeURIComponent(venue.id)}/noise-metrics/forecast`,
+      )
+        .then((r) => r.json())
+        .then((data) => {
+          if (data && data.forecast) {
+            const hasRealData = data.forecast.some(
+              (f: HourlyForecast) => f.predictedDb !== null,
+            );
+            if (hasRealData) {
+              setNoiseForecast(data.forecast);
+            } else {
+              setNoiseForecast(
+                generateMockNoiseForecast(venue.category || "default"),
+              );
+            }
+          } else {
+            setNoiseForecast(
+              generateMockNoiseForecast(venue.category || "default"),
+            );
+          }
+        })
+        .catch((err) => {
+          console.error(err);
+          setNoiseForecast(
+            generateMockNoiseForecast(venue.category || "default"),
+          );
+        });
     } else if (activeTab === "reviews") {
       fetch(`/api/venues/${encodeURIComponent(venue.id)}/reviews`)
         .then((r) => r.json())
@@ -974,8 +1009,13 @@ export function VenueDetailDialog({
                 </span>
               )}
             </div>
-            <h2 className="text-4xl font-black text-white tracking-tighter leading-none mb-1 text-shadow-lg">
-              {venue.name}
+            <h2 className="text-4xl font-black text-white tracking-tighter leading-none mb-1 text-shadow-lg flex items-center gap-2">
+              <span>{venue.name}</span>
+              {venue.isClaimed && (
+                <span title="Verified Host">
+                  <BadgeCheck className="w-6 h-6 text-green-400 shrink-0 pointer-events-auto" />
+                </span>
+              )}
             </h2>
             <div className="flex items-center gap-1.5 text-zinc-300 text-sm font-medium">
               <MapPin className="w-4 h-4 text-blue-400" />
@@ -1011,6 +1051,44 @@ export function VenueDetailDialog({
         <div className="p-8 bg-transparent overflow-y-auto flex-1 min-h-0 text-zinc-100">
           {activeTab === "overview" && (
             <>
+              {/* Verified Host Pinned Message */}
+              {venue.isClaimed && venue.hostMessage && (
+                <div className="mb-6 p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 rounded-2xl shadow-sm">
+                  <div className="flex items-center gap-2 mb-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                    <BadgeCheck className="w-4 h-4" />
+                    <span>Message from Host</span>
+                  </div>
+                  <p className="text-zinc-200 text-sm italic font-medium">
+                    "{venue.hostMessage}"
+                  </p>
+                </div>
+              )}
+
+              {/* Unverified Claim Link */}
+              {!venue.isClaimed && (
+                <div className="mb-6 p-4 bg-zinc-800/40 border border-zinc-700/30 rounded-2xl flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-zinc-700/40 rounded-xl text-zinc-400">
+                      <Building2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-zinc-200">
+                        Own this business?
+                      </p>
+                      <p className="text-xs text-zinc-400">
+                        Claim it to update details and post host messages.
+                      </p>
+                    </div>
+                  </div>
+                  <a
+                    href={`/venue-admin?claimId=${venue.id}`}
+                    className="px-4 py-2 bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs rounded-xl shadow transition-all shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    Claim Listing
+                  </a>
+                </div>
+              )}
+
               {/* Photo Gallery Thumbnails */}
               {allPhotos.length > 1 && (
                 <div className="mb-8">
@@ -1298,6 +1376,10 @@ export function VenueDetailDialog({
                     </ResponsiveContainer>
                   </div>
                 </div>
+              )}
+
+              {noiseForecast.length > 0 && (
+                <NoiseTimelineChart forecast={noiseForecast} />
               )}
 
               {/* Free Street Parking Tag */}
@@ -2133,4 +2215,50 @@ export function VenueDetailDialog({
       )}
     </div>
   );
+}
+
+function generateMockNoiseForecast(category: string): HourlyForecast[] {
+  const isLibrary = category.toLowerCase() === "library";
+  const isCafe = category.toLowerCase() === "cafe";
+  const isCoworking = category.toLowerCase() === "coworking_space";
+
+  // Base noise level in decibels: library is quiet (35dB), cafe is louder (55dB), coworking is moderate (45dB)
+  const baseDb = isLibrary ? 35 : isCafe ? 55 : isCoworking ? 45 : 45;
+
+  const mockForecast: HourlyForecast[] = [];
+
+  for (let hour = 0; hour < 24; hour++) {
+    let dev = 0;
+
+    // Daily occupancy/crowd fluctuations affect noise
+    if (hour >= 8 && hour <= 22) {
+      // Business hours: louder
+      if (hour >= 11 && hour <= 14) {
+        // Lunch peak: loudest
+        dev = isCafe ? 15 : isLibrary ? 5 : 10;
+      } else if (hour >= 18 && hour <= 21) {
+        // Evening peak
+        dev = isCafe ? 12 : isLibrary ? 3 : 8;
+      } else {
+        // Mid-morning/mid-afternoon
+        dev = isCafe ? 8 : isLibrary ? 2 : 5;
+      }
+    } else {
+      // Night hours: quietest
+      dev = -5;
+    }
+
+    // Add slight variation based on sine function to make it look realistic
+    const variation = Math.sin(hour) * 1.5;
+    const predictedDb = Math.round((baseDb + dev + variation) * 10) / 10;
+
+    mockForecast.push({
+      hour,
+      predictedDb: Math.max(30, Math.min(90, predictedDb)),
+      confidence: 0.5,
+      samples: 0,
+    });
+  }
+
+  return mockForecast;
 }

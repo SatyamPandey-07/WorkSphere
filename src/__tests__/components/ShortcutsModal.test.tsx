@@ -51,4 +51,22 @@ describe("ShortcutsModal", () => {
 
     expect(mockOnClose).toHaveBeenCalledTimes(1);
   });
+
+  it("calls onClose when Escape key is pressed", () => {
+    render(<ShortcutsModal isOpen={true} onClose={mockOnClose} />);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders with correct ARIA accessibility attributes", () => {
+    render(<ShortcutsModal isOpen={true} onClose={mockOnClose} />);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveAttribute("aria-labelledby", "shortcuts-modal-title");
+    expect(dialog).toHaveAttribute("aria-describedby", "shortcuts-modal-description");
+  });
 });

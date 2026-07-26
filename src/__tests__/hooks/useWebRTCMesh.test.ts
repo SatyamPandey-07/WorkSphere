@@ -1,5 +1,6 @@
 import { renderHook, act } from "@testing-library/react";
 import { useWebRTCMesh } from "@/hooks/useWebRTCMesh";
+import { adaptVideoBitrate } from "@/lib/screenShareBitrate";
 
 // Mock Clerk
 jest.mock("@clerk/nextjs", () => ({
@@ -73,6 +74,26 @@ class MockAudioContext {
 (global as any).AudioContext = MockAudioContext;
 (global as any).webkitAudioContext = MockAudioContext;
 
+class MockRTCPeerConnection {
+  onicecandidate: any = null;
+  ontrack: any = null;
+  oniceconnectionstatechange: any = null;
+  onnegotiationneeded: any = null;
+  iceConnectionState = "connected";
+  signalingState = "stable";
+
+  getSenders = jest.fn().mockReturnValue([]);
+  getStats = jest.fn().mockResolvedValue(new Map());
+  addTrack = jest.fn();
+  close = jest.fn();
+  setLocalDescription = jest.fn().mockResolvedValue(undefined);
+  setRemoteDescription = jest.fn().mockResolvedValue(undefined);
+  createOffer = jest.fn().mockResolvedValue({ type: "offer", sdp: "sdp" });
+  createAnswer = jest.fn().mockResolvedValue({ type: "answer", sdp: "sdp" });
+  addIceCandidate = jest.fn().mockResolvedValue(undefined);
+}
+(global as any).RTCPeerConnection = MockRTCPeerConnection;
+
 describe("useWebRTCMesh Bandwidth Probing", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -145,6 +166,42 @@ describe("useWebRTCMesh Bandwidth Probing", () => {
     expect(result.current.networkQuality).toBe("good");
     expect(mockApplyConstraints).toHaveBeenCalledWith({ sampleRate: 48000 });
   });
+
+  it("periodically triggers adaptVideoBitrate and handles low quality transport tiers", async () => {
+    (adaptVideoBitrate as jest.Mock).mockResolvedValue({
+      maxBitrate: 400_000,
+      audioMaxBitrate: 16_000,
+      label: "low",
+    });
+
+    const { result } = renderHook(() =>
+      useWebRTCMesh({ roomId: "test-room", userId: "user-1" }),
+    );
+
+    await act(async () => {
+      await result.current.toggleAudio();
+    });
+
+    // Simulate remote peer joining
+    act(() => {
+      mockSocketOnMessage({
+        data: JSON.stringify({
+          type: "webrtc-signal",
+          kind: "peer-join",
+          from: "user-2",
+        }),
+      });
+    });
+
+    // Advance 4000ms to trigger bitrate timer
+    await act(async () => {
+      jest.advanceTimersByTime(4000);
+    });
+
+    // Expect network quality to transition to poor when transport tier is low
+    expect(result.current.networkQuality).toBe("poor");
+    expect(mockApplyConstraints).toHaveBeenCalledWith({ sampleRate: 16000 });
+  });
 });
 
 describe("useWebRTCMesh Audio Level EMA Smoothing & Node Cleanup", () => {
@@ -206,5 +263,76 @@ describe("useWebRTCMesh Audio Level EMA Smoothing & Node Cleanup", () => {
 
     // Verify audio nodes were disconnected on unmount
     expect(localDisconnect).toHaveBeenCalled();
+  });
+});
+
+describe("useWebRTCMesh Network Switch & Cleanup", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("cleans up stale ICE listeners and peer connections on network switch (peer-join)", async () => {
+    const pcInstances: MockRTCPeerConnection[] = [];
+    (global as any).RTCPeerConnection = class extends MockRTCPeerConnection {
+      constructor(_config?: any) {
+        super();
+        pcInstances.push(this);
+      }
+    };
+
+    renderHook(() => useWebRTCMesh({ roomId: "test-room", userId: "user-1" }));
+
+    // 1. Remote peer joins for the first time
+    act(() => {
+      mockSocketOnMessage({
+        data: JSON.stringify({
+          type: "webrtc-signal",
+          kind: "peer-join",
+          from: "user-2",
+        }),
+      });
+    });
+
+    expect(pcInstances).toHaveLength(1);
+    const firstPc = pcInstances[0];
+    expect(firstPc.onicecandidate).toBeDefined();
+    expect(firstPc.onicecandidate).not.toBeNull();
+
+    // 2. Network switch: remote peer reconnects and sends peer-join again
+    act(() => {
+      mockSocketOnMessage({
+        data: JSON.stringify({
+          type: "webrtc-signal",
+          kind: "peer-join",
+          from: "user-2",
+        }),
+      });
+    });
+
+    // Stale listener should be removed and connection closed
+    expect(firstPc.onicecandidate).toBeNull();
+    expect(firstPc.close).toHaveBeenCalledTimes(1);
+
+    // A new peer connection should be created
+    expect(pcInstances).toHaveLength(2);
+    const secondPc = pcInstances[1];
+    expect(secondPc.onicecandidate).not.toBeNull();
+    expect(secondPc).not.toBe(firstPc);
+
+    // 3. Multiple reconnect cycles
+    act(() => {
+      mockSocketOnMessage({
+        data: JSON.stringify({
+          type: "webrtc-signal",
+          kind: "peer-join",
+          from: "user-2",
+        }),
+      });
+    });
+
+    expect(secondPc.onicecandidate).toBeNull();
+    expect(secondPc.close).toHaveBeenCalledTimes(1);
+    expect(pcInstances).toHaveLength(3);
+    expect(pcInstances[2].onicecandidate).not.toBeNull();
   });
 });

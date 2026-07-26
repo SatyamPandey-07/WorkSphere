@@ -55,6 +55,33 @@ import { getDB, TAG_STORE_NAME, MAX_SYNC_RETRIES } from "./offlineStore";
 
 export const TAG_SYNC_LOCK_NAME = "worksphere:favorite-tags-sync-lock";
 export const TAG_SYNC_CHANNEL_NAME = "worksphere:favorite-tags-sync-channel";
+export const TAG_STATE_HASH_KEY = "worksphere:favorite-tags-state-hash";
+
+export async function computeFavoriteTagStateHash(): Promise<string> {
+  const mutations = await getQueuedTagMutations();
+  const serialized = mutations
+    .map(
+      (m) =>
+        `${m.id ?? ""}:${m.tagId}:${m.operation}:${JSON.stringify(m.data)}`,
+    )
+    .join("|");
+
+  let hash = 5381;
+  for (let i = 0; i < serialized.length; i++) {
+    hash = (hash * 33) ^ serialized.charCodeAt(i);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+export async function updateFavoriteTagStateHash(): Promise<void> {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  try {
+    const hash = await computeFavoriteTagStateHash();
+    window.localStorage.setItem(TAG_STATE_HASH_KEY, hash);
+  } catch (err) {
+    console.warn("Failed to update favorite tags state hash:", err);
+  }
+}
 
 export interface TagSyncEventPayload {
   type: "TAG_MUTATION" | "TAG_DEQUEUED" | "TAG_SYNC_COMPLETE";
@@ -180,6 +207,8 @@ export async function queueFavoriteTagMutation(
         data,
         timestamp: Date.now(),
       });
+
+      await updateFavoriteTagStateHash();
     } catch (err) {
       console.error("Failed to queue offline tag mutation:", err);
     }
@@ -223,6 +252,8 @@ export async function dequeueTagMutation(id: number): Promise<void> {
         type: "TAG_DEQUEUED",
         timestamp: Date.now(),
       });
+
+      await updateFavoriteTagStateHash();
     } catch (err) {
       console.error("Failed to dequeue tag mutation:", err);
     }
@@ -377,10 +408,23 @@ export async function processTagMutationsQueue(): Promise<void> {
         type: "TAG_SYNC_COMPLETE",
         timestamp: Date.now(),
       });
+
+      await updateFavoriteTagStateHash();
     } catch (e) {
       console.error("[Tag Sync] processQueue failed:", e);
     } finally {
       isProcessing = false;
+    }
+  });
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", async (event) => {
+    if (event.key === TAG_STATE_HASH_KEY && event.newValue) {
+      const currentHash = await computeFavoriteTagStateHash();
+      if (currentHash !== event.newValue) {
+        processTagMutationsQueue();
+      }
     }
   });
 }

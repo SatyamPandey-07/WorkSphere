@@ -10,6 +10,8 @@ import {
   subscribeTagSyncChannel,
   TAG_SYNC_LOCK_NAME,
   TAG_SYNC_CHANNEL_NAME,
+  TAG_STATE_HASH_KEY,
+  computeFavoriteTagStateHash,
 } from "@/lib/favoriteTagSync";
 import { prisma } from "@/lib/prisma";
 
@@ -287,6 +289,58 @@ describe("Client-side Offline Sync", () => {
         data: { name: "Locked Tag" },
         timestamp: Date.now(),
       });
+    });
+  });
+
+  describe("Multi-Tab Storage Event Sync Loop Prevention (#1389)", () => {
+    beforeEach(() => {
+      window.localStorage.clear();
+      jest.clearAllMocks();
+    });
+
+    it("ignores storage mutations matching the current tab's state hash", async () => {
+      // 1. Queue a mutation so we have a non-empty state
+      await queueFavoriteTagMutation("tag-loop-1", "CREATE", {
+        name: "Loop Tag",
+      });
+      const currentHash = await computeFavoriteTagStateHash();
+
+      // Mock fetch - if sync is triggered, fetch would be called
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+
+      // 2. Simulate storage event from another tab sending the SAME hash
+      const storageEvent = new StorageEvent("storage", {
+        key: TAG_STATE_HASH_KEY,
+        newValue: currentHash,
+      });
+      window.dispatchEvent(storageEvent);
+
+      // Allow async events to propagate
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it("triggers sync when receiving a storage event with a different state hash", async () => {
+      // Mock fetch to simulate successful sync
+      global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+
+      // Queue a mutation so there is something in the queue to process
+      await queueFavoriteTagMutation("tag-loop-2", "CREATE", {
+        name: "New Loop Tag",
+      });
+      jest.clearAllMocks(); // Clear fetch calls from queueing phase
+
+      // Simulate storage event from another tab with a DIFFERENT hash
+      const storageEvent = new StorageEvent("storage", {
+        key: TAG_STATE_HASH_KEY,
+        newValue: "some-different-hash-abc",
+      });
+      window.dispatchEvent(storageEvent);
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
   });
 });

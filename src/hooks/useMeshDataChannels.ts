@@ -173,6 +173,7 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
       if (!userId || msg.from === userId) return;
 
       if (msg.kind === "peer-join") {
+        cleanupPeer(msg.from);
         ensurePeer(msg.from, true);
         return;
       }
@@ -230,6 +231,10 @@ export function useMeshDataChannels({ roomId, userId, onData }: Options) {
     query: token ? { token } : undefined,
     onOpen() {
       if (userId) {
+        const peerIds = [...peersRef.current.keys()];
+        for (const id of peerIds) {
+          cleanupPeer(id);
+        }
         sendSignal({ kind: "peer-join" });
       }
     },

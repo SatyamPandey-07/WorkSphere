@@ -296,7 +296,7 @@ export function MessageRenderer({
         lastIndex = regex.lastIndex;
         continue;
       }
-      props = result.data;
+      props = result.data as Record<string, any>;
     }
 
     let ComponentToRender = null;

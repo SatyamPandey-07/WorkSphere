@@ -17,6 +17,8 @@ interface AccessibleMarkerProps {
     isCheckedIn?: boolean;
     isConnected?: boolean;
   };
+  zIndexOffset?: number;
+  onClick?: () => void;
 }
 
 export const AccessibleMarker = memo(
@@ -27,7 +29,11 @@ export const AccessibleMarker = memo(
     category,
     isDestination,
     children,
+    telemetryData: _telemetryData,
+    zIndexOffset = 0,
+    onClick,
   }: AccessibleMarkerProps) {
+    console.count(`Rendered marker: ${name}`);
     const markerRef = useRef<LeafletMarker | null>(null);
 
     const handleKeyDown = useCallback((e: L.LeafletKeyboardEvent) => {
@@ -93,7 +99,9 @@ export const AccessibleMarker = memo(
         position={position}
         icon={icon}
         keyboard={true}
+        zIndexOffset={zIndexOffset}
         eventHandlers={{
+          click: onClick,
           keydown: handleKeyDown,
           add: handleAdd,
           popupopen: handlePopupOpen,

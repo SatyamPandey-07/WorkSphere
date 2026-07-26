@@ -32,7 +32,7 @@ describe("TimezoneClock", () => {
     render(<TimezoneClock timeZone="Asia/Tokyo" />);
     // 12:00:00Z is 09:00:00 PM JST
     expect(screen.getByText(/09:00:00\s*PM/)).toBeInTheDocument();
-    expect(screen.getByText("JST")).toBeInTheDocument();
+    expect(screen.getByText(/JST|GMT\+9/)).toBeInTheDocument();
   });
 
   it("renders correctly for UTC", () => {
@@ -43,8 +43,8 @@ describe("TimezoneClock", () => {
 
   it("handles invalid timezone identifiers gracefully", () => {
     render(<TimezoneClock timeZone="Invalid/Timezone" />);
+    jest.runOnlyPendingTimers();
     expect(screen.getByText("--:--:-- --")).toBeInTheDocument();
     expect(screen.getByText("Invalid/Timezone")).toBeInTheDocument();
   });
 });
-

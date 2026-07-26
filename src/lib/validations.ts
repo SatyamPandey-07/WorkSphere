@@ -209,6 +209,25 @@ export type Location = z.infer<typeof locationSchema>;
 export type CreateFolder = z.infer<typeof createFolderSchema>;
 export type UpdateFolder = z.infer<typeof updateFolderSchema>;
 
+// Short Link schemas
+export const createShortLinkSchema = z.object({
+  customCode: z
+    .string()
+    .trim()
+    .min(3, "Custom code must be at least 3 characters")
+    .max(30, "Custom code must be 30 characters or less")
+    .regex(
+      /^[a-zA-Z0-9-_]+$/,
+      "Custom code can only contain alphanumeric characters, hyphens, and underscores",
+    )
+    .optional()
+    .nullable()
+    .or(z.literal("")),
+  expiration: z.enum(["24h", "7d", "never"]),
+});
+
+export type CreateShortLink = z.infer<typeof createShortLinkSchema>;
+
 // XR Anchor schemas
 export const xrAnchorCreateSchema = z.object({
   venueId: z.string().min(1),

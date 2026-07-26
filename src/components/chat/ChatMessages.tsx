@@ -78,6 +78,9 @@ export interface Venue {
   hasAncHeadsetRental?: boolean;
   outletLocations?: string[];
   openingHours?: string;
+  isClaimed?: boolean;
+  ownerId?: string | null;
+  hostMessage?: string | null;
 }
 
 export interface Message {

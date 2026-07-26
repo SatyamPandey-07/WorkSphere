@@ -974,8 +974,11 @@ export function VenueDetailDialog({
                 </span>
               )}
             </div>
-            <h2 className="text-4xl font-black text-white tracking-tighter leading-none mb-1 text-shadow-lg">
-              {venue.name}
+            <h2 className="text-4xl font-black text-white tracking-tighter leading-none mb-1 text-shadow-lg flex items-center gap-2">
+              <span>{venue.name}</span>
+              {venue.isClaimed && (
+                <BadgeCheck className="w-6 h-6 text-green-400 shrink-0 pointer-events-auto" title="Verified Host" />
+              )}
             </h2>
             <div className="flex items-center gap-1.5 text-zinc-300 text-sm font-medium">
               <MapPin className="w-4 h-4 text-blue-400" />
@@ -1011,6 +1014,40 @@ export function VenueDetailDialog({
         <div className="p-8 bg-transparent overflow-y-auto flex-1 min-h-0 text-zinc-100">
           {activeTab === "overview" && (
             <>
+              {/* Verified Host Pinned Message */}
+              {venue.isClaimed && venue.hostMessage && (
+                <div className="mb-6 p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 rounded-2xl shadow-sm">
+                  <div className="flex items-center gap-2 mb-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+                    <BadgeCheck className="w-4 h-4" />
+                    <span>Message from Host</span>
+                  </div>
+                  <p className="text-zinc-200 text-sm italic font-medium">
+                    "{venue.hostMessage}"
+                  </p>
+                </div>
+              )}
+
+              {/* Unverified Claim Link */}
+              {!venue.isClaimed && (
+                <div className="mb-6 p-4 bg-zinc-800/40 border border-zinc-700/30 rounded-2xl flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-zinc-700/40 rounded-xl text-zinc-400">
+                      <Building2 className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-zinc-200">Own this business?</p>
+                      <p className="text-xs text-zinc-400">Claim it to update details and post host messages.</p>
+                    </div>
+                  </div>
+                  <a
+                    href={`/venue-admin?claimId=${venue.id}`}
+                    className="px-4 py-2 bg-zinc-100 hover:bg-white text-zinc-950 font-bold text-xs rounded-xl shadow transition-all shrink-0 hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    Claim Listing
+                  </a>
+                </div>
+              )}
+
               {/* Photo Gallery Thumbnails */}
               {allPhotos.length > 1 && (
                 <div className="mb-8">

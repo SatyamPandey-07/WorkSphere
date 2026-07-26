@@ -132,6 +132,9 @@ model Venue {
   maxCapacity         Int                 @default(50)
   checkIns            CheckIn[]
   xrAnchors           XRAnchor[]
+  isClaimed           Boolean             @default(false)
+  ownerId             String?
+  hostMessage         String?
 
   @@index([latitude, longitude])
   @@index([category])

@@ -1,10 +1,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+import { timingSafeEqual } from "crypto";
+
+function verifySharedSecret(req: NextRequest): boolean {
+  const secret = process.env.PARTYKIT_SHARED_SECRET;
+  if (!secret) {
+    console.warn(
+      "PARTYKIT_SHARED_SECRET is not set — rejecting PartyKit auth request",
+    );
+    return false;
+  }
+
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return false;
+  }
+
+  const token = authHeader.slice(7);
+  if (token.length !== secret.length) return false;
+
+  return timingSafeEqual(Buffer.from(token), Buffer.from(secret));
+}
 
 // Internal endpoint for PartyKit to verify user roles.
-// In production, you should secure this with a shared secret to prevent abuse.
+// Secured with PARTYKIT_SHARED_SECRET to prevent abuse.
 export async function GET(req: NextRequest) {
+  if (!verifySharedSecret(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     req.headers.get("x-real-ip") ??

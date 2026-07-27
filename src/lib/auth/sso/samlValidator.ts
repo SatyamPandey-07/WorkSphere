@@ -26,14 +26,19 @@ export function validateSamlAssertion(
     throw new Error("Invalid SAML: No signature found");
   }
 
+  const normalizedCert = expectedCert
+    .replace(/-----BEGIN CERTIFICATE-----/g, "")
+    .replace(/-----END CERTIFICATE-----/g, "")
+    .replace(/\s+/g, "");
+
   const sig = new SignedXml();
   // Provide the certificate to the verifier
   sig.keyInfoProvider = {
     getKeyInfo: () =>
-      `<X509Data><X509Certificate>${expectedCert}</X509Certificate></X509Data>`,
+      `<X509Data><X509Certificate>${normalizedCert}</X509Certificate></X509Data>`,
     getKey: () =>
       Buffer.from(
-        `-----BEGIN CERTIFICATE-----\n${expectedCert.replace(/(.{64})/g, "$1\n")}\n-----END CERTIFICATE-----`,
+        `-----BEGIN CERTIFICATE-----\n${normalizedCert.replace(/(.{64})/g, "$1\n")}\n-----END CERTIFICATE-----`,
       ),
   };
 

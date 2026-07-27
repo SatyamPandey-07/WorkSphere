@@ -15,6 +15,11 @@ import {
   ArrowLeft,
   Sparkles,
 } from "lucide-react";
+import {
+  parseStructuredHours,
+  DEFAULT_TIMEZONES,
+  DAYS_OF_WEEK,
+} from "@/lib/openingHours";
 
 function VenueAdminContent() {
   const { user, isLoaded, isSignedIn } = useUser();
@@ -37,6 +42,44 @@ function VenueAdminContent() {
   const [editHostMessage, setEditHostMessage] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Structured Hours states
+  const [useStructuredHours, setUseStructuredHours] = useState(false);
+  const [structuredHours, setStructuredHours] = useState<any>({
+    timezone: "UTC",
+    periods: {
+      monday: { open: "09:00", close: "17:00", closed: false },
+      tuesday: { open: "09:00", close: "17:00", closed: false },
+      wednesday: { open: "09:00", close: "17:00", closed: false },
+      thursday: { open: "09:00", close: "17:00", closed: false },
+      friday: { open: "09:00", close: "17:00", closed: false },
+      saturday: { open: "09:00", close: "17:00", closed: true },
+      sunday: { open: "09:00", close: "17:00", closed: true },
+    },
+  });
+
+  const populateVenueHours = (venue: any) => {
+    if (!venue) return;
+    const parsed = parseStructuredHours(venue.openingHours);
+    if (parsed) {
+      setStructuredHours(parsed);
+      setUseStructuredHours(true);
+    } else {
+      setUseStructuredHours(false);
+      setStructuredHours({
+        timezone: "UTC",
+        periods: {
+          monday: { open: "09:00", close: "17:00", closed: false },
+          tuesday: { open: "09:00", close: "17:00", closed: false },
+          wednesday: { open: "09:00", close: "17:00", closed: false },
+          thursday: { open: "09:00", close: "17:00", closed: false },
+          friday: { open: "09:00", close: "17:00", closed: false },
+          saturday: { open: "09:00", close: "17:00", closed: true },
+          sunday: { open: "09:00", close: "17:00", closed: true },
+        },
+      });
+    }
+  };
 
   // Fetch claimed venues
   useEffect(() => {
@@ -65,11 +108,9 @@ function VenueAdminContent() {
 
     async function fetchClaimVenue() {
       try {
-        // Query venue details by ID
         const res = await fetch(`/api/venues/search?id=${claimId}`);
         if (res.ok) {
           const data = await res.json();
-          // The search endpoint might return different formats, extract the single venue
           const venueDetail = data.venues?.[0] || data;
           if (venueDetail && venueDetail.id === claimId) {
             setClaimVenue(venueDetail);
@@ -112,6 +153,7 @@ function VenueAdminContent() {
         setEditAddress(data.venue.address || "");
         setEditHours(data.venue.openingHours || "");
         setEditHostMessage(data.venue.hostMessage || "");
+        populateVenueHours(data.venue);
         setClaimVenue(null);
       } else {
         setErrorMsg(data.error || "Failed to claim business.");
@@ -130,6 +172,26 @@ function VenueAdminContent() {
     setErrorMsg("");
     setSuccessMsg("");
 
+    let finalHours = editHours;
+    if (useStructuredHours) {
+      // Validate that opening time is before closing time for all open days
+      for (const day of DAYS_OF_WEEK) {
+        const period = structuredHours.periods[day];
+        if (period && !period.closed) {
+          const [openH, openM] = period.open.split(":").map(Number);
+          const [closeH, closeM] = period.close.split(":").map(Number);
+          const openMin = openH * 60 + openM;
+          const closeMin = closeH * 60 + closeM;
+          if (openMin >= closeMin) {
+            setErrorMsg(`On ${day.charAt(0).toUpperCase() + day.slice(1)}, the opening time must be before the closing time.`);
+            setUpdating(false);
+            return;
+          }
+        }
+      }
+      finalHours = JSON.stringify(structuredHours);
+    }
+
     try {
       const res = await fetch("/api/venues/managed", {
         method: "PUT",
@@ -138,7 +200,7 @@ function VenueAdminContent() {
           venueId: selectedVenue.id,
           name: editName,
           address: editAddress,
-          openingHours: editHours,
+          openingHours: finalHours,
           hostMessage: editHostMessage,
         }),
       });
@@ -147,6 +209,7 @@ function VenueAdminContent() {
       if (res.ok && data.success) {
         setSuccessMsg("Venue details updated successfully!");
         setSelectedVenue(data.venue);
+        setEditHours(finalHours);
         // Refresh list
         setManagedVenues((prev) =>
           prev.map((v) => (v.id === data.venue.id ? data.venue : v))
@@ -170,7 +233,6 @@ function VenueAdminContent() {
     );
   }
 
-  // Unauthorized page state
   if (!isSignedIn) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white p-4">
@@ -183,7 +245,7 @@ function VenueAdminContent() {
             Please sign in to your owner account to claim businesses or manage your listings.
           </p>
           <SignInButton mode="modal">
-            <button className="w-full py-3.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold text-sm rounded-xl shadow-lg transition-all active:scale-[0.99]">
+            <button className="w-full py-3.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold text-sm rounded-xl shadow-lg transition-all active:scale-[0.999]">
               Sign In to Owner Portal
             </button>
           </SignInButton>
@@ -300,6 +362,7 @@ function VenueAdminContent() {
                         setEditAddress(venue.address || "");
                         setEditHours(venue.openingHours || "");
                         setEditHostMessage(venue.hostMessage || "");
+                        populateVenueHours(venue);
                         setSuccessMsg("");
                         setErrorMsg("");
                       }}
@@ -373,8 +436,36 @@ function VenueAdminContent() {
 
                     <div className="space-y-2">
                       <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                        Opening Hours
+                        Address
                       </label>
+                      <input
+                        type="text"
+                        value={editAddress}
+                        onChange={(e) => setEditAddress(e.target.value)}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Timezone-aware Opening Hours Editor */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-black uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-blue-400" />
+                        <span>Opening Hours</span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={useStructuredHours}
+                          onChange={(e) => setUseStructuredHours(e.target.checked)}
+                          className="rounded border-zinc-800 text-blue-500 focus:ring-blue-500"
+                        />
+                        <span>Use Weekly Scheduler</span>
+                      </label>
+                    </div>
+
+                    {!useStructuredHours ? (
                       <input
                         type="text"
                         value={editHours}
@@ -382,19 +473,83 @@ function VenueAdminContent() {
                         placeholder="e.g. Mon-Fri: 8am - 6pm"
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700"
                       />
-                    </div>
-                  </div>
+                    ) : (
+                      <div className="bg-zinc-950 border border-zinc-850 rounded-2xl p-5 space-y-4 shadow-inner">
+                        {/* Timezone Selector */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-850 pb-4">
+                          <div className="space-y-0.5">
+                            <span className="text-xs font-bold text-zinc-300">Venue Timezone</span>
+                            <p className="text-[10px] text-zinc-500">Calculates local opens based on regional offsets</p>
+                          </div>
+                          <select
+                            value={structuredHours.timezone}
+                            onChange={(e) => setStructuredHours({
+                              ...structuredHours,
+                              timezone: e.target.value,
+                            })}
+                            className="bg-zinc-900 border border-zinc-800 text-xs text-white rounded-xl px-3 py-2 focus:outline-none focus:border-zinc-700 min-w-[200px]"
+                          >
+                            {DEFAULT_TIMEZONES.map((tz) => (
+                              <option key={tz} value={tz}>{tz}</option>
+                            ))}
+                          </select>
+                        </div>
 
-                  <div className="space-y-2">
-                    <label className="block text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                      Address
-                    </label>
-                    <input
-                      type="text"
-                      value={editAddress}
-                      onChange={(e) => setEditAddress(e.target.value)}
-                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-700"
-                    />
+                        {/* Days Grid */}
+                        <div className="space-y-3 pt-2">
+                          {DAYS_OF_WEEK.map((day) => {
+                            const period = structuredHours.periods[day] || { open: "09:00", close: "17:00", closed: false };
+                            return (
+                              <div key={day} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 border-b border-zinc-900 last:border-0">
+                                <span className="text-xs font-bold capitalize text-zinc-300 w-24">{day}</span>
+                                
+                                <div className="flex items-center gap-4 flex-1 justify-end">
+                                  <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={period.closed}
+                                      onChange={(e) => {
+                                        const newPeriods = { ...structuredHours.periods };
+                                        newPeriods[day] = { ...period, closed: e.target.checked };
+                                        setStructuredHours({ ...structuredHours, periods: newPeriods });
+                                      }}
+                                      className="rounded border-zinc-800 text-blue-500 focus:ring-blue-500"
+                                    />
+                                    <span>Closed</span>
+                                  </label>
+
+                                  {!period.closed && (
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="time"
+                                        value={period.open}
+                                        onChange={(e) => {
+                                          const newPeriods = { ...structuredHours.periods };
+                                          newPeriods[day] = { ...period, open: e.target.value };
+                                          setStructuredHours({ ...structuredHours, periods: newPeriods });
+                                        }}
+                                        className="bg-zinc-900 border border-zinc-800 text-xs text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-zinc-750"
+                                      />
+                                      <span className="text-zinc-600 text-xs font-semibold">to</span>
+                                      <input
+                                        type="time"
+                                        value={period.close}
+                                        onChange={(e) => {
+                                          const newPeriods = { ...structuredHours.periods };
+                                          newPeriods[day] = { ...period, close: e.target.value };
+                                          setStructuredHours({ ...structuredHours, periods: newPeriods });
+                                        }}
+                                        className="bg-zinc-900 border border-zinc-800 text-xs text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-zinc-750"
+                                      />
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -601,52 +601,81 @@ export function VenueCard({
         )}
 
         {/* Hours */}
-        {(enrichData?.opening_hours || venue.openingHours) && (
-          <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
-            <Clock className="w-3 h-3 shrink-0" />
-            <span>{enrichData?.opening_hours || venue.openingHours}</span>
-            {(() => {
-              const hoursStr = enrichData?.opening_hours || venue.openingHours;
-              if (!hoursStr) return null;
-              const match = hoursStr.match(
-                /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/,
-              );
-              if (!match) return null;
+        {(() => {
+          const hoursStr = enrichData?.opening_hours || venue.openingHours;
+          if (!hoursStr) return null;
 
-              const now = new Date();
-              const currentMinutes = now.getHours() * 60 + now.getMinutes();
-              const [openH, openM] = match[1].split(":").map(Number);
-              const [closeH, closeM] = match[2].split(":").map(Number);
+          const { getOpeningHoursStatus } = require("@/lib/openingHours");
+          const status = getOpeningHoursStatus(hoursStr);
 
-              const openMinutes = openH * 60 + openM;
-              const closeMinutes = closeH * 60 + closeM;
-
-              let isOpen = false;
-              if (closeMinutes < openMinutes) {
-                isOpen =
-                  currentMinutes >= openMinutes ||
-                  currentMinutes <= closeMinutes;
-              } else {
-                isOpen =
-                  currentMinutes >= openMinutes &&
-                  currentMinutes < closeMinutes;
-              }
-
-              return (
+          if (status.isStructured) {
+            return (
+              <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
+                <Clock className="w-3 h-3 shrink-0" />
+                <span className="truncate max-w-[200px]" title={status.displayString}>{status.displayString}</span>
                 <span
                   className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
-                    isOpen
+                    status.isOpen
                       ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                       : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                   }`}
-                  title={isOpen ? "Open Now" : "Closed"}
+                  title={status.isOpen ? "Open Now" : "Closed"}
                 >
-                  {isOpen ? "Open Now" : "Closed"}
+                  {status.isOpen ? "Open Now" : "Closed"}
                 </span>
-              );
-            })()}
-          </div>
-        )}
+              </div>
+            );
+          }
+
+          // Legacy parsing
+          const match = hoursStr.match(
+            /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/,
+          );
+          if (!match) {
+            return (
+              <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
+                <Clock className="w-3 h-3 shrink-0" />
+                <span className="truncate">{hoursStr}</span>
+              </div>
+            );
+          }
+
+          const now = new Date();
+          const currentMinutes = now.getHours() * 60 + now.getMinutes();
+          const [openH, openM] = match[1].split(":").map(Number);
+          const [closeH, closeM] = match[2].split(":").map(Number);
+
+          const openMinutes = openH * 60 + openM;
+          const closeMinutes = closeH * 60 + closeM;
+
+          let legacyOpen = false;
+          if (closeMinutes < openMinutes) {
+            legacyOpen =
+              currentMinutes >= openMinutes ||
+              currentMinutes <= closeMinutes;
+          } else {
+            legacyOpen =
+              currentMinutes >= openMinutes &&
+              currentMinutes < closeMinutes;
+          }
+
+          return (
+            <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
+              <Clock className="w-3 h-3 shrink-0" />
+              <span>{hoursStr}</span>
+              <span
+                className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
+                  legacyOpen
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                }`}
+                title={legacyOpen ? "Open Now" : "Closed"}
+              >
+                {legacyOpen ? "Open Now" : "Closed"}
+              </span>
+            </div>
+          );
+        })()}
 
         {/* INTERACTIVE AMENITY VERIFICATION TAG TRACKING ROW */}
         <div className="flex flex-col gap-2 mb-4 border-t border-zinc-100 dark:border-zinc-800 pt-3">

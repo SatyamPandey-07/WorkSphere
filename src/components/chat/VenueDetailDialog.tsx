@@ -967,7 +967,7 @@ export function VenueDetailDialog({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={displayPhoto}
-              alt={venue.name}
+              alt={"Photo of " + venue.name}
               className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all duration-500"
               onClick={() => setLightboxIndex(0)}
               onError={() => setImageError(true)}
@@ -991,6 +991,7 @@ export function VenueDetailDialog({
             </button>
             <button
               onClick={onClose}
+              aria-label="Close venue details"
               className="p-3 bg-white/10 hover:bg-white/20 backdrop-blur-md text-white rounded-full shadow-2xl border border-white/20 transition-all font-bold active:scale-90"
             >
               <X className="w-6 h-6" />
@@ -1797,6 +1798,7 @@ export function VenueDetailDialog({
                 <div className="flex gap-3">
                   <button
                     onClick={() => onToggleFavorite(venue)}
+                    aria-label={isFavorited ? `Remove ${venue.name} from favorites` : `Save ${venue.name} to favorites`}
                     className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl border-2 ${
                       enableTransition ? "transition-all duration-300" : ""
                     } ${
@@ -1823,6 +1825,7 @@ export function VenueDetailDialog({
                   )}
                   <button
                     onClick={handleShare}
+                    aria-label={"Share " + venue.name}
                     className="flex-1 flex items-center justify-center gap-2 bg-black/40 border-2 border-white/10 text-zinc-200 hover:bg-black/60 font-black uppercase tracking-widest py-3 px-6 rounded-2xl transition-all shadow-md active:scale-[0.98]"
                   >
                     {copied ? (

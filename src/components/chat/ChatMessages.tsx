@@ -31,8 +31,11 @@ import {
   X,
 } from "lucide-react";
 import { usePreferenceReranking } from "@/hooks/usePreferenceReranking";
+import { useKMeansClustering } from "@/hooks/useKMeansClustering";
+import { useSavedVenues } from "@/hooks/useSavedVenues";
 import { RecommendedBadge } from "@/components/RecommendedBadge";
-import { RefObject, useState, useEffect, useRef, useCallback } from "react";
+import { ClusterBadge } from "@/components/ClusterBadge";
+import { RefObject, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
@@ -140,6 +143,8 @@ interface VenueChatCardProps {
   compareDisabled?: boolean;
   onToggleCompare?: (venue: Venue) => void;
   isRecommended?: boolean;
+  clusterScore?: number;
+  cluster?: number;
 }
 
 export function VenueChatCard({
@@ -158,6 +163,8 @@ export function VenueChatCard({
   compareDisabled,
   onToggleCompare,
   isRecommended,
+  clusterScore,
+  cluster,
 }: VenueChatCardProps) {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
@@ -260,6 +267,9 @@ export function VenueChatCard({
                   {venue.name}
                 </h4>
                 {isRecommended && <RecommendedBadge />}
+                {clusterScore != null && clusterScore > 0.75 && (
+                  <ClusterBadge cluster={cluster} score={clusterScore} />
+                )}
                 {venue.score != null && (
                   <span className="text-[10px] font-black text-blue-600 bg-blue-50 dark:bg-blue-950/30 px-1 py-0.5 rounded">
                     {Math.round(venue.score * 10)}%
@@ -494,6 +504,9 @@ export function VenueChatCard({
                   {venue.name}
                 </h4>
                 {isRecommended && <RecommendedBadge />}
+                {clusterScore != null && clusterScore > 0.75 && (
+                  <ClusterBadge cluster={cluster} score={clusterScore} />
+                )}
               </div>
 
               {venue.address && (
@@ -723,6 +736,69 @@ export function VenueListings({
   // Apply preference reranking
   const { rerankedResults } = usePreferenceReranking(venues);
 
+  // Federated K-Means clustering for personalized ranking
+  const { favorites: savedFavorites } = useSavedVenues();
+  const savedVenueLike = savedFavorites.map((f) => ({
+    id: f.venueId,
+    venueId: f.venueId,
+    venue: {
+      id: f.venue.id,
+      rating: f.venue.rating,
+      wifiQuality: f.venue.wifiQuality,
+      hasOutlets: f.venue.hasOutlets,
+      noiseLevel: f.venue.noiseLevel,
+    },
+  }));
+  const {
+    centroids,
+    rankVenues: kmeansRank,
+    isReady: kmeansReady,
+  } = useKMeansClustering(savedVenueLike);
+
+  // Cluster-ranked venues state
+  const [clusterRanked, setClusterRanked] = useState<
+    Array<Venue & { clusterScore: number; cluster: number }>
+  >([]);
+
+  useEffect(() => {
+    if (!kmeansReady || !centroids || venues.length === 0) {
+      setClusterRanked([]);
+      return;
+    }
+    let cancelled = false;
+    kmeansRank(venues).then((ranked) => {
+      if (!cancelled) setClusterRanked(ranked);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [venues, centroids, kmeansReady, kmeansRank]);
+
+  // Blend k-means cluster scores with preference reranking
+  const blendedResults = useMemo(() => {
+    if (clusterRanked.length === 0) return rerankedResults;
+
+    const clusterMap = new Map(
+      clusterRanked.map((v) => [v.id, { clusterScore: v.clusterScore, cluster: v.cluster }]),
+    );
+
+    return rerankedResults.map((venue) => {
+      const clusterData = clusterMap.get(venue.id);
+      if (!clusterData) return venue;
+
+      const prefScore = (venue as any).similarityScore ?? 0;
+      const blend = prefScore * 0.6 + clusterData.clusterScore * 0.4;
+
+      return {
+        ...venue,
+        score: (venue.score ?? 5) + blend * 2,
+        isRecommended: venue.isRecommended || clusterData.clusterScore > 0.75,
+        _clusterScore: clusterData.clusterScore,
+        _cluster: clusterData.cluster,
+      };
+    });
+  }, [rerankedResults, clusterRanked]);
+
   // INFINITE SCROLL STATES
   const [visibleCount, setVisibleCount] = useState(5);
   const [isFetchingNextPage, setIsFetchingNextPage] = useState(false);
@@ -742,11 +818,11 @@ export function VenueListings({
       (entries) => {
         if (entries[0].isIntersecting && !isFetchingNextPage) {
           // If we have more venues locally, mock the pagination load
-          if (visibleCount < rerankedResults.length) {
+          if (visibleCount < blendedResults.length) {
             setIsFetchingNextPage(true);
             timeoutId = setTimeout(() => {
               setVisibleCount((prev) =>
-                Math.min(prev + 5, rerankedResults.length),
+                Math.min(prev + 5, blendedResults.length),
               );
               setIsFetchingNextPage(false);
             }, 800);
@@ -772,7 +848,7 @@ export function VenueListings({
   }, [
     visibleCount,
     venues.length,
-    rerankedResults.length,
+    blendedResults.length,
     isFetchingNextPage,
     onLoadMore,
   ]);
@@ -796,7 +872,7 @@ export function VenueListings({
   ) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      const nextIndex = Math.min(index + 1, rerankedResults.length - 1);
+      const nextIndex = Math.min(index + 1, blendedResults.length - 1);
       const nextEl = containerRef.current?.querySelector(
         `[data-index="${nextIndex}"]`,
       ) as HTMLElement;
@@ -818,7 +894,7 @@ export function VenueListings({
     <div className="space-y-3 pl-2" ref={containerRef}>
       <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2 mb-1">
         <p className="text-[10px] uppercase font-black tracking-widest text-zinc-400">
-          Recommended Venues ({rerankedResults.length})
+          Recommended Venues ({blendedResults.length})
         </p>
         <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-900 p-0.5 rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-inner">
           <button
@@ -848,7 +924,7 @@ export function VenueListings({
         </div>
       </div>
 
-      {rerankedResults.length === 0 ? (
+      {blendedResults.length === 0 ? (
         <EmptyState
           illustration="search"
           message="No venues found"
@@ -857,7 +933,7 @@ export function VenueListings({
       ) : (
         <LayoutGroup id="venue-listings">
           <VenueGrid viewMode={viewMode}>
-            {rerankedResults.slice(0, visibleCount).map((venue, index) => (
+            {blendedResults.slice(0, visibleCount).map((venue, index) => (
               <SubgridCell key={venue.id}>
                 {/* 
                   Measurement Container Pattern for Issue #1037:
@@ -877,6 +953,8 @@ export function VenueListings({
                     <VenueChatCard
                       venue={venue}
                       isRecommended={(venue as any).isRecommended}
+                      clusterScore={(venue as any)._clusterScore}
+                      cluster={(venue as any)._cluster}
                       isFavorited={favorites.has(venue.id)}
                       onGetDirections={onGetDirections}
                       onToggleFavorite={onToggleFavorite}

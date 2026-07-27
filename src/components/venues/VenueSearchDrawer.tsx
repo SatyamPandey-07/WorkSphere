@@ -200,33 +200,31 @@ export function VenueSearchDrawer({
           </div>
         </div>
 
-        {/* Amenity Checkboxes */}
+        {/* Amenity filter chips (#2177) */}
         <div className="space-y-2">
           <label className="block text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
             Amenities & Features
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="flex flex-wrap gap-2">
             {AMENITIES_LIST.map((item) => {
-              const isChecked = amenities.includes(item.id);
+              const isActive = amenities.includes(item.id);
               return (
-                <label
+                <button
                   key={item.id}
-                  className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                    isChecked
-                      ? "bg-blue-50 dark:bg-blue-950/40 border-blue-500 text-blue-700 dark:text-blue-300"
-                      : "bg-zinc-50 dark:bg-zinc-950/60 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
+                  type="button"
+                  id={`amenity-${item.id}`}
+                  data-testid={`amenity-${item.id}`}
+                  aria-pressed={isActive}
+                  aria-label={item.label}
+                  onClick={() => handleToggleAmenity(item.id)}
+                  className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition-all duration-200 ease-out origin-center ${
+                    isActive
+                      ? "scale-105 bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/25"
+                      : "scale-100 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-blue-400/60"
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    id={`amenity-${item.id}`}
-                    data-testid={`amenity-${item.id}`}
-                    checked={isChecked}
-                    onChange={() => handleToggleAmenity(item.id)}
-                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-zinc-300 dark:border-zinc-700"
-                  />
-                  <span>{item.label}</span>
-                </label>
+                  {item.label}
+                </button>
               );
             })}
           </div>

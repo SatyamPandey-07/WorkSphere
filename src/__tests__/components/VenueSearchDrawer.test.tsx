@@ -4,7 +4,7 @@ import "@testing-library/jest-dom";
 import { VenueSearchDrawer } from "@/components/venues/VenueSearchDrawer";
 
 describe("VenueSearchDrawer Component (#1429)", () => {
-  it("resets all filter parameters and sets amenity checkboxes to false on 'Clear Filters'", () => {
+  it("resets all filter parameters and clears amenity chips on 'Clear Filters'", () => {
     const handleSearchChange = jest.fn();
     const handleAmenitiesChange = jest.fn();
     const handleNoiseLevelChange = jest.fn();
@@ -34,21 +34,22 @@ describe("VenueSearchDrawer Component (#1429)", () => {
     const searchInput = screen.getByTestId("search-input") as HTMLInputElement;
     expect(searchInput.value).toBe("Coffee Shop");
 
-    const wifiCheckbox = screen.getByTestId("amenity-wifi") as HTMLInputElement;
-    const outletsCheckbox = screen.getByTestId(
-      "amenity-outlets",
-    ) as HTMLInputElement;
-    const quietCheckbox = screen.getByTestId(
-      "amenity-quiet",
-    ) as HTMLInputElement;
-    const ergonomicCheckbox = screen.getByTestId(
-      "amenity-ergonomic",
-    ) as HTMLInputElement;
-
-    expect(wifiCheckbox.checked).toBe(true);
-    expect(outletsCheckbox.checked).toBe(true);
-    expect(quietCheckbox.checked).toBe(true);
-    expect(ergonomicCheckbox.checked).toBe(false);
+    expect(screen.getByTestId("amenity-wifi")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("amenity-outlets")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("amenity-quiet")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("amenity-ergonomic")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
 
     // Click 'Clear Filters' button
     const clearBtn = screen.getByTestId("clear-filters-btn");
@@ -63,27 +64,24 @@ describe("VenueSearchDrawer Component (#1429)", () => {
     expect(handleClearFilters).toHaveBeenCalledTimes(1);
   });
 
-  it("resets internal uncontrolled filter checkboxes to false when cleared", () => {
+  it("toggles amenity chips with animated active state and clears them", () => {
     render(<VenueSearchDrawer isOpen={true} onClose={jest.fn()} />);
 
-    // Toggle WiFi and Outlets checkboxes on
-    const wifiCheckbox = screen.getByTestId("amenity-wifi") as HTMLInputElement;
-    const outletsCheckbox = screen.getByTestId(
-      "amenity-outlets",
-    ) as HTMLInputElement;
+    const wifiChip = screen.getByTestId("amenity-wifi");
+    const outletsChip = screen.getByTestId("amenity-outlets");
 
-    fireEvent.click(wifiCheckbox);
-    fireEvent.click(outletsCheckbox);
+    fireEvent.click(wifiChip);
+    fireEvent.click(outletsChip);
 
-    expect(wifiCheckbox.checked).toBe(true);
-    expect(outletsCheckbox.checked).toBe(true);
+    expect(wifiChip).toHaveAttribute("aria-pressed", "true");
+    expect(outletsChip).toHaveAttribute("aria-pressed", "true");
+    expect(wifiChip.className).toMatch(/scale-105/);
+    expect(wifiChip.className).toMatch(/bg-blue-600/);
 
-    // Click 'Clear Filters'
     const clearBtn = screen.getByTestId("clear-filters-btn");
     fireEvent.click(clearBtn);
 
-    // Assert all checkboxes are reset to false
-    expect(wifiCheckbox.checked).toBe(false);
-    expect(outletsCheckbox.checked).toBe(false);
+    expect(wifiChip).toHaveAttribute("aria-pressed", "false");
+    expect(outletsChip).toHaveAttribute("aria-pressed", "false");
   });
 });

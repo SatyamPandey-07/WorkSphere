@@ -340,8 +340,9 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 - Node.js 18+
 - npm or yarn
 - Git
+- Docker and Docker Compose (Optional, but highly recommended for local Postgres & Redis)
 
-### Installation
+### Installation & Setup
 
 1. **Clone the repository**
 
@@ -356,22 +357,37 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
    npm install
    ```
 
-3. **Set up environment variables**
+3. **Choose your environment setup path:**
+
+   #### Option A: Docker Compose (Recommended)
+
+   This starts a local PostgreSQL instance (with the `pgvector` extension) and Redis automatically.
 
    ```bash
+   # Start database and Redis container services
+   docker compose up -d
+
+   # Copy local environment example
    cp .env.example .env.local
-   # Edit .env.local with your credentials
+   # Fill out any missing external API keys in .env.local (e.g. Clerk, Groq)
    ```
 
-4. **Set up the database**
+   #### Option B: Manual Setup
+
+   If you prefer not to use Docker:
+   1. Setup a PostgreSQL 15+ database with the `pgvector` extension enabled.
+   2. Optionally setup an Upstash Redis database.
+   3. Copy environment config and fill in Neon and Upstash URLs:
+      ```bash
+      cp .env.example .env.local
+      ```
+
+4. **Initialize Database Schema**
 
    ```bash
-   # Prisma 7 uses driver adapters - ensure DATABASE_URL is set
    npx prisma generate
    npx prisma db push
    ```
-
-   > See [docs/NEON_DATABASE_POOLING.md](./docs/NEON_DATABASE_POOLING.md) for full connection string configuration, PgBouncer pooling setup, and migration workflow.
 
 5. **Run the development server**
 

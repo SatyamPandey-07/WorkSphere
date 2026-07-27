@@ -3,6 +3,7 @@ import {
   rgb,
   StandardFonts,
   PDFPageDrawTextOptions,
+  breakTextIntoLines,
 } from "pdf-lib";
 import { safeText } from "./pdfHelpers";
 import { sanitizeMathSymbols } from "./pdfUtils";
@@ -166,13 +167,24 @@ export async function generateTaxExportPdf(
       { x: 50, y: py, size: 10, font },
     );
     py -= 18;
-    drawText(page, `VENUE: ${safeText(booking.venue.name)}`, {
-      x: 50,
-      y: py,
-      size: 10,
-      font,
-    });
-    py -= 18;
+    const venueText = `VENUE: ${safeText(booking.venue.name)}`;
+    const venueLines = breakTextIntoLines(
+      venueText,
+      [" ", ",", "-"],
+      495,
+      (t) => font.widthOfTextAtSize(t, 10),
+    );
+
+    for (const line of venueLines) {
+      drawText(page, line, {
+        x: 50,
+        y: py,
+        size: 10,
+        font,
+      });
+      py -= 12;
+    }
+    py -= 6;
     drawText(
       page,
       `CATEGORY: ${safeText(booking.venue.category?.toUpperCase() || "WORKSPACE")}`,
@@ -371,13 +383,24 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
     font,
   });
   yPosition -= 18;
-  drawText(`VENUE: ${booking.venue.name}`, {
-    x: 50,
-    y: yPosition,
-    size: 10,
-    font,
-  });
-  yPosition -= 18;
+  const venueText = `VENUE: ${booking.venue.name}`;
+  const venueLines = breakTextIntoLines(
+    venueText,
+    [" ", ",", "-"],
+    495,
+    (t) => font.widthOfTextAtSize(t, 10),
+  );
+
+  for (const line of venueLines) {
+    drawText(line, {
+      x: 50,
+      y: yPosition,
+      size: 10,
+      font,
+    });
+    yPosition -= 12;
+  }
+  yPosition -= 6;
   drawText(
     `CATEGORY: ${booking.venue.category?.toUpperCase() || "WORKSPACE"}`,
     { x: 50, y: yPosition, size: 10, font },

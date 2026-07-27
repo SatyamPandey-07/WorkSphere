@@ -11,6 +11,7 @@ import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "@/hooks/usePartySocketReconnect";
 import YProvider from "y-partykit/provider";
 import * as Y from "yjs";
+import { useHydrationComplete } from "@/hooks/useHydrationComplete";
 
 interface VenueUpdate {
   type: "rating" | "availability" | "new_review";
@@ -248,18 +249,15 @@ export function useMultiplayerSession(roomId: string | null) {
   const [yDoc, setYDoc] = useState<Y.Doc | null>(null);
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
-
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
+  // Defer PartySocket / Yjs until after App Router hydration (#1033)
+  const isHydrated = useHydrationComplete();
 
   useEffect(() => {
     getToken().then(setToken).catch(console.error);
   }, [getToken]);
 
   useEffect(() => {
-    if (!roomId || token === null) {
+    if (!isHydrated || !roomId || token === null) {
       setProvider(null);
       setYDoc(null);
       return;
@@ -278,19 +276,19 @@ export function useMultiplayerSession(roomId: string | null) {
       newProvider.disconnect();
       doc.destroy();
     };
-  }, [roomId, token]);
+  }, [roomId, token, isHydrated]);
 
   // Use standard websocket for simple presence broadcast
-  // startClosed prevents WebSocket connection during SSR before hydration
+  // startClosed prevents WebSocket connection during SSR / streaming hydration
   const socket = usePartySocket({
     host: "127.0.0.1:1999",
-    room: isMounted && roomId ? roomId : "placeholder",
-    startClosed: !isMounted,
+    room: isHydrated && roomId ? roomId : "placeholder",
+    startClosed: !isHydrated,
     query: token ? { token } : undefined,
     onMessage() {
-      // handled in component
+      // handled in component after hydration
     },
   });
 
-  return { provider, yDoc, socket };
+  return { provider, yDoc, socket, isHydrated };
 }

@@ -4,6 +4,7 @@
  * Integrated with Yjs for CRDT-based offline state mutation and background sync.
  */
 import * as Y from "yjs";
+import { withWebLock } from "./webLock";
 
 // Initialize global Y.Doc for user state
 export const userDoc = new Y.Doc();
@@ -20,100 +21,7 @@ userDoc.on("update", async (update: Uint8Array) => {
 });
 
 const DB_NAME = "worksphere-offline";
-const DB_VERSION = 5;
-
-const IDB_STORAGE_LOCK = "worksphere-offline-storage-lock";
-
-/**
- * Execute an operation with exponential backoff retry if a DatabaseLockedError or lock contention error occurs.
- */
-export async function executeWithRetry<T>(
-  operation: () => Promise<T>,
-  maxRetries = 3,
-  delayMs = 50,
-): Promise<T> {
-  let attempt = 0;
-  while (true) {
-    try {
-      return await operation();
-    } catch (err: any) {
-      attempt++;
-      const isLockedError =
-        err?.name === "DatabaseLockedError" ||
-        err?.name === "AbortError" ||
-        err?.name === "UnknownError" ||
-        (err?.message && String(err.message).toLowerCase().includes("lock"));
-
-      if (isLockedError && attempt <= maxRetries) {
-        await new Promise((res) =>
-          setTimeout(res, delayMs * Math.pow(2, attempt - 1)),
-        );
-        continue;
-      }
-      throw err;
-    }
-  }
-}
-
-/**
- * Web Locks API wrapper to serialize IndexedDB transactions across concurrent tabs (#910, #1279)
- */
-export async function withWebLock<T>(
-  callback: () => Promise<T>,
-  lockName = IDB_STORAGE_LOCK,
-): Promise<T> {
-  const runner = async () => {
-    if (
-      typeof navigator !== "undefined" &&
-      "locks" in navigator &&
-      navigator.locks?.request
-    ) {
-      try {
-        return await navigator.locks.request(lockName, async () => {
-          return callback();
-        });
-      } catch {
-        return callback();
-      }
-    }
-    return callback();
-  };
-
-  return executeWithRetry(runner);
-}
-
-/**
- * Leader-election Web Lock: only ONE tab across all open windows runs the callback.
- * Other tabs skip (non-blocking) because the IndexedDB data is shared — the leader's
- * writes are visible to all tabs on the same origin (#1072).
- *
- * Returns `true` if this tab won the election and the callback ran; `false` if
- * another tab already holds the lock and work was skipped.
- */
-export async function withLeaderLock<T>(
-  lockName: string,
-  callback: () => Promise<T>,
-): Promise<{ acquired: boolean; result?: T }> {
-  if (
-    typeof navigator !== "undefined" &&
-    "locks" in navigator &&
-    navigator.locks?.request
-  ) {
-    try {
-      return await navigator.locks.request(
-        lockName,
-        { ifAvailable: true },
-        async (lock) => {
-          if (!lock) return { acquired: false };
-          return { acquired: true, result: await callback() };
-        },
-      );
-    } catch {
-      return { acquired: false, result: await callback() };
-    }
-  }
-  return { acquired: true, result: await callback() };
-}
+const DB_VERSION = 6;
 
 export interface OfflineVenue {
   id: string;
@@ -249,6 +157,13 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
           });
           receiptStore.createIndex("status", "status", { unique: false });
           receiptStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
+        // Pending favorites store
+        if (!database.objectStoreNames.contains("pendingFavorites")) {
+          database.createObjectStore("pendingFavorites", {
+            keyPath: "id",
+          });
         }
 
         // Preference reranking cache store
@@ -409,36 +324,47 @@ export async function saveSearchOffline(
   query: string,
   results: OfflineVenue[],
 ): Promise<void> {
-  // Leader-election: if another tab is already caching results for this same
-  // query, skip this write — the IndexedDB data is shared per-origin (#1072).
-  const { acquired } = await withLeaderLock(
-    `worksphere-search-cache-${query.trim().toLowerCase().slice(0, 64)}`,
-    async () => {
-      return withWebLock(async () => {
-        const database = await initOfflineDB();
+  const lockKey = `worksphere-search-cache-${query.trim().toLowerCase().slice(0, 64)}`;
 
-        await new Promise<void>((resolve, reject) => {
-          const transaction = database.transaction(["searches"], "readwrite");
-          const store = transaction.objectStore("searches");
+  const cacheOperation = async () => {
+    return withWebLock(async () => {
+      const database = await initOfflineDB();
 
-          const request = store.put({
-            query: query.toLowerCase().trim(),
-            results,
-            timestamp: Date.now(),
-          });
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(["searches"], "readwrite");
+        const store = transaction.objectStore("searches");
 
-          request.onsuccess = () => resolve();
-          request.onerror = () => reject(request.error);
+        const request = store.put({
+          query: query.toLowerCase().trim(),
+          results,
+          timestamp: Date.now(),
         });
 
-        await trimSearchHistory();
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
       });
-    },
-  );
-  if (!acquired) {
-    console.log(
-      `[Offline] Skipping search cache write for "${query}" — another tab is already indexing`,
+
+      await trimSearchHistory();
+    });
+  };
+
+  // Guard window.withLeaderLock safely
+  if (
+    typeof window !== "undefined" &&
+    typeof (window as any).withLeaderLock === "function"
+  ) {
+    const { acquired } = await (window as any).withLeaderLock(
+      lockKey,
+      cacheOperation,
     );
+    if (!acquired) {
+      console.log(
+        `[Offline] Skipping search cache write for "${query}" — another tab is already indexing`,
+      );
+    }
+  } else {
+    // Fall back to simple web lock path if leader lock isn't available
+    await cacheOperation();
   }
 }
 
@@ -624,13 +550,6 @@ export async function processPendingActions(): Promise<
 
 /**
  * Conversation history offline edits (issue #266)
- *
- * Renaming/deleting a conversation while offline queues a "conversation-rename"
- * or "conversation-delete" pendingAction, exactly like favorites/ratings already
- * do. A Background Sync tag ("sync-conversations") is registered so the service
- * worker flushes the queue as soon as connectivity returns; `flushConversationEditQueue`
- * below is a foreground fallback for browsers (Safari/iOS) that don't support the
- * Background Sync API.
  */
 
 export interface ConversationEditAction {
@@ -641,11 +560,6 @@ export interface ConversationEditAction {
   timestamp: number;
 }
 
-/**
- * Queue a rename. If an earlier queued rename for the same conversation hasn't
- * synced yet, it's replaced (only the latest title matters) rather than piling
- * up redundant sync work.
- */
 export async function queueConversationRename(
   conversationId: string,
   title: string,
@@ -683,11 +597,6 @@ export async function queueConversationRename(
   });
 }
 
-/**
- * Queue a delete. Any pending rename for the same conversation is dropped —
- * there's no point syncing a title change for a thread that's about to be
- * deleted anyway.
- */
 export async function queueConversationDelete(
   conversationId: string,
 ): Promise<void> {
@@ -736,9 +645,6 @@ async function registerConversationSync(): Promise<void> {
   }
 }
 
-/**
- * All queued (not-yet-synced) conversation rename/delete actions, oldest first.
- */
 export async function getPendingConversationEdits(): Promise<
   ConversationEditAction[]
 > {
@@ -765,12 +671,6 @@ export async function getPendingConversationEdits(): Promise<
   });
 }
 
-/**
- * Applies queued rename/delete edits on top of a server-fetched (possibly
- * stale/cached) conversation list, so a reload while offline — or before the
- * background sync has fired — still reflects the user's local edits instead
- * of reverting them.
- */
 export function applyPendingConversationEdits<
   T extends { id: string; title: string },
 >(conversations: T[], pendingEdits: ConversationEditAction[]): T[] {
@@ -810,12 +710,6 @@ async function removePendingActionById(id: number): Promise<void> {
   });
 }
 
-/**
- * Foreground fallback: sends every queued conversation edit to the server and
- * removes it from the queue on success. Safe to call opportunistically (e.g.
- * on the browser's `online` event) in addition to the service worker's
- * Background Sync handler — both simply no-op once the queue is empty.
- */
 export async function flushConversationEditQueue(): Promise<void> {
   const pending = await getPendingConversationEdits();
 
@@ -838,17 +732,12 @@ export async function flushConversationEditQueue(): Promise<void> {
         await removePendingActionById(action.id);
       }
     } catch (err) {
-      // Network errors (TypeError from fetch) mean the request never reached the
-      // server. Do NOT remove the action from the queue — it will be retried on
-      // the next flush or Background Sync event without data loss or duplication.
       if (err instanceof TypeError) {
         console.warn(
           `[OfflineStorage] flushConversationEditQueue: Network error for action ${action.id} — preserving in queue.`,
         );
-        // Abort the loop: subsequent actions are likely to fail too.
         return;
       }
-      // Non-network error — leave it queued for the next attempt.
       console.error("Failed to sync conversation edit:", err);
     }
   }
@@ -897,7 +786,7 @@ export async function cleanupOldData(
 }
 
 /**
- * Offline Receipt Sync Queue & Storage Helpers (Issue #1069)
+ * Offline Receipt Sync Queue & Storage Helpers
  */
 
 export interface QueuedReceiptJob {
@@ -941,7 +830,6 @@ export async function queueOfflineReceipt(
       getReq.onerror = () => reject(getReq.error);
     });
 
-    // Register background sync if Service Worker is available
     if ("serviceWorker" in navigator && "SyncManager" in window) {
       try {
         const swRegistration = await navigator.serviceWorker.ready;
@@ -1022,7 +910,6 @@ export async function savePreferenceRanking(
     return new Promise((resolve, reject) => {
       const tx = database.transaction(["preference_rankings"], "readwrite");
       const store = tx.objectStore("preference_rankings");
-      // Use a single well-known key for the latest ranking
       const req = store.put({ ...data, id: "latest" });
       req.onsuccess = () => resolve();
       req.onerror = () => reject(req.error);
@@ -1055,4 +942,103 @@ export async function clearPreferenceRanking(): Promise<void> {
       req.onerror = () => reject(req.error);
     });
   });
+}
+
+export interface PendingFavorite {
+  id: string;
+  venueId: string;
+  action: "add" | "remove";
+  timestamp: number;
+}
+
+export async function queuePendingFavorite(
+  venueId: string,
+  action: "add" | "remove",
+): Promise<void> {
+  const database = await initOfflineDB();
+
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(["pendingFavorites"], "readwrite");
+    const store = transaction.objectStore("pendingFavorites");
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const existing = (request.result as PendingFavorite[]).filter(
+        (a) => a.venueId === venueId,
+      );
+
+      existing.forEach((a) => store.delete(a.id));
+
+      store.add({
+        id: crypto.randomUUID(),
+        venueId,
+        action,
+        timestamp: Date.now(),
+      });
+    };
+    request.onerror = () => reject(request.error);
+
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+
+  if ("serviceWorker" in navigator && "SyncManager" in window) {
+    try {
+      const swRegistration = await navigator.serviceWorker.ready;
+      await (swRegistration as any).sync.register("sync-favorites");
+    } catch (err) {
+      console.error("Background Sync registration failed:", err);
+    }
+  }
+}
+
+export async function getPendingFavorites(): Promise<PendingFavorite[]> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(["pendingFavorites"], "readonly");
+    const store = transaction.objectStore("pendingFavorites");
+    const request = store.getAll();
+
+    request.onsuccess = () => {
+      const actions = (request.result as PendingFavorite[]).sort(
+        (a, b) => a.timestamp - b.timestamp,
+      );
+      resolve(actions);
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function removePendingFavorite(id: string): Promise<void> {
+  const database = await initOfflineDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(["pendingFavorites"], "readwrite");
+    const store = transaction.objectStore("pendingFavorites");
+    const request = store.delete(id);
+
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function executeWithRetry<T>(
+  fn: () => Promise<T>,
+  retries = 3,
+  delayMs = 10,
+): Promise<T> {
+  let attempt = 0;
+  while (attempt < retries) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt++;
+      if (attempt >= retries) throw err;
+      await new Promise((r) =>
+        setTimeout(r, delayMs * Math.pow(2, attempt - 1)),
+      );
+    }
+  }
+  throw new Error("Max retries exceeded");
 }

@@ -1,12 +1,93 @@
 "use client";
 
-import React from "react";
+import React, { useState, useRef } from "react";
 import { Volume2, Square, VolumeX } from "lucide-react";
-import {
-  useSpeechSynthesis,
-  SPEED_OPTIONS,
-  SpeedOption,
-} from "@/hooks/useSpeechSynthesis";
+import { useSpeechSynthesis, SPEED_OPTIONS } from "@/hooks/useSpeechSynthesis";
+
+function Tooltip({
+  children,
+  text,
+}: {
+  children: React.ReactNode;
+  text: string;
+}) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [position, setPosition] = useState<"top" | "bottom">("top");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const [isTouchDevice, setIsTouchDevice] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsTouchDevice("ontouchstart" in window);
+  }, []);
+
+  if (isTouchDevice) {
+    return <>{children}</>;
+  }
+
+  const handleMouseEnter = () => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      if (rect.top < 50) {
+        setPosition("bottom");
+      } else {
+        setPosition("top");
+      }
+    }
+    setIsVisible(true);
+  };
+
+  const handleMouseLeave = () => {
+    setIsVisible(false);
+  };
+
+  const handleTouchStart = () => {
+    setIsVisible(false);
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative inline-flex items-center"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onFocus={handleMouseEnter}
+      onBlur={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+    >
+      {children}
+
+      <div
+        data-testid="tooltip"
+        className={`
+          pointer-events-none
+          absolute
+          left-1/2
+          -translate-x-1/2
+          max-[380px]:left-0
+          max-[380px]:translate-x-0
+          z-50
+          w-max
+          max-w-[calc(100vw-1rem)]
+          break-words
+          text-center
+          rounded-md
+          bg-zinc-900
+          px-2
+          py-1
+          text-xs
+          text-white
+          transition-opacity
+          duration-150
+          ${isVisible ? "opacity-100" : "opacity-0"}
+          ${position === "bottom" ? "top-full mt-2" : "bottom-full mb-2"}
+        `}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
 
 export interface ReadAloudButtonProps {
   /** The text content to read aloud */
@@ -76,49 +157,51 @@ export function ReadAloudButton({
     <div
       className={`inline-flex items-center gap-1 text-xs font-medium ${className}`}
     >
-      <button
-        type="button"
-        onClick={handleTogglePlay}
-        aria-label={isSpeaking ? "Stop reading aloud" : "Read message aloud"}
-        title={isSpeaking ? "Stop reading" : "Read aloud"}
-        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-all duration-150 active:scale-95 shadow-sm ${
-          isSpeaking
-            ? "bg-rose-500 text-white hover:bg-rose-600 border border-rose-600 animate-pulse"
-            : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700"
-        }`}
-      >
-        {isSpeaking ? (
-          <>
-            <Square className="w-3.5 h-3.5 fill-current" />
-            <span>Stop</span>
-          </>
-        ) : (
-          <>
-            <Volume2 className="w-3.5 h-3.5" />
-            <span>Read Aloud</span>
-          </>
-        )}
-      </button>
+      <Tooltip text={isSpeaking ? "Stop reading" : "Read aloud"}>
+        <button
+          type="button"
+          onClick={handleTogglePlay}
+          aria-label={isSpeaking ? "Stop reading aloud" : "Read message aloud"}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-all duration-150 active:scale-95 shadow-sm ${
+            isSpeaking
+              ? "bg-rose-500 text-white hover:bg-rose-600 border border-rose-600 animate-pulse"
+              : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700"
+          }`}
+        >
+          {isSpeaking ? (
+            <>
+              <Square className="w-3.5 h-3.5 fill-current" />
+              <span>Stop</span>
+            </>
+          ) : (
+            <>
+              <Volume2 className="w-3.5 h-3.5" />
+              <span>Read Aloud</span>
+            </>
+          )}
+        </button>
+      </Tooltip>
 
       {/* Speed selection dropdown adjacent to ReadAloudButton */}
-      <div className="relative inline-flex items-center">
-        <select
-          value={rate}
-          onChange={handleSpeedChange}
-          aria-label="Playback speed"
-          title="Playback speed"
-          className="appearance-none rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 pl-2 pr-5 py-1 text-xs font-semibold cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
-        >
-          {SPEED_OPTIONS.map((speed: number) => (
-            <option key={speed} value={speed}>
-              {speed}x
-            </option>
-          ))}
-        </select>
-        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 dark:text-zinc-400">
-          ▼
-        </span>
-      </div>
+      <Tooltip text="Playback speed">
+        <div className="relative inline-flex items-center overflow-visible">
+          <select
+            value={rate}
+            onChange={handleSpeedChange}
+            aria-label="Playback speed"
+            className="appearance-none rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 pl-2 pr-5 py-1 text-xs font-semibold cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
+          >
+            {SPEED_OPTIONS.map((speed: number) => (
+              <option key={speed} value={speed}>
+                {speed}x
+              </option>
+            ))}
+          </select>
+          <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] text-zinc-500 dark:text-zinc-400">
+            ▼
+          </span>
+        </div>
+      </Tooltip>
     </div>
   );
 }

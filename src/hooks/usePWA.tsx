@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Download, Sparkles } from "lucide-react";
+import { purgeStaleWeights } from "@/lib/federated/weightDb";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -71,6 +72,12 @@ export function useSyncWorker() {
 export function SyncManager() {
   useSyncWorker();
   usePeriodicAvailabilitySync();
+
+  useEffect(() => {
+    // Non-blocking purge of stale federated learning model weights on startup
+    purgeStaleWeights().catch(() => {});
+  }, []);
+
   return null;
 }
 
@@ -284,8 +291,21 @@ function isPushNavigateMessage(data: unknown): data is PushNavigateMessage {
  * been removed from the outbox. Surfaces this to the user instead of the
  * action just silently disappearing. (Issue #712)
  */
-function useOfflineSyncNotice() {
+export function useOfflineSyncNotice() {
   const [notice, setNotice] = useState<OfflineSyncFailureMessage | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const clearPendingTimeout = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+  }, []);
+
+  const dismiss = useCallback(() => {
+    clearPendingTimeout();
+    setNotice(null);
+  }, [clearPendingTimeout]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -293,7 +313,11 @@ function useOfflineSyncNotice() {
     const handleMessage = (event: MessageEvent) => {
       if (isOfflineSyncFailureMessage(event.data)) {
         setNotice(event.data);
-        setTimeout(() => setNotice(null), 4000);
+        clearPendingTimeout();
+        timeoutRef.current = setTimeout(() => {
+          setNotice(null);
+          timeoutRef.current = null;
+        }, 4000);
       }
       if (isPushNavigateMessage(event.data)) {
         window.location.href = event.data.url;
@@ -319,10 +343,11 @@ function useOfflineSyncNotice() {
     navigator.serviceWorker.addEventListener("message", handleMessage);
     return () => {
       navigator.serviceWorker.removeEventListener("message", handleMessage);
+      clearPendingTimeout();
     };
-  }, []);
+  }, [clearPendingTimeout]);
 
-  return { notice, dismiss: () => setNotice(null) };
+  return { notice, dismiss };
 }
 
 /**

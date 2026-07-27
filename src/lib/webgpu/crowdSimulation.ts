@@ -186,6 +186,14 @@ export class CrowdSimulationEngine {
   private maxDensity = 1;
   private readonly DENSITY_GRID_SIZE = 64;
 
+  // Adaptive heatmap tile caching: skip recomputing the density texture
+  // when the map viewport isn't moving and occupancy hasn't changed.
+  private lastViewportX = 0;
+  private lastViewportY = 0;
+  private lastViewportZoom = 1;
+  private viewportVelocity = 0;
+  private lastOccupancyCount = -1;
+  private isDensityTextureCacheValid = false;
   // Exit + wall buffers
   private exitBuffer: GPUBuffer | null = null;
   private wallBuffer: GPUBuffer | null = null;
@@ -371,7 +379,7 @@ export class CrowdSimulationEngine {
           BufferUsage.STORAGE | BufferUsage.COPY_SRC | BufferUsage.COPY_DST,
       });
 
-      this.device.queue.writeBuffer(this.agentBufferA, 0, this.agents as any);
+      this.device.queue.writeBuffer(this.agentBufferA!, 0, this.agents as any);
 
       this.recreateBindGroups();
 
@@ -708,7 +716,7 @@ export class CrowdSimulationEngine {
     });
 
     const computePipelineLayout = this.device.createPipelineLayout({
-      bindGroupLayouts: [computeBindGroupLayout],
+      bindGroupLayouts: [this.computeBindGroupLayout],
     });
 
     // WebGPU compute pipeline creation
@@ -731,7 +739,7 @@ export class CrowdSimulationEngine {
 
       // Create bind groups (ping-pong)
       this.computeBindGroupA = this.device.createBindGroup({
-        layout: computeBindGroupLayout,
+        layout: this.computeBindGroupLayout,
         entries: [
           { binding: 0, resource: { buffer: this.computeUniformBuffer! } },
           { binding: 1, resource: { buffer: this.agentBufferA! } },
@@ -744,7 +752,7 @@ export class CrowdSimulationEngine {
       });
 
       this.computeBindGroupB = this.device.createBindGroup({
-        layout: computeBindGroupLayout,
+        layout: this.computeBindGroupLayout,
         entries: [
           { binding: 0, resource: { buffer: this.computeUniformBuffer! } },
           { binding: 1, resource: { buffer: this.agentBufferB! } },
@@ -1104,10 +1112,20 @@ export class CrowdSimulationEngine {
         computePass.end();
       }
 
+      // Adaptive caching: only stationary viewport + unchanged occupancy
+      // counts as "safe to reuse" the existing density texture.
+      const isViewportStationary = this.viewportVelocity < 1e-4;
+      const canUseCachedDensityTexture =
+        isViewportStationary && this.isDensityTextureCacheValid;
+
       // ── Compute Pass: Density accumulation ──
       const densityPipeline = (this as unknown as { _densityPipeline: unknown })
         ._densityPipeline;
-      if (densityPipeline && this.densityBindGroup) {
+      if (
+        densityPipeline &&
+        this.densityBindGroup &&
+        !canUseCachedDensityTexture
+      ) {
         const densityPass = commandEncoder.beginComputePass();
         densityPass.setPipeline(densityPipeline as GPUComputePipeline);
         densityPass.setBindGroup(0, this.densityBindGroup);
@@ -1117,7 +1135,11 @@ export class CrowdSimulationEngine {
       }
 
       // ── Copy density buffer → density texture ──
-      if (this.densityBuffer && this.densityTexture) {
+      if (
+        this.densityBuffer &&
+        this.densityTexture &&
+        !canUseCachedDensityTexture
+      ) {
         const gridW = this.DENSITY_GRID_SIZE;
         const bytesPerRow = gridW * 4;
         const alignedBytesPerRow = Math.ceil(bytesPerRow / 256) * 256;
@@ -1156,8 +1178,9 @@ export class CrowdSimulationEngine {
         // We'll destroy staging after submit
         (this as unknown as { _stagingBuffer: GPUBuffer })._stagingBuffer =
           stagingBuffer;
-      }
 
+        this.isDensityTextureCacheValid = true;
+      }
       // ── Render Pass: Agents ──
       const textureView = this.context.getCurrentTexture().createView();
 
@@ -1352,6 +1375,7 @@ export class CrowdSimulationEngine {
           if (this.agents[i * 8 + 5] === 1) evacuated++;
         }
 
+        this.updateOccupancyState(evacuated);
         this.onFrameCallback?.(this.agents, evacuated);
       });
     } catch {
@@ -1385,6 +1409,34 @@ export class CrowdSimulationEngine {
     this.onFrameCallback = callback;
   }
 
+  /**
+   * Report the current map viewport (pan position + zoom level) so the
+   * engine can detect when the view is stationary and skip recomputing
+   * the density heatmap texture that frame.
+   */
+  updateViewport(x: number, y: number, zoom: number): void {
+    const dx = x - this.lastViewportX;
+    const dy = y - this.lastViewportY;
+    const dz = zoom - this.lastViewportZoom;
+    this.viewportVelocity = Math.hypot(dx, dy) + Math.abs(dz);
+
+    this.lastViewportX = x;
+    this.lastViewportY = y;
+    this.lastViewportZoom = zoom;
+  }
+
+  /**
+   * Tell the engine how many agents currently occupy the venue. When this
+   * changes, the cached density texture is invalidated even if the
+   * viewport is otherwise stationary.
+   */
+  private updateOccupancyState(evacuated: number): void {
+    const occupancyCount = this.config.agentCount - evacuated;
+    if (occupancyCount !== this.lastOccupancyCount) {
+      this.lastOccupancyCount = occupancyCount;
+      this.isDensityTextureCacheValid = false;
+    }
+  }
   reset(): void {
     this.spawnAgents();
     if (this.device && this.agentBufferA) {
@@ -1392,8 +1444,9 @@ export class CrowdSimulationEngine {
     }
     this.currentReadBuffer = 0;
     this.time = 0;
+    this.lastOccupancyCount = -1;
+    this.isDensityTextureCacheValid = false;
   }
-
   private cleanupGPUResources(): void {
     this.agentBufferA?.destroy();
     this.agentBufferB?.destroy();

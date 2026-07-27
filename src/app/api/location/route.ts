@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rateLimit";
 
 const DEFAULT_LOCATION = {
   lat: 37.7749,
@@ -8,6 +9,8 @@ const DEFAULT_LOCATION = {
   country: "US",
   source: "default",
 };
+
+import { LocationResult, locationCache } from "@/lib/locationCache";
 
 function isPrivateOrLoopbackIP(ip: string): boolean {
   if (
@@ -30,7 +33,7 @@ function isPrivateOrLoopbackIP(ip: string): boolean {
   return false;
 }
 
-async function fetchIPLocation(rawIp: string | null) {
+async function fetchIPLocation(rawIp: string | null): Promise<LocationResult> {
   const forwardedIp = rawIp ? rawIp.split(",")[0].trim() : "";
   const isPrivate = isPrivateOrLoopbackIP(forwardedIp);
   const targetIp = isPrivate ? "" : forwardedIp;
@@ -39,7 +42,10 @@ async function fetchIPLocation(rawIp: string | null) {
   try {
     const res = await fetch(`https://ipwho.is/${targetIp}`, {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(3000),
+      signal:
+        typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(3000)
+          : undefined,
     });
     if (res.ok) {
       const data = await res.json();
@@ -61,11 +67,14 @@ async function fetchIPLocation(rawIp: string | null) {
     }
   } catch {}
 
-  // Provider 2: ip-api.com
+  // Provider 2: ip-api.com (HTTPS)
   try {
-    const res = await fetch(`http://ip-api.com/json/${targetIp}`, {
+    const res = await fetch(`https://ip-api.com/json/${targetIp}`, {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(3000),
+      signal:
+        typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(3000)
+          : undefined,
     });
     if (res.ok) {
       const data = await res.json();
@@ -93,7 +102,10 @@ async function fetchIPLocation(rawIp: string | null) {
       `https://ipapi.co/${targetIp ? targetIp + "/" : ""}json/`,
       {
         headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(3000),
+        signal:
+          typeof AbortSignal.timeout === "function"
+            ? AbortSignal.timeout(3000)
+            : undefined,
       },
     );
     if (res.ok) {
@@ -119,11 +131,32 @@ async function fetchIPLocation(rawIp: string | null) {
   return DEFAULT_LOCATION;
 }
 
-// GET /api/location - Multi-provider IP-based location fallback (#1113)
+// GET /api/location - Multi-provider IP-based location fallback (#1113, #1655)
 export async function GET(req: NextRequest) {
   try {
     const forwarded = req.headers.get("x-forwarded-for");
+    const realIp = req.headers.get("x-real-ip");
+    const forwardedIp = forwarded
+      ? forwarded.split(",")[0].trim()
+      : realIp || "";
+    const ip = forwardedIp || "127.0.0.1";
+
+    // Rate limiting: 10 requests per minute per IP
+    const identifier = `location:${ip}`;
+    const allowed = await rateLimit(identifier, 10);
+    if (!allowed) {
+      // Graceful degradation on rate limit
+      return NextResponse.json(DEFAULT_LOCATION, { status: 200 });
+    }
+
+    // In-memory cache lookup (10-minute TTL)
+    const cached = locationCache.get(ip);
+    if (cached) {
+      return NextResponse.json(cached, { status: 200 });
+    }
+
     const location = await fetchIPLocation(forwarded);
+    locationCache.set(ip, location);
     return NextResponse.json(location, { status: 200 });
   } catch {
     return NextResponse.json(DEFAULT_LOCATION, { status: 200 });

@@ -58,6 +58,19 @@ model User {
   lastCheckInDate    String? // stored as "YYYY-MM-DD" UTC
   passkeys           PasskeyCredential[]
   isVerifiedStudent  Boolean            @default(false)
+  accurateVotes      Int                @default(0)
+  badges             UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeType String
+  awardedAt DateTime @default(now())
+
+  @@unique([userId, badgeType])
+  @@index([userId])
 }
 
 model Venue {
@@ -119,6 +132,9 @@ model Venue {
   maxCapacity         Int                 @default(50)
   checkIns            CheckIn[]
   xrAnchors           XRAnchor[]
+  isClaimed           Boolean             @default(false)
+  ownerId             String?
+  hostMessage         String?
 
   @@index([latitude, longitude])
   @@index([category])
@@ -726,4 +742,4 @@ model FoodVote {
 
   @@unique([userId, validationId])
 }
-
+

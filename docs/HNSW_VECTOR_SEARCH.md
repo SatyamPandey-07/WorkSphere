@@ -36,11 +36,13 @@ Layer 0:   [0]─[1]─[2]─[3]─[4]─[5]─[6]─[7]─[8]─[9]─[10]─[1
 ```
 
 **Search procedure:**
+
 1. Start at the entry point at the highest layer.
 2. Greedily descend: at each layer above 0, find the single nearest node to the query and move to it.
 3. At layer 0, run a beam search with `efSearch` candidates to find the top-k results.
 
 **Insert procedure:**
+
 1. Assign a random layer to the new node using the geometric distribution controlled by `ml`.
 2. Descend from `maxLevel` to the node's layer, greedily finding the nearest node at each layer.
 3. At each layer from the node's layer down to 0, run `efConstruction` beam search, select the top-M neighbors, and bidirectionally link them.
@@ -54,35 +56,36 @@ The index is configured via the `HnswConfig` interface:
 ```typescript
 // src/lib/hnsw/types.ts
 export interface HnswConfig {
-  dim: number;        // vector dimensionality
-  M: number;          // max neighbors per node per layer
-  efConstruction: number;  // beam width during insert
-  efSearch: number;   // beam width during search
-  ml: number;         // layer normalization factor
+  dim: number; // vector dimensionality
+  M: number; // max neighbors per node per layer
+  efConstruction: number; // beam width during insert
+  efSearch: number; // beam width during search
+  ml: number; // layer normalization factor
 }
 ```
 
 ### Default Configuration
 
-| Parameter | Default | Description |
-|---|---|---|
-| `dim` | 1024 | Dimensionality of all vectors in the index. Every inserted vector must match this length. |
-| `M` | 16 | Maximum number of bi-directional neighbors per node at each layer. Higher values improve recall but increase memory and insertion time. |
-| `efConstruction` | 200 | Size of the dynamic candidate list during insertion. Higher values produce better graph quality but slower inserts. |
-| `efSearch` | 50 | Size of the dynamic candidate list during search at layer 0. Higher values improve recall at the cost of query latency. Must be ≥ `k` for correct top-k results. |
-| `ml` | `1 / ln(16)` ≈ 0.361 | Normalization factor for the geometric distribution that assigns node layers. Controls how many nodes appear at each layer. |
+| Parameter        | Default              | Description                                                                                                                                                      |
+| ---------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dim`            | 1024                 | Dimensionality of all vectors in the index. Every inserted vector must match this length.                                                                        |
+| `M`              | 16                   | Maximum number of bi-directional neighbors per node at each layer. Higher values improve recall but increase memory and insertion time.                          |
+| `efConstruction` | 200                  | Size of the dynamic candidate list during insertion. Higher values produce better graph quality but slower inserts.                                              |
+| `efSearch`       | 50                   | Size of the dynamic candidate list during search at layer 0. Higher values improve recall at the cost of query latency. Must be ≥ `k` for correct top-k results. |
+| `ml`             | `1 / ln(16)` ≈ 0.361 | Normalization factor for the geometric distribution that assigns node layers. Controls how many nodes appear at each layer.                                      |
 
 ### Parameter Tuning Guidelines
 
-| Goal | Adjust |
-|---|---|
-| Higher recall (≥ 95%) | Increase `efSearch` (100–500) and `M` (24–64) |
-| Faster queries | Decrease `efSearch` (10–30) |
-| Faster inserts | Decrease `efConstruction` (50–100) |
-| Better graph quality at insert time | Increase `efConstruction` (300–500) |
-| More layers / deeper hierarchy | Decrease `ml` (e.g., `1/ln(M)` for default, lower for more layers) |
+| Goal                                | Adjust                                                             |
+| ----------------------------------- | ------------------------------------------------------------------ |
+| Higher recall (≥ 95%)               | Increase `efSearch` (100–500) and `M` (24–64)                      |
+| Faster queries                      | Decrease `efSearch` (10–30)                                        |
+| Faster inserts                      | Decrease `efConstruction` (50–100)                                 |
+| Better graph quality at insert time | Increase `efConstruction` (300–500)                                |
+| More layers / deeper hierarchy      | Decrease `ml` (e.g., `1/ln(M)` for default, lower for more layers) |
 
 **Trade-off summary:**
+
 - `M` controls the average degree of the graph. Doubling `M` roughly doubles memory per node.
 - `efConstruction` determines how thoroughly the graph is connected at insert time. It directly affects recall.
 - `efSearch` is the only runtime knob: increase it at query time to trade latency for accuracy.
@@ -110,16 +113,17 @@ private cosineDistance(a: number[], b: number[]): number {
 
 ### Cosine Distance vs Euclidean Distance
 
-| Property | Cosine Distance | Euclidean (L2) Distance |
-|---|---|---|
-| Formula | `1 - (A · B) / (‖A‖ · ‖B‖)` | `√Σ(aᵢ - bᵢ)²` |
-| Range | [0, 2] | [0, ∞) |
-| Sensitivity to magnitude | Invariant (only measures angle) | Sensitive to vector magnitude |
-| Best for | Normalized embeddings (text, semantic search) | Spatial coordinates, unnormalized features |
-| Zero-vector behavior | Returns 1 (max distance) | Returns magnitude of the non-zero vector |
-| Pre-normalization required | No (built-in) | Recommended if magnitude varies |
+| Property                   | Cosine Distance                               | Euclidean (L2) Distance                    |
+| -------------------------- | --------------------------------------------- | ------------------------------------------ |
+| Formula                    | `1 - (A · B) / (‖A‖ · ‖B‖)`                   | `√Σ(aᵢ - bᵢ)²`                             |
+| Range                      | [0, 2]                                        | [0, ∞)                                     |
+| Sensitivity to magnitude   | Invariant (only measures angle)               | Sensitive to vector magnitude              |
+| Best for                   | Normalized embeddings (text, semantic search) | Spatial coordinates, unnormalized features |
+| Zero-vector behavior       | Returns 1 (max distance)                      | Returns magnitude of the non-zero vector   |
+| Pre-normalization required | No (built-in)                                 | Recommended if magnitude varies            |
 
 **When to consider adding Euclidean support:**
+
 - If vectors are spatial coordinates (e.g., geographic embeddings).
 - If the embedding model produces magnitude-meaningful vectors.
 - Implementation would require a separate distance function and a config flag; the graph structure and search algorithm remain identical.
@@ -130,18 +134,18 @@ private cosineDistance(a: number[], b: number[]): number {
 
 ### API Reference
 
-| Method | Signature | Description |
-|---|---|---|
-| `constructor` | `new HNSWIndex(config?: Partial<HnswConfig>)` | Creates an index with merged config defaults. |
-| `insert` | `insert(id: string, vector: number[]): void` | Inserts a node. No-op if `id` already exists. Assigns random level, links neighbors. |
-| `search` | `search(query: number[], k?: number): SearchResult[]` | Returns top-k nearest neighbors. Default k=10. Returns `[]` if index is empty. |
-| `delete` | `delete(id: string): boolean` | Removes a node and re-links its neighbors. Reassigns entry point if deleted. Returns false if id not found. |
-| `size` | `size(): number` | Returns the number of nodes. |
-| `clear` | `clear(): void` | Removes all nodes, resets entry point and max level. |
-| `getNode` | `getNode(id: string): HnswNode \| undefined` | Returns a single node or undefined. |
-| `getAllNodes` | `getAllNodes(): Map<string, HnswNode>` | Returns a shallow copy of the internal node map. |
-| `toJSON` | `toJSON(): object` | Serializes the entire index to a plain object. |
-| `fromJSON` | `static fromJSON(data): HNSWIndex` | Deserializes a previously serialized index. |
+| Method        | Signature                                             | Description                                                                                                 |
+| ------------- | ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `constructor` | `new HNSWIndex(config?: Partial<HnswConfig>)`         | Creates an index with merged config defaults.                                                               |
+| `insert`      | `insert(id: string, vector: number[]): void`          | Inserts a node. No-op if `id` already exists. Assigns random level, links neighbors.                        |
+| `search`      | `search(query: number[], k?: number): SearchResult[]` | Returns top-k nearest neighbors. Default k=10. Returns `[]` if index is empty.                              |
+| `delete`      | `delete(id: string): boolean`                         | Removes a node and re-links its neighbors. Reassigns entry point if deleted. Returns false if id not found. |
+| `size`        | `size(): number`                                      | Returns the number of nodes.                                                                                |
+| `clear`       | `clear(): void`                                       | Removes all nodes, resets entry point and max level.                                                        |
+| `getNode`     | `getNode(id: string): HnswNode \| undefined`          | Returns a single node or undefined.                                                                         |
+| `getAllNodes` | `getAllNodes(): Map<string, HnswNode>`                | Returns a shallow copy of the internal node map.                                                            |
+| `toJSON`      | `toJSON(): object`                                    | Serializes the entire index to a plain object.                                                              |
+| `fromJSON`    | `static fromJSON(data): HNSWIndex`                    | Deserializes a previously serialized index.                                                                 |
 
 ### Insert Flow
 
@@ -231,17 +235,18 @@ const restored = HNSWIndex.fromJSON(JSON.parse(json));
 
 ### Serialization Characteristics
 
-| Aspect | Detail |
-|---|---|
-| Format | JSON (plain object) |
-| Node key | String `id` |
-| Vector storage | Inline `number[]` |
-| Neighbor storage | `Record<layer, string[]>` — layer keys are stringified integers |
-| Config preservation | Full config is stored and restored |
-| Entry point | Preserved as string `id` |
-| Max level | Preserved as integer |
+| Aspect              | Detail                                                          |
+| ------------------- | --------------------------------------------------------------- |
+| Format              | JSON (plain object)                                             |
+| Node key            | String `id`                                                     |
+| Vector storage      | Inline `number[]`                                               |
+| Neighbor storage    | `Record<layer, string[]>` — layer keys are stringified integers |
+| Config preservation | Full config is stored and restored                              |
+| Entry point         | Preserved as string `id`                                        |
+| Max level           | Preserved as integer                                            |
 
 **Size considerations for large indexes:**
+
 - Each node's vector is stored as a JSON number array. For `dim=1024`, each vector is ~12 KB in JSON (including commas, decimal points).
 - For 100k nodes at dim=1024: vector data alone ≈ 1.2 GB in JSON.
 - Compressed serialization (e.g., MessagePack, Protocol Buffers, or binary Float32Array encoding) is recommended for production persistence beyond ~10k nodes.
@@ -252,34 +257,34 @@ const restored = HNSWIndex.fromJSON(JSON.parse(json));
 
 ### Per-Node Memory Breakdown
 
-| Component | Type | Estimated Size |
-|---|---|---|
-| `id` | `string` | ~50 bytes (varies by ID length) |
-| `vector` | `number[]` | `dim × 8` bytes (IEEE 754 double) |
-| `level` | `number` | 8 bytes |
-| `neighbors` | `Map<number, string[]>` | `(level + 1) × M × ~50` bytes (string IDs) + Map overhead ~100 bytes |
-| **Total per node** | | **~`dim × 8 + (level+1) × M × 50 + 158` bytes** |
+| Component          | Type                    | Estimated Size                                                       |
+| ------------------ | ----------------------- | -------------------------------------------------------------------- |
+| `id`               | `string`                | ~50 bytes (varies by ID length)                                      |
+| `vector`           | `number[]`              | `dim × 8` bytes (IEEE 754 double)                                    |
+| `level`            | `number`                | 8 bytes                                                              |
+| `neighbors`        | `Map<number, string[]>` | `(level + 1) × M × ~50` bytes (string IDs) + Map overhead ~100 bytes |
+| **Total per node** |                         | **~`dim × 8 + (level+1) × M × 50 + 158` bytes**                      |
 
 ### Worked Examples
 
-| Scenario | dim | M | Avg Level | Nodes | Estimated Memory |
-|---|---|---|---|---|---|
-| Small (1k venues) | 384 | 16 | 1.5 | 1,000 | ~23 MB |
-| Medium (10k venues) | 768 | 16 | 1.5 | 10,000 | ~230 MB |
-| Large (100k venues) | 1024 | 16 | 1.5 | 100,000 | ~2.3 GB |
-| Very large (1M embeddings) | 1024 | 32 | 2.0 | 1,000,000 | ~25 GB |
+| Scenario                   | dim  | M   | Avg Level | Nodes     | Estimated Memory |
+| -------------------------- | ---- | --- | --------- | --------- | ---------------- |
+| Small (1k venues)          | 384  | 16  | 1.5       | 1,000     | ~23 MB           |
+| Medium (10k venues)        | 768  | 16  | 1.5       | 10,000    | ~230 MB          |
+| Large (100k venues)        | 1024 | 16  | 1.5       | 100,000   | ~2.3 GB          |
+| Very large (1M embeddings) | 1024 | 32  | 2.0       | 1,000,000 | ~25 GB           |
 
 > **Key driver:** The `number[]` vector is the dominant memory cost. Using `Float32Array` (4 bytes/element) instead of `number[]` (8 bytes/element) would halve vector memory. This would require modifying `HnswNode.vector` from `number[]` to `Float32Array` and updating the `cosineDistance` method.
 
 ### Graph-Level Memory
 
-| Layer | Approximate Node Count | Degree per Node | Total Edges |
-|---|---|---|---|
-| 0 | N (all nodes) | M = 16 | N × 16 |
-| 1 | N × ml ≈ 0.36N | M = 16 | 0.36N × 16 |
-| 2 | N × ml² ≈ 0.13N | M = 16 | 0.13N × 16 |
-| ... | ... | ... | ... |
-| **Total** | | | **≈ N × M × 1/(1-ml) ≈ 25N edges** |
+| Layer     | Approximate Node Count | Degree per Node | Total Edges                        |
+| --------- | ---------------------- | --------------- | ---------------------------------- |
+| 0         | N (all nodes)          | M = 16          | N × 16                             |
+| 1         | N × ml ≈ 0.36N         | M = 16          | 0.36N × 16                         |
+| 2         | N × ml² ≈ 0.13N        | M = 16          | 0.13N × 16                         |
+| ...       | ...                    | ...             | ...                                |
+| **Total** |                        |                 | **≈ N × M × 1/(1-ml) ≈ 25N edges** |
 
 For 100k nodes: ~2.5M bidirectional edges × ~50 bytes/string = ~125 MB edge data.
 
@@ -289,12 +294,12 @@ For 100k nodes: ~2.5M bidirectional edges × ~50 bytes/string = ~125 MB edge dat
 
 ### When to Rebuild
 
-| Trigger | Recommended Action |
-|---|---|
-| After >20% of nodes deleted | Full rebuild (graph has accumulated dead edges) |
+| Trigger                                   | Recommended Action                                                 |
+| ----------------------------------------- | ------------------------------------------------------------------ |
+| After >20% of nodes deleted               | Full rebuild (graph has accumulated dead edges)                    |
 | After bulk inserts (>50% of current size) | Full rebuild (graph quality degrades with incremental bulk insert) |
-| Periodic maintenance | Scheduled rebuild during low-traffic windows |
-| Memory pressure | Rebuild with lower M or dim |
+| Periodic maintenance                      | Scheduled rebuild during low-traffic windows                       |
+| Memory pressure                           | Rebuild with lower M or dim                                        |
 
 ### Full Rebuild Procedure
 
@@ -358,12 +363,14 @@ For production persistence beyond the current session:
 // Store
 const data = JSON.stringify(index.toJSON());
 await db.query(
-  'INSERT INTO hnsw_indices (id, data, updated_at) VALUES ($1, $2, NOW())',
-  [indexId, data]
+  "INSERT INTO hnsw_indices (id, data, updated_at) VALUES ($1, $2, NOW())",
+  [indexId, data],
 );
 
 // Restore
-const row = await db.query('SELECT data FROM hnsw_indices WHERE id = $1', [indexId]);
+const row = await db.query("SELECT data FROM hnsw_indices WHERE id = $1", [
+  indexId,
+]);
 const index = HNSWIndex.fromJSON(JSON.parse(row.rows[0].data));
 ```
 
@@ -373,28 +380,29 @@ const index = HNSWIndex.fromJSON(JSON.parse(row.rows[0].data));
 
 ### Theoretical Complexity
 
-| Operation | Brute-Force k-NN | HNSW |
-|---|---|---|
-| Insert | O(N × dim) | O(dim × log N) (amortized) |
-| Search (top-k) | O(N × dim) | O(dim × log N) (amortized) |
-| Delete | O(1) | O(M × level) |
-| Memory | O(N × dim × 8) bytes | O(N × dim × 8 + N × M × 50 × layers) bytes |
+| Operation      | Brute-Force k-NN     | HNSW                                       |
+| -------------- | -------------------- | ------------------------------------------ |
+| Insert         | O(N × dim)           | O(dim × log N) (amortized)                 |
+| Search (top-k) | O(N × dim)           | O(dim × log N) (amortized)                 |
+| Delete         | O(1)                 | O(M × level)                               |
+| Memory         | O(N × dim × 8) bytes | O(N × dim × 8 + N × M × 50 × layers) bytes |
 
 ### Expected Recall vs Latency Trade-offs
 
-| Configuration | Recall@10 | Queries/sec (100k nodes, dim=1024) |
-|---|---|---|
-| Brute-force | 100% | ~100 |
-| HNSW (efSearch=10, M=16) | ~85% | ~5,000 |
-| HNSW (efSearch=50, M=16) | ~93% | ~2,000 |
-| HNSW (efSearch=200, M=16) | ~98% | ~800 |
-| HNSW (efSearch=200, M=32) | ~99% | ~400 |
+| Configuration             | Recall@10 | Queries/sec (100k nodes, dim=1024) |
+| ------------------------- | --------- | ---------------------------------- |
+| Brute-force               | 100%      | ~100                               |
+| HNSW (efSearch=10, M=16)  | ~85%      | ~5,000                             |
+| HNSW (efSearch=50, M=16)  | ~93%      | ~2,000                             |
+| HNSW (efSearch=200, M=16) | ~98%      | ~800                               |
+| HNSW (efSearch=200, M=32) | ~99%      | ~400                               |
 
 > **Note:** These are representative estimates based on published HNSW benchmarks (Malkov & Yashunin, 2018). Actual performance depends on vector distribution, hardware (CPU cache, memory bandwidth), and JavaScript runtime optimizations.
 
 ### Break-Even Point
 
 For N < ~1,000 nodes at dim=1024, brute-force linear scan may outperform HNSW due to:
+
 - No graph traversal overhead.
 - Better CPU cache locality for small arrays.
 - Simpler code path (single loop vs multi-level BFS).
@@ -408,15 +416,15 @@ For N < ~1,000 nodes at dim=1024, brute-force linear scan may outperform HNSW du
 ### Basic Usage
 
 ```typescript
-import { HNSWIndex } from '@/lib/hnsw/hnsw';
+import { HNSWIndex } from "@/lib/hnsw/hnsw";
 
 // Create index with defaults (dim=1024, M=16)
 const index = new HNSWIndex();
 
 // Insert vectors
-index.insert('venue-1', embeddingVector1);
-index.insert('venue-2', embeddingVector2);
-index.insert('venue-3', embeddingVector3);
+index.insert("venue-1", embeddingVector1);
+index.insert("venue-2", embeddingVector2);
+index.insert("venue-3", embeddingVector3);
 
 // Search for 5 nearest neighbors
 const results = index.search(queryVector, 5);
@@ -427,10 +435,10 @@ const results = index.search(queryVector, 5);
 
 ```typescript
 const index = new HNSWIndex({
-  dim: 768,           // match your embedding model output
-  M: 24,              // higher degree for better recall
+  dim: 768, // match your embedding model output
+  M: 24, // higher degree for better recall
   efConstruction: 300, // thorough graph construction
-  efSearch: 100,      // high recall at query time
+  efSearch: 100, // high recall at query time
 });
 ```
 
@@ -439,10 +447,10 @@ const index = new HNSWIndex({
 ```typescript
 // Save to storage
 const serialized = JSON.stringify(index.toJSON());
-localStorage.setItem('hnsw-index', serialized);
+localStorage.setItem("hnsw-index", serialized);
 
 // Restore from storage
-const saved = localStorage.getItem('hnsw-index');
+const saved = localStorage.getItem("hnsw-index");
 const restored = HNSWIndex.fromJSON(JSON.parse(saved!));
 const results = restored.search(queryVector, 10);
 ```
@@ -450,7 +458,10 @@ const results = restored.search(queryVector, 10);
 ### Batch Insert with Progress
 
 ```typescript
-function batchInsert(index: HNSWIndex, items: { id: string; vector: number[] }[]): void {
+function batchInsert(
+  index: HNSWIndex,
+  items: { id: string; vector: number[] }[],
+): void {
   for (let i = 0; i < items.length; i++) {
     index.insert(items[i].id, items[i].vector);
     if (i % 1000 === 0) {
@@ -464,7 +475,7 @@ function batchInsert(index: HNSWIndex, items: { id: string; vector: number[] }[]
 
 ## Source References
 
-| File | Purpose |
-|---|---|
-| `src/lib/hnsw/hnsw.ts` | HNSWIndex class implementation (322 lines) |
+| File                    | Purpose                                                                                       |
+| ----------------------- | --------------------------------------------------------------------------------------------- |
+| `src/lib/hnsw/hnsw.ts`  | HNSWIndex class implementation (322 lines)                                                    |
 | `src/lib/hnsw/types.ts` | TypeScript interfaces for HnswNode, SearchResult, HnswConfig, CompressedContext, ContextChunk |

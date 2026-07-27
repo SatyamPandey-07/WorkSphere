@@ -12,6 +12,7 @@ import {
   Landmark,
   Calendar,
   Clock,
+  AlertTriangle,
   User,
   Download,
   MapPin,
@@ -31,11 +32,16 @@ import confetti from "canvas-confetti";
 import { Venue } from "./ChatMessages";
 import { trackEvent } from "@/lib/analytics";
 import { ReceiptVerificationModal } from "@/components/receipt/ReceiptVerificationModal";
+import { SignatureVerificationBadge } from "@/components/receipt/SignatureVerificationBadge";
+import { usePdfSignatureVerifier } from "@/hooks/usePdfSignatureVerifier";
 
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
-import { shouldCloseFromBackdrop } from "@/lib/modal-interactions";
-import { apiFetch } from "@/lib/apiClient";
+import {
+  handleModalBackdropClick,
+  isModalBackdropClick,
+  shouldCloseFromBackdrop,
+} from "@/lib/modal-interactions";
 import { useRateLimit } from "@/hooks/useRateLimit";
 
 interface Booking {
@@ -57,6 +63,7 @@ interface BookingModalProps {
   isOpen: boolean;
   onClose: () => void;
   mode?: "booking" | "history";
+  initialHistory?: Booking[];
 }
 
 export function BookingModal({
@@ -64,12 +71,13 @@ export function BookingModal({
   isOpen,
   onClose,
   mode = "booking",
+  initialHistory = [],
 }: BookingModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const retryAfter = useRateLimit("book");
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
-  >("details");
+  >(mode === "history" ? "history" : "details");
   const getTodayString = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -83,10 +91,19 @@ export function BookingModal({
   const [recurringFrequency, setRecurringFrequency] = useState("weekly");
   const [recurringOccurrences, setRecurringOccurrences] = useState(2);
   const [confirmationId, setConfirmationId] = useState("");
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [billingCode, setBillingCode] = useState("");
-  const [history, setHistory] = useState<Booking[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [history, setHistory] = useState<Booking[]>(initialHistory);
+
+  useEffect(() => {
+    if (initialHistory && initialHistory.length > 0) {
+      setHistory(initialHistory);
+    }
+  }, [initialHistory]);
+  const [loadingHistory, setLoadingHistory] = useState(
+    initialHistory.length === 0,
+  );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
   const [guests, setGuests] = useState<GuestEntry[]>([]);
@@ -101,24 +118,38 @@ export function BookingModal({
   const [showLogo, setShowLogo] = useState(true);
   const [dateFilter, setDateFilter] = useState("all");
   const [verifyModalOpen, setVerifyModalOpen] = useState(false);
+  const [verificationStatuses, setVerificationStatuses] = useState<
+    Record<string, { status: string; result?: any }>
+  >({});
+  const [activeVerifyBookingId, setActiveVerifyBookingId] = useState<
+    string | null
+  >(null);
+  const {
+    status: verifHookStatus,
+    result: verifResult,
+    error: verifError,
+    verify,
+    reset,
+  } = usePdfSignatureVerifier();
 
   const modalRef = useRef<HTMLDivElement>(null);
   const pointerDownStartedOnBackdrop = useRef(false);
 
   const handleBackdropPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    pointerDownStartedOnBackdrop.current = event.target === event.currentTarget;
+    pointerDownStartedOnBackdrop.current = isModalBackdropClick(event);
   };
 
   const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
-    const clickEndedOnBackdrop = event.target === event.currentTarget;
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    const shouldClose = shouldCloseFromBackdrop(
+      pointerDownStartedOnBackdrop.current,
+      isModalBackdropClick(event),
+    );
 
-    if (
-      shouldCloseFromBackdrop(
-        pointerDownStartedOnBackdrop.current,
-        clickEndedOnBackdrop,
-      )
-    ) {
-      onClose();
+    if (shouldClose) {
+      handleModalBackdropClick(event, onClose);
     }
 
     pointerDownStartedOnBackdrop.current = false;
@@ -173,7 +204,13 @@ export function BookingModal({
   }, [step]);
 
   const getFilteredHistory = () => {
-    if (dateFilter === "all") return history;
+    const list =
+      Array.isArray(history) && history.length > 0
+        ? history
+        : Array.isArray(initialHistory)
+          ? initialHistory
+          : [];
+    if (dateFilter === "all") return list;
     const now = new Date();
     const currentYear = now.getFullYear();
 
@@ -210,11 +247,14 @@ export function BookingModal({
   const filteredHistory = getFilteredHistory();
 
   const fetchHistory = async () => {
-    setLoadingHistory(true);
     try {
       const res = await fetch("/api/bookings/history");
       const data = await res.json();
-      setHistory(data.bookings || []);
+      if (Array.isArray(data?.bookings) && data.bookings.length > 0) {
+        setHistory(data.bookings);
+      } else if (Array.isArray(data) && data.length > 0) {
+        setHistory(data);
+      }
       setSelectedIds(new Set());
       setStep("history");
     } catch (err) {
@@ -225,14 +265,43 @@ export function BookingModal({
   };
 
   useEffect(() => {
+    if (mode === "history" && step !== "history") {
+      setStep("history");
+    }
     if (!isOpen) {
-      setStep(mode === "history" ? "history" : "details");
       setGuests([]);
       setGuestInviteStatus("idle");
-    } else if (mode === "history") {
+      setVerificationStatuses({});
+      setActiveVerifyBookingId(null);
+    } else if (
+      mode === "history" &&
+      history.length === 0 &&
+      (!initialHistory || initialHistory.length === 0)
+    ) {
       fetchHistory();
     }
-  }, [isOpen, mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, mode, step]);
+
+  useEffect(() => {
+    if (!activeVerifyBookingId) return;
+    if (verifHookStatus === "verified" || verifHookStatus === "invalid") {
+      setVerificationStatuses((prev) => ({
+        ...prev,
+        [activeVerifyBookingId]: {
+          status: verifHookStatus,
+          result: verifResult,
+        },
+      }));
+      setActiveVerifyBookingId(null);
+    } else if (verifHookStatus === "error" || verifError) {
+      setVerificationStatuses((prev) => ({
+        ...prev,
+        [activeVerifyBookingId]: { status: "error" },
+      }));
+      setActiveVerifyBookingId(null);
+    }
+  }, [verifHookStatus, verifResult, verifError, activeVerifyBookingId]);
 
   useEffect(() => {
     if (!isOpen || !modalRef.current) return;
@@ -340,6 +409,30 @@ export function BookingModal({
     setReceiptDialogBookingId(null);
   };
 
+  const handleVerifyReceipt = async (bookingId: string) => {
+    setVerificationStatuses((prev) => ({
+      ...prev,
+      [bookingId]: { status: "verifying" },
+    }));
+    setActiveVerifyBookingId(bookingId);
+    reset();
+    try {
+      const response = await fetch(`/api/bookings/${bookingId}/download`);
+      if (!response.ok) throw new Error("Failed to download receipt");
+      const blob = await response.blob();
+      const file = new File([blob], `receipt-${bookingId}.pdf`, {
+        type: "application/pdf",
+      });
+      await verify(file);
+    } catch {
+      setActiveVerifyBookingId(null);
+      setVerificationStatuses((prev) => ({
+        ...prev,
+        [bookingId]: { status: "error" },
+      }));
+    }
+  };
+
   const handleBulkExport = async (format: "pdf" | "csv") => {
     setIsExporting(true);
     try {
@@ -415,7 +508,8 @@ export function BookingModal({
         }
       }
 
-      const response = await apiFetch("/api/bookings/confirm", {
+      setBookingError(null);
+      const response = await fetch("/api/bookings/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -431,10 +525,13 @@ export function BookingModal({
       const responseData = await response.json();
 
       if (!response.ok) {
+        if (response.status === 429) {
+          setIsSubmitting(false);
+          setStep("details");
+          return;
+        }
         throw new Error(
-          responseData.details ||
-            responseData.error ||
-            "Signal transmission failed",
+          responseData.error || "Booking failed. Please try again.",
         );
       }
 
@@ -467,15 +564,13 @@ export function BookingModal({
       }
     } catch (err: any) {
       console.error("Booking failure details:", err);
-      setIsSubmitting(false);
-      setStep("details");
-      alert(`NEURAL SIGNAL ERROR: ${err.message}`);
+      setBookingError(err.message || "Booking failed. Please try again.");
     }
   };
 
   return (
     <div
-      className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/90 animate-in fade-in duration-300 backdrop-blur-sm"
+      className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/60 animate-in fade-in duration-300 backdrop-blur-md"
       onPointerDown={handleBackdropPointerDown}
       onClick={handleBackdropClick}
     >
@@ -520,7 +615,7 @@ export function BookingModal({
                     Retrieving Archived Signals...
                   </p>
                 </div>
-              ) : history.length === 0 ? (
+              ) : filteredHistory.length === 0 ? (
                 <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
                   <div className="w-20 h-20 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
                     <Inbox className="w-10 h-10 text-zinc-300" />
@@ -583,7 +678,10 @@ export function BookingModal({
                   </div>
 
                   <div className="grid gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                    {filteredHistory.map((booking) => {
+                    {(Array.isArray(filteredHistory)
+                      ? filteredHistory
+                      : []
+                    ).map((booking) => {
                       const hours = booking.duration || 1;
                       const price = hours * 15;
                       const tax = price * 0.08;
@@ -609,18 +707,18 @@ export function BookingModal({
                               <div>
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="text-[8px] font-black bg-[var(--primary-accent)] text-white px-2 py-0.5 rounded uppercase tracking-widest">
-                                    {booking.venue.category}
+                                    {booking.venue?.category || "workspace"}
                                   </span>
                                   <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
                                     {booking.confirmationId}
                                   </span>
                                 </div>
                                 <h4 className="text-lg font-black uppercase tracking-tight group-hover:accent-text transition-colors">
-                                  {booking.venue.name}
+                                  {booking.venue?.name || "Workspace"}
                                 </h4>
                                 <p className="text-[10px] text-zinc-500 font-bold flex items-center gap-1 uppercase tracking-widest mt-1">
                                   <MapPin className="w-3 h-3" />
-                                  {booking.venue.address}
+                                  {booking.venue?.address || ""}
                                 </p>
                               </div>
                             </div>
@@ -639,11 +737,27 @@ export function BookingModal({
 
                           <div className="flex items-center gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                             <button
+                              aria-label="Download Receipt"
                               onClick={() => handleDownloadSingle(booking.id)}
                               className="flex-1 flex items-center justify-center gap-2 py-3 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all active:scale-95"
                             >
                               <Download className="w-3.5 h-3.5" />
                               Download Receipt
+                            </button>
+                            <button
+                              onClick={() => handleVerifyReceipt(booking.id)}
+                              className="flex items-center gap-1.5 px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-all"
+                            >
+                              <SignatureVerificationBadge
+                                status={
+                                  (verificationStatuses[booking.id]
+                                    ?.status as any) || "idle"
+                                }
+                                result={
+                                  verificationStatuses[booking.id]?.result
+                                }
+                                className="!p-0 !border-0 !bg-transparent"
+                              />
                             </button>
                             <div className="flex gap-2">
                               <a
@@ -737,6 +851,11 @@ export function BookingModal({
             </div>
           )}
 
+          {bookingError && (
+            <div className="mb-4 p-4 bg-red-900/30 border border-red-700 rounded-xl text-red-200 text-sm">
+              {bookingError}
+            </div>
+          )}
           {step === "details" && venue && (
             <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
               <div className="flex items-center gap-4 p-6 bg-zinc-900 dark:bg-[var(--primary-accent)] rounded-[2rem] text-white shadow-2xl relative overflow-hidden group">
@@ -964,9 +1083,27 @@ export function BookingModal({
                 </div>
               </div>
 
+              {retryAfter > 0 && (
+                <div className="flex items-center gap-2.5 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400 animate-in slide-in-from-top-2 duration-300">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-wider">
+                      Rate Limit Reached
+                    </p>
+                    <p className="text-[11px] font-mono font-semibold mt-0.5">
+                      Retry in{" "}
+                      <span className="tabular-nums tracking-tight">
+                        {retryAfter}s
+                      </span>
+                    </p>
+                  </div>
+                  <Clock className="w-4 h-4 shrink-0 animate-pulse" />
+                </div>
+              )}
+
               <button
                 onClick={handleBooking}
-                disabled={isSubmitting}
+                disabled={isSubmitting || retryAfter > 0}
                 className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 text-white font-black uppercase tracking-widest py-6 rounded-[1.5rem] flex items-center justify-center gap-3 shadow-2xl shadow-green-500/20 hover:scale-[1.02] disabled:hover:scale-100 transition-all active:scale-95 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (

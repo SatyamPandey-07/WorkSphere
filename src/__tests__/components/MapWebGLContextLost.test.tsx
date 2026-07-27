@@ -50,6 +50,7 @@ describe("WebGL Context Lost & Restoration Manager (#909)", () => {
       createBuffer: jest.fn().mockReturnValue({}),
       bindBuffer: jest.fn(),
       bufferData: jest.fn(),
+      viewport: jest.fn(),
       ARRAY_BUFFER: 0x8892,
       STATIC_DRAW: 0x88e4,
     } as unknown as WebGLRenderingContext;
@@ -65,5 +66,37 @@ describe("WebGL Context Lost & Restoration Manager (#909)", () => {
     expect(mockGl.bindBuffer).toHaveBeenCalled();
     expect(mockGl.bufferData).toHaveBeenCalled();
     expect(buffers.positionBuffer).toBeDefined();
+  });
+
+  it("reallocates retina drawing buffer when canvas is passed on restore", () => {
+    Object.defineProperty(window, "devicePixelRatio", {
+      configurable: true,
+      value: 2,
+    });
+
+    const canvas = document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(canvas, "clientHeight", {
+      configurable: true,
+      value: 300,
+    });
+
+    const mockGl = {
+      createBuffer: jest.fn().mockReturnValue({}),
+      bindBuffer: jest.fn(),
+      bufferData: jest.fn(),
+      viewport: jest.fn(),
+      ARRAY_BUFFER: 0x8892,
+      STATIC_DRAW: 0x88e4,
+    } as unknown as WebGLRenderingContext;
+
+    reinitializeWebGLBuffers(mockGl, [[1, 2, 0.5]], canvas);
+
+    expect(canvas.width).toBe(800);
+    expect(canvas.height).toBe(600);
+    expect(mockGl.viewport).toHaveBeenCalledWith(0, 0, 800, 600);
   });
 });

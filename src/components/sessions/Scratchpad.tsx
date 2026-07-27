@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import * as Y from "yjs";
 import usePartySocket from "partysocket/react";
 import { CryptoManager } from "@/lib/e2ee/CryptoManager";
 import { KeyStore } from "@/lib/e2ee/KeyStore";
-import { Lock, Unlock, Key, Loader2, Share2 } from "lucide-react";
+import { Unlock, Key, Loader2, Share2 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 import {
   generateKeyPair,
@@ -34,9 +34,12 @@ export default function Scratchpad({ sessionId }: Props) {
   const yTextRef = useRef<Y.Text | null>(null);
   const cryptoKeyRef = useRef<CryptoKey | null>(null);
   const isLocalUpdateRef = useRef(false);
-  const processedUpdatesRef = useRef<Set<string>>(new Set());
   const updateQueueRef = useRef<Uint8Array[]>([]);
   const isApplyingRef = useRef(false);
+  const socketRef = useRef<{
+    send: (data: string) => void;
+    readyState: number;
+  } | null>(null);
 
   const processQueue = () => {
     if (isApplyingRef.current || !docRef.current) return;
@@ -55,6 +58,37 @@ export default function Scratchpad({ sessionId }: Props) {
       isApplyingRef.current = false;
     }
   };
+
+  // Helper to send sync request with local state vector
+  const sendSyncRequest = useCallback(async () => {
+    const currentSocket = socketRef.current;
+    if (
+      !docRef.current ||
+      !cryptoKeyRef.current ||
+      !currentSocket ||
+      currentSocket.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
+
+    try {
+      const stateVector = Y.encodeStateVector(docRef.current);
+      const encryptedVector = await CryptoManager.encryptPayload(
+        cryptoKeyRef.current,
+        stateVector,
+      );
+
+      currentSocket.send(
+        JSON.stringify({
+          type: "sync-step-1",
+          clientId: clientId.current,
+          payload: encryptedVector,
+        }),
+      );
+    } catch (err) {
+      console.error("Failed to send sync request", err);
+    }
+  }, []);
 
   // Initialize Y.Doc
   useEffect(() => {
@@ -90,9 +124,65 @@ export default function Scratchpad({ sessionId }: Props) {
 
   const socket = usePartySocket({
     room: `session-scratchpad-${sessionId}`,
+    onOpen: () => {
+      sendSyncRequest();
+    },
     onMessage: async (e) => {
       try {
         const msg = JSON.parse(e.data);
+
+        // Handle incoming sync-step-1 from a peer
+        if (
+          msg.type === "sync-step-1" &&
+          cryptoKeyRef.current &&
+          docRef.current
+        ) {
+          if (msg.clientId === clientId.current) return;
+
+          const { ciphertext, iv } = msg.payload;
+          const remoteVector = await CryptoManager.decryptPayload(
+            cryptoKeyRef.current,
+            ciphertext,
+            iv,
+          );
+
+          // Compute delta missing from remote peer's state vector
+          const delta = Y.encodeStateAsUpdate(docRef.current, remoteVector);
+          const encryptedDelta = await CryptoManager.encryptPayload(
+            cryptoKeyRef.current,
+            delta,
+          );
+
+          socket.send(
+            JSON.stringify({
+              type: "sync-step-2",
+              targetClientId: msg.clientId,
+              payload: encryptedDelta,
+            }),
+          );
+          return;
+        }
+
+        // Handle incoming sync-step-2 from a peer
+        if (
+          msg.type === "sync-step-2" &&
+          msg.targetClientId === clientId.current &&
+          cryptoKeyRef.current &&
+          docRef.current
+        ) {
+          const { ciphertext, iv } = msg.payload;
+          const decryptedDelta = await CryptoManager.decryptPayload(
+            cryptoKeyRef.current,
+            ciphertext,
+            iv,
+          );
+
+          updateQueueRef.current.push(decryptedDelta);
+          isLocalUpdateRef.current = true;
+          processQueue();
+          isLocalUpdateRef.current = false;
+          return;
+        }
 
         // Handle incoming E2EE delta updates
         if (
@@ -106,7 +196,8 @@ export default function Scratchpad({ sessionId }: Props) {
             ciphertext,
             iv,
           );
-          
+
+          updateQueueRef.current.push(decryptedUpdate);
           isLocalUpdateRef.current = true;
           processQueue();
           isLocalUpdateRef.current = false;
@@ -180,6 +271,10 @@ export default function Scratchpad({ sessionId }: Props) {
     },
   });
 
+  useEffect(() => {
+    socketRef.current = socket;
+  }, [socket]);
+
   // Start negotiation when socket is open
   useEffect(() => {
     if (
@@ -227,11 +322,16 @@ export default function Scratchpad({ sessionId }: Props) {
       if (isLocalUpdateRef.current || !cryptoKeyRef.current) return;
 
       try {
-        const encrypted = await CryptoManager.encryptPayload(cryptoKeyRef.current, update);
-        socket.send(JSON.stringify({
-          type: "e2ee-delta",
-          payload: encrypted
-        }));
+        const encrypted = await CryptoManager.encryptPayload(
+          cryptoKeyRef.current,
+          update,
+        );
+        socket.send(
+          JSON.stringify({
+            type: "e2ee-delta",
+            payload: encrypted,
+          }),
+        );
       } catch (err) {
         console.error("Failed to encrypt/send update", err);
       }
@@ -242,6 +342,27 @@ export default function Scratchpad({ sessionId }: Props) {
       doc.off("update", handleUpdate);
     };
   }, [socket, hasKey]);
+
+  // Re-sync on window focus or network reconnection (e.g. waking from sleep mode)
+  useEffect(() => {
+    const handleReconnect = () => {
+      sendSyncRequest();
+    };
+
+    window.addEventListener("focus", handleReconnect);
+    window.addEventListener("online", handleReconnect);
+
+    return () => {
+      window.removeEventListener("focus", handleReconnect);
+      window.removeEventListener("online", handleReconnect);
+    };
+  }, [sendSyncRequest]);
+
+  useEffect(() => {
+    if (hasKey) {
+      sendSyncRequest();
+    }
+  }, [hasKey, sendSyncRequest]);
   const handleShare = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);

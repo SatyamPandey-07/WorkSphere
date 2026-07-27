@@ -50,8 +50,22 @@ describe("WebGLContextRecoveryManager", () => {
 
   it("should execute onRestore callback when webglcontextrestored is fired and show success state", () => {
     // Mock getContext to avoid throwing in jsdom environment
-    const mockContext = {} as any;
+    const mockContext = {
+      viewport: jest.fn(),
+    } as any;
     jest.spyOn(canvas, "getContext").mockReturnValue(mockContext);
+    Object.defineProperty(canvas, "clientWidth", {
+      configurable: true,
+      value: 800,
+    });
+    Object.defineProperty(canvas, "clientHeight", {
+      configurable: true,
+      value: 450,
+    });
+    Object.defineProperty(window, "devicePixelRatio", {
+      configurable: true,
+      value: 2,
+    });
 
     const manager = new WebGLContextRecoveryManager(canvas, { onRestore });
 
@@ -68,6 +82,9 @@ describe("WebGLContextRecoveryManager", () => {
     });
     canvas.dispatchEvent(restoreEvent);
 
+    expect(mockContext.viewport).toHaveBeenCalledWith(0, 0, 1600, 900);
+    expect(canvas.width).toBe(1600);
+    expect(canvas.height).toBe(900);
     expect(onRestore).toHaveBeenCalledWith(mockContext);
 
     const banner = document.getElementById("webgl-recovery-banner");

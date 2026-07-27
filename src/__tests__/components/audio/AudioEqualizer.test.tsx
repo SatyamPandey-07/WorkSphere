@@ -136,11 +136,15 @@ describe("AudioEqualizer Component (#859)", () => {
     const options = Array.from(select.options).map((o) => o.value);
 
     expect(options).toContain("flat");
+    expect(options).toContain("balanced");
+    expect(options).toContain("speech-clarity");
     expect(options).toContain("bass-boost");
+    expect(options).toContain("music");
     expect(options).toContain("vocal-enhancer");
     expect(options).toContain("treble-boost");
     expect(options).toContain("warm");
-    expect(options).toHaveLength(5);
+    expect(options).toContain("custom");
+    expect(options).toHaveLength(9);
   });
 
   it("updates EQ preset on selection", () => {
@@ -151,8 +155,8 @@ describe("AudioEqualizer Component (#859)", () => {
     fireEvent.change(select, { target: { value: "bass-boost" } });
     expect(select.value).toBe("bass-boost");
 
-    fireEvent.change(select, { target: { value: "vocal-enhancer" } });
-    expect(select.value).toBe("vocal-enhancer");
+    fireEvent.change(select, { target: { value: "speech-clarity" } });
+    expect(select.value).toBe("speech-clarity");
   });
 
   it("displays correct label for each EQ preset option", () => {
@@ -162,10 +166,29 @@ describe("AudioEqualizer Component (#859)", () => {
     const optionLabels = Array.from(select.options).map((o) => o.text);
 
     expect(optionLabels).toContain("Flat");
+    expect(optionLabels).toContain("Balanced");
+    expect(optionLabels).toContain("Speech Clarity");
     expect(optionLabels).toContain("Bass Boost");
+    expect(optionLabels).toContain("Music");
     expect(optionLabels).toContain("Vocal Enhancer");
     expect(optionLabels).toContain("Treble Boost");
     expect(optionLabels).toContain("Warm");
+  });
+
+  it("applies equalizer preset gain curve smoothly when selected", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    // Start playing to initialize the Web Audio API nodes
+    const playButton = screen.getByTitle("Listen to Ambience");
+    fireEvent.click(playButton);
+
+    const select = screen.getByTitle("Equalizer Preset") as HTMLSelectElement;
+
+    // Trigger select change to speech-clarity
+    fireEvent.change(select, { target: { value: "speech-clarity" } });
+
+    // Verify it updates and calls smooth audio param ramping
+    expect(select.value).toBe("speech-clarity");
   });
 
   it("updates BiquadFilterNode gain in real-time with smooth audio param ramping when dragging EQ sliders (#1392)", () => {

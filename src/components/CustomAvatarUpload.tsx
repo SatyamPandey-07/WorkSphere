@@ -102,19 +102,6 @@ export function CustomAvatarUpload() {
     setSelectedFileName("");
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    let file = e.target.files?.[0];
-    if (!file) return;
-
-    setError(null);
-    setSuccess(null);
-
-      return null;
-    });
-    setSelectedFileName("");
-    clearInput();
-  };
-
   const handleFileChange = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
@@ -282,13 +269,11 @@ export function CustomAvatarUpload() {
                   {success}
                 </p>
               )}
-            </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-
-    <AvatarCropModal
+      <AvatarCropModal
         imageSource={cropSource ?? ""}
         originalFileName={selectedFileName}
         isOpen={Boolean(cropSource)}

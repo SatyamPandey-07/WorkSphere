@@ -61,7 +61,9 @@ interface ChatHeaderProps {
     oatAlmondMilk?: boolean;
     pourOverAvailable?: boolean;
     musicStyle?: "all" | "lofi" | "classical_jazz" | "no_music";
+    distanceRadius?: number;
   };
+  categoryCounts?: { cafe: number; coworking: number; library: number };
   showFilters: boolean;
   setShowFilters: (show: boolean) => void;
   onToggleFilter: (filter: string) => void;
@@ -91,6 +93,7 @@ export function ChatHeader({
   userLocation,
   onLocationChange,
   filters,
+  categoryCounts = { cafe: 0, coworking: 0, library: 0 },
   showFilters,
   setShowFilters,
   onToggleFilter,
@@ -403,6 +406,41 @@ export function ChatHeader({
             className="mt-4 p-3.5 sm:p-5 bg-zinc-50 dark:bg-zinc-900 border-2 border-orange-500/30 rounded-[2rem] flex flex-col gap-4 sm:gap-5 animate-in slide-in-from-top-2 duration-200 shadow-2xl"
             onMouseDown={(e) => e.stopPropagation()}
           >
+            {/* Section 0: Venue Category Filters */}
+            <div>
+              <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">
+                Venue Categories
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                >
+                  Cafes
+                  <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-orange-600 text-white text-[8px] font-black">
+                    {categoryCounts.cafe}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                >
+                  Coworking
+                  <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-orange-600 text-white text-[8px] font-black">
+                    {categoryCounts.coworking}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] font-black uppercase tracking-wide sm:tracking-widest transition-all bg-white dark:bg-zinc-800 text-zinc-500 border border-zinc-200 dark:border-zinc-700"
+                >
+                  Libraries
+                  <span className="inline-flex items-center justify-center min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-orange-600 text-white text-[8px] font-black">
+                    {categoryCounts.library}
+                  </span>
+                </button>
+              </div>
+            </div>
             {/* Section 1: Standard Toggles */}
             <div>
               <div className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-2.5 ml-1">

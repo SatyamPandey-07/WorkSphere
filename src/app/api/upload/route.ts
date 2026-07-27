@@ -33,15 +33,22 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate MIME type
-    const allowedMimeTypes = [
-      "image/png",
-      "image/jpeg",
-      "image/jpg",
-      "image/gif",
-      "image/webp",
-    ];
-    if (!allowedMimeTypes.includes(file.type)) {
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+
+    // Validate file type via magic bytes (not client-controlled MIME)
+    const magicBytes: Record<string, [number, number[]][]> = {
+      png: [[0, [0x89, 0x50, 0x4e, 0x47]]],
+      jpeg: [[0, [0xff, 0xd8]]],
+      gif: [[0, [0x47, 0x49, 0x46]]],
+      webp: [[8, [0x57, 0x45, 0x42, 0x50]]],
+    };
+    const detected = Object.entries(magicBytes).find(([_, sigs]) =>
+      sigs.some(([offset, bytes]) =>
+        bytes.every((b, i) => buffer[offset + i] === b),
+      ),
+    )?.[0];
+    if (!detected || !["png", "jpeg", "gif", "webp"].includes(detected)) {
       return NextResponse.json(
         {
           error:
@@ -50,19 +57,6 @@ export async function POST(request: Request) {
         { status: 400 },
       );
     }
-
-    // Validate file extension
-    const fileExt = path.extname(file.name).toLowerCase();
-    const allowedExtensions = [".png", ".jpeg", ".jpg", ".gif", ".webp"];
-    if (!allowedExtensions.includes(fileExt)) {
-      return NextResponse.json(
-        { error: "Invalid file extension." },
-        { status: 400 },
-      );
-    }
-
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
 
     // Fallback to local storage if Cloudinary config is missing
     if (

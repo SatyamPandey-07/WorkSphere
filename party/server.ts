@@ -4,11 +4,36 @@ import { verifyToken } from "@clerk/backend";
 
 type SeatStatus = "green" | "yellow" | "red";
 
+// Music genre options for the quick-select dropdown (issue #2077)
+export type MusicGenre =
+  | "Lo-Fi"
+  | "Jazz"
+  | "Pop"
+  | "Classical"
+  | "None"
+  | "Loud";
+
+const VALID_MUSIC_GENRES: readonly MusicGenre[] = [
+  "Lo-Fi",
+  "Jazz",
+  "Pop",
+  "Classical",
+  "None",
+  "Loud",
+];
+
 interface SeatCheckin {
   venueId: string;
   capacity: number;
   checkedInAt: number;
   version: number;
+}
+
+// Tracks the current music genre reported by any checked-in user at a venue
+interface VenueMusicState {
+  genre: MusicGenre;
+  updatedAt: number;
+  reportedByConnId: string;
 }
 
 // Venues we don't have real capacity data for yet still need a sensible
@@ -32,7 +57,40 @@ export default class WorkspaceServer implements Party.Server {
   private serverEpoch = Date.now();
   private sequenceId = 0;
 
-  constructor(readonly room: Party.Room) {}
+  // Music genre state per venue (#2077): tracks the current reported genre
+  // for each venueId. Overwritten on each update — last reporter wins.
+  private venueMusic = new Map<string, VenueMusicState>();
+
+  private heartbeatInterval?: ReturnType<typeof setInterval>;
+  private connectionStates = new Map
+    string,
+    { lastPong: number; name?: string; currentVenueId?: string }
+  >();
+
+  constructor(readonly room: Party.Room) {
+    this.heartbeatInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [connId, state] of this.connectionStates.entries()) {
+        const conn = this.room.getConnection(connId);
+        if (!conn) {
+          this.connectionStates.delete(connId);
+          continue;
+        }
+
+        if (now - state.lastPong > 30000) {
+          if (state.name) {
+            this.room.broadcast(
+              JSON.stringify({ type: "peer-leave", name: state.name }),
+            );
+          }
+          conn.close();
+          this.connectionStates.delete(connId);
+        } else if (now - state.lastPong >= 10000) {
+          conn.send(JSON.stringify({ type: "ping" }));
+        }
+      }
+    }, 10000);
+  }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
     const url = new URL(ctx.request.url);
@@ -76,7 +134,8 @@ export default class WorkspaceServer implements Party.Server {
         }
       } catch (err) {
         console.error("Token verification or DB fetch failed:", err);
-        isViewer = true;
+        conn.close(4001, "Unauthorized: Token expired");
+        return;
       }
     } else {
       isViewer = true;
@@ -107,6 +166,8 @@ export default class WorkspaceServer implements Party.Server {
       gc: true,
       readOnly: isViewer,
     });
+
+    this.connectionStates.set(conn.id, { lastPong: Date.now() });
 
     // Also handle simple presence via standard WebSockets
     conn.addEventListener("message", (event: { data: unknown }) => {
@@ -149,6 +210,21 @@ export default class WorkspaceServer implements Party.Server {
         return;
       }
 
+      if (parsed.type === "pong") {
+        const state = this.connectionStates.get(sender.id);
+        if (state) {
+          state.lastPong = Date.now();
+        }
+        return;
+      }
+
+      if (parsed.type === "cursor" && parsed.name) {
+        const state = this.connectionStates.get(sender.id);
+        if (state) {
+          state.name = parsed.name;
+        }
+      }
+
       if (
         parsed.type === "request_room_snapshot" ||
         parsed.type === "request_snapshot"
@@ -189,11 +265,31 @@ export default class WorkspaceServer implements Party.Server {
         parsed.type === "seat_checkin" &&
         typeof parsed.venueId === "string"
       ) {
+        // Track which venue this connection is checked into (#2077)
+        const connState = this.connectionStates.get(sender.id);
+        if (connState) {
+          connState.currentVenueId = parsed.venueId;
+        }
         this.handleSeatCheckin(sender, parsed.venueId, parsed.capacity);
         return;
       }
       if (parsed.type === "seat_checkout") {
+        const connState = this.connectionStates.get(sender.id);
+        if (connState) {
+          connState.currentVenueId = undefined;
+        }
         this.handleSeatCheckout(sender);
+        return;
+      }
+
+      // Music genre update (#2077): checked-in users can report the current
+      // music playing at their venue. Validated against allowed genre list.
+      if (
+        parsed.type === "music_genre_update" &&
+        typeof parsed.venueId === "string" &&
+        typeof parsed.genre === "string"
+      ) {
+        this.handleMusicGenreUpdate(sender, parsed.venueId, parsed.genre);
         return;
       }
 
@@ -216,6 +312,7 @@ export default class WorkspaceServer implements Party.Server {
   // Clear a disconnecting user's seat check-in so they don't count toward
   // a venue's availability after they've left (#703).
   onClose(conn: Party.Connection) {
+    this.connectionStates.delete(conn.id);
     this.handleSeatCheckout(conn);
   }
 
@@ -301,6 +398,60 @@ export default class WorkspaceServer implements Party.Server {
     console.error("[Seat] Max retries exceeded for checkout", connId);
   }
 
+  // Handles a music genre report from a checked-in user (#2077).
+  // Validates the genre, stores it per venue, and broadcasts to all clients
+  // so VenueCards update in real-time without a page refresh.
+  private handleMusicGenreUpdate(
+    conn: Party.Connection,
+    venueId: string,
+    genre: string,
+  ) {
+    // Only accept valid genres from the defined list — reject arbitrary strings
+    const normalised = VALID_MUSIC_GENRES.find(
+      (g) => g.toLowerCase() === genre.toLowerCase(),
+    );
+    if (!normalised) {
+      conn.send(
+        JSON.stringify({
+          type: "music_genre_error",
+          error: `Invalid genre. Must be one of: ${VALID_MUSIC_GENRES.join(", ")}`,
+        }),
+      );
+      return;
+    }
+
+    // Only accept updates from users currently checked into this venue
+    const connState = this.connectionStates.get(conn.id);
+    if (connState?.currentVenueId !== venueId) {
+      conn.send(
+        JSON.stringify({
+          type: "music_genre_error",
+          error: "You must be checked in at this venue to report music genre.",
+        }),
+      );
+      return;
+    }
+
+    const updatedAt = Date.now();
+    this.venueMusic.set(venueId, {
+      genre: normalised,
+      updatedAt,
+      reportedByConnId: conn.id,
+    });
+
+    // Broadcast the update to all connections so venue cards refresh instantly
+    this.sequenceId++;
+    this.room.broadcast(
+      JSON.stringify({
+        type: "music_genre_broadcast",
+        venueId,
+        genre: normalised,
+        updatedAt,
+        sequenceId: this.sequenceId,
+      }),
+    );
+  }
+
   private countForVenue(venueId: string): number {
     let count = 0;
     for (const checkin of this.seatCheckins.values()) {
@@ -319,6 +470,7 @@ export default class WorkspaceServer implements Party.Server {
   private broadcastSeatUpdate(venueId: string) {
     const count = this.countForVenue(venueId);
     const capacity = this.capacityForVenue(venueId);
+    const music = this.venueMusic.get(venueId);
     this.sequenceId++;
     this.room.broadcast(
       JSON.stringify({
@@ -327,6 +479,10 @@ export default class WorkspaceServer implements Party.Server {
         count,
         capacity,
         status: seatStatusFor(count, capacity),
+        // Include current music genre in seat updates so clients get it
+        // even if they missed the dedicated music_genre_broadcast (#2077)
+        musicGenre: music?.genre ?? null,
+        musicGenreUpdatedAt: music?.updatedAt ?? null,
         epoch: this.serverEpoch,
         sequenceId: this.sequenceId,
       }),
@@ -340,11 +496,14 @@ export default class WorkspaceServer implements Party.Server {
     }
     return Array.from(counts.entries()).map(([venueId, count]) => {
       const capacity = this.capacityForVenue(venueId);
+      const music = this.venueMusic.get(venueId);
       return {
         venueId,
         count,
         capacity,
         status: seatStatusFor(count, capacity),
+        musicGenre: music?.genre ?? null,
+        musicGenreUpdatedAt: music?.updatedAt ?? null,
       };
     });
   }

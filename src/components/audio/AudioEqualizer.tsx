@@ -9,13 +9,18 @@ import {
   Radio,
   Settings,
   RotateCcw,
+  BatteryLow,
+  Battery,
 } from "lucide-react";
 
 type SoundPreset = "jazz" | "cafe" | "library";
 
 export type EqPresetName =
   | "flat"
+  | "balanced"
+  | "speech-clarity"
   | "bass-boost"
+  | "music"
   | "vocal-enhancer"
   | "treble-boost"
   | "warm"
@@ -40,9 +45,21 @@ export const EQ_PRESETS: Record<EqPresetName, EqPreset> = {
     label: "Flat",
     gains: [0, 0, 0, 0, 0],
   },
+  balanced: {
+    label: "Balanced",
+    gains: [0, 0, 0, 0, 0],
+  },
+  "speech-clarity": {
+    label: "Speech Clarity",
+    gains: [-2, -1, 3, 2, 0],
+  },
   "bass-boost": {
     label: "Bass Boost",
     gains: [5, 3, 0, 0, 0],
+  },
+  music: {
+    label: "Music",
+    gains: [4, 1, -1, 2, 3],
   },
   "vocal-enhancer": {
     label: "Vocal Enhancer",
@@ -128,6 +145,9 @@ export function AudioEqualizer({
   const [bandGains, setBandGains] = useState<number[]>(
     initialGains || [0, 0, 0, 0, 0],
   );
+  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
+  const [batteryCharging, setBatteryCharging] = useState<boolean | null>(null);
+  const batteryAutoPausedRef = useRef<boolean>(false);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
@@ -135,9 +155,7 @@ export function AudioEqualizer({
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const jazzCleanupRef = useRef<(() => void) | null>(null);
-  const [frequencies, setFrequencies] = useState<number[]>(
-    new Array(12).fill(10),
-  );
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Detect prefers-reduced-motion on mount
   useEffect(() => {
@@ -153,20 +171,51 @@ export function AudioEqualizer({
     }
   }, []);
 
+  // Monitor battery status for low-power auto-pause
+  useEffect(() => {
+    let battery: any = null;
+    const updateBattery = (b: any) => {
+      setBatteryLevel(b.level);
+      setBatteryCharging(b.charging);
+    };
+
+    if (typeof navigator !== "undefined" && "getBattery" in navigator) {
+      (navigator as any).getBattery().then((b: any) => {
+        battery = b;
+        updateBattery(b);
+        b.addEventListener("levelchange", () => updateBattery(b));
+        b.addEventListener("chargingchange", () => updateBattery(b));
+      });
+    }
+
+    return () => {
+      if (battery) {
+        battery.removeEventListener("levelchange", () =>
+          updateBattery(battery),
+        );
+        battery.removeEventListener("chargingchange", () =>
+          updateBattery(battery),
+        );
+      }
+    };
+  }, []);
+
   // Load from Local Storage on Mount
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const savedPreset = window.localStorage.getItem("webrtc_eq_preset") as EqPresetName;
+      const savedPreset = window.localStorage.getItem(
+        "webrtc_eq_preset",
+      ) as EqPresetName;
       const savedGains = window.localStorage.getItem("webrtc_eq_gains");
-      
+
       if (savedPreset && EQ_PRESETS[savedPreset]) {
         setEqPreset(savedPreset);
       }
-      
+
       if (savedGains) {
         try {
           setBandGains(JSON.parse(savedGains));
-        } catch (e) {}
+        } catch {}
       } else if (savedPreset && savedPreset !== "custom") {
         setBandGains(EQ_PRESETS[savedPreset].gains);
       }
@@ -253,6 +302,24 @@ export function AudioEqualizer({
     }
   }, [stopPlayingNodes]);
 
+  // Auto-pause sampling when battery is critical and unplugged
+  useEffect(() => {
+    if (
+      batteryLevel !== null &&
+      batteryLevel < 0.15 &&
+      !batteryCharging &&
+      isPlaying &&
+      !batteryAutoPausedRef.current
+    ) {
+      batteryAutoPausedRef.current = true;
+      stopPlaying();
+      setIsPlaying(false);
+    }
+    if (batteryCharging && batteryAutoPausedRef.current) {
+      batteryAutoPausedRef.current = false;
+    }
+  }, [batteryLevel, batteryCharging, isPlaying, stopPlaying]);
+
   // Handle Real-Time Gain Slider Drag with Smooth Audio Parameter Ramping
   const handleBandGainChange = (index: number, newGain: number) => {
     setEqPreset("custom");
@@ -290,7 +357,7 @@ export function AudioEqualizer({
 
   const handleEqPresetChange = (presetName: EqPresetName) => {
     setEqPreset(presetName);
-    
+
     if (typeof window !== "undefined") {
       window.localStorage.setItem("webrtc_eq_preset", presetName);
     }
@@ -471,15 +538,76 @@ export function AudioEqualizer({
     let interval: NodeJS.Timeout;
 
     const updateFrequencies = () => {
-      if (!analyserRef.current || !isPlaying) return;
-      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-      analyserRef.current.getByteFrequencyData(dataArray);
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
-      const nextFrequencies = Array.from({ length: 12 }, (_, i) => {
-        const val = dataArray[i * 2] || 0;
-        return Math.max(5, Math.min(100, (val / 255) * 100));
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      if (
+        canvas.width !== Math.floor(rect.width * dpr) ||
+        canvas.height !== Math.floor(rect.height * dpr)
+      ) {
+        canvas.width = Math.floor(rect.width * dpr);
+        canvas.height = Math.floor(rect.height * dpr);
+      }
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      let nextFrequencies: number[];
+      if (analyserRef.current && isPlaying) {
+        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+        analyserRef.current.getByteFrequencyData(dataArray);
+
+        nextFrequencies = Array.from({ length: 12 }, (_, i) => {
+          const val = dataArray[i * 2] || 0;
+          return Math.max(5, Math.min(100, (val / 255) * 100));
+        });
+      } else {
+        nextFrequencies = new Array(12).fill(10);
+      }
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+
+      const numBars = 12;
+      const gap = 4;
+      const barWidth = 6;
+      const totalContentWidth = numBars * barWidth + (numBars - 1) * gap;
+      const startX = (rect.width - totalContentWidth) / 2;
+
+      const gradient = ctx.createLinearGradient(0, rect.height, 0, 0);
+      gradient.addColorStop(0, "#6366f1");
+      gradient.addColorStop(0.5, "#a855f7");
+      gradient.addColorStop(1, "#f472b6");
+      ctx.fillStyle = gradient;
+
+      nextFrequencies.forEach((heightPct, i) => {
+        const h = (heightPct / 100) * rect.height;
+        const x = startX + i * (barWidth + gap);
+        const y = rect.height - h;
+        const radius = Math.min(barWidth / 2, h);
+
+        ctx.beginPath();
+        ctx.moveTo(x, rect.height);
+        ctx.lineTo(x, y + radius);
+        if (radius > 0) {
+          ctx.arcTo(x, y, x + radius, y, radius);
+          ctx.arcTo(x + barWidth, y, x + barWidth, y + radius, radius);
+        } else {
+          ctx.lineTo(x, y);
+          ctx.lineTo(x + barWidth, y);
+        }
+        ctx.lineTo(x + barWidth, rect.height);
+        ctx.closePath();
+        ctx.fill();
       });
-      setFrequencies(nextFrequencies);
+
+      ctx.restore();
     };
 
     if (isPlaying) {
@@ -493,12 +621,17 @@ export function AudioEqualizer({
         loop();
       }
     } else {
-      setFrequencies(new Array(12).fill(10));
+      updateFrequencies(); // Draw idle state
     }
+
+    // Ensure it redraws correctly on window resize
+    const handleResize = () => updateFrequencies();
+    window.addEventListener("resize", handleResize);
 
     return () => {
       if (animFrame) cancelAnimationFrame(animFrame);
       if (interval) clearInterval(interval);
+      window.removeEventListener("resize", handleResize);
     };
   }, [isPlaying, reducedMotion]);
 
@@ -573,18 +706,12 @@ export function AudioEqualizer({
         </select>
 
         {/* Equalizer Frequency Bars */}
-        <div className="flex-1 flex items-end justify-center gap-[4px] h-12 px-2 bg-black/20 rounded-lg overflow-hidden border border-white/5">
-          {frequencies.map((height, i) => (
-            <div
-              key={i}
-              className={`w-[6px] rounded-t-full bg-gradient-to-t from-indigo-500 via-purple-500 to-pink-400 transition-all ${
-                isPlaying ? "duration-75" : "duration-300"
-              }`}
-              style={{
-                height: `${height}%`,
-              }}
-            />
-          ))}
+        <div className="flex-1 flex items-end justify-center h-12 bg-black/20 rounded-lg overflow-hidden border border-white/5 relative">
+          <canvas
+            ref={canvasRef}
+            className="w-full h-full absolute top-0 left-0"
+            style={{ width: "100%", height: "100%" }}
+          />
         </div>
 
         {/* Volume controls */}
@@ -661,6 +788,19 @@ export function AudioEqualizer({
           <Settings className="w-3.5 h-3.5" />
           <span className="text-[9px] uppercase tracking-wider font-bold">
             Reduced Motion Active
+          </span>
+        </div>
+      )}
+      {batteryLevel !== null && (
+        <div className="flex items-center gap-1.5 mt-2 justify-end opacity-40">
+          {batteryLevel < 0.15 && !batteryCharging ? (
+            <BatteryLow className="w-3.5 h-3.5 text-amber-400" />
+          ) : (
+            <Battery className="w-3.5 h-3.5" />
+          )}
+          <span className="text-[9px] uppercase tracking-wider font-bold">
+            {Math.round(batteryLevel * 100)}%
+            {batteryCharging ? " Charging" : ""}
           </span>
         </div>
       )}

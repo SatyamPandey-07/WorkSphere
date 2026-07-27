@@ -126,7 +126,9 @@ export function NoiseMeter({ onMeasured }: Props) {
           "devicechange",
           handleDeviceChange,
         );
-        cancelAnimationFrame(animationFrame);
+        if (typeof globalThis.cancelAnimationFrame === "function") {
+          globalThis.cancelAnimationFrame(animationFrame);
+        }
         try {
           source.disconnect();
         } catch {}
@@ -207,7 +209,7 @@ export function NoiseMeter({ onMeasured }: Props) {
         if (lastTickTime !== null) {
           const delta = now - lastTickTime;
           if (delta < targetFrameInterval) {
-            animationFrame = requestAnimationFrame(tick);
+            animationFrame = globalThis.requestAnimationFrame(tick);
             return;
           }
           lastTickTime = now - (delta % targetFrameInterval);
@@ -281,7 +283,7 @@ export function NoiseMeter({ onMeasured }: Props) {
           }
         }
 
-        animationFrame = requestAnimationFrame(tick);
+        animationFrame = globalThis.requestAnimationFrame(tick);
       };
 
       setTimeout(() => {

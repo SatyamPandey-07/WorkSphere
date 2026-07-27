@@ -10,27 +10,45 @@ import { XMLParser } from "fast-xml-parser";
  * @param expectedAudience - (Optional) The expected audience (EntityID) of our SP
  * @returns An object containing the extracted NameID and attributes if valid
  */
-export function validateSamlAssertion(xmlString: string, expectedCert: string, expectedAudience?: string) {
+export function validateSamlAssertion(
+  xmlString: string,
+  expectedCert: string,
+  expectedAudience?: string,
+) {
   // 1. Verify XML Signature using xml-crypto
   const doc = new DOMParser().parseFromString(xmlString, "text/xml");
-  const signature = doc.getElementsByTagNameNS("http://www.w3.org/2000/09/xmldsig#", "Signature")[0];
+  const signature = doc.getElementsByTagNameNS(
+    "http://www.w3.org/2000/09/xmldsig#",
+    "Signature",
+  )[0];
 
   if (!signature) {
     throw new Error("Invalid SAML: No signature found");
   }
 
+  const normalizedCert = expectedCert
+    .replace(/-----BEGIN CERTIFICATE-----/g, "")
+    .replace(/-----END CERTIFICATE-----/g, "")
+    .replace(/\s+/g, "");
+
   const sig = new SignedXml();
   // Provide the certificate to the verifier
   sig.keyInfoProvider = {
-    getKeyInfo: () => `<X509Data><X509Certificate>${expectedCert}</X509Certificate></X509Data>`,
-    getKey: () => Buffer.from(`-----BEGIN CERTIFICATE-----\n${expectedCert.replace(/(.{64})/g, "$1\n")}\n-----END CERTIFICATE-----`),
+    getKeyInfo: () =>
+      `<X509Data><X509Certificate>${normalizedCert}</X509Certificate></X509Data>`,
+    getKey: () =>
+      Buffer.from(
+        `-----BEGIN CERTIFICATE-----\n${normalizedCert.replace(/(.{64})/g, "$1\n")}\n-----END CERTIFICATE-----`,
+      ),
   };
 
   sig.loadSignature(signature.toString());
   const isValid = sig.checkSignature(xmlString);
 
   if (!isValid) {
-    throw new Error(`SAML Signature validation failed: ${sig.validationErrors.join(", ")}`);
+    throw new Error(
+      `SAML Signature validation failed: ${sig.validationErrors.join(", ")}`,
+    );
   }
 
   // 2. Parse the validated XML to extract details
@@ -73,7 +91,7 @@ export function validateSamlAssertion(xmlString: string, expectedCert: string, e
         const audiences = Array.isArray(audienceRestriction.Audience)
           ? audienceRestriction.Audience
           : [audienceRestriction.Audience];
-        
+
         if (!audiences.includes(expectedAudience)) {
           throw new Error("SAML Assertion Audience restriction mismatch");
         }

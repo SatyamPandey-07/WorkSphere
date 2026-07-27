@@ -4,11 +4,7 @@
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import {
-  WEIGHT_DB_NAME,
-  WEIGHT_KEY,
-  WEIGHT_STORE,
-} from "./types";
+import { WEIGHT_DB_NAME, WEIGHT_KEY, WEIGHT_STORE } from "./types";
 
 export type WeightBlob = {
   weights: Float32Array;
@@ -64,6 +60,40 @@ export async function loadWeights(): Promise<WeightBlob | null> {
     bias: row.bias,
     updatedAt: row.updatedAt,
   };
+}
+
+export const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+
+export async function purgeStaleWeights(
+  maxAgeMs: number = THIRTY_DAYS,
+): Promise<{ deletedCount: number; remainingCount: number }> {
+  try {
+    const db = await getWeightDb();
+    const tx = db.transaction(WEIGHT_STORE, "readwrite");
+    const store = tx.objectStore(WEIGHT_STORE);
+
+    let deletedCount = 0;
+    let remainingCount = 0;
+    const now = Date.now();
+
+    let cursor = await store.openCursor();
+    while (cursor) {
+      const entry = cursor.value;
+      if (now - entry.updatedAt > maxAgeMs) {
+        await cursor.delete();
+        deletedCount++;
+      } else {
+        remainingCount++;
+      }
+      cursor = await cursor.continue();
+    }
+
+    await tx.done;
+    return { deletedCount, remainingCount };
+  } catch (error) {
+    console.error("[Federated] Failed to purge stale weights:", error);
+    return { deletedCount: 0, remainingCount: 0 };
+  }
 }
 
 /** Test helper — clears the module-level DB promise. */

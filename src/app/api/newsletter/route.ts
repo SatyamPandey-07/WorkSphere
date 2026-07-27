@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { rateLimit } from "@/lib/rateLimit";
 
 const newsletterSchema = z.object({
   email: z.string().email("Please enter a valid email address."),
@@ -20,8 +21,11 @@ export async function POST(req: Request) {
 
     const { email } = validation.data;
 
-    // Simulate network delay for UX loading state
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "anonymous";
+    const allowed = await rateLimit(`newsletter:${ip}`, 5);
+    if (!allowed) {
+      return NextResponse.json({ error: "Too many requests" }, { status: 429 });
+    }
 
     // In a real application, you would connect to an email service provider
     // e.g., Resend, Mailchimp, ConvertKit, or save to your Prisma database:

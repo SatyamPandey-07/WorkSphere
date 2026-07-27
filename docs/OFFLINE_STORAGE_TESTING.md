@@ -101,10 +101,10 @@ Testing offline capabilities requires simulating a loss of network connectivity.
 
 WorkSphere uses two IndexedDB databases that evolve independently:
 
-| Database | Module | Current Version |
-| :--- | :--- | :---: |
-| `worksphere-offline` | `src/lib/offlineStorage.ts` | 4 |
-| `WorkSphereOfflineDB` | `src/lib/offlineStore.ts` | 3 |
+| Database              | Module                      | Current Version |
+| :-------------------- | :-------------------------- | :-------------: |
+| `worksphere-offline`  | `src/lib/offlineStorage.ts` |        4        |
+| `WorkSphereOfflineDB` | `src/lib/offlineStore.ts`   |        3        |
 
 When you bump `DB_VERSION` (or the version argument to `indexedDB.open()`), the browser fires `IDBOpenDBRequest.onupgradeneeded` **before** `onsuccess`. This is the only place where you are allowed to create, delete, or modify object stores and indexes.
 
@@ -133,6 +133,7 @@ indexedDB.open(DB_NAME, newVersion)
 ```
 
 **Critical rules:**
+
 - `createObjectStore()`, `deleteObjectStore()`, `createIndex()`, and `deleteIndex()` can **only** be called inside the `onupgradeneeded` callback.
 - The upgrade runs inside an implicit `versionchange` transaction — you do not need to call `db.transaction()`.
 - If the callback throws, the entire upgrade is rolled back and `onerror` fires instead of `onsuccess`.
@@ -173,7 +174,9 @@ When one tab opens a higher version while another tab still holds an active conn
 ```typescript
 // On the NEW tab (requesting the upgrade):
 request.onblocked = () => {
-  console.warn("[OfflineDB] Database upgrade blocked — another tab holds the connection");
+  console.warn(
+    "[OfflineDB] Database upgrade blocked — another tab holds the connection",
+  );
 };
 
 // On the OLD tab (holding the stale connection):
@@ -196,12 +199,14 @@ db.onversionchange = () => {
 When adding a new store (e.g., a `conversations` outbox), follow these steps:
 
 1. **Bump the version constant** in the relevant module:
+
    ```typescript
    // src/lib/offlineStorage.ts
    const DB_VERSION = 5; // was 4
    ```
 
 2. **Add the guarded creation** inside `onupgradeneeded`:
+
    ```typescript
    if (!database.objectStoreNames.contains("conversations")) {
      const store = database.createObjectStore("conversations", {
@@ -336,13 +341,25 @@ request.onupgradeneeded = (event) => {
 
 ### 6.1 Setting Up `fake-indexeddb` for Jest
 
-WorkSphere uses [`fake-indexeddb`](https://github.com/nicolo-ribaudo/fake-indexeddb) to provide a full IndexedDB implementation in Node.js for unit tests. Import it at the top of your test file:
+WorkSphere uses [`fake-indexeddb`](https://github.com/nicolo-ribaudo/fake-indexeddb) to provide a full IndexedDB implementation in Node.js for unit tests. This globally polyfills `indexedDB`, `IDBDatabase`, `IDBTransaction`, and related classes, supporting `onupgradeneeded`, versioning, and all store/index operations in-memory.
 
-```typescript
-import "fake-indexeddb/auto";
-```
+#### Configuration Options
 
-This globally polyfills `indexedDB`, `IDBDatabase`, `IDBTransaction`, and related classes. The polyfill supports `onupgradeneeded`, versioning, and all store/index operations.
+1. **Per-File Setup (Recommended for isolated tests)**:
+   Import the auto-polyfill at the very top of your test file before any module imports:
+   ```typescript
+   import "fake-indexeddb/auto";
+   ```
+2. **Global Setup**:
+   If most tests interact with offline storage components, register it in `jest.setup.js`:
+   ```javascript
+   import "fake-indexeddb/auto";
+   ```
+
+#### Key Mechanics of `fake-indexeddb`:
+
+- **In-Memory Storage**: The database is stored entirely in memory. It does not write to the file system, ensuring test speed and preventing data leaks.
+- **Asynchronous Loop**: It respects the asynchronous event-loop mechanics of IndexedDB. Transactions, `onsuccess`, `onerror`, and `onupgradeneeded` execute as macro-tasks, meaning you must `await` Promises wrapping IndexedDB calls inside tests.
 
 ### 6.2 Clearing the Database Between Tests
 
@@ -515,10 +532,90 @@ it("gracefully intercepts SecurityError and alerts user once", async () => {
   });
 
   // The module should not crash — it catches the error and shows an alert
-  await expect(queueOfflineFavorite("venue-fail", "ADD")).resolves.toBeUndefined();
+  await expect(
+    queueOfflineFavorite("venue-fail", "ADD"),
+  ).resolves.toBeUndefined();
   expect(global.alert).toHaveBeenCalledTimes(1);
 
   indexedDB.open = originalOpen;
+});
+```
+
+### 6.6 Offline Queue Persistence & Assertion Rules
+
+When writing tests for outbox queues (e.g. synchronization queues for favorites, messages, or bookings), follow these strict assertion rules to verify offline reliability:
+
+#### Rule 1: Assert on Unique Auto-Increment IDs
+
+To prevent `ConstraintError` exceptions when users double-click buttons rapidly (within the same millisecond), the outbox primary key must be auto-incremented by the database rather than generated via client-side timestamps.
+
+- In your test, trigger concurrent queue actions and verify both write successfully:
+
+```typescript
+it("handles rapid queueing (double-clicks) without ConstraintError", async () => {
+  await expect(
+    Promise.all([
+      queueOfflineFavorite("venue_abc", "ADD"),
+      queueOfflineFavorite("venue_abc", "ADD"),
+    ]),
+  ).resolves.not.toThrow();
+
+  const queued = await getQueuedFavorites();
+  const entries = queued.filter((a) => a.venueId === "venue_abc");
+  expect(entries).toHaveLength(2);
+  expect(entries[0].id).not.toBe(entries[1].id); // unique keys
+});
+```
+
+#### Rule 2: Assert FIFO Execution Order
+
+The queue must be processed in First-In-First-Out (FIFO) order to preserve user intent.
+
+- Assert that list getters or synchronization runners sort the entries by `timestamp` ascending before applying them.
+
+#### Rule 3: Assert Complete Dequeuing
+
+Ensure that successfully synchronized items are deleted individually, and that deletes targeting one ID do not affect other records:
+
+```typescript
+it("removes specified entry by id on dequeue", async () => {
+  await queueOfflineFavorite("venue_1", "ADD");
+  await queueOfflineFavorite("venue_2", "ADD");
+
+  const queuedBefore = await getQueuedFavorites();
+  const target = queuedBefore.find((a) => a.venueId === "venue_1")!;
+
+  await dequeueOfflineAction(target.id);
+
+  const queuedAfter = await getQueuedFavorites();
+  expect(queuedAfter.find((a) => a.id === target.id)).toBeUndefined();
+  expect(queuedAfter.find((a) => a.venueId === "venue_2")).toBeDefined(); // preserved
+});
+```
+
+#### Rule 4: Assert Bounded Retry Thresholds
+
+Queued actions that fail to synchronize must not loop infinitely. They must be bounded to `MAX_SYNC_RETRIES` and fail gracefully.
+
+- Verify that `incrementRetryCount(id)` persists increments.
+- Verify that once the limit is reached, the entry status is flagged, or the service worker triggers a user-facing failure notification instead of discarding the outbox silently.
+
+```typescript
+it("bounds failed sync attempts to MAX_SYNC_RETRIES", async () => {
+  await queueOfflineFavorite("venue_test", "ADD");
+  const queued = await getQueuedFavorites();
+  const entry = queued.find((a) => a.venueId === "venue_test")!;
+  expect(entry.retryCount).toBe(0);
+
+  let currentRetry = entry.retryCount;
+  for (let i = 0; i < MAX_SYNC_RETRIES; i++) {
+    currentRetry = await incrementRetryCount(entry.id);
+    expect(currentRetry).toBe(i + 1);
+  }
+
+  // Next attempt should flag failure / remove to notify user
+  const finalRetry = await incrementRetryCount(entry.id);
+  expect(finalRetry).toBeGreaterThan(MAX_SYNC_RETRIES);
 });
 ```
 

@@ -1,152 +1,288 @@
 /**
- * Solar position calculator for WebGL 2.0 God Rays rendering.
- * Computes sun altitude/azimuth from venue coordinates and UTC timestamp
- * using simplified astronomical algorithms (NOAA Solar Calculator).
+ * sunPosition.ts — Pure-math sun position calculations for outdoor seating.
  *
- * All latitude and longitude inputs are expected in **decimal degrees**
- * (positive north / east, negative south / west).
+ * No external dependencies — implements the same core algorithm as the
+ * `suncalc` npm package using NOAA solar geometry equations, so the bundle
+ * stays lightweight and edge-runtime compatible.
+ *
+ * Reference: https://gml.noaa.gov/grad/solcalc/calcdetails.html
  */
 
-/** Radian/degree conversion constants. */
-const DEG_TO_RAD = Math.PI / 180;
-const RAD_TO_DEG = 180 / Math.PI;
-
-/** Result of a solar position computation. */
 export interface SunPosition {
-  /** Sun angle above the local horizon in degrees (negative = below horizon). */
+  /** Altitude above the horizon in degrees (negative = below horizon) */
   altitude: number;
-  /** Compass bearing from true north in degrees [0, 360). */
+  /** True azimuth in degrees clockwise from North (0–360) */
   azimuth: number;
-  /** `true` when the sun is above astronomical twilight (altitude > −6°). */
-  isAboveHorizon: boolean;
-  /** Altitude normalised to [0, 1] for WebGL uniform interpolation. */
-  normalizedAltitude: number;
 }
 
-/**
- * Return the 1-based day-of-year for the given date.
- *
- * @param date - Any `Date` value; only the year, month, and day are used.
- * @returns Day number in [1, 365] (366 in leap years).
- */
-function dayOfYear(date: Date): number {
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = date.getTime() - start.getTime();
-  return Math.floor(diff / 86400000);
+export type SunExposureLabel =
+  | "Direct Sun"
+  | "Partial Sun"
+  | "Shaded"
+  | "Night";
+
+export interface SunExposureResult {
+  label: SunExposureLabel;
+  altitude: number;
+  azimuth: number;
+  uvRisk: "none" | "low" | "moderate" | "high" | "very-high";
+  description: string;
+  /** Whether this is considered peak UV hours in summer (used by ReasoningAgent) */
+  isPeakUvSummer: boolean;
 }
 
-/**
- * Compute the solar declination angle (δ) for a given day of year.
- *
- * Uses the NOAA approximation:
- *   δ ≈ 23.45° × sin( 360/365 × (N − 81) )
- *
- * where N is the day-of-year and 81 corresponds to the March equinox
- * (~March 21).
- *
- * @param dayOfYear - 1-based day of year.
- * @returns Declination angle in degrees (range ≈ ±23.45°).
- */
-function solarDeclination(dayOfYear: number): number {
-  return 23.45 * Math.sin(DEG_TO_RAD * (360 / 365) * (dayOfYear - 81));
+// ---------------------------------------------------------------------------
+// Internal math helpers
+// ---------------------------------------------------------------------------
+
+function toRad(deg: number): number {
+  return (deg * Math.PI) / 180;
 }
 
-/**
- * Compute the Equation of Time (EoT) for a given day of year.
- *
- * The EoT accounts for the eccentricity of Earth's orbit and the obliquity
- * of the ecliptic, expressed as the difference (in minutes) between apparent
- * solar time and mean solar time.  Uses a four-term Fourier approximation:
- *
- *   EoT ≈ 9.87 sin(2B) − 7.53 cos(B) − 1.5 sin(B)
- *
- * where B = 360/365 × (N − 81) in radians.
- *
- * @param dayOfYear - 1-based day of year.
- * @returns Equation of time in minutes (range ≈ −17 to +16 min).
- */
-function equationOfTime(dayOfYear: number): number {
-  const B = DEG_TO_RAD * (360 / 365) * (dayOfYear - 81);
-  return 9.87 * Math.sin(2 * B) - 7.53 * Math.cos(B) - 1.5 * Math.sin(B);
+function toDeg(rad: number): number {
+  return (rad * 180) / Math.PI;
 }
+
+/** Julian Day Number from a UTC Date */
+function julianDay(date: Date): number {
+  return date.getTime() / 86400000 + 2440587.5;
+}
+
+/** Julian century from J2000.0 */
+function julianCentury(jd: number): number {
+  return (jd - 2451545.0) / 36525.0;
+}
+
+/** Geometric mean longitude of the sun in degrees */
+function sunGeomMeanLongDeg(t: number): number {
+  return (280.46646 + t * (36000.76983 + t * 0.0003032)) % 360;
+}
+
+/** Geometric mean anomaly of the sun in degrees */
+function sunGeomMeanAnomDeg(t: number): number {
+  return 357.52911 + t * (35999.05029 - 0.0001537 * t);
+}
+
+/** Eccentricity of earth's orbit */
+function earthOrbitEccentricity(t: number): number {
+  return 0.016708634 - t * (0.000042037 + 0.0000001267 * t);
+}
+
+/** Sun equation of centre in degrees */
+function sunEqOfCentre(t: number): number {
+  const m = toRad(sunGeomMeanAnomDeg(t));
+  return (
+    Math.sin(m) * (1.9146 - t * (0.004817 + 0.000014 * t)) +
+    Math.sin(2 * m) * (0.019993 - 0.000101 * t) +
+    Math.sin(3 * m) * 0.00029
+  );
+}
+
+/** Sun true longitude in degrees */
+function sunTrueLongDeg(t: number): number {
+  return sunGeomMeanLongDeg(t) + sunEqOfCentre(t);
+}
+
+/** Sun apparent longitude in degrees */
+function sunApparentLongDeg(t: number): number {
+  const o = sunTrueLongDeg(t);
+  const omega = 125.04 - 1934.136 * t;
+  return o - 0.00569 - 0.00478 * Math.sin(toRad(omega));
+}
+
+/** Mean obliquity of the ecliptic in degrees */
+function meanObliquityOfEcliptic(t: number): number {
+  const seconds =
+    21.448 -
+    t * (46.815 + t * (0.00059 - t * 0.001813));
+  return 23.0 + (26.0 + seconds / 60.0) / 60.0;
+}
+
+/** Corrected obliquity in degrees */
+function obliquityCorrection(t: number): number {
+  const e0 = meanObliquityOfEcliptic(t);
+  const omega = 125.04 - 1934.136 * t;
+  return e0 + 0.00256 * Math.cos(toRad(omega));
+}
+
+/** Sun declination in degrees */
+function sunDeclinationDeg(t: number): number {
+  const e = toRad(obliquityCorrection(t));
+  const lambda = toRad(sunApparentLongDeg(t));
+  return toDeg(Math.asin(Math.sin(e) * Math.sin(lambda)));
+}
+
+/** Equation of time in minutes */
+function equationOfTimeMinutes(t: number): number {
+  const e = earthOrbitEccentricity(t);
+  const epsilon = toRad(obliquityCorrection(t));
+  const l0 = toRad(sunGeomMeanLongDeg(t));
+  const m = toRad(sunGeomMeanAnomDeg(t));
+  const y = Math.tan(epsilon / 2) ** 2;
+  return (
+    4 *
+    toDeg(
+      y * Math.sin(2 * l0) -
+        2 * e * Math.sin(m) +
+        4 * e * y * Math.sin(m) * Math.cos(2 * l0) -
+        0.5 * y * y * Math.sin(4 * l0) -
+        1.25 * e * e * Math.sin(2 * m),
+    )
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 /**
  * Calculate the sun's altitude and azimuth for a given location and time.
  *
- * Implements the NOAA solar position algorithm:
- *   1. Determine the Equation of Time and solar declination.
- *   2. Convert UTC time to approximate solar time via longitude offset.
- *   3. Compute the local hour angle from true solar time.
- *   4. Solve the spherical astronomy triangle for altitude and azimuth.
- *
- * @param lat - Latitude in **decimal degrees** (positive = north).
- * @param lng - Longitude in **decimal degrees** (positive = east).
- * @param date - JS `Date` object (defaults to `new Date()`). UTC fields are
- *               read directly; the local time zone is **not** used.
- * @returns A {@link SunPosition} with altitude, azimuth, normalised altitude,
- *          and a convenience flag for above-horizon status.
+ * @param latitude  Venue latitude in decimal degrees
+ * @param longitude Venue longitude in decimal degrees
+ * @param date      Moment to calculate for (defaults to now)
  */
 export function calculateSunPosition(
-  lat: number,
-  lng: number,
+  latitude: number,
+  longitude: number,
   date: Date = new Date(),
 ): SunPosition {
-  const doy = dayOfYear(date);
-  const decl = solarDeclination(doy);
-  const eot = equationOfTime(doy);
+  const jd = julianDay(date);
+  const t = julianCentury(jd);
 
-  // Convert UTC clock time to fractional hours (e.g. 14:30 → 14.5).
-  const utcHours =
-    date.getUTCHours() +
-    date.getUTCMinutes() / 60 +
-    date.getUTCSeconds() / 3600;
+  // True solar time in minutes
+  const utcMinutes = date.getUTCHours() * 60 + date.getUTCMinutes();
+  const eot = equationOfTimeMinutes(t);
+  const trueSolarTime =
+    ((utcMinutes + eot + 4 * longitude) % 1440) + (utcMinutes < 0 ? 1440 : 0);
 
-  // Approximate local solar time by adding the longitude correction
-  // (4 min per degree of longitude) and the Equation of Time offset.
-  const solarTimeFix = eot + 4 * lng;
-  const trueSolarTime = utcHours * 60 + solarTimeFix;
+  // Hour angle
+  const hourAngleDeg =
+    trueSolarTime / 4 < 0
+      ? trueSolarTime / 4 + 180
+      : trueSolarTime / 4 - 180;
+  const ha = toRad(hourAngleDeg);
 
-  // Hour angle: 0° at solar noon, negative before noon, positive after.
-  // Each degree of hour angle corresponds to 4 minutes of solar time.
-  const hourAngle = trueSolarTime / 4 - 180;
+  const latRad = toRad(latitude);
+  const decl = toRad(sunDeclinationDeg(t));
 
-  // Convert degrees to radians for trigonometric calculations.
-  const latRad = lat * DEG_TO_RAD;
-  const declRad = decl * DEG_TO_RAD;
-  const haRad = hourAngle * DEG_TO_RAD;
+  // Solar zenith
+  const cosZenith =
+    Math.sin(latRad) * Math.sin(decl) +
+    Math.cos(latRad) * Math.cos(decl) * Math.cos(ha);
+  const zenithRad = Math.acos(Math.min(1, Math.max(-1, cosZenith)));
+  const altitude = 90 - toDeg(zenithRad);
 
-  // Compute the sine of the solar altitude using the spherical law of cosines.
-  // Clamp to [−1, 1] to guard against floating-point overshoot near ±90°.
-  const sinAlt =
-    Math.sin(latRad) * Math.sin(declRad) +
-    Math.cos(latRad) * Math.cos(declRad) * Math.cos(haRad);
-
-  const altitude = Math.asin(Math.max(-1, Math.min(1, sinAlt))) * RAD_TO_DEG;
-
-  // Derive azimuth from the spherical triangle.
-  // Clamp to [−1, 1] for acos domain safety; add a tiny epsilon to avoid
-  // division by zero when the sun is near the zenith.
-  const cosAzimuth =
-    (Math.sin(declRad) - Math.sin(latRad) * sinAlt) /
-    (Math.cos(latRad) * Math.cos(Math.asin(sinAlt)) + 1e-10);
-
-  // acos returns [0, π]; we flip for afternoon (hour angle > 0) to get
-  // a full [0, 360) bearing measured clockwise from north.
-  let azimuth = Math.acos(Math.max(-1, Math.min(1, cosAzimuth))) * RAD_TO_DEG;
-
-  if (hourAngle > 0) {
+  // Azimuth (0–360, clockwise from North)
+  const cosAz =
+    (Math.sin(latRad) * Math.cos(zenithRad) - Math.sin(decl)) /
+    (Math.cos(latRad) * Math.sin(zenithRad));
+  let azimuth = toDeg(Math.acos(Math.min(1, Math.max(-1, cosAz))));
+  if (hourAngleDeg > 0) {
     azimuth = 360 - azimuth;
   }
 
-  // Map altitude from [−10°, 90°] → [0, 1] for smooth shader blending.
-  // Values below −10° (deep twilight) clamp to 0; above 90° clamp to 1.
-  const normalizedAltitude = Math.max(0, Math.min(1, (altitude + 10) / 100));
+  return { altitude, azimuth };
+}
 
-  return {
-    altitude,
-    azimuth,
-    // Sun is considered visible once it rises above astronomical twilight.
-    isAboveHorizon: altitude > -6,
-    normalizedAltitude,
-  };
+/**
+ * Estimate UV risk level from sun altitude (rough NOAA model).
+ * Returns "none" at night and scales up through "very-high" at solar noon.
+ */
+export function estimateUvRisk(
+  altitude: number,
+): "none" | "low" | "moderate" | "high" | "very-high" {
+  if (altitude <= 0) return "none";
+  if (altitude < 15) return "low";
+  if (altitude < 35) return "moderate";
+  if (altitude < 55) return "high";
+  return "very-high";
+}
+
+/**
+ * Returns a human-readable sun exposure label and description for a venue
+ * patio, given the venue's coordinates and an optional time.
+ *
+ * @param latitude   Venue latitude in decimal degrees
+ * @param longitude  Venue longitude in decimal degrees
+ * @param date       Observation time (defaults to now)
+ */
+export function getSunExposure(
+  latitude: number,
+  longitude: number,
+  date: Date = new Date(),
+): SunExposureResult {
+  const { altitude, azimuth } = calculateSunPosition(latitude, longitude, date);
+  const uvRisk = estimateUvRisk(altitude);
+
+  const month = date.getUTCMonth(); // 0 = Jan, 11 = Dec
+  const isSummerHemisphere =
+    latitude >= 0
+      ? month >= 4 && month <= 8   // Northern summer: May–Sep
+      : month >= 10 || month <= 2; // Southern summer: Nov–Mar
+
+  const isPeakUvSummer =
+    isSummerHemisphere && altitude > 40;
+
+  let label: SunExposureLabel;
+  let description: string;
+
+  if (altitude <= 0) {
+    label = "Night";
+    description = "Sun is below the horizon. Outdoor seating is in darkness.";
+  } else if (altitude < 10) {
+    label = "Partial Sun";
+    description =
+      "Sun is low on the horizon — expect dappled light or long shadows.";
+  } else if (altitude < 35) {
+    label = "Partial Sun";
+    description = `Sun at ${altitude.toFixed(0)}° — outdoor patio will have morning/evening light but not harsh glare.`;
+  } else {
+    label = "Direct Sun";
+    description = `Sun at ${altitude.toFixed(0)}° — outdoor seating is in full direct sun. UV risk: ${uvRisk}.${isPeakUvSummer ? " Peak UV hours — consider an umbrella." : ""}`;
+  }
+
+  return { label, altitude, azimuth, uvRisk, description, isPeakUvSummer };
+}
+
+/**
+ * Returns a CSS-friendly colour token for the sun exposure badge.
+ */
+export function sunExposureColour(label: SunExposureLabel): {
+  bg: string;
+  text: string;
+  darkBg: string;
+  darkText: string;
+} {
+  switch (label) {
+    case "Direct Sun":
+      return {
+        bg: "bg-amber-100",
+        text: "text-amber-800",
+        darkBg: "dark:bg-amber-900/30",
+        darkText: "dark:text-amber-300",
+      };
+    case "Partial Sun":
+      return {
+        bg: "bg-yellow-50",
+        text: "text-yellow-700",
+        darkBg: "dark:bg-yellow-900/20",
+        darkText: "dark:text-yellow-400",
+      };
+    case "Shaded":
+      return {
+        bg: "bg-blue-50",
+        text: "text-blue-700",
+        darkBg: "dark:bg-blue-900/20",
+        darkText: "dark:text-blue-400",
+      };
+    case "Night":
+    default:
+      return {
+        bg: "bg-zinc-100",
+        text: "text-zinc-500",
+        darkBg: "dark:bg-zinc-800",
+        darkText: "dark:text-zinc-400",
+      };
+  }
 }

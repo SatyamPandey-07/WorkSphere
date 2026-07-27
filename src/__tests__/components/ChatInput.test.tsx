@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { ChatInput } from "../../components/chat/ChatMessages";
 import "@testing-library/jest-dom";
 
@@ -150,7 +150,7 @@ describe("ChatInput keyboard inset", () => {
     Object.defineProperty(window, "visualViewport", {
       configurable: true,
       value: {
-        height: 500,
+        height: 100,
         offsetTop: 0,
         addEventListener: (type: string, cb: () => void) => {
           listeners[type] = listeners[type] || [];
@@ -180,8 +180,12 @@ describe("ChatInput keyboard inset", () => {
       />,
     );
 
+    act(() => {
+      listeners["resize"]?.forEach((cb) => cb());
+    });
+
     const wrap = container.firstChild as HTMLElement;
-    expect(wrap.style.paddingBottom).toContain("300px");
+    expect(wrap.getAttribute("data-keyboard-inset")).toBe("700");
   });
 });
 

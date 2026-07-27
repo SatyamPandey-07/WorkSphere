@@ -12,6 +12,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { eventBus } from "@/core/events";
+import { generateGuestListPdf } from "@/lib/pdfGenerator";
 import {
   inviteGuestsToBooking,
   getBookingGuests,
@@ -57,7 +58,7 @@ const rsvpSchema = z.object({
 async function verifyBookingOwnership(bookingId: string, userId: string) {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
-    select: { userId: true, id: true },
+    include: { venue: true, user: true },
   });
 
   if (!booking) {
@@ -179,6 +180,31 @@ export async function GET(
     }
 
     const guests = await getBookingGuests(bookingId);
+    const format = searchParams.get("format");
+
+    if (format === "pdf") {
+      if (ownership.booking.status !== "CONFIRMED") {
+        return NextResponse.json(
+          { error: "Forbidden: booking is not confirmed" },
+          { status: 403 },
+        );
+      }
+
+      if (!guests || guests.length === 0) {
+        return NextResponse.json({ guests: [] });
+      }
+
+      const pdfBytes = await generateGuestListPdf(ownership.booking, guests);
+      return new Response(new Uint8Array(pdfBytes), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename="GuestList_${bookingId}.pdf"`,
+          "Content-Length": pdfBytes.length.toString(),
+          "Cache-Control": "no-cache",
+        },
+      });
+    }
 
     return NextResponse.json({ guests });
   } catch (error: any) {
@@ -237,13 +263,7 @@ export async function POST(
     const { guests } = validation.data;
 
     // Fetch booking details for the invite flow
-    const booking = await prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: {
-        venue: true,
-        user: true,
-      },
-    });
+    const booking = ownership.booking;
 
     if (!booking || !booking.venue) {
       return NextResponse.json(
@@ -252,11 +272,12 @@ export async function POST(
       );
     }
 
-    const hostName =
-      [booking.user.firstName, booking.user.lastName]
-        .filter(Boolean)
-        .join(" ")
-        .trim() || booking.customerEmail;
+    const hostName = booking.user
+      ? [booking.user.firstName, booking.user.lastName]
+          .filter(Boolean)
+          .join(" ")
+          .trim() || booking.customerEmail
+      : booking.customerEmail;
 
     // Send invitations
     const results = await inviteGuestsToBooking(

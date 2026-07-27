@@ -48,7 +48,7 @@ jobs:
           cache: 'npm'
 
       - name: Cache Next.js build output
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             .next/cache

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { JobStatusTracker } from "@/components/JobStatusTracker";
 
 interface TaxExportModalProps {
@@ -20,6 +20,19 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !loading) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open, onClose, loading]);
 
   if (!open) return null;
 
@@ -78,8 +91,13 @@ export default function TaxExportModal({ open, onClose }: TaxExportModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="mb-4 text-lg font-semibold">Export Tax Summary</h2>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tax-export-title"
+        className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl"
+      >
+        <h2 id="tax-export-title" className="mb-4 text-lg font-semibold">Export Tax Summary</h2>
 
         <div className="mb-4 flex gap-2">
           <button

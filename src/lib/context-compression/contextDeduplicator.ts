@@ -10,7 +10,7 @@ interface DedupResult {
 const SEMANTIC_SIMILARITY_THRESHOLD = 0.88;
 const EXACT_MATCH_THRESHOLD = 0.95;
 
-function cosineSimilarity(a: number[], b: number[]): number {
+function _cosineSimilarity(a: number[], b: number[]): number {
   let dot = 0;
   let normA = 0;
   let normB = 0;
@@ -45,7 +45,10 @@ function isPromptTemplate(content: string): boolean {
 }
 
 function normalizeText(text: string): string {
-  return text.toLowerCase().replace(/[^\w\s]/g, "").trim();
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, "")
+    .trim();
 }
 
 export class ContextDeduplicator {
@@ -82,7 +85,10 @@ export class ContextDeduplicator {
       const embedding = await generateEmbedding(content);
       const results = this.index.search(embedding, 1);
 
-      if (results.length > 0 && results[0].distance < 1 - SEMANTIC_SIMILARITY_THRESHOLD) {
+      if (
+        results.length > 0 &&
+        results[0].distance < 1 - SEMANTIC_SIMILARITY_THRESHOLD
+      ) {
         const node = this.index.getNode(results[0].id);
         return {
           isDuplicate: true,
@@ -90,16 +96,17 @@ export class ContextDeduplicator {
         };
       }
 
-      this.index.insert(`dedup_${Date.now()}_${Math.random().toString(36).slice(2)}`, embedding);
+      this.index.insert(
+        `dedup_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        embedding,
+      );
       return { isDuplicate: false };
     } catch {
       const normalized = normalizeText(content);
-      const similar = this.recentContents.find(
-        (rc) => {
-          const sim = this.jaccardSimilarity(normalized, normalizeText(rc));
-          return sim > EXACT_MATCH_THRESHOLD;
-        },
-      );
+      const similar = this.recentContents.find((rc) => {
+        const sim = this.jaccardSimilarity(normalized, normalizeText(rc));
+        return sim > EXACT_MATCH_THRESHOLD;
+      });
 
       if (similar) {
         return { isDuplicate: true, similarTo: similar.slice(0, 50) };
@@ -134,7 +141,10 @@ export class ContextDeduplicator {
 
     for (const msg of messages) {
       if (isPromptTemplate(msg.content)) {
-        if (deduplicated.length > 0 && deduplicated[deduplicated.length - 1].role === msg.role) {
+        if (
+          deduplicated.length > 0 &&
+          deduplicated[deduplicated.length - 1].role === msg.role
+        ) {
           const lastSame = deduplicated
             .filter((m) => m.role === msg.role)
             .pop();

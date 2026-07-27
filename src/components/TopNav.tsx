@@ -7,7 +7,10 @@ import { ReactiveUserButton } from "@/components/ReactiveUserButton";
 import { Coffee, LayoutGrid, Menu, Shield, X } from "lucide-react";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
+
 import { NotificationBell } from "@/components/NotificationBell";
+import StreakBadge from "@/components/Header/StreakBadge";
+import { StreakBadge } from "@/components/Header/StreakBadge";
 
 interface TopNavProps {
   hideAuth?: boolean;
@@ -15,6 +18,7 @@ interface TopNavProps {
 
 export function TopNav({ hideAuth = false }: TopNavProps) {
   const { isSignedIn } = useUser();
+
   console.log({
     hideAuth,
     isSignedIn,
@@ -113,6 +117,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                     <Shield className="w-4 h-4" />
                     Admin
                   </Link>
+                  <StreakBadge />
                   <NotificationBell />
                   <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
                     <ReactiveUserButton

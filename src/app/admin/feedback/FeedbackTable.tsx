@@ -51,19 +51,17 @@ export default function FeedbackTable({ initialFlags }: { initialFlags: Flag[] }
 
   if (flags.length === 0) {
     return (
-      <div className="bg-white rounded-xl p-8 text-center shadow-sm border border-gray-100">
-        <h3 className="text-lg font-medium text-gray-900 mb-2">All Caught Up!</h3>
-        <p className="text-gray-500">There are no pending flags to review.</p>
+<div className="bg-white dark:bg-zinc-900 rounded-xl p-8 text-center shadow-sm border border-gray-100 dark:border-zinc-800">        
+<h3 className="text-lg font-medium text-gray-900 dark:text-zinc-100 mb-2">All Caught Up!</h3>        <p className="text-gray-500 dark:text-zinc-400">There are no pending flags to review.</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-gray-100 dark:border-zinc-800 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-gray-50 text-gray-700 border-b border-gray-100">
-            <tr>
+<thead className="bg-gray-50 dark:bg-zinc-800/50 text-gray-700 dark:text-zinc-300 border-b border-gray-100 dark:border-zinc-800">            <tr>
               <th className="px-6 py-4 font-semibold">Target</th>
               <th className="px-6 py-4 font-semibold">Reason</th>
               <th className="px-6 py-4 font-semibold">Reported By</th>
@@ -71,44 +69,35 @@ export default function FeedbackTable({ initialFlags }: { initialFlags: Flag[] }
               <th className="px-6 py-4 font-semibold text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
-            {flags.map((flag) => (
-              <tr key={flag.id} className="hover:bg-gray-50/50 transition-colors">
-                <td className="px-6 py-4 align-top">
+<tbody className="divide-y divide-gray-100 dark:divide-zinc-800">            {flags.map((flag) => (
+<tr key={flag.id} className="hover:bg-gray-50/50 dark:hover:bg-zinc-800/50 transition-colors">                <td className="px-6 py-4 align-top">
                   <div className="flex flex-col gap-1">
                     <span className={`inline-flex w-fit items-center px-2 py-0.5 rounded text-xs font-medium ${flag.type === 'VENUE' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'}`}>
                       {flag.type}
                     </span>
                     {flag.type === "VENUE" && flag.itemDetails && (
-                      <div className="text-gray-900 font-medium mt-1">{flag.itemDetails.name}</div>
-                    )}
+<div className="text-gray-900 dark:text-zinc-100 font-medium mt-1">{flag.itemDetails.name}</div>                    )}
                     {flag.type === "REVIEW" && flag.itemDetails && (
-                      <div className="text-gray-900 line-clamp-2 mt-1 italic">
-                        "{flag.itemDetails.comment}"
-                        <div className="text-xs text-gray-500 mt-1 not-italic">
-                          Venue: {flag.itemDetails.venue?.name}
+<div className="text-gray-900 dark:text-zinc-100 line-clamp-2 mt-1 italic">                        "{flag.itemDetails.comment}"
+<div className="text-xs text-gray-500 dark:text-zinc-400 mt-1 not-italic">                          Venue: {flag.itemDetails.venue?.name}
                         </div>
                       </div>
                     )}
                   </div>
                 </td>
-                <td className="px-6 py-4 align-top text-gray-700">
-                  {flag.reason}
+<td className="px-6 py-4 align-top text-gray-700 dark:text-zinc-300">                  {flag.reason}
                 </td>
-                <td className="px-6 py-4 align-top text-gray-500">
-                  <div>{flag.reportedBy.firstName} {flag.reportedBy.lastName}</div>
+<td className="px-6 py-4 align-top text-gray-500 dark:text-zinc-400">                  <div>{flag.reportedBy.firstName} {flag.reportedBy.lastName}</div>
                   <div className="text-xs">{flag.reportedBy.email}</div>
                 </td>
-                <td className="px-6 py-4 align-top text-gray-500 whitespace-nowrap">
-                  {new Date(flag.createdAt).toLocaleDateString()}
+<td className="px-6 py-4 align-top text-gray-500 dark:text-zinc-400 whitespace-nowrap">                  {new Date(flag.createdAt).toLocaleDateString()}
                 </td>
                 <td className="px-6 py-4 align-top text-right">
                   <div className="flex justify-end gap-2">
                     <button
                       onClick={() => handleDismiss(flag.id)}
                       disabled={loadingId === flag.id}
-                      className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors"
-                    >
+className="px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700 rounded-md hover:bg-gray-50 dark:hover:bg-zinc-700 disabled:opacity-50 transition-colors"                    >
                       Dismiss
                     </button>
                     <button

@@ -1,5 +1,6 @@
 import { generateReceiptPdf, generateTaxExportPdf } from "@/lib/pdfGenerator";
 import fs from "fs";
+import { PDFDocument } from "pdf-lib";
 
 jest.mock("fs", () => {
   const actualFs = jest.requireActual("fs");
@@ -69,6 +70,25 @@ describe("PDF Generator", () => {
       const pdfBytes = await generateReceiptPdf(mathBooking);
       expect(pdfBytes).toBeInstanceOf(Uint8Array);
       expect(pdfBytes.length).toBeGreaterThan(0);
+    });
+
+    it("should generate a receipt with a long venue name (80+ chars) wrapped correctly without errors", async () => {
+      const longVenueBooking = {
+        ...mockBooking,
+        venue: {
+          name: "The Quantum Cafe, Hub and Science Space Laboratories of the Greater Metropolitan Area Development Center",
+          category: "cafe",
+          address: "123 Science Way",
+        },
+      };
+
+      const pdfBytes = await generateReceiptPdf(longVenueBooking);
+      expect(pdfBytes).toBeInstanceOf(Uint8Array);
+      expect(pdfBytes.length).toBeGreaterThan(0);
+
+      // Load PDF and verify it has exactly 1 page
+      const doc = await PDFDocument.load(pdfBytes);
+      expect(doc.getPageCount()).toBe(1);
     });
   });
 

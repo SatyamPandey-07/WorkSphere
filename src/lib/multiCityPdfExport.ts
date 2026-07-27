@@ -15,7 +15,7 @@ function safeWidthOfTextAtSize(text: string, font: any, size: number): number {
   }
 }
 
-function truncateText(
+export function truncateText(
   text: string,
   font: any,
   size: number,

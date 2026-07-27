@@ -12,6 +12,14 @@ export type ZkProofPayload = {
   publicSignals: string[];
 };
 
+interface VerificationKey {
+  vk_alpha_1: string[];
+  vk_beta_2: string[][];
+  vk_gamma_2: string[][];
+  vk_delta_2: string[][];
+  IC: string[][];
+}
+
 function artifactPaths() {
   const root = path.join(process.cwd(), "public", "zkp");
   return {
@@ -21,9 +29,8 @@ function artifactPaths() {
   };
 }
 
-function loadSnarkjsNode() {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  return require("snarkjs");
+async function loadSnarkjs() {
+  return await import("snarkjs");
 }
 
 async function releaseCurve() {
@@ -39,11 +46,13 @@ async function releaseCurve() {
   }
 }
 
+const VERIFICATION_TIMEOUT_MS = 10_000;
+
 /** Node: build a groth16 proof for a private identity token. */
 export async function proveMembership(
   identityToken: string | number | bigint,
 ): Promise<ZkProofPayload & { ms: number }> {
-  const snarkjs = loadSnarkjsNode();
+  const snarkjs = await loadSnarkjs();
   const expectedCommit = computeMembershipCommit(identityToken);
   const { wasm, zkey } = artifactPaths();
 
@@ -63,21 +72,29 @@ export async function proveMembership(
   }
 }
 
-let cachedVkey: any = null;
+let cachedVkey: VerificationKey | null = null;
 
 /** Server-only: verify a proof. Does not accept or store identity tokens. */
 export async function verifyMembershipProof(
   proof: ZkProofPayload["proof"],
   publicSignals: string[],
 ): Promise<boolean> {
-  const snarkjs = loadSnarkjsNode();
+  const snarkjs = await loadSnarkjs();
   if (!cachedVkey) {
     const fs = await import("fs/promises");
     const vkeyRaw = await fs.readFile(artifactPaths().vkey, "utf8");
     cachedVkey = JSON.parse(vkeyRaw);
   }
   try {
-    return await snarkjs.groth16.verify(cachedVkey, publicSignals, proof);
+    return await Promise.race([
+      snarkjs.groth16.verify(cachedVkey, publicSignals, proof),
+      new Promise<boolean>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Verification timed out")),
+          VERIFICATION_TIMEOUT_MS,
+        ),
+      ),
+    ]);
   } finally {
     await releaseCurve();
   }
@@ -89,6 +106,6 @@ export async function isCommitmentRevoked(
 ): Promise<boolean> {
   const { getCurrentMerkleRoot, verifyMerkleProof } =
     await import("./revocation");
-  const root = await getCurrentMerkleRoot();
+  const root = getCurrentMerkleRoot();
   return verifyMerkleProof(commitment, witness, root);
 }

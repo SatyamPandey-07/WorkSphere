@@ -172,7 +172,6 @@ export default async function VenuePage({ params }: PageProps) {
                 </div>
               ) : null}
             </div>
-            feat/1625-noise-forecast
             <div className="pt-2">
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
                 <span>Expected Noise Levels</span>
@@ -198,12 +197,11 @@ export default async function VenuePage({ params }: PageProps) {
                 interactive={true}
               />
             </div>
-            {/* 2. Injected the CollaborativeNotes component here! */}
+            {/* Collaborative venue notes */}
             <CollaborativeNotes
               roomId={venue.id}
               placeholder={`Shared notes for ${venue.name}...`}
             />
-            main
             <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800 space-y-4">
               {isPremiumVenue(venue) && (
                 <PremiumZkpGate venueId={venue.id} venueName={venue.name} />

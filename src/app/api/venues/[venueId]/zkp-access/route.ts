@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/rateLimit";
 import { isAllowedCommit, isPremiumVenue } from "@/lib/zkp/membership";
-import { verifyMembershipProof, isCommitmentRevoked } from "@/lib/zkp/verify";
+import {
+  verifyMembershipProof,
+  isCommitmentRevoked,
+} from "@/lib/zkp/verify";
+import { issueVenueAccessToken } from "@/lib/zkp/venueAccessToken";
+import { isCommitmentRevokedDirectly } from "@/lib/zkp/revocation";
 
+// snarkjs requires Node.js runtime (uses fs, crypto, worker_threads)
 export const runtime = "nodejs";
 
 const bodySchema = z.object({
@@ -23,6 +30,7 @@ const bodySchema = z.object({
  *
  * Verifies a zk-SNARK membership proof for premium venue access.
  * Body carries only proof + publicSignals — never an identity token.
+ * On success, returns a signed venue access token (HMAC-SHA256).
  * Nothing about the caller is persisted.
  */
 export async function POST(
@@ -30,6 +38,17 @@ export async function POST(
   ctx: { params: Promise<{ venueId: string }> },
 ) {
   const { venueId } = await ctx.params;
+
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    req.headers.get("x-real-ip") ??
+    "unknown";
+  if (!(await rateLimit(`zkp-access:${ip}`, 10))) {
+    return NextResponse.json(
+      { error: "Too many requests. Please try again later." },
+      { status: 429 },
+    );
+  }
 
   let body: unknown;
   try {
@@ -69,6 +88,15 @@ export async function POST(
     );
   }
 
+  // Server-side revocation check — always runs, never relies on client input.
+  if (isCommitmentRevokedDirectly(commit)) {
+    return NextResponse.json(
+      { allowed: false, error: "Commitment has been revoked." },
+      { status: 403 },
+    );
+  }
+
+  // Optional Merkle witness check for clients that provide it
   const { witness } = parsed.data;
   if (witness) {
     const revoked = await isCommitmentRevoked(commit, witness);
@@ -104,6 +132,7 @@ export async function POST(
     );
   }
 
-  // Intentionally no DB write — we never store identity or proof artifacts.
-  return NextResponse.json({ allowed: true, venueId: venue.id });
+  const accessToken = issueVenueAccessToken(venue.id, commit);
+
+  return NextResponse.json({ allowed: true, venueId: venue.id, accessToken });
 }

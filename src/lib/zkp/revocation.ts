@@ -1,16 +1,23 @@
 import crypto from "crypto";
 
-// Simulated database of revoked credential hashes
+// Simulated database of revoked credential hashes (commitments)
 export const REVOKED_CREDENTIAL_HASHES: string[] = [
   "12345678901234567890", // dummy
   "152415827008091", // if student id is 12345678 => 12345678^2 + 5*12345678 + 17 = 152415827008091
 ];
 
+function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 export function hashPair(left: string, right: string): string {
   const [a, b] = [left, right].sort();
   return crypto
     .createHash("sha256")
-    .update(a + b)
+    .update(`${a.length}:${a}${b.length}:${b}`)
     .digest("hex");
 }
 
@@ -44,9 +51,9 @@ export function buildMerkleTree(leaves: string[]): {
   return { root: currentLevel[0], tree };
 }
 
-export async function getCurrentMerkleRoot(): Promise<string> {
+export function getCurrentMerkleRoot(): string {
   const { root } = buildMerkleTree(REVOKED_CREDENTIAL_HASHES);
-  return Promise.resolve(root);
+  return root;
 }
 
 export function generateWitness(credentialHash: string): string[] {
@@ -82,21 +89,37 @@ export function verifyMerkleProof(
   witness: string[],
   currentRoot: string,
 ): boolean {
-  if (witness.length === 0) {
-    const leafHash = crypto
-      .createHash("sha256")
-      .update(credentialHash)
-      .digest("hex");
-    return currentRoot === leafHash;
-  }
-
-  let currentHash = crypto
+  const leafHash = crypto
     .createHash("sha256")
     .update(credentialHash)
     .digest("hex");
+
+  if (witness.length === 0) {
+    return safeCompare(currentRoot, leafHash);
+  }
+
+  let currentHash = leafHash;
   for (const sibling of witness) {
     currentHash = hashPair(currentHash, sibling);
   }
 
-  return currentHash === currentRoot;
+  return safeCompare(currentRoot, currentHash);
+}
+
+/**
+ * Server-side check: directly determines if a commitment is revoked
+ * without requiring any input from the client.
+ */
+export function isCommitmentRevokedDirectly(commitment: string): boolean {
+  return REVOKED_CREDENTIAL_HASHES.some((revoked) => {
+    const revokedHash = crypto
+      .createHash("sha256")
+      .update(revoked)
+      .digest("hex");
+    const commitmentHash = crypto
+      .createHash("sha256")
+      .update(commitment)
+      .digest("hex");
+    return safeCompare(revokedHash, commitmentHash);
+  });
 }

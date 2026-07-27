@@ -14,17 +14,22 @@ function defaultCommits(): Set<string> {
   return new Set(DEMO_TOKENS.map((t) => computeMembershipCommit(t)));
 }
 
+let cachedCommits: Set<string> | null = null;
+
 export function getAllowedMembershipCommits(): Set<string> {
+  if (cachedCommits) return cachedCommits;
+
   const fromEnv = process.env.PREMIUM_MEMBER_COMMITS;
-  if (fromEnv && fromEnv.trim()) {
-    return new Set(
-      fromEnv
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
-    );
-  }
-  return defaultCommits();
+  cachedCommits =
+    fromEnv && fromEnv.trim()
+      ? new Set(
+          fromEnv
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+        )
+      : defaultCommits();
+  return cachedCommits;
 }
 
 export function isAllowedCommit(commit: string): boolean {

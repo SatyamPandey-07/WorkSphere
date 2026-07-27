@@ -452,7 +452,7 @@ export function VenueCard({
         >
           <Image
             src={photos[photoIndex]}
-            alt={venue.name}
+            alt={"Photo of " + venue.name}
             fill
             className="object-cover"
             unoptimized // External URLs from Foursquare
@@ -539,6 +539,7 @@ export function VenueCard({
           <button
             onClick={handleFavorite}
             disabled={isSavingFavorite}
+            aria-label={isFavorited ? `Remove ${venue.name} from favorites` : `Add ${venue.name} to favorites`}
             className={`p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
               enableTransition ? "transition-colors duration-300" : ""
             } ${

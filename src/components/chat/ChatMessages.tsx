@@ -401,6 +401,7 @@ export function VenueChatCard({
             </button>
             <button
               onClick={() => onToggleFavorite(venue)}
+              aria-label={isFavorited ? "Remove from favorites" : "Save to favorites"}
               className={`p-1.5 rounded-lg border active:scale-[0.95] ${
                 enableTransition ? "transition-all duration-300" : ""
               } ${
@@ -653,6 +654,7 @@ export function VenueChatCard({
                       );
                       onToggleFavorite(venue);
                     }}
+                    aria-label={isFavorited ? "Remove from favorites" : "Save to favorites"}
                     className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg ${
                       enableTransition ? "transition-all duration-300" : ""
                     } ${

@@ -11,6 +11,9 @@ jest.mock("recharts", () => ({
   XAxis: () => <div />,
   YAxis: () => <div />,
   Tooltip: () => <div />,
+  LineChart: ({ children }: any) => <div>{children}</div>,
+  Line: () => <div />,
+  CartesianGrid: () => <div />,
 }));
 
 // Mock next/navigation params

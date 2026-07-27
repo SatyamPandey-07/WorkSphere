@@ -16,6 +16,11 @@ import {
   selectBestNode,
 } from "../src/lib/edge/geoRouter";
 import { DurableStateSync } from "../src/lib/edge/stateSync";
+import { EdgeMeshSync } from "../src/lib/edge/edgeMeshSync";
+import {
+  generateHandoffToken,
+  verifyHandoffToken,
+} from "../src/lib/edge/edgeHandoff";
 
 type SeatStatus = "green" | "yellow" | "red";
 
@@ -97,18 +102,49 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
   private seatCheckins = new Map<string, SeatCheckin>();
   private seatCheckinLocks = new Set<string>();
   private stateSync: DurableStateSync;
+  private meshSync: EdgeMeshSync;
   private connRegions = new Map<string, Region>();
+  private serverRegion: Region;
+  private serverId: string;
   private serverEpoch = Date.now();
   private sequenceId = 0;
 
   constructor(readonly room: Party.Room) {
-    const region = (process.env.PARTYKIT_REGION as Region) ?? "us-east";
-    this.stateSync = new DurableStateSync(region);
+    this.serverRegion = (process.env.PARTYKIT_REGION as Region) ?? "us-east";
+    this.serverId = `${this.serverRegion}-${room.id}-${Date.now()}`;
+    this.stateSync = new DurableStateSync(this.serverRegion);
 
     this.stateSync.setBroadcastFn((message) => {
       this.room.broadcast(message);
     });
     this.stateSync.startSync();
+
+    // Initialize inter-server mesh sync
+    this.meshSync = new EdgeMeshSync(this.serverId, this.serverRegion, {
+      heartbeatIntervalMs: 10_000,
+      syncIntervalMs: 5_000,
+    });
+
+    this.meshSync.setGetLocalStateFn(() => this.stateSync.serializeState());
+
+    this.meshSync.setOnRemoteStateReceived((state, _sourceRegion) => {
+      const remoteState = this.stateSync.deserializeState(
+        JSON.stringify(state),
+      );
+      if (remoteState) {
+        this.stateSync.mergeRemoteState(remoteState);
+      }
+    });
+
+    // Connect to peer edge servers in the mesh
+    const meshPeers = REGION_NODES.filter((n) => n.id !== this.serverId).map(
+      (n) => ({
+        serverId: n.id,
+        region: n.region as Region,
+        host: n.host,
+      }),
+    );
+    this.meshSync.start(meshPeers);
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
@@ -247,7 +283,7 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
   }
 
   onMessage(message: string, sender: Party.Connection) {
-    const state = sender.state as { role?: string };
+    const state = sender.state as { role?: string; region?: Region };
 
     try {
       const parsed = JSON.parse(message);
@@ -288,6 +324,24 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
         return;
       }
 
+      // Edge handoff: client requests a token to migrate to another region
+      if (
+        parsed.type === "edge_handoff_request" &&
+        typeof parsed.targetRegion === "string"
+      ) {
+        this.handleHandoffRequest(sender, parsed.targetRegion as Region);
+        return;
+      }
+
+      // Edge handoff: client presents a token from another region
+      if (
+        parsed.type === "edge_handoff_verify" &&
+        typeof parsed.token === "string"
+      ) {
+        this.handleHandoffVerify(sender, parsed.token);
+        return;
+      }
+
       if (state.role === "VIEWER") return;
 
       this.room.broadcast(message, [sender.id]);
@@ -302,6 +356,89 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
     this.handleSeatCheckout(conn);
     this.stateSync.removePresence(conn.id);
     this.connRegions.delete(conn.id);
+  }
+
+  // -----------------------------------------------------------------------
+  // Edge Handoff Handlers
+  // -----------------------------------------------------------------------
+
+  private async handleHandoffRequest(
+    conn: Party.Connection,
+    targetRegion: Region,
+  ): Promise<void> {
+    const connState = conn.state as { userId?: string } | null;
+    const userId = connState?.userId ?? conn.id;
+
+    try {
+      const token = await generateHandoffToken(
+        userId,
+        this.serverRegion,
+        targetRegion,
+      );
+
+      // Find the optimal target node
+      const targetNode = REGION_NODES.find((n) => n.region === targetRegion);
+
+      conn.send(
+        JSON.stringify({
+          type: "edge_handoff_token",
+          token,
+          targetRegion,
+          targetHost: targetNode?.host ?? null,
+          sourceRegion: this.serverRegion,
+        }),
+      );
+    } catch (err) {
+      conn.send(
+        JSON.stringify({
+          type: "edge_handoff_error",
+          error: `Failed to generate handoff token: ${err instanceof Error ? err.message : String(err)}`,
+        }),
+      );
+    }
+  }
+
+  private async handleHandoffVerify(
+    conn: Party.Connection,
+    token: string,
+  ): Promise<void> {
+    const result = await verifyHandoffToken(token, this.serverRegion);
+
+    if (!result.valid) {
+      conn.send(
+        JSON.stringify({
+          type: "edge_handoff_rejected",
+          error: result.error ?? "Invalid handoff token",
+        }),
+      );
+      return;
+    }
+
+    const payload = result.payload!;
+
+    // Accept the handoff — set connection state with transferred identity
+    conn.setState({
+      ...((conn.state as Record<string, unknown>) ?? {}),
+      userId: payload.userId,
+      region: payload.targetRegion,
+      handoffFrom: payload.sourceRegion,
+      handoffAt: Date.now(),
+    });
+
+    this.connRegions.set(conn.id, payload.targetRegion);
+
+    // Send current state to the newly handed-off client
+    const presenceState = this.stateSync.serializeState();
+    conn.send(
+      JSON.stringify({
+        type: "edge_handoff_accepted",
+        userId: payload.userId,
+        sourceRegion: payload.sourceRegion,
+        targetRegion: payload.targetRegion,
+        presence: presenceState,
+        seats: this.seatSummary(),
+      }),
+    );
   }
 
   private handleSeatCheckin(

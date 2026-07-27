@@ -742,4 +742,4 @@ model FoodVote {
 
   @@unique([userId, validationId])
 }
-
+

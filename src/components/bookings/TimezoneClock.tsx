@@ -15,9 +15,38 @@ interface TimezoneClockProps {
  * Updates every second via setInterval. Cleans up on unmount.
  */
 export function TimezoneClock({ timeZone, label }: TimezoneClockProps) {
-  const [time, setTime] = useState<string>("");
-  const [tzAbbr, setTzAbbr] = useState<string>("");
-  const [isValid, setIsValid] = useState(true);
+  const [time, setTime] = useState<string>(() => {
+    try {
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: true,
+      }).format(new Date());
+    } catch {
+      return "--:--:-- --";
+    }
+  });
+  const [tzAbbr, setTzAbbr] = useState<string>(() => {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        timeZoneName: "short",
+      }).formatToParts(new Date());
+      return parts.find((p) => p.type === "timeZoneName")?.value ?? timeZone;
+    } catch {
+      return timeZone;
+    }
+  });
+  const [isValid, setIsValid] = useState(() => {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 
   useEffect(() => {
     const tick = () => {
@@ -61,7 +90,19 @@ export function TimezoneClock({ timeZone, label }: TimezoneClockProps) {
     return () => clearInterval(id);
   }, [timeZone]);
 
-  if (!isValid) return null;
+  if (!isValid) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 font-mono tabular-nums mt-1">
+        <Globe className="w-3 h-3 shrink-0 text-red-400" />
+        <span className="text-zinc-900 dark:text-zinc-100 font-semibold">
+          --:--:-- --
+        </span>
+        <span className="text-zinc-400 dark:text-zinc-500">
+          {tzAbbr || timeZone}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 font-mono tabular-nums mt-1">

@@ -80,7 +80,7 @@ export default function Scratchpad({ sessionId }: Props) {
 
       currentSocket.send(
         JSON.stringify({
-          type: "sync-request",
+          type: "sync-step-1",
           clientId: clientId.current,
           payload: encryptedVector,
         }),
@@ -131,9 +131,9 @@ export default function Scratchpad({ sessionId }: Props) {
       try {
         const msg = JSON.parse(e.data);
 
-        // Handle incoming sync-request from a peer
+        // Handle incoming sync-step-1 from a peer
         if (
-          msg.type === "sync-request" &&
+          msg.type === "sync-step-1" &&
           cryptoKeyRef.current &&
           docRef.current
         ) {
@@ -155,7 +155,7 @@ export default function Scratchpad({ sessionId }: Props) {
 
           socket.send(
             JSON.stringify({
-              type: "sync-response",
+              type: "sync-step-2",
               targetClientId: msg.clientId,
               payload: encryptedDelta,
             }),
@@ -163,9 +163,9 @@ export default function Scratchpad({ sessionId }: Props) {
           return;
         }
 
-        // Handle incoming sync-response from a peer
+        // Handle incoming sync-step-2 from a peer
         if (
-          msg.type === "sync-response" &&
+          msg.type === "sync-step-2" &&
           msg.targetClientId === clientId.current &&
           cryptoKeyRef.current &&
           docRef.current

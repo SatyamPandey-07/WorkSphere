@@ -88,14 +88,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  const { email, otp } = validation.data;
+  const { email, otp: _otp } = validation.data;
 
   // 4. Verify OTP (stub — integrate with Clerk / Redis / TOTP / etc.)
   // In a real implementation:
-  //   const isValid = await verifyUserOtp({ email, otp });
+  //   const isValid = await verifyUserOtp({ email, _otp });
   //   if (!isValid) return NextResponse.json({ error: "Invalid or expired code." }, { status: 400 });
   console.log(
-    `[verify-otp] OTP verification attempted for: ${email}, otp: ${otp}`,
+    `[verify-otp] OTP verification attempted for: ${email}`,
   );
 
   return NextResponse.json(

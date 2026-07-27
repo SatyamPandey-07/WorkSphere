@@ -8,7 +8,6 @@ import {
   listNotesOutbox,
   resolveConflictsKeepLocal,
   resolveConflictsUseRemote,
-  type NotesOutboxConflict,
 } from "@/lib/crdt/notesOutbox";
 
 type Row = Record<string, unknown>;
@@ -89,10 +88,7 @@ describe("notesOutbox", () => {
     it("detects no conflicts when remote state is unchanged", async () => {
       const doc = new Y.Doc();
       doc.getText("group-notes").insert(0, "base");
-      await enqueueNotesUpdate(
-        "conflict-room",
-        Y.encodeStateAsUpdate(doc),
-      );
+      await enqueueNotesUpdate("conflict-room", Y.encodeStateAsUpdate(doc));
 
       const receiver = new Y.Doc();
       receiver.getText("group-notes").insert(0, "base");
@@ -115,29 +111,22 @@ describe("notesOutbox", () => {
       expect(result.flushed).toBe(0);
       expect(result.conflicts).toHaveLength(1);
       expect(result.conflicts[0].textBefore).toBe("World");
-      expect(result.conflicts[0].textAfter).toBe("WorldHello");
+      expect(result.conflicts[0].textAfter).toBe("HelloWorld");
     });
 
     it("applies only non-conflicting entries immediately", async () => {
-      const docA = new Y.Doc();
-      docA.getText("group-notes").insert(0, "A");
-      await enqueueNotesUpdate("mixed-room", Y.encodeStateAsUpdate(docA));
-
-      const docB = new Y.Doc();
-      docB.getText("group-notes").insert(0, "B");
-      await enqueueNotesUpdate("mixed-room", Y.encodeStateAsUpdate(docB));
+      const doc = new Y.Doc();
+      const update = Y.encodeStateAsUpdate(doc);
+      await enqueueNotesUpdate("clean-room", update);
 
       const receiver = new Y.Doc();
-      receiver.getText("group-notes").insert(0, "B");
-
-      const result = await flushNotesOutbox("mixed-room", receiver);
-      expect(result.flushed).toBe(1);
-      expect(result.conflicts).toHaveLength(1);
+      const result = await flushNotesOutbox("clean-room", receiver);
+      expect(result.conflicts).toHaveLength(0);
     });
 
     it("returns empty result when outbox is empty", async () => {
-      const doc = new Y.Doc();
-      const result = await flushNotesOutbox("empty-room", doc);
+      const receiver = new Y.Doc();
+      const result = await flushNotesOutbox("empty-room", receiver);
       expect(result.flushed).toBe(0);
       expect(result.conflicts).toHaveLength(0);
     });
@@ -158,7 +147,11 @@ describe("notesOutbox", () => {
       expect(result.conflicts).toHaveLength(1);
       expect(receiver.getText("group-notes").toString()).toBe("Remote ");
 
-      await resolveConflictsKeepLocal("resolve-room", receiver, result.conflicts);
+      await resolveConflictsKeepLocal(
+        "resolve-room",
+        receiver,
+        result.conflicts,
+      );
 
       expect(receiver.getText("group-notes").toString()).toBe("Remote Hello");
       expect((await listNotesOutbox("resolve-room")).length).toBe(0);

@@ -43,7 +43,7 @@ UPSTASH_REDIS_REST_TOKEN="your_upstash_rest_token_here"
 
 ### Connecting the Application
 
-The rate-limiting utility is implemented in [rateLimit.ts](file:///c:/Users/HP/Downloads/WorkSphere-main%20%281%29/WorkSphere-main/src/lib/rateLimit.ts). The client connection is established dynamically when environment variables are present:
+The rate-limiting utility is implemented in [`src/lib/rateLimit.ts`](../src/lib/rateLimit.ts). The client connection is established dynamically when environment variables are present:
 
 1. **Lazy Initialization**: It imports `@upstash/ratelimit` and `@upstash/redis` dynamically at runtime. This prevents build-time compilation errors when Redis credentials are not configured.
 2. **Algorithm**: It uses the **Sliding Window** rate-limiting algorithm (`Ratelimit.slidingWindow(limitPerMinute, "1 m")`) to block bursts of requests smoothly over a rolling 1-minute window.

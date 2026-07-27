@@ -39,6 +39,11 @@ import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
+import {
+  useLiveVenueData,
+  MUSIC_GENRE_EMOJI,
+  type MusicGenre,
+} from "@/hooks/useLiveVenueData";
 
 interface VenueEnrichData {
   found: boolean;
@@ -68,6 +73,13 @@ interface VenueCardProps {
   isSelected?: boolean;
   onToggleCompare?: (venue: MapMarker) => void;
   compareDisabled?: boolean;
+  liveData?: {
+    musicGenre?: MusicGenre | null;
+    count?: number;
+    status?: string;
+  };
+  checkedInVenueId?: string | null;
+  onReportMusicGenre?: (genre: MusicGenre) => void;
 }
 
 interface VoteMetricState {
@@ -94,6 +106,10 @@ export function VenueCard({
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
+  const [showGenreDropdown, setShowGenreDropdown] = useState(false);
+  
+  const isCheckedInHere = checkedInVenueId === venue.id;
+  const activeMusicGenre = liveData?.musicGenre ?? null;
 
   const { currency } = useCurrency();
   const router = useRouter();
@@ -676,6 +692,64 @@ export function VenueCard({
             </div>
           );
         })()}
+
+        {/* Real-time Music Genre Display (#2077) */}
+                {activeMusicGenre && activeMusicGenre !== "None" && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300">
+                      {/* Pulsating ring signals live data */}
+                      <span className="relative flex h-3 w-3 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
+                        <Music className="relative inline-flex h-3 w-3 text-purple-500" />
+                      </span>
+                      <span className="text-[11px] font-semibold">
+                        {MUSIC_GENRE_EMOJI[activeMusicGenre]} {activeMusicGenre} playing
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-zinc-400">live</span>
+                  </div>
+                )}
+        
+                {/* Genre report dropdown — only visible when user is checked in here */}
+                {isCheckedInHere && onReportMusicGenre && (
+                  <div className="mb-3">
+                    <button
+                      onClick={() => setShowGenreDropdown((v) => !v)}
+                      className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 underline underline-offset-2 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                    >
+                      🎵 Update music genre
+                    </button>
+                    {showGenreDropdown && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {(
+                          [
+                            "Lo-Fi",
+                            "Jazz",
+                            "Pop",
+                            "Classical",
+                            "None",
+                            "Loud",
+                          ] as MusicGenre[]
+                        ).map((g) => (
+                          <button
+                            key={g}
+                            onClick={() => {
+                              onReportMusicGenre(g);
+                              setShowGenreDropdown(false);
+                            }}
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition-all ${
+                              activeMusicGenre === g
+                                ? "bg-purple-600 text-white border-purple-600"
+                                : "border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-purple-400 hover:text-purple-600"
+                            }`}
+                          >
+                            {MUSIC_GENRE_EMOJI[g as MusicGenre]} {g}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
         {/* INTERACTIVE AMENITY VERIFICATION TAG TRACKING ROW */}
         <div className="flex flex-col gap-2 mb-4 border-t border-zinc-100 dark:border-zinc-800 pt-3">

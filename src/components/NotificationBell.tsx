@@ -95,18 +95,26 @@ export function NotificationBell() {
   };
 
   const markAllAsRead = async () => {
+    const prevCount = unreadCount;
+    const prevNotifications = notifications;
+
+    setUnreadCount(0);
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+
     try {
       const res = await fetch("/api/user/notifications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "markAsRead" }),
       });
-      if (res.ok) {
-        setUnreadCount(0);
-        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      if (!res.ok) {
+        setUnreadCount(prevCount);
+        setNotifications(prevNotifications);
       }
     } catch (e) {
       console.error("Failed to mark notifications as read:", e);
+      setUnreadCount(prevCount);
+      setNotifications(prevNotifications);
     }
   };
 

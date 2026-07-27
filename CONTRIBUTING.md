@@ -246,4 +246,5 @@ Before pushing changes to GitHub, you **MUST** verify that all the checks below 
 
 ### 2. Vercel Build Verification
 Vercel builds use `npm run build` which runs `prisma generate && next build`. If this step fails locally, it **will** fail on Vercel deployment. Make sure you run `npm run build` successfully before submitting your PR!
- 
+
+> **Note:** The current production build does **not** invoke `tsc` as a separate build step. For complete TypeScript type checking, run `npx tsc --noEmit` in addition to `npm run build` before opening a pull request.

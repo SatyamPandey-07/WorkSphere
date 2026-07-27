@@ -72,6 +72,20 @@ export function NotificationSettings() {
   );
   const [imageUrl, setImageUrl] = useState("");
 
+  const persistField = async (patch: Record<string, unknown>) => {
+    try {
+      const res = await fetch("/api/user/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error("Persist failed");
+    } catch {
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    }
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -431,7 +445,11 @@ export function NotificationSettings() {
             id="sms-alerts"
             type="checkbox"
             checked={smsAlertsEnabled}
-            onChange={(e) => setSmsAlertsEnabled(e.target.checked)}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setSmsAlertsEnabled(next);
+              persistField({ smsAlertsEnabled: next });
+            }}
             className="w-4 h-4 mt-1 border-zinc-300 dark:border-zinc-700 rounded focus:ring-[var(--primary-accent)]"
           />
           <label

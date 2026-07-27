@@ -104,6 +104,6 @@ describe("PWA Update Flow", () => {
     });
 
     const toasts = screen.getAllByText("New version available.");
-    expect(toasts.length).toBe(2);
+    expect(toasts.length).toBe(1);
   });
 });

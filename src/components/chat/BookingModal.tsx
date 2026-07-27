@@ -42,7 +42,6 @@ import {
   isModalBackdropClick,
   shouldCloseFromBackdrop,
 } from "@/lib/modal-interactions";
-import { apiFetch } from "@/lib/apiClient";
 import { useRateLimit } from "@/hooks/useRateLimit";
 
 interface Booking {
@@ -64,6 +63,7 @@ interface BookingModalProps {
   isOpen: boolean;
   onClose: () => void;
   mode?: "booking" | "history";
+  initialHistory?: Booking[];
 }
 
 export function BookingModal({
@@ -71,12 +71,13 @@ export function BookingModal({
   isOpen,
   onClose,
   mode = "booking",
+  initialHistory = [],
 }: BookingModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const retryAfter = useRateLimit("book");
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
-  >("details");
+  >(mode === "history" ? "history" : "details");
   const getTodayString = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -90,10 +91,19 @@ export function BookingModal({
   const [recurringFrequency, setRecurringFrequency] = useState("weekly");
   const [recurringOccurrences, setRecurringOccurrences] = useState(2);
   const [confirmationId, setConfirmationId] = useState("");
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [billingCode, setBillingCode] = useState("");
-  const [history, setHistory] = useState<Booking[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [history, setHistory] = useState<Booking[]>(initialHistory);
+
+  useEffect(() => {
+    if (initialHistory && initialHistory.length > 0) {
+      setHistory(initialHistory);
+    }
+  }, [initialHistory]);
+  const [loadingHistory, setLoadingHistory] = useState(
+    initialHistory.length === 0,
+  );
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isExporting, setIsExporting] = useState(false);
   const [guests, setGuests] = useState<GuestEntry[]>([]);
@@ -111,8 +121,16 @@ export function BookingModal({
   const [verificationStatuses, setVerificationStatuses] = useState<
     Record<string, { status: string; result?: any }>
   >({});
-  const [activeVerifyBookingId, setActiveVerifyBookingId] = useState<string | null>(null);
-  const { status: verifHookStatus, result: verifResult, error: verifError, verify, reset } = usePdfSignatureVerifier();
+  const [activeVerifyBookingId, setActiveVerifyBookingId] = useState<
+    string | null
+  >(null);
+  const {
+    status: verifHookStatus,
+    result: verifResult,
+    error: verifError,
+    verify,
+    reset,
+  } = usePdfSignatureVerifier();
 
   const modalRef = useRef<HTMLDivElement>(null);
   const pointerDownStartedOnBackdrop = useRef(false);
@@ -186,7 +204,13 @@ export function BookingModal({
   }, [step]);
 
   const getFilteredHistory = () => {
-    if (dateFilter === "all") return history;
+    const list =
+      Array.isArray(history) && history.length > 0
+        ? history
+        : Array.isArray(initialHistory)
+          ? initialHistory
+          : [];
+    if (dateFilter === "all") return list;
     const now = new Date();
     const currentYear = now.getFullYear();
 
@@ -223,11 +247,14 @@ export function BookingModal({
   const filteredHistory = getFilteredHistory();
 
   const fetchHistory = async () => {
-    setLoadingHistory(true);
     try {
       const res = await fetch("/api/bookings/history");
       const data = await res.json();
-      setHistory(data.bookings || []);
+      if (Array.isArray(data?.bookings) && data.bookings.length > 0) {
+        setHistory(data.bookings);
+      } else if (Array.isArray(data) && data.length > 0) {
+        setHistory(data);
+      }
       setSelectedIds(new Set());
       setStep("history");
     } catch (err) {
@@ -238,23 +265,33 @@ export function BookingModal({
   };
 
   useEffect(() => {
+    if (mode === "history" && step !== "history") {
+      setStep("history");
+    }
     if (!isOpen) {
-      setStep(mode === "history" ? "history" : "details");
       setGuests([]);
       setGuestInviteStatus("idle");
       setVerificationStatuses({});
       setActiveVerifyBookingId(null);
-    } else if (mode === "history") {
+    } else if (
+      mode === "history" &&
+      history.length === 0 &&
+      (!initialHistory || initialHistory.length === 0)
+    ) {
       fetchHistory();
     }
-  }, [isOpen, mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, mode, step]);
 
   useEffect(() => {
     if (!activeVerifyBookingId) return;
     if (verifHookStatus === "verified" || verifHookStatus === "invalid") {
       setVerificationStatuses((prev) => ({
         ...prev,
-        [activeVerifyBookingId]: { status: verifHookStatus, result: verifResult },
+        [activeVerifyBookingId]: {
+          status: verifHookStatus,
+          result: verifResult,
+        },
       }));
       setActiveVerifyBookingId(null);
     } else if (verifHookStatus === "error" || verifError) {
@@ -533,7 +570,7 @@ export function BookingModal({
 
   return (
     <div
-      className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/90 animate-in fade-in duration-300 backdrop-blur-sm"
+      className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-zinc-950/60 animate-in fade-in duration-300 backdrop-blur-md"
       onPointerDown={handleBackdropPointerDown}
       onClick={handleBackdropClick}
     >
@@ -578,7 +615,7 @@ export function BookingModal({
                     Retrieving Archived Signals...
                   </p>
                 </div>
-              ) : history.length === 0 ? (
+              ) : filteredHistory.length === 0 ? (
                 <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
                   <div className="w-20 h-20 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
                     <Inbox className="w-10 h-10 text-zinc-300" />
@@ -641,7 +678,10 @@ export function BookingModal({
                   </div>
 
                   <div className="grid gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                    {filteredHistory.map((booking) => {
+                    {(Array.isArray(filteredHistory)
+                      ? filteredHistory
+                      : []
+                    ).map((booking) => {
                       const hours = booking.duration || 1;
                       const price = hours * 15;
                       const tax = price * 0.08;
@@ -667,18 +707,18 @@ export function BookingModal({
                               <div>
                                 <div className="flex items-center gap-2 mb-1">
                                   <span className="text-[8px] font-black bg-[var(--primary-accent)] text-white px-2 py-0.5 rounded uppercase tracking-widest">
-                                    {booking.venue.category}
+                                    {booking.venue?.category || "workspace"}
                                   </span>
                                   <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
                                     {booking.confirmationId}
                                   </span>
                                 </div>
                                 <h4 className="text-lg font-black uppercase tracking-tight group-hover:accent-text transition-colors">
-                                  {booking.venue.name}
+                                  {booking.venue?.name || "Workspace"}
                                 </h4>
                                 <p className="text-[10px] text-zinc-500 font-bold flex items-center gap-1 uppercase tracking-widest mt-1">
                                   <MapPin className="w-3 h-3" />
-                                  {booking.venue.address}
+                                  {booking.venue?.address || ""}
                                 </p>
                               </div>
                             </div>
@@ -697,6 +737,7 @@ export function BookingModal({
 
                           <div className="flex items-center gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                             <button
+                              aria-label="Download Receipt"
                               onClick={() => handleDownloadSingle(booking.id)}
                               className="flex-1 flex items-center justify-center gap-2 py-3 bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-[1.02] transition-all active:scale-95"
                             >
@@ -712,7 +753,9 @@ export function BookingModal({
                                   (verificationStatuses[booking.id]
                                     ?.status as any) || "idle"
                                 }
-                                result={verificationStatuses[booking.id]?.result}
+                                result={
+                                  verificationStatuses[booking.id]?.result
+                                }
                                 className="!p-0 !border-0 !bg-transparent"
                               />
                             </button>

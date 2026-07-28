@@ -78,18 +78,10 @@ async function upstashRateLimit(
 
 // ─── In-memory fallback (development / no Redis) ─────────────────────────────
 interface MemEntry {
-  count: number;
+  timestamps: number[];
   resetTime: number;
 }
 const memStore = new Map<string, MemEntry>();
-
-interface RateLimitInfo {
-  count: number;
-  remaining: number;
-  resetTime: number;
-  isLimited: boolean;
-}
-const rateLimitInfoStore = new Map<string, RateLimitInfo>();
 
 const CLEANUP_INTERVAL_MS = 60_000;
 
@@ -99,12 +91,6 @@ function cleanupExpiredEntries() {
   for (const [key, value] of memStore) {
     if (now > value.resetTime) {
       memStore.delete(key);
-    }
-  }
-
-  for (const [key, value] of rateLimitInfoStore) {
-    if (now > value.resetTime) {
-      rateLimitInfoStore.delete(key);
     }
   }
 }
@@ -122,19 +108,37 @@ if (!globalCleanup.__rateLimitCleanupTimer) {
   globalCleanup.__rateLimitCleanupTimer.unref?.();
 }
 
-function memRateLimit(identifier: string, limit: number, windowMs: number = DEFAULT_WINDOW_MS): boolean {
+function memRateLimit(
+  identifier: string,
+  limit: number,
+  windowMs: number = DEFAULT_WINDOW_MS,
+): boolean {
   const now = Date.now();
+  const start = now - windowMs;
 
-  const entry = memStore.get(identifier);
-
-  if (!entry || now > entry.resetTime) {
-    memStore.set(identifier, { count: 1, resetTime: now + windowMs });
-    return true;
+  let entry = memStore.get(identifier);
+  if (!entry) {
+    entry = { timestamps: [], resetTime: now + windowMs };
+    memStore.set(identifier, entry);
   }
 
-  if (entry.count >= limit) return false;
+  let firstValid = 0;
+  while (
+    firstValid < entry.timestamps.length &&
+    entry.timestamps[firstValid] <= start
+  ) {
+    firstValid++;
+  }
+  if (firstValid > 0) {
+    entry.timestamps = entry.timestamps.slice(firstValid);
+  }
 
-  entry.count++;
+  if (entry.timestamps.length >= limit) {
+    return false;
+  }
+
+  entry.timestamps.push(now);
+  entry.resetTime = now + windowMs;
   return true;
 }
 
@@ -143,20 +147,35 @@ function memGetInfo(
   limit: number,
   windowMs: number = DEFAULT_WINDOW_MS,
 ): { count: number; remaining: number; resetTime: number; isLimited: boolean } {
+  const now = Date.now();
+  const start = now - windowMs;
+
   const entry = memStore.get(identifier);
-  if (!entry || Date.now() > entry.resetTime) {
+  if (!entry) {
     return {
       count: 0,
       remaining: limit,
-      resetTime: Date.now() + windowMs,
+      resetTime: now + windowMs,
       isLimited: false,
     };
   }
+
+  let firstValid = 0;
+  while (
+    firstValid < entry.timestamps.length &&
+    entry.timestamps[firstValid] <= start
+  ) {
+    firstValid++;
+  }
+  const validCount = entry.timestamps.length - firstValid;
+  const resetTime =
+    validCount > 0 ? entry.timestamps[firstValid] + windowMs : now + windowMs;
+
   return {
-    count: entry.count,
-    remaining: Math.max(0, limit - entry.count),
-    resetTime: entry.resetTime,
-    isLimited: entry.count >= limit,
+    count: validCount,
+    remaining: Math.max(0, limit - validCount),
+    resetTime,
+    isLimited: validCount >= limit,
   };
 }
 
@@ -194,14 +213,11 @@ export async function getRateLimitInfo(
   return memGetInfo(identifier, limit, windowMs);
 }
 
-/** Reset in-memory rate limit (useful in tests). */
 export function resetRateLimit(identifier?: string): void {
   if (identifier) {
     memStore.delete(identifier);
-    rateLimitInfoStore.delete(identifier);
   } else {
     memStore.clear();
-    rateLimitInfoStore.clear();
   }
 }
 

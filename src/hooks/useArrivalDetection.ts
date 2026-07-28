@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Vector3 } from "../types/ar";
 import { calculateDistance } from "../lib/math";
 
@@ -107,7 +107,10 @@ export function useArrivalDetection(
   const [checkedIn, setCheckedIn] = useState<boolean>(false);
   const [isCheckingIn, setIsCheckingIn] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [bluetoothDevice, setBluetoothDevice] = useState<any>(null);
+  const advertisementListenerRef = useRef<{
+    device: any;
+    listener: (event: any) => void;
+  } | null>(null);
 
   // Extract options if not in vector mode
   const options: UseArrivalDetectionOptions = isVectorMode
@@ -231,7 +234,6 @@ export function useArrivalDetection(
       const device = await (navigator as any).bluetooth.requestDevice(
         scanOptions,
       );
-      setBluetoothDevice(device);
 
       const handleAdvertisement = (event: any) => {
         const deviceRssi = event.rssi ?? null;
@@ -244,10 +246,41 @@ export function useArrivalDetection(
         }
       };
 
+      if (advertisementListenerRef.current) {
+        const { device: oldDevice, listener: oldListener } =
+          advertisementListenerRef.current;
+        oldDevice.removeEventListener("advertisementreceived", oldListener);
+        if (oldDevice.unwatchAdvertisements && oldDevice !== device) {
+          oldDevice.unwatchAdvertisements().catch((err: any) => {
+            console.warn(
+              "Failed to unwatch advertisements when replacing device:",
+              err,
+            );
+          });
+        }
+      }
+      advertisementListenerRef.current = {
+        device,
+        listener: handleAdvertisement,
+      };
+
       device.addEventListener("advertisementreceived", handleAdvertisement);
 
       if (device.watchAdvertisements) {
-        await device.watchAdvertisements();
+        try {
+          await device.watchAdvertisements();
+        } catch (watchErr) {
+          device.removeEventListener(
+            "advertisementreceived",
+            handleAdvertisement,
+          );
+          if (
+            advertisementListenerRef.current?.listener === handleAdvertisement
+          ) {
+            advertisementListenerRef.current = null;
+          }
+          throw watchErr;
+        }
       } else {
         // Fallback for browsers supporting requestDevice but not watchAdvertisements
         setRssi(-70);
@@ -261,11 +294,23 @@ export function useArrivalDetection(
   // Bluetooth cleanup
   useEffect(() => {
     return () => {
-      if (bluetoothDevice) {
-        // Clean up device or listener if watchAdvertisements was started
+      if (advertisementListenerRef.current) {
+        const { device: oldDevice, listener: oldListener } =
+          advertisementListenerRef.current;
+        oldDevice.removeEventListener("advertisementreceived", oldListener);
+        if (oldDevice.unwatchAdvertisements) {
+          // Fire-and-forget to avoid unhandled promise rejection in cleanup
+          oldDevice.unwatchAdvertisements().catch((err: any) => {
+            console.warn(
+              "Failed to unwatch advertisements during cleanup:",
+              err,
+            );
+          });
+        }
+        advertisementListenerRef.current = null;
       }
     };
-  }, [bluetoothDevice]);
+  }, []);
 
   // 4. One-tap Check-In Confirmation callback
   const confirmCheckIn = useCallback(async () => {

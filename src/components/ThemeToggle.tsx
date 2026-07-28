@@ -1,9 +1,27 @@
 "use client";
+import { useEffect } from "react";
 import { Sun, Moon, Zap } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 
 export function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isShortcut =
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        (e.key === "L" || e.key === "l");
+
+      if (isShortcut) {
+        e.preventDefault();
+        toggleTheme();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [toggleTheme]);
 
   const labelFor = (t: string) =>
     t === "light"
@@ -12,6 +30,8 @@ export function ThemeToggle() {
         ? "Switch to cyberpunk mode"
         : "Switch to light mode";
 
+  const tooltipTitle = `${labelFor(theme)} (Cmd/Ctrl + Shift + L)`;
+
   return (
     <button
       role="switch"
@@ -19,8 +39,8 @@ export function ThemeToggle() {
       onClick={toggleTheme}
       data-active-theme={theme}
       className="p-2 cursor-pointer bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent,#2563eb)] hover:text-white transition-all active:scale-95"
-      title={labelFor(theme)}
-      aria-label={labelFor(theme)}
+      title={tooltipTitle}
+      aria-label={tooltipTitle}
     >
       {theme === "light" && <Sun className="w-4 h-4" />}
       {theme === "dark" && <Moon className="w-4 h-4" />}

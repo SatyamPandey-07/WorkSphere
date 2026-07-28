@@ -34,14 +34,19 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
     const renderer = new WebGPUFloorPlanRenderer(canvas);
     rendererRef.current = renderer;
     let detachRecovery: (() => void) | null = null;
+    let fallbackCleanup: (() => void) | null = null;
     let worker: Worker | null = null;
+    let isUnmounted = false;
 
     renderer.initialize().then((success) => {
+      if (isUnmounted) return;
+
       worker = new Worker(
         new URL("../../../workers/layoutWorker.ts", import.meta.url),
       );
 
       worker.onmessage = (event) => {
+        if (isUnmounted) return;
         if (event.data.type === "LAYOUT_COMPLETE") {
           const { webgpu, webgl } = event.data;
 
@@ -52,9 +57,12 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
               renderer.startRenderLoop();
             }
           } else {
-            renderWebGLFallback(canvas, data, webgl);
+            fallbackCleanup = renderWebGLFallback(canvas, data, webgl);
             detachRecovery = attachWebGLContextRecovery(canvas, () => {
-              renderWebGLFallback(canvas, data, webgl);
+              if (!isUnmounted) {
+                fallbackCleanup?.();
+                fallbackCleanup = renderWebGLFallback(canvas, data, webgl);
+              }
             });
           }
         }
@@ -67,8 +75,11 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
     });
 
     return () => {
+      isUnmounted = true;
       worker?.terminate();
       detachRecovery?.();
+      fallbackCleanup?.();
+      renderer.stopRenderLoop();
       renderer.destroy();
     };
   }, [data]);
@@ -248,9 +259,9 @@ function renderWebGLFallback(
   canvas: HTMLCanvasElement,
   data: FloorPlanData,
   meshData?: { positions: Float32Array; colors: Float32Array },
-): void {
+): () => void {
   const gl = canvas.getContext("webgl2");
-  if (!gl) return;
+  if (!gl) return () => {};
 
   // CSS size × devicePixelRatio so Retina restores are sharp (#1030)
   const { width, height } = allocateCanvasDrawingBuffer(
@@ -300,16 +311,16 @@ function renderWebGLFallback(
 
   const vs = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
   const fs = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-  if (!vs || !fs) return;
+  if (!vs || !fs) return () => {};
 
   const program = gl.createProgram();
-  if (!program) return;
+  if (!program) return () => {};
   gl.attachShader(program, vs);
   gl.attachShader(program, fs);
   gl.linkProgram(program);
 
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    return;
+    return () => {};
   }
 
   gl.useProgram(program);
@@ -403,4 +414,17 @@ function renderWebGLFallback(
   gl.uniformMatrix4fv(uMVP, false, mvp);
 
   gl.drawArrays(gl.TRIANGLES, 0, positionsArray.length / 3);
+
+  return () => {
+    try {
+      if (posBuf) gl.deleteBuffer(posBuf);
+      if (colBuf) gl.deleteBuffer(colBuf);
+      if (program) gl.deleteProgram(program);
+      if (vs) gl.deleteShader(vs);
+      if (fs) gl.deleteShader(fs);
+      gl.getExtension("WEBGL_lose_context")?.loseContext();
+    } catch {
+      // Ignore errors during cleanup
+    }
+  };
 }

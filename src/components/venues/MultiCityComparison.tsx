@@ -135,6 +135,28 @@ function getWifiSpeedBadgeDetails(
   };
 }
 
+export function formatVenueComparisonCsv(venues: Venue[]): string {
+  const headers = [
+    "Name",
+    "Address",
+    "Wi-Fi Speed (Mbps)",
+    "Power Outlets",
+    "Noise Level",
+    "Score",
+  ];
+  const rows = venues.map((v) => {
+    const name = `"${(v.name || "").replace(/"/g, '""')}"`;
+    const address = `"${(v.address || "").replace(/"/g, '""')}"`;
+    const wifiSpeed =
+      v.wifiSpeed != null ? String(v.wifiSpeed) : v.wifi ? "Available" : "N/A";
+    const outlets = v.hasOutlets ? "Yes" : "No";
+    const noise = v.noiseLevel || "N/A";
+    const score = v.score != null ? `${Math.round(v.score * 10)}%` : "N/A";
+    return [name, address, wifiSpeed, outlets, noise, score].join(",");
+  });
+  return [headers.join(","), ...rows].join("\n");
+}
+
 export function buildComparisonChartData(
   selectedCities: string[],
   venues: Venue[],
@@ -307,6 +329,20 @@ export function MultiCityComparison({
       updateUrlParams(nextCities, selectedFilters);
     }
     setCustomCityInput("");
+  };
+
+  const handleExportCsv = () => {
+    if (venues.length === 0) return;
+    const csvContent = formatVenueComparisonCsv(venues);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "worksphere-comparison.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const handleExportPdfReport = async () => {
@@ -608,6 +644,16 @@ export function MultiCityComparison({
               </span>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            disabled={venues.length === 0}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white shadow-sm transition-all"
+            title="Export CSV venue comparison"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            <span>Export CSV</span>
+          </button>
           <button
             type="button"
             onClick={handleExportPdfReport}

@@ -3,13 +3,11 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
-  
   Clock3,
   Copy,
   ExternalLink,
   MapPin,
   RefreshCw,
-  
   Sparkles,
   UserRoundCheck,
   UsersRound,
@@ -57,8 +55,14 @@ type Session = {
   };
 };
 
-function displayName(user: { firstName: string | null; lastName: string | null }) {
-  return [user.firstName, user.lastName].filter(Boolean).join(" ") || "WorkSphere member";
+function displayName(user: {
+  firstName: string | null;
+  lastName: string | null;
+}) {
+  return (
+    [user.firstName, user.lastName].filter(Boolean).join(" ") ||
+    "WorkSphere member"
+  );
 }
 
 function formatDate(value: string) {
@@ -66,6 +70,14 @@ function formatDate(value: string) {
     dateStyle: "medium",
     timeStyle: "short",
   });
+}
+
+async function safeJson(response: Response): Promise<{ error?: string }> {
+  const contentType = response.headers.get("content-type");
+  if (contentType && contentType.includes("json")) {
+    return response.json();
+  }
+  return {};
 }
 
 export default function SocialWorkspaceClient() {
@@ -90,7 +102,11 @@ export default function SocialWorkspaceClient() {
 
     if (venueResponse.ok) {
       const venuePayload = await venueResponse.json();
-      setVenues(Array.isArray(venuePayload) ? venuePayload : venuePayload.venues ?? []);
+      setVenues(
+        Array.isArray(venuePayload)
+          ? venuePayload
+          : (venuePayload.venues ?? []),
+      );
     }
   }
 
@@ -105,28 +121,32 @@ export default function SocialWorkspaceClient() {
 
     const form = new FormData(event.currentTarget);
 
-    const response = await fetch("/api/social/status", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        venueId: form.get("venueId"),
-        note: form.get("note"),
-        until: form.get("until"),
-        isPublic: true,
-      }),
-    });
+    try {
+      const response = await fetch("/api/social/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          venueId: form.get("venueId"),
+          note: form.get("note"),
+          until: form.get("until"),
+          isPublic: true,
+        }),
+      });
 
-    const payload = await response.json();
+      const payload = await safeJson(response);
 
-    if (!response.ok) {
-      setMessage(payload.error ?? "Unable to publish status");
-    } else {
-      setStatusOpen(false);
-      setMessage("Your Work Buddy status is live.");
-      await load();
+      if (!response.ok) {
+        setMessage(payload.error ?? "Unable to publish status");
+      } else {
+        setStatusOpen(false);
+        setMessage("Your Work Buddy status is live.");
+        await load();
+      }
+    } catch {
+      setMessage("A network error occurred. Please try again.");
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   }
 
   async function submitSession(event: FormEvent<HTMLFormElement>) {
@@ -136,30 +156,34 @@ export default function SocialWorkspaceClient() {
 
     const form = new FormData(event.currentTarget);
 
-    const response = await fetch("/api/social/sessions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: form.get("title"),
-        description: form.get("description"),
-        venueId: form.get("venueId"),
-        startsAt: form.get("startsAt"),
-        endsAt: form.get("endsAt"),
-        maxGuests: Number(form.get("maxGuests")) || null,
-      }),
-    });
+    try {
+      const response = await fetch("/api/social/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: form.get("title"),
+          description: form.get("description"),
+          venueId: form.get("venueId"),
+          startsAt: form.get("startsAt"),
+          endsAt: form.get("endsAt"),
+          maxGuests: Number(form.get("maxGuests")) || null,
+        }),
+      });
 
-    const payload = await response.json();
+      const payload = await safeJson(response);
 
-    if (!response.ok) {
-      setMessage(payload.error ?? "Unable to create session");
-    } else {
-      setSessionOpen(false);
-      setMessage("Coworking session created.");
-      await load();
+      if (!response.ok) {
+        setMessage(payload.error ?? "Unable to create session");
+      } else {
+        setSessionOpen(false);
+        setMessage("Coworking session created.");
+        await load();
+      }
+    } catch {
+      setMessage("A network error occurred. Please try again.");
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   }
 
   const activeCount = useMemo(() => statuses.length, [statuses]);
@@ -182,7 +206,8 @@ export default function SocialWorkspaceClient() {
               Coworking Social Hub
             </h1>
             <p className="mt-3 max-w-2xl text-zinc-400">
-              Share where you are working, discover work buddies nearby, and turn a good workspace into a group session.
+              Share where you are working, discover work buddies nearby, and
+              turn a good workspace into a group session.
             </p>
           </div>
 
@@ -212,17 +237,23 @@ export default function SocialWorkspaceClient() {
           <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
             <UserRoundCheck className="mb-4 h-6 w-6 text-emerald-300" />
             <div className="text-3xl font-semibold">{activeCount}</div>
-            <div className="mt-1 text-sm text-zinc-500">active work statuses</div>
+            <div className="mt-1 text-sm text-zinc-500">
+              active work statuses
+            </div>
           </div>
           <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
             <UsersRound className="mb-4 h-6 w-6 text-violet-300" />
             <div className="text-3xl font-semibold">{sessions.length}</div>
-            <div className="mt-1 text-sm text-zinc-500">upcoming group sessions</div>
+            <div className="mt-1 text-sm text-zinc-500">
+              upcoming group sessions
+            </div>
           </div>
           <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
             <MapPin className="mb-4 h-6 w-6 text-cyan-300" />
             <div className="text-3xl font-semibold">{venues.length}</div>
-            <div className="mt-1 text-sm text-zinc-500">available workspace locations</div>
+            <div className="mt-1 text-sm text-zinc-500">
+              available workspace locations
+            </div>
           </div>
         </section>
 
@@ -242,7 +273,10 @@ export default function SocialWorkspaceClient() {
             </button>
           </div>
 
-          <button onClick={load} className="rounded-xl p-2 text-zinc-400 transition hover:bg-white/5 hover:text-white">
+          <button
+            onClick={load}
+            className="rounded-xl p-2 text-zinc-400 transition hover:bg-white/5 hover:text-white"
+          >
             <RefreshCw className="h-5 w-5" />
           </button>
         </div>
@@ -250,11 +284,18 @@ export default function SocialWorkspaceClient() {
         {tab === "pulse" ? (
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {statuses.map((status) => (
-              <article key={status.id} className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur">
+              <article
+                key={status.id}
+                className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur"
+              >
                 <div className="mb-4 flex items-start justify-between">
                   <div>
-                    <div className="font-medium">{displayName(status.user)}</div>
-                    <div className="mt-1 text-sm text-zinc-500">is working now</div>
+                    <div className="font-medium">
+                      {displayName(status.user)}
+                    </div>
+                    <div className="mt-1 text-sm text-zinc-500">
+                      is working now
+                    </div>
                   </div>
                   <span className="h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,.8)]" />
                 </div>
@@ -264,17 +305,25 @@ export default function SocialWorkspaceClient() {
                     <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-violet-300" />
                     <div>
                       <div className="font-medium">{status.venue.name}</div>
-                      <div className="mt-1 text-xs text-zinc-500">{status.venue.address}</div>
+                      <div className="mt-1 text-xs text-zinc-500">
+                        {status.venue.address}
+                      </div>
                     </div>
                   </div>
                   <div className="mt-3 flex items-center gap-2 text-xs text-zinc-400">
                     <Clock3 className="h-4 w-4" />
-                    until {new Date(status.until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    until{" "}
+                    {new Date(status.until).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
                   </div>
                 </div>
 
                 {status.note && (
-                  <p className="mt-4 text-sm leading-6 text-zinc-300">“{status.note}”</p>
+                  <p className="mt-4 text-sm leading-6 text-zinc-300">
+                    “{status.note}”
+                  </p>
                 )}
 
                 <a
@@ -297,7 +346,10 @@ export default function SocialWorkspaceClient() {
         ) : (
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {sessions.map((session) => (
-              <article key={session.id} className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04]">
+              <article
+                key={session.id}
+                className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04]"
+              >
                 <div className="p-5">
                   <div className="mb-3 flex items-center justify-between gap-4">
                     <span className="rounded-full bg-violet-400/10 px-3 py-1 text-xs text-violet-300">
@@ -324,7 +376,9 @@ export default function SocialWorkspaceClient() {
                       <MapPin className="h-5 w-5 shrink-0 text-cyan-300" />
                       <div>
                         <div>{session.venue.name}</div>
-                        <div className="mt-1 text-xs text-zinc-500">{session.venue.address}</div>
+                        <div className="mt-1 text-xs text-zinc-500">
+                          {session.venue.address}
+                        </div>
                       </div>
                     </div>
                     <div className="flex gap-3 text-zinc-300">
@@ -341,7 +395,11 @@ export default function SocialWorkspaceClient() {
                       View & RSVP
                     </a>
                     <button
-                      onClick={() => navigator.clipboard.writeText(`${window.location.origin}/sessions/${session.slug}`)}
+                      onClick={() =>
+                        navigator.clipboard.writeText(
+                          `${window.location.origin}/sessions/${session.slug}`,
+                        )
+                      }
                       className="rounded-xl border border-white/10 px-3 hover:bg-white/5"
                       title="Copy share link"
                     >
@@ -356,7 +414,10 @@ export default function SocialWorkspaceClient() {
       </div>
 
       {statusOpen && (
-        <Modal title="Share your Work Buddy status" onClose={() => setStatusOpen(false)}>
+        <Modal
+          title="Share your Work Buddy status"
+          onClose={() => setStatusOpen(false)}
+        >
           <form onSubmit={submitStatus} className="space-y-4">
             <Field label="Workspace">
               <select name="venueId" required className="input">
@@ -369,12 +430,25 @@ export default function SocialWorkspaceClient() {
               </select>
             </Field>
             <Field label="What are you working on?">
-              <input name="note" maxLength={160} placeholder="Deep work on a launch plan..." className="input" />
+              <input
+                name="note"
+                maxLength={160}
+                placeholder="Deep work on a launch plan..."
+                className="input"
+              />
             </Field>
             <Field label="Working until">
-              <input name="until" type="datetime-local" required className="input" />
+              <input
+                name="until"
+                type="datetime-local"
+                required
+                className="input"
+              />
             </Field>
-            <button disabled={busy} className="w-full rounded-xl bg-violet-600 px-4 py-3 font-medium hover:bg-violet-500 disabled:opacity-50">
+            <button
+              disabled={busy}
+              className="w-full rounded-xl bg-violet-600 px-4 py-3 font-medium hover:bg-violet-500 disabled:opacity-50"
+            >
               {busy ? "Publishing..." : "Publish status"}
             </button>
           </form>
@@ -382,10 +456,19 @@ export default function SocialWorkspaceClient() {
       )}
 
       {sessionOpen && (
-        <Modal title="Create a group coworking session" onClose={() => setSessionOpen(false)}>
+        <Modal
+          title="Create a group coworking session"
+          onClose={() => setSessionOpen(false)}
+        >
           <form onSubmit={submitSession} className="space-y-4">
             <Field label="Session title">
-              <input name="title" required maxLength={100} placeholder="Friday focus sprint" className="input" />
+              <input
+                name="title"
+                required
+                maxLength={100}
+                placeholder="Friday focus sprint"
+                className="input"
+              />
             </Field>
             <Field label="Workspace">
               <select name="venueId" required className="input">
@@ -399,19 +482,44 @@ export default function SocialWorkspaceClient() {
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Starts">
-                <input name="startsAt" type="datetime-local" required className="input" />
+                <input
+                  name="startsAt"
+                  type="datetime-local"
+                  required
+                  className="input"
+                />
               </Field>
               <Field label="Ends">
-                <input name="endsAt" type="datetime-local" required className="input" />
+                <input
+                  name="endsAt"
+                  type="datetime-local"
+                  required
+                  className="input"
+                />
               </Field>
             </div>
             <Field label="Description">
-              <textarea name="description" rows={3} maxLength={500} placeholder="Bring headphones. We'll do two focus blocks and a coffee break." className="input resize-none" />
+              <textarea
+                name="description"
+                rows={3}
+                maxLength={500}
+                placeholder="Bring headphones. We'll do two focus blocks and a coffee break."
+                className="input resize-none"
+              />
             </Field>
             <Field label="Maximum guests (optional)">
-              <input name="maxGuests" type="number" min={1} max={100} className="input" />
+              <input
+                name="maxGuests"
+                type="number"
+                min={1}
+                max={100}
+                className="input"
+              />
             </Field>
-            <button disabled={busy} className="w-full rounded-xl bg-violet-600 px-4 py-3 font-medium hover:bg-violet-500 disabled:opacity-50">
+            <button
+              disabled={busy}
+              className="w-full rounded-xl bg-violet-600 px-4 py-3 font-medium hover:bg-violet-500 disabled:opacity-50"
+            >
               {busy ? "Creating..." : "Create shareable session"}
             </button>
           </form>
@@ -454,7 +562,10 @@ function Modal({
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-white/10 bg-[#111114] p-6 shadow-2xl">
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-xl font-semibold">{title}</h2>
-          <button onClick={onClose} className="rounded-xl p-2 text-zinc-400 hover:bg-white/5 hover:text-white">
+          <button
+            onClick={onClose}
+            className="rounded-xl p-2 text-zinc-400 hover:bg-white/5 hover:text-white"
+          >
             <X className="h-5 w-5" />
           </button>
         </div>

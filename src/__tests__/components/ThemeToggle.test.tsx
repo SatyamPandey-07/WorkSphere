@@ -63,4 +63,25 @@ describe("ThemeToggle", () => {
     expect(btn).toHaveAttribute("aria-checked", "true");
     expect(btn).toHaveAttribute("data-active-theme", "cyberpunk");
   });
+
+  it("toggles theme on Cmd/Ctrl + Shift + L keyboard shortcut", () => {
+    render(
+      <ThemeProvider initialTheme="light">
+        <ThemeToggle />
+      </ThemeProvider>,
+    );
+    const btn = screen.getByRole("switch");
+    expect(btn).toHaveAttribute("data-active-theme", "light");
+
+    // Simulate Ctrl + Shift + L
+    const event = new KeyboardEvent("keydown", {
+      key: "L",
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+    });
+    window.dispatchEvent(event);
+
+    expect(btn).toHaveAttribute("data-active-theme", "dark");
+  });
 });

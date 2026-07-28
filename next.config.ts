@@ -29,7 +29,7 @@ const nextConfig: NextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev; style-src 'self' 'unsafe-inline'; img-src 'self' images.unsplash.com source.unsplash.com res.cloudinary.com https://img.clerk.com data: blob:; connect-src 'self' *.partykit.io wss://*.partykit.io https://router.project-osrm.org https://*.clerk.accounts.dev https://vitals.vercel-insights.com; worker-src 'self' blob:; frame-ancestors 'self';",
+              "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev; style-src 'self' 'unsafe-inline'; img-src 'self' images.unsplash.com source.unsplash.com images.pexels.com res.cloudinary.com https://img.clerk.com data: blob:; connect-src 'self' *.partykit.io wss://*.partykit.io https://router.project-osrm.org https://*.clerk.accounts.dev https://vitals.vercel-insights.com; worker-src 'self' blob:; frame-ancestors 'self';",
           },
           {
             key: "X-Frame-Options",
@@ -85,6 +85,11 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "res.cloudinary.com",
+        pathname: "/**",
+      },
+      {
+        protocol: "https",
+        hostname: "images.pexels.com",
         pathname: "/**",
       },
     ],

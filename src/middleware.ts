@@ -17,7 +17,7 @@ function generateCsp(nonce: string): string {
     `script-src 'self' 'nonce-${nonce}' https://cdn.clerk.com ${isDev ? "'unsafe-eval' https://*.clerk.accounts.dev" : ""}`,
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `font-src 'self' https://fonts.gstatic.com data:`,
-    `img-src 'self' https://images.unsplash.com https://*.unsplash.com https://res.cloudinary.com data: blob:`,
+    `img-src 'self' https://images.unsplash.com https://*.unsplash.com https://images.pexels.com https://res.cloudinary.com data: blob:`,
     `connect-src 'self' https://*.clerk.com https://api.groq.com https://router.project-osrm.org wss://*.partykit.dev`,
     `frame-src 'self' https://*.clerk.com`,
     `worker-src 'self' blob:`,

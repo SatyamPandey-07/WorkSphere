@@ -31,6 +31,10 @@ import {
   applyPendingConversationEdits,
   flushConversationEditQueue,
 } from "@/lib/offlineStorage";
+import {
+  formatChatHistoryMarkdown,
+  generateChatPdfReport,
+} from "@/lib/chatExport";
 
 // Types
 
@@ -207,7 +211,46 @@ export function EnhancedChatbot({
     stopSpeaking,
   } = useSpeechSynthesis();
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
-  const lastReadMsgId = useRef<string | null>(null);
+  const [isExportingChatPdf, setIsExportingChatPdf] = useState(false);
+
+  const handleExportMarkdown = () => {
+    if (messages.length === 0) return;
+    const mdContent = formatChatHistoryMarkdown(messages);
+    const blob = new Blob([mdContent], {
+      type: "text/markdown;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `worksphere-chat-export-${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportPdf = async () => {
+    if (messages.length === 0) return;
+    setIsExportingChatPdf(true);
+    try {
+      const pdfBytes = await generateChatPdfReport(messages);
+      const blob = new Blob([pdfBytes.buffer as ArrayBuffer], {
+        type: "application/pdf",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `worksphere-chat-export-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to export chat PDF:", err);
+    } finally {
+      setIsExportingChatPdf(false);
+    }
+  };
 
   // Conversations & favorites
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -1259,6 +1302,29 @@ export function EnhancedChatbot({
               </button>
             )}
           </div>
+
+          <div className="flex items-center gap-2" aria-label="Export Conversation">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 hidden sm:inline">
+              Export Chat:
+            </span>
+            <button
+              onClick={handleExportMarkdown}
+              disabled={messages.length === 0}
+              className="text-[11px] font-bold px-2.5 py-1 bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg hover:bg-zinc-300 dark:hover:bg-zinc-700 disabled:opacity-40 transition-colors"
+              title="Export conversation history to Markdown (.md)"
+            >
+              .MD
+            </button>
+            <button
+              onClick={handleExportPdf}
+              disabled={messages.length === 0 || isExportingChatPdf}
+              className="text-[11px] font-bold px-2.5 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
+              title="Export conversation history to PDF (.pdf)"
+            >
+              {isExportingChatPdf ? "Exporting…" : ".PDF"}
+            </button>
+          </div>
+
           {showVoiceSettings && (
             <div className="flex items-center gap-4 text-xs">
               <label className="flex items-center gap-1 cursor-pointer text-zinc-700 dark:text-zinc-300">

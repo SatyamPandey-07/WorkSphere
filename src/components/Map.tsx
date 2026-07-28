@@ -871,6 +871,8 @@ const Map = ({
           width: 100%;
           height: 100%;
           border-radius: 12px;
+          position: relative;
+          z-index: 20;
         }
         
         /* UPDATED: Target map tiles specifically so they don't hide the heatmap canvas */
@@ -1069,11 +1071,13 @@ const Map = ({
         zoom={13}
         maxZoom={18}
         preferCanvas={true}
+        className="z-20 relative"
         style={{
           width: "95%",
           height: "95%",
           borderRadius: "12px",
           position: "relative",
+          zIndex: 20,
         }}
       >
         <ScaleControl position="bottomleft" metric={true} imperial={false} />

@@ -10,7 +10,6 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 import { NotificationBell } from "@/components/NotificationBell";
 import StreakBadge from "@/components/Header/StreakBadge";
-import { StreakBadge } from "@/components/Header/StreakBadge";
 
 interface TopNavProps {
   hideAuth?: boolean;
@@ -26,7 +25,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-zinc-200/80 dark:border-white/5 backdrop-blur-xl bg-white/70 dark:bg-black/40 transition-colors">
+    <nav className="sticky top-0 z-40 border-b border-zinc-200/80 dark:border-white/5 backdrop-blur-xl bg-white/70 dark:bg-black/40 transition-colors">
       <div className="container mx-auto px-6 sm:px-10 h-[72px] flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2.5 group">
           <Image

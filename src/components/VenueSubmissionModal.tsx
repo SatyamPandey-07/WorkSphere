@@ -87,6 +87,19 @@ export function VenueSubmissionModal({
     };
   }, [imagePreview]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -310,10 +323,15 @@ export function VenueSubmissionModal({
       <div className="absolute inset-0 bg-black/95" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg bg-white dark:bg-zinc-950 rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden border border-zinc-200 dark:border-zinc-800">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="venue-suggest-title"
+        className="relative w-full max-w-lg bg-white dark:bg-zinc-950 rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.8)] overflow-hidden border border-zinc-200 dark:border-zinc-800"
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 className="text-lg font-black uppercase tracking-tighter text-zinc-900 dark:text-zinc-50">
+          <h2 id="venue-suggest-title" className="text-lg font-black uppercase tracking-tighter text-zinc-900 dark:text-zinc-50">
             Suggest a Workspace
           </h2>
           <button

@@ -52,8 +52,10 @@ export function useGodRaysRenderer(options: GodRaysOptions) {
   const [isSupported, setIsSupported] = useState<boolean>(true);
   const [fps, setFps] = useState<number>(60);
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
+  const [isContextLost, setIsContextLost] = useState(false);
 
   const animFrameIdRef = useRef<number | null>(null);
+  const contextLostRef = useRef(false);
   const glRef = useRef<WebGL2RenderingContext | null>(null);
   const programRef = useRef<WebGLProgram | null>(null);
   const vaoRef = useRef<WebGLVertexArrayObject | null>(null);
@@ -233,26 +235,26 @@ export function useGodRaysRenderer(options: GodRaysOptions) {
 
   const cleanupWebGL = useCallback(() => {
     const gl = glRef.current;
-    if (gl) {
+    // Skip GL deletes when context is already lost — objects are invalid (#1288)
+    if (gl && typeof gl.isContextLost === "function" && !gl.isContextLost()) {
       if (programRef.current) {
         gl.deleteProgram(programRef.current);
-        programRef.current = null;
       }
       for (const s of shadersRef.current) {
         gl.deleteShader(s);
       }
-      shadersRef.current = [];
-
       if (bufferRef.current) {
         gl.deleteBuffer(bufferRef.current);
-        bufferRef.current = null;
       }
       if (vaoRef.current) {
         gl.deleteVertexArray(vaoRef.current);
-        vaoRef.current = null;
       }
-      glRef.current = null;
     }
+    programRef.current = null;
+    shadersRef.current = [];
+    bufferRef.current = null;
+    vaoRef.current = null;
+    glRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -265,15 +267,24 @@ export function useGodRaysRenderer(options: GodRaysOptions) {
     const initialized = initWebGL(el);
     if (!initialized) return;
 
-    const cleanupContextRecovery = attachWebGLContextRecovery(el, () => {
-      initWebGL(el);
-    });
-
     const startTime = performance.now();
     let frameCount = 0;
     let fpsTimer = startTime;
 
+    const stopRenderLoop = () => {
+      if (animFrameIdRef.current !== null) {
+        cancelAnimationFrame(animFrameIdRef.current);
+        animFrameIdRef.current = null;
+      }
+    };
+
     const renderFrame = (now: number) => {
+      // Halt draws while context is lost to avoid recovery re-render loops (#1288)
+      if (contextLostRef.current) {
+        animFrameIdRef.current = null;
+        return;
+      }
+
       const gl = glRef.current;
       const program = programRef.current;
       const vao = vaoRef.current;
@@ -321,23 +332,47 @@ export function useGodRaysRenderer(options: GodRaysOptions) {
         }
       }
 
-      if (animate) {
+      if (animate && !contextLostRef.current) {
         animFrameIdRef.current = requestAnimationFrame(renderFrame);
+      } else {
+        animFrameIdRef.current = null;
       }
     };
 
-    if (animate) {
-      animFrameIdRef.current = requestAnimationFrame(renderFrame);
-    } else {
-      renderFrame(performance.now());
-    }
+    const startRenderLoop = () => {
+      stopRenderLoop();
+      if (animate) {
+        animFrameIdRef.current = requestAnimationFrame(renderFrame);
+      } else {
+        renderFrame(performance.now());
+      }
+    };
+
+    const cleanupContextRecovery = attachWebGLContextRecovery(
+      el,
+      () => {
+        // Clean re-init of programs / buffers after webglcontextrestored (#1288)
+        cleanupWebGL();
+        const ok = initWebGL(el);
+        if (!ok) return;
+        contextLostRef.current = false;
+        setIsContextLost(false);
+        startRenderLoop();
+      },
+      () => {
+        contextLostRef.current = true;
+        setIsContextLost(true);
+        stopRenderLoop();
+      },
+    );
+
+    startRenderLoop();
 
     return () => {
-      if (animFrameIdRef.current !== null) {
-        cancelAnimationFrame(animFrameIdRef.current);
-      }
+      stopRenderLoop();
       cleanupContextRecovery();
       cleanupWebGL();
+      contextLostRef.current = false;
     };
   }, [initWebGL, cleanupWebGL, animate, resolutionScale]);
 
@@ -345,5 +380,6 @@ export function useGodRaysRenderer(options: GodRaysOptions) {
     isSupported,
     fps,
     canvas,
+    isContextLost,
   };
 }

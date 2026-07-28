@@ -51,3 +51,10 @@ next-env.d.ts
 # wasm-pack
 wasm-pack-init.exe
 wasm-pack-init.stamp
+
+# local build/debug artifacts (should never be committed)
+/ci-logs-temp/
+/next-build-log*.txt
+/tsc_output.txt
+/scratch_test.mjs
+/test-webhook.js

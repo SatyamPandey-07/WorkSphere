@@ -5,7 +5,7 @@
  * Development: Falls back to an in-memory sliding window automatically
  */
 
-const WINDOW_MS = 60_000;
+const DEFAULT_WINDOW_MS = 60_000;
 
 let redisClient: any = null;
 
@@ -40,14 +40,15 @@ function getRedisClient() {
 async function upstashRateLimit(
   identifier: string,
   limit: number,
+  windowMs: number = DEFAULT_WINDOW_MS,
 ): Promise<boolean> {
   const redis = getRedisClient();
-  if (!redis) return memRateLimit(identifier, limit);
+  if (!redis) return memRateLimit(identifier, limit, windowMs);
 
   try {
     const now = Date.now();
-    const windowStart = now - WINDOW_MS;
-    const windowSeconds = Math.ceil(WINDOW_MS / 1000);
+    const windowStart = now - windowMs;
+    const windowSeconds = Math.ceil(windowMs / 1000);
     const key = `worksphere:ratelimit:${identifier}`;
     const member = microTimestampMember(
       Math.floor(now / 1000),
@@ -71,7 +72,7 @@ async function upstashRateLimit(
 
     return true;
   } catch {
-    return memRateLimit(identifier, limit);
+    return memRateLimit(identifier, limit, windowMs);
   }
 }
 
@@ -121,13 +122,13 @@ if (!globalCleanup.__rateLimitCleanupTimer) {
   globalCleanup.__rateLimitCleanupTimer.unref?.();
 }
 
-function memRateLimit(identifier: string, limit: number): boolean {
+function memRateLimit(identifier: string, limit: number, windowMs: number = DEFAULT_WINDOW_MS): boolean {
   const now = Date.now();
 
   const entry = memStore.get(identifier);
 
   if (!entry || now > entry.resetTime) {
-    memStore.set(identifier, { count: 1, resetTime: now + WINDOW_MS });
+    memStore.set(identifier, { count: 1, resetTime: now + windowMs });
     return true;
   }
 
@@ -140,13 +141,14 @@ function memRateLimit(identifier: string, limit: number): boolean {
 function memGetInfo(
   identifier: string,
   limit: number,
+  windowMs: number = DEFAULT_WINDOW_MS,
 ): { count: number; remaining: number; resetTime: number; isLimited: boolean } {
   const entry = memStore.get(identifier);
   if (!entry || Date.now() > entry.resetTime) {
     return {
       count: 0,
       remaining: limit,
-      resetTime: Date.now() + WINDOW_MS,
+      resetTime: Date.now() + windowMs,
       isLimited: false,
     };
   }
@@ -167,27 +169,29 @@ function memGetInfo(
 export async function rateLimit(
   identifier: string,
   limit = 10,
+  windowMs: number = DEFAULT_WINDOW_MS,
 ): Promise<boolean> {
   if (
     process.env.UPSTASH_REDIS_REST_URL &&
     process.env.UPSTASH_REDIS_REST_TOKEN
   ) {
-    return upstashRateLimit(identifier, limit);
+    return upstashRateLimit(identifier, limit, windowMs);
   }
 
-  return memRateLimit(identifier, limit);
+  return memRateLimit(identifier, limit, windowMs);
 }
 
 export async function getRateLimitInfo(
   identifier: string,
   limit = 10,
+  windowMs: number = DEFAULT_WINDOW_MS,
 ): Promise<{
   count: number;
   remaining: number;
   resetTime: number;
   isLimited: boolean;
 } | null> {
-  return memGetInfo(identifier, limit);
+  return memGetInfo(identifier, limit, windowMs);
 }
 
 /** Reset in-memory rate limit (useful in tests). */

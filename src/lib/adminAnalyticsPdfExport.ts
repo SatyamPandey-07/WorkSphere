@@ -7,6 +7,7 @@
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { drawSafeText, safeText } from "@/lib/pdfHelpers";
 import type { AnalyticsExportData } from "./adminAnalyticsCsvExport";
+import { truncateText } from "./multiCityPdfExport";
 
 export async function generateAnalyticsPdfReport(
   data: AnalyticsExportData,
@@ -281,9 +282,7 @@ export async function generateAnalyticsPdfReport(
     }
 
     const rankStr = String(index + 1).padStart(2, "0");
-    const nameStr = safeText(
-      venue.name.length > 28 ? `${venue.name.slice(0, 26)}...` : venue.name,
-    );
+    const nameStr = truncateText(venue.name, bold, 8, 180);
     const catStr = safeText(venue.category);
     const ratingStr =
       venue.rating != null && !isNaN(venue.rating)

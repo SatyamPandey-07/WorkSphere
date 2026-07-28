@@ -146,7 +146,7 @@ describe("Upload API", () => {
     const response = await POST(request);
     expect(response.status).toBe(400);
     const data = await response.json();
-    expect(data.error).toContain("Invalid file extension");
+    expect(data.error).toContain("Invalid file type");
   });
 
   it("should successfully upload and save locally if Cloudinary config is missing", async () => {
@@ -155,7 +155,9 @@ describe("Upload API", () => {
     });
     process.env.CLOUDINARY_CLOUD_NAME = "dummy";
 
-    const fileContent = new TextEncoder().encode("fake image content");
+    const fileContent = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    ]);
     const mockFile = {
       name: "valid_image.png",
       type: "image/png",

@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import * as Y from "yjs";
 import YPartyKitProvider from "y-partykit/provider";
 import { Bold, Italic, Loader2, Underline, Wifi, WifiOff } from "lucide-react";
@@ -37,7 +43,9 @@ export function GroupNotesEditor({
 }: GroupNotesEditorProps) {
   const [status, setStatus] = useState<ConnStatus>("connecting");
   const [pendingOutbox, setPendingOutbox] = useState(0);
-  const [conflicts, setConflicts] = useState<NotesOutboxConflict[] | null>(null);
+  const [conflicts, setConflicts] = useState<NotesOutboxConflict[] | null>(
+    null,
+  );
 
   const { toast } = useToast();
 
@@ -66,8 +74,7 @@ export function GroupNotesEditor({
     const ytext = ydoc.getText(textKey);
     yTextRef.current = ytext;
 
-    const host =
-      process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999";
+    const host = process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999";
     const provider = new YPartyKitProvider(host, `notes-${roomId}`, ydoc);
     providerRef.current = provider;
 
@@ -101,7 +108,8 @@ export function GroupNotesEditor({
       flushed: number;
       conflicts: NotesOutboxConflict[];
     }) => {
-      if (result.flushed > 0 || result.conflicts.length > 0) setPendingOutbox(0);
+      if (result.flushed > 0 || result.conflicts.length > 0)
+        setPendingOutbox(0);
       syncEditorFromYText();
       if (result.conflicts.length > 0) {
         setConflicts(result.conflicts);
@@ -154,7 +162,7 @@ export function GroupNotesEditor({
       yTextRef.current = null;
       providerRef.current = null;
     };
-  }, [roomId, syncEditorFromYText, textKey]);
+  }, [roomId, syncEditorFromYText, textKey, toast]);
 
   const handleInput = () => {
     if (applyingRemoteRef.current) return;
@@ -181,7 +189,10 @@ export function GroupNotesEditor({
         toast("Your local changes have been kept.", "success");
       } else {
         await resolveConflictsUseRemote(roomId, conflicts);
-        toast("Remote changes were kept. Your offline edits were discarded.", "warning");
+        toast(
+          "Remote changes were kept. Your offline edits were discarded.",
+          "warning",
+        );
       }
       syncEditorFromYText();
       setConflicts(null);
@@ -265,8 +276,8 @@ export function GroupNotesEditor({
                 Merge Conflict
               </h2>
               <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-                Your offline edits overlap with changes made by others.
-                Choose which version to keep.
+                Your offline edits overlap with changes made by others. Choose
+                which version to keep.
               </p>
             </div>
 
@@ -281,13 +292,17 @@ export function GroupNotesEditor({
                   </p>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
-                      <span className="font-medium text-zinc-600 dark:text-zinc-400">Your edit:</span>
+                      <span className="font-medium text-zinc-600 dark:text-zinc-400">
+                        Your edit:
+                      </span>
                       <p className="mt-0.5 rounded bg-blue-50 p-1 text-zinc-800 dark:bg-blue-950 dark:text-zinc-200">
                         {c.textBefore || "(empty)"}
                       </p>
                     </div>
                     <div>
-                      <span className="font-medium text-zinc-600 dark:text-zinc-400">Remote:</span>
+                      <span className="font-medium text-zinc-600 dark:text-zinc-400">
+                        Remote:
+                      </span>
                       <p className="mt-0.5 rounded bg-amber-50 p-1 text-zinc-800 dark:bg-amber-950 dark:text-zinc-200">
                         {c.textAfter || "(empty)"}
                       </p>

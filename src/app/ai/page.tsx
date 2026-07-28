@@ -30,7 +30,6 @@ import { useRealTimeUpdates } from "@/hooks/useRealTime";
 import {
   saveVenueOffline,
   getAllVenuesOffline,
-  withLeaderLock,
   OfflineVenue,
 } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
@@ -166,24 +165,32 @@ function AppPage() {
   // persists venues — the IndexedDB data is shared per-origin.
   useEffect(() => {
     if (markers.length > 0 && isOnline) {
-      withLeaderLock("worksphere-venue-cache-leader", async () => {
-        await Promise.all(
-          markers.map(async (marker) => {
-            try {
-              await saveVenueOffline({
-                id: marker.id,
-                name: marker.name,
-                latitude: marker.position.lat,
-                longitude: marker.position.lng,
-                category: marker.category,
-                address: marker.address,
-              });
-            } catch (err) {
-              console.error("[Offline] Failed to save venue:", err);
-            }
-          }),
+      if (
+        typeof window !== "undefined" &&
+        typeof (window as any).withLeaderLock === "function"
+      ) {
+        (window as any).withLeaderLock(
+          "worksphere-venue-cache-leader",
+          async () => {
+            await Promise.all(
+              markers.map(async (marker) => {
+                try {
+                  await saveVenueOffline({
+                    id: marker.id,
+                    name: marker.name,
+                    latitude: marker.position.lat,
+                    longitude: marker.position.lng,
+                    category: marker.category,
+                    address: marker.address,
+                  });
+                } catch (err) {
+                  console.warn("Failed to cache venue locally:", err);
+                }
+              }),
+            );
+          },
         );
-      });
+      }
     }
   }, [markers, isOnline]);
 

@@ -1,3 +1,8 @@
+import {
+  generateHandoffToken,
+  verifyHandoffToken,
+} from "../../lib/edge/edgeHandoff";
+
 interface MockConnection {
   id: string;
   state: Record<string, unknown>;
@@ -292,5 +297,53 @@ describe("PartyKit Seat Check-in Race Condition", () => {
     server.handleSeatCheckout(conn);
     const checkins = server.getSeatCheckins();
     expect(checkins.size).toBe(0);
+  });
+});
+
+describe("Edge Handoff Token Protocol", () => {
+  test("generates and verifies a valid token", async () => {
+    const token = await generateHandoffToken(
+      "user-123",
+      "us-east",
+      "us-west",
+      10000,
+    );
+    const result = await verifyHandoffToken(token, "us-west");
+
+    expect(result.valid).toBe(true);
+    expect(result.payload?.userId).toBe("user-123");
+    expect(result.payload?.sourceRegion).toBe("us-east");
+    expect(result.payload?.targetRegion).toBe("us-west");
+  });
+
+  test("rejects token for incorrect target region", async () => {
+    const token = await generateHandoffToken(
+      "user-123",
+      "us-east",
+      "us-west",
+      10000,
+    );
+    const result = await verifyHandoffToken(token, "eu-west");
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/Region mismatch/);
+  });
+
+  test("rejects expired token", async () => {
+    const token = await generateHandoffToken(
+      "user-123",
+      "us-east",
+      "us-west",
+      -1000,
+    );
+    const result = await verifyHandoffToken(token, "us-west");
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Token expired");
+  });
+
+  test("rejects invalid signature", async () => {
+    const result = await verifyHandoffToken("invalid-base64-string", "us-west");
+    expect(result.valid).toBe(false);
   });
 });

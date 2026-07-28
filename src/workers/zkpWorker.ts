@@ -1,6 +1,7 @@
 import * as snarkjs from "snarkjs";
 
 interface ProofRequest {
+  type: "prove";
   identityToken: string;
   expectedCommit: string;
 }
@@ -11,34 +12,64 @@ interface CancelMessage {
 
 type WorkerMessage = ProofRequest | CancelMessage;
 
-let activeAbort = false;
+let generation = 0;
+
+function sanitizeError(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    if (
+      error.message.includes("wasm") ||
+      error.message.includes("memory") ||
+      error.message.includes("ENOENT")
+    ) {
+      return "Proof generation failed due to an internal error.";
+    }
+  }
+  return "Proof generation failed.";
+}
 
 self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
-  if ("type" in e.data && e.data.type === "cancel") {
-    activeAbort = true;
+  if (e.data.type === "cancel") {
+    generation++;
     return;
   }
 
-  const { identityToken, expectedCommit } = e.data as ProofRequest;
-  activeAbort = false;
+  if (e.data.type !== "prove") return;
 
-  let blobUrls: string[] = [];
+  const myGeneration = ++generation;
+  const { identityToken, expectedCommit } = e.data;
+
+  if (
+    typeof identityToken !== "string" ||
+    !/^-?\d+$/.test(identityToken)
+  ) {
+    self.postMessage({ type: "error", error: "Invalid identity token." });
+    return;
+  }
+
+  if (
+    typeof expectedCommit !== "string" ||
+    !/^-?\d+$/.test(expectedCommit)
+  ) {
+    self.postMessage({ type: "error", error: "Invalid commitment value." });
+    return;
+  }
 
   try {
+    self.postMessage({ type: "progress", stage: "generating" });
+
     const { proof, publicSignals } = await snarkjs.groth16.fullProve(
       { identityToken, expectedCommit },
       "/zkp/premium_membership.wasm",
       "/zkp/premium_membership.zkey",
     );
 
-    if (activeAbort) return;
+    if (myGeneration !== generation) return;
 
     self.postMessage({ type: "success", proof, publicSignals });
   } catch (error) {
-    if (activeAbort) return;
-    self.postMessage({ type: "error", error: (error as Error).message });
+    if (myGeneration !== generation) return;
+    self.postMessage({ type: "error", error: sanitizeError(error) });
   } finally {
-    // Release BN128 curve worker threads held by snarkjs
     const g = globalThis as typeof globalThis & {
       curve_bn128?: { terminate: () => Promise<void> };
     };
@@ -49,15 +80,5 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
         // ignore cleanup errors
       }
     }
-
-    // Revoke any blob object URLs created by snarkjs WASM loading
-    for (const url of blobUrls) {
-      try {
-        URL.revokeObjectURL(url);
-      } catch {
-        // ignore
-      }
-    }
-    blobUrls = [];
   }
 });

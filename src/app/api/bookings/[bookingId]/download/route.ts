@@ -199,13 +199,24 @@ export async function GET(
       { x: 50, y: yPosition, size: 10, font },
     );
     yPosition -= 18;
-    drawSafeText(`VENUE: ${booking.venue.name}`, {
-      x: 50,
-      y: yPosition,
-      size: 10,
-      font,
-    });
-    yPosition -= 18;
+    const venueText = `VENUE: ${booking.venue.name}`;
+    const venueLines = breakTextIntoLines(
+      venueText,
+      [" ", ",", "-"],
+      495, // max width (595 - 50 - 50 = 495)
+      (t) => font.widthOfTextAtSize(t, 10),
+    );
+
+    for (const line of venueLines) {
+      drawSafeText(line, {
+        x: 50,
+        y: yPosition,
+        size: 10,
+        font,
+      });
+      yPosition -= 12;
+    }
+    yPosition -= 6;
     drawSafeText(
       `CATEGORY: ${booking.venue.category?.toUpperCase() || "WORKSPACE"}`,
       { x: 50, y: yPosition, size: 10, font },

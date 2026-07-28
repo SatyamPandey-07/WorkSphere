@@ -122,6 +122,55 @@ describe("microTimestampMember", () => {
   });
 });
 
+describe("custom window duration", () => {
+  beforeEach(() => {
+    resetRateLimit();
+  });
+
+  it("should allow requests within a custom 5-minute window", async () => {
+    const key = "custom-window-test";
+    const fiveMinMs = 300_000;
+
+    for (let i = 0; i < 3; i++) {
+      expect(await rateLimit(key, 3, fiveMinMs)).toBe(true);
+    }
+
+    expect(await rateLimit(key, 3, fiveMinMs)).toBe(false);
+  });
+
+  it("should track different windows independently per key", async () => {
+    const key1 = "window-a";
+    const key2 = "window-b";
+
+    for (let i = 0; i < 3; i++) {
+      await rateLimit(key1, 3, 60_000);
+    }
+
+    expect(await rateLimit(key1, 3, 60_000)).toBe(false);
+    expect(await rateLimit(key2, 3, 60_000)).toBe(true);
+  });
+
+  it("should return correct info for custom window", async () => {
+    const key = "info-custom-window";
+    const fiveMinMs = 300_000;
+
+    let info = await getRateLimitInfo(key, 3, fiveMinMs);
+    expect(info?.remaining).toBe(3);
+
+    await rateLimit(key, 3, fiveMinMs);
+    info = await getRateLimitInfo(key, 3, fiveMinMs);
+    expect(info?.count).toBe(1);
+    expect(info?.remaining).toBe(2);
+
+    for (let i = 0; i < 2; i++) {
+      await rateLimit(key, 3, fiveMinMs);
+    }
+    info = await getRateLimitInfo(key, 3, fiveMinMs);
+    expect(info?.isLimited).toBe(true);
+    expect(info?.remaining).toBe(0);
+  });
+});
+
 describe("Redis sliding window atomic MULTI (ZREMRANGEBYSCORE + ZCARD)", () => {
   beforeEach(() => {
     resetRedisScripts();

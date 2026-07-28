@@ -61,6 +61,7 @@ interface ChatHeaderProps {
     oatAlmondMilk?: boolean;
     pourOverAvailable?: boolean;
     musicStyle?: "all" | "lofi" | "classical_jazz" | "no_music";
+    distanceRadius?: number;
   };
   categoryCounts?: { cafe: number; coworking: number; library: number };
   showFilters: boolean;

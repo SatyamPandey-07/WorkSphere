@@ -98,6 +98,19 @@ export function VenueRatingDialog({
     };
   }, [isOpen, mounted]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   const compressImage = (file: File): Promise<Blob> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -243,13 +256,19 @@ export function VenueRatingDialog({
 
   return createPortal(
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="venue-rating-title"
+        aria-describedby="venue-rating-description"
+        className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+      >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-zinc-200 bg-white/95 px-5 py-4 backdrop-blur dark:border-zinc-700 dark:bg-zinc-900/95">
           <div>
-            <h2 className="text-xl font-semibold text-zinc-900 dark:text-white">
+            <h2 id="venue-rating-title" className="text-xl font-semibold text-zinc-900 dark:text-white">
               Rate {venueName}
             </h2>
-            <p className="text-xs text-zinc-500">
+            <p id="venue-rating-description" className="text-xs text-zinc-500">
               Add subjective feedback and optional measured noise data.
             </p>
           </div>

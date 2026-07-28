@@ -5,6 +5,10 @@ This document describes how WorkSphere uses **WebAuthn / FIDO2 passkeys**, inclu
 ## Related Code
 
 - `src/lib/webauthn.ts` — RP ID normalization, origin checks, challenge comparison, and `clientDataJSON` parsing.
+- `src/lib/passkey/rotation.ts` — Passkey rotation status, expiry prompts, and expired-credential cleanup.
+- `src/lib/passkey/attestation.ts` — Key expiry helpers (`shouldPromptRotation`, `getKeyExpiryDate`).
+- `src/app/api/auth/passkey/rotation/route.ts` — `GET`/`POST` rotation status, rotate, and cleanup actions.
+- `src/app/api/auth/passkey/credentials/[id]/route.ts` — Credential rename and revocation (`DELETE`).
 - `src/app/api/auth/webauthn/verify/route.ts` — Handles `POST /api/auth/webauthn/verify`.
 - `src/lib/webauthn-frame.ts` and `src/components/PasskeyFrameNotice.tsx` — Handle iframe and Permissions-Policy fallback behavior.
 - Sign-in and sign-up pages embed Clerk's passkey UI along with the frame notice.
@@ -263,14 +267,146 @@ When WebAuthn cannot be completed, users should still be able to sign in using a
 - After successful assertion verification:
   - Invalidate the challenge.
   - Rotate session cookies using the normal Clerk session flow.
-  ---
 
-# 8. API Surface (WorkSphere)
+---
+
+# 8. Passkey Rotation Security Protocol
+
+This section documents the **security lifecycle** for WorkSphere-managed passkeys stored in Prisma (`PasskeyCredential`): when to rotate, how credentials are revoked, how the server replaces public keys, and how to manage keys across multiple devices.
+
+## 8.1 Rotation Interval and Triggers
+
+| Constant / helper | Location | Value / behavior |
+| ----------------- | -------- | ---------------- |
+| `KEY_ROTATION_INTERVAL_DAYS` | `src/lib/passkey/rotation.ts` | **90 days** from credential `createdAt` |
+| `needsRotation` / `shouldPromptRotation` | `rotation.ts` / `attestation.ts` | Prompt when **≤ 14 days** remain until expiry |
+| `expiresAt` on create | `register/verify` | Set to `now + 90 days` when the credential is first stored |
+| `cleanupExpiredPasskeys` | `rotation.ts` | Deletes credentials whose `createdAt` is older than 90 days |
+
+**Triggers that start a rotation ceremony:**
+
+1. **Scheduled expiry** — Credential age reaches or exceeds the 90-day rotation interval.
+2. **Pre-expiry prompt** — `daysUntilExpiry ≤ 14` (`needsRotation: true` from `GET /api/auth/passkey/rotation`).
+3. **User-initiated** — Settings UI calls `POST /api/auth/passkey/rotation` with `{ "action": "rotate", "credentialId": "<cuid>" }` after (or while) registering a replacement authenticator.
+4. **Compromise / lost device** — Immediate **revocation** (see §8.2), then register a fresh passkey; do not wait for the 90-day window.
+5. **Authenticator firmware / OS vault reset** — Old `credentialId` will fail assertions; revoke the server row and enroll again.
+
+```text
+Registration (create)
+        │  expiresAt = now + 90d
+        ▼
+Active use (counter / lastUsedAt updates)
+        │
+        ├─ daysUntilExpiry ≤ 14  →  prompt rotation (UI)
+        ├─ expired / cleanup     →  revoke row (deleteMany)
+        └─ lost/stolen device    →  immediate DELETE by id
+                │
+                ▼
+New WebAuthn create ceremony → new publicKey in Prisma
+                │
+                ▼
+Revoke previous PasskeyCredential (if still present)
+```
+
+## 8.2 Credential Revocation Flow
+
+Revocation removes the **server-side trust** for a credential. The authenticator may still hold a private key locally, but WorkSphere will no longer accept assertions for that `credentialId`.
+
+| Path | API | Effect |
+| ---- | --- | ------ |
+| Explicit revoke | `DELETE /api/auth/passkey/credentials/[id]` | Deletes one `PasskeyCredential` owned by the authenticated user |
+| Bulk expiry cleanup | `POST /api/auth/passkey/rotation` `{ "action": "cleanup" }` | `deleteMany` where `createdAt < now - 90 days` for that user |
+| Account deletion | Prisma `onDelete: Cascade` on `User` | All passkeys for the user are removed |
+
+**Revocation steps (security order):**
+
+1. Authenticate the session (`auth()` / Clerk `userId`).
+2. Load the credential with `{ id, userId }` ownership check — never delete by `credentialId` alone without `userId`.
+3. `prisma.passkeyCredential.delete({ where: { id } })` (or `deleteMany` for cleanup).
+4. Confirm the client no longer lists the credential (`GET` credentials).
+5. If this was the user’s only passkey, require an alternate factor (email / passwordless) before completing logout of other sessions.
+
+Spent `PasskeyChallenge` rows are deleted after successful register/authenticate verify and are unrelated to long-lived credential revocation.
+
+## 8.3 Server-Side Public Key Replacement (Prisma)
+
+WebAuthn **cannot rotate a private key in place**. Cryptographic rotation means: enroll a **new** credential (new key pair) and stop trusting the old one. On the server, that is a **public key replacement** in the `PasskeyCredential` model.
+
+### Schema (`prisma/schema.prisma`)
+
+```prisma
+model PasskeyCredential {
+  id                String   @id @default(cuid())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  credentialId      String   @unique   // WebAuthn credential ID (Base64URL)
+  publicKey         Bytes              // COSE public key bytes (RP verification material)
+  counter           BigInt   @default(0)
+  transports        String[] @default([])
+  deviceType        String   @default("singleDevice")  // singleDevice | multiDevice
+  backedUp          Boolean  @default(false)
+  name              String
+  aaguid            String?
+  attestationFormat String?
+  createdAt         DateTime @default(now())
+  lastUsedAt        DateTime @default(now())
+  expiresAt         DateTime           // lifecycle / rotation deadline
+
+  @@index([userId])
+}
+```
+
+### Replacement procedure
+
+1. Run a new **registration** ceremony (`register/options` → `navigator.credentials.create` → `register/verify`).
+2. On verify success, persist the new material:
+
+```ts
+await prisma.passkeyCredential.create({
+  data: {
+    userId,
+    credentialId: credential.id,                    // new unique ID
+    publicKey: Buffer.from(credential.publicKey), // replaces trust root
+    counter: BigInt(credential.counter),
+    transports: credential.transports || [],
+    deviceType: credentialDeviceType,
+    backedUp: credentialBackedUp,
+    name: name?.trim() || "Passkey Credential",
+    aaguid: aaguid || null,
+    expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+  },
+});
+```
+
+3. **Revoke** the previous row (`DELETE .../credentials/[id]` or cleanup). Do **not** overwrite `publicKey` on the old `credentialId` — the authenticator’s private key is bound to that ID; a mismatched public key would break verification and invite confusion.
+4. Registration options should `excludeCredentials` existing passkeys so the authenticator does not silently re-emit an already-stored credential.
+
+`POST .../rotation` with `action: "rotate"` refreshes operational metadata (`lastUsedAt` / reported `newExpiresAt`) for lifecycle UX; **cryptographic** replacement always goes through create + revoke as above so `publicKey` and `credentialId` stay consistent.
+
+## 8.4 Multi-Device Key Management Guidelines
+
+| Guideline | Rationale |
+| --------- | --------- |
+| Prefer **at least two** registered passkeys per account (e.g. laptop + phone, or platform + security key) | Survives loss of one authenticator without account lockout |
+| Treat `deviceType: "multiDevice"` + `backedUp: true` as cloud-synced vault keys | Same synced secret may appear on several devices; revoking the server row revokes all synced copies for this RP |
+| Treat `singleDevice` / `backedUp: false` as device-bound | Losing that hardware requires a different enrolled factor |
+| Use `excludeCredentials` on registration | Prevents duplicate enrollments of the same authenticator credential |
+| Name credentials clearly (`PATCH .../credentials/[id]` `{ "name": "..." }`) | Users can revoke the correct device after theft |
+| After revoking a lost device, **rotate remaining** keys if compromise is suspected | Limits replay of cloned or backup vault material |
+| Never export or log `publicKey` Bytes in plaintext logs | Reduces credential stuffing / targeted forgery risk |
+| Keep RP ID stable across subdomains | Changing `WEBAUTHN_RP_ID` invalidates all stored passkeys (see §7) |
+| Run periodic `cleanup` for expired rows | Shrinks the attack surface of stale `credentialId`s |
+| Do not share one hardware key across unrelated user accounts without separate credentials | Preserves per-user counter and revocation boundaries |
+
+**Sync vs server:** Platform sync (iCloud Keychain, Google Password Manager) moves **private** keys between the user’s devices. WorkSphere only stores **public** keys in Prisma and never participates in private-key sync.
+
+---
+
+# 9. API Surface (WorkSphere)
 
 ## Endpoint
 
 ### `POST /api/auth/webauthn/verify`
-
 ### Request Body
 
 ```json
@@ -302,17 +438,18 @@ Invalid WebAuthn challenge signature
 
 ---
 
-# 9. Summary
+# 10. Summary
 
 - Registration and authentication follow the standard **FIDO2/WebAuthn** create and get ceremonies using server-issued challenges.
 - Public keys are stored in **COSE** format (typically ES256), while private keys remain on the authenticator or synchronized credential vault.
+- Passkeys follow a **90-day rotation lifecycle** with 14-day prompts, Prisma `publicKey` replacement via new registration, and explicit revocation (`DELETE` / cleanup).
 - Multi-device authentication is enabled through platform passkey synchronization combined with a shared parent RP ID.
 - WorkSphere never transfers private keys between devices.
 - Fallback authentication methods are available for iframe restrictions and other scenarios where WebAuthn cannot be completed.
 
 ---
 
-# 10. Troubleshooting & Common Error Codes
+# 11. Troubleshooting & Common Error Codes
 
 This section describes common `DOMException` errors that may occur during WebAuthn registration or authentication, along with their causes and recommended resolutions.
 
@@ -324,7 +461,7 @@ This section describes common `DOMException` errors that may occur during WebAut
 
 ---
 
-# 11. Contributor Step-by-Step Resolution Guide
+# 12. Contributor Step-by-Step Resolution Guide
 
 Follow these steps when debugging passkey issues during local development or pull request verification.
 

@@ -18,42 +18,10 @@ const forgotPasswordSchema = z.object({
  * the email exists in the database. This prevents account enumeration attacks
  * where an attacker could probe for valid emails.
  */
+const FIVE_MINUTES_MS = 300_000;
+
 export async function POST(req: NextRequest) {
-  // 1. Identify the caller
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-    req.headers.get("x-real-ip") ??
-    "anonymous";
-
-  const identifier = `forgot-password:${ip}`;
-
-  // 2. Rate limit — 3 requests per 1-minute sliding window
-  const allowed = await rateLimit(identifier, 3);
-
-  if (!allowed) {
-    const info = await getRateLimitInfo(identifier, 3);
-    const retryAfter = info?.resetTime
-      ? Math.ceil((info.resetTime - Date.now()) / 1000)
-      : 60;
-
-    return NextResponse.json(
-      {
-        error:
-          "Too many password reset requests. Please wait before trying again.",
-        retryAfter,
-      },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(retryAfter),
-          "X-RateLimit-Limit": "3",
-          "X-RateLimit-Remaining": "0",
-        },
-      },
-    );
-  }
-
-  // 3. Validate request body
+  // 1. Validate request body (must happen before rate limiting to extract email)
   let body: unknown;
   try {
     body = await req.json();
@@ -73,6 +41,40 @@ export async function POST(req: NextRequest) {
   }
 
   const { email } = validation.data;
+
+  // 2. Identify the caller
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+    req.headers.get("x-real-ip") ??
+    "anonymous";
+
+  const identifier = `forgot-password:${email}:${ip}`;
+
+  // 3. Rate limit — 3 requests per 5-minute sliding window per email+IP
+  const allowed = await rateLimit(identifier, 3, FIVE_MINUTES_MS);
+
+  if (!allowed) {
+    const info = await getRateLimitInfo(identifier, 3, FIVE_MINUTES_MS);
+    const retryAfter = info?.resetTime
+      ? Math.ceil((info.resetTime - Date.now()) / 1000)
+      : 300;
+
+    return NextResponse.json(
+      {
+        error:
+          "Too many password reset requests. Please wait before trying again.",
+        retryAfter,
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(retryAfter),
+          "X-RateLimit-Limit": "3",
+          "X-RateLimit-Remaining": "0",
+        },
+      },
+    );
+  }
 
   // 4. Trigger password reset (stub — integrate with Clerk / Nodemailer / etc.)
   // In a real implementation:

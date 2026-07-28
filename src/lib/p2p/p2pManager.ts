@@ -88,6 +88,9 @@ export class P2PManager {
     };
 
     this.roomSocket.onopen = () => {
+      for (const peerId of this.peers.keys()) {
+        this.cleanupPeer(peerId);
+      }
       this.sendMessage({
         type: "peer-join",
         peerId: this.localPeerId,
@@ -130,10 +133,30 @@ export class P2PManager {
 
       case "peer-join":
         if ((message.peerId as string) !== this.localPeerId) {
+          this.cleanupPeer(message.peerId as string);
           await this.initiateConnection(message.peerId as string);
         }
         break;
     }
+  }
+
+  private cleanupPeer(peerId: string): void {
+    const peer = this.peers.get(peerId);
+    if (!peer) return;
+
+    peer.connection.onicecandidate = null;
+    peer.connection.onconnectionstatechange = null;
+    peer.connection.ondatachannel = null;
+    peer.connection.close();
+
+    if (peer.dataChannel) {
+      peer.dataChannel.onopen = null;
+      peer.dataChannel.onclose = null;
+      peer.dataChannel.onmessage = null;
+      peer.dataChannel.close();
+    }
+
+    this.peers.delete(peerId);
   }
 
   private async initiateConnection(peerId: string): Promise<void> {

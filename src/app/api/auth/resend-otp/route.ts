@@ -34,41 +34,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. Identify the caller (prefer IP, fall back to forwarded header)
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
-    req.headers.get("x-real-ip") ??
-    "anonymous";
-
-  const identifier = `resend-otp:${ip}`;
-
-  // 3. Rate limit — 3 requests per 1-minute sliding window
-  const allowed = await rateLimit(identifier, 3);
-
-  if (!allowed) {
-    const info = await getRateLimitInfo(identifier, 3);
-    const retryAfter = info?.resetTime
-      ? Math.ceil((info.resetTime - Date.now()) / 1000)
-      : 60;
-
-    return NextResponse.json(
-      {
-        error:
-          "Too many OTP requests. Please wait before requesting a new code.",
-        retryAfter,
-      },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(retryAfter),
-          "X-RateLimit-Limit": "3",
-          "X-RateLimit-Remaining": "0",
-        },
-      },
-    );
-  }
-
-  // 4. Validate request body
+  // 2. Validate request body (must happen before rate limiting to extract email)
   let body: unknown;
   try {
     body = await req.json();
@@ -88,6 +54,40 @@ export async function POST(req: NextRequest) {
   }
 
   const { email } = validation.data;
+
+  // 3. Identify the caller (prefer IP, fall back to forwarded header)
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+    req.headers.get("x-real-ip") ??
+    "anonymous";
+
+  const identifier = `resend-otp:${email}:${ip}`;
+
+  // 4. Rate limit — 1 request per 60-second sliding window per email+IP
+  const allowed = await rateLimit(identifier, 1);
+
+  if (!allowed) {
+    const info = await getRateLimitInfo(identifier, 1);
+    const retryAfter = info?.resetTime
+      ? Math.ceil((info.resetTime - Date.now()) / 1000)
+      : 60;
+
+    return NextResponse.json(
+      {
+        error:
+          "Too many OTP requests. Please wait before requesting a new code.",
+        retryAfter,
+      },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(retryAfter),
+          "X-RateLimit-Limit": "1",
+          "X-RateLimit-Remaining": "0",
+        },
+      },
+    );
+  }
 
   // 5. Delegate to OTP service (stub — integrate with Clerk / Twilio / etc.)
   // In a real implementation:

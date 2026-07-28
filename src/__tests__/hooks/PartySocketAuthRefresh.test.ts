@@ -49,7 +49,7 @@ describe("PartySocket Expired Clerk Token Re-authentication (#1750)", () => {
     });
 
     expect(mockGetToken).toHaveBeenCalledWith({ skipCache: true });
-    expect(result.current.query.token).toBe("fresh-clerk-jwt-token");
+    expect((result.current as any).query?.token).toBe("fresh-clerk-jwt-token");
     expect(mockConnect).toHaveBeenCalled();
   });
 });

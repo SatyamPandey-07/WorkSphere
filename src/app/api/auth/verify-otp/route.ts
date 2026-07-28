@@ -38,15 +38,33 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. Identify the caller
+  // 2. Validate request body (must happen before rate limiting to extract email)
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  const validation = verifyOtpSchema.safeParse(body);
+  if (!validation.success) {
+    const errors = validation.error.flatten().fieldErrors;
+    const message =
+      errors.email?.[0] ?? errors.otp?.[0] ?? "Validation failed.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+
+  const { email, otp: _otp } = validation.data;
+
+  // 3. Identify the caller
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     req.headers.get("x-real-ip") ??
     "anonymous";
 
-  const identifier = `verify-otp:${ip}`;
+  const identifier = `verify-otp:${email}:${ip}`;
 
-  // 2. Rate limit — 5 requests per 1-minute sliding window
+  // 4. Rate limit — 5 requests per 1-minute sliding window per email+IP
   const allowed = await rateLimit(identifier, 5);
 
   if (!allowed) {
@@ -72,30 +90,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 3. Validate request body
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
-  }
-
-  const validation = verifyOtpSchema.safeParse(body);
-  if (!validation.success) {
-    const errors = validation.error.flatten().fieldErrors;
-    const message =
-      errors.email?.[0] ?? errors.otp?.[0] ?? "Validation failed.";
-    return NextResponse.json({ error: message }, { status: 400 });
-  }
-
-  const { email, otp } = validation.data;
-
   // 4. Verify OTP (stub — integrate with Clerk / Redis / TOTP / etc.)
   // In a real implementation:
-  //   const isValid = await verifyUserOtp({ email, otp });
+  //   const isValid = await verifyUserOtp({ email, _otp });
   //   if (!isValid) return NextResponse.json({ error: "Invalid or expired code." }, { status: 400 });
   console.log(
-    `[verify-otp] OTP verification attempted for: ${email}, otp: ${otp}`,
+    `[verify-otp] OTP verification attempted for: ${email}`,
   );
 
   return NextResponse.json(

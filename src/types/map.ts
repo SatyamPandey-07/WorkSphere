@@ -31,6 +31,9 @@ export interface MapMarker {
   hasNoMusic?: boolean;
   hasQuietZone?: boolean;
   hasAncHeadsetRental?: boolean;
+  isClaimed?: boolean;
+  ownerId?: string | null;
+  hostMessage?: string | null;
   amenities?: {
     wifi?: boolean;
     outlets?: boolean;

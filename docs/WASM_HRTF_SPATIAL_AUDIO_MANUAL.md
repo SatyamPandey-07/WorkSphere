@@ -62,3 +62,13 @@ Processing real-time audio requires maintaining strict low-latency constraints t
 | **WASM SIMD (v128)**  | **< 0.1 ms**                     | **Minimal**  |
 
 _Note: The WebAudio `AudioWorklet` provides a native processing block size of 128 samples (~2.6ms at 48kHz). The WASM SIMD execution comfortably fits within this rendering quantum._
+
+## SPSC Lock-Free Ring Buffer
+
+To handle zero-latency WebRTC Spatial Audio PCM processing without audio frame overruns or underruns during mesh calls, we utilize a lock-free Single Producer Single Consumer (SPSC) Ring Buffer (`src/lib/spatial/SPSCRingBuffer.ts`).
+
+### Architecture
+
+- **SharedArrayBuffer**: Used to share memory between the main thread (Producer) and the AudioWorklet thread (Consumer).
+- **Atomics**: Synchronization is achieved strictly via `Atomics.load` and `Atomics.store` to guarantee correct cross-thread memory visibility. This avoids blocking mutexes which would cause audio dropouts.
+- **Buffer Layout**: The first 8 bytes store the `readIndex` and `writeIndex` monotonic counters, followed by a dynamically sized `Float32Array` holding the 48kHz audio samples. Capacity is strictly enforced as a power of 2 for fast bitwise masking.

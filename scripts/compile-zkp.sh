@@ -18,8 +18,9 @@ npx circom2 "$CIRCUIT_DIR/premium_membership.circom" \
 if [[ ! -f "$PTAU" ]]; then
   echo ">> powers of tau (small ceremony for this toy circuit)"
   npx snarkjs powersoftau new bn128 12 "$BUILD_DIR/pot12_0000.ptau" -v
+  CONTRIBUTION_ENTROPY=$(openssl rand -hex 32)
   npx snarkjs powersoftau contribute "$BUILD_DIR/pot12_0000.ptau" "$BUILD_DIR/pot12_0001.ptau" \
-    --name="worksphere" -e="worksphere-zkp-dev"
+    --name="worksphere" -e="$CONTRIBUTION_ENTROPY"
   npx snarkjs powersoftau prepare phase2 "$BUILD_DIR/pot12_0001.ptau" "$PTAU"
 fi
 
@@ -29,10 +30,11 @@ npx snarkjs groth16 setup \
   "$PTAU" \
   "$BUILD_DIR/premium_membership_0000.zkey"
 
+ZKEY_ENTROPY=$(openssl rand -hex 32)
 npx snarkjs zkey contribute \
   "$BUILD_DIR/premium_membership_0000.zkey" \
   "$BUILD_DIR/premium_membership_final.zkey" \
-  --name="worksphere" -e="worksphere-zkp-contrib"
+  --name="worksphere" -e="$ZKEY_ENTROPY"
 
 npx snarkjs zkey export verificationkey \
   "$BUILD_DIR/premium_membership_final.zkey" \

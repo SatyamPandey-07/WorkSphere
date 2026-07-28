@@ -28,7 +28,7 @@ export async function GET() {
             longitude: true,
             category: true,
             address: true,
-            image: true,
+            imageUrl: true,
           },
         },
         tags: {

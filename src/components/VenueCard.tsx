@@ -28,6 +28,7 @@ import {
   Bike,
   Shield,
   PawPrint,
+  BadgeCheck,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
@@ -38,6 +39,11 @@ import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
+import {
+  useLiveVenueData,
+  MUSIC_GENRE_EMOJI,
+  type MusicGenre,
+} from "@/hooks/useLiveVenueData";
 
 interface VenueEnrichData {
   found: boolean;
@@ -67,6 +73,13 @@ interface VenueCardProps {
   isSelected?: boolean;
   onToggleCompare?: (venue: MapMarker) => void;
   compareDisabled?: boolean;
+  liveData?: {
+    musicGenre?: MusicGenre | null;
+    count?: number;
+    status?: string;
+  };
+  checkedInVenueId?: string | null;
+  onReportMusicGenre?: (genre: MusicGenre) => void;
 }
 
 interface VoteMetricState {
@@ -93,6 +106,10 @@ export function VenueCard({
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
+  const [showGenreDropdown, setShowGenreDropdown] = useState(false);
+  
+  const isCheckedInHere = checkedInVenueId === venue.id;
+  const activeMusicGenre = liveData?.musicGenre ?? null;
 
   const { currency } = useCurrency();
   const router = useRouter();
@@ -435,7 +452,7 @@ export function VenueCard({
         >
           <Image
             src={photos[photoIndex]}
-            alt={venue.name}
+            alt={"Photo of " + venue.name}
             fill
             className="object-cover"
             unoptimized // External URLs from Foursquare
@@ -507,7 +524,10 @@ export function VenueCard({
         <div className="flex items-start justify-between mb-2 mt-4">
           <div className="flex-1">
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-              {venue.name}
+              <span>{venue.name}</span>
+              {venue.isClaimed && (
+                <BadgeCheck className="w-4 h-4 text-green-500 shrink-0" title="Verified Host" />
+              )}
               {isLoading && (
                 <Loader2 className="w-3 h-3 animate-spin accent-text shrink-0" />
               )}
@@ -519,6 +539,7 @@ export function VenueCard({
           <button
             onClick={handleFavorite}
             disabled={isSavingFavorite}
+            aria-label={isFavorited ? `Remove ${venue.name} from favorites` : `Add ${venue.name} to favorites`}
             className={`p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed ${
               enableTransition ? "transition-colors duration-300" : ""
             } ${
@@ -597,52 +618,139 @@ export function VenueCard({
         )}
 
         {/* Hours */}
-        {(enrichData?.opening_hours || venue.openingHours) && (
-          <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
-            <Clock className="w-3 h-3 shrink-0" />
-            <span>{enrichData?.opening_hours || venue.openingHours}</span>
-            {(() => {
-              const hoursStr = enrichData?.opening_hours || venue.openingHours;
-              if (!hoursStr) return null;
-              const match = hoursStr.match(
-                /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/,
-              );
-              if (!match) return null;
+        {(() => {
+          const hoursStr = enrichData?.opening_hours || venue.openingHours;
+          if (!hoursStr) return null;
 
-              const now = new Date();
-              const currentMinutes = now.getHours() * 60 + now.getMinutes();
-              const [openH, openM] = match[1].split(":").map(Number);
-              const [closeH, closeM] = match[2].split(":").map(Number);
+          const { getOpeningHoursStatus } = require("@/lib/openingHours");
+          const status = getOpeningHoursStatus(hoursStr);
 
-              const openMinutes = openH * 60 + openM;
-              const closeMinutes = closeH * 60 + closeM;
-
-              let isOpen = false;
-              if (closeMinutes < openMinutes) {
-                isOpen =
-                  currentMinutes >= openMinutes ||
-                  currentMinutes <= closeMinutes;
-              } else {
-                isOpen =
-                  currentMinutes >= openMinutes &&
-                  currentMinutes < closeMinutes;
-              }
-
-              return (
+          if (status.isStructured) {
+            return (
+              <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
+                <Clock className="w-3 h-3 shrink-0" />
+                <span className="truncate max-w-[200px]" title={status.displayString}>{status.displayString}</span>
                 <span
                   className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
-                    isOpen
+                    status.isOpen
                       ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
                       : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                   }`}
-                  title={isOpen ? "Open Now" : "Closed"}
+                  title={status.isOpen ? "Open Now" : "Closed"}
                 >
-                  {isOpen ? "Open Now" : "Closed"}
+                  {status.isOpen ? "Open Now" : "Closed"}
                 </span>
-              );
-            })()}
-          </div>
-        )}
+              </div>
+            );
+          }
+
+          // Legacy parsing
+          const match = hoursStr.match(
+            /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/,
+          );
+          if (!match) {
+            return (
+              <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
+                <Clock className="w-3 h-3 shrink-0" />
+                <span className="truncate">{hoursStr}</span>
+              </div>
+            );
+          }
+
+          const now = new Date();
+          const currentMinutes = now.getHours() * 60 + now.getMinutes();
+          const [openH, openM] = match[1].split(":").map(Number);
+          const [closeH, closeM] = match[2].split(":").map(Number);
+
+          const openMinutes = openH * 60 + openM;
+          const closeMinutes = closeH * 60 + closeM;
+
+          let legacyOpen = false;
+          if (closeMinutes < openMinutes) {
+            legacyOpen =
+              currentMinutes >= openMinutes ||
+              currentMinutes <= closeMinutes;
+          } else {
+            legacyOpen =
+              currentMinutes >= openMinutes &&
+              currentMinutes < closeMinutes;
+          }
+
+          return (
+            <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
+              <Clock className="w-3 h-3 shrink-0" />
+              <span>{hoursStr}</span>
+              <span
+                className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
+                  legacyOpen
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                }`}
+                title={legacyOpen ? "Open Now" : "Closed"}
+              >
+                {legacyOpen ? "Open Now" : "Closed"}
+              </span>
+            </div>
+          );
+        })()}
+
+        {/* Real-time Music Genre Display (#2077) */}
+                {activeMusicGenre && activeMusicGenre !== "None" && (
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300">
+                      {/* Pulsating ring signals live data */}
+                      <span className="relative flex h-3 w-3 shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75" />
+                        <Music className="relative inline-flex h-3 w-3 text-purple-500" />
+                      </span>
+                      <span className="text-[11px] font-semibold">
+                        {MUSIC_GENRE_EMOJI[activeMusicGenre]} {activeMusicGenre} playing
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-zinc-400">live</span>
+                  </div>
+                )}
+        
+                {/* Genre report dropdown — only visible when user is checked in here */}
+                {isCheckedInHere && onReportMusicGenre && (
+                  <div className="mb-3">
+                    <button
+                      onClick={() => setShowGenreDropdown((v) => !v)}
+                      className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 underline underline-offset-2 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                    >
+                      🎵 Update music genre
+                    </button>
+                    {showGenreDropdown && (
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {(
+                          [
+                            "Lo-Fi",
+                            "Jazz",
+                            "Pop",
+                            "Classical",
+                            "None",
+                            "Loud",
+                          ] as MusicGenre[]
+                        ).map((g) => (
+                          <button
+                            key={g}
+                            onClick={() => {
+                              onReportMusicGenre(g);
+                              setShowGenreDropdown(false);
+                            }}
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-medium border transition-all ${
+                              activeMusicGenre === g
+                                ? "bg-purple-600 text-white border-purple-600"
+                                : "border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:border-purple-400 hover:text-purple-600"
+                            }`}
+                          >
+                            {MUSIC_GENRE_EMOJI[g as MusicGenre]} {g}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
         {/* INTERACTIVE AMENITY VERIFICATION TAG TRACKING ROW */}
         <div className="flex flex-col gap-2 mb-4 border-t border-zinc-100 dark:border-zinc-800 pt-3">

@@ -832,7 +832,51 @@ export function EnhancedChatbot({
     },
     [isLoading],
   );
+   const handleRefreshVenues = async () => {
+  if (!location) return;
 
+  const params = new URLSearchParams({
+    lat: String(location.lat),
+    lng: String(location.lng),
+    radius: "5000",
+  });
+
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== false) {
+      params.set(key, String(value));
+    }
+  });
+
+  const response = await apiFetch(`/api/venues?${params.toString()}`);
+
+  if (!response.ok) {
+    throw new Error("Failed to refresh venues");
+  }
+
+  const data = await response.json();
+
+  const refreshedVenues: Venue[] = (data.venues ?? []).map(
+    (venue: any) => ({
+      ...venue,
+      lat: Number(venue.latitude),
+      lng: Number(venue.longitude),
+    }),
+  );
+
+  setMessages((prev) => {
+    const latestVenueMessageIndex = prev.findLastIndex(
+      (message) => message.venues && message.venues.length > 0,
+    );
+
+    if (latestVenueMessageIndex === -1) return prev;
+
+    return prev.map((message, index) =>
+      index === latestVenueMessageIndex
+        ? { ...message, venues: refreshedVenues }
+        : message,
+    );
+  });
+};
   // Main submit
   const handleInputChange = (val: string) => {
     const safeVal = typeof val === "string" ? val : "";
@@ -1268,6 +1312,7 @@ export function EnhancedChatbot({
         }}
         onSuggestionClick={handleSuggestionClick}
         initialSuggestions={INITIAL_SUGGESTIONS}
+        onRefreshVenues={handleRefreshVenues}
       />
 
       {/* Voice Control Settings Toggle Area */}

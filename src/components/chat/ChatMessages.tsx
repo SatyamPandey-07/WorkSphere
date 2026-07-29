@@ -718,6 +718,7 @@ interface VenueListingsProps {
   onOpenDetails: (venue: Venue) => void;
   onBook: (venue: Venue) => void;
   onLoadMore?: () => Promise<void>;
+  onRefresh?: () => Promise<void>;
 }
 
 export function VenueListings({
@@ -729,10 +730,16 @@ export function VenueListings({
   onOpenDetails,
   onBook,
   onLoadMore,
+  onRefresh,
 }: VenueListingsProps) {
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
   const containerRef = useRef<HTMLDivElement>(null);
+  const touchStartY = useRef<number | null>(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
+  const PULL_THRESHOLD = 70;
+  const MAX_PULL_DISTANCE = 100;
   const [selectedVenues, setSelectedVenues] = useState<Venue[]>([]);
 
   // Apply preference reranking
@@ -891,9 +898,76 @@ export function VenueListings({
       onOpenDetails(venue);
     }
   };
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+  if (!onRefresh || isRefreshing) return;
 
+  const scrollContainer = containerRef.current?.closest(
+    ".overflow-y-auto",
+  ) as HTMLElement | null;
+
+  if (scrollContainer?.scrollTop === 0) {
+    touchStartY.current = e.touches[0].clientY;
+  }
+};
+
+const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+  if (touchStartY.current === null || isRefreshing) return;
+
+  const distance = e.touches[0].clientY - touchStartY.current;
+
+  if (distance > 0) {
+    setPullDistance(Math.min(distance * 0.5, MAX_PULL_DISTANCE));
+  }
+};
+
+const handleTouchEnd = async () => {
+  if (touchStartY.current === null) return;
+
+  const shouldRefresh = pullDistance >= PULL_THRESHOLD;
+
+  touchStartY.current = null;
+  setPullDistance(0);
+
+  if (!shouldRefresh || !onRefresh || isRefreshing) return;
+
+  setIsRefreshing(true);
+
+  try {
+    await onRefresh();
+  } finally {
+    setIsRefreshing(false);
+  }
+};
   return (
-    <div className="space-y-3 pl-2" ref={containerRef}>
+  <div
+    className="space-y-3 pl-2"
+    ref={containerRef}
+    onTouchStart={handleTouchStart}
+    onTouchMove={handleTouchMove}
+    onTouchEnd={handleTouchEnd}
+  >
+    {(pullDistance > 0 || isRefreshing) && (
+        <div
+          className="flex items-center justify-center overflow-hidden transition-all duration-200"
+          style={{
+            height: isRefreshing ? 40 : Math.min(pullDistance, 40),
+          }}
+          aria-live="polite"
+        >
+          {isRefreshing ? (
+            <Loader2
+              className="h-5 w-5 animate-spin text-zinc-500"
+              aria-label="Refreshing venues"
+            />
+          ) : (
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+              {pullDistance >= PULL_THRESHOLD
+                ? "Release to refresh"
+                : "Pull to refresh"}
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-2 mb-1">
         <p className="text-[10px] uppercase font-black tracking-widest text-zinc-400">
           Recommended Venues ({blendedResults.length})
@@ -1016,6 +1090,7 @@ interface MessageListProps {
   onBook: (venue: Venue) => void;
   onSuggestionClick: (s: string) => void;
   initialSuggestions: string[];
+  onRefreshVenues?: () => Promise<void>;
 }
 
 export function MessageList({
@@ -1033,6 +1108,7 @@ export function MessageList({
   onBook,
   onSuggestionClick,
   initialSuggestions,
+  onRefreshVenues,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -1244,6 +1320,7 @@ export function MessageList({
               onRateVenue={onRateVenue}
               onOpenDetails={onOpenDetails}
               onBook={onBook}
+              onRefresh={onRefreshVenues}
             />
           )}
         </div>

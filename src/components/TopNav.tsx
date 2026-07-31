@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { ReactiveUserButton } from "@/components/ReactiveUserButton";
@@ -23,6 +23,35 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
     isSignedIn,
   });
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (isMenuOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsMenuOpen(false);
+    };
+
+    const handleResize = () => {
+      if (window.innerWidth >= 768 && isMenuOpen) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    if (isMenuOpen) {
+      document.addEventListener("keydown", handleEscape);
+      window.addEventListener("resize", handleResize);
+    }
+
+    return () => {
+      document.body.style.overflow = "";
+      document.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [isMenuOpen]);
 
   return (
     <nav className="sticky top-0 z-40 border-b border-zinc-200/80 dark:border-white/5 backdrop-blur-xl bg-white/70 dark:bg-black/40 transition-colors">
@@ -68,7 +97,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
 
                   {/* Mobile */}
                   <button
-                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    onClick={() => setIsMenuOpen((prev) => !prev)}
                     className="md:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
                   >
                     {isMenuOpen ? (
@@ -82,7 +111,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                 <>
                   {/* Mobile Menu Button */}
                   <button
-                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    onClick={() => setIsMenuOpen((prev) => !prev)}
                     className="md:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
                     aria-label="Toggle navigation menu"
                   >
@@ -135,13 +164,13 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
         <>
           {/* Backdrop Overlay */}
           <div
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm md:hidden z-40"
+            className="fixed inset-0 top-[72px] bg-black/60 backdrop-blur-sm md:hidden z-40"
             onClick={() => setIsMenuOpen(false)}
             aria-hidden="true"
           />
 
           {/* Mobile Menu Drawer */}
-          <div className="md:hidden border-t bg-white dark:bg-black relative z-50">
+          <div className="md:hidden border-t bg-white dark:bg-black absolute top-full left-0 w-full z-50">
             <div className="flex flex-col p-4 gap-3">
               {!isSignedIn ? (
                 <>

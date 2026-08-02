@@ -52,7 +52,7 @@
     "pdfkit": "^0.19.1",
     "pg": "^8.22.0",
     "prisma": "^7.9.0",
-    "radix-ui": "^1.6.2",
+    "radix-ui": "^1.6.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-easy-crop": "^6.2.2",

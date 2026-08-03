@@ -10,6 +10,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 
 import { NotificationBell } from "@/components/NotificationBell";
 import StreakBadge from "@/components/Header/StreakBadge";
+import { OfflineSyncProgressBar } from "@/components/OfflineSyncProgressBar";
 
 interface TopNavProps {
   hideAuth?: boolean;
@@ -200,6 +201,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
           </div>
         </>
       )}
+      <OfflineSyncProgressBar />
     </nav>
   );
 }

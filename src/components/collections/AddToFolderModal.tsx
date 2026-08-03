@@ -104,7 +104,10 @@ export function AddToFolderModal({ venue, onClose }: AddToFolderModalProps) {
                 className="w-full flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:accent-border-50 hover:accent-bg-10 dark:hover:accent-bg-dark-10 transition-all text-left"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500">
+                  <div
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-semibold shadow-xs"
+                    style={{ backgroundColor: folder.color || "#3b82f6" }}
+                  >
                     <Folder className="w-4 h-4" />
                   </div>
                   <span className="font-medium text-sm text-zinc-900 dark:text-white">

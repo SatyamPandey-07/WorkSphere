@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FolderColorPicker } from "@/components/collections/FolderColorPicker";
 
 export default function CollectionsPage() {
   const router = useRouter();
@@ -30,6 +31,7 @@ export default function CollectionsPage() {
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderDesc, setNewFolderDesc] = useState("");
   const [newFolderPublic, setNewFolderPublic] = useState(false);
+  const [newFolderColor, setNewFolderColor] = useState("#3b82f6");
   const [activeTab, setActiveTab] = useState<"my" | "public">("my");
 
   // Drag and drop state
@@ -139,12 +141,14 @@ export default function CollectionsPage() {
           name: trimmedName,
           description: newFolderDesc.trim(),
           isPublic: newFolderPublic,
+          color: newFolderColor,
         }),
       });
       if (res.ok) {
         setNewFolderName("");
         setNewFolderDesc("");
         setNewFolderPublic(false);
+        setNewFolderColor("#3b82f6");
         if (activeTab === "my") {
           await fetchFolders();
         } else {
@@ -292,6 +296,10 @@ export default function CollectionsPage() {
                   onChange={(e) => setNewFolderDesc(e.target.value)}
                   className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-[var(--primary-accent)] transition-colors text-zinc-900 dark:text-white resize-none h-20"
                 />
+                <FolderColorPicker
+                  selectedColor={newFolderColor}
+                  onChange={setNewFolderColor}
+                />
                 <div className="flex items-center justify-between px-1 py-1">
                   <span className="text-xs text-zinc-500">
                     Publish to Discovery Feed
@@ -363,7 +371,12 @@ export default function CollectionsPage() {
                     >
                       <div>
                         <div className="flex items-start justify-between mb-4">
-                          <div className="w-10 h-10 rounded-xl accent-bg-10 accent-bg-dark-20 accent-text flex items-center justify-center">
+                          <div
+                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-sm"
+                            style={{
+                              backgroundColor: folder.color || "#3b82f6",
+                            }}
+                          >
                             <Folder className="w-5 h-5" />
                           </div>
                           <div className="flex items-center gap-1.5">

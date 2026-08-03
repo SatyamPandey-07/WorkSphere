@@ -51,13 +51,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, description, isPublic } = validation.data;
+    const { name, description, isPublic, color } = validation.data;
 
     const folder = await prisma.folder.create({
       data: {
         name,
         description,
         isPublic: isPublic ?? false,
+        color: color ?? "#3b82f6",
         ownerId: userId,
         members: {
           create: {

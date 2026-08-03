@@ -513,6 +513,7 @@ model Folder {
   id          String   @id @default(cuid())
   name        String
   description String?
+  color       String?  @default("#3b82f6")
   ownerId     String
   owner       User     @relation("FolderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   inviteToken String?  @unique

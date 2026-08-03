@@ -13,7 +13,6 @@ import {
   Loader2,
   Globe,
   FileDown,
-  Link2,
 } from "lucide-react";
 
 import usePartySocket from "@/hooks/usePartySocketReconnect";
@@ -51,14 +50,14 @@ export default function FolderDetailsPage({
   const [exportingPdf, setExportingPdf] = useState(false);
 
   // Short Link states
-  const [shortLinks, setShortLinks] = useState<ShortLink[]>([]);
-  const [generatingShortLink, setGeneratingShortLink] = useState(false);
+  const [_shortLinks, setShortLinks] = useState<ShortLink[]>([]);
+  const [_generatingShortLink, setGeneratingShortLink] = useState(false);
   const [customShortCode, setCustomShortCode] = useState("");
   const [shortLinkExpiration, setShortLinkExpiration] = useState<
     "24h" | "7d" | "never"
   >("never");
-  const [shortLinkError, setShortLinkError] = useState<string | null>(null);
-  const [copiedShortCode, setCopiedShortCode] = useState<string | null>(null);
+  const [_shortLinkError, setShortLinkError] = useState<string | null>(null);
+  const [_copiedShortCode, _setCopiedShortCode] = useState<string | null>(null);
 
   const fetchShortLinks = useCallback(async () => {
     if (!id || userRole === "VIEWER") return;
@@ -79,7 +78,7 @@ export default function FolderDetailsPage({
     }
   }, [fetchShortLinks, userRole]);
 
-  const handleGenerateShortLink = async (e: React.FormEvent) => {
+  const _handleGenerateShortLink = async (e: React.FormEvent) => {
     e.preventDefault();
     setGeneratingShortLink(true);
     setShortLinkError(null);
@@ -112,7 +111,7 @@ export default function FolderDetailsPage({
     }
   };
 
-  const handleRevokeShortLink = async (linkId: string) => {
+  const _handleRevokeShortLink = async (linkId: string) => {
     try {
       const res = await fetch(`/api/folders/${id}/short-links/${linkId}`, {
         method: "DELETE",
@@ -251,7 +250,7 @@ export default function FolderDetailsPage({
           inviteToken: data.token,
           isPublic: true,
         }));
-        
+
         const shareUrl = `${window.location.origin}/collections/public/${data.token}`;
         await navigator.clipboard.writeText(shareUrl);
         setCopiedLink(true);
@@ -389,11 +388,24 @@ export default function FolderDetailsPage({
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div>
-              <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-                {folder.name}
-              </h1>
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-4 h-4 rounded-full shadow-sm shrink-0"
+                  style={{ backgroundColor: folder.color || "#3b82f6" }}
+                  title={`Tag color: ${folder.color || "#3b82f6"}`}
+                />
+                <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+                  {folder.name}
+                </h1>
+                <span
+                  className="px-2.5 py-0.5 rounded-full text-xs font-semibold text-white shadow-xs"
+                  style={{ backgroundColor: folder.color || "#3b82f6" }}
+                >
+                  {folder.color || "#3b82f6"}
+                </span>
+              </div>
               {folder.description && (
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
                   {folder.description}
                 </p>
               )}
@@ -634,7 +646,9 @@ export default function FolderDetailsPage({
                         title="Copy to clipboard"
                       >
                         {copiedLink ? (
-                          <span className="text-[10px] text-emerald-500 font-bold">Copied</span>
+                          <span className="text-[10px] text-emerald-500 font-bold">
+                            Copied
+                          </span>
                         ) : (
                           <Copy className="w-3.5 h-3.5" />
                         )}

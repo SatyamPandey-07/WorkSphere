@@ -207,8 +207,38 @@ describe("Chat API - Route Handler", () => {
 
     const res = await POST(req);
     expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
     const body = await res.json();
     expect(body.error).toContain("Rate limit exceeded");
+  });
+
+  it("should intercept Groq AI rate limit errors and return HTTP 429 with Retry-After header", async () => {
+    const rateLimitError: any = new Error(
+      "Rate limit exceeded. Please try again in 12s.",
+    );
+    rateLimitError.status = 429;
+    rateLimitError.headers = {
+      "retry-after": "12",
+    };
+
+    mockCreateCompletions.mockImplementation(() => {
+      throw rateLimitError;
+    });
+
+    const request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      body: JSON.stringify({
+        messages: [{ role: "user", content: "Find workspace" }],
+      }),
+    });
+
+    const response = await POST(request);
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe("12");
+
+    const body = await response.json();
+    expect(body.error).toContain("Groq AI rate limit exceeded");
+    expect(body.retryAfter).toBe(12);
   });
 });
 

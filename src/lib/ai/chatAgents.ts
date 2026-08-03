@@ -95,8 +95,18 @@ For general chat: {"skipAgents": true, "reasoning": "General conversation"}`;
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Orchestrator error:", error);
+    if (
+      error?.status === 429 ||
+      error?.statusCode === 429 ||
+      error?.name === "RateLimitError" ||
+      (error instanceof Error &&
+        (error.message.includes("429") ||
+          error.message.toLowerCase().includes("rate limit")))
+    ) {
+      throw error;
+    }
   }
 
   return {
@@ -159,8 +169,18 @@ Output ONLY valid JSON:
       result.parameters.location = userLocation || null;
       return result;
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("ContextAgent error:", error);
+    if (
+      error?.status === 429 ||
+      error?.statusCode === 429 ||
+      error?.name === "RateLimitError" ||
+      (error instanceof Error &&
+        (error.message.includes("429") ||
+          error.message.toLowerCase().includes("rate limit")))
+    ) {
+      throw error;
+    }
   }
 
   return {

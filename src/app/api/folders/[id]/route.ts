@@ -102,7 +102,7 @@ export async function PUT(
       );
     }
 
-    const { name, description, isPublic } = validation.data;
+    const { name, description, isPublic, color } = validation.data;
 
     const updatedFolder = await prisma.folder.update({
       where: { id },
@@ -110,6 +110,7 @@ export async function PUT(
         ...(name && { name }),
         ...(description !== undefined && { description }),
         ...(isPublic !== undefined && { isPublic }),
+        ...(color !== undefined && { color }),
       },
     });
 

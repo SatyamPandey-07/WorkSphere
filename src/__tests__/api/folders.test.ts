@@ -71,13 +71,44 @@ describe("Collection Folders API & Schema Validation", () => {
         );
       }
     });
+
+    it("should validate and persist custom tag color HEX value on folder creation", () => {
+      const payload = {
+        name: "Design Studio Hubs",
+        description: "Quiet cafes with wide tables",
+        isPublic: true,
+        color: "#8b5cf6",
+      };
+
+      const result = createFolderSchema.safeParse(payload);
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.color).toBe("#8b5cf6");
+      }
+    });
+
+    it("should reject invalid non-hex tag color values", () => {
+      const payload = {
+        name: "Invalid Color Folder",
+        color: "invalid-hex-code",
+      };
+
+      const result = createFolderSchema.safeParse(payload);
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].message).toBe(
+          "Must be a valid hex color",
+        );
+      }
+    });
   });
 
   describe("PUT /api/folders/[id] validation", () => {
-    it("should allow valid folder update data", () => {
+    it("should allow valid folder update data including tag color persistence", () => {
       const payload = {
         name: "Renamed Collection",
         isPublic: false,
+        color: "#ec4899",
       };
 
       const result = updateFolderSchema.safeParse(payload);
@@ -85,6 +116,7 @@ describe("Collection Folders API & Schema Validation", () => {
       if (result.success) {
         expect(result.data.name).toBe("Renamed Collection");
         expect(result.data.isPublic).toBe(false);
+        expect(result.data.color).toBe("#ec4899");
       }
     });
 

@@ -10,7 +10,6 @@ const SHORTCUTS = [
   { key: "M", description: "Toggle Map View" },
 ];
 
-export default function KeyboardShortcutsModal() {
 export function KeyboardShortcutsModal() {
   const [isOpen, setIsOpen] = useState(false);
 

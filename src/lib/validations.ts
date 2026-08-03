@@ -173,6 +173,10 @@ export const createFolderSchema = z.object({
     .max(500, "Description must be 500 characters or less")
     .optional(),
   isPublic: z.boolean().optional(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color")
+    .optional(),
 });
 
 export const updateFolderSchema = z.object({
@@ -188,6 +192,10 @@ export const updateFolderSchema = z.object({
     .max(500, "Description must be 500 characters or less")
     .optional(),
   isPublic: z.boolean().optional(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/, "Must be a valid hex color")
+    .optional(),
 });
 
 // =========================================================================

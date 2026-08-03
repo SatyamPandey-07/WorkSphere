@@ -1184,6 +1184,80 @@ Address the user's query and include UI components if helpful.`;
     const message =
       error instanceof Error ? error.message : "An unexpected error occurred";
 
+    const isRateLimitError =
+      (error as any)?.status === 429 ||
+      (error as any)?.statusCode === 429 ||
+      error instanceof Groq.RateLimitError ||
+      (error as any)?.name === "RateLimitError" ||
+      message.includes("429") ||
+      message.toLowerCase().includes("rate limit") ||
+      message.toLowerCase().includes("ratelimit");
+
+    if (isRateLimitError) {
+      let retryAfter = 60;
+
+      if (
+        typeof (error as any)?.retryAfter === "number" &&
+        (error as any).retryAfter > 0
+      ) {
+        retryAfter = (error as any).retryAfter;
+      } else {
+        const headers =
+          (error as any)?.headers || (error as any)?.response?.headers;
+        let rawHeader: any = null;
+
+        if (headers) {
+          if (typeof headers.get === "function") {
+            try {
+              rawHeader =
+                headers.get("retry-after") ??
+                headers.get("Retry-After") ??
+                headers.get("x-ratelimit-reset-requests") ??
+                headers.get("x-ratelimit-reset-tokens");
+            } catch {
+              // ignore
+            }
+          }
+          if (!rawHeader && typeof headers === "object") {
+            rawHeader =
+              headers["retry-after"] ??
+              headers["Retry-After"] ??
+              headers["x-ratelimit-reset-requests"] ??
+              headers["x-ratelimit-reset-tokens"];
+          }
+        }
+
+        if (rawHeader !== null && rawHeader !== undefined) {
+          const parsed = parseInt(String(rawHeader), 10);
+          if (!isNaN(parsed) && parsed > 0) retryAfter = parsed;
+        } else if (typeof message === "string") {
+          const match =
+            message.match(/try again in ([0-9.]+)\s*s/i) ||
+            message.match(/retry after ([0-9.]+)/i);
+          if (match && match[1]) {
+            const seconds = Math.ceil(parseFloat(match[1]));
+            if (!isNaN(seconds) && seconds > 0) retryAfter = seconds;
+          }
+        }
+      }
+
+      return Response.json(
+        {
+          error: "Groq AI rate limit exceeded. Exponential backoff active.",
+          retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(retryAfter),
+            "X-RateLimit-Reset": String(
+              Math.ceil(Date.now() / 1000) + retryAfter,
+            ),
+          },
+        },
+      );
+    }
+
     if (
       message.includes("Invalid API Key") ||
       message.includes("Unauthorized") ||

@@ -115,11 +115,14 @@ jest.mock("react-leaflet", () => ({
       </div>
     );
   }),
-  Popup: ({ children, autoPanPaddingTopLeft }: any) => (
+  Popup: ({ children, autoPanPaddingTopLeft, autoPanPadding }: any) => (
     <div
       data-testid="popup"
       data-autopan-top={
         autoPanPaddingTopLeft ? autoPanPaddingTopLeft[1] : undefined
+      }
+      data-autopan-padding={
+        autoPanPadding ? JSON.stringify(autoPanPadding) : undefined
       }
     >
       {children}
@@ -563,6 +566,25 @@ describe("Map Component", () => {
         expect(
           Number(popup.getAttribute("data-autopan-top")),
         ).toBeGreaterThanOrEqual(72);
+      });
+    });
+  });
+
+  describe("Mobile Popup Z-Index Stacking Context (#1925)", () => {
+    it("configures autoPanPadding options on Leaflet popups to prevent mobile UI overlay collisions", () => {
+      const mockMarkers: MapMarker[] = [
+        {
+          id: "marker-mobile-1",
+          name: "Mobile Venue Test",
+          position: { lat: 37.7749, lng: -122.4194 },
+          category: "cafe",
+        },
+      ];
+      render(<Map {...defaultProps} markers={mockMarkers} />);
+      const popups = screen.getAllByTestId("popup");
+      expect(popups.length).toBeGreaterThan(0);
+      popups.forEach((popup) => {
+        expect(popup.getAttribute("data-autopan-padding")).toBe("[20,20]");
       });
     });
   });

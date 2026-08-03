@@ -127,6 +127,7 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
             eventHandlers={markerEventHandlers}
           >
             <Popup
+              autoPanPadding={[20, 20]}
               autoPanPaddingTopLeft={[20, 90]}
               autoPanPaddingBottomRight={[20, 20]}
             >

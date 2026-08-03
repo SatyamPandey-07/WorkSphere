@@ -430,3 +430,15 @@ textarea:focus::placeholder {
     transition-delay: 0s !important;
   }
 }
+
+/* Leaflet map marker popup z-index stacking context for mobile viewports (<640px) */
+.leaflet-popup-pane {
+  z-index: 1000 !important;
+}
+
+@media (max-width: 640px) {
+  .leaflet-popup-pane,
+  .leaflet-container .leaflet-popup {
+    z-index: 9999 !important;
+  }
+}

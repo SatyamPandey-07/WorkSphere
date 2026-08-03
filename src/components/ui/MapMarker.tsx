@@ -109,6 +109,7 @@ export const AccessibleMarker = memo(
         }}
       >
         <Popup
+          autoPanPadding={[20, 20]}
           autoPanPaddingTopLeft={[20, 90]}
           autoPanPaddingBottomRight={[20, 20]}
         >

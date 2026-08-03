@@ -1279,6 +1279,7 @@ const Map = ({
               }}
             >
               <Popup
+                autoPanPadding={[20, 20]}
                 autoPanPaddingTopLeft={[20, 90]}
                 autoPanPaddingBottomRight={[20, 20]}
               >
@@ -1326,7 +1327,7 @@ const Map = ({
               }}
             >
               {route.distance && (
-                <Popup>
+                <Popup autoPanPadding={[20, 20]}>
                   <div className="text-sm">
                     Distance: {(route.distance / 1000).toFixed(1)} km
                     {route.duration && (

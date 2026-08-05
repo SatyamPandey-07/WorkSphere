@@ -18,7 +18,7 @@ function PresenceIndicator() {
   const searchParams = useSearchParams();
   const folderId = searchParams?.get("folderId") || "global";
   const roomId = `presence-room-${folderId}`;
-  
+
   const [users, setUsers] = useState<any[]>([]);
 
   useEffect(() => {
@@ -27,9 +27,10 @@ function PresenceIndicator() {
     const provider = new YProvider(host, roomId, doc);
     const awareness = provider.awareness;
 
-    const localUserName = isSignedIn && user
-      ? user.fullName || user.firstName || "Collaborator"
-      : `Guest ${Math.floor(Math.random() * 1000)}`;
+    const localUserName =
+      isSignedIn && user
+        ? user.fullName || user.firstName || "Collaborator"
+        : `Guest ${Math.floor(Math.random() * 1000)}`;
 
     const localUserAvatar = isSignedIn && user ? user.imageUrl : null;
     const localUserRole = isSignedIn ? "Member" : "Guest";
@@ -45,9 +46,7 @@ function PresenceIndicator() {
 
     const handleAwarenessChange = () => {
       const states = Array.from(awareness.getStates().values());
-      const activeUsers = states
-        .map((s: any) => s.user)
-        .filter(Boolean);
+      const activeUsers = states.map((s: any) => s.user).filter(Boolean);
       setUsers(activeUsers);
     };
 
@@ -98,13 +97,27 @@ function PresenceIndicator() {
       provider.destroy();
       doc.destroy();
     };
-  }, [user, isSignedIn, roomId]);
+    // Depend on primitives derived from `user`, not the object itself — a
+    // hook returning a fresh object each render (as some environments do)
+    // would otherwise re-run this effect every render, tearing down and
+    // recreating the PartyKit connection in a tight loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    user?.id,
+    user?.fullName,
+    user?.firstName,
+    user?.imageUrl,
+    isSignedIn,
+    roomId,
+  ]);
 
   if (users.length === 0) return null;
 
   return (
     <div className="flex items-center gap-2 mb-4 p-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm w-fit z-10">
-      <span className="text-xs font-semibold text-zinc-500 mr-1">Active Now:</span>
+      <span className="text-xs font-semibold text-zinc-500 mr-1">
+        Active Now:
+      </span>
       <div className="flex -space-x-2 overflow-hidden">
         <AnimatePresence>
           {users.map((u, i) => (
@@ -137,7 +150,9 @@ function PresenceIndicator() {
               />
               <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5 bg-zinc-950/90 text-white text-xs rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap z-50 border border-zinc-800 backdrop-blur-sm">
                 <p className="font-bold">{u.name}</p>
-                <p className="text-[10px] text-zinc-400 font-medium">{u.role}</p>
+                <p className="text-[10px] text-zinc-400 font-medium">
+                  {u.role}
+                </p>
               </div>
             </motion.div>
           ))}

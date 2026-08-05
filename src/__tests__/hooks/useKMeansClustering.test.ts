@@ -1,6 +1,5 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { KMEANS_DIMENSIONS, NUM_CLUSTERS } from "@/lib/kmeans/types";
-import type { AmenityVector } from "@/lib/kmeans/types";
 
 // Mock Worker for Jest CJS environment
 const mockPostMessage = jest.fn();
@@ -42,22 +41,30 @@ Object.defineProperty(globalThis, "import.meta", {
 // Must import AFTER mocking
 import { useKMeansClustering } from "@/hooks/useKMeansClustering";
 
-function makeSavedVenueLike(overrides: Partial<AmenityVector> = {}) {
+function makeSavedVenueLike(
+  overrides: Partial<{
+    wifiQuality: number;
+    hasOutlets: boolean;
+    noiseLevel: string;
+  }> = {},
+) {
   return {
     id: "v1",
     venueId: "v1",
     venue: {
       id: "v1",
       rating: 4,
-      wifiQuality: 8,
-      hasOutlets: true,
-      noiseLevel: "quiet" as string | null,
-      ...Object.fromEntries(
-        KMEANS_DIMENSIONS.filter(
-          (d) =>
-            !["rating", "wifiQuality", "hasOutlets", "noiseLevel"].includes(d),
-        ).map((d) => [d, overrides[d] ?? 0.5]),
-      ),
+      wifiQuality: overrides.wifiQuality ?? 8,
+      hasOutlets: overrides.hasOutlets ?? true,
+      noiseLevel: overrides.noiseLevel ?? "quiet",
+      outletDensity: "some_tables",
+      hasErgonomic: false,
+      hasPhoneBooths: false,
+      hasNoMusic: false,
+      hasQuietZone: false,
+      hasAncHeadsetRental: false,
+      lighting: "natural",
+      currentOccupancy: 50,
     },
   };
 }
@@ -80,7 +87,7 @@ describe("useKMeansClustering", () => {
     const favorites = Array.from({ length: 10 }, (_, i) =>
       makeSavedVenueLike({
         wifiQuality: i / 10,
-        hasOutlets: i % 2 === 0 ? 1 : 0,
+        hasOutlets: i % 2 === 0,
       }),
     );
 
@@ -187,7 +194,7 @@ describe("useKMeansClustering", () => {
 
   it("handles duplicate vectors via deduplication", async () => {
     const favorites = Array.from({ length: 10 }, () =>
-      makeSavedVenueLike({ wifiQuality: 0.8, hasOutlets: 1 }),
+      makeSavedVenueLike({ wifiQuality: 0.8, hasOutlets: true }),
     );
 
     const { result } = renderHook(() => useKMeansClustering(favorites));

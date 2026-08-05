@@ -14,7 +14,25 @@ jest.mock("@/lib/prisma", () => ({
   },
 }));
 
+const TEST_SHARED_SECRET = "test-partykit-shared-secret";
+
+function authedRequest(url: string): NextRequest {
+  return new NextRequest(url, {
+    headers: { authorization: `Bearer ${TEST_SHARED_SECRET}` },
+  });
+}
+
 describe("GET /api/partykit/auth - Rate Limiting", () => {
+  const originalSecret = process.env.PARTYKIT_SHARED_SECRET;
+
+  beforeAll(() => {
+    process.env.PARTYKIT_SHARED_SECRET = TEST_SHARED_SECRET;
+  });
+
+  afterAll(() => {
+    process.env.PARTYKIT_SHARED_SECRET = originalSecret;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     resetRateLimit();
@@ -25,7 +43,7 @@ describe("GET /api/partykit/auth - Rate Limiting", () => {
     (prisma.folder.findUnique as jest.Mock).mockResolvedValue(null);
 
     for (let i = 0; i < 30; i++) {
-      const req = new NextRequest(
+      const req = authedRequest(
         "http://localhost/api/partykit/auth?userId=u1&folderId=f1",
       );
       const res = await GET(req);
@@ -39,7 +57,7 @@ describe("GET /api/partykit/auth - Rate Limiting", () => {
 
     let lastRes;
     for (let i = 0; i < 31; i++) {
-      const req = new NextRequest(
+      const req = authedRequest(
         "http://localhost/api/partykit/auth?userId=u1&folderId=f1",
       );
       lastRes = await GET(req);

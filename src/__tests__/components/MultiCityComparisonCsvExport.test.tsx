@@ -15,7 +15,7 @@ describe("formatVenueComparisonCsv", () => {
         wifiSpeed: 120,
         hasOutlets: true,
         noiseLevel: "quiet",
-        score: 0.95,
+        score: 9.5,
       },
       {
         id: "v2",
@@ -28,7 +28,7 @@ describe("formatVenueComparisonCsv", () => {
         wifiSpeed: 50,
         hasOutlets: false,
         noiseLevel: "moderate",
-        score: 0.8,
+        score: 8,
       },
     ];
 

@@ -111,7 +111,13 @@ describe("notesOutbox", () => {
       expect(result.flushed).toBe(0);
       expect(result.conflicts).toHaveLength(1);
       expect(result.conflicts[0].textBefore).toBe("World");
-      expect(result.conflicts[0].textAfter).toBe("HelloWorld");
+      // Yjs resolves concurrent inserts at the same position using each
+      // doc's randomly-generated clientID as a tie-breaker, so the merge
+      // order ("HelloWorld" vs "WorldHello") isn't deterministic here —
+      // only that both edits survived the merge.
+      expect(result.conflicts[0].textAfter).toHaveLength(10);
+      expect(result.conflicts[0].textAfter).toContain("Hello");
+      expect(result.conflicts[0].textAfter).toContain("World");
     });
 
     it("applies only non-conflicting entries immediately", async () => {
@@ -153,7 +159,12 @@ describe("notesOutbox", () => {
         result.conflicts,
       );
 
-      expect(receiver.getText("group-notes").toString()).toBe("Remote Hello");
+      // See the comment in "conflict detection" above — merge order between
+      // two independently-created Y.Docs isn't deterministic.
+      const merged = receiver.getText("group-notes").toString();
+      expect(merged).toHaveLength("Remote Hello".length);
+      expect(merged).toContain("Remote");
+      expect(merged).toContain("Hello");
       expect((await listNotesOutbox("resolve-room")).length).toBe(0);
     });
 

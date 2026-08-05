@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
@@ -80,7 +80,9 @@ describe("ThemeToggle", () => {
       shiftKey: true,
       bubbles: true,
     });
-    window.dispatchEvent(event);
+    act(() => {
+      window.dispatchEvent(event);
+    });
 
     expect(btn).toHaveAttribute("data-active-theme", "dark");
   });

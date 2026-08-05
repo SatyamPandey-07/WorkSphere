@@ -127,6 +127,7 @@ export function useKMeansClustering(
 
   const terminate = useCallback(() => {
     engineRef.current.terminate();
+    setIsReady(false);
   }, []);
 
   return {

@@ -47,6 +47,7 @@ HTMLCanvasElement.prototype.getContext = jest.fn((type: string) => {
       deleteTexture: jest.fn(),
       deleteProgram: jest.fn(),
       deleteVertexArray: jest.fn(),
+      deleteBuffer: jest.fn(),
       VERTEX_SHADER: 35633,
       FRAGMENT_SHADER: 35632,
       COMPILE_STATUS: 35713,

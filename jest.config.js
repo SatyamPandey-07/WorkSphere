@@ -23,7 +23,7 @@ const customJestConfig = {
   // a worker; recycle a worker once it grows past this instead of letting it
   // run out of heap partway through the full suite. Capping workers keeps
   // total concurrent memory demand within reach of typical CI/dev machines.
-  workerIdleMemoryLimit: '512MB',
+  workerIdleMemoryLimit: '256MB',
   maxWorkers: '50%',
   collectCoverageFrom: [
     'src/**/*.{js,jsx,ts,tsx}',

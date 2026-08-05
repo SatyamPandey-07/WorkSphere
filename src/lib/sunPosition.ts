@@ -13,13 +13,20 @@ export interface SunPosition {
   altitude: number;
   /** True azimuth in degrees clockwise from North (0–360) */
   azimuth: number;
+  /** Whether the sun is currently above the horizon */
+  isAboveHorizon: boolean;
+  /** Altitude normalized to [0, 1] against a 90° zenith (clamped at 0 when below horizon) */
+  normalizedAltitude: number;
+}
+
+export interface PatioShadeResult {
+  shadePercentage: number;
+  sunAltitude: number;
+  sunAzimuth: number;
 }
 
 export type SunExposureLabel =
-  | "Direct Sun"
-  | "Partial Sun"
-  | "Shaded"
-  | "Night";
+  "Direct Sun" | "Partial Sun" | "Shaded" | "Night";
 
 export interface SunExposureResult {
   label: SunExposureLabel;
@@ -92,9 +99,7 @@ function sunApparentLongDeg(t: number): number {
 
 /** Mean obliquity of the ecliptic in degrees */
 function meanObliquityOfEcliptic(t: number): number {
-  const seconds =
-    21.448 -
-    t * (46.815 + t * (0.00059 - t * 0.001813));
+  const seconds = 21.448 - t * (46.815 + t * (0.00059 - t * 0.001813));
   return 23.0 + (26.0 + seconds / 60.0) / 60.0;
 }
 
@@ -158,9 +163,7 @@ export function calculateSunPosition(
 
   // Hour angle
   const hourAngleDeg =
-    trueSolarTime / 4 < 0
-      ? trueSolarTime / 4 + 180
-      : trueSolarTime / 4 - 180;
+    trueSolarTime / 4 < 0 ? trueSolarTime / 4 + 180 : trueSolarTime / 4 - 180;
   const ha = toRad(hourAngleDeg);
 
   const latRad = toRad(latitude);
@@ -182,7 +185,52 @@ export function calculateSunPosition(
     azimuth = 360 - azimuth;
   }
 
-  return { altitude, azimuth };
+  return {
+    altitude,
+    azimuth,
+    isAboveHorizon: altitude > 0,
+    normalizedAltitude: Math.max(0, Math.min(1, altitude / 90)),
+  };
+}
+
+/**
+ * Estimate how shaded an outdoor patio is, given its orientation (the
+ * compass direction, in degrees, the patio faces) relative to the sun.
+ *
+ * A patio facing directly toward the sun's azimuth gets the most direct
+ * light (least shade); one facing away gets the most shade. Full shade
+ * (100%) is returned whenever the sun is below the horizon.
+ *
+ * @param latitude       Venue latitude in decimal degrees
+ * @param longitude      Venue longitude in decimal degrees
+ * @param date           Observation time (defaults to now)
+ * @param patioAzimuth   Compass direction the patio faces, in degrees (0–360)
+ */
+export function getPatioShadePercentage(
+  latitude: number,
+  longitude: number,
+  date: Date = new Date(),
+  patioAzimuth: number = 0,
+): PatioShadeResult {
+  const { altitude, azimuth, isAboveHorizon, normalizedAltitude } =
+    calculateSunPosition(latitude, longitude, date);
+
+  if (!isAboveHorizon) {
+    return { shadePercentage: 100, sunAltitude: altitude, sunAzimuth: azimuth };
+  }
+
+  const angleDiff = Math.abs(
+    ((((azimuth - patioAzimuth + 180) % 360) + 360) % 360) - 180,
+  );
+  // 1 when the patio faces the sun head-on, 0 when facing directly away
+  const orientationFactor = (1 + Math.cos(toRad(angleDiff))) / 2;
+
+  const shadePercentage = Math.max(
+    0,
+    Math.min(100, 100 - orientationFactor * normalizedAltitude * 100),
+  );
+
+  return { shadePercentage, sunAltitude: altitude, sunAzimuth: azimuth };
 }
 
 /**
@@ -218,11 +266,10 @@ export function getSunExposure(
   const month = date.getUTCMonth(); // 0 = Jan, 11 = Dec
   const isSummerHemisphere =
     latitude >= 0
-      ? month >= 4 && month <= 8   // Northern summer: May–Sep
+      ? month >= 4 && month <= 8 // Northern summer: May–Sep
       : month >= 10 || month <= 2; // Southern summer: Nov–Mar
 
-  const isPeakUvSummer =
-    isSummerHemisphere && altitude > 40;
+  const isPeakUvSummer = isSummerHemisphere && altitude > 40;
 
   let label: SunExposureLabel;
   let description: string;

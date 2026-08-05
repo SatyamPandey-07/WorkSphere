@@ -1,5 +1,8 @@
 import { POST as claimPOST } from "../../app/api/venues/claim/route";
-import { GET as managedGET, PUT as managedPUT } from "../../app/api/venues/managed/route";
+import {
+  GET as managedGET,
+  PUT as managedPUT,
+} from "../../app/api/venues/managed/route";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest } from "next/server";
@@ -25,7 +28,7 @@ describe("Venue Claiming & Management APIs", () => {
 
   describe("POST /api/venues/claim", () => {
     it("returns 401 if unauthenticated", async () => {
-      (auth as jest.Mock).mockResolvedValue({ userId: null });
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: null });
       const req = new NextRequest("http://localhost/api/venues/claim", {
         method: "POST",
         body: JSON.stringify({ venueId: "v1" }),
@@ -35,7 +38,7 @@ describe("Venue Claiming & Management APIs", () => {
     });
 
     it("returns 400 if venueId is missing", async () => {
-      (auth as jest.Mock).mockResolvedValue({ userId: "u1" });
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
       const req = new NextRequest("http://localhost/api/venues/claim", {
         method: "POST",
         body: JSON.stringify({}),
@@ -45,7 +48,7 @@ describe("Venue Claiming & Management APIs", () => {
     });
 
     it("returns 404 if venue is not found", async () => {
-      (auth as jest.Mock).mockResolvedValue({ userId: "u1" });
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
       (prisma.venue.findUnique as jest.Mock).mockResolvedValue(null);
 
       const req = new NextRequest("http://localhost/api/venues/claim", {
@@ -57,7 +60,7 @@ describe("Venue Claiming & Management APIs", () => {
     });
 
     it("returns 400 if venue is already claimed", async () => {
-      (auth as jest.Mock).mockResolvedValue({ userId: "u1" });
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
       (prisma.venue.findUnique as jest.Mock).mockResolvedValue({
         id: "v1",
         isClaimed: true,
@@ -72,7 +75,7 @@ describe("Venue Claiming & Management APIs", () => {
     });
 
     it("claims the venue successfully", async () => {
-      (auth as jest.Mock).mockResolvedValue({ userId: "u1" });
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
       (prisma.venue.findUnique as jest.Mock).mockResolvedValue({
         id: "v1",
         isClaimed: false,
@@ -97,7 +100,7 @@ describe("Venue Claiming & Management APIs", () => {
 
   describe("GET /api/venues/managed", () => {
     it("returns claimed venues for the user", async () => {
-      (auth as jest.Mock).mockResolvedValue({ userId: "u1" });
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
       (prisma.venue.findMany as jest.Mock).mockResolvedValue([
         { id: "v1", name: "My Café" },
       ]);
@@ -112,7 +115,7 @@ describe("Venue Claiming & Management APIs", () => {
 
   describe("PUT /api/venues/managed", () => {
     it("updates venue details if authorized", async () => {
-      (auth as jest.Mock).mockResolvedValue({ userId: "u1" });
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
       (prisma.venue.findUnique as jest.Mock).mockResolvedValue({
         id: "v1",
         ownerId: "u1",
@@ -139,7 +142,7 @@ describe("Venue Claiming & Management APIs", () => {
     });
 
     it("returns 403 if user is not the owner", async () => {
-      (auth as jest.Mock).mockResolvedValue({ userId: "u1" });
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
       (prisma.venue.findUnique as jest.Mock).mockResolvedValue({
         id: "v1",
         ownerId: "someone-else",

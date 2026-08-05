@@ -1013,7 +1013,12 @@ export function VenueDetailDialog({
             <h2 className="text-4xl font-black text-white tracking-tighter leading-none mb-1 text-shadow-lg flex items-center gap-2">
               <span>{venue.name}</span>
               {venue.isClaimed && (
-                <BadgeCheck className="w-6 h-6 text-green-400 shrink-0 pointer-events-auto" title="Verified Host" />
+                <span
+                  title="Verified Host"
+                  className="inline-flex shrink-0 pointer-events-auto"
+                >
+                  <BadgeCheck className="w-6 h-6 text-green-400 shrink-0" />
+                </span>
               )}
             </h2>
             <div className="flex items-center gap-1.5 text-zinc-300 text-sm font-medium">
@@ -1071,8 +1076,12 @@ export function VenueDetailDialog({
                       <Building2 className="w-5 h-5" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-zinc-200">Own this business?</p>
-                      <p className="text-xs text-zinc-400">Claim it to update details and post host messages.</p>
+                      <p className="text-sm font-bold text-zinc-200">
+                        Own this business?
+                      </p>
+                      <p className="text-xs text-zinc-400">
+                        Claim it to update details and post host messages.
+                      </p>
                     </div>
                   </div>
                   <a
@@ -1798,7 +1807,11 @@ export function VenueDetailDialog({
                 <div className="flex gap-3">
                   <button
                     onClick={() => onToggleFavorite(venue)}
-                    aria-label={isFavorited ? `Remove ${venue.name} from favorites` : `Save ${venue.name} to favorites`}
+                    aria-label={
+                      isFavorited
+                        ? `Remove ${venue.name} from favorites`
+                        : `Save ${venue.name} to favorites`
+                    }
                     className={`flex-1 flex items-center justify-center gap-2 font-black uppercase tracking-widest py-3 px-6 rounded-2xl border-2 ${
                       enableTransition ? "transition-all duration-300" : ""
                     } ${

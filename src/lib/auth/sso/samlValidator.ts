@@ -33,22 +33,23 @@ export function validateSamlAssertion(
 
   const sig = new SignedXml();
   // Provide the certificate to the verifier
-  sig.keyInfoProvider = {
-    getKeyInfo: () =>
-      `<X509Data><X509Certificate>${normalizedCert}</X509Certificate></X509Data>`,
-    getKey: () =>
-      Buffer.from(
-        `-----BEGIN CERTIFICATE-----\n${normalizedCert.replace(/(.{64})/g, "$1\n")}\n-----END CERTIFICATE-----`,
-      ),
-  };
+  sig.publicCert = Buffer.from(
+    `-----BEGIN CERTIFICATE-----\n${normalizedCert.replace(/(.{64})/g, "$1\n")}\n-----END CERTIFICATE-----`,
+  );
 
   sig.loadSignature(signature.toString());
-  const isValid = sig.checkSignature(xmlString);
+
+  let isValid: boolean;
+  try {
+    isValid = sig.checkSignature(xmlString);
+  } catch (err) {
+    throw new Error(
+      `SAML Signature validation failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   if (!isValid) {
-    throw new Error(
-      `SAML Signature validation failed: ${sig.validationErrors.join(", ")}`,
-    );
+    throw new Error("SAML Signature validation failed");
   }
 
   // 2. Parse the validated XML to extract details

@@ -344,6 +344,7 @@ export function EnhancedChatbot({
   }, [isHydrated, socket, onMapUpdate]);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const lastReadMsgId = useRef<string | null>(null);
 
   // Auto-read completion tracking
   useEffect(() => {
@@ -832,51 +833,49 @@ export function EnhancedChatbot({
     },
     [isLoading],
   );
-   const handleRefreshVenues = async () => {
-  if (!location) return;
+  const handleRefreshVenues = async () => {
+    if (!location) return;
 
-  const params = new URLSearchParams({
-    lat: String(location.lat),
-    lng: String(location.lng),
-    radius: "5000",
-  });
+    const params = new URLSearchParams({
+      lat: String(location.lat),
+      lng: String(location.lng),
+      radius: "5000",
+    });
 
-  Object.entries(filters).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== false) {
-      params.set(key, String(value));
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== false) {
+        params.set(key, String(value));
+      }
+    });
+
+    const response = await apiFetch(`/api/venues?${params.toString()}`);
+
+    if (!response.ok) {
+      throw new Error("Failed to refresh venues");
     }
-  });
 
-  const response = await apiFetch(`/api/venues?${params.toString()}`);
+    const data = await response.json();
 
-  if (!response.ok) {
-    throw new Error("Failed to refresh venues");
-  }
-
-  const data = await response.json();
-
-  const refreshedVenues: Venue[] = (data.venues ?? []).map(
-    (venue: any) => ({
+    const refreshedVenues: Venue[] = (data.venues ?? []).map((venue: any) => ({
       ...venue,
       lat: Number(venue.latitude),
       lng: Number(venue.longitude),
-    }),
-  );
+    }));
 
-  setMessages((prev) => {
-    const latestVenueMessageIndex = prev.findLastIndex(
-      (message) => message.venues && message.venues.length > 0,
-    );
+    setMessages((prev) => {
+      const latestVenueMessageIndex = prev.findLastIndex(
+        (message) => message.venues && message.venues.length > 0,
+      );
 
-    if (latestVenueMessageIndex === -1) return prev;
+      if (latestVenueMessageIndex === -1) return prev;
 
-    return prev.map((message, index) =>
-      index === latestVenueMessageIndex
-        ? { ...message, venues: refreshedVenues }
-        : message,
-    );
-  });
-};
+      return prev.map((message, index) =>
+        index === latestVenueMessageIndex
+          ? { ...message, venues: refreshedVenues }
+          : message,
+      );
+    });
+  };
   // Main submit
   const handleInputChange = (val: string) => {
     const safeVal = typeof val === "string" ? val : "";
@@ -1348,7 +1347,10 @@ export function EnhancedChatbot({
             )}
           </div>
 
-          <div className="flex items-center gap-2" aria-label="Export Conversation">
+          <div
+            className="flex items-center gap-2"
+            aria-label="Export Conversation"
+          >
             <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 hidden sm:inline">
               Export Chat:
             </span>

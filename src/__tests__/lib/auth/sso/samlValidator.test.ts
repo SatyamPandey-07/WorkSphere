@@ -5,10 +5,9 @@ jest.mock("xml-crypto", () => {
   return {
     SignedXml: jest.fn().mockImplementation(() => {
       return {
-        keyInfoProvider: null as any,
+        publicCert: null as any,
         loadSignature: jest.fn(),
         checkSignature: jest.fn(),
-        validationErrors: ["Signature verification failed"],
       };
     }),
   };
@@ -57,76 +56,113 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Y3r
 
   it("should normalize and validate multi-line PEM certificates successfully", () => {
     const mockSignedXmlInstance = {
-      keyInfoProvider: null as any,
+      publicCert: null as any,
       loadSignature: jest.fn(),
       checkSignature: jest.fn().mockReturnValue(true),
-      validationErrors: [],
     };
-    (SignedXml as unknown as jest.Mock).mockReturnValueOnce(mockSignedXmlInstance);
+    (SignedXml as unknown as jest.Mock).mockReturnValueOnce(
+      mockSignedXmlInstance,
+    );
 
-    const result = validateSamlAssertion(mockXml, multiLineCert, "http://sp.example.com");
+    const result = validateSamlAssertion(
+      mockXml,
+      multiLineCert,
+      "http://sp.example.com",
+    );
 
     expect(result.nameId).toBe("user@example.com");
     expect(result.attributes.email).toBe("user@example.com");
 
-    const keyInfo = mockSignedXmlInstance.keyInfoProvider.getKeyInfo();
-    const key = mockSignedXmlInstance.keyInfoProvider.getKey();
-
-    expect(keyInfo).toContain("MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Y3r");
-    expect(keyInfo).not.toContain("-----BEGIN CERTIFICATE-----");
-    expect(keyInfo).not.toContain("\n");
-
-    const keyString = key.toString();
+    const keyString = mockSignedXmlInstance.publicCert.toString();
     expect(keyString).toContain("-----BEGIN CERTIFICATE-----");
-    expect(keyString).toContain("MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Y3r");
+    expect(keyString).toContain(
+      "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Y3r",
+    );
     expect(keyString).toContain("-----END CERTIFICATE-----");
   });
 
   it("should normalize whitespace-heavy certs and reformat them correctly", () => {
     const mockSignedXmlInstance = {
-      keyInfoProvider: null as any,
+      publicCert: null as any,
       loadSignature: jest.fn(),
       checkSignature: jest.fn().mockReturnValue(true),
-      validationErrors: [],
     };
-    (SignedXml as unknown as jest.Mock).mockReturnValueOnce(mockSignedXmlInstance);
+    (SignedXml as unknown as jest.Mock).mockReturnValueOnce(
+      mockSignedXmlInstance,
+    );
 
-    const result = validateSamlAssertion(mockXml, whitespaceCert, "http://sp.example.com");
+    const result = validateSamlAssertion(
+      mockXml,
+      whitespaceCert,
+      "http://sp.example.com",
+    );
 
     expect(result.nameId).toBe("user@example.com");
 
-    const keyInfo = mockSignedXmlInstance.keyInfoProvider.getKeyInfo();
-    expect(keyInfo).toBe("<X509Data><X509Certificate>MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Y3r</X509Certificate></X509Data>");
+    const keyString = mockSignedXmlInstance.publicCert.toString();
+    expect(keyString).toContain(
+      "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Y3r",
+    );
+    expect(keyString).not.toContain(
+      "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A\n    MIIBCgKCAQEA0Y3r",
+    );
   });
 
   it("should maintain compatibility with single-line certificates", () => {
     const mockSignedXmlInstance = {
-      keyInfoProvider: null as any,
+      publicCert: null as any,
       loadSignature: jest.fn(),
       checkSignature: jest.fn().mockReturnValue(true),
-      validationErrors: [],
     };
-    (SignedXml as unknown as jest.Mock).mockReturnValueOnce(mockSignedXmlInstance);
+    (SignedXml as unknown as jest.Mock).mockReturnValueOnce(
+      mockSignedXmlInstance,
+    );
 
-    const result = validateSamlAssertion(mockXml, singleLineCert, "http://sp.example.com");
+    const result = validateSamlAssertion(
+      mockXml,
+      singleLineCert,
+      "http://sp.example.com",
+    );
 
     expect(result.nameId).toBe("user@example.com");
 
-    const keyInfo = mockSignedXmlInstance.keyInfoProvider.getKeyInfo();
-    expect(keyInfo).toContain(singleLineCert);
+    const keyString = mockSignedXmlInstance.publicCert.toString();
+    expect(keyString).toContain(singleLineCert);
   });
 
   it("should reject invalid/unmatching signatures", () => {
     const mockSignedXmlInstance = {
-      keyInfoProvider: null as any,
+      publicCert: null as any,
       loadSignature: jest.fn(),
       checkSignature: jest.fn().mockReturnValue(false),
-      validationErrors: ["Signature check returned false"],
     };
-    (SignedXml as unknown as jest.Mock).mockReturnValueOnce(mockSignedXmlInstance);
+    (SignedXml as unknown as jest.Mock).mockReturnValueOnce(
+      mockSignedXmlInstance,
+    );
 
     expect(() => {
       validateSamlAssertion(mockXml, singleLineCert, "http://sp.example.com");
-    }).toThrow("SAML Signature validation failed: Signature check returned false");
+    }).toThrow("SAML Signature validation failed");
+  });
+
+  it("should surface an error thrown during signature verification", () => {
+    const mockSignedXmlInstance = {
+      publicCert: null as any,
+      loadSignature: jest.fn(),
+      checkSignature: jest.fn().mockImplementation(() => {
+        throw new Error(
+          "invalid signature: the signature value dummy is incorrect",
+        );
+      }),
+    };
+    (SignedXml as unknown as jest.Mock).mockReturnValueOnce(
+      mockSignedXmlInstance,
+    );
+
+    expect(() => {
+      validateSamlAssertion(mockXml, singleLineCert, "http://sp.example.com");
+    }).toThrow(
+      "SAML Signature validation failed: invalid signature: the signature value dummy is incorrect",
+    );
   });
 });

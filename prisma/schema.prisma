@@ -135,6 +135,7 @@ model Venue {
   isClaimed           Boolean             @default(false)
   ownerId             String?
   hostMessage         String?
+  openingHours        String?
 
   @@index([latitude, longitude])
   @@index([category])
@@ -526,8 +527,21 @@ model Folder {
   members    FolderMember[]
   upvoteRefs FolderUpvote[]
   invites    FolderInvite[]
+  shortLinks ShortLink[]
 
   @@index([ownerId])
+}
+
+model ShortLink {
+  id        String    @id @default(cuid())
+  shortCode String    @unique
+  folderId  String
+  folder    Folder    @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([folderId])
+  @@index([shortCode])
 }
 
 model FolderVenue {

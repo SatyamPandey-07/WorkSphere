@@ -6,12 +6,7 @@ type SeatStatus = "green" | "yellow" | "red";
 
 // Music genre options for the quick-select dropdown (issue #2077)
 export type MusicGenre =
-  | "Lo-Fi"
-  | "Jazz"
-  | "Pop"
-  | "Classical"
-  | "None"
-  | "Loud";
+  "Lo-Fi" | "Jazz" | "Pop" | "Classical" | "None" | "Loud";
 
 const VALID_MUSIC_GENRES: readonly MusicGenre[] = [
   "Lo-Fi",
@@ -62,7 +57,7 @@ export default class WorkspaceServer implements Party.Server {
   private venueMusic = new Map<string, VenueMusicState>();
 
   private heartbeatInterval?: ReturnType<typeof setInterval>;
-  private connectionStates = new Map
+  private connectionStates = new Map<
     string,
     { lastPong: number; name?: string; currentVenueId?: string }
   >();

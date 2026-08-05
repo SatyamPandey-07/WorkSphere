@@ -9,7 +9,7 @@ import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 import { NotificationBell } from "@/components/NotificationBell";
-import StreakBadge from "@/components/Header/StreakBadge";
+import { StreakBadge } from "@/components/Header/StreakBadge";
 import { OfflineSyncProgressBar } from "@/components/OfflineSyncProgressBar";
 
 interface TopNavProps {

@@ -111,7 +111,7 @@
     "wabt": "^1.0.39"
   },
   "optionalDependencies": {
-    "@next/swc-linux-x64-gnu": "16.2.12",
+    "@next/swc-linux-x64-gnu": "16.3.0",
     "@next/swc-linux-x64-musl": "16.3.0",
     "@tailwindcss/oxide-linux-x64-gnu": "4.3.3",
     "@tailwindcss/oxide-linux-x64-musl": "4.3.3",

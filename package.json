@@ -90,7 +90,7 @@
     "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@types/three": "^0.185.1",
+    "@types/three": "^0.185.4",
     "@types/web-push": "^3.6.4",
     "@types/xml-crypto": "^1.4.2",
     "@webgpu/types": "^0.1.71",

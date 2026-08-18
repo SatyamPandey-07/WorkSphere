@@ -35,7 +35,14 @@ import { useKMeansClustering } from "@/hooks/useKMeansClustering";
 import { useSavedVenues } from "@/hooks/useSavedVenues";
 import { RecommendedBadge } from "@/components/RecommendedBadge";
 import { ClusterBadge } from "@/components/ClusterBadge";
-import { RefObject, useState, useEffect, useRef, useCallback, useMemo } from "react";
+import {
+  RefObject,
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { useSpeechSynthesis } from "@/hooks/useSpeechSynthesis";
@@ -47,6 +54,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ComparisonDrawer } from "@/components/ComparisonDrawer";
 import { ChatMessageSkeleton } from "@/components/ui/skeleton";
 import { ReadAloudButton } from "./ReadAloudButton";
+import { RecentlyViewedVenues } from "@/components/venues/RecentlyViewedVenues";
 import {
   VenueGrid,
   LayoutBoundary,
@@ -401,7 +409,9 @@ export function VenueChatCard({
             </button>
             <button
               onClick={() => onToggleFavorite(venue)}
-              aria-label={isFavorited ? "Remove from favorites" : "Save to favorites"}
+              aria-label={
+                isFavorited ? "Remove from favorites" : "Save to favorites"
+              }
               className={`p-1.5 rounded-lg border active:scale-[0.95] ${
                 enableTransition ? "transition-all duration-300" : ""
               } ${
@@ -654,7 +664,11 @@ export function VenueChatCard({
                       );
                       onToggleFavorite(venue);
                     }}
-                    aria-label={isFavorited ? "Remove from favorites" : "Save to favorites"}
+                    aria-label={
+                      isFavorited
+                        ? "Remove from favorites"
+                        : "Save to favorites"
+                    }
                     className={`flex-1 flex items-center justify-center gap-1 px-2 py-2 text-[10px] uppercase font-black tracking-tighter rounded-lg ${
                       enableTransition ? "transition-all duration-300" : ""
                     } ${
@@ -788,7 +802,10 @@ export function VenueListings({
     if (clusterRanked.length === 0) return rerankedResults;
 
     const clusterMap = new Map(
-      clusterRanked.map((v) => [v.id, { clusterScore: v.clusterScore, cluster: v.cluster }]),
+      clusterRanked.map((v) => [
+        v.id,
+        { clusterScore: v.clusterScore, cluster: v.cluster },
+      ]),
     );
 
     return rerankedResults.map((venue) => {
@@ -899,54 +916,55 @@ export function VenueListings({
     }
   };
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
-  if (!onRefresh || isRefreshing) return;
+    if (!onRefresh || isRefreshing) return;
 
-  const scrollContainer = containerRef.current?.closest(
-    ".overflow-y-auto",
-  ) as HTMLElement | null;
+    const scrollContainer = containerRef.current?.closest(
+      ".overflow-y-auto",
+    ) as HTMLElement | null;
 
-  if (scrollContainer?.scrollTop === 0) {
-    touchStartY.current = e.touches[0].clientY;
-  }
-};
+    if (scrollContainer?.scrollTop === 0) {
+      touchStartY.current = e.touches[0].clientY;
+    }
+  };
 
-const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
-  if (touchStartY.current === null || isRefreshing) return;
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (touchStartY.current === null || isRefreshing) return;
 
-  const distance = e.touches[0].clientY - touchStartY.current;
+    const distance = e.touches[0].clientY - touchStartY.current;
 
-  if (distance > 0) {
-    setPullDistance(Math.min(distance * 0.5, MAX_PULL_DISTANCE));
-  }
-};
+    if (distance > 0) {
+      setPullDistance(Math.min(distance * 0.5, MAX_PULL_DISTANCE));
+    }
+  };
 
-const handleTouchEnd = async () => {
-  if (touchStartY.current === null) return;
+  const handleTouchEnd = async () => {
+    if (touchStartY.current === null) return;
 
-  const shouldRefresh = pullDistance >= PULL_THRESHOLD;
+    const shouldRefresh = pullDistance >= PULL_THRESHOLD;
 
-  touchStartY.current = null;
-  setPullDistance(0);
+    touchStartY.current = null;
+    setPullDistance(0);
 
-  if (!shouldRefresh || !onRefresh || isRefreshing) return;
+    if (!shouldRefresh || !onRefresh || isRefreshing) return;
 
-  setIsRefreshing(true);
+    setIsRefreshing(true);
 
-  try {
-    await onRefresh();
-  } finally {
-    setIsRefreshing(false);
-  }
-};
+    try {
+      await onRefresh();
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
   return (
-  <div
-    className="space-y-3 pl-2"
-    ref={containerRef}
-    onTouchStart={handleTouchStart}
-    onTouchMove={handleTouchMove}
-    onTouchEnd={handleTouchEnd}
-  >
-    {(pullDistance > 0 || isRefreshing) && (
+    <div
+      className="space-y-3 pl-2"
+      ref={containerRef}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      <RecentlyViewedVenues />
+      {(pullDistance > 0 || isRefreshing) && (
         <div
           className="flex items-center justify-center overflow-hidden transition-all duration-200"
           style={{

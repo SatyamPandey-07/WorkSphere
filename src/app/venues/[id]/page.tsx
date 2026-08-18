@@ -10,6 +10,7 @@ import { isPremiumVenue } from "@/lib/zkp/membership";
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
 import { NoiseForecastChart } from "@/components/noise/NoiseForecastChart";
 import { SeatingForecastChart } from "@/components/venue/SeatingForecastChart";
+import { RecentlyViewedTracker } from "@/components/venues/RecentlyViewedTracker";
 
 import { CollaborativeNotes } from "@/components/bookings/CollaborativeNotes"; // <-- 1. Imported your new component here!
 
@@ -94,6 +95,15 @@ export default async function VenuePage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 flex flex-col font-sans">
+      <RecentlyViewedTracker
+        venue={{
+          id: venue.id,
+          name: venue.name,
+          address: venue.address,
+          category: venue.category,
+          imageUrl: venue.imageUrl,
+        }}
+      />
       <TopNav hideAuth />
       <main className="flex-grow flex items-center justify-center p-4">
         <div className="max-w-2xl w-full bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in fade-in slide-in-from-bottom-4 duration-500">

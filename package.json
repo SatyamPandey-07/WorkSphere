@@ -87,7 +87,7 @@
     "@types/node": "^26",
     "@types/nodemailer": "^8.0.1",
     "@types/pdfkit": "^0.17.5",
-    "@types/pg": "^8.21.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.185.4",

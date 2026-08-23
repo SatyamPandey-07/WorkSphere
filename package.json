@@ -31,7 +31,7 @@
     "class-variance-authority": "^0.7.1",
     "cloudinary": "^2.10.1",
     "clsx": "^2.1.1",
-    "fast-xml-parser": "^5.10.1",
+    "fast-xml-parser": "^5.11.0",
     "framer-motion": "^13.1.0",
     "groq-sdk": "^1.5.0",
     "heic2any": "^0.0.4",

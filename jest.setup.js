@@ -45,30 +45,43 @@ if (typeof global.MessageChannel === "undefined") {
   global.MessageChannel = MessageChannel;
   global.MessagePort = MessagePort;
 }
-/* eslint-disable @typescript-eslint/no-require-imports */
-const {
-  Request: UndiciRequest,
-  Response: UndiciResponse,
-  Headers: UndiciHeaders,
-  FormData: UndiciFormData,
-  File: UndiciFile,
-} = require("undici");
-/* eslint-enable @typescript-eslint/no-require-imports */
+// Node 18+ already provides Request/Response/Headers/FormData/File as
+// globals (backed by its own bundled fetch implementation), so this is only
+// reached on a runtime that predates them. Requiring the standalone `undici`
+// package unconditionally breaks on Node versions older than it supports
+// (it needs >=22.19) even though its exports are never actually used there.
+if (
+  typeof global.Request === "undefined" ||
+  typeof global.Response === "undefined" ||
+  typeof global.Headers === "undefined" ||
+  typeof global.FormData === "undefined" ||
+  typeof global.File === "undefined"
+) {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const {
+    Request: UndiciRequest,
+    Response: UndiciResponse,
+    Headers: UndiciHeaders,
+    FormData: UndiciFormData,
+    File: UndiciFile,
+  } = require("undici");
+  /* eslint-enable @typescript-eslint/no-require-imports */
 
-if (typeof global.Request === "undefined") {
-  global.Request = UndiciRequest;
-}
-if (typeof global.Response === "undefined") {
-  global.Response = UndiciResponse;
-}
-if (typeof global.Headers === "undefined") {
-  global.Headers = UndiciHeaders;
-}
-if (typeof global.FormData === "undefined") {
-  global.FormData = UndiciFormData;
-}
-if (typeof global.File === "undefined") {
-  global.File = UndiciFile;
+  if (typeof global.Request === "undefined") {
+    global.Request = UndiciRequest;
+  }
+  if (typeof global.Response === "undefined") {
+    global.Response = UndiciResponse;
+  }
+  if (typeof global.Headers === "undefined") {
+    global.Headers = UndiciHeaders;
+  }
+  if (typeof global.FormData === "undefined") {
+    global.FormData = UndiciFormData;
+  }
+  if (typeof global.File === "undefined") {
+    global.File = UndiciFile;
+  }
 }
 if (typeof global.crypto === "undefined" || !global.crypto.subtle) {
   Object.defineProperty(global, "crypto", {

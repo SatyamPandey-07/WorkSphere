@@ -8,7 +8,6 @@ import { proveMembership, verifyMembershipProof } from "@/lib/zkp/verify";
 import {
   hashPair,
   buildMerkleTree,
-  verifyMerkleProof,
   isCommitmentRevokedDirectly,
 } from "@/lib/zkp/revocation";
 
@@ -112,15 +111,12 @@ describe("revocation", () => {
 
   it("buildMerkleTree and verifyMerkleProof round-trip", () => {
     const leaves = ["a", "b", "c", "d"];
-    const { root, tree } = buildMerkleTree(leaves);
+    const { tree } = buildMerkleTree(leaves);
     expect(tree.length).toBeGreaterThan(1);
 
     // Verify each leaf
     for (const leaf of leaves) {
-      const leafHash = crypto
-        .createHash("sha256")
-        .update(leaf)
-        .digest("hex");
+      const leafHash = crypto.createHash("sha256").update(leaf).digest("hex");
       // Find the leaf's index to build a proof
       const idx = tree[0].indexOf(leafHash);
       expect(idx).toBeGreaterThanOrEqual(0);

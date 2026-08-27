@@ -22,7 +22,7 @@ import {
 } from "@/lib/openingHours";
 
 function VenueAdminContent() {
-  const { user, isLoaded, isSignedIn } = useUser();
+  const { isLoaded, isSignedIn } = useUser();
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -158,7 +158,7 @@ function VenueAdminContent() {
       } else {
         setErrorMsg(data.error || "Failed to claim business.");
       }
-    } catch (err) {
+    } catch {
       setErrorMsg("An error occurred during claiming.");
     } finally {
       setClaiming(false);
@@ -183,7 +183,9 @@ function VenueAdminContent() {
           const openMin = openH * 60 + openM;
           const closeMin = closeH * 60 + closeM;
           if (openMin >= closeMin) {
-            setErrorMsg(`On ${day.charAt(0).toUpperCase() + day.slice(1)}, the opening time must be before the closing time.`);
+            setErrorMsg(
+              `On ${day.charAt(0).toUpperCase() + day.slice(1)}, the opening time must be before the closing time.`,
+            );
             setUpdating(false);
             return;
           }
@@ -212,12 +214,12 @@ function VenueAdminContent() {
         setEditHours(finalHours);
         // Refresh list
         setManagedVenues((prev) =>
-          prev.map((v) => (v.id === data.venue.id ? data.venue : v))
+          prev.map((v) => (v.id === data.venue.id ? data.venue : v)),
         );
       } else {
         setErrorMsg(data.error || "Failed to update venue.");
       }
-    } catch (err) {
+    } catch {
       setErrorMsg("An error occurred during update.");
     } finally {
       setUpdating(false);
@@ -240,9 +242,12 @@ function VenueAdminContent() {
           <div className="w-16 h-16 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-400">
             <Lock className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-black mb-2 tracking-tight">Access Restricted</h1>
+          <h1 className="text-2xl font-black mb-2 tracking-tight">
+            Access Restricted
+          </h1>
           <p className="text-sm text-zinc-400 mb-8 leading-relaxed">
-            Please sign in to your owner account to claim businesses or manage your listings.
+            Please sign in to your owner account to claim businesses or manage
+            your listings.
           </p>
           <SignInButton mode="modal">
             <button className="w-full py-3.5 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-bold text-sm rounded-xl shadow-lg transition-all active:scale-[0.999]">
@@ -308,7 +313,9 @@ function VenueAdminContent() {
                 </p>
 
                 <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 mb-6">
-                  <h3 className="font-bold text-sm text-white mb-1">{claimVenue.name}</h3>
+                  <h3 className="font-bold text-sm text-white mb-1">
+                    {claimVenue.name}
+                  </h3>
                   <p className="text-xs text-zinc-400 flex items-start gap-1.5 leading-tight">
                     <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-0.5" />
                     <span>{claimVenue.address || "Address not available"}</span>
@@ -348,7 +355,8 @@ function VenueAdminContent() {
                 <div className="text-center py-12 text-zinc-500">
                   <p className="text-sm mb-2">No venues claimed yet.</p>
                   <p className="text-xs max-w-xs mx-auto leading-relaxed">
-                    To claim a business, search for it on WorkSphere and click "Claim Listing" from the info page.
+                    To claim a business, search for it on WorkSphere and click
+                    "Claim Listing" from the info page.
                   </p>
                 </div>
               ) : (
@@ -373,7 +381,9 @@ function VenueAdminContent() {
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <span className="font-bold text-sm text-white truncate">{venue.name}</span>
+                        <span className="font-bold text-sm text-white truncate">
+                          {venue.name}
+                        </span>
                         <BadgeCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                       </div>
                       <p className="text-xs text-zinc-400 truncate flex items-center gap-1">
@@ -397,7 +407,9 @@ function VenueAdminContent() {
                       <span>Edit {selectedVenue.name}</span>
                       <BadgeCheck className="w-5 h-5 text-emerald-400" />
                     </h2>
-                    <p className="text-xs text-zinc-400">Modify details for your verified listing.</p>
+                    <p className="text-xs text-zinc-400">
+                      Modify details for your verified listing.
+                    </p>
                   </div>
                 </div>
 
@@ -416,7 +428,8 @@ function VenueAdminContent() {
                       className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50"
                     />
                     <p className="text-[10px] text-zinc-500">
-                      Promote special offers, share updates, or provide useful tips to remote workers.
+                      Promote special offers, share updates, or provide useful
+                      tips to remote workers.
                     </p>
                   </div>
 
@@ -458,7 +471,9 @@ function VenueAdminContent() {
                         <input
                           type="checkbox"
                           checked={useStructuredHours}
-                          onChange={(e) => setUseStructuredHours(e.target.checked)}
+                          onChange={(e) =>
+                            setUseStructuredHours(e.target.checked)
+                          }
                           className="rounded border-zinc-800 text-blue-500 focus:ring-blue-500"
                         />
                         <span>Use Weekly Scheduler</span>
@@ -478,19 +493,27 @@ function VenueAdminContent() {
                         {/* Timezone Selector */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-850 pb-4">
                           <div className="space-y-0.5">
-                            <span className="text-xs font-bold text-zinc-300">Venue Timezone</span>
-                            <p className="text-[10px] text-zinc-500">Calculates local opens based on regional offsets</p>
+                            <span className="text-xs font-bold text-zinc-300">
+                              Venue Timezone
+                            </span>
+                            <p className="text-[10px] text-zinc-500">
+                              Calculates local opens based on regional offsets
+                            </p>
                           </div>
                           <select
                             value={structuredHours.timezone}
-                            onChange={(e) => setStructuredHours({
-                              ...structuredHours,
-                              timezone: e.target.value,
-                            })}
+                            onChange={(e) =>
+                              setStructuredHours({
+                                ...structuredHours,
+                                timezone: e.target.value,
+                              })
+                            }
                             className="bg-zinc-900 border border-zinc-800 text-xs text-white rounded-xl px-3 py-2 focus:outline-none focus:border-zinc-700 min-w-[200px]"
                           >
                             {DEFAULT_TIMEZONES.map((tz) => (
-                              <option key={tz} value={tz}>{tz}</option>
+                              <option key={tz} value={tz}>
+                                {tz}
+                              </option>
                             ))}
                           </select>
                         </div>
@@ -498,20 +521,37 @@ function VenueAdminContent() {
                         {/* Days Grid */}
                         <div className="space-y-3 pt-2">
                           {DAYS_OF_WEEK.map((day) => {
-                            const period = structuredHours.periods[day] || { open: "09:00", close: "17:00", closed: false };
+                            const period = structuredHours.periods[day] || {
+                              open: "09:00",
+                              close: "17:00",
+                              closed: false,
+                            };
                             return (
-                              <div key={day} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 border-b border-zinc-900 last:border-0">
-                                <span className="text-xs font-bold capitalize text-zinc-300 w-24">{day}</span>
-                                
+                              <div
+                                key={day}
+                                className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-2 border-b border-zinc-900 last:border-0"
+                              >
+                                <span className="text-xs font-bold capitalize text-zinc-300 w-24">
+                                  {day}
+                                </span>
+
                                 <div className="flex items-center gap-4 flex-1 justify-end">
                                   <label className="flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer">
                                     <input
                                       type="checkbox"
                                       checked={period.closed}
                                       onChange={(e) => {
-                                        const newPeriods = { ...structuredHours.periods };
-                                        newPeriods[day] = { ...period, closed: e.target.checked };
-                                        setStructuredHours({ ...structuredHours, periods: newPeriods });
+                                        const newPeriods = {
+                                          ...structuredHours.periods,
+                                        };
+                                        newPeriods[day] = {
+                                          ...period,
+                                          closed: e.target.checked,
+                                        };
+                                        setStructuredHours({
+                                          ...structuredHours,
+                                          periods: newPeriods,
+                                        });
                                       }}
                                       className="rounded border-zinc-800 text-blue-500 focus:ring-blue-500"
                                     />
@@ -524,20 +564,38 @@ function VenueAdminContent() {
                                         type="time"
                                         value={period.open}
                                         onChange={(e) => {
-                                          const newPeriods = { ...structuredHours.periods };
-                                          newPeriods[day] = { ...period, open: e.target.value };
-                                          setStructuredHours({ ...structuredHours, periods: newPeriods });
+                                          const newPeriods = {
+                                            ...structuredHours.periods,
+                                          };
+                                          newPeriods[day] = {
+                                            ...period,
+                                            open: e.target.value,
+                                          };
+                                          setStructuredHours({
+                                            ...structuredHours,
+                                            periods: newPeriods,
+                                          });
                                         }}
                                         className="bg-zinc-900 border border-zinc-800 text-xs text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-zinc-750"
                                       />
-                                      <span className="text-zinc-600 text-xs font-semibold">to</span>
+                                      <span className="text-zinc-600 text-xs font-semibold">
+                                        to
+                                      </span>
                                       <input
                                         type="time"
                                         value={period.close}
                                         onChange={(e) => {
-                                          const newPeriods = { ...structuredHours.periods };
-                                          newPeriods[day] = { ...period, close: e.target.value };
-                                          setStructuredHours({ ...structuredHours, periods: newPeriods });
+                                          const newPeriods = {
+                                            ...structuredHours.periods,
+                                          };
+                                          newPeriods[day] = {
+                                            ...period,
+                                            close: e.target.value,
+                                          };
+                                          setStructuredHours({
+                                            ...structuredHours,
+                                            periods: newPeriods,
+                                          });
                                         }}
                                         className="bg-zinc-900 border border-zinc-800 text-xs text-white rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-zinc-750"
                                       />
@@ -583,9 +641,12 @@ function VenueAdminContent() {
             ) : (
               <div className="bg-zinc-900/40 border-2 border-dashed border-zinc-800 rounded-3xl p-12 text-center text-zinc-500 flex flex-col items-center justify-center min-h-[400px]">
                 <Building2 className="w-12 h-12 text-zinc-700 mb-4" />
-                <h3 className="text-md font-bold text-zinc-400 mb-1">No business selected</h3>
+                <h3 className="text-md font-bold text-zinc-400 mb-1">
+                  No business selected
+                </h3>
                 <p className="text-xs max-w-sm leading-relaxed">
-                  Select a business from your claimed list or confirm ownership to edit listing features.
+                  Select a business from your claimed list or confirm ownership
+                  to edit listing features.
                 </p>
               </div>
             )}
@@ -598,12 +659,14 @@ function VenueAdminContent() {
 
 export default function VenueAdminPage() {
   return (
-    <Suspense fallback={
-      <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-2" />
-        <p className="text-sm text-zinc-400">Loading portal...</p>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex flex-col items-center justify-center min-h-screen bg-zinc-950 text-white">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-2" />
+          <p className="text-sm text-zinc-400">Loading portal...</p>
+        </div>
+      }
+    >
       <VenueAdminContent />
     </Suspense>
   );

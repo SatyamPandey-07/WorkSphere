@@ -48,10 +48,12 @@ export function PasskeySignInButton() {
       const resData = await verifyRes.json();
 
       if (resData.verified) {
+        // Hard navigation (not router.push) so the browser picks up the
+        // freshly issued session cookie before the next page renders.
         if (resData.signInUrl) {
           window.location.href = resData.signInUrl;
         } else {
-          // Redirect to homepage/dashboard on successful authentication
+          // eslint-disable-next-line @next/next/no-location-assign-relative-destination
           window.location.href = "/";
         }
       }

@@ -10,8 +10,10 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function OfflinePage() {
+  const router = useRouter();
   const [isRetrying, setIsRetrying] = useState(false);
   const [lastOnline, setLastOnline] = useState<string | null>(null);
 
@@ -41,8 +43,8 @@ export default function OfflinePage() {
     // Try to fetch to check connection
     try {
       await fetch("/api/location", { method: "HEAD" });
-      // If successful, reload the page
-      window.location.href = "/ai";
+      // If successful, navigate back
+      router.push("/ai");
     } catch {
       // Still offline
       setTimeout(() => setIsRetrying(false), 1500);

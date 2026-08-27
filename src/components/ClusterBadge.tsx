@@ -6,7 +6,7 @@ interface ClusterBadgeProps {
   score?: number;
 }
 
-export function ClusterBadge({ cluster, score }: ClusterBadgeProps) {
+export function ClusterBadge({ score }: ClusterBadgeProps) {
   const label =
     score != null && score > 0.9
       ? "Top Match"

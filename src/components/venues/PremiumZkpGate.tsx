@@ -1,11 +1,8 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { ShieldCheck, Loader2, CheckCircle2, Copy, Check } from "lucide-react";
-import {
-  provePremiumAccess,
-  type ZkpProgressStage,
-} from "@/lib/zkp/client";
+import { ShieldCheck, Loader2, Copy, Check } from "lucide-react";
+import { provePremiumAccess, type ZkpProgressStage } from "@/lib/zkp/client";
 
 type Props = {
   venueId: string;
@@ -46,7 +43,9 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
       if (result.allowed) {
         setStage("done");
         setAccessToken(result.accessToken ?? null);
-        setMsg(`Verified in ${result.proveMs}ms. Access granted to ${venueName}.`);
+        setMsg(
+          `Verified in ${result.proveMs}ms. Access granted to ${venueName}.`,
+        );
         setToken("");
       } else {
         setStage("idle");

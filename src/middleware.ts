@@ -8,17 +8,34 @@ import {
   verifyCsrfToken,
 } from "./lib/csrf";
 
+function getClerkFrontendApiHost(): string | null {
+  const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const match = key?.match(/^pk_(?:test|live)_(.+)$/);
+  if (!match) return null;
+  try {
+    return Buffer.from(match[1], "base64").toString("utf-8").replace(/\$$/, "");
+  } catch {
+    return null;
+  }
+}
+
 function generateCsp(nonce: string): string {
   const isDev = process.env.NODE_ENV === "development";
+  const clerkFrontendApi = getClerkFrontendApiHost();
+  const clerkHosts = [
+    "https://*.clerk.com",
+    "https://*.clerk.accounts.dev",
+    ...(clerkFrontendApi ? [`https://${clerkFrontendApi}`] : []),
+  ].join(" ");
   return [
     `base-uri 'self'`,
     `default-src 'self'`,
-    `script-src 'self' 'nonce-${nonce}' https://cdn.clerk.com ${isDev ? "'unsafe-eval' https://*.clerk.accounts.dev" : ""}`,
+    `script-src 'self' 'nonce-${nonce}' https://cdn.clerk.com ${clerkFrontendApi ? `https://${clerkFrontendApi}` : ""} ${isDev ? "'unsafe-eval' https://*.clerk.accounts.dev" : ""}`,
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `font-src 'self' https://fonts.gstatic.com data:`,
     `img-src 'self' https://images.unsplash.com https://*.unsplash.com https://res.cloudinary.com data: blob:`,
-    `connect-src 'self' https://*.clerk.com https://*.clerk.accounts.dev https://api.groq.com https://router.project-osrm.org wss://*.partykit.dev`,
-    `frame-src 'self' https://*.clerk.com https://*.clerk.accounts.dev`,
+    `connect-src 'self' ${clerkHosts} https://api.groq.com https://router.project-osrm.org wss://*.partykit.dev`,
+    `frame-src 'self' ${clerkHosts}`,
     `worker-src 'self' blob:`,
     `object-src 'none'`,
   ].join("; ");

@@ -13,19 +13,11 @@ function Tooltip({
 }) {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<"top" | "bottom">("top");
+  const [isTouchDismissed, setIsTouchDismissed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const [isTouchDevice, setIsTouchDevice] = React.useState(false);
-
-  React.useEffect(() => {
-    setIsTouchDevice("ontouchstart" in window);
-  }, []);
-
-  if (isTouchDevice) {
-    return <>{children}</>;
-  }
-
   const handleMouseEnter = () => {
+    if (isTouchDismissed) return;
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       if (rect.top < 50) {
@@ -39,10 +31,12 @@ function Tooltip({
 
   const handleMouseLeave = () => {
     setIsVisible(false);
+    setIsTouchDismissed(false);
   };
 
   const handleTouchStart = () => {
     setIsVisible(false);
+    setIsTouchDismissed(true);
   };
 
   return (

@@ -64,6 +64,7 @@ interface BookingModalProps {
   onClose: () => void;
   mode?: "booking" | "history";
   initialHistory?: Booking[];
+  initialStep?: "details" | "payment" | "processing" | "success" | "history";
 }
 
 export function BookingModal({
@@ -72,12 +73,13 @@ export function BookingModal({
   onClose,
   mode = "booking",
   initialHistory = [],
+  initialStep,
 }: BookingModalProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const retryAfter = useRateLimit("book");
   const [step, setStep] = useState<
     "details" | "payment" | "processing" | "success" | "history"
-  >(mode === "history" ? "history" : "details");
+  >(initialStep ?? (mode === "history" ? "history" : "details"));
   const getTodayString = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -162,13 +164,14 @@ export function BookingModal({
     let animationFrameId: number;
 
     if (step === "success") {
-      const respectsReducedMotion = window.matchMedia(
-        "(prefers-reduced-motion: reduce)",
-      ).matches;
+      const respectsReducedMotion =
+        typeof window !== "undefined" &&
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
       if (respectsReducedMotion) return;
 
-      const duration = 3 * 1000;
+      const duration = 2 * 1000;
       const end = Date.now() + duration;
 
       const frame = () => {

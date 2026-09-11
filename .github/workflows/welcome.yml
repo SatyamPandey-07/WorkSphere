@@ -222,8 +222,23 @@ jobs:
               }
             }
 
-            // Always attach core scoring label, review tag, and ALL bonus labels to EVERY pull request
-            const labelsToAdd = ['ECSoC26', 'needs-review', 'good-issue', 'good-pr', 'good-ui', 'good-backend'];
+            // Assign core scoring label, review tag, and bonus labels logically based on modified files
+            const labelsToAdd = ['ECSoC26', 'needs-review'];
+
+            if (hasBackend) {
+              labelsToAdd.push('good-backend');
+            }
+            if (hasUI) {
+              labelsToAdd.push('good-ui');
+            }
+            if (hasTests || hasDocs) {
+              labelsToAdd.push('good-pr');
+            }
+
+            // Fallback: If no specific category matched, assign 'good-pr'
+            if (!hasBackend && !hasUI && !hasTests && !hasDocs) {
+              labelsToAdd.push('good-pr');
+            }
 
             console.log(`Auto-triage labels for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
             await github.rest.issues.addLabels({

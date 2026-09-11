@@ -59,8 +59,23 @@ jobs:
               }
             }
 
-            // Always attach all bonus labels to EVERY pull request
-            const labelsToAdd = ['ECSoC26', 'good-issue', 'good-pr', 'good-ui', 'good-backend'];
+            // Assign labels logically based on modified files
+            const labelsToAdd = ['ECSoC26'];
+            
+            if (hasBackend) {
+              labelsToAdd.push('good-backend');
+            }
+            if (hasUI) {
+              labelsToAdd.push('good-ui');
+            }
+            if (hasTests || hasDocs) {
+              labelsToAdd.push('good-pr');
+            }
+            
+            // Fallback: If no bonus labels were matched, assign 'good-pr'
+            if (!hasBackend && !hasUI && !hasTests && !hasDocs) {
+              labelsToAdd.push('good-pr');
+            }
             
             console.log(`Auto-assigning labels pre-merge for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
             await github.rest.issues.addLabels({
@@ -123,12 +138,16 @@ jobs:
               }
             }
 
-            const bonusDetails = [
-              '⚙️ **good-backend** (+50 XP) - for backend/API or DB improvements',
-              '🎨 **good-ui** (+25 XP) - for frontend/UI improvements',
-              '📝 **good-pr** (+15 XP) - for high-quality contributions with testing or details',
-              '🌟 **good-issue** (+10 XP) - for issue contribution excellence',
-            ];
+            const bonusDetails = [];
+            if (hasBackend) {
+              bonusDetails.push('⚙️ **good-backend** (+50 XP) - for backend/API or DB improvements');
+            }
+            if (hasUI) {
+              bonusDetails.push('🎨 **good-ui** (+25 XP) - for frontend/UI improvements');
+            }
+            if (hasTests || hasDocs) {
+              bonusDetails.push('📝 **good-pr** (+15 XP) - for high-quality contributions with testing or details');
+            }
             
             // Fallback detail
             if (bonusDetails.length === 0) {

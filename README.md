@@ -32,14 +32,13 @@
 >
 > You will have **6 days** to complete it! 🚀
 
-### 🚀 Contributors (70+ Active Rockstars)
+### 🚀 Contributors (76 Active Rockstars)
 
-Thanks to all **70+ contributors** building WorkSphere! This grid pulls live from GitHub, so it never goes stale.
+Thanks to all **76 contributors** building WorkSphere! This grid pulls live from GitHub, so it never goes stale.
 
 <a href="https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100" alt="WorkSphere contributors" />
 </a>
-
 
 ## 📋 Table of Contents
 

@@ -125,125 +125,135 @@ jobs:
             });
 
       - name: Welcome PR Contributor & Triage PR
-        if: github.event_name == 'pull_request_target'
+        if: github.event_name == 'pull_request_target' && github.actor != 'dependabot[bot]'
         uses: actions/github-script@v9
         with:
           script: |
-            const prNumber = context.payload.pull_request.number;
-            const prAuthor = context.payload.pull_request.user.login;
-            const association = context.payload.pull_request.author_association;
-            const isFirstTime = association === 'FIRST_TIME_CONTRIBUTOR' || association === 'FIRST_TIMER';
-            
-            // 1. Post PR Welcome comment (only when first opened)
-            if (context.payload.action === 'opened') {
-              let welcomePrefix = '';
-              if (isFirstTime) {
-                welcomePrefix = `🎉 Welcome to WorkSphere!\nThanks for making your first contribution. Need help? Feel free to ask.\n\n`;
-              }
-              const prComment = welcomePrefix + `🎉 Thank you for contributing to WorkSphere!
-
-              Please ensure:
-
-              ✅ Tests pass
-              ✅ No secrets committed
-              ✅ Documentation updated
-
-              ---
-              💡 **Connect & Support:**
-              - ⭐ Star the [WorkSphere repository](https://github.com/SatyamPandey-07/WorkSphere) to show your support!
-              - 👤 Follow the maintainer on GitHub: [@SatyamPandey-07](https://github.com/SatyamPandey-07)
-              - 💼 Connect on LinkedIn: [Satyam Pandey](https://www.linkedin.com/in/satyam-pandey-0b246432a/)
-              - 💬 Have questions or queries? Join our [WhatsApp Group](https://chat.whatsapp.com/D3pfq0vSmwd0iR0dFNjj43) or contact via phone at \`+91 9820866720\`.`;
+            try {
+              const prNumber = context.payload.pull_request.number;
+              const prAuthor = context.payload.pull_request.user.login;
+              const association = context.payload.pull_request.author_association;
+              const isFirstTime = association === 'FIRST_TIME_CONTRIBUTOR' || association === 'FIRST_TIMER';
               
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                body: prComment
-              });
+              // Skip automated bots
+              if (context.payload.pull_request?.user?.type === 'Bot' || prAuthor === 'dependabot[bot]') {
+                console.log(`Skipping bot PR #${prNumber} by ${prAuthor}`);
+                return;
+              }
+              
+              // 1. Post PR Welcome comment (only when first opened)
+              if (context.payload.action === 'opened') {
+                let welcomePrefix = '';
+                if (isFirstTime) {
+                  welcomePrefix = `🎉 Welcome to WorkSphere!\nThanks for making your first contribution. Need help? Feel free to ask.\n\n`;
+                }
+                const prComment = welcomePrefix + `🎉 Thank you for contributing to WorkSphere!
 
-              // Assign PR author as assignee
-              await github.rest.issues.addAssignees({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                assignees: [prAuthor]
-              });
+                Please ensure:
 
-              // Request review from maintainer
-              if (prAuthor !== 'SatyamPandey-07') {
-                try {
-                  await github.rest.pulls.requestReviewers({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    pull_number: prNumber,
-                    reviewers: ['SatyamPandey-07']
-                  });
-                } catch (error) {
-                  console.log(`Failed to request review: ${error.message}`);
+                ✅ Tests pass
+                ✅ No secrets committed
+                ✅ Documentation updated
+
+                ---
+                💡 **Connect & Support:**
+                - ⭐ Star the [WorkSphere repository](https://github.com/SatyamPandey-07/WorkSphere) to show your support!
+                - 👤 Follow the maintainer on GitHub: [@SatyamPandey-07](https://github.com/SatyamPandey-07)
+                - 💼 Connect on LinkedIn: [Satyam Pandey](https://www.linkedin.com/in/satyam-pandey-0b246432a/)
+                - 💬 Have questions or queries? Join our [WhatsApp Group](https://chat.whatsapp.com/D3pfq0vSmwd0iR0dFNjj43) or contact via phone at \`+91 9820866720\`.`;
+                
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  body: prComment
+                });
+
+                // Assign PR author as assignee
+                await github.rest.issues.addAssignees({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: prNumber,
+                  assignees: [prAuthor]
+                });
+
+                // Request review from maintainer
+                if (prAuthor !== 'SatyamPandey-07') {
+                  try {
+                    await github.rest.pulls.requestReviewers({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      pull_number: prNumber,
+                      reviewers: ['SatyamPandey-07']
+                    });
+                  } catch (error) {
+                    console.log(`Failed to request review: ${error.message}`);
+                  }
                 }
               }
-            }
 
-            // 2. Fetch list of modified files in the PR to assign labels dynamically
-            const { data: files } = await github.rest.pulls.listFiles({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber,
-            });
+              // 2. Fetch list of modified files in the PR to assign labels dynamically
+              const { data: files } = await github.rest.pulls.listFiles({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber,
+              });
 
-            let hasUI = false;
-            let hasBackend = false;
-            let hasTests = false;
-            let hasDocs = false;
+              let hasUI = false;
+              let hasBackend = false;
+              let hasTests = false;
+              let hasDocs = false;
 
-            for (const file of files) {
-              const filename = file.filename;
-              if (filename.includes('__tests__/') || filename.endsWith('.test.ts') || filename.endsWith('.test.tsx')) {
-                hasTests = true;
-              } else if (
-                filename.startsWith('src/components/') || 
-                (filename.startsWith('src/app/') && !filename.includes('/api/') && (filename.endsWith('.tsx') || filename.endsWith('.css')))
-              ) {
-                hasUI = true;
-              } else if (
-                filename.startsWith('src/app/api/') || 
-                filename.startsWith('prisma/') || 
-                filename.startsWith('src/lib/') || 
-                filename === 'src/middleware.ts'
-              ) {
-                hasBackend = true;
-              } else if (
-                filename === 'README.md' ||
-                filename.startsWith('docs/') ||
-                filename.endsWith('.md')
-              ) {
-                hasDocs = true;
+              for (const file of files) {
+                const filename = file.filename;
+                if (filename.includes('__tests__/') || filename.endsWith('.test.ts') || filename.endsWith('.test.tsx')) {
+                  hasTests = true;
+                } else if (
+                  filename.startsWith('src/components/') || 
+                  (filename.startsWith('src/app/') && !filename.includes('/api/') && (filename.endsWith('.tsx') || filename.endsWith('.css')))
+                ) {
+                  hasUI = true;
+                } else if (
+                  filename.startsWith('src/app/api/') || 
+                  filename.startsWith('prisma/') || 
+                  filename.startsWith('src/lib/') || 
+                  filename === 'src/middleware.ts'
+                ) {
+                  hasBackend = true;
+                } else if (
+                  filename === 'README.md' ||
+                  filename.startsWith('docs/') ||
+                  filename.endsWith('.md')
+                ) {
+                  hasDocs = true;
+                }
               }
-            }
 
-            // Assign core scoring label, review tag, and bonus labels logically based on modified files
-            const labelsToAdd = ['ECSoC26', 'needs-review'];
+              // Assign core scoring label, review tag, and bonus labels logically based on modified files
+              const labelsToAdd = ['ECSoC26', 'needs-review'];
 
-            if (hasBackend) {
-              labelsToAdd.push('good-backend');
-            }
-            if (hasUI) {
-              labelsToAdd.push('good-ui');
-            }
-            if (hasTests || hasDocs) {
-              labelsToAdd.push('good-pr');
-            }
+              if (hasBackend) {
+                labelsToAdd.push('good-backend');
+              }
+              if (hasUI) {
+                labelsToAdd.push('good-ui');
+              }
+              if (hasTests || hasDocs) {
+                labelsToAdd.push('good-pr');
+              }
 
-            // Fallback: If no specific category matched, assign 'good-pr'
-            if (!hasBackend && !hasUI && !hasTests && !hasDocs) {
-              labelsToAdd.push('good-pr');
-            }
+              // Fallback: If no specific category matched, assign 'good-pr'
+              if (!hasBackend && !hasUI && !hasTests && !hasDocs) {
+                labelsToAdd.push('good-pr');
+              }
 
-            console.log(`Auto-triage labels for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              labels: labelsToAdd
-            });
+              console.log(`Auto-triage labels for PR #${prNumber}: ${labelsToAdd.join(', ')}`);
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                labels: labelsToAdd
+              });
+            } catch (err) {
+              console.warn('PR triage warning (gracefully caught):', err.message);
+            }

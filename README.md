@@ -675,6 +675,18 @@ To get started quickly:
 
 ---
 
+## 👥 Contributors (76)
+
+Thanks to all the amazing contributors who have contributed to WorkSphere!
+
+<p align="center">
+  <a href="https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors">
+    <img src=".github/contributors.svg" alt="WorkSphere Contributors" width="812" />
+  </a>
+</p>
+
+---
+
 ## 📄 License
 
 This project is licensed under the MIT License.

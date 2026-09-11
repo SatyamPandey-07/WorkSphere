@@ -34,11 +34,13 @@
 
 ### 🚀 Contributors (76 Active Rockstars)
 
-Thanks to all **76 contributors** building WorkSphere! This grid pulls live from GitHub, so it never goes stale.
+Thanks to all **76 contributors** building WorkSphere!
 
-<a href="https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere&max=100" alt="WorkSphere contributors" />
-</a>
+<p align="center">
+  <a href="https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors">
+    <img src=".github/contributors.svg" alt="WorkSphere Contributors" width="812" />
+  </a>
+</p>
 
 ## 📋 Table of Contents
 
@@ -672,18 +674,6 @@ To get started quickly:
 3. Make sure all pre-commit checks pass (`npm run lint`, `npx tsc --noEmit`, and `npm test`).
 4. Commit your changes (`git commit -m 'feat: Add amazing feature'`) and push to your branch.
 5. Open a Pull Request against the `main` branch.
-
----
-
-## 👥 Contributors (76)
-
-Thanks to all the amazing contributors who have contributed to WorkSphere!
-
-<p align="center">
-  <a href="https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors">
-    <img src=".github/contributors.svg" alt="WorkSphere Contributors" width="812" />
-  </a>
-</p>
 
 ---
 

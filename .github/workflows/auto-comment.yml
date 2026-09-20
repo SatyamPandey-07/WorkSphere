@@ -74,7 +74,7 @@ jobs:
               }
 
               // Assign labels logically based on modified files
-              const labelsToAdd = ["OSCI'26", 'ECSoC26'];
+              const labelsToAdd = ["OSCI'26"];
               
               if (hasBackend) {
                 labelsToAdd.push('good-backend');
@@ -180,7 +180,7 @@ jobs:
                 bonusDetails.push('📝 **good-pr** (+15 XP) - baseline contribution bonus');
               }
 
-              let bonusSection = `\n\n### 🏆 Bonus XP Awarded!\nBased on our automated review, we have applied the following bonus labels to your PR:\n${bonusDetails.map(d => `- ${d}`).join('\n')}\n\nThese will be picked up by the ECSOC Sentinel scoring system shortly!`;
+              let bonusSection = `\n\n### 🏆 Bonus XP Awarded!\nBased on our automated review, we have applied the following bonus labels to your PR:\n${bonusDetails.map(d => `- ${d}`).join('\n')}\n\nThese will be picked up by the scoring system shortly!`;
 
               const thankComment = `🎉 Congratulations!
 

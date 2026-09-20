@@ -1,4 +1,4 @@
-name: Bulk Triage Issues - Add OSCI'26 & Unassign
+name: Bulk Triage Issues - Add OSCI'26, Remove ECSoC & Unassign
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
   triage-open-issues:
     runs-on: ubuntu-latest
     steps:
-      - name: Add OSCI'26 label and unassign all open issues
+      - name: Add OSCI'26 label, remove ECSoC labels, and unassign all open issues
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -69,6 +69,7 @@ jobs:
 
             let labeledCount = 0;
             let unassignedCount = 0;
+            let ecsocRemovedCount = 0;
             let errorCount = 0;
 
             const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -76,13 +77,15 @@ jobs:
             for (let i = 0; i < openIssues.length; i++) {
               const issue = openIssues[i];
               const issueNumber = issue.number;
-              const hasLabel = issue.labels.some(l => (typeof l === 'string' ? l : l.name) === targetLabel);
+              const issueLabels = issue.labels.map(l => (typeof l === 'string' ? l : l.name));
+              const hasTargetLabel = issueLabels.includes(targetLabel);
+              const ecsocLabels = issueLabels.filter(l => l.toLowerCase().includes('ecsoc') || l.toLowerCase().includes('ecwoc'));
               const assignees = (issue.assignees || []).map(a => a.login);
 
-              console.log(`[${i + 1}/${openIssues.length}] Processing Issue #${issueNumber}: "${issue.title}"`);
+              console.log(`[${i + 1}/${openIssues.length}] Issue #${issueNumber}: "${issue.title}"`);
 
-              // Add label if missing
-              if (!hasLabel) {
+              // Add OSCI'26 label if missing
+              if (!hasTargetLabel) {
                 console.log(`  -> Adding label "${targetLabel}" to #${issueNumber}`);
                 if (!isDryRun) {
                   try {
@@ -101,7 +104,28 @@ jobs:
                   labeledCount++;
                 }
               } else {
-                console.log(`  -> Label "${targetLabel}" already present on #${issueNumber}`);
+                console.log(`  -> Label "${targetLabel}" already present.`);
+              }
+
+              // Remove ECSoC-related labels if present
+              for (const ecsocLabel of ecsocLabels) {
+                console.log(`  -> Removing label "${ecsocLabel}" from #${issueNumber}`);
+                if (!isDryRun) {
+                  try {
+                    await github.rest.issues.removeLabel({
+                      owner,
+                      repo,
+                      issue_number: issueNumber,
+                      name: ecsocLabel
+                    });
+                    ecsocRemovedCount++;
+                  } catch (err) {
+                    console.error(`  Error removing label "${ecsocLabel}" from #${issueNumber}: ${err.message}`);
+                    errorCount++;
+                  }
+                } else {
+                  ecsocRemovedCount++;
+                }
               }
 
               // Remove assignees if present
@@ -124,17 +148,37 @@ jobs:
                   unassignedCount++;
                 }
               } else {
-                console.log(`  -> Issue #${issueNumber} is already unassigned`);
+                console.log(`  -> Issue #${issueNumber} is already unassigned.`);
               }
 
               // Small delay to prevent hitting GitHub rate limits
               await sleep(150);
             }
 
-            console.log('====================================');
+            // 3. Delete ECSoC26 label globally from repository if not in dry-run
+            if (!isDryRun) {
+              const labelsToDelete = ['ECSoC26', 'ECSoC', 'ECSOC26', 'ECSOC'];
+              for (const lbl of labelsToDelete) {
+                try {
+                  await github.rest.issues.deleteLabel({
+                    owner,
+                    repo,
+                    name: lbl
+                  });
+                  console.log(`Globally deleted label "${lbl}" from ${owner}/${repo}`);
+                } catch (delErr) {
+                  if (delErr.status !== 404) {
+                    console.warn(`Label deletion note for "${lbl}": ${delErr.message}`);
+                  }
+                }
+              }
+            }
+
+            console.log('\n====================================');
             console.log(`Bulk Triage Complete!`);
             console.log(`Total open issues processed: ${openIssues.length}`);
             console.log(`Issues labeled with "${targetLabel}": ${labeledCount}`);
+            console.log(`ECSoC labels removed from issues: ${ecsocRemovedCount}`);
             console.log(`Issues unassigned: ${unassignedCount}`);
             console.log(`Errors encountered: ${errorCount}`);
-            console.log('====================================');
+            console.log('====================================\n');

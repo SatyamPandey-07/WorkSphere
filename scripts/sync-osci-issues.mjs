@@ -3,7 +3,9 @@
  * 1. Ensures label "OSCI'26" exists.
  * 2. Fetches all open issues in the repository.
  * 3. Applies "OSCI'26" to every open issue that does not already have it.
- * 4. Removes all assignees from every open issue to make them unassigned.
+ * 4. Removes all "ECSoC" / "ECWoC" labels from all open issues.
+ * 5. Removes all assignees from every open issue to make them unassigned.
+ * 6. Deletes ECSoC labels from the repository.
  *
  * Usage:
  *   GITHUB_TOKEN="ghp_xxx" node scripts/sync-osci-issues.mjs [--dry-run]
@@ -84,6 +86,16 @@ async function addLabelToIssue(issueNumber) {
   }
 }
 
+async function removeLabelFromIssue(issueNumber, labelName) {
+  const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/issues/${issueNumber}/labels/${encodeURIComponent(labelName)}`, {
+    method: 'DELETE',
+    headers
+  });
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Failed to remove label "${labelName}" from issue #${issueNumber}: ${res.status} ${await res.text()}`);
+  }
+}
+
 async function removeAssigneesFromIssue(issueNumber, assignees) {
   const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/issues/${issueNumber}/assignees`, {
     method: 'DELETE',
@@ -103,17 +115,21 @@ async function run() {
   console.log(`Found ${openIssues.length} open issues.`);
 
   let labeledCount = 0;
+  let ecsocRemovedCount = 0;
   let unassignedCount = 0;
   let errorCount = 0;
 
   for (let i = 0; i < openIssues.length; i++) {
     const issue = openIssues[i];
     const issueNumber = issue.number;
-    const hasLabel = issue.labels.some(l => (typeof l === 'string' ? l : l.name) === TARGET_LABEL);
+    const issueLabels = issue.labels.map(l => (typeof l === 'string' ? l : l.name));
+    const hasLabel = issueLabels.includes(TARGET_LABEL);
+    const ecsocLabels = issueLabels.filter(l => l.toLowerCase().includes('ecsoc') || l.toLowerCase().includes('ecwoc'));
     const assignees = (issue.assignees || []).map(a => a.login);
 
     console.log(`[${i + 1}/${openIssues.length}] Issue #${issueNumber}: "${issue.title}"`);
 
+    // Add OSCI'26
     if (!hasLabel) {
       console.log(`  -> Adding label "${TARGET_LABEL}" to #${issueNumber}`);
       if (!isDryRun) {
@@ -128,9 +144,26 @@ async function run() {
         labeledCount++;
       }
     } else {
-      console.log(`  -> Label already present.`);
+      console.log(`  -> Label "${TARGET_LABEL}" already present.`);
     }
 
+    // Remove ECSoC labels
+    for (const ecsocLabel of ecsocLabels) {
+      console.log(`  -> Removing label "${ecsocLabel}" from #${issueNumber}`);
+      if (!isDryRun) {
+        try {
+          await removeLabelFromIssue(issueNumber, ecsocLabel);
+          ecsocRemovedCount++;
+        } catch (err) {
+          console.error(`  Error removing "${ecsocLabel}": ${err.message}`);
+          errorCount++;
+        }
+      } else {
+        ecsocRemovedCount++;
+      }
+    }
+
+    // Remove assignees
     if (assignees.length > 0) {
       console.log(`  -> Removing assignees [${assignees.join(', ')}] from #${issueNumber}`);
       if (!isDryRun) {
@@ -151,10 +184,27 @@ async function run() {
     await sleep(150);
   }
 
+  // Delete ECSoC labels from repo
+  if (!isDryRun) {
+    const labelsToDelete = ['ECSoC26', 'ECSoC', 'ECSOC26', 'ECSOC'];
+    for (const lbl of labelsToDelete) {
+      try {
+        const delRes = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/labels/${encodeURIComponent(lbl)}`, {
+          method: 'DELETE',
+          headers
+        });
+        if (delRes.ok) console.log(`Deleted repo label "${lbl}"`);
+      } catch (err) {
+        // ignore 404
+      }
+    }
+  }
+
   console.log('\n====================================');
   console.log('Bulk Issue Sync Complete!');
   console.log(`Total open issues processed: ${openIssues.length}`);
   console.log(`Issues labeled with "${TARGET_LABEL}": ${labeledCount}`);
+  console.log(`ECSoC labels removed: ${ecsocRemovedCount}`);
   console.log(`Issues unassigned: ${unassignedCount}`);
   console.log(`Errors encountered: ${errorCount}`);
   console.log('====================================\n');

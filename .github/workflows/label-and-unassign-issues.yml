@@ -1,0 +1,140 @@
+name: Bulk Triage Issues - Add OSCI'26 & Unassign
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (preview changes without applying)'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  triage-open-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add OSCI'26 label and unassign all open issues
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const isDryRun = context.payload.inputs?.dry_run === 'true' || context.payload.inputs?.dry_run === true;
+            console.log(`Starting bulk issue triage (Dry run: ${isDryRun})...`);
+
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const targetLabel = "OSCI'26";
+
+            // 1. Ensure target label exists
+            try {
+              await github.rest.issues.getLabel({
+                owner,
+                repo,
+                name: targetLabel
+              });
+              console.log(`Label "${targetLabel}" already exists in ${owner}/${repo}`);
+            } catch (err) {
+              if (err.status === 404) {
+                console.log(`Creating label "${targetLabel}" in ${owner}/${repo}...`);
+                if (!isDryRun) {
+                  await github.rest.issues.createLabel({
+                    owner,
+                    repo,
+                    name: targetLabel,
+                    color: '5319e7',
+                    description: "Open Source Contribution Initiative '26"
+                  });
+                  console.log(`Label "${targetLabel}" created successfully.`);
+                }
+              } else {
+                console.warn(`Label check warning: ${err.message}`);
+              }
+            }
+
+            // 2. Fetch all open issues (paginated)
+            console.log('Fetching all open issues...');
+            const allItems = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100
+            });
+
+            const openIssues = allItems.filter(item => !item.pull_request);
+            console.log(`Found ${openIssues.length} open issues (excluding PRs).`);
+
+            let labeledCount = 0;
+            let unassignedCount = 0;
+            let errorCount = 0;
+
+            const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+            for (let i = 0; i < openIssues.length; i++) {
+              const issue = openIssues[i];
+              const issueNumber = issue.number;
+              const hasLabel = issue.labels.some(l => (typeof l === 'string' ? l : l.name) === targetLabel);
+              const assignees = (issue.assignees || []).map(a => a.login);
+
+              console.log(`[${i + 1}/${openIssues.length}] Processing Issue #${issueNumber}: "${issue.title}"`);
+
+              // Add label if missing
+              if (!hasLabel) {
+                console.log(`  -> Adding label "${targetLabel}" to #${issueNumber}`);
+                if (!isDryRun) {
+                  try {
+                    await github.rest.issues.addLabels({
+                      owner,
+                      repo,
+                      issue_number: issueNumber,
+                      labels: [targetLabel]
+                    });
+                    labeledCount++;
+                  } catch (err) {
+                    console.error(`  Error adding label to #${issueNumber}: ${err.message}`);
+                    errorCount++;
+                  }
+                } else {
+                  labeledCount++;
+                }
+              } else {
+                console.log(`  -> Label "${targetLabel}" already present on #${issueNumber}`);
+              }
+
+              // Remove assignees if present
+              if (assignees.length > 0) {
+                console.log(`  -> Removing assignees [${assignees.join(', ')}] from #${issueNumber}`);
+                if (!isDryRun) {
+                  try {
+                    await github.rest.issues.removeAssignees({
+                      owner,
+                      repo,
+                      issue_number: issueNumber,
+                      assignees: assignees
+                    });
+                    unassignedCount++;
+                  } catch (err) {
+                    console.error(`  Error removing assignees from #${issueNumber}: ${err.message}`);
+                    errorCount++;
+                  }
+                } else {
+                  unassignedCount++;
+                }
+              } else {
+                console.log(`  -> Issue #${issueNumber} is already unassigned`);
+              }
+
+              // Small delay to prevent hitting GitHub rate limits
+              await sleep(150);
+            }
+
+            console.log('====================================');
+            console.log(`Bulk Triage Complete!`);
+            console.log(`Total open issues processed: ${openIssues.length}`);
+            console.log(`Issues labeled with "${targetLabel}": ${labeledCount}`);
+            console.log(`Issues unassigned: ${unassignedCount}`);
+            console.log(`Errors encountered: ${errorCount}`);
+            console.log('====================================');

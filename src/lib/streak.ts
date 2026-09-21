@@ -9,16 +9,39 @@
 export const STREAK_MILESTONES = [5, 10, 30] as const;
 export type StreakMilestone = (typeof STREAK_MILESTONES)[number];
 
-/** Returns today's date as a "YYYY-MM-DD" UTC string */
-export function todayUTC(): string {
-  return new Date().toISOString().slice(0, 10);
+/** Returns the date in a given timezone as a "YYYY-MM-DD" string */
+export function dateInTimeZone(date: Date, timeZone: string = "UTC"): string {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+
+    const parts = formatter.formatToParts(date);
+    const map = Object.fromEntries(
+      parts
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value]),
+    ) as Record<string, string>;
+
+    return `${map.year}-${map.month}-${map.day}`;
+  } catch {
+    return new Date(date.toISOString()).toISOString().slice(0, 10);
+  }
 }
 
-/** Returns yesterday's date as a "YYYY-MM-DD" UTC string */
-export function yesterdayUTC(): string {
+/** Returns today's date as a "YYYY-MM-DD" string in the supplied timezone */
+export function todayUTC(timeZone: string = "UTC"): string {
+  return dateInTimeZone(new Date(), timeZone);
+}
+
+/** Returns yesterday's date as a "YYYY-MM-DD" string in the supplied timezone */
+export function yesterdayUTC(timeZone: string = "UTC"): string {
   const d = new Date();
   d.setUTCDate(d.getUTCDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return dateInTimeZone(d, timeZone);
 }
 
 export interface StreakResult {
@@ -55,9 +78,10 @@ export function calculateStreak(
   lastCheckInDate: string | null,
   currentStreak: number,
   longestStreak: number,
+  timeZone: string = "UTC",
 ): StreakResult {
-  const today = todayUTC();
-  const yesterday = yesterdayUTC();
+  const today = todayUTC(timeZone);
+  const yesterday = yesterdayUTC(timeZone);
 
   // ── Same-day duplicate ──────────────────────────────────────────────────
   if (lastCheckInDate === today) {

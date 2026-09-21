@@ -18,6 +18,7 @@ export async function GET() {
         currentStreak: true,
         longestStreak: true,
         lastCheckInDate: true,
+        timezone: true,
       },
     });
 
@@ -29,6 +30,7 @@ export async function GET() {
       currentStreak: user.currentStreak,
       longestStreak: user.longestStreak,
       lastCheckInDate: user.lastCheckInDate,
+      timezone: user.timezone || "UTC",
       unlockedMilestones: getUnlockedMilestones(user.currentStreak),
     });
   } catch (error) {
@@ -57,6 +59,7 @@ export async function POST() {
         currentStreak: true,
         longestStreak: true,
         lastCheckInDate: true,
+        timezone: true,
       },
     });
 
@@ -69,6 +72,7 @@ export async function POST() {
       user.lastCheckInDate,
       user.currentStreak,
       user.longestStreak,
+      user.timezone || "UTC",
     );
 
     // Only write to DB if the streak actually changed (not a same-day duplicate)
@@ -87,6 +91,7 @@ export async function POST() {
       currentStreak: result.currentStreak,
       longestStreak: result.longestStreak,
       lastCheckInDate: result.lastCheckInDate,
+      timezone: user.timezone || "UTC",
       incremented: result.incremented,
       newMilestones: result.newMilestones,
       unlockedMilestones: getUnlockedMilestones(result.currentStreak),

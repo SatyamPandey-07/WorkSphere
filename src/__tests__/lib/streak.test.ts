@@ -28,6 +28,15 @@ describe("yesterdayUTC", () => {
     const diff = today.getTime() - yesterday.getTime();
     expect(diff).toBe(24 * 60 * 60 * 1000);
   });
+
+  it("respects the user timezone instead of UTC on local midnight boundaries", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2024-01-01T23:30:00-08:00"));
+
+    expect(todayUTC("America/Los_Angeles")).toBe("2024-01-01");
+    expect(yesterdayUTC("America/Los_Angeles")).toBe("2023-12-31");
+
+    jest.useRealTimers();
+  });
 });
 
 // ─── calculateStreak ──────────────────────────────────────────────────────────
@@ -76,6 +85,16 @@ describe("calculateStreak", () => {
     it("returns no new milestones", () => {
       const result = calculateStreak(todayUTC(), 4, 4);
       expect(result.newMilestones).toHaveLength(0);
+    });
+
+    it("ignores the UTC day boundary when the user is still on the same local day", () => {
+      jest.useFakeTimers().setSystemTime(new Date("2024-01-01T23:30:00-08:00"));
+
+      const result = calculateStreak("2024-01-01", 4, 4, "America/Los_Angeles");
+      expect(result.incremented).toBe(false);
+      expect(result.currentStreak).toBe(4);
+
+      jest.useRealTimers();
     });
   });
 

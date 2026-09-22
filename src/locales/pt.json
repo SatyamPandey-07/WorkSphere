@@ -1,0 +1,15 @@
+{
+  "venue": {
+    "reviews": "Avaliações",
+    "noReviewsYet": "Ainda sem avaliações",
+    "beTheFirst": "Seja o primeiro a compartilhar sua avaliação deste espaço.",
+    "wifi": "Wi-Fi",
+    "power": "Tomadas",
+    "noise": "Ruído",
+    "yes": "Sim",
+    "no": "Não",
+    "viewSpeedtest": "Ver captura do teste de velocidade",
+    "translate": "Traduzir",
+    "translating": "Traduzindo..."
+  }
+}

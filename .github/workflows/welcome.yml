@@ -27,31 +27,34 @@ jobs:
               welcomePrefix = `🎉 Welcome to WorkSphere!\nThanks for making your first contribution. Need help? Feel free to ask.\n\n`;
             }
             
-            const issueComment = welcomePrefix + `🎉 Thanks for opening this issue!
-
-            We appreciate your contribution.
-
-            Please ensure:
-            ✅ Clear description
-            ✅ Expected behavior
-            ✅ Screenshots if possible
-
-            ---
-            🔔 **Update for Contributors:**
-
-            The limit for active assigned issues per person has been increased to 10 (previously 5).
-
-            You can claim this issue by posting a comment with exactly:
-            \`/claim\`
-
-            You will have 6 days to complete it! 🚀
-
-            ---
-            💡 **Connect & Support:**
-            - ⭐ Star the [WorkSphere repository](https://github.com/SatyamPandey-07/WorkSphere) to show your support!
-            - 👤 Follow the maintainer on GitHub: [@SatyamPandey-07](https://github.com/SatyamPandey-07)
-            - 💼 Connect on LinkedIn: [Satyam Pandey](https://www.linkedin.com/in/satyam-pandey-0b246432a/)
-            - 💬 Have questions or queries? Join our [WhatsApp Group](https://chat.whatsapp.com/D3pfq0vSmwd0iR0dFNjj43) or contact via phone at \`+91 9820866720\`.`;
+            const issueComment = [
+              welcomePrefix ? welcomePrefix.trimEnd() + '\n' : null,
+              '🎉 Thanks for opening this issue!',
+              '',
+              'We appreciate your contribution.',
+              '',
+              'Please ensure:',
+              '- ✅ Clear description',
+              '- ✅ Expected behavior',
+              '- ✅ Screenshots if possible',
+              '',
+              '---',
+              '🔔 **Update for Contributors:**',
+              '',
+              'The limit for active assigned issues per person has been increased to 10 (previously 5).',
+              '',
+              'You can claim this issue by posting a comment with exactly:',
+              '`/claim`',
+              '',
+              'You will have 6 days to complete it! 🚀',
+              '',
+              '---',
+              '💡 **Connect & Support:**',
+              '- ⭐ Star the [WorkSphere repository](https://github.com/SatyamPandey-07/WorkSphere) to show your support!',
+              '- 👤 Follow the maintainer on GitHub: [@SatyamPandey-07](https://github.com/SatyamPandey-07)',
+              '- 💼 Connect on LinkedIn: [Satyam Pandey](https://www.linkedin.com/in/satyam-pandey-0b246432a/)',
+              '- 💬 Have questions or queries? Join our [WhatsApp Group](https://chat.whatsapp.com/D3pfq0vSmwd0iR0dFNjj43) or contact via phone at `+91 9820866720`.'
+            ].filter(Boolean).join('\n');
             
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -147,20 +150,22 @@ jobs:
                 if (isFirstTime) {
                   welcomePrefix = `🎉 Welcome to WorkSphere!\nThanks for making your first contribution. Need help? Feel free to ask.\n\n`;
                 }
-                const prComment = welcomePrefix + `🎉 Thank you for contributing to WorkSphere!
-
-                Please ensure:
-
-                ✅ Tests pass
-                ✅ No secrets committed
-                ✅ Documentation updated
-
-                ---
-                💡 **Connect & Support:**
-                - ⭐ Star the [WorkSphere repository](https://github.com/SatyamPandey-07/WorkSphere) to show your support!
-                - 👤 Follow the maintainer on GitHub: [@SatyamPandey-07](https://github.com/SatyamPandey-07)
-                - 💼 Connect on LinkedIn: [Satyam Pandey](https://www.linkedin.com/in/satyam-pandey-0b246432a/)
-                - 💬 Have questions or queries? Join our [WhatsApp Group](https://chat.whatsapp.com/D3pfq0vSmwd0iR0dFNjj43) or contact via phone at \`+91 9820866720\`.`;
+                const prComment = [
+                  welcomePrefix ? welcomePrefix.trimEnd() + '\n' : null,
+                  '🎉 Thank you for contributing to WorkSphere!',
+                  '',
+                  'Please ensure:',
+                  '- ✅ Tests pass',
+                  '- ✅ No secrets committed',
+                  '- ✅ Documentation updated',
+                  '',
+                  '---',
+                  '💡 **Connect & Support:**',
+                  '- ⭐ Star the [WorkSphere repository](https://github.com/SatyamPandey-07/WorkSphere) to show your support!',
+                  '- 👤 Follow the maintainer on GitHub: [@SatyamPandey-07](https://github.com/SatyamPandey-07)',
+                  '- 💼 Connect on LinkedIn: [Satyam Pandey](https://www.linkedin.com/in/satyam-pandey-0b246432a/)',
+                  '- 💬 Have questions or queries? Join our [WhatsApp Group](https://chat.whatsapp.com/D3pfq0vSmwd0iR0dFNjj43) or contact via phone at `+91 9820866720`.'
+                ].filter(Boolean).join('\n');
                 
                 await github.rest.issues.createComment({
                   owner: context.repo.owner,

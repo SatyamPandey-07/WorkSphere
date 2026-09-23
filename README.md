@@ -381,28 +381,41 @@ For a full guide on writing, running, and debugging Playwright tests, see [docs/
 
 ## 🔐 Environment Variables
 
-Create a `.env.local` file in the root directory:
+Create a `.env.local` file in the root directory by copying the template:
+
+```bash
+cp .env.example .env.local
+```
+
+Fill in the following values. Variables marked **(required)** must be set for the app to start; **(optional)** ones have local fallbacks.
 
 ```env
-# Database (Neon PostgreSQL)
+# ── Database ─────────────────────────────────────────────────────────
+# (required) Neon PostgreSQL connection string — get from neon.tech
 DATABASE_URL="postgresql://user:password@host/database?sslmode=require"
 
-# Clerk Authentication
+# ── Authentication ───────────────────────────────────────────────────
+# (required) Clerk keys — get from clerk.com > your app > API keys
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
 CLERK_SECRET_KEY=sk_test_...
 NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 
-# AI (Groq)
+# ── AI ───────────────────────────────────────────────────────────────
+# (required) Groq API key — free at console.groq.com
 GROQ_API_KEY=gsk_...
 
-# Pexels (for venue photos - free at pexels.com/api)
+# ── Venue Photos ─────────────────────────────────────────────────────
+# (optional) Pexels API key — falls back to placeholder images
 PEXELS_API_KEY=your_pexels_key_here
 
-# Upstash Redis (for distributed rate limiting)
+# ── Rate Limiting ────────────────────────────────────────────────────
+# (optional) Upstash Redis — falls back to in-memory rate limiter
 UPSTASH_REDIS_REST_URL=https://your-upstash-redis-endpoint.upstash.io
 UPSTASH_REDIS_REST_TOKEN=your-upstash-redis-token
 ```
+
+> **Full reference:** See [`docs/ENV_VARS.md`](docs/ENV_VARS.md) for a complete list of every variable with detailed descriptions.
 
 You can obtain the Upstash Redis credentials from your Upstash Redis database dashboard.
 

@@ -105,6 +105,7 @@ export function VenueCard({
   const [enrichData, setEnrichData] = useState<VenueEnrichData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [photoError, setPhotoError] = useState(false);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
   const [showGenreDropdown, setShowGenreDropdown] = useState(false);
@@ -373,6 +374,7 @@ export function VenueCard({
   const nextPhoto = () => {
     if (enrichData?.photos && enrichData.photos.length > 1) {
       setPhotoIndex((prev) => (prev + 1) % enrichData.photos!.length);
+      setPhotoError(false);
     }
   };
 
@@ -452,11 +454,12 @@ export function VenueCard({
           onClick={nextPhoto}
         >
           <Image
-            src={photos[photoIndex]}
+            src={photoError ? "/images/venue-placeholder.svg" : photos[photoIndex]}
             alt={"Photo of " + venue.name}
             fill
             className="object-cover"
             unoptimized // External URLs from Foursquare
+            onError={() => setPhotoError(true)}
           />
           {photos.length > 1 && (
             <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 rounded-full text-xs text-white">

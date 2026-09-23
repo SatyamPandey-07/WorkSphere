@@ -296,3 +296,48 @@ Before pushing changes to GitHub, you **MUST** verify that all the checks below 
 Vercel builds use `npm run build` which runs `prisma generate && next build`. If this step fails locally, it **will** fail on Vercel deployment. Make sure you run `npm run build` successfully before submitting your PR!
 
 > **Note:** The current production build does **not** invoke `tsc` as a separate build step. For complete TypeScript type checking, run `npx tsc --noEmit` in addition to `npm run build` before opening a pull request.
+
+---
+
+## 6. PR Pre-flight Checklist
+
+Before opening a pull request, work through this checklist top-to-bottom. Each step is a gate — don't move to the next until the current one is green.
+
+```bash
+# 1. Sync your fork with upstream to avoid merge conflicts
+git fetch upstream
+git rebase upstream/main
+
+# 2. Install any new dependencies added since your last sync
+npm install
+
+# 3. Apply any pending Prisma schema migrations
+npx prisma generate
+npx prisma migrate dev   # only if schema.prisma changed
+
+# 4. Run the app locally and verify your change works end-to-end
+npm run dev
+
+# 5. Lint — fix all errors before continuing
+npm run lint
+
+# 6. Type-check — fix any TypeScript errors
+npx tsc --noEmit
+
+# 7. Unit tests — make sure nothing is broken
+npm test
+
+# 8. Production build — the definitive gate before pushing
+npm run build
+```
+
+Once all eight steps pass:
+
+- [ ] Branch is up-to-date with `upstream/main`
+- [ ] Feature/fix works as expected in `npm run dev`
+- [ ] `npm run lint` returns zero errors
+- [ ] `npx tsc --noEmit` returns zero errors
+- [ ] `npm test` passes with no regressions
+- [ ] `npm run build` completes successfully
+- [ ] PR title follows the Conventional Commits format (`feat:`, `fix:`, `docs:`, etc.)
+- [ ] PR description explains **what** changed and **why**, and references the issue (`Closes #N`)

@@ -17,6 +17,7 @@ import {
   Star,
   Users,
 } from "lucide-react";
+import { DashboardSkeleton } from "@/components/admin/DashboardSkeleton";
 import { downloadAnalyticsCSV } from "@/lib/adminAnalyticsCsvExport";
 import { downloadAnalyticsPDF } from "@/lib/adminAnalyticsPdfExport";
 import {
@@ -178,6 +179,17 @@ export default function AdminAnalyticsDashboard() {
     [data],
   );
 
+ if (loading && !data) return <DashboardSkeleton />;
+  
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#07070a] p-8 text-red-400">
+        <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-6 py-4">
+          Error loading dashboard: {error}
+        </p>
+      </div>
+    );
+  }    
   return (
     <main className="min-h-screen bg-[#07070a] text-white">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">

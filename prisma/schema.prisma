@@ -193,6 +193,7 @@ model Favorite {
 
   @@unique([userId, venueId])
   @@index([userId])
+  @@index([venueId])
 }
 
 model FavoriteTag {

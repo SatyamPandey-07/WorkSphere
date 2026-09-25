@@ -10,6 +10,7 @@ import {
   Wifi,
   Volume2,
   VolumeX,
+  Trash2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -118,6 +119,37 @@ export function NotificationBell() {
     }
   };
 
+  const [isClearing, setIsClearing] = useState(false);
+
+  const clearAllNotifications = async () => {
+    if (isClearing) return;
+    setIsClearing(true);
+
+    const prevNotifications = notifications;
+    const prevCount = unreadCount;
+
+    setNotifications([]);
+    setUnreadCount(0);
+
+    try {
+      const res = await fetch("/api/user/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clearAll" }),
+      });
+      if (!res.ok) {
+        setNotifications(prevNotifications);
+        setUnreadCount(Math.max(0, prevCount));
+      }
+    } catch (e) {
+      console.error("Failed to clear notifications:", e);
+      setNotifications(prevNotifications);
+      setUnreadCount(Math.max(0, prevCount));
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   // Mark all as read when opening the panel to ensure badge count clears immediately
   const handleToggleOpen = () => {
     const nextState = !isOpen;
@@ -208,6 +240,18 @@ export function NotificationBell() {
                 >
                   <Check className="w-3 h-3" />
                   Read All
+                </button>
+              )}
+
+              {notifications.length > 0 && (
+                <button
+                  onClick={clearAllNotifications}
+                  disabled={isClearing}
+                  className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-400 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Clear all notifications"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Clear
                 </button>
               )}
             </div>

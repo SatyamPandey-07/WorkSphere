@@ -757,10 +757,10 @@ export function AudioEqualizer({
           </button>
         </div>
 
-        <div className="grid grid-cols-5 gap-2 text-center">
+        <div className="grid grid-cols-5 gap-1 sm:gap-2 text-center">
           {EQ_BAND_LABELS.map((label, idx) => (
-            <div key={label} className="flex flex-col items-center gap-1.5">
-              <span className="text-[10px] font-mono text-zinc-400">
+            <div key={label} className="flex flex-col items-center justify-between gap-1 sm:gap-1.5 min-w-0">
+              <span className="text-[9px] sm:text-[10px] font-mono text-zinc-400 whitespace-nowrap">
                 {label}
               </span>
               <input
@@ -775,7 +775,7 @@ export function AudioEqualizer({
                 }
                 className="w-full h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
               />
-              <span className="text-[9px] font-mono text-indigo-400">
+              <span className="text-[8px] sm:text-[9px] font-mono text-indigo-400 whitespace-nowrap">
                 {bandGains[idx] > 0 ? `+${bandGains[idx]}` : bandGains[idx]} dB
               </span>
             </div>

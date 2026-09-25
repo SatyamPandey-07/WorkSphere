@@ -26,6 +26,7 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isMarkingRead, setIsMarkingRead] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => {
     if (typeof window === "undefined") return true;
 
@@ -95,6 +96,9 @@ export function NotificationBell() {
   };
 
   const markAllAsRead = async () => {
+    if (isMarkingRead) return;
+    setIsMarkingRead(true);
+
     const prevCount = unreadCount;
     const prevNotifications = notifications;
 
@@ -108,13 +112,15 @@ export function NotificationBell() {
         body: JSON.stringify({ action: "markAsRead" }),
       });
       if (!res.ok) {
-        setUnreadCount(prevCount);
+        setUnreadCount(Math.max(0, prevCount));
         setNotifications(prevNotifications);
       }
     } catch (e) {
       console.error("Failed to mark notifications as read:", e);
-      setUnreadCount(prevCount);
+      setUnreadCount(Math.max(0, prevCount));
       setNotifications(prevNotifications);
+    } finally {
+      setIsMarkingRead(false);
     }
   };
 
@@ -204,7 +210,8 @@ export function NotificationBell() {
               {unreadCount > 0 && (
                 <button
                   onClick={markAllAsRead}
-                  className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-indigo-500 hover:text-indigo-400 cursor-pointer"
+                  disabled={isMarkingRead}
+                  className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-indigo-500 hover:text-indigo-400 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Check className="w-3 h-3" />
                   Read All

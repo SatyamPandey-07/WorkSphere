@@ -245,6 +245,25 @@ jest.mock('leaflet', () => ({
 
 Avoid connecting to actual databases or Redis caches in unit tests. Mock the client modules using `jest.mock`.
 
+#### 4. ZKP (Zero-Knowledge Proof) Module Configuration
+
+WorkSphere includes a student discount verification feature that uses `snarkjs` and `ffjavascript` for zero-knowledge proof generation. These packages ship as ES modules (ESM) but Jest runs in CommonJS (CJS) mode by default.
+
+`jest.config.js` maps both packages to their CJS builds to prevent `SyntaxError: Cannot use import statement` at test time:
+
+```js
+moduleNameMapper: {
+  '^snarkjs$': '<rootDir>/node_modules/snarkjs/build/main.cjs',
+  '^ffjavascript$': '<rootDir>/node_modules/ffjavascript/build/main.cjs',
+  '^uncrypto$': '<rootDir>/node_modules/uncrypto/dist/crypto.node.cjs',
+},
+```
+
+**What contributors should know:**
+- Tests that import ZKP-related modules work automatically — no manual mocking needed
+- If you add a new package that ships ESM-only and fails with `SyntaxError: Cannot use import statement`, add a similar entry to `moduleNameMapper` in `jest.config.js`
+- ZKP proof generation is CPU and memory intensive; the config sets `workerIdleMemoryLimit: '256MB'` and `maxWorkers: '50%'` to prevent heap exhaustion during the full test suite
+
 ---
 
 ## 4. E2E Testing (Playwright)

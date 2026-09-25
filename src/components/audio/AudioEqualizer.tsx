@@ -151,6 +151,7 @@ export function AudioEqualizer({
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
+  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
   const eqFiltersRef = useRef<BiquadFilterNode[]>([]);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -232,7 +233,19 @@ export function AudioEqualizer({
     const analyser = ctx.createAnalyser();
 
     analyser.fftSize = 64;
-    masterGain.connect(analyser);
+    // DynamicsCompressorNode prevents digital clipping when 5+ participants
+    // mix their audio tracks through the same Web Audio graph (4:1 ratio,
+    // -24 dB knee for gentle limiting before the master output).
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -24;
+    compressor.knee.value = 12;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+    compressorRef.current = compressor;
+
+    masterGain.connect(compressor);
+    compressor.connect(analyser);
     analyser.connect(ctx.destination);
 
     // Build 5-band BiquadFilterNode cascade

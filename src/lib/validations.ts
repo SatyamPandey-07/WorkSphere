@@ -2,6 +2,32 @@ import { z } from "zod";
 import { buildVenueSearchSchema } from "@/lib/filters";
 
 // =========================================================================
+// USER SETTINGS SCHEMA
+// =========================================================================
+
+export const userSettingsSchema = z.object({
+  phoneNumber: z.string().max(20).optional(),
+  smsAlertsEnabled: z.boolean().optional(),
+  whatsappWebhookUrl: z.string().url("Invalid WhatsApp webhook URL").or(z.literal("")).optional(),
+  telegramWebhookUrl: z.string().url("Invalid Telegram webhook URL").or(z.literal("")).optional(),
+  notificationStart: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "notificationStart must be HH:mm")
+    .or(z.literal(""))
+    .optional(),
+  notificationEnd: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "notificationEnd must be HH:mm")
+    .or(z.literal(""))
+    .optional(),
+  timezone: z.string().max(64).optional(),
+  imageUrl: z.string().url("Invalid image URL").or(z.literal("")).optional(),
+  workStyleProfile: z.string().max(2000).optional(),
+});
+
+export type UserSettingsInput = z.infer<typeof userSettingsSchema>;
+
+// =========================================================================
 // CORE SCHEMAS
 // =========================================================================
 

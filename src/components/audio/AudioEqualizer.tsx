@@ -322,6 +322,10 @@ export function AudioEqualizer({
 
   // Handle Real-Time Gain Slider Drag with Smooth Audio Parameter Ramping
   const handleBandGainChange = (index: number, newGain: number) => {
+    // Clamp to ±20 dB hard limit — values outside this range cause BiquadFilterNode
+    // clipping and severe audio distortion on some browsers.
+    const clampedGain = Math.max(-20, Math.min(20, newGain));
+
     setEqPreset("custom");
     if (typeof window !== "undefined") {
       window.localStorage.setItem("webrtc_eq_preset", "custom");
@@ -329,7 +333,7 @@ export function AudioEqualizer({
 
     setBandGains((prev) => {
       const next = [...prev];
-      next[index] = newGain;
+      next[index] = clampedGain;
       if (typeof window !== "undefined") {
         window.localStorage.setItem("webrtc_eq_gains", JSON.stringify(next));
       }
@@ -337,7 +341,7 @@ export function AudioEqualizer({
     });
 
     if (onGainChange) {
-      onGainChange(index, newGain);
+      onGainChange(index, clampedGain);
     }
 
     const filter = eqFiltersRef.current[index];
@@ -345,12 +349,12 @@ export function AudioEqualizer({
       const now = audioContextRef.current.currentTime;
       if (typeof filter.gain.setTargetAtTime === "function") {
         // Smooth audio param ramp to eliminate audio pops and clicks
-        filter.gain.setTargetAtTime(newGain, now, 0.015);
+        filter.gain.setTargetAtTime(clampedGain, now, 0.015);
       } else if (typeof filter.gain.linearRampToValueAtTime === "function") {
         filter.gain.setValueAtTime(filter.gain.value ?? 0, now);
-        filter.gain.linearRampToValueAtTime(newGain, now + 0.03);
+        filter.gain.linearRampToValueAtTime(clampedGain, now + 0.03);
       } else if (typeof filter.gain.setValueAtTime === "function") {
-        filter.gain.setValueAtTime(newGain, now);
+        filter.gain.setValueAtTime(clampedGain, now);
       }
     }
   };
@@ -765,8 +769,8 @@ export function AudioEqualizer({
               </span>
               <input
                 type="range"
-                min="-12"
-                max="12"
+                min="-20"
+                max="20"
                 step="0.5"
                 aria-label={`${label} Gain`}
                 value={bandGains[idx]}

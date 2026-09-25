@@ -158,7 +158,16 @@ export default function middleware(request: any, event: any) {
         .map((e) => e.trim().toLowerCase())
         .filter(Boolean);
 
-      const isEnvAdmin = adminEmails.length > 0 && Boolean(authObj.userId);
+      // Compare the user's actual email against the admin list.
+      // authObj.sessionClaims?.email contains the primary email address
+      // set in the JWT by Clerk's session token customization.
+      const userEmail = (
+        (authObj.sessionClaims?.email as string | undefined) ?? ""
+      ).toLowerCase();
+      const isEnvAdmin =
+        adminEmails.length > 0 &&
+        userEmail.length > 0 &&
+        adminEmails.includes(userEmail);
 
       if (!isAdminRole && !isEnvAdmin) {
         if (req.nextUrl.pathname.startsWith("/api")) {

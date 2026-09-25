@@ -204,6 +204,7 @@ export function VenueDetailDialog({
     "overview",
   );
   const [reviews, setReviews] = useState<any[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
   const [menuPhotos, setMenuPhotos] = useState<string[]>([]);
   const [uploadingMenu, setUploadingMenu] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
@@ -675,12 +676,14 @@ export function VenueDetailDialog({
   // Fetch reviews on dialog open / venue change to have stats ready
   useEffect(() => {
     if (!venue || !isOpen) return;
+    setReviewsLoading(true);
     fetch(`/api/venues/${encodeURIComponent(venue.id)}/reviews`)
       .then((r) => r.json())
       .then((data) => {
         if (data.reviews) setReviews(data.reviews);
       })
-      .catch((err) => console.error(err));
+      .catch((err) => console.error(err))
+      .finally(() => setReviewsLoading(false));
   }, [venue, isOpen]);
 
   // Effect 3: Fetch predictions and menu photos based on active tab
@@ -731,12 +734,14 @@ export function VenueDetailDialog({
           );
         });
     } else if (activeTab === "reviews") {
+      setReviewsLoading(true);
       fetch(`/api/venues/${encodeURIComponent(venue.id)}/reviews`)
         .then((r) => r.json())
         .then((data) => {
           if (data.reviews) setReviews(data.reviews);
         })
-        .catch((err) => console.error(err));
+        .catch((err) => console.error(err))
+        .finally(() => setReviewsLoading(false));
     } else if (activeTab === "menu") {
       setMenuPhotos([]);
       fetch(`/api/venues/${encodeURIComponent(venue.id)}/menu`)
@@ -1860,7 +1865,28 @@ export function VenueDetailDialog({
 
           {activeTab === "reviews" && (
             <div className="space-y-4">
-              {reviews.length === 0 ? (
+              {reviewsLoading ? (
+                <div className="space-y-3">
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="p-4 border border-white/10 bg-black/20 rounded-2xl space-y-3 animate-pulse"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-2">
+                          <div className="h-3 w-24 bg-zinc-700 rounded" />
+                          <div className="h-2 w-40 bg-zinc-800 rounded" />
+                        </div>
+                        <div className="h-3 w-12 bg-zinc-700 rounded" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="h-2 w-full bg-zinc-800 rounded" />
+                        <div className="h-2 w-3/4 bg-zinc-800 rounded" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : reviews.length === 0 ? (
                 <div className="py-12 border-2 border-dashed border-white/10 rounded-2xl text-center px-4">
                   <Info className="w-8 h-8 text-zinc-400 mx-auto mb-2" />
                   <p className="text-xs font-black uppercase tracking-wider text-zinc-400">

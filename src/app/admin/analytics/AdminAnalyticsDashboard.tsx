@@ -17,6 +17,7 @@ import {
   Star,
   Users,
 } from "lucide-react";
+import { DashboardSkeleton } from "@/components/admin/DashboardSkeleton";
 import { downloadAnalyticsCSV } from "@/lib/adminAnalyticsCsvExport";
 import { downloadAnalyticsPDF } from "@/lib/adminAnalyticsPdfExport";
 import {
@@ -110,6 +111,7 @@ export default function AdminAnalyticsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(false);
 
   const handleExportCSV = () => {
     if (!data) return;
@@ -126,7 +128,20 @@ export default function AdminAnalyticsDashboard() {
     } finally {
       setIsExportingPdf(false);
     }
-  };
+
+    useEffect(() => {
+    loadAnalytics(range);
+  }, [range]);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (autoRefresh) {
+      interval = setInterval(() => {
+        loadAnalytics(range);
+      }, 30000); // 30 seconds
+    }
+    return () => clearInterval(interval);
+  }, [autoRefresh, range]);
 
   async function loadAnalytics(selectedRange: RangeKey) {
     setLoading(true);
@@ -164,6 +179,17 @@ export default function AdminAnalyticsDashboard() {
     [data],
   );
 
+ if (loading && !data) return <DashboardSkeleton />;
+  
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#07070a] p-8 text-red-400">
+        <p className="rounded-2xl border border-red-500/20 bg-red-500/10 px-6 py-4">
+          Error loading dashboard: {error}
+        </p>
+      </div>
+    );
+  }    
   return (
     <main className="min-h-screen bg-[#07070a] text-white">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -219,6 +245,16 @@ export default function AdminAnalyticsDashboard() {
               ))}
             </div>
 
+            <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-white/[0.08] hover:text-white">
+              <input 
+                type="checkbox" 
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+                className="rounded border-white/10 bg-black text-violet-500 focus:ring-violet-500/20"
+              />
+              Auto-refresh (30s)
+            </label>
+
             <button
               onClick={() => loadAnalytics(range)}
               disabled={loading}
@@ -226,7 +262,7 @@ export default function AdminAnalyticsDashboard() {
               aria-label="Refresh analytics"
             >
               <RefreshCw
-                className={`h-5 w-5 ${loading ? "animate-spin" : ""}`}
+                className={`h-5 w-5 ${loading && !autoRefresh ? "animate-spin" : ""}`}
               />
             </button>
 
@@ -530,53 +566,4 @@ export default function AdminAnalyticsDashboard() {
                         {venue.category}
                       </p>
                     </td>
-                    <td className="px-3 py-4 text-zinc-300">{venue.views}</td>
-                    <td className="px-3 py-4 text-zinc-300">
-                      {venue.bookings}
-                    </td>
-                    <td className="px-3 py-4">
-                      <span
-                        className={`inline-flex items-center gap-1 ${
-                          (venue.rating ?? 0) > 0
-                            ? "text-amber-300"
-                            : "text-zinc-500"
-                        }`}
-                      >
-                        <Star
-                          className={`h-4 w-4 ${
-                            (venue.rating ?? 0) > 0
-                              ? "fill-current"
-                              : "text-zinc-500"
-                          }`}
-                        />
-                        {venue.rating != null && !isNaN(venue.rating)
-                          ? venue.rating.toFixed(1)
-                          : "0.0"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-4 font-medium text-violet-300">
-                      {venue.score}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <footer className="mt-6 flex flex-col gap-2 text-xs text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
-          <span>
-            Admin-only · First-party analytics · No third-party tracking
-          </span>
-          <span>
-            {data?.generatedAt
-              ? `Updated ${new Date(data.generatedAt).toLocaleString()}`
-              : loading
-                ? "Loading telemetry…"
-                : "No telemetry loaded"}
-          </span>
-        </footer>
-      </div>
-    </main>
-  );
-}
+                    <td className="px-3 py-4 text-zinc-30

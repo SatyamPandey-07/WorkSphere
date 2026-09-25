@@ -248,18 +248,14 @@ export async function getRelevantMemory(
     const embedding = embedData.embeddings[0];
     const embeddingString = `[${embedding.join(",")}]`;
 
-    const memories: any[] = await prisma.$queryRawUnsafe(
-      `
+    const memories = await prisma.$queryRaw<{ content: string; similarity: number }[]>`
       SELECT content,
-             1 - (embedding <=> $1::vector) AS similarity
+             1 - (embedding <=> ${embeddingString}::vector) AS similarity
       FROM "UserMemory"
-      WHERE "userId" = $2
-      ORDER BY embedding <=> $1::vector
+      WHERE "userId" = ${userId}
+      ORDER BY embedding <=> ${embeddingString}::vector
       LIMIT 3
-      `,
-      embeddingString,
-      userId,
-    );
+    `;
 
     if (memories.length > 0) {
       memoryContext +=

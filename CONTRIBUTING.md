@@ -266,6 +266,43 @@ moduleNameMapper: {
 
 ---
 
+#### 5. ZKP Circuit Compilation (`npm run zkp:compile`)
+
+The `zkp:compile` script compiles the [Circom](https://docs.circom.io/) circuit used for student discount verification and generates the Groth16 proving/verification keys.
+
+**When to run it:** Only when you modify `circuits/premium_membership.circom`. You do **not** need to run it for most features — the compiled outputs (`public/zkp/`) are committed and kept up to date.
+
+**Dependencies (install once):**
+
+```bash
+# Circom compiler
+npm install -g @iden3/circom
+
+# snarkjs and openssl must be available in PATH
+npm install                       # snarkjs is already in package.json
+openssl version                   # confirm openssl is installed
+```
+
+**Run the compile script:**
+
+```bash
+npm run zkp:compile
+```
+
+This will:
+1. Compile `circuits/premium_membership.circom` → R1CS, WASM, SYM files in `circuits/build/`
+2. Generate a small Powers-of-Tau ceremony (`pot12_final.ptau`) if one doesn't already exist
+3. Run the Groth16 trusted-setup → outputs `premium_membership_final.zkey`
+4. Export the verification key to `public/zkp/verification_key.json`
+5. Copy the WASM prover to `public/zkp/`
+
+**Notes:**
+- The build step can take 30–90 seconds on a typical laptop
+- The generated `.ptau` and `.zkey` files are large; they are committed to the repo so other contributors don't need to regenerate them
+- If `npm run zkp:compile` fails with "circom not found", ensure `@iden3/circom` is on your PATH
+
+---
+
 ## 4. E2E Testing (Playwright)
 
 End-to-end tests simulate actual user interactions inside the browser. These tests are configured in `playwright.config.ts` and reside in the `e2e/` folder.

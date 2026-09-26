@@ -63,72 +63,128 @@ export async function compressConversationChunk(
   let currentBatch: ContextChunk[] = [];
   let currentTokens = 0;
 
-  for (const msg of messages) {
-    const tokenCount = estimateTokens(msg.content);
-    const chunk: ContextChunk = {
-      role: msg.role,
-      content: msg.content,
-      tokenCount,
-    };
+  try {
+    for (const msg of messages) {
+      const tokenCount = estimateTokens(msg.content);
+      const chunk: ContextChunk = {
+        role: msg.role,
+        content: msg.content,
+        tokenCount,
+      };
 
-    if (
-      currentTokens + tokenCount > MAX_TOKENS_PER_COMPRESSED &&
-      currentBatch.length > 0
-    ) {
-      currentBatch.push(chunk);
-      const summary = await compressWithLLM(currentBatch);
+      if (
+        currentTokens + tokenCount > MAX_TOKENS_PER_COMPRESSED &&
+        currentBatch.length > 0
+      ) {
+        // Original behavior: the boundary-crossing chunk is added to the current
+        // batch before it is summarized, exactly as in the pre-fix code.
+        currentBatch.push(chunk);
+
+        // Capture batch token count (pre-overflow, matching original chunks.push below)
+        const batchTokenCount = currentTokens;
+
+        // Move the batch reference out and reset state immediately so the array
+        // becomes eligible for GC as soon as the LLM call finishes.
+        let batchRef: ContextChunk[] | null = currentBatch;
+        currentBatch = [];
+        currentTokens = 0;
+
+        let summary: string;
+        try {
+          summary = await compressWithLLM(batchRef);
+        } finally {
+          // Release batch data immediately after the LLM call (success or error).
+          batchRef.length = 0;
+          batchRef = null;
+        }
+
+        const embedding = await generateEmbedding(summary);
+
+        // Preserve original semantics: spread chunk (role/content from the overflow
+        // chunk) and use the pre-overflow accumulated token count.
+        chunks.push({
+          ...chunk,
+          embedding,
+          tokenCount: batchTokenCount,
+        });
+      } else {
+        currentBatch.push(chunk);
+        currentTokens += tokenCount;
+      }
+    }
+
+    if (currentBatch.length > 0) {
+      // Capture the trailing batch's token count before resetting state,
+      // matching the original behaviour where tokenCount: currentTokens
+      // was read before any reset occurred.
+      const trailingBatchTokenCount = currentTokens;
+
+      let batchRef: ContextChunk[] | null = currentBatch;
+      currentBatch = [];
+      currentTokens = 0;
+
+      let summary: string;
+      try {
+        summary = await compressWithLLM(batchRef);
+      } finally {
+        batchRef.length = 0;
+        batchRef = null;
+      }
+
       const embedding = await generateEmbedding(summary);
 
       chunks.push({
-        ...chunk,
+        role: "assistant",
+        content: summary,
+        tokenCount: trailingBatchTokenCount,
         embedding,
-        tokenCount: currentTokens,
       });
-
-      currentBatch = [];
-      currentTokens = 0;
-    } else {
-      currentBatch.push(chunk);
-      currentTokens += tokenCount;
     }
+
+    const fullSummary = await compressWithLLM(
+      chunks.map((c) => ({
+        role: c.role,
+        content: c.content,
+        tokenCount: c.tokenCount,
+      })),
+    );
+
+    // Release intermediate chunk content and embeddings immediately after they have
+    // been used by compressWithLLM above and before the final embedding is generated.
+    for (const c of chunks) {
+      c.embedding = undefined;
+      c.content = "";
+    }
+    chunks.length = 0;
+
+    const fullEmbedding = await generateEmbedding(fullSummary);
+
+    const compressed: CompressedContext = {
+      id: `${conversationId}-${Date.now()}`,
+      summary: fullSummary,
+      userId,
+      conversationId,
+      embedding: fullEmbedding,
+      tokenCount: estimateTokens(fullSummary),
+      createdAt: Date.now(),
+      messageCount: messages.length,
+    };
+
+    const index = getOrCreateIndex(userId);
+    index.insert(compressed.id, fullEmbedding);
+
+    return compressed;
+  } finally {
+    // Guarantee cleanup even on error paths — does not swallow any thrown error.
+    if (currentBatch.length > 0) {
+      currentBatch.length = 0;
+    }
+    for (const c of chunks) {
+      c.embedding = undefined;
+      c.content = "";
+    }
+    chunks.length = 0;
   }
-
-  if (currentBatch.length > 0) {
-    const summary = await compressWithLLM(currentBatch);
-    const embedding = await generateEmbedding(summary);
-
-    chunks.push({
-      role: "assistant",
-      content: summary,
-      tokenCount: currentTokens,
-      embedding,
-    });
-  }
-
-  const fullSummary = await compressWithLLM(
-    chunks.map((c) => ({
-      role: c.role,
-      content: c.content,
-      tokenCount: c.tokenCount,
-    })),
-  );
-  const fullEmbedding = await generateEmbedding(fullSummary);
-
-  const compressed: CompressedContext = {
-    id: `${conversationId}-${Date.now()}`,
-    summary: fullSummary,
-    userId,
-    conversationId,
-    embedding: fullEmbedding,
-    tokenCount: estimateTokens(fullSummary),
-    createdAt: Date.now(),
-    messageCount: messages.length,
-  };
-
-  const index = getOrCreateIndex(userId);
-  index.insert(compressed.id, fullEmbedding);
-
-  return compressed;
 }
 
 export async function retrieveRelevantContext(

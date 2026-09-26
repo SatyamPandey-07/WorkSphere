@@ -31,11 +31,53 @@ export async function getValidToken(
   return _refreshPromise;
 }
 
+/** Cached CSRF token; refreshed on 403 CSRF rejection. */
+let _csrfToken: string | null = null;
+
+/**
+ * Fetch (or return cached) CSRF token from /api/auth/csrf-token.
+ * Used to auto-refresh the token when a session stays open >24 h.
+ */
+async function fetchCsrfToken(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/auth/csrf-token", { credentials: "include" });
+    if (!res.ok) return null;
+    const data = await res.json();
+    _csrfToken = data.csrfToken ?? null;
+    return _csrfToken;
+  } catch {
+    return null;
+  }
+}
+
 export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
   const response = await fetch(input, init);
+
+  // Auto-refresh CSRF token and retry once on 403 with CSRF rejection code.
+  // This handles sessions left open >24 hours where the cookie expired.
+  if (response.status === 403) {
+    try {
+      const clone = response.clone();
+      const data = await clone.json();
+      if (data?.code === "CSRF_INVALID" || data?.error?.toLowerCase().includes("csrf")) {
+        const freshToken = await fetchCsrfToken();
+        if (freshToken) {
+          const retryHeaders = new Headers(
+            init?.headers instanceof Headers
+              ? init.headers
+              : new Headers(init?.headers ?? {}),
+          );
+          retryHeaders.set("x-csrf-token", freshToken);
+          return fetch(input, { ...init, headers: retryHeaders });
+        }
+      }
+    } catch {
+      // If JSON parse fails or retry fetch fails, fall through to return original 403
+    }
+  }
 
   if (response.status === 429) {
     const urlString =

@@ -72,7 +72,10 @@ export async function POST(request: NextRequest) {
     seatIds = [body.seatId];
   }
 
-  const uniqueSeatIds = Array.from(new Set(seatIds)).sort();
+  // Sort seat IDs deterministically so concurrent transactions always acquire
+  // row locks in the same order — prevents cross-locking deadlocks (P2034)
+  // when two requests try to book overlapping seat sets simultaneously.
+  const uniqueSeatIds = Array.from(new Set(seatIds)).sort((a, b) => a.localeCompare(b));
 
   const date = typeof body.date === "string" ? body.date : "";
   const time = typeof body.time === "string" ? body.time : "";
@@ -297,7 +300,8 @@ export async function POST(request: NextRequest) {
 
       if (isTransient && attempt < MAX_RETRIES) {
         attempt++;
-        const backoff = Math.pow(2, attempt) * 100 + Math.random() * 50;
+        // Exponential backoff with ±50ms jitter, capped at 2 s per attempt.
+        const backoff = Math.min(Math.pow(2, attempt) * 100 + Math.random() * 50, 2000);
         await new Promise((res) => setTimeout(res, backoff));
         continue;
       }

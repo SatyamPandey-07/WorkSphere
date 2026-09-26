@@ -155,7 +155,7 @@ export function AvatarCropModal({
         </header>
 
         <div className="p-5">
-          <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-zinc-950">
+          <div className="relative aspect-square w-full max-h-[60vh] overflow-hidden rounded-xl bg-zinc-950">
             <Cropper
               image={imageSource}
               crop={crop}

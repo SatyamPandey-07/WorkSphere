@@ -32,9 +32,9 @@
 >
 > You will have **6 days** to complete it! 🚀
 
-### 🚀 Contributors (83 Active Rockstars)
+### 🚀 Contributors (88 Active Rockstars)
 
-Thanks to all **83 contributors** building WorkSphere!
+Thanks to all **88 contributors** building WorkSphere!
 
 <p align="center">
   <a href="https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors">

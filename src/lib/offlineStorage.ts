@@ -297,6 +297,42 @@ export async function removeFavoriteOffline(id: string): Promise<void> {
 }
 
 /**
+ * Save multiple favorites in a single readwrite transaction.
+ * Prefer this over calling saveFavoriteOffline() in a loop to reduce
+ * the number of IDB transaction round-trips during bulk sync operations.
+ */
+export async function saveFavoritesOfflineBatch(venues: OfflineVenue[]): Promise<void> {
+  if (venues.length === 0) return;
+  return withWebLock(async () => {
+    // Update CRDT state for every entry first
+    for (const venue of venues) {
+      yFavorites.set(venue.id, venue as any);
+    }
+
+    const database = await initOfflineDB();
+
+    return new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["favorites"], "readwrite");
+      const store = transaction.objectStore("favorites");
+      const now = Date.now();
+      let pending = venues.length;
+
+      transaction.onerror = () => reject(transaction.error);
+      transaction.oncomplete = () => resolve();
+
+      for (const venue of venues) {
+        const req = store.put({ ...venue, savedAt: now });
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          pending -= 1;
+          if (pending === 0 && !transaction.oncomplete) resolve();
+        };
+      }
+    });
+  });
+}
+
+/**
  * Get all offline favorites
  */
 export async function getFavoritesOffline(): Promise<OfflineVenue[]> {

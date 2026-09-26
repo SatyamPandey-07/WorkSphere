@@ -689,6 +689,11 @@ export function BookingModal({
                       const price = hours * 15;
                       const tax = price * 0.08;
                       const total = price + tax;
+                      const isUpcoming =
+                        booking.date
+                          ? new Date(booking.date) >= new Date(new Date().toDateString())
+                          : false;
+
                       return (
                         <div
                           key={booking.id}
@@ -696,7 +701,7 @@ export function BookingModal({
                             selectedIds.has(booking.id)
                               ? "accent-border ring-2 ring-[color-mix(in_srgb,var(--primary-accent),transparent_0.8)]"
                               : "border-zinc-200 dark:border-zinc-700 hover:accent-border-50"
-                          }`}
+                          } ${isUpcoming ? "booking-card-active" : ""}`}
                         >
                           <div className="flex justify-between items-start mb-4">
                             <div className="flex items-start gap-3">

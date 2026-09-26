@@ -525,7 +525,20 @@ export function AudioEqualizer({
   }, [volume, muted]);
 
   useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (
+        document.visibilityState === "visible" &&
+        audioContextRef.current &&
+        audioContextRef.current.state !== "closed"
+      ) {
+        audioContextRef.current.resume().catch(() => {});
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       stopPlayingNodes();
       if (audioContextRef.current) {
         audioContextRef.current.close();
@@ -759,7 +772,10 @@ export function AudioEqualizer({
 
         <div className="grid grid-cols-5 gap-1 sm:gap-2 text-center">
           {EQ_BAND_LABELS.map((label, idx) => (
-            <div key={label} className="flex flex-col items-center justify-between gap-1 sm:gap-1.5 min-w-0">
+            <div
+              key={label}
+              className="flex flex-col items-center justify-between gap-1 sm:gap-1.5 min-w-0"
+            >
               <span className="text-[9px] sm:text-[10px] font-mono text-zinc-400 whitespace-nowrap">
                 {label}
               </span>

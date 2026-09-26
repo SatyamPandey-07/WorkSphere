@@ -6,7 +6,7 @@
 // Client-side hook for real-time updates
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "@/hooks/usePartySocketReconnect";
 import YProvider from "y-partykit/provider";
@@ -162,9 +162,17 @@ export function useOptimisticUpdate<T>(
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Keep a ref to the latest value so the update callback never closes over
+  // a stale snapshot — avoids WebSocket/SSE handlers applying updates on top
+  // of an outdated local state.
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+
   const update = useCallback(
     async (newValue: T) => {
-      const previousValue = value;
+      const previousValue = valueRef.current;
       setValue(newValue); // Optimistic update
       setIsPending(true);
       setError(null);
@@ -173,13 +181,13 @@ export function useOptimisticUpdate<T>(
         const confirmedValue = await updateFn(newValue);
         setValue(confirmedValue);
       } catch (e) {
-        setValue(previousValue); // Rollback
+        setValue(previousValue); // Rollback to the latest known-good value
         setError(e instanceof Error ? e.message : "Update failed");
       } finally {
         setIsPending(false);
       }
     },
-    [value, updateFn],
+    [updateFn], // no longer depends on `value` — reads from ref instead
   );
 
   return { value, update, isPending, error };

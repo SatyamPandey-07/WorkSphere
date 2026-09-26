@@ -129,3 +129,86 @@ export const downloadICS = (
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 };
+
+// ---------------------------------------------------------------------------
+// Bulk ICS export — multiple bookings in a single calendar file
+// ---------------------------------------------------------------------------
+
+interface BulkBooking {
+  venueName: string;
+  venueAddress: string;
+  date: string;
+  time: string;
+  duration?: number;
+  confirmationId?: string;
+}
+
+/**
+ * Generate a single RFC 5545 .ics file containing one VEVENT per booking.
+ * Returns null if none of the bookings produced valid date/time values.
+ */
+export function generateBulkICSContent(bookings: BulkBooking[]): string | null {
+  const events: string[] = [];
+
+  for (const b of bookings) {
+    const { start, end } = formatDateTimeForCalendar(
+      b.date,
+      b.time,
+      b.duration ?? 60,
+    );
+    if (!start) continue;
+
+    const durationLabel = `${b.duration ?? 60} min`;
+    const summary = b.confirmationId
+      ? `Booking at ${b.venueName} (${durationLabel}) [${b.confirmationId}]`
+      : `Booking at ${b.venueName} (${durationLabel})`;
+    const uid = b.confirmationId
+      ? `${b.confirmationId.replace(/[^A-Za-z0-9#-]/g, "")}@worksphere.app`
+      : `booking-${start}-${Math.random().toString(36).slice(2, 8)}@worksphere.app`;
+
+    events.push(
+      [
+        "BEGIN:VEVENT",
+        `UID:${uid}`,
+        `DTSTAMP:${start}`,
+        `DTSTART:${start}`,
+        `DTEND:${end}`,
+        `SUMMARY:${escapeIcsText(summary)}`,
+        `LOCATION:${escapeIcsText(b.venueAddress)}`,
+        "END:VEVENT",
+      ].join("\r\n"),
+    );
+  }
+
+  if (events.length === 0) return null;
+
+  return (
+    [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//WorkSphere//EN",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      ...events,
+      "END:VCALENDAR",
+    ].join("\r\n") + "\r\n"
+  );
+}
+
+/**
+ * Download all confirmed bookings as a single worksphere-bookings.ics file.
+ */
+export function downloadBulkICS(bookings: BulkBooking[]): void {
+  const content = generateBulkICSContent(bookings);
+  if (!content) return;
+
+  const blob = new Blob([content], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "worksphere-bookings.ics";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}

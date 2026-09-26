@@ -277,30 +277,43 @@ async function dataAgent(
   const endpoints = [
     "https://overpass-api.de/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
   ];
+
+  // Race all mirrors in parallel — 3.5 s per mirror, first success wins.
+  // Previously this queried sequentially (up to 20 s total); now the
+  // effective timeout is just 3.5 s regardless of how many mirrors are used.
+  const MIRROR_TIMEOUT_MS = 3500;
 
   let overpassFailed = true;
 
-  for (const endpoint of endpoints) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => {
-      controller.abort();
-    }, 10000);
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        body: `data=${encodeURIComponent(query)}`,
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "WorkSphere-Dev-App/1.0",
-          Accept: "application/json",
-        },
-        signal: controller.signal,
-      });
+  const raceResult = await Promise.any(
+    endpoints.map(async (endpoint) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), MIRROR_TIMEOUT_MS);
+      try {
+        const response = await fetch(endpoint, {
+          method: "POST",
+          body: `data=${encodeURIComponent(query)}`,
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "WorkSphere-Dev-App/1.0",
+            Accept: "application/json",
+          },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`${endpoint} returned ${response.status}`);
+        const data = await response.json();
+        return { endpoint, data };
+      } finally {
+        clearTimeout(timeout);
+      }
+    }),
+  ).catch(() => null);
 
-      if (!response.ok) continue;
-      const data = await response.json();
-      overpassFailed = false;
+  if (raceResult) {
+    const { data } = raceResult;
+    overpassFailed = false;
 
       let venues = data.elements.slice(0, 15).map((el: any) => {
         const hasErgonomic =
@@ -382,18 +395,6 @@ async function dataAgent(
         meta: { total: venues.length, source: "Overpass API" },
         reasoning: `Found ${venues.length} venues within ${radius}m`,
       };
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        console.warn(
-          `Overpass API request to ${endpoint} timed out after 10 seconds.`,
-        );
-      } else {
-        console.error("Data agent error:", error);
-      }
-      continue;
-    } finally {
-      clearTimeout(timeout);
-    }
   }
 
   // Fallback to mock data if Overpass API is completely down/rate-limited

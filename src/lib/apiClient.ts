@@ -1,3 +1,5 @@
+import { CSRF_HEADER_NAME, CSRF_PROTECTED_METHODS } from "./csrf";
+
 /**
  * Single-flight token refresh guard.
  *
@@ -31,29 +33,127 @@ export async function getValidToken(
   return _refreshPromise;
 }
 
-/** Cached CSRF token; refreshed on 403 CSRF rejection. */
+/** Cached CSRF token; refreshed proactively before mutations and on 403 rejection. */
 let _csrfToken: string | null = null;
 
+/** Timestamp (ms) of the last successful CSRF token fetch. */
+let _csrfFetchedAt = 0;
+
 /**
- * Fetch (or return cached) CSRF token from /api/auth/csrf-token.
- * Used to auto-refresh the token when a session stays open >24 h.
+ * If the cached token is older than this threshold, treat it as near-expiration
+ * and proactively refresh before issuing a mutation request. 20 minutes is
+ * well within any realistic session/cookie lifetime while avoiding unnecessary
+ * round-trips on rapid successive mutations.
+ */
+export const CSRF_REFRESH_THRESHOLD_MS = 20 * 60 * 1000;
+
+/** Single-flight guard for CSRF token refresh — mirrors the pattern used by getValidToken above. */
+let _csrfRefreshPromise: Promise<string | null> | null = null;
+
+/**
+ * Fetch a fresh CSRF token from /api/auth/csrf-token.
+ * Always hits the server; callers should use ensureCsrfToken() to avoid redundant requests.
  */
 async function fetchCsrfToken(): Promise<string | null> {
   try {
     const res = await fetch("/api/auth/csrf-token", { credentials: "include" });
     if (!res.ok) return null;
     const data = await res.json();
-    _csrfToken = data.csrfToken ?? null;
-    return _csrfToken;
+    if (data?.csrfToken && typeof data.csrfToken === "string") {
+      _csrfToken = data.csrfToken;
+      _csrfFetchedAt = Date.now();
+      return _csrfToken;
+    }
+    return null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Returns the age (in ms) of the cached CSRF token.
+ * Returns Infinity if no token is currently cached.
+ */
+export function getCsrfTokenAge(): number {
+  if (!_csrfToken || !_csrfFetchedAt) return Infinity;
+  return Date.now() - _csrfFetchedAt;
+}
+
+/**
+ * Checks whether the CSRF token is missing or near expiration.
+ */
+export function isCsrfTokenNearExpiration(): boolean {
+  if (!_csrfToken) return true;
+  return getCsrfTokenAge() >= CSRF_REFRESH_THRESHOLD_MS;
+}
+
+/**
+ * Ensures a valid, non-stale CSRF token is available for a mutation request.
+ *
+ * Behaviour:
+ *  - Returns the cached token immediately if it was fetched recently (< threshold).
+ *  - Otherwise fetches a fresh token from the server, using single-flight
+ *    deduplication so concurrent mutations share the same in-flight refresh.
+ */
+export async function ensureCsrfToken(): Promise<string | null> {
+  if (!isCsrfTokenNearExpiration() && _csrfToken) {
+    return _csrfToken;
+  }
+
+  // Single-flight: if another caller is already fetching, queue on that promise.
+  if (_csrfRefreshPromise) {
+    return _csrfRefreshPromise;
+  }
+
+  _csrfRefreshPromise = fetchCsrfToken().finally(() => {
+    _csrfRefreshPromise = null;
+  });
+
+  return _csrfRefreshPromise;
+}
+
+function isMutatingMethod(method: string): boolean {
+  return CSRF_PROTECTED_METHODS.has(method.toUpperCase());
+}
+
+/** Resolve the effective HTTP method from RequestInit / Request input. */
+function resolveMethod(input: RequestInfo | URL, init?: RequestInit): string {
+  if (init?.method) return init.method.toUpperCase();
+  if (typeof Request !== "undefined" && input instanceof Request) {
+    return input.method.toUpperCase();
+  }
+  return "GET";
 }
 
 export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
+  const method = resolveMethod(input, init);
+  const urlString =
+    typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : typeof Request !== "undefined" && input instanceof Request
+          ? input.url
+          : "";
+
+  // Proactively ensure a fresh CSRF token and attach it before mutation requests.
+  if (isMutatingMethod(method) && !urlString.includes("/api/auth/csrf-token")) {
+    const token = await ensureCsrfToken();
+    if (token) {
+      const existingHeaders =
+        init?.headers ??
+        (typeof Request !== "undefined" && input instanceof Request
+          ? input.headers
+          : undefined);
+      const headers = new Headers(existingHeaders);
+      headers.set(CSRF_HEADER_NAME, token);
+      init = { ...init, method, headers };
+    }
+  }
+
   const response = await fetch(input, init);
 
   // Auto-refresh CSRF token and retry once on 403 with CSRF rejection code.
@@ -62,7 +162,10 @@ export async function apiFetch(
     try {
       const clone = response.clone();
       const data = await clone.json();
-      if (data?.code === "CSRF_INVALID" || data?.error?.toLowerCase().includes("csrf")) {
+      if (
+        data?.code === "CSRF_INVALID" ||
+        data?.error?.toLowerCase().includes("csrf")
+      ) {
         const freshToken = await fetchCsrfToken();
         if (freshToken) {
           const retryHeaders = new Headers(
@@ -70,8 +173,8 @@ export async function apiFetch(
               ? init.headers
               : new Headers(init?.headers ?? {}),
           );
-          retryHeaders.set("x-csrf-token", freshToken);
-          return fetch(input, { ...init, headers: retryHeaders });
+          retryHeaders.set(CSRF_HEADER_NAME, freshToken);
+          return fetch(input, { ...init, method, headers: retryHeaders });
         }
       }
     } catch {
@@ -145,4 +248,28 @@ export async function apiFetch(
   }
 
   return response;
+}
+
+/**
+ * Reset internal CSRF state. Exported for use in tests only — allows each test
+ * case to start with a clean slate without leaking state between cases.
+ * @internal
+ */
+export function _resetCsrfStateForTesting(): void {
+  _csrfToken = null;
+  _csrfFetchedAt = 0;
+  _csrfRefreshPromise = null;
+}
+
+/**
+ * Set internal CSRF state directly. Exported for use in tests only.
+ * @internal
+ */
+export function _setCsrfTokenForTesting(
+  token: string | null,
+  fetchedAt: number = Date.now(),
+): void {
+  _csrfToken = token;
+  _csrfFetchedAt = fetchedAt;
+  _csrfRefreshPromise = null;
 }

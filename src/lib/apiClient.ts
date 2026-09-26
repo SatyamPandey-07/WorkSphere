@@ -1,3 +1,36 @@
+/**
+ * Single-flight token refresh guard.
+ *
+ * When multiple concurrent requests receive a 401 during Clerk JWT expiration,
+ * naively each one triggers a token refresh — causing a queue of parallel
+ * refreshes that can race and deadlock when one fails while others are waiting.
+ *
+ * This module ensures only ONE refresh is in-flight at a time. All requests
+ * that arrive while a refresh is pending queue on the same promise rather than
+ * starting a competing refresh.
+ *
+ * Usage:
+ *   const token = await getValidToken(clerk.session);
+ */
+let _refreshPromise: Promise<string | null> | null = null;
+
+export async function getValidToken(
+  session: { getToken: () => Promise<string | null> } | null | undefined,
+): Promise<string | null> {
+  if (!session) return null;
+
+  if (_refreshPromise) {
+    // Another request is already refreshing — queue on the same promise.
+    return _refreshPromise;
+  }
+
+  _refreshPromise = session.getToken().finally(() => {
+    _refreshPromise = null;
+  });
+
+  return _refreshPromise;
+}
+
 export async function apiFetch(
   input: RequestInfo | URL,
   init?: RequestInit,

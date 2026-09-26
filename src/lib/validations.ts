@@ -2,6 +2,86 @@ import { z } from "zod";
 import { buildVenueSearchSchema } from "@/lib/filters";
 
 // =========================================================================
+// RESERVATION SCHEMAS
+// =========================================================================
+
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
+  .refine((v) => !isNaN(Date.parse(v)), "Invalid calendar date");
+
+const hhMm = z.string().regex(/^\d{2}:\d{2}$/, "Time must be HH:mm");
+
+export const bookingRequestSchema = z.object({
+  venueId: z.string().min(1, "venueId is required"),
+  seatId: z.string().min(1, "seatId is required").or(
+    z.array(z.string().min(1)).min(1, "at least one seatId required"),
+  ),
+  date: isoDate,
+  time: hhMm,
+  duration: z
+    .number()
+    .int("duration must be an integer")
+    .min(30, "duration must be at least 30 minutes")
+    .max(480, "duration cannot exceed 480 minutes"),
+  amenitiesNeeded: z.array(z.string()).max(10).optional(),
+  guests: z
+    .array(
+      z.object({
+        email: z.string().email("Invalid guest email"),
+        name: z.string().max(100).optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
+  customerEmail: z.string().email().optional(),
+  customerPhone: z.string().max(20).optional(),
+  projectBillingCode: z.string().max(100).optional(),
+});
+
+export const recurringBookingSchema = bookingRequestSchema
+  .omit({ seatId: true })
+  .extend({
+    seatId: z.string().min(1, "seatId is required"),
+    frequency: z.enum(["daily", "weekly", "monthly"]),
+    endDate: isoDate.optional(),
+    occurrences: z.number().int().min(1).max(52).optional(),
+  })
+  .refine(
+    (d) => d.endDate !== undefined || d.occurrences !== undefined,
+    "Provide either endDate or occurrences",
+  );
+
+export type BookingRequestInput = z.infer<typeof bookingRequestSchema>;
+export type RecurringBookingInput = z.infer<typeof recurringBookingSchema>;
+
+// =========================================================================
+// USER SETTINGS SCHEMA
+// =========================================================================
+
+export const userSettingsSchema = z.object({
+  phoneNumber: z.string().max(20).optional(),
+  smsAlertsEnabled: z.boolean().optional(),
+  whatsappWebhookUrl: z.string().url("Invalid WhatsApp webhook URL").or(z.literal("")).optional(),
+  telegramWebhookUrl: z.string().url("Invalid Telegram webhook URL").or(z.literal("")).optional(),
+  notificationStart: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "notificationStart must be HH:mm")
+    .or(z.literal(""))
+    .optional(),
+  notificationEnd: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "notificationEnd must be HH:mm")
+    .or(z.literal(""))
+    .optional(),
+  timezone: z.string().max(64).optional(),
+  imageUrl: z.string().url("Invalid image URL").or(z.literal("")).optional(),
+  workStyleProfile: z.string().max(2000).optional(),
+});
+
+export type UserSettingsInput = z.infer<typeof userSettingsSchema>;
+
+// =========================================================================
 // CORE SCHEMAS
 // =========================================================================
 

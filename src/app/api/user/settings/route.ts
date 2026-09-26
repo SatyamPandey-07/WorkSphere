@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { userSettingsSchema } from "@/lib/validations";
 import type { Prisma } from "@prisma/client";
 
 export async function GET() {
@@ -53,6 +54,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    const body = await req.json();
+    const parsed = userSettingsSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: "Invalid parameters",
+          details: parsed.error.flatten().fieldErrors,
+        },
+        { status: 400 },
+      );
+    }
+
     const {
       phoneNumber,
       smsAlertsEnabled,
@@ -62,18 +75,8 @@ export async function POST(req: Request) {
       notificationEnd,
       timezone,
       imageUrl,
-      workStyleProfile, // <-- NEW: Extracting from frontend request
-    } = await req.json();
-
-    if (
-      typeof smsAlertsEnabled !== "boolean" &&
-      smsAlertsEnabled !== undefined
-    ) {
-      return NextResponse.json(
-        { error: "Invalid parameters" },
-        { status: 400 },
-      );
-    }
+      workStyleProfile,
+    } = parsed.data;
 
     // Prepare update data, ignoring fields that aren't provided to allow partial updates
     const dataToUpdate: any = {

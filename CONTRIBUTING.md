@@ -245,6 +245,62 @@ jest.mock('leaflet', () => ({
 
 Avoid connecting to actual databases or Redis caches in unit tests. Mock the client modules using `jest.mock`.
 
+#### 4. ZKP (Zero-Knowledge Proof) Module Configuration
+
+WorkSphere includes a student discount verification feature that uses `snarkjs` and `ffjavascript` for zero-knowledge proof generation. These packages ship as ES modules (ESM) but Jest runs in CommonJS (CJS) mode by default.
+
+`jest.config.js` maps both packages to their CJS builds to prevent `SyntaxError: Cannot use import statement` at test time:
+
+```js
+moduleNameMapper: {
+  '^snarkjs$': '<rootDir>/node_modules/snarkjs/build/main.cjs',
+  '^ffjavascript$': '<rootDir>/node_modules/ffjavascript/build/main.cjs',
+  '^uncrypto$': '<rootDir>/node_modules/uncrypto/dist/crypto.node.cjs',
+},
+```
+
+**What contributors should know:**
+- Tests that import ZKP-related modules work automatically — no manual mocking needed
+- If you add a new package that ships ESM-only and fails with `SyntaxError: Cannot use import statement`, add a similar entry to `moduleNameMapper` in `jest.config.js`
+- ZKP proof generation is CPU and memory intensive; the config sets `workerIdleMemoryLimit: '256MB'` and `maxWorkers: '50%'` to prevent heap exhaustion during the full test suite
+
+---
+
+#### 5. ZKP Circuit Compilation (`npm run zkp:compile`)
+
+The `zkp:compile` script compiles the [Circom](https://docs.circom.io/) circuit used for student discount verification and generates the Groth16 proving/verification keys.
+
+**When to run it:** Only when you modify `circuits/premium_membership.circom`. You do **not** need to run it for most features — the compiled outputs (`public/zkp/`) are committed and kept up to date.
+
+**Dependencies (install once):**
+
+```bash
+# Circom compiler
+npm install -g @iden3/circom
+
+# snarkjs and openssl must be available in PATH
+npm install                       # snarkjs is already in package.json
+openssl version                   # confirm openssl is installed
+```
+
+**Run the compile script:**
+
+```bash
+npm run zkp:compile
+```
+
+This will:
+1. Compile `circuits/premium_membership.circom` → R1CS, WASM, SYM files in `circuits/build/`
+2. Generate a small Powers-of-Tau ceremony (`pot12_final.ptau`) if one doesn't already exist
+3. Run the Groth16 trusted-setup → outputs `premium_membership_final.zkey`
+4. Export the verification key to `public/zkp/verification_key.json`
+5. Copy the WASM prover to `public/zkp/`
+
+**Notes:**
+- The build step can take 30–90 seconds on a typical laptop
+- The generated `.ptau` and `.zkey` files are large; they are committed to the repo so other contributors don't need to regenerate them
+- If `npm run zkp:compile` fails with "circom not found", ensure `@iden3/circom` is on your PATH
+
 ---
 
 ## 4. E2E Testing (Playwright)

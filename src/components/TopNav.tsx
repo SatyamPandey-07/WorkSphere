@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { ReactiveUserButton } from "@/components/ReactiveUserButton";
 import { Coffee, LayoutGrid, Menu, Shield, X } from "lucide-react";
@@ -18,11 +19,18 @@ interface TopNavProps {
 
 export function TopNav({ hideAuth = false }: TopNavProps) {
   const { isSignedIn } = useUser();
+  const pathname = usePathname();
 
-  console.log({
-    hideAuth,
-    isSignedIn,
-  });
+  const navLinkClass = (href: string) => {
+    const isActive = pathname === href || pathname.startsWith(href + "/");
+    return [
+      "hidden md:flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap",
+      isActive
+        ? "text-blue-600 dark:text-blue-400 font-semibold bg-blue-50 dark:bg-blue-900/20 rounded-lg"
+        : "text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white",
+    ].join(" ");
+  };
+
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -126,7 +134,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                   {/* Desktop Links */}
                   <Link
                     href="/ai"
-                    className="hidden md:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
+                    className={navLinkClass("/ai")}
                   >
                     <Coffee className="w-4 h-4" />
                     Dashboard
@@ -134,7 +142,7 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
 
                   <Link
                     href="/collections"
-                    className="hidden md:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
+                    className={navLinkClass("/collections")}
                   >
                     <LayoutGrid className="w-4 h-4" />
                     Collections

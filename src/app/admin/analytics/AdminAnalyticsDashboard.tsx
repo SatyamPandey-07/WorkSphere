@@ -128,8 +128,9 @@ export default function AdminAnalyticsDashboard() {
     } finally {
       setIsExportingPdf(false);
     }
+  };
 
-    useEffect(() => {
+  useEffect(() => {
     loadAnalytics(range);
   }, [range]);
 
@@ -179,8 +180,8 @@ export default function AdminAnalyticsDashboard() {
     [data],
   );
 
- if (loading && !data) return <DashboardSkeleton />;
-  
+  if (loading && !data) return <DashboardSkeleton />;
+
   if (error) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#07070a] p-8 text-red-400">
@@ -189,7 +190,7 @@ export default function AdminAnalyticsDashboard() {
         </p>
       </div>
     );
-  }    
+  }
   return (
     <main className="min-h-screen bg-[#07070a] text-white">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -246,8 +247,8 @@ export default function AdminAnalyticsDashboard() {
             </div>
 
             <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-zinc-300 transition hover:bg-white/[0.08] hover:text-white">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 checked={autoRefresh}
                 onChange={(e) => setAutoRefresh(e.target.checked)}
                 className="rounded border-white/10 bg-black text-violet-500 focus:ring-violet-500/20"
@@ -566,4 +567,53 @@ export default function AdminAnalyticsDashboard() {
                         {venue.category}
                       </p>
                     </td>
-                    <td className="px-3 py-4 text-zinc-30
+                    <td className="px-3 py-4 text-zinc-300">{venue.views}</td>
+                    <td className="px-3 py-4 text-zinc-300">
+                      {venue.bookings}
+                    </td>
+                    <td className="px-3 py-4">
+                      <span
+                        className={`inline-flex items-center gap-1 ${
+                          (venue.rating ?? 0) > 0
+                            ? "text-amber-300"
+                            : "text-zinc-500"
+                        }`}
+                      >
+                        <Star
+                          className={`h-4 w-4 ${
+                            (venue.rating ?? 0) > 0
+                              ? "fill-current"
+                              : "text-zinc-500"
+                          }`}
+                        />
+                        {venue.rating != null && !isNaN(venue.rating)
+                          ? venue.rating.toFixed(1)
+                          : "0.0"}
+                      </span>
+                    </td>
+                    <td className="px-3 py-4 font-medium text-violet-300">
+                      {venue.score}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <footer className="mt-6 flex flex-col gap-2 text-xs text-zinc-600 sm:flex-row sm:items-center sm:justify-between">
+          <span>
+            Admin-only · First-party analytics · No third-party tracking
+          </span>
+          <span>
+            {data?.generatedAt
+              ? `Updated ${new Date(data.generatedAt).toLocaleString()}`
+              : loading
+                ? "Loading telemetry…"
+                : "No telemetry loaded"}
+          </span>
+        </footer>
+      </div>
+    </main>
+  );
+}

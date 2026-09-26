@@ -20,7 +20,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Auto-label PR
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         with:
           script: |
             try {
@@ -112,7 +112,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Thank Contributor
-        uses: actions/github-script@v9
+        uses: actions/github-script@v7
         with:
           script: |
             try {

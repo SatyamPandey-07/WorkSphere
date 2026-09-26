@@ -28,6 +28,7 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isMarkingRead, setIsMarkingRead] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => {
     if (typeof window === "undefined") return true;
 
@@ -122,6 +123,35 @@ export function NotificationBell() {
       setNotifications(prevNotifications);
     } finally {
       setIsMarkingRead(false);
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    if (isClearing) return;
+    setIsClearing(true);
+
+    const prevNotifications = notifications;
+    const prevUnreadCount = unreadCount;
+
+    setNotifications([]);
+    setUnreadCount(0);
+
+    try {
+      const res = await fetch("/api/user/notifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clearAll" }),
+      });
+      if (!res.ok) {
+        setNotifications(prevNotifications);
+        setUnreadCount(prevUnreadCount);
+      }
+    } catch (e) {
+      console.error("Failed to clear notifications:", e);
+      setNotifications(prevNotifications);
+      setUnreadCount(prevUnreadCount);
+    } finally {
+      setIsClearing(false);
     }
   };
 

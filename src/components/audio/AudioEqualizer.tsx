@@ -236,16 +236,20 @@ export function AudioEqualizer({
     // DynamicsCompressorNode prevents digital clipping when 5+ participants
     // mix their audio tracks through the same Web Audio graph (4:1 ratio,
     // -24 dB knee for gentle limiting before the master output).
-    const compressor = ctx.createDynamicsCompressor();
-    compressor.threshold.value = -24;
-    compressor.knee.value = 12;
-    compressor.ratio.value = 4;
-    compressor.attack.value = 0.003;
-    compressor.release.value = 0.25;
-    compressorRef.current = compressor;
+    if (typeof ctx.createDynamicsCompressor === "function") {
+      const compressor = ctx.createDynamicsCompressor();
+      if (compressor.threshold) compressor.threshold.value = -24;
+      if (compressor.knee) compressor.knee.value = 12;
+      if (compressor.ratio) compressor.ratio.value = 4;
+      if (compressor.attack) compressor.attack.value = 0.003;
+      if (compressor.release) compressor.release.value = 0.25;
+      compressorRef.current = compressor;
 
-    masterGain.connect(compressor);
-    compressor.connect(analyser);
+      masterGain.connect(compressor);
+      compressor.connect(analyser);
+    } else {
+      masterGain.connect(analyser);
+    }
     analyser.connect(ctx.destination);
 
     // Build 5-band BiquadFilterNode cascade

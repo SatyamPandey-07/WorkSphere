@@ -13,7 +13,6 @@ import {
   MonitorUp,
   MonitorDown,
   PhoneOff,
-  Signal,
   Loader2,
 } from "lucide-react";
 
@@ -113,15 +112,6 @@ export function MeshCallGrid({ sessionSlug }: MeshCallGridProps) {
     // Refreshing the page will clean up WebRTC state
     window.location.reload();
   }, []);
-
-  const networkColor =
-    networkQuality === "good"
-      ? "text-emerald-400"
-      : networkQuality === "fair"
-        ? "text-amber-400"
-        : networkQuality === "poor"
-          ? "text-rose-400"
-          : "text-zinc-500";
 
   // Error banner
   if (error) {

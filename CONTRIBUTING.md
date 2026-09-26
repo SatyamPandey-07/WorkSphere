@@ -291,11 +291,24 @@ Before pushing changes to GitHub, you **MUST** verify that all the checks below 
 | `npm test`         | Runs the full Jest test suite to check unit and component logic.    | Fix regressions; do not skip failing tests.                  |
 | `npm run build`    | Simulates a production build (Prisma generation + Next.js compile). | Critical check. Fix any build-blocking errors.               |
 
-### 2. Vercel Build Verification
+### 2. Vercel Build Verification & TypeScript Behavior
 
 Vercel builds use `npm run build` which runs `prisma generate && next build`. If this step fails locally, it **will** fail on Vercel deployment. Make sure you run `npm run build` successfully before submitting your PR!
 
-> **Note:** The current production build does **not** invoke `tsc` as a separate build step. For complete TypeScript type checking, run `npx tsc --noEmit` in addition to `npm run build` before opening a pull request.
+#### TypeScript Build Behavior & Validation
+
+- **What `npm run build` Validates**: `npm run build` runs `prisma generate` to build Prisma client type definitions, followed by `next build --webpack` to compile production application pages and components.
+- **TypeScript Errors Inclusion**: TypeScript errors are **included and enforced** during `npm run build` because Next.js has type checking enabled by default (`ignoreBuildErrors` is not set in `next.config.ts`). Any TypeScript compilation errors in the application build graph will fail the build.
+- **Separate Type-Checking Command**: Because `npm run build` does not run `tsc` as an independent script and involves Prisma code generation plus production asset compilation, contributors should run `npx tsc --noEmit` separately for fast, standalone TypeScript type checking during development.
+
+### 3. Recommended PR Validation Workflow
+
+Before submitting a pull request, run the following validation steps in order:
+
+1. `npm run lint` — Validates code style and ESLint rules.
+2. `npx tsc --noEmit` — Runs standalone TypeScript type-checking across the workspace.
+3. `npm test` — Executes the Jest unit and component test suites.
+4. `npm run build` — Verifies Prisma client generation and Next.js production build compilation.
 
 ---
 

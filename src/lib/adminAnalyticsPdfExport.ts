@@ -27,10 +27,12 @@ export async function generateAnalyticsPdfReport(
     y = height - margin;
   };
 
-  const ensureSpace = (needed: number) => {
+  const ensureSpace = (needed: number): boolean => {
     if (y - needed < margin + 30) {
       newPage();
+      return true;
     }
+    return false;
   };
 
   // Top Accent Bar (Purple)
@@ -204,7 +206,7 @@ export async function generateAnalyticsPdfReport(
   });
   y -= 16;
 
-  // Table Headers
+  // Table Headers — extracted so they can be re-drawn after a mid-table page break
   const tableX = margin;
   const colX = [
     tableX,
@@ -214,61 +216,68 @@ export async function generateAnalyticsPdfReport(
     tableX + 380,
     tableX + 440,
   ];
-  page.drawRectangle({
-    x: margin,
-    y: y - 18,
-    width: width - margin * 2,
-    height: 18,
-    color: rgb(0.92, 0.94, 0.97),
-  });
 
-  drawSafeText(page, "RK", {
-    x: colX[0] + 6,
-    y: y - 13,
-    size: 8,
-    font: bold,
-    color: rgb(0.3, 0.3, 0.3),
-  });
-  drawSafeText(page, "VENUE NAME", {
-    x: colX[1] + 6,
-    y: y - 13,
-    size: 8,
-    font: bold,
-    color: rgb(0.3, 0.3, 0.3),
-  });
-  drawSafeText(page, "CATEGORY", {
-    x: colX[2] + 6,
-    y: y - 13,
-    size: 8,
-    font: bold,
-    color: rgb(0.3, 0.3, 0.3),
-  });
-  drawSafeText(page, "VIEWS", {
-    x: colX[3] + 6,
-    y: y - 13,
-    size: 8,
-    font: bold,
-    color: rgb(0.3, 0.3, 0.3),
-  });
-  drawSafeText(page, "BOOKINGS", {
-    x: colX[4] + 6,
-    y: y - 13,
-    size: 8,
-    font: bold,
-    color: rgb(0.3, 0.3, 0.3),
-  });
-  drawSafeText(page, "SCORE", {
-    x: colX[5] + 6,
-    y: y - 13,
-    size: 8,
-    font: bold,
-    color: rgb(0.3, 0.3, 0.3),
-  });
+  const drawTableHeader = () => {
+    page.drawRectangle({
+      x: margin,
+      y: y - 18,
+      width: width - margin * 2,
+      height: 18,
+      color: rgb(0.92, 0.94, 0.97),
+    });
+    drawSafeText(page, "RK", {
+      x: colX[0] + 6,
+      y: y - 13,
+      size: 8,
+      font: bold,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    drawSafeText(page, "VENUE NAME", {
+      x: colX[1] + 6,
+      y: y - 13,
+      size: 8,
+      font: bold,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    drawSafeText(page, "CATEGORY", {
+      x: colX[2] + 6,
+      y: y - 13,
+      size: 8,
+      font: bold,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    drawSafeText(page, "VIEWS", {
+      x: colX[3] + 6,
+      y: y - 13,
+      size: 8,
+      font: bold,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    drawSafeText(page, "BOOKINGS", {
+      x: colX[4] + 6,
+      y: y - 13,
+      size: 8,
+      font: bold,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    drawSafeText(page, "SCORE", {
+      x: colX[5] + 6,
+      y: y - 13,
+      size: 8,
+      font: bold,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    y -= 22;
+  };
 
-  y -= 22;
+  drawTableHeader();
 
-  data.venueLeaderboard.slice(0, 10).forEach((venue, index) => {
-    ensureSpace(20);
+  data.venueLeaderboard.forEach((venue, index) => {
+    // If ensureSpace opens a new page mid-table, re-draw the column headers
+    const didPageBreak = ensureSpace(20);
+    if (didPageBreak) {
+      drawTableHeader();
+    }
     const rowY = y - 16;
 
     if (index % 2 === 1) {

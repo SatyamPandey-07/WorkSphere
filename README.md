@@ -32,13 +32,13 @@
 >
 > You will have **6 days** to complete it! 🚀
 
-### 🚀 Contributors (76 Active Rockstars)
+### 🚀 Contributors (83 Active Rockstars)
 
-Thanks to all **76 contributors** building WorkSphere!
+Thanks to all **83 contributors** building WorkSphere!
 
 <p align="center">
   <a href="https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors">
-    <img src=".github/contributors.svg" alt="WorkSphere Contributors" width="812" />
+    <img src="https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere" alt="WorkSphere Contributors" />
   </a>
 </p>
 
@@ -687,20 +687,6 @@ To get started quickly:
 3. Make sure all pre-commit checks pass (`npm run lint`, `npx tsc --noEmit`, and `npm test`).
 4. Commit your changes (`git commit -m 'feat: Add amazing feature'`) and push to your branch.
 5. Open a Pull Request against the `main` branch.
-
----
-
-## 👥 Contributors
-
-A huge thank you to all the wonderful contributors who help improve WorkSphere! ✨
-
-<div align="center">
-
-<a href="https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere" alt="WorkSphere Contributors" />
-</a>
-
-</div>
 
 ---
 

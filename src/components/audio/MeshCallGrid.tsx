@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useWebRTCMesh } from "@/hooks/useWebRTCMesh";
 import { useUser } from "@clerk/nextjs";
 import { PeerAvatarTile } from "./PeerAvatarTile";
+import { NetworkQualityBadge } from "./NetworkQualityBadge";
 import {
   Mic,
   MicOff,
@@ -147,11 +148,11 @@ export function MeshCallGrid({ sessionSlug }: MeshCallGridProps) {
         </div>
 
         {isJoined && (
-          <div className="flex items-center gap-2 text-[10px] text-zinc-500">
-            <Signal className={`h-3 w-3 ${networkColor}`} />
-            <span className="capitalize">{networkQuality}</span>
-            {rtt > 0 && <span>{rtt.toFixed(0)}ms</span>}
-          </div>
+          <NetworkQualityBadge
+            qualityTier={networkQuality as "good" | "fair" | "poor" | "unknown"}
+            ping={rtt > 0 ? rtt : undefined}
+            className="text-[10px]"
+          />
         )}
       </div>
 

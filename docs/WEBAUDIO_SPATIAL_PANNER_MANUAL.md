@@ -221,6 +221,33 @@ Clamped to [0, 1].
 gain = (distance / refDistance)^(−rolloffFactor)
 ```
 
+#### Model Comparison
+
+| Model | Curve | Best for |
+|-------|-------|---------|
+| `"inverse"` | Reciprocal (realistic) | Default — matches how real-world sound decays |
+| `"linear"` | Linear fade to 0 | Simple panning effects where hard cutoff is acceptable |
+| `"exponential"` | Steep power-law | Directional sound effects that fade very quickly |
+
+#### Recommended Values for WorkSphere Spatial Audio
+
+For a virtual workspace where seats are distributed across a room (~10–20 metres):
+
+```js
+panner.distanceModel = "inverse";   // Realistic room acoustics
+panner.panningModel  = "HRTF";      // Full binaural cues over headphones
+panner.refDistance   = 1.0;         // No attenuation within 1 metre
+panner.maxDistance   = 20.0;        // Clamp gain at 20 m (typical room width)
+panner.rolloffFactor = 1.0;         // Standard roll-off; increase for more intimate feel
+```
+
+Use `"equalpower"` instead of `"HRTF"` only as a fallback for devices without HRTF support (e.g. mobile Safari) or when CPU budget is tight. `"equalpower"` omits elevation cues but is significantly cheaper to compute.
+
+```js
+// Lightweight fallback
+panner.panningModel = navigator.maxTouchPoints > 0 ? "equalpower" : "HRTF";
+```
+
 ### 3.2 Azimuth & Elevation Calculation
 
 The HRTF panning model converts source position to **azimuth** (horizontal angle) and **elevation** (vertical angle) relative to the listener's head. These angles determine which HRTF impulse response is applied.

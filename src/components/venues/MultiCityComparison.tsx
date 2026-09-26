@@ -282,8 +282,14 @@ export function MultiCityComparison({
       setPrevParamsString(currentParamsString);
       const urlCities = parseCitiesFromParams(searchParams);
       const urlFilters = parseFiltersFromParams(searchParams);
-      setSelectedCities(urlCities);
-      setSelectedFilters(urlFilters);
+      // Only update state when values actually differ to prevent a new array
+      // reference from triggering the fetch useEffect on every URL write.
+      setSelectedCities((prev) =>
+        prev.join(",") === urlCities.join(",") ? prev : urlCities,
+      );
+      setSelectedFilters((prev) =>
+        prev.join(",") === urlFilters.join(",") ? prev : urlFilters,
+      );
     }
   }, [searchParams, prevParamsString]);
 

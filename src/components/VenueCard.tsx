@@ -42,6 +42,7 @@ import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
 import { getOpeningHoursStatus } from "@/lib/openingHours";
 import { MUSIC_GENRE_EMOJI, type MusicGenre } from "@/hooks/useLiveVenueData";
+import { HighlightedText } from "@/components/ui/HighlightedText";
 import { useSeatAvailability } from "@/hooks/useSeatAvailability";
 
 interface VenueEnrichData {
@@ -79,6 +80,8 @@ interface VenueCardProps {
   };
   checkedInVenueId?: string | null;
   onReportMusicGenre?: (genre: MusicGenre) => void;
+  /** Active search query — matching terms are highlighted in the venue name */
+  searchQuery?: string;
 }
 
 interface VoteMetricState {
@@ -100,6 +103,7 @@ export function VenueCard({
   liveData,
   checkedInVenueId,
   onReportMusicGenre,
+  searchQuery = "",
 }: VenueCardProps) {
   const [isFavorited, setIsFavorited] = useState(false);
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
@@ -539,7 +543,7 @@ export function VenueCard({
         <div className="flex items-start justify-between mb-2 mt-4">
           <div className="flex-1">
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-              <span>{venue.name}</span>
+              <HighlightedText text={venue.name} query={searchQuery} />
               {venue.isClaimed && (
                 <span title="Verified Host" className="inline-flex shrink-0">
                   <BadgeCheck className="w-4 h-4 text-green-500 shrink-0" />

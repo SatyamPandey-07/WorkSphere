@@ -469,7 +469,7 @@ export default function Scratchpad({ sessionId }: Props) {
           value={text}
           onChange={handleChange}
           placeholder="Start typing securely..."
-          className="h-full w-full resize-none bg-transparent text-white outline-none placeholder:text-zinc-600 font-mono text-sm"
+          className="h-full w-full resize-none bg-transparent text-white outline-none placeholder:text-zinc-600 font-mono text-sm focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-inset rounded"
         />
       </div>
     </div>

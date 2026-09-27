@@ -31,7 +31,7 @@ import {
   BadgeCheck,
   Music,
 } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
@@ -112,6 +112,14 @@ export function VenueCard({
 
   const isCheckedInHere = checkedInVenueId === venue.id;
   const activeMusicGenre = liveData?.musicGenre ?? null;
+
+  // Defer time-dependent rendering (open/closed status) to after hydration to
+  // prevent SSR/client mismatch caused by new Date() producing different values
+  // on server vs. client.
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const { currency } = useCurrency();
   const router = useRouter();
@@ -669,37 +677,43 @@ export function VenueCard({
             );
           }
 
-          const now = new Date();
-          const currentMinutes = now.getHours() * 60 + now.getMinutes();
-          const [openH, openM] = match[1].split(":").map(Number);
-          const [closeH, closeM] = match[2].split(":").map(Number);
-
-          const openMinutes = openH * 60 + openM;
-          const closeMinutes = closeH * 60 + closeM;
-
+          // Gate the open/closed badge on isClient to prevent SSR hydration mismatch
+          // (new Date() differs between server and client render times).
           let legacyOpen = false;
-          if (closeMinutes < openMinutes) {
-            legacyOpen =
-              currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
-          } else {
-            legacyOpen =
-              currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+          if (isClient) {
+            const now = new Date();
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+            const [openH, openM] = match[1].split(":").map(Number);
+            const [closeH, closeM] = match[2].split(":").map(Number);
+
+            const openMinutes = openH * 60 + openM;
+            const closeMinutes = closeH * 60 + closeM;
+
+            if (closeMinutes < openMinutes) {
+              legacyOpen =
+                currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+            } else {
+              legacyOpen =
+                currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+            }
           }
 
           return (
             <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
               <Clock className="w-3 h-3 shrink-0" />
               <span>{hoursStr}</span>
-              <span
-                className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
-                  legacyOpen
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                }`}
-                title={legacyOpen ? "Open Now" : "Closed"}
-              >
-                {legacyOpen ? "Open Now" : "Closed"}
-              </span>
+              {isClient && (
+                <span
+                  className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
+                    legacyOpen
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                  }`}
+                  title={legacyOpen ? "Open Now" : "Closed"}
+                >
+                  {legacyOpen ? "Open Now" : "Closed"}
+                </span>
+              )}
             </div>
           );
         })()}

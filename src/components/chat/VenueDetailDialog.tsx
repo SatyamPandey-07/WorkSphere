@@ -109,6 +109,27 @@ export function VenueDetailDialog({
     "wifi" | "outlets" | "noise" | null
   >(null);
   const [copied, setCopied] = useState(false);
+  const [showFlagMenu, setShowFlagMenu] = useState(false);
+  const [flagSubmitted, setFlagSubmitted] = useState(false);
+  const [flagSubmitting, setFlagSubmitting] = useState(false);
+
+  const submitFlag = async (reason: string) => {
+    setFlagSubmitting(true);
+    setShowFlagMenu(false);
+    try {
+      await fetch(`/api/venues/${venue.id}/flag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      setFlagSubmitted(true);
+      setTimeout(() => setFlagSubmitted(false), 3000);
+    } catch {
+      // silently fail — the UI will just reset
+    } finally {
+      setFlagSubmitting(false);
+    }
+  };
   // Floor plan seat selection state (used by floor plan component when rendered)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
@@ -1841,6 +1862,44 @@ export function VenueDetailDialog({
                       Rate
                     </button>
                   )}
+                  {/* Report Inaccurate Data */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowFlagMenu((v) => !v)}
+                      aria-label="Report inaccurate venue data"
+                      aria-haspopup="true"
+                      aria-expanded={showFlagMenu}
+                      className="flex items-center justify-center gap-1.5 bg-black/40 border-2 border-white/10 text-zinc-400 hover:text-amber-400 hover:border-amber-500/40 py-3 px-4 rounded-2xl transition-all shadow-md active:scale-[0.98]"
+                    >
+                      {flagSubmitted ? (
+                        <Check className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4" />
+                      )}
+                    </button>
+                    {showFlagMenu && (
+                      <div className="absolute bottom-full mb-2 right-0 z-50 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl w-52 py-1 text-sm">
+                        {[
+                          { id: "permanently_closed", label: "Permanently Closed" },
+                          { id: "wrong_hours", label: "Wrong Hours" },
+                          { id: "no_wifi", label: "No Longer Has WiFi" },
+                          { id: "wrong_address", label: "Wrong Address" },
+                          { id: "other", label: "Other Issue" },
+                        ].map(({ id, label }) => (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => submitFlag(id)}
+                            disabled={flagSubmitting}
+                            className="w-full text-left px-4 py-2 text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors disabled:opacity-50"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={handleShare}
                     aria-label={"Share " + venue.name}

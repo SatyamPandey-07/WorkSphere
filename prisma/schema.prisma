@@ -116,6 +116,9 @@ model Venue {
   updatedAt           DateTime            @updatedAt
   lighting            String?
   musicStyle          String?
+  isWellLit           Boolean             @default(false) // OSM lit=yes along walking route
+  hasCCTV             Boolean             @default(false) // CCTV visible on premises
+  safetyScore         Int?     // 1-5 crowdsourced safety rating for night workers
   ratings             VenueRating[]
   favorites           Favorite[]
   bookings            Booking[]

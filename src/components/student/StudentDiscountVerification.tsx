@@ -16,6 +16,50 @@ interface StudentDiscountVerificationProps {
   onClose?: () => void;
 }
 
+const ZKP_CACHE_KEY = "worksphere-zkp-verified";
+const ZKP_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+interface ZkpCacheEntry {
+  studentIdHash: string;
+  verifiedAt: number;
+}
+
+function hashStudentId(id: string): string {
+  // Simple non-cryptographic hash — only used as a cache key; actual security
+  // is enforced server-side via the ZKP proof verification.
+  let h = 5381;
+  for (let i = 0; i < id.length; i++) {
+    h = (((h << 5) + h) ^ id.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(36);
+}
+
+function loadZkpCache(): ZkpCacheEntry | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(ZKP_CACHE_KEY);
+    if (!raw) return null;
+    const entry: ZkpCacheEntry = JSON.parse(raw);
+    if (Date.now() - entry.verifiedAt > ZKP_CACHE_TTL_MS) {
+      localStorage.removeItem(ZKP_CACHE_KEY);
+      return null;
+    }
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+function saveZkpCache(studentIdHash: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const entry: ZkpCacheEntry = { studentIdHash, verifiedAt: Date.now() };
+    localStorage.setItem(ZKP_CACHE_KEY, JSON.stringify(entry));
+  } catch {
+    // Storage quota exceeded — skip caching
+  }
+}
+
 function createZkpWorker(): Worker {
   return new Worker(
     new URL("../../workers/zkpWorker.ts", import.meta.url),
@@ -29,7 +73,12 @@ export function StudentDiscountVerification({
   const [studentId, setStudentId] = useState("");
   const [isProving, setIsProving] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  // Pre-populate isSuccess if there's a valid cached proof so the success
+  // state is shown immediately without re-running the expensive ZKP worker.
+  const [isSuccess, setIsSuccess] = useState(() => {
+    const cached = loadZkpCache();
+    return cached !== null;
+  });
   const [error, setError] = useState<string | null>(null);
 
   const workerRef = useRef<Worker | null>(null);
@@ -76,6 +125,7 @@ export function StudentDiscountVerification({
           }
 
           setIsSuccess(true);
+          saveZkpCache(hashStudentId(studentId.trim()));
           onVerifiedRef.current?.();
         } catch (err: any) {
           setError(err.message);
@@ -108,6 +158,16 @@ export function StudentDiscountVerification({
   const handleVerify = () => {
     if (!studentId) return;
     setError(null);
+
+    // Skip expensive ZKP proof generation if a valid cached result exists
+    // for this student ID within the 24-hour verification window.
+    const cached = loadZkpCache();
+    if (cached && cached.studentIdHash === hashStudentId(studentId.trim())) {
+      setIsSuccess(true);
+      onVerifiedRef.current?.();
+      return;
+    }
+
     setIsProving(true);
 
     try {

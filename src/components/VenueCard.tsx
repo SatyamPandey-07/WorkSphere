@@ -42,6 +42,7 @@ import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
 import { getOpeningHoursStatus } from "@/lib/openingHours";
 import { MUSIC_GENRE_EMOJI, type MusicGenre } from "@/hooks/useLiveVenueData";
+import { useSeatAvailability } from "@/hooks/useSeatAvailability";
 
 interface VenueEnrichData {
   found: boolean;
@@ -104,6 +105,8 @@ export function VenueCard({
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
   const [enrichData, setEnrichData] = useState<VenueEnrichData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const { availability } = useSeatAvailability();
+  const liveOccupancy = availability.get(venue.id);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [photoError, setPhotoError] = useState(false);
   const [showFolderModal, setShowFolderModal] = useState(false);
@@ -541,6 +544,12 @@ export function VenueCard({
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {venue.address || "Address not available"}
             </p>
+            {liveOccupancy && liveOccupancy.count > 0 && (
+              <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {liveOccupancy.count} {liveOccupancy.count === 1 ? "person" : "people"} here now
+              </span>
+            )}
           </div>
           <button
             onClick={handleFavorite}

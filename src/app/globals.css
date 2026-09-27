@@ -469,3 +469,32 @@ textarea:focus::placeholder {
   mask-composite: exclude;
   pointer-events: none;
 }
+
+/* =========================================================
+   Theme circular reveal — View Transitions API (issue #2173)
+   ========================================================= */
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0% at var(--theme-reveal-x, 50%) var(--theme-reveal-y, 50%));
+  }
+  to {
+    clip-path: circle(150% at var(--theme-reveal-x, 50%) var(--theme-reveal-y, 50%));
+  }
+}
+
+::view-transition-new(root) {
+  animation: theme-reveal 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Keep old view frozen during the transition so only the new view animates */
+::view-transition-old(root) {
+  animation: none;
+}
+
+/* Disable the transition for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(root),
+  ::view-transition-old(root) {
+    animation: none;
+  }
+}

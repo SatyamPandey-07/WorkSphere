@@ -103,6 +103,8 @@ model Venue {
   powerTypes          String[]            @default([])
   outletLocations     String[]            @default([])
   wifiSpeed           Int? // in Mbps
+  meetingRoomCapacity Int?     // max headcount for private meeting/event area
+  hasPrivateArea      Boolean             @default(false)
   crowdsourced        Boolean             @default(false)
   requiresReview      Boolean             @default(false)
   imageUrl            String?

@@ -20,6 +20,8 @@ export interface MapMarker {
   oatAlmondMilk?: boolean;
   pourOverAvailable?: boolean;
   noiseLevel?: string;
+  meetingRoomCapacity?: number; // max headcount for private meeting area
+  hasPrivateArea?: boolean;
   lighting?: string;
   hasErgonomic?: boolean;
   distance?: string;

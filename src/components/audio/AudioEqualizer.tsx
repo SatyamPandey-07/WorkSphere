@@ -645,8 +645,15 @@ export function AudioEqualizer({
     };
 
     if (isPlaying) {
-      if (reducedMotion) {
-        interval = setInterval(updateFrequencies, 350);
+      // Battery guard: throttle the visualiser frame rate when battery is low
+      // to reduce DSP / compositing overhead on the CPU.
+      // < 20% && not charging → 8fps (125ms interval, down from 60fps rAF)
+      const isLowBattery =
+        batteryLevel !== null && batteryLevel < 0.2 && !batteryCharging;
+
+      if (reducedMotion || isLowBattery) {
+        const frameMs = isLowBattery ? 125 : 350; // 8fps / ~3fps
+        interval = setInterval(updateFrequencies, frameMs);
       } else {
         const loop = () => {
           updateFrequencies();
@@ -667,7 +674,7 @@ export function AudioEqualizer({
       if (interval) clearInterval(interval);
       window.removeEventListener("resize", handleResize);
     };
-  }, [isPlaying, reducedMotion]);
+  }, [isPlaying, reducedMotion, batteryLevel, batteryCharging]);
 
   return (
     <div className="p-5 rounded-2xl border border-white/10 bg-black/40 text-zinc-100 shadow-xl backdrop-blur-md relative overflow-hidden transition-all duration-300">

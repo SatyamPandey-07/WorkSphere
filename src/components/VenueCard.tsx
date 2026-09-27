@@ -42,6 +42,12 @@ import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
 import { getOpeningHoursStatus } from "@/lib/openingHours";
 import { MUSIC_GENRE_EMOJI, type MusicGenre } from "@/hooks/useLiveVenueData";
+import {
+  haversineKm,
+  formatDistanceBadge,
+  getStoredDistanceUnit,
+  type DistanceUnit,
+} from "@/lib/distance";
 
 interface VenueEnrichData {
   found: boolean;
@@ -78,6 +84,8 @@ interface VenueCardProps {
   };
   checkedInVenueId?: string | null;
   onReportMusicGenre?: (genre: MusicGenre) => void;
+  /** User's current GPS position — used to compute live distance badge */
+  userLocation?: { lat: number; lng: number };
 }
 
 interface VoteMetricState {
@@ -99,7 +107,9 @@ export function VenueCard({
   liveData,
   checkedInVenueId,
   onReportMusicGenre,
+  userLocation,
 }: VenueCardProps) {
+  const [distanceUnit, setDistanceUnit] = useState<DistanceUnit>("mi");
   const [isFavorited, setIsFavorited] = useState(false);
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
   const [enrichData, setEnrichData] = useState<VenueEnrichData | null>(null);
@@ -112,6 +122,23 @@ export function VenueCard({
 
   const isCheckedInHere = checkedInVenueId === venue.id;
   const activeMusicGenre = liveData?.musicGenre ?? null;
+
+  useEffect(() => {
+    setDistanceUnit(getStoredDistanceUnit());
+  }, []);
+
+  const computedDistance =
+    userLocation && venue.position
+      ? formatDistanceBadge(
+          haversineKm(
+            userLocation.lat,
+            userLocation.lng,
+            venue.position.lat,
+            venue.position.lng,
+          ),
+          distanceUnit,
+        )
+      : null;
 
   const { currency } = useCurrency();
   const router = useRouter();
@@ -1274,12 +1301,12 @@ export function VenueCard({
               </div>
             )}
 
-            {venue.distance && (
+            {(computedDistance ?? venue.distance) && (
               <div
-                className="text-xs text-zinc-500 self-center ml-auto font-medium truncate max-w-[100px]"
-                title={venue.distance}
+                className="text-xs text-zinc-500 self-center ml-auto font-medium truncate max-w-[160px]"
+                title={computedDistance ?? venue.distance}
               >
-                📏 {venue.distance}
+                📏 {computedDistance ?? venue.distance}
               </div>
             )}
           </div>
@@ -1482,12 +1509,12 @@ export function VenueCard({
               </span>
             </div>
           )}
-          {venue.distance && (
+          {(computedDistance ?? venue.distance) && (
             <div
-              className="text-xs text-zinc-600 dark:text-zinc-400 truncate max-w-[100px]"
-              title={venue.distance}
+              className="text-xs text-zinc-600 dark:text-zinc-400 truncate max-w-[160px]"
+              title={computedDistance ?? venue.distance}
             >
-              📏 {venue.distance}
+              📏 {computedDistance ?? venue.distance}
             </div>
           )}
           {enrichData?.venueId && (

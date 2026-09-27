@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Vector3 } from "../types/ar";
 import { calculateDistance } from "../lib/math";
+import { useGeolocationWatch } from "./useGeolocationWatch";
 
 export interface VenueBeaconConfig {
   uuid?: string;
@@ -147,26 +148,14 @@ export function useArrivalDetection(
     vectorArrived,
   ]);
 
-  // 2. Geolocation Watch logic
-  useEffect(() => {
-    if (isVectorMode) return;
-    if (latitude === undefined || longitude === undefined) return;
+  // 2. Geolocation Watch logic — delegated to useGeolocationWatch
+  const handleGeoPosition = useCallback(
+    (position: GeolocationPosition) => {
+      if (isVectorMode) return;
+      if (latitude === undefined || longitude === undefined) return;
 
-    if (
-      typeof window === "undefined" ||
-      typeof navigator === "undefined" ||
-      !navigator.geolocation
-    ) {
-      setError("Geolocation is not supported by this browser.");
-      return;
-    }
-
-    const handleSuccess = (position: GeolocationPosition) => {
-      const {
-        latitude: lat1,
-        longitude: lon1,
-        altitude: alt1,
-      } = position.coords;
+      const { latitude: lat1, longitude: lon1, altitude: alt1 } =
+        position.coords;
       setCurrentCoords({ latitude: lat1, longitude: lon1 });
 
       const dist = getDistanceInMeters(
@@ -185,26 +174,23 @@ export function useArrivalDetection(
       if (inside && onArrived) {
         onArrived();
       }
-    };
+    },
+    [isVectorMode, latitude, longitude, altitude, geofenceRadius, onArrived],
+  );
 
-    const handleError = (err: GeolocationPositionError) => {
-      setError(`Geolocation error: ${err.message}`);
-    };
+  const geoWatchEnabled = !isVectorMode && latitude !== undefined && longitude !== undefined;
 
-    const watchId = navigator.geolocation.watchPosition(
-      handleSuccess,
-      handleError,
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      },
-    );
+  const { error: geoError } = useGeolocationWatch(
+    geoWatchEnabled ? handleGeoPosition : undefined,
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+  );
 
-    return () => {
-      navigator.geolocation.clearWatch(watchId);
-    };
-  }, [isVectorMode, latitude, longitude, altitude, geofenceRadius, onArrived]);
+  // Propagate geolocation errors into local error state
+  useEffect(() => {
+    if (geoError) {
+      setError(`Geolocation error: ${geoError.message}`);
+    }
+  }, [geoError]);
 
   // 3. Web Bluetooth Scanning callback
   const scanBluetooth = useCallback(async () => {

@@ -261,6 +261,9 @@ model Booking {
   @@index([seatId])
   @@index([createdAt])
   @@index([recurringGroupId])
+  // Composite index for availability range queries: venueId + date + status
+  // Supports /api/reservations/availability which filters by venueId, date range, and status
+  @@index([venueId, date, status])
 }
 
 model BookingGuest {

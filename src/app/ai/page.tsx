@@ -90,6 +90,7 @@ function AppPage() {
     longitude: number;
   } | null>(null);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
+  const [outdoorSeatingOnly, setOutdoorSeatingOnly] = useState(false);
   const [routes, setRoutes] = useState<MapRoute[]>([]);
   const [mapView, setMapView] = useState<MapView | null>(null);
   const [ratingDialog, setRatingDialog] = useState<{
@@ -807,10 +808,32 @@ function AppPage() {
               </div>
             </div>
           )}
+          {/* Outdoor seating quick filter */}
+          {markers.length > 0 && (
+            <div className="absolute top-3 right-3 z-20">
+              <button
+                type="button"
+                onClick={() => setOutdoorSeatingOnly((v) => !v)}
+                aria-pressed={outdoorSeatingOnly}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shadow transition-colors ${
+                  outdoorSeatingOnly
+                    ? "bg-green-600 text-white"
+                    : "bg-white/90 dark:bg-zinc-900/90 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <span aria-hidden="true">🌿</span>
+                Outdoor Seating
+              </button>
+            </div>
+          )}
           <MapErrorBoundary>
             <Map
               location={location}
-              markers={markers}
+              markers={
+                outdoorSeatingOnly
+                  ? markers.filter((m) => m.patioOnly || m.amenities?.patio)
+                  : markers
+              }
               routes={routes}
               mapView={mapView}
               roomId={sessionId}

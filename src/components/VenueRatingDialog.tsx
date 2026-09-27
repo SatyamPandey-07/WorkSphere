@@ -5,6 +5,19 @@ import { Star, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+export const VIBE_TAGS = [
+  { id: "COZY",           label: "☕ Cozy" },
+  { id: "INDUSTRIAL",     label: "🏗️ Industrial" },
+  { id: "MINIMALIST",     label: "⬜ Minimalist" },
+  { id: "PLANT_FILLED",   label: "🌿 Plant-filled" },
+  { id: "BRIGHT_AIRY",    label: "☀️ Bright & Airy" },
+  { id: "DARK_MOODY",     label: "🌑 Dark & Moody" },
+  { id: "VINTAGE_RETRO",  label: "📻 Vintage / Retro" },
+  { id: "MODERN_SLEEK",   label: "🔷 Modern & Sleek" },
+  { id: "ARTSY_CREATIVE", label: "🎨 Artsy / Creative" },
+  { id: "LIVELY_SOCIAL",  label: "🎉 Lively & Social" },
+] as const;
+
 interface VenueRatingDialogProps {
   venueName: string;
   venueId: string;

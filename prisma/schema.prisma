@@ -99,6 +99,7 @@ model Venue {
   waterBowlsProvided  Boolean             @default(false)
   dogFriendly         Boolean             @default(false)
   catsAllowed         Boolean             @default(false)
+  topVibeTags         VibeTag[]           @default([]) // top 3 most-voted vibe tags aggregated from ratings
   outletDensity       String? // every_table, some_tables, wall_seats, none
   powerTypes          String[]            @default([])
   outletLocations     String[]            @default([])
@@ -172,8 +173,9 @@ model VenueRating {
   petsAllowedIndoors Boolean  @default(false)
   patioOnly          Boolean  @default(false)
   waterBowlsProvided Boolean  @default(false)
-  dogFriendly        Boolean  @default(false)
-  catsAllowed        Boolean  @default(false)
+  dogFriendly        Boolean    @default(false)
+  catsAllowed        Boolean    @default(false)
+  vibeTags           VibeTag[]  @default([]) // up to 3 vibe/aesthetic tags per review
 
   @@unique([userId, venueId])
   @@index([venueId])
@@ -278,6 +280,20 @@ model BookingGuest {
 
   @@unique([bookingId, email])
   @@index([bookingId])
+}
+
+/// Predefined venue atmosphere/vibe tags for crowdsourced aesthetic filtering
+enum VibeTag {
+  COZY
+  INDUSTRIAL
+  MINIMALIST
+  PLANT_FILLED
+  BRIGHT_AIRY
+  DARK_MOODY
+  VINTAGE_RETRO
+  MODERN_SLEEK
+  ARTSY_CREATIVE
+  LIVELY_SOCIAL
 }
 
 enum GuestStatus {

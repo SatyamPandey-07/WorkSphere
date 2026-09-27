@@ -65,6 +65,15 @@ const OnboardingTour = dynamic(
   { ssr: false },
 );
 
+// Dynamically import OnboardingModal to avoid SSR/localStorage access on the server
+const OnboardingModal = dynamic(
+  () =>
+    import("@/components/onboarding/OnboardingModal").then(
+      (mod) => mod.OnboardingModal,
+    ),
+  { ssr: false },
+);
+
 // Dynamically import Map to avoid SSR issues with Leaflet
 const Map = dynamic(() => import("@/components/Map"), {
   ssr: false,
@@ -99,6 +108,8 @@ function AppPage() {
   const [selectedVenue, setSelectedVenue] = useState<MapMarker | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [loadedFromCache, setLoadedFromCache] = useState(false);
   const [toast, setToast] = useState<{
     message: string;
     type: "error" | "warning" | "success";
@@ -111,6 +122,11 @@ function AppPage() {
       return () => clearTimeout(timer);
     }
   }, [toast]);
+
+  // Mark hydration complete so client-only components (e.g. OnboardingModal) render safely
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
 
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get("session") || null;
@@ -212,6 +228,7 @@ function AppPage() {
             }),
           );
           setMarkers(offlineMarkers);
+          setLoadedFromCache(true);
         }
       } catch (err) {
         console.error("[Offline] Failed to load venues:", err);
@@ -738,6 +755,7 @@ function AppPage() {
   return (
     <div className="flex flex-col h-dvh bg-zinc-50 dark:bg-black overflow-hidden">
       <OnboardingTour />
+      {!isHydrated || loadedFromCache ? null : <OnboardingModal />}
       {/* Offline Banner */}
       {!isOnline && (
         <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white text-center py-2 text-sm flex items-center justify-center gap-2 shadow-lg">

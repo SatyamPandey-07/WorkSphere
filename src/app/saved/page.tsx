@@ -2,11 +2,52 @@
 
 import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, Bookmark, Search, X } from "lucide-react";
-import { useSavedVenues } from "@/hooks/useSavedVenues";
+import { ArrowLeft, Bookmark, Download, Search, X } from "lucide-react";
+import { useSavedVenues, type SavedVenue } from "@/hooks/useSavedVenues";
 import { SavedVenueCard, TagFilter } from "@/components/saved-venues";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SavedVenueCardSkeleton } from "@/components/ui/skeleton";
+
+function exportCollectionAsCSV(favorites: SavedVenue[]) {
+  const headers = [
+    "Name",
+    "Category",
+    "Address",
+    "WiFi Quality",
+    "Noise Level",
+    "Rating",
+    "Tags",
+  ];
+
+  const escape = (value: string | null | undefined) => {
+    if (value == null) return "";
+    const str = String(value);
+    if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const rows = favorites.map((fav) => [
+    escape(fav.venue.name),
+    escape(fav.venue.category),
+    escape(fav.venue.address),
+    escape(fav.venue.wifiQuality != null ? String(fav.venue.wifiQuality) : null),
+    escape(fav.venue.noiseLevel),
+    escape(fav.venue.rating != null ? String(fav.venue.rating) : null),
+    escape(fav.tags.map((t) => t.name).join("; ")),
+  ]);
+
+  const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "worksphere-saved-venues.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function SavedVenuesPage() {
   const {
@@ -86,6 +127,18 @@ export default function SavedVenuesPage() {
               </p>
             </div>
           </div>
+
+          {!loading && favorites.length > 0 && (
+            <button
+              type="button"
+              onClick={() => exportCollectionAsCSV(favorites)}
+              className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
+              aria-label="Export saved venues as CSV"
+            >
+              <Download className="w-4 h-4" />
+              Export CSV
+            </button>
+          )}
         </div>
 
         {/* Filters */}

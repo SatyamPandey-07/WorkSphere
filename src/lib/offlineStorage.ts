@@ -188,22 +188,83 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
 /**
  * Save venue to offline storage
  */
+/**
+ * Prune the oldest `count` venue records to reclaim quota.
+ */
+async function pruneOldestVenues(
+  database: IDBDatabase,
+  count = 10,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const tx = database.transaction(["venues"], "readwrite");
+    const store = tx.objectStore("venues");
+    const indexReq = store.index("savedAt").openCursor(null, "next");
+    let deleted = 0;
+
+    indexReq.onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+      if (!cursor || deleted >= count) {
+        resolve();
+        return;
+      }
+      cursor.delete();
+      deleted++;
+      cursor.continue();
+    };
+
+    indexReq.onerror = () => reject(indexReq.error);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
   return withWebLock(async () => {
     const database = await initOfflineDB();
 
-    return new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(["venues"], "readwrite");
-      const store = transaction.objectStore("venues");
+    const attemptWrite = (): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(["venues"], "readwrite");
+        const store = transaction.objectStore("venues");
 
-      const request = store.put({
-        ...venue,
-        savedAt: Date.now(),
+        const request = store.put({
+          ...venue,
+          savedAt: Date.now(),
+        });
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
       });
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
+    try {
+      await attemptWrite();
+    } catch (err) {
+      const isQuotaError =
+        err instanceof DOMException &&
+        (err.name === "QuotaExceededError" ||
+          err.name === "NS_ERROR_DOM_QUOTA_REACHED");
+
+      if (!isQuotaError) throw err;
+
+      // Offline storage full — prune the 10 oldest records and retry once
+      console.warn("[OfflineStorage] Quota exceeded; pruning 10 oldest venues.");
+      try {
+        await pruneOldestVenues(database, 10);
+        await attemptWrite();
+      } catch (retryErr) {
+        console.error(
+          "[OfflineStorage] Failed to save venue after pruning:",
+          retryErr,
+        );
+        // Dispatch a custom event so the UI can show a toast
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("offline-storage-full", {
+              detail: { venueName: venue.name },
+            }),
+          );
+        }
+      }
+    }
   });
 }
 

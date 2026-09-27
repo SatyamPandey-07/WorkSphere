@@ -89,6 +89,10 @@ function AppPage() {
     longitude: number;
   } | null>(null);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
+  const [noiseFilter, setNoiseFilter] = useState<"all" | "quiet" | "moderate" | "loud">("all");
+  const filteredMarkers = noiseFilter === "all"
+    ? markers
+    : markers.filter((m) => m.noiseLevel === noiseFilter);
   const [routes, setRoutes] = useState<MapRoute[]>([]);
   const [mapView, setMapView] = useState<MapView | null>(null);
   const [ratingDialog, setRatingDialog] = useState<{
@@ -799,10 +803,39 @@ function AppPage() {
           lg:flex flex-1 lg:flex-[7] relative
         `}
         >
+          {/* Noise level quick filter pills */}
+          {markers.length > 0 && (
+            <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 flex-wrap">
+              {(["all", "quiet", "moderate", "loud"] as const).map((level) => {
+                const labels = {
+                  all: "All",
+                  quiet: "🤫 Quiet",
+                  moderate: "💬 Moderate",
+                  loud: "🎵 Lively",
+                };
+                const active = noiseFilter === level;
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => setNoiseFilter(level)}
+                    aria-pressed={active}
+                    className={`px-2.5 py-1 rounded-full text-xs font-medium shadow transition-colors ${
+                      active
+                        ? "bg-[var(--primary-accent,#2563eb)] text-white"
+                        : "bg-white/90 dark:bg-zinc-900/90 text-zinc-700 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    {labels[level]}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <MapErrorBoundary>
             <Map
               location={location}
-              markers={markers}
+              markers={filteredMarkers}
               routes={routes}
               mapView={mapView}
               roomId={sessionId}

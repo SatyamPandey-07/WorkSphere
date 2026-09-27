@@ -33,6 +33,7 @@ import {
   OfflineVenue,
 } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
+import { VenueSearchEmptyState } from "@/components/venues/VenueSearchEmptyState";
 import { Venue } from "@/components/chat/ChatMessages";
 import { PartyKitPresenceWrapper } from "@/components/chat/PartyKitPresenceWrapper";
 
@@ -799,6 +800,13 @@ function AppPage() {
           lg:flex flex-1 lg:flex-[7] relative
         `}
         >
+          {markers.length === 0 && !isLoadingLocation && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+              <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-2xl shadow-xl pointer-events-auto max-w-xs w-full mx-4">
+                <VenueSearchEmptyState />
+              </div>
+            </div>
+          )}
           <MapErrorBoundary>
             <Map
               location={location}

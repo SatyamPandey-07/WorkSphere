@@ -537,65 +537,76 @@ The UI shows each agent's contribution:
 
 ## 📁 Project Structure
 
+The repository is a Next.js monorepo. Below is the top-level layout followed by a plain-English description of every major directory.
+
 ```
 worksphere/
-├── prisma/
-│   └── schema.prisma          # Database schema
-├── public/
-│   ├── sw.js                  # Service worker for PWA
-│   └── manifest.json          # PWA manifest
+├── prisma/                    # Database schema, migrations, and seed script
+├── party/                     # PartyKit real-time collaboration server
+├── docs/                      # Extended developer guides and reference docs
+├── e2e/                       # Playwright end-to-end tests
+├── public/                    # Static assets: PWA manifest, service worker, icons
+├── scripts/                   # Build and utility scripts
 ├── src/
-│   ├── __tests__/             # Test files
+│   ├── __tests__/             # Jest unit and integration tests
 │   │   ├── api/               # API route tests
 │   │   ├── components/        # Component tests
 │   │   └── lib/               # Utility tests
-│   ├── agents/                # AI Agent implementations
-│   │   ├── Orchestrator.tsx   # Routes queries to agents
-│   │   ├── ContextAgent.tsx   # Extracts user intent
-│   │   ├── DataAgent.tsx      # Fetches venue data
-│   │   ├── ReasoningAgent.tsx # Scores and ranks venues
-│   │   └── ActionAgent.tsx    # Updates UI
-│   ├── app/
-│   │   ├── api/               # API routes
-│   │   │   ├── chat/          # Agent pipeline endpoint
-│   │   │   ├── venues/        # Venue CRUD
-│   │   │   │   └── enrich/    # OSM + Pexels enrichment
+│   ├── app/                   # Next.js App Router pages, layouts, and API routes
+│   │   ├── api/               # API route handlers
+│   │   │   ├── chat/          # Multi-agent pipeline endpoint
+│   │   │   ├── venues/        # Venue CRUD + OSM/Pexels enrichment
 │   │   │   ├── favorites/     # User favorites
 │   │   │   └── conversations/ # Chat history
-│   │   ├── ai/                # Main app page
-│   │   ├── sign-in/           # Auth pages
+│   │   ├── ai/                # Main workspace-finder page
+│   │   ├── dashboard/         # User profile and booking dashboard
+│   │   ├── sign-in/           # Clerk authentication pages
 │   │   ├── sign-up/
-│   │   ├── offline/           # Offline fallback
-│   │   └── layout.tsx         # Root layout
-│   ├── components/
-│   │   ├── ai-elements/       # Reusable AI UI components
-│   │   ├── ui/                # UI components
-│   │   ├── EnhancedChatbot.tsx
-│   │   ├── Map.tsx
-│   │   ├── VenueCard.tsx      # Enhanced with photos, amenities
-│   │   ├── VenueRatingDialog.tsx
-│   │   ├── VenueSubmissionModal.tsx
-│   │   └── ErrorBoundary.tsx
-│   ├── hooks/
-│   │   ├── usePWA.tsx              # PWA installation hook
-│   │   ├── useRealTime.tsx         # Real-time updates hook
-│   │   └── useSpeechRecognition.ts # Voice input with browser-support detection
-│   ├── lib/
-│   │   ├── prisma.ts          # Database client
-│   │   ├── utils.ts           # Utilities
-│   │   ├── rateLimit.ts       # Rate limiting
-│   │   ├── analytics.ts       # Event tracking
-│   │   ├── validations.ts     # Zod schemas
-│   │   ├── venues.ts          # OSM + Pexels integration (NEW)
-│   │   ├── routing.ts         # OSRM routing (NEW)
-│   │   └── offlineStorage.ts  # IndexedDB for PWA
-│   ├── tools/                 # AI Agent tools
-│   └── types/                 # TypeScript types
-├── e2e/                       # Playwright E2E tests
+│   │   ├── offline/           # PWA offline fallback
+│   │   └── layout.tsx         # Root layout and global providers
+│   ├── components/            # Reusable React UI components
+│   │   ├── ai-elements/       # Agent-transparency and AI-specific UI pieces
+│   │   └── ui/                # General design-system components
+│   ├── context/               # React context providers for global client state
+│   ├── core/                  # Core business logic and domain services
+│   ├── hooks/                 # Custom React hooks (PWA, real-time, speech)
+│   ├── lib/                   # Shared utilities, database client, rate limiting, analytics
+│   ├── locales/               # Internationalisation (i18n) string files
+│   ├── shaders/               # WebGL/GLSL shader source files
+│   ├── types/                 # Shared TypeScript type definitions
+│   ├── utils/                 # General-purpose helper functions
+│   ├── wasm/                  # WebAssembly modules used in the browser
+│   ├── worker/                # Service worker and background-sync logic
+│   └── workers/               # Additional web worker scripts
 ├── jest.config.js             # Jest configuration
 ├── playwright.config.ts       # Playwright configuration
 └── package.json
 ```
+
+### Key directories at a glance
+
+| Directory | What it contains |
+| --------- | ---------------- |
+| `prisma/` | `schema.prisma` (data model), auto-generated migrations, and a seed script for local development |
+| `party/` | PartyKit server (`server.ts`, `multiRegionServer.ts`) that powers real-time collaborative features via WebSockets |
+| `docs/` | Hundreds of developer-facing guides covering architecture, testing, deployment, security, and more |
+| `e2e/` | Playwright end-to-end test suites for full browser flows |
+| `public/` | Static files served directly: service worker (`sw.js`), PWA manifest, and app icons |
+| `scripts/` | One-off and CI utility scripts (database seeding, asset generation, etc.) |
+| `src/app/` | Next.js 15 App Router — every page, layout, and API route handler lives here |
+| `src/components/` | Reusable React components: map, chatbot, venue cards, rating dialog, error boundary, and design-system primitives |
+| `src/context/` | React context providers that share global state (currency, events, etc.) across the component tree |
+| `src/core/` | Framework-agnostic business logic and domain services, kept separate from Next.js specifics |
+| `src/hooks/` | Custom React hooks: `usePWA`, `useRealTime` (SSE), and `useSpeechRecognition` |
+| `src/lib/` | Shared back-end helpers: Prisma client, Zod validation schemas, rate limiter, analytics, OSM/Pexels integration, and OSRM routing |
+| `src/locales/` | Translation JSON files used by the i18n layer |
+| `src/shaders/` | GLSL/WebGL shader programs for any GPU-accelerated rendering |
+| `src/types/` | Project-wide TypeScript interfaces and enums |
+| `src/utils/` | Lightweight, stateless helper functions shared across the codebase |
+| `src/wasm/` | Compiled WebAssembly modules (e.g. FFT, noise filtering, SQLite FTS) |
+| `src/worker/` | Service worker source and offline/background-sync logic |
+| `src/workers/` | Additional dedicated web worker scripts (heavy computation off the main thread) |
+| `src/__tests__/` | Unit and integration tests mirroring the `src/` directory layout |
 
 ---
 

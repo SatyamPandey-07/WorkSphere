@@ -68,11 +68,21 @@ export default class WorkspaceServer implements Party.Server {
       for (const [connId, state] of this.connectionStates.entries()) {
         const conn = this.room.getConnection(connId);
         if (!conn) {
+          // Connection already gone — prune ALL state for this connId so that
+          // seatCheckins, connectionStates, and seatCheckinLocks don't accumulate
+          // indefinitely after abrupt disconnects (Issue #1936).
           this.connectionStates.delete(connId);
+          if (this.seatCheckins.has(connId)) {
+            const prev = this.seatCheckins.get(connId)!;
+            this.seatCheckins.delete(connId);
+            this.broadcastSeatUpdate(prev.venueId);
+          }
+          this.seatCheckinLocks.delete(connId);
           continue;
         }
 
-        if (now - state.lastPong > 30000) {
+        if (now - state.lastPong > 45000) {
+          // 45-second timeout: broadcast departure and force-close stale socket
           if (state.name) {
             this.room.broadcast(
               JSON.stringify({ type: "peer-leave", name: state.name }),
@@ -80,11 +90,17 @@ export default class WorkspaceServer implements Party.Server {
           }
           conn.close();
           this.connectionStates.delete(connId);
+          if (this.seatCheckins.has(connId)) {
+            const prev = this.seatCheckins.get(connId)!;
+            this.seatCheckins.delete(connId);
+            this.broadcastSeatUpdate(prev.venueId);
+          }
+          this.seatCheckinLocks.delete(connId);
         } else if (now - state.lastPong >= 10000) {
           conn.send(JSON.stringify({ type: "ping" }));
         }
       }
-    }, 10000);
+    }, 15000);
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {

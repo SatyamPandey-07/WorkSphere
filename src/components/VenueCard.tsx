@@ -558,6 +558,28 @@ export function VenueCard({
                 {liveOccupancy.count} {liveOccupancy.count === 1 ? "person" : "people"} here now
               </span>
             )}
+            {liveOccupancy && (() => {
+              // Crowding badge: Quiet (<40%), Moderate (40-75%), Busy (>75%)
+              const pct = liveOccupancy.capacity > 0
+                ? (liveOccupancy.count / liveOccupancy.capacity) * 100
+                : 0;
+              const label = pct < 40 ? "Quiet" : pct <= 75 ? "Moderate" : "Busy";
+              const style =
+                pct < 40
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : pct <= 75
+                    ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                    : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
+              return (
+                <span
+                  className={`mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${style}`}
+                  title={`${Math.round(pct)}% occupancy — ${label}`}
+                  aria-label={`Venue is currently ${label} — ${Math.round(pct)}% occupied`}
+                >
+                  {label}
+                </span>
+              );
+            })()}
           </div>
           <button
             onClick={handleFavorite}

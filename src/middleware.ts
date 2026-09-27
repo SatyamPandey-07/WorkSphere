@@ -65,9 +65,13 @@ const isPublicRoute = createRouteMatcher([
 // Routes exempt from CSRF validation even though they're mutating — webhooks are
 // authenticated via their own provider signature (Stripe/Clerk/etc.), not a browser
 // session, so there's no browser-held CSRF cookie to check against.
+// SSE (Server-Sent Events) GET streams are also exempt: CSRF attacks cannot forge
+// cross-origin GET requests, and attempting to set a cookie header on a long-lived
+// streaming response causes middleware interference with the event stream.
 const isCsrfExemptMatcher = createRouteMatcher([
   "/api/webhook(.*)",
   "/api/auth/csrf-token",
+  "/api/venues/updates",
 ]);
 
 export function isCsrfExemptRoute(req: any): boolean {

@@ -3,15 +3,20 @@ import {
   getQueuedFavorites,
   withWebLock,
 } from "../../lib/offlineStore";
+import { LockTimeoutError } from "../../lib/webLock";
 
 describe("IndexedDB Multi-Tab Lock & Deadlock Prevention (#910)", () => {
   it("uses Web Locks API (navigator.locks) to serialize multi-tab storage access", async () => {
     let lockQueue = Promise.resolve();
-    const mockRequest = jest.fn().mockImplementation((_name, callback) => {
-      const next = lockQueue.then(() => callback());
-      lockQueue = next.catch(() => {});
-      return next;
-    });
+    // New signature: request(name, options, callback) — options may be the
+    // AbortSignal options object; we accept and ignore it in the mock.
+    const mockRequest = jest
+      .fn()
+      .mockImplementation((_name, _options, callback) => {
+        const next = lockQueue.then(() => callback());
+        lockQueue = next.catch(() => {});
+        return next;
+      });
 
     // Mock navigator.locks if missing in test environment
     Object.defineProperty(navigator, "locks", {
@@ -51,7 +56,7 @@ describe("IndexedDB Multi-Tab Lock & Deadlock Prevention (#910)", () => {
     expect(queued).toBeDefined();
   });
 
-  describe("Web Locks API Fallback (Issue #1811)", () => {
+  describe("Web Locks API Timeout (Issue #2118)", () => {
     beforeEach(() => {
       jest.useFakeTimers();
     });
@@ -61,11 +66,21 @@ describe("IndexedDB Multi-Tab Lock & Deadlock Prevention (#910)", () => {
       jest.restoreAllMocks();
     });
 
-    it("executes the callback if navigator.locks.request hangs for 5 seconds", async () => {
-      const mockRequest = jest.fn().mockImplementation(() => {
-        // Simulates a hanging lock acquisition (e.g. Firefox Private Browsing)
-        return new Promise(() => {}); // never resolves
-      });
+    it("rejects with LockTimeoutError and does NOT execute the callback when the lock hangs", async () => {
+      // Simulate a hanging lock that never resolves (e.g. Firefox Private Browsing).
+      // The mock must honour the AbortSignal so that aborting causes rejection.
+      const mockRequest = jest
+        .fn()
+        .mockImplementation((_name, options: LockOptions, _cb) => {
+          return new Promise((_resolve, reject) => {
+            // When the AbortController fires, reject with an AbortError just
+            // as a real browser would.
+            options.signal?.addEventListener("abort", () => {
+              const err = new DOMException("Lock request aborted", "AbortError");
+              reject(err);
+            });
+          });
+        });
 
       Object.defineProperty(navigator, "locks", {
         value: { request: mockRequest },
@@ -76,36 +91,36 @@ describe("IndexedDB Multi-Tab Lock & Deadlock Prevention (#910)", () => {
       const callback = jest.fn().mockResolvedValue("success");
       const promise = withWebLock(callback);
 
-      // Advance timers by 4.9 seconds - should not trigger
+      // Just before the 5 s threshold — callback must not have been touched.
       jest.advanceTimersByTime(4900);
-
-      // Wait for any pending microtasks
       await Promise.resolve();
       expect(callback).not.toHaveBeenCalled();
 
-      // Advance to 5 seconds
+      // Advance past the threshold.
       jest.advanceTimersByTime(100);
-
-      // Let microtasks flush for the timeout handler to execute the callback
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(callback).toHaveBeenCalledTimes(1);
+      // The critical section must NEVER be invoked without a held lock.
+      expect(callback).not.toHaveBeenCalled();
 
-      // We need to use real timers for the await on the actual promise
       jest.useRealTimers();
-      const result = await promise;
-      expect(result).toBe("success");
+      await expect(promise).rejects.toBeInstanceOf(LockTimeoutError);
     });
 
-    it("does not execute the callback twice if the lock eventually resolves after timeout", async () => {
-      let hangingResolve: (value: any) => void;
-      const mockRequest = jest.fn().mockImplementation((_name, cb) => {
-        return new Promise((resolve) => {
-          hangingResolve = () => resolve(cb());
+    it("does not execute the callback at all if the lock never resolves before timeout", async () => {
+      // Same hanging-lock scenario; verify the callback stays at 0 invocations
+      // even after the timeout fires and the AbortController cancels the request.
+      const mockRequest = jest
+        .fn()
+        .mockImplementation((_name, options: LockOptions, _cb) => {
+          return new Promise((_resolve, reject) => {
+            options.signal?.addEventListener("abort", () => {
+              reject(new DOMException("Lock request aborted", "AbortError"));
+            });
+          });
         });
-      });
 
       Object.defineProperty(navigator, "locks", {
         value: { request: mockRequest },
@@ -116,27 +131,15 @@ describe("IndexedDB Multi-Tab Lock & Deadlock Prevention (#910)", () => {
       const callback = jest.fn().mockResolvedValue("success");
       const promise = withWebLock(callback);
 
-      // Advance past 5s
       jest.advanceTimersByTime(5000);
-
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
 
-      expect(callback).toHaveBeenCalledTimes(1);
-
-      // Lock acquires late
-      hangingResolve!(undefined);
-
-      await Promise.resolve();
-      await Promise.resolve();
-
-      // Callback should still be called exactly once
-      expect(callback).toHaveBeenCalledTimes(1);
+      expect(callback).toHaveBeenCalledTimes(0);
 
       jest.useRealTimers();
-      const result = await promise;
-      expect(result).toBe("success");
+      await expect(promise).rejects.toBeInstanceOf(LockTimeoutError);
     });
   });
 });

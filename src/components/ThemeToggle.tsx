@@ -1,25 +1,7 @@
 "use client";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { Sun, Moon, Zap } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
-
-function startThemeTransition(
-  toggleFn: () => void,
-  x: number,
-  y: number,
-): void {
-  const xPct = ((x / window.innerWidth) * 100).toFixed(2) + "%";
-  const yPct = ((y / window.innerHeight) * 100).toFixed(2) + "%";
-  document.documentElement.style.setProperty("--theme-reveal-x", xPct);
-  document.documentElement.style.setProperty("--theme-reveal-y", yPct);
-
-  if (!document.startViewTransition) {
-    toggleFn();
-    return;
-  }
-
-  document.startViewTransition(toggleFn);
-}
 
 export function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
@@ -33,12 +15,7 @@ export function ThemeToggle() {
 
       if (isShortcut) {
         e.preventDefault();
-        // Keyboard toggle: reveal from screen center
-        startThemeTransition(
-          toggleTheme,
-          window.innerWidth / 2,
-          window.innerHeight / 2,
-        );
+        toggleTheme();
       }
     };
 
@@ -55,15 +32,11 @@ export function ThemeToggle() {
 
   const tooltipTitle = `${labelFor(theme)} (Cmd/Ctrl + Shift + L)`;
 
-  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    startThemeTransition(toggleTheme, e.clientX, e.clientY);
-  };
-
   return (
     <button
       role="switch"
       aria-checked={theme !== "light"}
-      onClick={handleClick}
+      onClick={toggleTheme}
       data-active-theme={theme}
       className="p-2 cursor-pointer bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-400 hover:bg-[var(--primary-accent,#2563eb)] hover:text-white transition-all active:scale-95"
       title={tooltipTitle}

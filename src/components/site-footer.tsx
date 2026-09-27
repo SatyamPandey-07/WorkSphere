@@ -5,6 +5,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
 import { MessageSquare, Send, Check, Loader2 } from "lucide-react";
+import FAQAccordion from "@/components/ui/FAQAccordion";
 
 function Github({ className }: { className?: string }) {
   return (
@@ -133,6 +134,12 @@ export default function SiteFooter() {
       </div>
 
       <div className="container mx-auto px-4 max-w-6xl">
+        {/* FAQ Resources Section */}
+        <FAQAccordion className="my-0 mb-12 px-0 max-w-full" />
+
+        {/* Visual separator between FAQ and footer navigation */}
+        <div className="border-t border-zinc-200/60 dark:border-white/10 mb-12" />
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-10 lg:gap-12">
           {/* Brand Identity Column */}
           <div className="lg:col-span-4 flex flex-col gap-4">

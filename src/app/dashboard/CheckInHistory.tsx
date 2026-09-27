@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { MapPin, Clock, Wifi, Calendar } from "lucide-react";
+import { MapPin, Clock, Wifi, Calendar, Download } from "lucide-react";
 import { TimezoneClock } from "@/components/bookings/TimezoneClock";
 
 interface CheckIn {
@@ -73,6 +73,27 @@ const getWifiBadgeStyle = (status: CheckIn["wifiStatus"]) => {
   }
 };
 
+function downloadBookingsAsJson(checkIns: CheckIn[]) {
+  const records = checkIns.map((c) => ({
+    id: c.id,
+    location: c.location,
+    date: c.date,
+    hoursSpent: c.hoursSpent,
+    wifiStatus: c.wifiStatus,
+    timezone: c.timezone ?? null,
+  }));
+
+  const blob = new Blob([JSON.stringify(records, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "worksphere-bookings.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function CheckInHistory() {
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col h-[500px]">
@@ -83,9 +104,21 @@ export function CheckInHistory() {
             Check-In History
           </h2>
         </div>
-        <span className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">
-          {mockCheckIns.length} Recent
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-zinc-500 dark:text-zinc-400 font-medium">
+            {mockCheckIns.length} Recent
+          </span>
+          <button
+            type="button"
+            onClick={() => downloadBookingsAsJson(mockCheckIns)}
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 transition-colors"
+            title="Export booking history as JSON"
+            aria-label="Export History (JSON)"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export JSON
+          </button>
+        </div>
       </div>
 
       <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">

@@ -111,6 +111,7 @@ export function useArrivalDetection(
     device: any;
     listener: (event: any) => void;
   } | null>(null);
+  const hasArrivedRef = useRef<boolean>(false);
 
   // Extract options if not in vector mode
   const options: UseArrivalDetectionOptions = isVectorMode
@@ -161,6 +162,10 @@ export function useArrivalDetection(
       return;
     }
 
+    // Reset entry flag whenever geofence parameters change so a new watch
+    // starts with a clean slate.
+    hasArrivedRef.current = false;
+
     const handleSuccess = (position: GeolocationPosition) => {
       const {
         latitude: lat1,
@@ -182,8 +187,15 @@ export function useArrivalDetection(
       const inside = dist <= geofenceRadius;
       setInGeofence(inside);
 
-      if (inside && onArrived) {
-        onArrived();
+      if (inside && !hasArrivedRef.current) {
+        // Transition: outside → inside. Fire once and latch.
+        hasArrivedRef.current = true;
+        if (onArrived) {
+          onArrived();
+        }
+      } else if (!inside && hasArrivedRef.current) {
+        // Transition: inside → outside. Reset so re-entry fires again.
+        hasArrivedRef.current = false;
       }
     };
 

@@ -420,6 +420,8 @@ model VenueSeat {
 
   amenities String[] @default([])
   isEnabled Boolean  @default(true)
+  isQuietZone Boolean @default(false) // seat is in a designated quiet zone
+  zoneName    String? // e.g. "Quiet Reading Room", "Collaborative Area"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 
 export type SpeedOption = number;
 export const SPEED_OPTIONS: SpeedOption[] = [0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -434,6 +435,15 @@ export function useSpeechSynthesis(
       cancel();
     };
   }, [cancel]);
+
+  const pathname = usePathname();
+  const prevPathnameRef = useRef(pathname);
+  useEffect(() => {
+    if (prevPathnameRef.current !== pathname) {
+      prevPathnameRef.current = pathname;
+      cancel();
+    }
+  }, [pathname, cancel]);
 
   return {
     isSupported,

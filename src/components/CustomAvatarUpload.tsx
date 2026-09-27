@@ -15,6 +15,7 @@ import { dispatchAvatarUpdated } from "@/lib/avatar-events";
 
 const MAX_SOURCE_FILE_SIZE = 5 * 1024 * 1024;
 const HEIC_EXTENSIONS = [".heic", ".heif"];
+const MIN_IMAGE_DIMENSION = 100;
 
 const isHeicFile = (file: File) =>
   HEIC_EXTENSIONS.some((extension) =>
@@ -40,6 +41,17 @@ async function convertHeicToJpeg(file: File): Promise<File> {
       lastModified: Date.now(),
     },
   );
+}
+
+function getImageDimensions(
+  src: string,
+): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => reject(new Error("Failed to read image dimensions."));
+    img.src = src;
+  });
 }
 
 export function CustomAvatarUpload() {
@@ -134,6 +146,28 @@ export function CustomAvatarUpload() {
       }
 
       const source = createSafeObjectURL(file);
+
+      let dimensions: { width: number; height: number };
+      try {
+        dimensions = await getImageDimensions(source);
+      } catch {
+        revokeSafeObjectURL(source);
+        setError("Failed to read image dimensions. Please try another file.");
+        clearInput();
+        return;
+      }
+
+      if (
+        dimensions.width < MIN_IMAGE_DIMENSION ||
+        dimensions.height < MIN_IMAGE_DIMENSION
+      ) {
+        revokeSafeObjectURL(source);
+        setError(
+          `Image resolution too low. Minimum ${MIN_IMAGE_DIMENSION}×${MIN_IMAGE_DIMENSION} required.`,
+        );
+        clearInput();
+        return;
+      }
 
       setCropSource((currentSource) => {
         if (currentSource) {

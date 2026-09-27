@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Maximize2,
   Minimize2,
@@ -21,11 +21,15 @@ interface FloorPlan3DProps {
   data: FloorPlanData;
 }
 
-export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
+export function FloorPlan3D({ venueId, data }: FloorPlan3DProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<WebGPUFloorPlanRenderer | null>(null);
   const [useWebGPU, setUseWebGPU] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Memoize the layout data by venueId so that camera-rotation state changes
+  // on parent components don't trigger a full worker restart + geometry rebuild.
+  const stableData = useMemo(() => data, [venueId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -57,11 +61,11 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
               renderer.startRenderLoop();
             }
           } else {
-            fallbackCleanup = renderWebGLFallback(canvas, data, webgl);
+            fallbackCleanup = renderWebGLFallback(canvas, stableData, webgl);
             detachRecovery = attachWebGLContextRecovery(canvas, () => {
               if (!isUnmounted) {
                 fallbackCleanup?.();
-                fallbackCleanup = renderWebGLFallback(canvas, data, webgl);
+                fallbackCleanup = renderWebGLFallback(canvas, stableData, webgl);
               }
             });
           }
@@ -70,7 +74,7 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
 
       worker.postMessage({
         type: "CALCULATE_LAYOUT",
-        data,
+        data: stableData,
       });
     });
 
@@ -82,7 +86,7 @@ export function FloorPlan3D({ venueId: _venueId, data }: FloorPlan3DProps) {
       renderer.stopRenderLoop();
       renderer.destroy();
     };
-  }, [data]);
+  }, [stableData]);
 
   const handleZoomIn = useCallback(() => {
     const r = rendererRef.current;

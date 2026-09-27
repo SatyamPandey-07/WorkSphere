@@ -40,7 +40,7 @@ export async function getRoute(
     const url = `${osrmBase}/route/v1/${profile}/${coords}?overview=full&geometries=geojson`;
 
     const response = await fetch(url, {
-      headers: { "Content-Type": "application/json" },
+      headers: { "Accept": "application/json" },
     });
 
     if (!response.ok) {

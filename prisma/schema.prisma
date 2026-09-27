@@ -103,6 +103,7 @@ model Venue {
   powerTypes          String[]            @default([])
   outletLocations     String[]            @default([])
   wifiSpeed           Int? // in Mbps
+  priceTier           Int?     // 1=$ 2=$$ 3=$$$ 4=$$$$ — crowdsourced cost tier (1=budget, 4=premium)
   crowdsourced        Boolean             @default(false)
   requiresReview      Boolean             @default(false)
   imageUrl            String?

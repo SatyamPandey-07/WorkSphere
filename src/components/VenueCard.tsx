@@ -1263,6 +1263,17 @@ export function VenueCard({
               </div>
             )}
 
+            {/* Price tier badge */}
+            {venue.priceTier && venue.priceTier >= 1 && venue.priceTier <= 4 && (
+              <div
+                className="flex items-center px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs font-semibold text-zinc-700 dark:text-zinc-300"
+                title={["", "Budget-friendly", "Moderate", "Premium", "Luxury"][venue.priceTier]}
+                aria-label={`Price tier: ${"$".repeat(venue.priceTier)}`}
+              >
+                {"$".repeat(venue.priceTier)}
+              </div>
+            )}
+
             {/* Noise profile badge — Issue #701: ambient audio preview */}
             {venue.noiseLevel && (
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-xs text-zinc-700 dark:text-zinc-300">

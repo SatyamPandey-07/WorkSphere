@@ -20,6 +20,7 @@ export interface MapMarker {
   oatAlmondMilk?: boolean;
   pourOverAvailable?: boolean;
   noiseLevel?: string;
+  priceTier?: number; // 1=$ 2=$$ 3=$$$ 4=$$$$
   lighting?: string;
   hasErgonomic?: boolean;
   distance?: string;

@@ -54,18 +54,37 @@ export async function POST(req: Request) {
       ? parseClientDataJSON(authenticationResponse.response.clientDataJSON)
       : null;
 
-    const verification = await verifyAuthenticationResponse({
-      response: authenticationResponse,
-      expectedChallenge: challengeRecord.challenge,
-      expectedOrigin: getExpectedOrigin(req, clientData?.origin),
-      expectedRPID: getRpId(req),
-      credential: {
-        id: passkey.credentialId,
-        publicKey: new Uint8Array(passkey.publicKey),
-        counter: Number(passkey.counter),
-        transports: passkey.transports as AuthenticatorTransportFuture[],
-      },
-    });
+    let verification: Awaited<ReturnType<typeof verifyAuthenticationResponse>>;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response: authenticationResponse,
+        expectedChallenge: challengeRecord.challenge,
+        expectedOrigin: getExpectedOrigin(req, clientData?.origin),
+        expectedRPID: getRpId(req),
+        credential: {
+          id: passkey.credentialId,
+          publicKey: new Uint8Array(passkey.publicKey),
+          counter: Number(passkey.counter),
+          transports: passkey.transports as AuthenticatorTransportFuture[],
+        },
+      });
+    } catch (verifyErr) {
+      // SimpleWebAuthn throws Error objects with descriptive messages when the
+      // challenge is expired or mismatched — return 400 instead of letting the
+      // outer catch return 500.
+      const msg =
+        verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+      const isChallengeError =
+        /challenge|expired|unexpected.*challenge/i.test(msg);
+      return NextResponse.json(
+        {
+          error: isChallengeError
+            ? "Passkey authentication challenge expired. Please try again."
+            : "Passkey assertion verification failed",
+        },
+        { status: 400 },
+      );
+    }
 
     if (!verification.verified || !verification.authenticationInfo) {
       return NextResponse.json(

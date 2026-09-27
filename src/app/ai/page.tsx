@@ -89,6 +89,13 @@ function AppPage() {
     longitude: number;
   } | null>(null);
   const [markers, setMarkers] = useState<MapMarker[]>([]);
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const categoryFilteredMarkers =
+    categoryFilter === "all"
+      ? markers
+      : markers.filter(
+          (m) => m.category?.toLowerCase() === categoryFilter,
+        );
   const [routes, setRoutes] = useState<MapRoute[]>([]);
   const [mapView, setMapView] = useState<MapView | null>(null);
   const [ratingDialog, setRatingDialog] = useState<{
@@ -799,10 +806,39 @@ function AppPage() {
           lg:flex flex-1 lg:flex-[7] relative
         `}
         >
+          {/* Category quick filter pills */}
+          {markers.length > 0 && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm border border-zinc-200 dark:border-zinc-700 rounded-full px-3 py-1.5 shadow-lg">
+              {([
+                { id: "all", label: "All", emoji: "🗺️" },
+                { id: "cafe", label: "Café", emoji: "☕" },
+                { id: "library", label: "Library", emoji: "📚" },
+                { id: "coworking", label: "Cowork", emoji: "🏢" },
+              ] as const).map(({ id, label, emoji }) => {
+                const active = categoryFilter === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setCategoryFilter(id)}
+                    aria-pressed={active}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                      active
+                        ? "bg-[var(--primary-accent,#2563eb)] text-white shadow"
+                        : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    <span aria-hidden="true">{emoji}</span>
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
           <MapErrorBoundary>
             <Map
               location={location}
-              markers={markers}
+              markers={categoryFilteredMarkers}
               routes={routes}
               mapView={mapView}
               roomId={sessionId}

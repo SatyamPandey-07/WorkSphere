@@ -292,6 +292,22 @@ export function AudioEqualizer({
     masterGainRef.current = masterGain;
     eqFiltersRef.current = filters;
     analyserRef.current = analyser;
+
+    // Safari iOS keeps AudioContext in "suspended" state until a user-gesture
+    // event fires. Attach a one-shot touchstart+click handler that resumes it.
+    if (ctx.state === "suspended") {
+      const resumeOnInteraction = () => {
+        if (!audioContextRef.current) return;
+        audioContextRef.current.resume().then(() => {
+          if (audioContextRef.current?.state === "running") {
+            document.removeEventListener("touchstart", resumeOnInteraction);
+            document.removeEventListener("click", resumeOnInteraction);
+          }
+        }).catch(() => {});
+      };
+      document.addEventListener("touchstart", resumeOnInteraction, { passive: true });
+      document.addEventListener("click", resumeOnInteraction);
+    }
   }, [bandGains]);
 
   // Play Sound Logic

@@ -153,6 +153,8 @@ model VenueRating {
   specialtyEspresso  Boolean  @default(false)
   oatAlmondMilk      Boolean  @default(false)
   pourOverAvailable  Boolean  @default(false)
+  downloadMbps       Float?   // User-measured download speed in Mbps (optional)
+  uploadMbps         Float?   // User-measured upload speed in Mbps (optional)
   noiseLevel         String // quiet, moderate, loud
   hasErgonomic       Boolean  @default(false)
   hasPhoneBooths     Boolean  @default(false)

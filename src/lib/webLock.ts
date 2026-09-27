@@ -13,13 +13,34 @@
  *    on exactly the call that most needed it (the one that errored).
  *    That unlocked retry is what let rapid concurrent writes interleave
  *    and silently drop earlier queued outbox entries.
+ *
+ * Fix for #2118:
+ *  - The timeout fallback was calling the callback without a lock, defeating
+ *    mutual exclusion. The timeout path now rejects with LockTimeoutError so
+ *    callers can handle contention without ever running the critical section
+ *    outside of a held lock.
  */
+
+/** Thrown when withWebLock cannot acquire the lock within the timeout period. */
+export class LockTimeoutError extends Error {
+  readonly lockName: string;
+  constructor(lockName: string, timeoutMs: number) {
+    super(
+      `Could not acquire lock "${lockName}" within ${timeoutMs}ms. The critical section was NOT executed.`,
+    );
+    this.name = "LockTimeoutError";
+    this.lockName = lockName;
+    // Maintain correct prototype chain for instanceof checks across transpile targets.
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
 
 export const OFFLINE_WRITE_LOCK = "worksphere-offline-write-lock";
 
 export async function withWebLock<T>(
   callback: () => Promise<T>,
   lockName: string = OFFLINE_WRITE_LOCK,
+  timeoutMs: number = 5000,
 ): Promise<T> {
   const hasLocksApi =
     typeof navigator !== "undefined" &&
@@ -33,41 +54,33 @@ export async function withWebLock<T>(
     return callback();
   }
 
-  let executed = false;
-
-  const runOnce = async (): Promise<T> => {
-    if (executed) {
-      return undefined as unknown as T;
-    }
-    executed = true;
-    return callback();
-  };
+  const controller = new AbortController();
 
   return new Promise<T>((resolve, reject) => {
-    let timeoutId: ReturnType<typeof setTimeout>;
+    const timeoutId = setTimeout(() => {
+      // Abort the pending lock request so the browser drops it from the
+      // queue. The callback is intentionally NOT invoked here — running
+      // the critical section without holding the lock defeats serialization.
+      controller.abort();
+      reject(new LockTimeoutError(lockName, timeoutMs));
+    }, timeoutMs);
 
-    const lockPromise = navigator.locks.request(lockName, async () => {
-      clearTimeout(timeoutId);
-      return runOnce();
-    });
-
-    const timeoutPromise = new Promise<T>((_, timeoutReject) => {
-      timeoutId = setTimeout(() => {
-        timeoutReject(new Error("LOCK_TIMEOUT"));
-      }, 5000);
-    });
-
-    Promise.race([lockPromise, timeoutPromise])
-      .then(resolve)
-      .catch((err) => {
-        if (err instanceof Error && err.message === "LOCK_TIMEOUT") {
-          runOnce().then(resolve).catch(reject);
-        } else {
-          reject(err);
-        }
-      })
-      .finally(() => {
+    navigator.locks
+      .request(lockName, { signal: controller.signal }, async () => {
         clearTimeout(timeoutId);
+        return callback();
+      })
+      .then(resolve)
+      .catch((err: unknown) => {
+        clearTimeout(timeoutId);
+        // AbortError is the expected outcome of the timeout path above;
+        // the caller already received a LockTimeoutError rejection, so
+        // swallow this secondary rejection to avoid an unhandled-rejection
+        // warning in the browser console.
+        if (err instanceof DOMException && err.name === "AbortError") {
+          return;
+        }
+        reject(err);
       });
   });
 }

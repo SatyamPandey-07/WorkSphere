@@ -54,7 +54,37 @@ export function StudentDiscountVerification({
 
       if (type === "error") {
         setIsProving(false);
-        setError(workerError || "Failed to generate zero-knowledge proof");
+        const { isOom } = e.data;
+        if (isOom) {
+          // OOM during WASM instantiation — fall back to server-side verification
+          // which does not require client-side snarkjs proof generation.
+          setError(
+            "Your device ran out of memory for local proof generation. Attempting server-side verification…",
+          );
+          setIsVerifying(true);
+          try {
+            const response = await fetch("/api/user/verify-student", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ serverSideFallback: true, studentId }),
+            });
+            const data = await response.json();
+            if (response.ok) {
+              setError(null);
+              setIsSuccess(true);
+              saveZkpCache(hashStudentId(studentId.trim()));
+              onVerifiedRef.current?.();
+            } else {
+              setError(data.error || "Server-side verification failed");
+            }
+          } catch {
+            setError("Server-side verification unavailable. Please try on a device with more memory.");
+          } finally {
+            setIsVerifying(false);
+          }
+        } else {
+          setError(workerError || "Failed to generate zero-knowledge proof");
+        }
         // Terminate the worker after failure so snarkjs WASM resources are freed
         terminateWorker();
         return;

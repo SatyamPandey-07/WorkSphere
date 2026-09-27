@@ -216,7 +216,6 @@ export default async function RootLayout({
       >
         <ScrollProgress />
         <ScrollToTopButton />
-        <SyncManager />
         {bodyContent}
         <CookieBanner />
       </body>

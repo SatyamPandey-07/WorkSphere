@@ -77,7 +77,6 @@ export async function POST(request: Request) {
     }
 
     const { venueId, dates, time } = parsed.data;
-    const confirmationId = generateConfirmationId();
 
     // Create one booking record per date. For a single date this is a single row;
     // for recurring bookings it is one row per occurrence.
@@ -91,7 +90,7 @@ export async function POST(request: Request) {
             time,
             customerEmail: user.primaryEmailAddress!.emailAddress,
             status: "CONFIRMED",
-            confirmationId,
+            confirmationId: generateConfirmationId(),
           },
           include: { venue: true },
         }),

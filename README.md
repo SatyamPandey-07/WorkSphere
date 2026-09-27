@@ -192,6 +192,57 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 
 ---
 
+## 📸 UI Screenshots & Walkthrough
+
+> _Screenshots show the live production deployment at [work-sphere-one.vercel.app](https://work-sphere-one.vercel.app)._
+
+### 🗺️ Interactive Map View
+The main workspace discovery interface — AI chat on the right, Leaflet map on the left with real-time venue markers.
+
+<!-- Replace with actual screenshot: public/screenshots/map-view.png -->
+![Map View](https://work-sphere-one.vercel.app/icons/icon-512.png)
+
+| Feature visible | Description |
+|-----------------|-------------|
+| 📍 Venue markers | Color-coded by noise level (green=quiet, amber=moderate, red=busy) |
+| 🔍 AI chat panel | Natural language search and booking on the right sidebar |
+| 🔊 Noise filter | Quick filter pills (All / Quiet / Moderate / Lively) at top |
+| ☕ Category filter | Café / Library / Cowork pills at map bottom |
+
+---
+
+### 🤖 AI Chatbot & Venue Results
+
+The AI returns venue recommendations with WiFi speed, noise level, outlet density, and real-time occupancy badges.
+
+| Feature | Details |
+|---------|---------|
+| 🟢 Crowding badge | Quiet / Moderate / Busy based on live PartyKit presence |
+| 📏 Distance | Haversine distance + walking time from user's GPS |
+| 🌿 Outdoor seating | Toggle filter for patio venues |
+| 🔋 Battery Panic Mode | Auto-filters to outlet-equipped venues when battery < 20% |
+
+---
+
+### 📋 Booking & Dashboard
+
+The profile dashboard shows check-in history, monthly spending chart, and notification settings.
+
+| Screen | Features |
+|--------|---------|
+| Check-in history | Timeline with venue, WiFi quality, hours spent |
+| Monthly spending | SVG bar chart with CSV export |
+| Notification settings | Sound effects toggle, push notifications, SMS reminders |
+| Offline cache | Cache size, venue count, clear button |
+
+---
+
+### 🏢 Venue Detail Page
+
+Each venue has a full detail view with: noise forecast chart, floor plan 3D viewer, ZKP student verification, and PartyKit collaborative notes.
+
+---
+
 ## 🛠️ Tech Stack
 
 | Category           | Technology                                                 |

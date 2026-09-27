@@ -83,12 +83,23 @@ export async function cropImageToWebP(
   context.fillStyle = "#ffffff";
   context.fillRect(0, 0, size, size);
 
+  // Normalise crop to a perfect square to prevent aspect-ratio distortion when
+  // react-easy-crop returns slightly non-square croppedAreaPixels due to
+  // floating-point rounding or when the source image has an unusual DPR.
+  const scaleX = image.naturalWidth / image.width || 1;
+  const scaleY = image.naturalHeight / image.height || 1;
+  const naturalCropW = crop.width * scaleX;
+  const naturalCropH = crop.height * scaleY;
+  const squareSide = Math.min(naturalCropW, naturalCropH);
+  const srcX = crop.x * scaleX + (naturalCropW - squareSide) / 2;
+  const srcY = crop.y * scaleY + (naturalCropH - squareSide) / 2;
+
   context.drawImage(
     image,
-    crop.x,
-    crop.y,
-    crop.width,
-    crop.height,
+    srcX,
+    srcY,
+    squareSide,
+    squareSide,
     0,
     0,
     size,

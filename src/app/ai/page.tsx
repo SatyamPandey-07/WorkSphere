@@ -35,6 +35,7 @@ import {
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { Venue } from "@/components/chat/ChatMessages";
 import { PartyKitPresenceWrapper } from "@/components/chat/PartyKitPresenceWrapper";
+import { useBatteryStatus } from "@/hooks/useBatteryStatus";
 
 // Dynamically import EnhancedChatbot to isolate WASM loading / client effects during streaming SSR and prevent hydration mismatches
 const EnhancedChatbot = dynamic(
@@ -98,6 +99,7 @@ function AppPage() {
   const [selectedVenue, setSelectedVenue] = useState<MapMarker | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const battery = useBatteryStatus();
   const [toast, setToast] = useState<{
     message: string;
     type: "error" | "warning" | "success";
@@ -802,7 +804,14 @@ function AppPage() {
           <MapErrorBoundary>
             <Map
               location={location}
-              markers={markers}
+              markers={
+                // Battery Panic Mode: show only venues with outlets when battery is critical
+                battery.isPanic && !battery.charging
+                  ? markers.filter((m) => m.hasOutlets).length > 0
+                    ? markers.filter((m) => m.hasOutlets)
+                    : markers
+                  : markers
+              }
               routes={routes}
               mapView={mapView}
               roomId={sessionId}
@@ -1048,6 +1057,14 @@ function AppPage() {
 
       {/* PWA Install Banner */}
       <PWABanner />
+
+      {/* Battery Panic Mode Banner */}
+      {battery.isPanic && !battery.charging && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-2 px-4 py-2.5 rounded-full bg-red-600 text-white text-xs font-semibold shadow-xl animate-in slide-in-from-top duration-300">
+          <span aria-hidden="true">🔋</span>
+          Battery critical ({Math.round((battery.level ?? 0) * 100)}%) — showing only venues with outlets nearby
+        </div>
+      )}
 
       {/* Glassmorphic Toast Warning Card */}
       {toast && (

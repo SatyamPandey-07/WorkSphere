@@ -733,3 +733,81 @@ Before rendering, the engine filters the input `venues` array for each selected 
 - **Graphics Fallbacks**: Simple shapes (rectangles and lines) are drawn with solid colors as fallbacks if external image assets fail to load.
 
 # End of API Reference
+
+---
+
+# Rate Limiting & Throttling
+
+WorkSphere enforces per-user and per-IP rate limits on all API endpoints to prevent abuse. Rate limiting uses a **sliding-window** algorithm backed by Upstash Redis (with an in-memory fallback for local development).
+
+## Rate Limit Response Headers
+
+Every API response includes the following headers:
+
+| Header | Type | Description |
+|--------|------|-------------|
+| `X-RateLimit-Limit` | integer | Maximum number of requests allowed in the window |
+| `X-RateLimit-Remaining` | integer | Requests remaining before the limit is hit |
+| `X-RateLimit-Reset` | Unix timestamp (s) | When the current window resets |
+| `Retry-After` | integer (seconds) | **Only on 429 responses** — seconds until the next request is allowed |
+
+## 429 Too Many Requests
+
+When the rate limit is exceeded, the API returns:
+
+```
+HTTP/1.1 429 Too Many Requests
+Retry-After: 42
+X-RateLimit-Reset: 1727000000
+Content-Type: application/json
+
+{
+  "error": "Rate limit exceeded. Please wait before making more requests.",
+  "retryAfterSeconds": 42,
+  "retryAfter": 42
+}
+```
+
+## Client Retry with Exponential Backoff
+
+Do not immediately retry a 429 response — use exponential backoff with jitter to avoid thundering-herd conditions:
+
+```typescript
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  maxAttempts = 4,
+): Promise<Response> {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const response = await fetch(url, options);
+
+    if (response.status !== 429) {
+      return response;
+    }
+
+    const retryAfterHeader = response.headers.get("Retry-After");
+    const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 60;
+
+    if (attempt === maxAttempts - 1) {
+      return response; // Exhausted retries — surface the 429 to the caller
+    }
+
+    // Exponential backoff: base 1s, doubles each attempt, +rand(0,500ms) jitter
+    const baseMs = Math.min(retryAfterSec * 1000, 1000 * Math.pow(2, attempt));
+    const jitter = Math.random() * 500;
+    await new Promise((resolve) => setTimeout(resolve, baseMs + jitter));
+  }
+
+  return fetch(url, options); // Final attempt
+}
+```
+
+## Per-Route Limits
+
+| Route | Limit | Window |
+|-------|-------|--------|
+| `POST /api/reservations/book` | 5 requests | 60 s per user |
+| `POST /api/chat` | 10 requests | 60 s per user |
+| `POST /api/partykit/auth` | 30 requests | 60 s per IP |
+| All other authenticated routes | 100 requests | 60 s per user |
+| Unauthenticated routes | 20 requests | 60 s per IP |

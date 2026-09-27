@@ -158,6 +158,9 @@ export function CustomAvatarUpload() {
     setSuccess(null);
     setIsUploading(true);
 
+    const MAX_ATTEMPTS = 3;
+    const BASE_DELAY_MS = 500;
+
     try {
       if (!user) return;
       const normalizedFile = await normalizeImageOrientation(croppedFile);
@@ -170,10 +173,25 @@ export function CustomAvatarUpload() {
         return objectUrl;
       });
 
-      await user.setProfileImage({
-        file: normalizedFile,
-      });
-      await user.reload();
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          await user.setProfileImage({ file: normalizedFile });
+          await user.reload();
+          lastError = undefined;
+          break;
+        } catch (err) {
+          lastError = err;
+          if (attempt < MAX_ATTEMPTS) {
+            // Exponential backoff: 500ms, 1000ms
+            await new Promise((resolve) =>
+              setTimeout(resolve, BASE_DELAY_MS * 2 ** (attempt - 1)),
+            );
+          }
+        }
+      }
+
+      if (lastError) throw lastError;
 
       dispatchAvatarUpdated(user.id, user.imageUrl);
       setSuccess("Profile picture updated.");
@@ -187,7 +205,7 @@ export function CustomAvatarUpload() {
       setSelectedFileName("");
       clearInput();
     } catch (uploadError: unknown) {
-      console.error("Failed to upload image:", uploadError);
+      console.error("Failed to upload image after retries:", uploadError);
 
       const clerkError = uploadError as {
         errors?: Array<{ message?: string }>;

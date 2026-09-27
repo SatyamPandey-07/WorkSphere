@@ -12,13 +12,52 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { NotificationBell } from "@/components/NotificationBell";
 import { StreakBadge } from "@/components/Header/StreakBadge";
 import { OfflineSyncProgressBar } from "@/components/OfflineSyncProgressBar";
+import { WebSocketLatencyBadge } from "@/components/WebSocketLatencyBadge";
+import { type LatencyTier } from "@/hooks/useWebSocketLatency";
 
 interface TopNavProps {
   hideAuth?: boolean;
 }
 
+function useConnectionLatency(): { latencyMs: number | null; tier: LatencyTier } {
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function probe() {
+      try {
+        const start = performance.now();
+        await fetch("/favicon.ico", { method: "HEAD", cache: "no-store" });
+        if (!cancelled) setLatencyMs(Math.round(performance.now() - start));
+      } catch {
+        if (!cancelled) setLatencyMs(null);
+      }
+    }
+
+    probe();
+    const id = setInterval(probe, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  const tier: LatencyTier =
+    latencyMs === null
+      ? "unknown"
+      : latencyMs < 50
+        ? "good"
+        : latencyMs < 150
+          ? "fair"
+          : "poor";
+
+  return { latencyMs, tier };
+}
+
 export function TopNav({ hideAuth = false }: TopNavProps) {
   const { isSignedIn } = useUser();
+  const { latencyMs, tier } = useConnectionLatency();
   const pathname = usePathname();
 
   const navLinkClass = (href: string) => {
@@ -79,6 +118,11 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
         </Link>
 
         <div className="flex items-center gap-2 ml-auto">
+          <WebSocketLatencyBadge
+            latencyMs={latencyMs}
+            tier={tier}
+            className="hidden sm:flex px-2 py-1 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700"
+          />
           <div className="flex items-center justify-center shrink-0">
             <ThemeToggle />
           </div>

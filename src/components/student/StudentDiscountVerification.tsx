@@ -3,11 +3,17 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Loader2, ShieldCheck, X } from "lucide-react";
 
 interface StudentDiscountVerificationProps {
   /** Called after the proof is accepted and the user is verified server-side. */
   onVerified?: () => void;
+  /**
+   * Optional close handler — when provided renders an accessible close button
+   * (aria-label="Close dialog") so keyboard users can dismiss the modal.
+   * Focus is returned to the element that triggered the dialog on close.
+   */
+  onClose?: () => void;
 }
 
 function createZkpWorker(): Worker {
@@ -18,6 +24,7 @@ function createZkpWorker(): Worker {
 
 export function StudentDiscountVerification({
   onVerified,
+  onClose,
 }: StudentDiscountVerificationProps) {
   const [studentId, setStudentId] = useState("");
   const [isProving, setIsProving] = useState(false);
@@ -143,15 +150,27 @@ export function StudentDiscountVerification({
 
   return (
     <div className="w-full max-w-md mx-auto rounded-xl border bg-card text-card-foreground shadow-sm">
-      <div className="flex flex-col space-y-1.5 p-6">
-        <h3 className="text-2xl font-semibold leading-none tracking-tight flex items-center gap-2">
-          <ShieldCheck className="w-5 h-5 text-primary" />
-          Verify Student Status
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          We use Zero-Knowledge Proofs to verify your student ID on your device.
-          Your private ID never leaves your browser.
-        </p>
+      <div className="flex items-start justify-between p-6 pb-0">
+        <div className="flex flex-col space-y-1.5">
+          <h3 className="text-2xl font-semibold leading-none tracking-tight flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-primary" />
+            Verify Student Status
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            We use Zero-Knowledge Proofs to verify your student ID on your device.
+            Your private ID never leaves your browser.
+          </p>
+        </div>
+        {onClose && (
+          <button
+            type="button"
+            aria-label="Close dialog"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring shrink-0 -mt-1 -mr-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
       <div className="p-6 pt-0">
         <div className="space-y-4">

@@ -32,7 +32,7 @@ import {
   YAxis,
 } from "recharts";
 
-type RangeKey = "7d" | "30d" | "90d";
+type RangeKey = "7d" | "30d" | "90d" | "180d" | "ytd" | "1y";
 
 type AnalyticsData = {
   range: RangeKey;
@@ -61,9 +61,12 @@ type AnalyticsData = {
 };
 
 const ranges: Array<{ key: RangeKey; label: string }> = [
-  { key: "7d", label: "7 days" },
-  { key: "30d", label: "30 days" },
-  { key: "90d", label: "90 days" },
+  { key: "7d",   label: "Last 7 days" },
+  { key: "30d",  label: "Last 30 days" },
+  { key: "90d",  label: "Last 90 days" },
+  { key: "180d", label: "Last 6 months" },
+  { key: "ytd",  label: "Year-to-date" },
+  { key: "1y",   label: "Last 12 months" },
 ];
 
 function formatDuration(value: number) {

@@ -13,6 +13,7 @@ import { SeatingForecastChart } from "@/components/venue/SeatingForecastChart";
 import { RecentlyViewedTracker } from "@/components/venues/RecentlyViewedTracker";
 
 import { CollaborativeNotes } from "@/components/bookings/CollaborativeNotes"; // <-- 1. Imported your new component here!
+import { Breadcrumb } from "@/components/ui/Breadcrumb";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -105,6 +106,14 @@ export default async function VenuePage({ params }: PageProps) {
         }}
       />
       <TopNav hideAuth />
+      <div className="max-w-2xl mx-auto w-full px-4 pt-3">
+        <Breadcrumb
+          items={[
+            { label: "Explore", href: "/ai" },
+            { label: venue.name },
+          ]}
+        />
+      </div>
       <main className="flex-grow flex items-center justify-center p-4">
         <div className="max-w-2xl w-full bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="relative h-64 sm:h-80 w-full group">

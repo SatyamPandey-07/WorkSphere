@@ -178,6 +178,14 @@ export function useSpeechSynthesis(
       if (window.speechSynthesis.onvoiceschanged !== undefined) {
         window.speechSynthesis.onvoiceschanged = updateVoices;
       }
+
+      return () => {
+        // Cancel any active or queued utterances when the component unmounts
+        // (e.g. user navigates away) so speech doesn't continue in the background.
+        window.speechSynthesis.cancel();
+        setIsReading(false);
+        setSentenceIndex(0);
+      };
     } else {
       setIsSupported(false);
     }

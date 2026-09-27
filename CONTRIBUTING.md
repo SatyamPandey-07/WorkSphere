@@ -347,6 +347,8 @@ Before pushing changes to GitHub, you **MUST** verify that all the checks below 
 | `npm test`         | Runs the full Jest test suite to check unit and component logic.    | Fix regressions; do not skip failing tests.                  |
 | `npm run build`    | Simulates a production build (Prisma generation + Next.js compile). | Critical check. Fix any build-blocking errors.               |
 
+> **Note on TypeScript during `npm run build`:** TypeScript strict checking is enforced — `typescript.ignoreBuildErrors` is not set in `next.config.ts` (and must not be added), so type errors in the build graph will cause the build to fail. Run `npx tsc --noEmit` separately for faster, standalone type feedback during development without waiting for Prisma generation and full asset compilation.
+
 ### 2. Vercel Build Verification & TypeScript Behavior
 
 Vercel builds use `npm run build` which runs `prisma generate && next build`. If this step fails locally, it **will** fail on Vercel deployment. Make sure you run `npm run build` successfully before submitting your PR!

@@ -103,6 +103,8 @@ model Venue {
   powerTypes          String[]            @default([])
   outletLocations     String[]            @default([])
   wifiSpeed           Int? // in Mbps
+  tableSize           String?  // "small", "medium", "large", "xl" — crowdsourced desk/table dimensions
+  equipmentLoadout    String?  // "minimal", "standard", "heavy" — typical equipment profile of regulars
   crowdsourced        Boolean             @default(false)
   requiresReview      Boolean             @default(false)
   imageUrl            String?
@@ -174,6 +176,7 @@ model VenueRating {
   waterBowlsProvided Boolean  @default(false)
   dogFriendly        Boolean  @default(false)
   catsAllowed        Boolean  @default(false)
+  tableSize          String?  // crowdsourced: "small", "medium", "large", "xl"
 
   @@unique([userId, venueId])
   @@index([venueId])

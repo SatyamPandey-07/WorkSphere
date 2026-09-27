@@ -1,6 +1,35 @@
 import Groq from "groq-sdk";
 import { applyFilters } from "@/lib/filters";
 
+/**
+ * Patterns that attempt to override or escape the system prompt. Removing
+ * them from user input prevents prompt injection before it reaches the LLM.
+ */
+const INJECTION_PATTERNS = [
+  /ignore\s+(all\s+)?(previous|prior|above)\s+instructions?/gi,
+  /disregard\s+(all\s+)?(previous|prior|above)\s+instructions?/gi,
+  /forget\s+(all\s+)?(previous|prior|above)\s+instructions?/gi,
+  /you\s+are\s+now\s+/gi,
+  /act\s+as\s+(?:an?\s+)?(?:evil|unfiltered|jailbroken|DAN)/gi,
+  /\[\s*INST\s*\]/gi,       // Llama-2 special token
+  /<\|?system\|?>/gi,       // system delimiter tag
+  /<\|?im_start\|?>/gi,     // ChatML start tag
+  /<\|?im_end\|?>/gi,       // ChatML end tag
+];
+
+/**
+ * Strips prompt injection patterns from user input and trims whitespace.
+ * Returns the sanitized string, capped at 2000 characters to prevent
+ * excessively long prompts from inflating context size.
+ */
+export function sanitizeUserInput(input: string): string {
+  let sanitized = input;
+  for (const pattern of INJECTION_PATTERNS) {
+    sanitized = sanitized.replace(pattern, "");
+  }
+  return sanitized.trim().slice(0, 2000);
+}
+
 // Lazy init Groq client
 let groq: Groq | null = null;
 function getGroqClient(): Groq {
@@ -41,7 +70,7 @@ export interface RawVenue {
 
 // AGENT 1: ORCHESTRATOR
 export async function orchestratorAgent(
-  userMessage: string,
+  rawUserMessage: string,
   context?: any,
 ): Promise<{
   agentsToUse: string[];
@@ -77,6 +106,7 @@ For simple searches: {"agentsToUse": ["DataAgent", "ActionAgent"], "reasoning": 
 
 For general chat: {"skipAgents": true, "reasoning": "General conversation"}`;
 
+  const userMessage = sanitizeUserInput(rawUserMessage);
   try {
     const response = await getGroqClient().chat.completions.create({
       model: "llama-3.3-70b-versatile",
@@ -118,7 +148,7 @@ For general chat: {"skipAgents": true, "reasoning": "General conversation"}`;
 
 // AGENT 2: CONTEXT
 export async function contextAgent(
-  userMessage: string,
+  rawUserMessage: string,
   userLocation?: { lat: number; lng: number },
   _userId?: string | null,
 ): Promise<{
@@ -149,6 +179,7 @@ Output ONLY valid JSON:
   "reasoning": "Extracted intent and params"
 }`;
 
+  const userMessage = sanitizeUserInput(rawUserMessage);
   try {
     const response = await getGroqClient().chat.completions.create({
       model: "llama-3.3-70b-versatile",

@@ -15,7 +15,7 @@ class CompressionClient:
         self, method: str, path: str, data: Optional[Dict] = None
     ) -> Any:
         url = f"{self.server_url}{path}"
-        body = json.dumps(data).encode() if data else None
+        body = json.dumps(data).encode() if data is not None else None
         req = Request(url, data=body, method=method)
         req.add_header("Content-Type", "application/json")
         try:
@@ -49,7 +49,7 @@ class CompressionClient:
     def compress_context(
         self, query: str, max_tokens: Optional[int] = None
     ) -> Dict:
-        body = {"query": query}
+        body: Dict[str, Any] = {"query": query}
         if max_tokens is not None:
             body["max_tokens"] = max_tokens
         return self._request("POST", "/api/compress", body)
@@ -61,7 +61,7 @@ class CompressionClient:
         return result["results"]
 
     def deduplicate(self, threshold: Optional[float] = None) -> int:
-        body = {}
+        body: Dict[str, Any] = {}
         if threshold is not None:
             body["threshold"] = threshold
         result = self._request("POST", "/api/deduplicate", body)

@@ -1,197 +1,18 @@
 name: Continuous Integration
 
 on:
-  pull_request_target:
+  pull_request:
     branches: [main, master, dev, development]
     types: [opened, synchronize, reopened]
   push:
     branches: [main, master]
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
 
 jobs:
-  auto-merge-linked-pr:
-    name: Check Issue Link & Auto-Merge
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request_target'
-    permissions:
-      contents: write
-      pull-requests: write
-      issues: write
-    steps:
-      - name: Auto-merge if linked to an issue
-        uses: actions/github-script@v7
-        with:
-          script: |
-            try {
-              const pr = context.payload.pull_request;
-              if (!pr) {
-                console.log('No pull request found in event payload.');
-                return;
-              }
-
-              const prNumber = pr.number;
-              const owner = context.repo.owner;
-              const repo = context.repo.repo;
-              const title = pr.title || '';
-              const body = pr.body || '';
-              const headRef = pr.head ? pr.head.ref : '';
-
-              console.log(`Evaluating PR #${prNumber}: "${title}" for linked issues...`);
-
-              let hasLinkedIssue = false;
-              let linkedIssues = [];
-
-              // 1. Check official GitHub closingIssuesReferences via GraphQL
-              try {
-                const query = `
-                  query($owner: String!, $repo: String!, $number: Int!) {
-                    repository(owner: $owner, name: $repo) {
-                      pullRequest(number: $number) {
-                        closingIssuesReferences(first: 10) {
-                          nodes {
-                            number
-                          }
-                        }
-                      }
-                    }
-                  }
-                `;
-                const gqlRes = await github.graphql(query, { owner, repo, number: prNumber });
-                const closingNodes = gqlRes?.repository?.pullRequest?.closingIssuesReferences?.nodes || [];
-                if (closingNodes.length > 0) {
-                  hasLinkedIssue = true;
-                  for (const node of closingNodes) {
-                    const tag = `#${node.number}`;
-                    if (!linkedIssues.includes(tag)) linkedIssues.push(tag);
-                  }
-                }
-              } catch (gqlErr) {
-                console.warn('GraphQL closingIssuesReferences query note:', gqlErr.message);
-              }
-
-              // 2. Check title / body / branch name with issue keywords
-              const issuePattern = /(?:closes?|closed|fixes?|fixed|resolves?|resolved|issue)\s*#?(\d+)/gi;
-              let m;
-              while ((m = issuePattern.exec(title)) !== null) {
-                hasLinkedIssue = true;
-                const tag = `#${m[1]}`;
-                if (!linkedIssues.includes(tag)) linkedIssues.push(tag);
-              }
-              while ((m = issuePattern.exec(body)) !== null) {
-                hasLinkedIssue = true;
-                const tag = `#${m[1]}`;
-                if (!linkedIssues.includes(tag)) linkedIssues.push(tag);
-              }
-
-              // Check generic #<number> in title
-              const hashPattern = /#(\d+)/g;
-              while ((m = hashPattern.exec(title)) !== null) {
-                hasLinkedIssue = true;
-                const tag = `#${m[1]}`;
-                if (!linkedIssues.includes(tag)) linkedIssues.push(tag);
-              }
-
-              // Check branch ref (e.g. fix/issue-123 or issue-123)
-              const branchMatch = headRef.match(/(?:issue[-/]?|#)(\d+)/i);
-              if (branchMatch) {
-                hasLinkedIssue = true;
-                const tag = `#${branchMatch[1]}`;
-                if (!linkedIssues.includes(tag)) linkedIssues.push(tag);
-              }
-
-              // ==========================================
-              // UNLINKED PR: Leave for manual review
-              // ==========================================
-              if (!hasLinkedIssue) {
-                console.log(`PR #${prNumber} is NOT linked to any issue.`);
-                console.log('Skipping auto-merge. PR is left open for manual maintainer review.');
-                
-                const noticeMsg = `👋 Thank you for opening this PR!\n\nThis PR does not appear to be linked to an issue (e.g. \`Closes #123\` or \`Fixes #123\`). It will be kept open for manual maintainer review. If this PR addresses an existing issue, please link it in your PR description or title!`;
-                await github.rest.issues.createComment({
-                  owner,
-                  repo,
-                  issue_number: prNumber,
-                  body: noticeMsg
-                }).catch(e => console.warn('Comment notice note:', e.message));
-                return;
-              }
-
-              // ==========================================
-              // LINKED PR: Auto-approve & auto-merge
-              // ==========================================
-              console.log(`PR #${prNumber} is linked to issue(s): ${linkedIssues.join(', ')}. Initiating auto-merge...`);
-
-              // Auto-approve PR if needed
-              try {
-                await github.rest.pulls.createReview({
-                  owner,
-                  repo,
-                  pull_number: prNumber,
-                  event: 'APPROVE',
-                  body: `Auto-approved by CI: PR is linked to issue(s) ${linkedIssues.join(', ')}.`
-                });
-              } catch (e) {
-                console.log('PR approval notice:', e.message);
-              }
-
-              // Fetch mergeable status (poll with delay if GitHub is computing)
-              let prDetails;
-              for (let attempt = 1; attempt <= 4; attempt++) {
-                const res = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
-                prDetails = res.data;
-                if (prDetails.mergeable !== null) break;
-                console.log(`Waiting for GitHub to compute mergeability (attempt ${attempt}/4)...`);
-                await new Promise(r => setTimeout(r, 2500));
-              }
-
-              if (prDetails.mergeable === false || prDetails.mergeable_state === 'dirty') {
-                const conflictMsg = `⚠️ **Auto-merge paused**: PR #${prNumber} is linked to issue(s) ${linkedIssues.join(', ')}, but cannot be auto-merged due to merge conflicts with \`main\` (state: \`${prDetails.mergeable_state}\`). Please resolve any merge conflicts to proceed!`;
-                await github.rest.issues.createComment({
-                  owner,
-                  repo,
-                  issue_number: prNumber,
-                  body: conflictMsg
-                }).catch(e => console.warn('Conflict comment note:', e.message));
-                return;
-              }
-
-              // Execute squash merge with co-author attribution
-              const commitTitle = `${title} (#${prNumber})`;
-              const commitMessage = `${body}\n\nCo-authored-by: Satyam Pandey <satyam53@tsecol.onmicrosoft.com>\nCo-authored-by: SatyamPandey-07 <186389297+SatyamPandey-07@users.noreply.github.com>`;
-
-              const mergeResponse = await github.rest.pulls.merge({
-                owner,
-                repo,
-                pull_number: prNumber,
-                commit_title: commitTitle,
-                commit_message: commitMessage,
-                merge_method: 'squash'
-              });
-
-              console.log(`PR #${prNumber} successfully auto-merged! SHA: ${mergeResponse.data.sha}`);
-
-              const successMsg = `🚀 **Auto-merge complete!**\n\nThis pull request is linked to issue(s) ${linkedIssues.join(', ')} and has been automatically squash-merged into \`main\` with co-author credit! 🎉\n\nThank you for contributing to **WorkSphere**! ✨`;
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: successMsg
-              }).catch(e => console.warn('Success comment note:', e.message));
-
-            } catch (err) {
-              console.error('Auto-merge step error (gracefully caught):', err.message);
-            }
-
   build-and-test:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      contents: read
-    continue-on-error: true
     env:
       DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ
@@ -217,23 +38,21 @@ jobs:
       UPSTASH_REDIS_REST_URL: https://dummy.upstash.io
       UPSTASH_REDIS_REST_TOKEN: dummy
       NEXT_PUBLIC_OSRM_URL: https://router.project-osrm.org
+
     steps:
-      - name: Checkout code
+      - name: Check out repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: npm
 
       - name: Cache Next.js build output
         uses: actions/cache@v4
         with:
-          path: |
-            .next/cache
+          path: .next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
@@ -247,17 +66,12 @@ jobs:
 
       - name: Run lint
         run: npm run lint
-        continue-on-error: true
 
       - name: Run type check
         run: npx tsc --noEmit
-        continue-on-error: true
 
       - name: Run tests
         run: npm test
-        continue-on-error: true
 
       - name: Build Next.js application
         run: npm run build
-        continue-on-error: true
-

@@ -1,5 +1,6 @@
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act } from "@testing-library/react";
 import { useCityDataPack } from "@/hooks/useCityDataPack";
+import { saveVenueOffline } from "@/lib/offlineStorage";
 
 // Mock offlineStorage
 jest.mock("@/lib/offlineStorage", () => ({
@@ -29,11 +30,21 @@ describe("useCityDataPack", () => {
 
   it("sets status to 'downloading' while fetching", async () => {
     // Delay the fetch response
-    global.fetch = jest.fn().mockImplementationOnce(
-      () => new Promise((resolve) => setTimeout(() =>
-        resolve({ ok: true, json: async () => ({ venues: mockVenues }) }), 100),
-      ),
-    );
+    global.fetch = jest
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  ok: true,
+                  json: async () => ({ venues: mockVenues }),
+                }),
+              100,
+            ),
+          ),
+      );
 
     const { result } = renderHook(() => useCityDataPack());
 
@@ -57,7 +68,6 @@ describe("useCityDataPack", () => {
   });
 
   it("calls saveVenueOffline for each venue", async () => {
-    const { saveVenueOffline } = require("@/lib/offlineStorage");
     const { result } = renderHook(() => useCityDataPack());
 
     await act(async () => {
@@ -88,7 +98,10 @@ describe("useCityDataPack", () => {
     const { result } = renderHook(() => useCityDataPack());
 
     await act(async () => {
-      await result.current.downloadCityPack("Tokyo", { lat: 35.68, lng: 139.69 });
+      await result.current.downloadCityPack("Tokyo", {
+        lat: 35.68,
+        lng: 139.69,
+      });
     });
 
     expect(result.current.status).toBe("error");

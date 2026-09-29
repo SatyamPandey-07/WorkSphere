@@ -1,5 +1,8 @@
 import { POST } from "@/app/api/venues/[venueId]/flag/route";
 import { NextRequest } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { rateLimit } from "@/lib/rateLimit";
+import { prisma } from "@/lib/prisma";
 
 // Mock Clerk auth
 jest.mock("@clerk/nextjs/server", () => ({
@@ -24,15 +27,15 @@ jest.mock("@/lib/prisma", () => ({
   },
 }));
 
-function makeRequest(venueId: string, body: Record<string, unknown>): NextRequest {
-  return new NextRequest(
-    `http://localhost/api/venues/${venueId}/flag`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    },
-  );
+function makeRequest(
+  venueId: string,
+  body: Record<string, unknown>,
+): NextRequest {
+  return new NextRequest(`http://localhost/api/venues/${venueId}/flag`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 describe("POST /api/venues/[venueId]/flag", () => {
@@ -53,8 +56,7 @@ describe("POST /api/venues/[venueId]/flag", () => {
   });
 
   it("returns 401 when user is not authenticated", async () => {
-    const { auth } = require("@clerk/nextjs/server");
-    auth.mockResolvedValueOnce({ userId: null });
+    (auth as unknown as jest.Mock).mockResolvedValueOnce({ userId: null });
 
     const response = await POST(
       makeRequest("venue-123", { reason: "wrong_hours" }),
@@ -64,8 +66,7 @@ describe("POST /api/venues/[venueId]/flag", () => {
   });
 
   it("returns 429 when rate limit is exceeded", async () => {
-    const { rateLimit } = require("@/lib/rateLimit");
-    rateLimit.mockResolvedValueOnce(false);
+    (rateLimit as unknown as jest.Mock).mockResolvedValueOnce(false);
 
     const response = await POST(
       makeRequest("venue-123", { reason: "no_wifi" }),
@@ -75,8 +76,9 @@ describe("POST /api/venues/[venueId]/flag", () => {
   });
 
   it("returns 404 when venue does not exist", async () => {
-    const { prisma } = require("@/lib/prisma");
-    prisma.venue.findUnique.mockResolvedValueOnce(null);
+    (prisma.venue.findUnique as unknown as jest.Mock).mockResolvedValueOnce(
+      null,
+    );
 
     const response = await POST(
       makeRequest("nonexistent", { reason: "permanently_closed" }),
@@ -86,8 +88,9 @@ describe("POST /api/venues/[venueId]/flag", () => {
   });
 
   it("returns 200 (deduplicated) when flag already exists", async () => {
-    const { prisma } = require("@/lib/prisma");
-    prisma.flaggedItem.findFirst.mockResolvedValueOnce({ id: "existing-flag" });
+    (
+      prisma.flaggedItem.findFirst as unknown as jest.Mock
+    ).mockResolvedValueOnce({ id: "existing-flag" });
 
     const response = await POST(
       makeRequest("venue-123", { reason: "permanently_closed" }),

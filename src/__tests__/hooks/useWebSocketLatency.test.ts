@@ -1,5 +1,5 @@
 import { useWebSocketLatency } from "@/hooks/useWebSocketLatency";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook } from "@testing-library/react";
 
 // Helper to create a minimal mock WebSocket
 function createMockSocket(readyState = WebSocket.OPEN): WebSocket {
@@ -9,10 +9,12 @@ function createMockSocket(readyState = WebSocket.OPEN): WebSocket {
     readyState,
     send: jest.fn(),
     close: jest.fn(),
-    addEventListener: jest.fn((event: string, cb: EventListenerOrEventListenerObject) => {
-      if (!listeners[event]) listeners[event] = [];
-      listeners[event].push(cb);
-    }),
+    addEventListener: jest.fn(
+      (event: string, cb: EventListenerOrEventListenerObject) => {
+        if (!listeners[event]) listeners[event] = [];
+        listeners[event].push(cb);
+      },
+    ),
     removeEventListener: jest.fn(),
     // Helper to fire events in tests
     _fire: (event: string, data?: unknown) => {
@@ -52,16 +54,13 @@ describe("useWebSocketLatency", () => {
   it("sends a ping message when socket is OPEN on mount", () => {
     const socket = createMockSocket(WebSocket.OPEN);
     renderHook(() => useWebSocketLatency(socket, { intervalMs: 60000 }));
-    expect(socket.send).toHaveBeenCalledWith(
-      expect.stringContaining("ping"),
-    );
+    expect(socket.send).toHaveBeenCalledWith(expect.stringContaining("ping"));
   });
 
   it("tier is 'good' for latencyMs < 50", () => {
     // We test the tier derivation logic indirectly via the hook internals
     // by checking the exported tier function
-    const { useWebSocketLatency: hook } = require("@/hooks/useWebSocketLatency");
-    const { result } = renderHook(() => hook(null));
+    const { result } = renderHook(() => useWebSocketLatency(null));
     // null latency → unknown tier
     expect(result.current.tier).toBe("unknown");
   });
@@ -69,8 +68,14 @@ describe("useWebSocketLatency", () => {
   it("registers message and close listeners when socket is provided", () => {
     const socket = createMockSocket(WebSocket.OPEN);
     renderHook(() => useWebSocketLatency(socket, { intervalMs: 60000 }));
-    expect(socket.addEventListener).toHaveBeenCalledWith("message", expect.any(Function));
-    expect(socket.addEventListener).toHaveBeenCalledWith("close", expect.any(Function));
+    expect(socket.addEventListener).toHaveBeenCalledWith(
+      "message",
+      expect.any(Function),
+    );
+    expect(socket.addEventListener).toHaveBeenCalledWith(
+      "close",
+      expect.any(Function),
+    );
   });
 
   it("removes listeners on unmount", () => {

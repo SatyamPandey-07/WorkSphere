@@ -6,10 +6,14 @@ type GeolocationPermission = "prompt" | "granted" | "denied";
 
 function classifyGeolocationError(code: number): GeolocationPermission {
   switch (code) {
-    case 1: return "denied";     // PERMISSION_DENIED
-    case 2: return "prompt";     // POSITION_UNAVAILABLE → keep as prompt
-    case 3: return "prompt";     // TIMEOUT → keep as prompt
-    default: return "prompt";
+    case 1:
+      return "denied"; // PERMISSION_DENIED
+    case 2:
+      return "prompt"; // POSITION_UNAVAILABLE → keep as prompt
+    case 3:
+      return "prompt"; // TIMEOUT → keep as prompt
+    default:
+      return "prompt";
   }
 }
 
@@ -58,20 +62,24 @@ describe("Geolocation permission state transitions", () => {
 
   it("transitions to 'granted' on first successful position", () => {
     let state: GeolocationPermission = "prompt";
-    const onSuccess = () => { state = "granted"; };
+    const onSuccess = () => {
+      state = "granted";
+    };
     onSuccess();
     expect(state).toBe("granted");
   });
 
   it("transitions to 'denied' on PERMISSION_DENIED error", () => {
     let state: GeolocationPermission = "prompt";
-    const onError = (code: number) => { state = classifyGeolocationError(code); };
+    const onError = (code: number) => {
+      state = classifyGeolocationError(code);
+    };
     onError(1); // PERMISSION_DENIED
     expect(state).toBe("denied");
   });
 
   it("stays 'granted' after multiple updates", () => {
-    let state: GeolocationPermission = "granted";
+    const state: GeolocationPermission = "granted";
     // Multiple success callbacks don't change state
     for (let i = 0; i < 5; i++) {
       // success callback would normally set to granted — state unchanged

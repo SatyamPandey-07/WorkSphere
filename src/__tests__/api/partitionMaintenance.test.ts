@@ -5,10 +5,13 @@
 
 import { GET } from "@/app/api/cron/partition-maintenance/route";
 import { NextRequest } from "next/server";
+import { autoCreateUpcomingPartitions } from "@/lib/partitionMaintenance";
 
 // Mock the partition maintenance functions
 jest.mock("@/lib/partitionMaintenance", () => ({
-  autoCreateUpcomingPartitions: jest.fn().mockResolvedValue(["partition_2026_11"]),
+  autoCreateUpcomingPartitions: jest
+    .fn()
+    .mockResolvedValue(["partition_2026_11"]),
   archiveExpiredPushNotificationPartitions: jest.fn().mockResolvedValue([]),
   checkPartitionHealth: jest.fn().mockResolvedValue({ status: "OK" }),
 }));
@@ -73,8 +76,9 @@ describe("GET /api/cron/partition-maintenance", () => {
 
   it("returns 207 and errors array when a step fails", async () => {
     delete process.env.CRON_SECRET;
-    const { autoCreateUpcomingPartitions } = require("@/lib/partitionMaintenance");
-    autoCreateUpcomingPartitions.mockRejectedValueOnce(new Error("DB timeout"));
+    (
+      autoCreateUpcomingPartitions as unknown as jest.Mock
+    ).mockRejectedValueOnce(new Error("DB timeout"));
 
     const response = await GET(makeRequest());
     const data = await response.json();

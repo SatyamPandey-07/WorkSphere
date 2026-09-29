@@ -5,6 +5,8 @@
 
 import { POST } from "@/app/api/translate/route";
 import { NextRequest } from "next/server";
+import { auth } from "@clerk/nextjs/server";
+import { rateLimit } from "@/lib/rateLimit";
 
 jest.mock("@clerk/nextjs/server", () => ({
   auth: jest.fn().mockResolvedValue({ userId: "user-123" }),
@@ -76,8 +78,7 @@ describe("POST /api/translate validation", () => {
   });
 
   it("returns 429 when rate limit exceeded", async () => {
-    const { rateLimit } = require("@/lib/rateLimit");
-    rateLimit.mockResolvedValueOnce(false);
+    (rateLimit as unknown as jest.Mock).mockResolvedValueOnce(false);
 
     const resp = await POST(
       makeRequest({ text: "Hello", targetLanguage: "es" }),
@@ -86,8 +87,7 @@ describe("POST /api/translate validation", () => {
   });
 
   it("returns 401 when not authenticated", async () => {
-    const { auth } = require("@clerk/nextjs/server");
-    auth.mockResolvedValueOnce({ userId: null });
+    (auth as unknown as jest.Mock).mockResolvedValueOnce({ userId: null });
 
     const resp = await POST(
       makeRequest({ text: "Hello", targetLanguage: "de" }),

@@ -1,5 +1,6 @@
 import { GET } from "@/app/api/venues/[venueId]/quiet-hours/route";
 import { NextRequest } from "next/server";
+import { predictQuietHours } from "@/lib/quietHoursPrediction";
 
 // Mock the prediction function
 jest.mock("@/lib/quietHoursPrediction", () => ({
@@ -18,9 +19,7 @@ jest.mock("@/lib/quietHoursPrediction", () => ({
 }));
 
 function makeRequest(venueId: string): NextRequest {
-  return new NextRequest(
-    `http://localhost/api/venues/${venueId}/quiet-hours`,
-  );
+  return new NextRequest(`http://localhost/api/venues/${venueId}/quiet-hours`);
 }
 
 describe("GET /api/venues/[venueId]/quiet-hours", () => {
@@ -55,8 +54,9 @@ describe("GET /api/venues/[venueId]/quiet-hours", () => {
   });
 
   it("returns 500 when prediction fails", async () => {
-    const { predictQuietHours } = require("@/lib/quietHoursPrediction");
-    predictQuietHours.mockRejectedValueOnce(new Error("DB error"));
+    (predictQuietHours as unknown as jest.Mock).mockRejectedValueOnce(
+      new Error("DB error"),
+    );
 
     const response = await GET(makeRequest("bad-venue"), {
       params: Promise.resolve({ venueId: "bad-venue" }),

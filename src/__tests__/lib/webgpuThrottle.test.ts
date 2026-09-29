@@ -61,15 +61,15 @@ describe("WebGPU 60fps frame-rate throttle logic", () => {
 
 describe("IntersectionObserver canvas pause logic", () => {
   it("isVisible defaults to true before observer fires", () => {
-    let isVisible = true;
+    const isVisible = true;
     expect(isVisible).toBe(true);
   });
 
   it("render is skipped when isVisible is false", () => {
     let renderCount = 0;
-    let isVisible = false;
+    const isVisible = false;
 
-    const loop = (timestamp: number) => {
+    const loop = (_timestamp: number) => {
       if (!isVisible) return; // paused off-screen
       renderCount++;
     };
@@ -80,7 +80,7 @@ describe("IntersectionObserver canvas pause logic", () => {
 
   it("render proceeds when isVisible is true", () => {
     let renderCount = 0;
-    let isVisible = true;
+    const isVisible = true;
     let prevFrameTime = 0;
 
     const loop = (timestamp: number) => {

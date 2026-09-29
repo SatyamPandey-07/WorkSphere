@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { saveVenueOffline } from "@/lib/offlineStorage";
 import { type OfflineVenue } from "@/lib/offlineStorage";
 
@@ -30,7 +30,7 @@ export function useCityDataPack(): UseCityDataPackResult {
   const [downloadedCount, setDownloadedCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const cancelledRef = { current: false };
+  const cancelledRef = useRef(false);
 
   const downloadCityPack = useCallback(
     async (cityName: string, bounds: CityBounds) => {
@@ -113,5 +113,12 @@ export function useCityDataPack(): UseCityDataPackResult {
     setStatus("idle");
   }, []);
 
-  return { status, downloadedCount, totalCount, error, downloadCityPack, cancel };
+  return {
+    status,
+    downloadedCount,
+    totalCount,
+    error,
+    downloadCityPack,
+    cancel,
+  };
 }

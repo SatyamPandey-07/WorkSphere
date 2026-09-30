@@ -22,12 +22,16 @@ import { FolderColorPicker } from "@/components/collections/FolderColorPicker";
 
 export default function CollectionsPage() {
   const router = useRouter();
+
   const [folders, setFolders] = useState<any[]>([]);
   const [publicFolders, setPublicFolders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingPublic, setLoadingPublic] = useState(false);
   const [creating, setCreating] = useState(false);
+
   const isCreatingRef = useRef(false);
+  const isDraggingRef = useRef(false);
+
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderDesc, setNewFolderDesc] = useState("");
   const [newFolderPublic, setNewFolderPublic] = useState(false);
@@ -39,34 +43,69 @@ export default function CollectionsPage() {
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
+    isDraggingRef.current = true;
     setDraggedIndex(index);
+
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", index.toString());
   };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
+
     if (draggedIndex === index) return;
+
     setDragOverIndex(index);
   };
 
   const handleDragEnd = () => {
     setDraggedIndex(null);
     setDragOverIndex(null);
+
+    // Prevent the click event generated after dragging
+    // from navigating to the collection.
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 0);
   };
 
-  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+  const handleDrop = (
+    e: React.DragEvent,
+    targetIndex: number,
+  ) => {
     e.preventDefault();
-    if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+    if (
+      draggedIndex === null ||
+      draggedIndex === targetIndex
+    ) {
+      handleDragEnd();
+      return;
+    }
 
     const reorderedFolders = [...folders];
-    const [draggedFolder] = reorderedFolders.splice(draggedIndex, 1);
-    reorderedFolders.splice(targetIndex, 0, draggedFolder);
+
+    const [draggedFolder] = reorderedFolders.splice(
+      draggedIndex,
+      1,
+    );
+
+    reorderedFolders.splice(
+      targetIndex,
+      0,
+      draggedFolder,
+    );
 
     setFolders(reorderedFolders);
 
-    const orderIds = reorderedFolders.map((f) => f.id);
-    localStorage.setItem("worksphere_folder_order", JSON.stringify(orderIds));
+    const orderIds = reorderedFolders.map(
+      (folder) => folder.id,
+    );
+
+    localStorage.setItem(
+      "worksphere_folder_order",
+      JSON.stringify(orderIds),
+    );
 
     handleDragEnd();
   };
@@ -74,24 +113,57 @@ export default function CollectionsPage() {
   const fetchFolders = async () => {
     try {
       setLoading(true);
+
       const res = await fetch("/api/folders");
+
+      if (!res.ok) {
+        throw new Error(
+          `Failed to fetch folders: ${res.status}`,
+        );
+      }
+
       const data = await res.json();
+
       if (data.folders) {
-        const savedOrder = localStorage.getItem("worksphere_folder_order");
+        const savedOrder = localStorage.getItem(
+          "worksphere_folder_order",
+        );
+
         if (savedOrder) {
           try {
             const orderIds = JSON.parse(savedOrder);
-            const orderedFolders = [...data.folders].sort((a, b) => {
-              const indexA = orderIds.indexOf(a.id);
-              const indexB = orderIds.indexOf(b.id);
-              if (indexA === -1 && indexB === -1) return 0;
-              if (indexA === -1) return 1;
-              if (indexB === -1) return -1;
-              return indexA - indexB;
-            });
+
+            const orderedFolders = [...data.folders].sort(
+              (a, b) => {
+                const indexA = orderIds.indexOf(a.id);
+                const indexB = orderIds.indexOf(b.id);
+
+                if (
+                  indexA === -1 &&
+                  indexB === -1
+                ) {
+                  return 0;
+                }
+
+                if (indexA === -1) {
+                  return 1;
+                }
+
+                if (indexB === -1) {
+                  return -1;
+                }
+
+                return indexA - indexB;
+              },
+            );
+
             setFolders(orderedFolders);
           } catch (e) {
-            console.error("Failed to parse saved folder order", e);
+            console.error(
+              "Failed to parse saved folder order",
+              e,
+            );
+
             setFolders(data.folders);
           }
         } else {
@@ -99,7 +171,8 @@ export default function CollectionsPage() {
         }
       }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to fetch folders:", e);
+      setFolders([]);
     } finally {
       setLoading(false);
     }
@@ -108,11 +181,31 @@ export default function CollectionsPage() {
   const fetchPublicFolders = async () => {
     try {
       setLoadingPublic(true);
-      const res = await fetch("/api/collections/public");
+
+      const res = await fetch(
+        "/api/collections/public",
+      );
+
+      if (!res.ok) {
+        throw new Error(
+          `Failed to fetch public folders: ${res.status}`,
+        );
+      }
+
       const data = await res.json();
-      if (data.folders) setPublicFolders(data.folders);
+
+      if (data.folders) {
+        setPublicFolders(data.folders);
+      } else {
+        setPublicFolders([]);
+      }
     } catch (e) {
-      console.error(e);
+      console.error(
+        "Failed to fetch public folders:",
+        e,
+      );
+
+      setPublicFolders([]);
     } finally {
       setLoadingPublic(false);
     }
@@ -126,17 +219,31 @@ export default function CollectionsPage() {
     }
   }, [activeTab]);
 
-  const createFolder = async (e: React.FormEvent) => {
+  const createFolder = async (
+    e: React.FormEvent,
+  ) => {
     e.preventDefault();
-    const trimmedName = newFolderName.trim();
-    if (!trimmedName || creating || isCreatingRef.current) return;
+
+    const trimmedName =
+      newFolderName.trim();
+
+    if (
+      !trimmedName ||
+      creating ||
+      isCreatingRef.current
+    ) {
+      return;
+    }
 
     try {
       isCreatingRef.current = true;
       setCreating(true);
+
       const res = await fetch("/api/folders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           name: trimmedName,
           description: newFolderDesc.trim(),
@@ -144,66 +251,100 @@ export default function CollectionsPage() {
           color: newFolderColor,
         }),
       });
-      if (res.ok) {
-        setNewFolderName("");
-        setNewFolderDesc("");
-        setNewFolderPublic(false);
-        setNewFolderColor("#3b82f6");
-        if (activeTab === "my") {
-          await fetchFolders();
-        } else {
-          setActiveTab("my");
-        }
+
+      if (!res.ok) {
+        throw new Error(
+          `Failed to create folder: ${res.status}`,
+        );
+      }
+
+      setNewFolderName("");
+      setNewFolderDesc("");
+      setNewFolderPublic(false);
+      setNewFolderColor("#3b82f6");
+
+      if (activeTab === "my") {
+        await fetchFolders();
+      } else {
+        setActiveTab("my");
       }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to create folder:", e);
     } finally {
       setCreating(false);
       isCreatingRef.current = false;
     }
   };
 
-  const toggleUpvote = async (folderId: string, e: React.MouseEvent) => {
+  const toggleUpvote = async (
+    folderId: string,
+    e: React.MouseEvent,
+  ) => {
     e.preventDefault();
     e.stopPropagation();
+
     try {
       setPublicFolders((prev) =>
-        prev.map((f) => {
-          if (f.id === folderId) {
-            const hasUpvoted = !f.hasUpvoted;
-            const upvotes = f.upvotes + (hasUpvoted ? 1 : -1);
-            return { ...f, hasUpvoted, upvotes };
+        prev.map((folder) => {
+          if (folder.id === folderId) {
+            const hasUpvoted =
+              !folder.hasUpvoted;
+
+            const upvotes =
+              folder.upvotes +
+              (hasUpvoted ? 1 : -1);
+
+            return {
+              ...folder,
+              hasUpvoted,
+              upvotes,
+            };
           }
-          return f;
+
+          return folder;
         }),
       );
 
-      const res = await fetch("/api/collections/public/upvote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folderId }),
-      });
+      const res = await fetch(
+        "/api/collections/public/upvote",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            folderId,
+          }),
+        },
+      );
 
       if (!res.ok) {
-        fetchPublicFolders();
-      } else {
-        const data = await res.json();
-        setPublicFolders((prev) =>
-          prev.map((f) => {
-            if (f.id === folderId) {
-              return {
-                ...f,
-                hasUpvoted: data.hasUpvoted,
-                upvotes: data.upvotes,
-              };
-            }
-            return f;
-          }),
-        );
+        await fetchPublicFolders();
+        return;
       }
+
+      const data = await res.json();
+
+      setPublicFolders((prev) =>
+        prev.map((folder) => {
+          if (folder.id === folderId) {
+            return {
+              ...folder,
+              hasUpvoted: data.hasUpvoted,
+              upvotes: data.upvotes,
+            };
+          }
+
+          return folder;
+        }),
+      );
     } catch (err) {
-      console.error(err);
-      fetchPublicFolders();
+      console.error(
+        "Failed to toggle upvote:",
+        err,
+      );
+
+      await fetchPublicFolders();
     }
   };
 
@@ -219,14 +360,16 @@ export default function CollectionsPage() {
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
+
             <div>
               <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
                 <LayoutGrid className="w-6 h-6 text-blue-500" />
                 Collections Hub
               </h1>
+
               <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                Curate, collaborate, and discover workspaces shared by the
-                community.
+                Curate, collaborate, and discover workspaces
+                shared by the community.
               </p>
             </div>
           </div>
@@ -242,6 +385,7 @@ export default function CollectionsPage() {
             >
               My Collections
             </button>
+
             <button
               onClick={() => setActiveTab("public")}
               className={`px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-1.5 ${
@@ -253,6 +397,7 @@ export default function CollectionsPage() {
               <Globe className="w-4 h-4 text-blue-500" />
               Discovery Feed
             </button>
+
             <Link
               href="/compare"
               className="px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white hover:bg-zinc-200 dark:hover:bg-zinc-800"
@@ -268,14 +413,21 @@ export default function CollectionsPage() {
           <div className="md:col-span-1">
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 shadow-sm sticky top-24">
               <h2 className="text-lg font-semibold mb-4 text-zinc-900 dark:text-white flex items-center gap-2">
-                <Plus className="w-5 h-5 text-green-500" /> Create Collection
+                <Plus className="w-5 h-5 text-green-500" />
+                Create Collection
               </h2>
-              <form onSubmit={createFolder} className="flex flex-col gap-3">
+
+              <form
+                onSubmit={createFolder}
+                className="flex flex-col gap-3"
+              >
                 <input
                   type="text"
                   placeholder="Collection Name"
                   value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
+                  onChange={(e) =>
+                    setNewFolderName(e.target.value)
+                  }
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       if (
@@ -290,23 +442,33 @@ export default function CollectionsPage() {
                   className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-[var(--primary-accent)] transition-colors text-zinc-900 dark:text-white"
                   required
                 />
+
                 <textarea
                   placeholder="Description (Optional)"
                   value={newFolderDesc}
-                  onChange={(e) => setNewFolderDesc(e.target.value)}
+                  onChange={(e) =>
+                    setNewFolderDesc(e.target.value)
+                  }
                   className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-sm outline-none focus:border-[var(--primary-accent)] transition-colors text-zinc-900 dark:text-white resize-none h-20"
                 />
+
                 <FolderColorPicker
                   selectedColor={newFolderColor}
                   onChange={setNewFolderColor}
                 />
+
                 <div className="flex items-center justify-between px-1 py-1">
                   <span className="text-xs text-zinc-500">
                     Publish to Discovery Feed
                   </span>
+
                   <button
                     type="button"
-                    onClick={() => setNewFolderPublic(!newFolderPublic)}
+                    onClick={() =>
+                      setNewFolderPublic(
+                        !newFolderPublic,
+                      )
+                    }
                     className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${
                       newFolderPublic
                         ? "accent-bg"
@@ -315,14 +477,20 @@ export default function CollectionsPage() {
                   >
                     <span
                       className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                        newFolderPublic ? "translate-x-5" : "translate-x-0"
+                        newFolderPublic
+                          ? "translate-x-5"
+                          : "translate-x-0"
                       }`}
                     />
                   </button>
                 </div>
+
                 <button
                   type="submit"
-                  disabled={creating || !newFolderName.trim()}
+                  disabled={
+                    creating ||
+                    !newFolderName.trim()
+                  }
                   className="w-full flex items-center justify-center gap-2 px-4 py-2 accent-bg hover:opacity-90 text-white font-medium rounded-xl text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {creating ? (
@@ -338,7 +506,6 @@ export default function CollectionsPage() {
           {/* List Views */}
           <div className="md:col-span-2 lg:col-span-3 space-y-4">
             {activeTab === "my" ? (
-              // My Collections tab
               loading ? (
                 <div className="flex justify-center p-12">
                   <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
@@ -351,73 +518,103 @@ export default function CollectionsPage() {
                 />
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {folders.map((folder, index) => (
-                    <div
-                      key={folder.id}
-                      onClick={(e) => {
-                        if ((e.target as HTMLElement).closest(".drag-handle"))
-                          return;
-                        router.push(`/collections/${folder.id}`);
-                      }}
-                      onDragOver={(e) => handleDragOver(e, index)}
-                      onDrop={(e) => handleDrop(e, index)}
-                      className={`group bg-white dark:bg-zinc-900 border rounded-2xl p-5 hover:accent-border-50 hover:shadow-lg hover:shadow-[var(--primary-accent)]/5 transition-all cursor-pointer h-full flex flex-col justify-between ${
-                        draggedIndex === index
-                          ? "opacity-30 border-dashed border-zinc-300 dark:border-zinc-700 scale-95"
-                          : dragOverIndex === index
-                            ? "accent-border accent-bg-10 accent-bg-dark-10 scale-102"
-                            : "border-zinc-200 dark:border-zinc-800"
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-start justify-between mb-4">
-                          <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-sm"
-                            style={{
-                              backgroundColor: folder.color || "#3b82f6",
-                            }}
-                          >
-                            <Folder className="w-5 h-5" />
-                          </div>
-                          <div className="flex items-center gap-1.5">
+                  {folders.map(
+                    (folder, index) => (
+                      <div
+                        key={folder.id}
+                        onClick={() => {
+                          if (
+                            isDraggingRef.current
+                          ) {
+                            return;
+                          }
+
+                          router.push(
+                            `/collections/${folder.id}`,
+                          );
+                        }}
+                        onDragOver={(e) =>
+                          handleDragOver(
+                            e,
+                            index,
+                          )
+                        }
+                        onDrop={(e) =>
+                          handleDrop(
+                            e,
+                            index,
+                          )
+                        }
+                        className={`group bg-white dark:bg-zinc-900 border rounded-2xl p-5 hover:accent-border-50 hover:shadow-lg hover:shadow-[var(--primary-accent)]/5 transition-all cursor-pointer h-full flex flex-col justify-between ${
+                          draggedIndex === index
+                            ? "opacity-30 border-dashed border-zinc-300 dark:border-zinc-700 scale-95"
+                            : dragOverIndex === index
+                              ? "accent-border accent-bg-10 accent-bg-dark-10 scale-102"
+                              : "border-zinc-200 dark:border-zinc-800"
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-start justify-between mb-4">
                             <div
-                              className="drag-handle p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 cursor-grab active:cursor-grabbing transition-colors"
-                              draggable
-                              onDragStart={(e) => handleDragStart(e, index)}
-                              onDragEnd={handleDragEnd}
+                              className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold shadow-sm"
+                              style={{
+                                backgroundColor:
+                                  folder.color ||
+                                  "#3b82f6",
+                              }}
                             >
-                              <GripVertical className="w-4 h-4" />
+                              <Folder className="w-5 h-5" />
                             </div>
-                            <ChevronRight className="w-5 h-5 text-zinc-300 dark:text-zinc-700 group-hover:accent-text transition-colors" />
+
+                            <div className="flex items-center gap-1.5">
+                              <div
+                                className="drag-handle p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-zinc-600 cursor-grab active:cursor-grabbing transition-colors"
+                                draggable
+                                onDragStart={(e) =>
+                                  handleDragStart(
+                                    e,
+                                    index,
+                                  )
+                                }
+                                onDragEnd={
+                                  handleDragEnd
+                                }
+                              >
+                                <GripVertical className="w-4 h-4" />
+                              </div>
+
+                              <ChevronRight className="w-5 h-5 text-zinc-300 dark:text-zinc-700 group-hover:accent-text transition-colors" />
+                            </div>
                           </div>
+
+                          <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:accent-text transition-colors line-clamp-1">
+                            {folder.name}
+                          </h3>
+
+                          {folder.description && (
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
+                              {folder.description}
+                            </p>
+                          )}
                         </div>
 
-                        <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:accent-text transition-colors line-clamp-1">
-                          {folder.name}
-                        </h3>
-                        {folder.description && (
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
-                            {folder.description}
-                          </p>
-                        )}
-                      </div>
+                        <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center gap-4 text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                          <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
+                            <MapPin className="w-3.5 h-3.5 accent-text" />
+                            {folder._count?.venues || 0} Places
+                          </span>
 
-                      <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center gap-4 text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                        <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
-                          <MapPin className="w-3.5 h-3.5 accent-text" />
-                          {folder._count?.venues || 0} Places
-                        </span>
-                        <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
-                          <Users className="w-3.5 h-3.5 text-purple-500" />
-                          {folder._count?.members || 1} Members
-                        </span>
+                          <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
+                            <Users className="w-3.5 h-3.5 text-purple-500" />
+                            {folder._count?.members || 1} Members
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ),
+                  )}
                 </div>
               )
-            ) : // Public Discovery Feed tab
-            loadingPublic ? (
+            ) : loadingPublic ? (
               <div className="flex justify-center p-12">
                 <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
               </div>
@@ -429,68 +626,98 @@ export default function CollectionsPage() {
               />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {publicFolders.map((pubFolder) => (
-                  <Link
-                    href={`/collections/${pubFolder.id}`}
-                    key={pubFolder.id}
-                  >
-                    <div className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 hover:accent-border-50 hover:shadow-lg hover:shadow-[var(--primary-accent)]/5 transition-all cursor-pointer h-full flex flex-col justify-between">
-                      <div>
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800 shrink-0">
-                              {pubFolder.owner?.imageUrl && (
-                                <Image
-                                  src={pubFolder.owner.imageUrl}
-                                  alt={pubFolder.owner.firstName || "User"}
-                                  width={24}
-                                  height={24}
-                                  className="w-full h-full object-cover"
-                                />
-                              )}
+                {publicFolders.map(
+                  (pubFolder) => (
+                    <Link
+                      href={`/collections/${pubFolder.id}`}
+                      key={pubFolder.id}
+                    >
+                      <div className="group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 hover:accent-border-50 hover:shadow-lg hover:shadow-[var(--primary-accent)]/5 transition-all cursor-pointer h-full flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 rounded-full overflow-hidden bg-zinc-200 dark:bg-zinc-800 shrink-0">
+                                {pubFolder.owner
+                                  ?.imageUrl && (
+                                  <Image
+                                    src={
+                                      pubFolder.owner
+                                        .imageUrl
+                                    }
+                                    alt={
+                                      pubFolder.owner
+                                        .firstName ||
+                                      "User"
+                                    }
+                                    width={24}
+                                    height={24}
+                                    className="w-full h-full object-cover"
+                                  />
+                                )}
+                              </div>
+
+                              <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 truncate max-w-[120px]">
+                                {pubFolder.owner
+                                  ?.firstName ||
+                                  "Nomad"}
+                              </span>
                             </div>
-                            <span className="text-xs font-semibold text-zinc-600 dark:text-zinc-400 truncate max-w-[120px]">
-                              {pubFolder.owner?.firstName || "Nomad"}
-                            </span>
+
+                            <button
+                              onClick={(e) =>
+                                toggleUpvote(
+                                  pubFolder.id,
+                                  e,
+                                )
+                              }
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${
+                                pubFolder.hasUpvoted
+                                  ? "accent-bg accent-border text-white shadow-sm shadow-[var(--primary-accent)]/20 scale-105"
+                                  : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:accent-border-50 hover:accent-text"
+                              }`}
+                            >
+                              <ThumbsUp
+                                className={`w-3.5 h-3.5 ${
+                                  pubFolder.hasUpvoted
+                                    ? "fill-current"
+                                    : ""
+                                }`}
+                              />
+
+                              {pubFolder.upvotes}
+                            </button>
                           </div>
-                          <button
-                            onClick={(e) => toggleUpvote(pubFolder.id, e)}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all border ${
-                              pubFolder.hasUpvoted
-                                ? "accent-bg accent-border text-white shadow-sm shadow-[var(--primary-accent)]/20 scale-105"
-                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:accent-border-50 hover:accent-text"
-                            }`}
-                          >
-                            <ThumbsUp
-                              className={`w-3.5 h-3.5 ${pubFolder.hasUpvoted ? "fill-current" : ""}`}
-                            />
-                            {pubFolder.upvotes}
-                          </button>
+
+                          <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:accent-text transition-colors line-clamp-1">
+                            {pubFolder.name}
+                          </h3>
+
+                          {pubFolder.description && (
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-4 leading-relaxed">
+                              {pubFolder.description}
+                            </p>
+                          )}
                         </div>
 
-                        <h3 className="text-base font-bold text-zinc-900 dark:text-white mb-1 group-hover:accent-text transition-colors line-clamp-1">
-                          {pubFolder.name}
-                        </h3>
-                        {pubFolder.description && (
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 mb-4 leading-relaxed">
-                            {pubFolder.description}
-                          </p>
-                        )}
-                      </div>
+                        <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center gap-4 text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                          <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
+                            <MapPin className="w-3.5 h-3.5 accent-text" />
+                            {pubFolder._count?.venues ||
+                              0}{" "}
+                            Places
+                          </span>
 
-                      <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center gap-4 text-[10px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                        <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
-                          <MapPin className="w-3.5 h-3.5 accent-text" />
-                          {pubFolder._count?.venues || 0} Places
-                        </span>
-                        <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
-                          <Users className="w-3.5 h-3.5 text-purple-500" />
-                          {pubFolder._count?.members || 1} Members
-                        </span>
+                          <span className="flex items-center gap-1.5 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-1 rounded-md">
+                            <Users className="w-3.5 h-3.5 text-purple-500" />
+                            {pubFolder._count?.members ||
+                              1}{" "}
+                            Members
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  </Link>
-                ))}
+                    </Link>
+                  ),
+                )}
               </div>
             )}
           </div>

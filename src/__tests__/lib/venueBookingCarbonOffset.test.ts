@@ -33,7 +33,7 @@ function netCarbonKg(sources: CarbonSource[], offsetKg: number): number {
   return Math.max(0, Math.round((totalCarbonKg(sources) - offsetKg) * 100) / 100);
 }
 
-function isCarbon Neutral(sources: CarbonSource[], offsetKg: number): boolean {
+function isCarbonNeutral(sources: CarbonSource[], offsetKg: number): boolean {
   return totalCarbonKg(sources) <= offsetKg;
 }
 

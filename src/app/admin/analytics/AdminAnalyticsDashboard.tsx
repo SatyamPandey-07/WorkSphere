@@ -174,10 +174,7 @@ export default function AdminAnalyticsDashboard() {
     }
   }
 
-  useEffect(() => {
-    loadAnalytics(range);
-  }, [range]);
-
+ 
   const maxTermCount = useMemo(
     () => Math.max(...(data?.searchTerms.map((item) => item.count) ?? [1]), 1),
     [data],

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
@@ -129,6 +129,7 @@ function AppPage() {
   const [routeProfile, setRouteProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
+  const routeRequestId = useRef(0);
 
   // Stable venueIds reference — must be memoised or a new array every render
   // causes the SSE connection to be torn down and recreated on every render.
@@ -883,12 +884,43 @@ function AppPage() {
                         <button
                           key={profile}
                           onClick={async () => {
-                            setRouteProfile(profile);
-                            // Re-calculate route with new profile
-                            if (routes.length > 0 && location) {
-                              const { getRoute } =
-                                await import("@/lib/routing");
-                              const lastRoute = routes[0];
+                                setRouteProfile(profile);
+                              
+                                if (routes.length > 0 && location) {
+                                  const currentRequest = ++routeRequestId.current;
+                              
+                                  const { getRoute } = await import("@/lib/routing");
+                                  const lastRoute = routes[0];
+                              
+                                  const destination =
+                                    lastRoute.path[lastRoute.path.length - 1];
+                              
+                                  const routeData = await getRoute(
+                                    {
+                                      lat: location.latitude,
+                                      lng: location.longitude,
+                                    },
+                                    destination,
+                                    profile,
+                                  );
+                              
+                                  // Ignore older route requests
+                                  if (currentRequest !== routeRequestId.current) {
+                                    return;
+                                  }
+                              
+                                  if (routeData) {
+                                    setRoutes([
+                                      {
+                                        ...lastRoute,
+                                        path: routeData.path,
+                                        distance: routeData.distance,
+                                        duration: routeData.duration,
+                                      },
+                                    ]);
+                                  }
+                                }
+                              }}
                               // We need the original destination. For now, we take the last point of the path.
                               const destination =
                                 lastRoute.path[lastRoute.path.length - 1];

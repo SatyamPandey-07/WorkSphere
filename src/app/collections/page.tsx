@@ -37,17 +37,22 @@ export default function CollectionsPage() {
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const isDraggingRef = useRef(false);
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedIndex(index);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", index.toString());
+  isDraggingRef.current = true;
+  setDraggedIndex(index);
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", index.toString());
   };
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    if (draggedIndex === index) return;
-    setDragOverIndex(index);
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 0);
   };
 
   const handleDragEnd = () => {
@@ -355,8 +360,8 @@ export default function CollectionsPage() {
                     <div
                       key={folder.id}
                       onClick={(e) => {
-                        if ((e.target as HTMLElement).closest(".drag-handle"))
-                          return;
+                        if (isDraggingRef.current) return;
+                        if ((e.target as HTMLElement).closest(".drag-handle")) return;
                         router.push(`/collections/${folder.id}`);
                       }}
                       onDragOver={(e) => handleDragOver(e, index)}

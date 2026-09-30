@@ -4,10 +4,11 @@
 
 ## Related Issue
 
-<!-- 
-Please link to the issue here using the standard keywords. 
-Example: Fixes #123 or Closes #123
+<!--
+Please link to the issue here using the standard keywords.
+Example: Fixes #<issue_number> or Closes #<issue_number>
 -->
+
 Fixes #
 
 ## Checklist

@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "zkp:compile": "bash scripts/compile-zkp.sh",
+    "build:wasm:audio-filter": "bash wasm/audio-filter/build.sh",
     "postinstall": "prisma generate",
     "prepare": "husky"
   },

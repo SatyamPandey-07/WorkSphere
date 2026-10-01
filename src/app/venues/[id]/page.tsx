@@ -14,6 +14,7 @@ import { RecentlyViewedTracker } from "@/components/venues/RecentlyViewedTracker
 
 import { CollaborativeNotes } from "@/components/bookings/CollaborativeNotes"; // <-- 1. Imported your new component here!
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
+import { VenueSummary } from "@/components/venue/VenueSummary";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -191,6 +192,9 @@ export default async function VenuePage({ params }: PageProps) {
                 </div>
               ) : null}
             </div>
+
+            <VenueSummary venueId={venue.id} />
+
             <div className="pt-2">
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
                 <span>Expected Noise Levels</span>

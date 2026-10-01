@@ -1247,9 +1247,12 @@ async function enforceImageCacheQuota(cache, aggressive = false) {
         });
 
         // Now remove from Cache Storage after IDB transaction completes
+        const evictedCount = toEvict.length;
+
         for (const record of toEvict) {
           await cache.delete(record.url);
         }
+        
         console.log(
           `[SW] True LRU: Evicted ${evictedCount} images to stay under ${targetSize / 1024 / 1024}MB quota.`,
         );

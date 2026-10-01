@@ -97,12 +97,12 @@ export function perlinNoise3D(
 
   // Hash coordinates
   const A = P[X] + Y;
-  const AA = P[A] + Z;
-  const AB = P[A + 1] + Z;
-
+  const AA = P[A & 255] + Z;
+  const AB = P[(A + 1) & 255] + Z;
+  
   const B = P[X + 1] + Y;
-  const BA = P[B] + Z;
-  const BB = P[B + 1] + Z;
+  const BA = P[B & 255] + Z;
+  const BB = P[(B + 1) & 255] + Z;
 
   // Interpolate the 8 cube corners
   const result = lerp(

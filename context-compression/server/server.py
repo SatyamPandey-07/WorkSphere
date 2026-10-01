@@ -1,12 +1,185 @@
+import asyncio
 import json
 import logging
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 from typing import Any, Dict, Optional
 
-from ..compression.compressor import ContextCompressor
-from ..storage.store import VectorStore
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
+
+try:
+    from ..compression.compressor import ContextCompressor
+    from ..storage.store import VectorStore
+except (ImportError, ValueError):
+    from compression.compressor import ContextCompressor
+    from storage.store import VectorStore
 
 logger = logging.getLogger(__name__)
+
+
+def create_app(
+    compressor: Optional[ContextCompressor] = None,
+    store: Optional[VectorStore] = None,
+) -> FastAPI:
+    if compressor is None:
+        compressor = ContextCompressor()
+    if store is None:
+        store = VectorStore()
+
+    app = FastAPI(title="Context Compression Server")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.get("/api/health")
+    async def health():
+        return {"status": "ok"}
+
+    @app.get("/api/stats")
+    async def stats():
+        return {
+            "compressor": compressor.get_stats(),
+            "store": {"size": store.size()},
+        }
+
+    @app.post("/api/add")
+    async def add_message(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        role = body.get("role", "user")
+        content = body.get("content", "")
+        metadata = body.get("metadata")
+        node_id = compressor.add_message(role, content, metadata)
+        return {"node_id": node_id}
+
+    @app.post("/api/search")
+    async def search(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        query = body.get("query", "")
+        k = body.get("k", 10)
+        results = compressor.get_relevant_context(query, k)
+        return {"results": results}
+
+    @app.post("/api/compress")
+    async def compress(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        query = body.get("query", "")
+        max_tokens = body.get("max_tokens")
+        result, tokens = compressor.compress_context(
+            query, max_tokens=max_tokens
+        )
+        return {
+            "compressed": result,
+            "total_tokens": tokens,
+            "stats": compressor.get_stats(),
+        }
+
+    @app.post("/api/compress/stream")
+    async def compress_stream(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        query = body.get("query", "")
+        max_tokens = body.get("max_tokens")
+
+        async def event_generator():
+            try:
+                total_yielded = 0
+                async for chunk in compressor.compress_context_stream(
+                    query, max_tokens=max_tokens
+                ):
+                    if await request.is_disconnected():
+                        logger.info("Client disconnected, aborting compression stream early")
+                        break
+
+                    payload = json.dumps({
+                        "chunk": chunk,
+                        "done": False,
+                    })
+                    yield f"data: {payload}\n\n"
+                    total_yielded += 1
+                    await asyncio.sleep(0)
+
+                if not await request.is_disconnected():
+                    done_payload = json.dumps({
+                        "done": True,
+                        "total_yielded": total_yielded,
+                        "stats": compressor.get_stats(),
+                    })
+                    yield f"data: {done_payload}\n\n"
+                    yield "data: [DONE]\n\n"
+            except (asyncio.CancelledError, GeneratorExit):
+                logger.info("Compression streaming cancelled due to client disconnect")
+                raise
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @app.post("/api/deduplicate")
+    async def deduplicate(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        threshold = body.get("threshold")
+        removed = compressor.deduplicate(threshold=threshold)
+        return {
+            "removed": removed,
+            "stats": compressor.get_stats(),
+        }
+
+    @app.post("/api/store/add")
+    async def store_add(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        text = body.get("text", "")
+        metadata = body.get("metadata")
+        node_id = store.add(text, metadata)
+        return {"node_id": node_id}
+
+    @app.post("/api/store/search")
+    async def store_search(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        query = body.get("query", "")
+        k = body.get("k", 10)
+        results = store.search(query, k)
+        return {"results": results}
+
+    @app.delete("/api/clear")
+    async def clear():
+        compressor.clear()
+        store.clear()
+        return {"status": "cleared"}
+
+    return app
 
 
 class CompressionServer:
@@ -29,131 +202,43 @@ class CompressionServer:
             similarity_threshold=similarity_threshold,
         )
         self.store = VectorStore(dimension=dimension)
+        self.app = create_app(compressor=self.compressor, store=self.store)
 
-        self._server: Optional[HTTPServer] = None
-
-    def _make_handler(self):
-        compressor = self.compressor
-        store = self.store
-
-        class Handler(BaseHTTPRequestHandler):
-            def _send_json(self, data: Any, status: int = 200):
-                self.send_response(status)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.end_headers()
-                self.wfile.write(json.dumps(data).encode())
-
-            def do_OPTIONS(self):
-                self.send_response(200)
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
-                self.end_headers()
-
-            def do_POST(self):
-                try:
-                    length = int(self.headers.get("Content-Length", 0))
-                    body = json.loads(self.rfile.read(length)) if length > 0 else {}
-                except Exception as e:
-                    self._send_json({"error": f"Invalid request: {e}"}, 400)
-                    return
-
-                if self.path == "/api/compress":
-                    query = body.get("query", "")
-                    max_tokens = body.get("max_tokens")
-                    result, tokens = compressor.compress_context(
-                        query, max_tokens=max_tokens
-                    )
-                    self._send_json({
-                        "compressed": result,
-                        "total_tokens": tokens,
-                        "stats": compressor.get_stats(),
-                    })
-
-                elif self.path == "/api/deduplicate":
-                    threshold = body.get("threshold")
-                    removed = compressor.deduplicate(threshold=threshold)
-                    self._send_json({
-                        "removed": removed,
-                        "stats": compressor.get_stats(),
-                    })
-
-                elif self.path == "/api/add":
-                    role = body.get("role", "user")
-                    content = body.get("content", "")
-                    metadata = body.get("metadata")
-                    node_id = compressor.add_message(role, content, metadata)
-                    self._send_json({"node_id": node_id})
-
-                elif self.path == "/api/search":
-                    query = body.get("query", "")
-                    k = body.get("k", 10)
-                    results = compressor.get_relevant_context(query, k)
-                    self._send_json({"results": results})
-
-                elif self.path == "/api/store/add":
-                    text = body.get("text", "")
-                    metadata = body.get("metadata")
-                    node_id = store.add(text, metadata)
-                    self._send_json({"node_id": node_id})
-
-                elif self.path == "/api/store/search":
-                    query = body.get("query", "")
-                    k = body.get("k", 10)
-                    results = store.search(query, k)
-                    self._send_json({"results": results})
-
-                else:
-                    self._send_json({"error": "Not found"}, 404)
-
-            def do_GET(self):
-                if self.path == "/api/stats":
-                    self._send_json({
-                        "compressor": compressor.get_stats(),
-                        "store": {"size": store.size()},
-                    })
-                elif self.path == "/api/health":
-                    self._send_json({"status": "ok"})
-                else:
-                    self._send_json({"error": "Not found"}, 404)
-
-            def do_DELETE(self):
-                if self.path == "/api/clear":
-                    compressor.clear()
-                    store.clear()
-                    self._send_json({"status": "cleared"})
-                else:
-                    self._send_json({"error": "Not found"}, 404)
-
-            def log_message(self, fmt, *args):
-                logger.debug(f"{self.address_string()} - {fmt % args}")
-
-        return Handler
+        self._server: Optional[uvicorn.Server] = None
+        self._thread: Optional[threading.Thread] = None
 
     def start(self):
-        handler = self._make_handler()
-        self._server = HTTPServer((self.host, self.port), handler)
+        config = uvicorn.Config(
+            self.app,
+            host=self.host,
+            port=self.port,
+            log_level="info",
+        )
+        self._server = uvicorn.Server(config)
         logger.info(
             f"CompressionServer listening on http://{self.host}:{self.port}"
         )
         try:
-            self._server.serve_forever()
+            self._server.run()
         except KeyboardInterrupt:
             self.stop()
 
     def stop(self):
         if self._server:
-            self._server.shutdown()
+            self._server.should_exit = True
             logger.info("CompressionServer stopped")
 
     def run_in_thread(self):
-        import threading
-
-        handler = self._make_handler()
-        self._server = HTTPServer((self.host, self.port), handler)
-        thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        config = uvicorn.Config(
+            self.app,
+            host=self.host,
+            port=self.port,
+            log_level="warning",
+        )
+        self._server = uvicorn.Server(config)
+        thread = threading.Thread(target=self._server.run, daemon=True)
         thread.start()
+        self._thread = thread
         logger.info(
             f"CompressionServer running in thread on http://{self.host}:{self.port}"
         )

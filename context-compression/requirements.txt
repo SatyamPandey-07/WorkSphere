@@ -1,4 +1,6 @@
-# Core dependencies (no external ML frameworks required)
-# The engine uses pure Python + standard library
+# Core dependencies
+fastapi>=0.110.0
+uvicorn>=0.28.0
+
 # Optional: install numpy for faster vector operations
 # pip install numpy>=1.24.0

@@ -2,7 +2,7 @@ from .embedding.embedder import Embedder
 from .index.hnsw_index import HNSWIndex
 from .compression.compressor import ContextCompressor
 from .storage.store import VectorStore
-from .server.server import CompressionServer
+from .server.server import CompressionServer, create_app
 from .client.client import CompressionClient
 
 __all__ = [
@@ -11,5 +11,6 @@ __all__ = [
     "ContextCompressor",
     "VectorStore",
     "CompressionServer",
+    "create_app",
     "CompressionClient",
 ]

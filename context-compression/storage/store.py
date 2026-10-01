@@ -3,8 +3,12 @@ import os
 import pickle
 from typing import Any, Dict, List, Optional
 
-from ..embedding.embedder import Embedder
-from ..index.hnsw_index import HNSWIndex
+try:
+    from ..embedding.embedder import Embedder
+    from ..index.hnsw_index import HNSWIndex, _HNSWNode
+except (ImportError, ValueError):
+    from embedding.embedder import Embedder
+    from index.hnsw_index import HNSWIndex, _HNSWNode
 
 
 class VectorStore:
@@ -89,7 +93,6 @@ class VectorStore:
         self.index._max_level = state["max_level"]
         self.index._size = state["size"]
         self.index._next_id = state["next_id"]
-        from ..index.hnsw_index import _HNSWNode
 
         for nid, ndata in state["nodes"].items():
             nid_int = int(nid)

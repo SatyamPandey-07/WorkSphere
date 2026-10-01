@@ -54,6 +54,36 @@ class CompressionClient:
             body["max_tokens"] = max_tokens
         return self._request("POST", "/api/compress", body)
 
+    def compress_context_stream(
+        self, query: str, max_tokens: Optional[int] = None
+    ):
+        url = f"{self.server_url}/api/compress/stream"
+        body = {"query": query}
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
+        data = json.dumps(body).encode()
+        req = Request(url, data=data, method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("Accept", "text/event-stream")
+        try:
+            with urlopen(req, timeout=60) as resp:
+                for line in resp:
+                    line_str = line.decode("utf-8").strip()
+                    if line_str.startswith("data: "):
+                        content = line_str[6:]
+                        if content == "[DONE]":
+                            break
+                        try:
+                            yield json.loads(content)
+                        except json.JSONDecodeError:
+                            yield {"data": content}
+        except URLError as e:
+            logger.error(f"Streaming request failed: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected streaming error: {e}")
+            raise
+
     def search_context(self, query: str, k: int = 10) -> List[Dict]:
         result = self._request(
             "POST", "/api/search", {"query": query, "k": k}

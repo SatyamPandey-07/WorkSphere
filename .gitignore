@@ -52,6 +52,12 @@ next-env.d.ts
 wasm-pack-init.exe
 wasm-pack-init.stamp
 
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
 # local build/debug artifacts (should never be committed)
 /ci-logs-temp/
 /next-build-log*.txt

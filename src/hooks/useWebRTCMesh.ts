@@ -348,11 +348,28 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       };
 
       pc.oniceconnectionstatechange = () => {
-        if (
-          pc?.iceConnectionState === "disconnected" ||
-          pc?.iceConnectionState === "failed"
-        ) {
-          cleanupPeer(peerId);
+        const state = pc?.iceConnectionState;
+        if (state === "failed") {
+          // Attempt ICE restart before tearing down — this recovers the call
+          // when the user switches from Wi-Fi to cellular (Issue #1932).
+          if (typeof pc?.restartIce === "function") {
+            console.log(`[WebRTCMesh] ICE failed for ${peerId} — attempting restart`);
+            try {
+              pc.restartIce();
+            } catch (err) {
+              console.warn("[WebRTCMesh] restartIce() failed:", err);
+              cleanupPeer(peerId);
+            }
+          } else {
+            cleanupPeer(peerId);
+          }
+        } else if (state === "disconnected") {
+          // "disconnected" is transient; give ICE 5s to recover before cleanup
+          setTimeout(() => {
+            if (pc?.iceConnectionState === "disconnected" || pc?.iceConnectionState === "failed") {
+              cleanupPeer(peerId);
+            }
+          }, 5000);
         }
       };
 

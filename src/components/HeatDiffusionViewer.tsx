@@ -407,7 +407,7 @@ export function HeatDiffusionViewer({
             type="button"
             onClick={togglePause}
             aria-label={paused ? "Resume simulation" : "Pause simulation"}
-            className="rounded-lg p-2 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="rounded-lg p-2 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-all duration-200 ease-in-out hover:scale-105 motion-reduce:transition-none motion-reduce:hover:scale-100"
           >
             {paused ? (
               <Play className="h-4 w-4" />
@@ -419,7 +419,7 @@ export function HeatDiffusionViewer({
             type="button"
             onClick={handleReset}
             aria-label="Reset simulation"
-            className="rounded-lg p-2 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            className="rounded-lg p-2 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-300 dark:hover:bg-zinc-800 transition-all duration-200 ease-in-out hover:scale-105 motion-reduce:transition-none motion-reduce:hover:scale-100"
           >
             <RotateCcw className="h-4 w-4" />
           </button>

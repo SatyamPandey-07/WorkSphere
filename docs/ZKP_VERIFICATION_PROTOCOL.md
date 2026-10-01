@@ -49,18 +49,20 @@ The overall ZKP verification workflow spans three execution domains: client-side
 
 ## 3. Circom Circuit Definition Template
 
-The membership verification circuit is defined using **Circom 2.0**. The circuit proves that the prover knows a private `identityToken` whose non-linear polynomial transformation matches the public signal `expectedCommit`.
+The membership verification circuit is defined using **Circom 2.0**. The circuit proves that the prover knows a private `identityToken` whose Poseidon hash matches the public signal `expectedCommit`.
 
 ### 3.1 Circuit Implementation (`circuits/premium_membership.circom`)
 
 ```circom
 pragma circom 2.0.0;
 
+include "circomlib/circuits/poseidon.circom";
+
 /**
  * PremiumMembership Circuit
  *
- * Proves knowledge of a private identity token that binds to a public
- * membership commitment. The identity token is kept strictly private.
+ * Proves knowledge of a private identity token whose Poseidon hash equals the
+ * public membership commitment. The identity token is kept strictly private.
  */
 template PremiumMembership() {
     // Private Input Signal (Only known to the prover)
@@ -69,17 +71,10 @@ template PremiumMembership() {
     // Public Input Signal (Exposed to the verifier)
     signal input expectedCommit;
 
-    // Intermediate Signal for non-linear constraint binding
-    signal t2;
-    t2 <== identityToken * identityToken;
-
-    // Non-linear commitment binding equation:
-    // commit = token^2 + 5 * token + 17
-    signal commit;
-    commit <== t2 + identityToken * 5 + 17;
-
-    // Enforce equivalence constraint between computed commitment and expected commitment
-    expectedCommit === commit;
+    // Commitment binding: commit = Poseidon(token)
+    component hash = Poseidon(1);
+    hash.inputs[0] <== identityToken;
+    expectedCommit === hash.out;
 }
 
 // Instantiate main component exposing expectedCommit as a public input
@@ -88,9 +83,11 @@ component main {public [expectedCommit]} = PremiumMembership();
 
 ### 3.2 Mathematical Commitment Formula
 
-The quadratic commitment function is defined as:
-$$C(t) = t^2 + 5t + 17 \pmod{r}$$
-where $t$ is the private `identityToken` BigInt value and $r$ is the scalar field order of the BN128 curve. Because $C(t)$ is computed inside R1CS (Rank-1 Constraint System) constraints, the prover demonstrates knowledge of $t$ satisfying $C(t) = \text{expectedCommit}$ without revealing $t$.
+The commitment function is defined as:
+$$C(t) = \text{Poseidon}(t)$$
+where $t$ is the private `identityToken` BigInt value, reduced into the scalar field of the BN128 curve. Because $C(t)$ is computed inside R1CS (Rank-1 Constraint System) constraints, the prover demonstrates knowledge of $t$ satisfying $C(t) = \text{expectedCommit}$ without revealing $t$.
+
+> The earlier quadratic binding $t^2 + 5t + 17$ was **not** hiding: it can be solved for $t$ directly from the public commitment, so it has been replaced by a collision-resistant hash. The TypeScript implementation in `src/lib/zkp/poseidon.ts` is pinned to circomlib's published test vectors in `src/__tests__/lib/zkp.test.ts`.
 
 ---
 

@@ -208,6 +208,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       seatId: selected.id,
       date,
       time,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       duration,
       amenitiesNeeded: amenities,
       guests: guests.map((g) => ({

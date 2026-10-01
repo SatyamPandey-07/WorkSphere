@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 
 export type SpeedOption = number;
 export const SPEED_OPTIONS: SpeedOption[] = [0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -178,6 +179,14 @@ export function useSpeechSynthesis(
       if (window.speechSynthesis.onvoiceschanged !== undefined) {
         window.speechSynthesis.onvoiceschanged = updateVoices;
       }
+
+      return () => {
+        // Cancel any active or queued utterances when the component unmounts
+        // (e.g. user navigates away) so speech doesn't continue in the background.
+        window.speechSynthesis.cancel();
+        setIsSpeaking(false);
+        setSpeakingSentenceIndex(null);
+      };
     } else {
       setIsSupported(false);
     }
@@ -434,6 +443,15 @@ export function useSpeechSynthesis(
       cancel();
     };
   }, [cancel]);
+
+  const pathname = usePathname();
+  const prevPathnameRef = useRef(pathname);
+  useEffect(() => {
+    if (prevPathnameRef.current !== pathname) {
+      prevPathnameRef.current = pathname;
+      cancel();
+    }
+  }, [pathname, cancel]);
 
   return {
     isSupported,

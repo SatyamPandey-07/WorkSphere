@@ -38,12 +38,22 @@ async function hasSufficientStorageQuota(requiredBytes = 0) {
   ) {
     try {
       const estimate = await navigator.storage.estimate();
-      if (estimate.quota !== undefined && estimate.usage !== undefined) {
-        const availableBytes = estimate.quota - estimate.usage;
+      const quota = estimate.quota;
+      const usage = estimate.usage;
+      if (
+        quota !== undefined &&
+        usage !== undefined &&
+        isFinite(quota) &&
+        isFinite(usage) &&
+        quota > 0
+      ) {
+        const availableBytes = quota - usage;
+        if (!isFinite(availableBytes) || availableBytes < 0) return true;
         const minRequiredBuffer = Math.max(requiredBytes, 5 * 1024 * 1024);
         return availableBytes >= minRequiredBuffer;
       }
     } catch (err) {
+      // iOS Safari Private Browsing mode rejects estimate() — treat as sufficient
       console.warn("[SW] Failed to estimate storage quota:", err);
     }
   }

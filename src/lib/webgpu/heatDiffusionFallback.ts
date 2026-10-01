@@ -67,6 +67,16 @@ export class HeatDiffusionFallback {
   }
 
   initialize(): boolean {
+    // Free any previously allocated GPU resources before re-initialising
+    // to prevent texture/buffer leaks on repeated initialize() calls.
+    const prevGl = this.gl;
+    if (prevGl) {
+      if (this.texture) { prevGl.deleteTexture(this.texture); this.texture = null; }
+      if (this.vbo)     { prevGl.deleteBuffer(this.vbo);     this.vbo = null;     }
+      if (this.vao)     { prevGl.deleteVertexArray(this.vao); this.vao = null;    }
+      if (this.program) { prevGl.deleteProgram(this.program); this.program = null; }
+    }
+
     const gl = this.canvas.getContext("webgl2", {
       alpha: true,
       premultipliedAlpha: true,
@@ -83,11 +93,15 @@ export class HeatDiffusionFallback {
     gl.attachShader(program, vs);
     gl.attachShader(program, fs);
     gl.linkProgram(program);
+    // Shaders are linked into the program — they are no longer needed separately
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
       console.warn(
         "[HeatDiffusionFallback] link failed",
         gl.getProgramInfoLog(program),
       );
+      gl.deleteProgram(program);
       return false;
     }
     this.program = program;

@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { bookingsToCSV } from "@/lib/pdfHelpers";
 import { resolveDateRange, filterBookingsByRange } from "@/lib/taxExport";
-import { pushJob } from "@/lib/queue";
+import { generateTaxExportPdf } from "@/lib/pdfGenerator";
 
 export async function POST(req: NextRequest) {
   try {
@@ -78,25 +78,15 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // PDF path
-    const jobId = crypto.randomUUID();
-    
-    // Instead of passing all booking objects which could be large and cause Redis to choke,
-    // we just pass the criteria. The worker can fetch them again. Or we can just pass the bookings.
-    // Given the payload might be up to a few MBs, let's just pass the same criteria so the worker
-    // fetches them.
-    await pushJob(jobId, {
-      userId,
-      type: "TAX_EXPORT",
-      data: {
-        bookingIds,
-        taxYear,
-        startDate,
-        endDate
-      }
+    const pdfBytes = await generateTaxExportPdf(bookings);
+    return new NextResponse(Buffer.from(pdfBytes), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${Date.now()}.pdf"`,
+        "Cache-Control": "no-cache",
+      },
     });
-
-    return NextResponse.json({ jobId, status: "QUEUED" }, { status: 202 });
   } catch (error: any) {
     console.error("[Bookings Export Error]:", error);
     return NextResponse.json(

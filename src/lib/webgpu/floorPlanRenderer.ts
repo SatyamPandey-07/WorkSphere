@@ -524,16 +524,41 @@ export class WebGPUFloorPlanRenderer {
     }
   }
 
-  startRenderLoop(): void {
-    const loop = () => {
-      this.render();
+  private prevFrameTime = 0;
+  private intersectionObserver: IntersectionObserver | null = null;
+  private isVisible = true;
+  private readonly TARGET_FRAME_MS = 1000 / 60; // ~16.67ms
+
+  startRenderLoop(canvas?: HTMLCanvasElement): void {
+    if (canvas) {
+      this.intersectionObserver = new IntersectionObserver(
+        ([entry]) => {
+          this.isVisible = entry.isIntersecting;
+        },
+        { threshold: 0 },
+      );
+      this.intersectionObserver.observe(canvas);
+    }
+
+    const loop = (timestamp: number) => {
       this.animationFrame = requestAnimationFrame(loop);
+
+      if (!this.isVisible) return;
+
+      const elapsed = timestamp - this.prevFrameTime;
+      if (elapsed < this.TARGET_FRAME_MS) return;
+
+      // Snap timestamp to an exact 60fps multiple to avoid drift
+      this.prevFrameTime = timestamp - (elapsed % this.TARGET_FRAME_MS);
+      this.render();
     };
-    loop();
+    this.animationFrame = requestAnimationFrame(loop);
   }
 
   stopRenderLoop(): void {
     cancelAnimationFrame(this.animationFrame);
+    this.intersectionObserver?.disconnect();
+    this.intersectionObserver = null;
   }
 
   private cleanupGPUResources(): void {

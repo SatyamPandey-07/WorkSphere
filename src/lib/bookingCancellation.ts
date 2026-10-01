@@ -1,3 +1,5 @@
+import { parseBookingDateTime } from "./bookingTime";
+
 export const BOOKING_CANCELLATION_WINDOW_HOURS = 2;
 export const BOOKING_CANCELLATION_WINDOW_MS =
   BOOKING_CANCELLATION_WINDOW_HOURS * 60 * 60 * 1000;
@@ -56,8 +58,13 @@ export function getBookingCancellationEligibility(input: {
   date: string;
   time: string;
   now?: Date;
+  timeZone?: string | null;
 }): BookingCancellationEligibility {
-  const bookingStart = parseBookingStart(input.date, input.time);
+  // With a known timezone, resolve the wall-clock time in that zone (and
+  // accept legacy "h:mm AM" values); otherwise fall back to server-local time.
+  const bookingStart = input.timeZone
+    ? parseBookingDateTime(input.date, input.time, input.timeZone)
+    : parseBookingStart(input.date, input.time);
 
   if (!bookingStart) {
     return {

@@ -137,7 +137,14 @@ export function CommandPalette() {
           <input
             autoFocus
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              // Strip control characters (<, >, HTML/script injection chars,
+              // and non-printable chars) before storing the query.
+              const sanitized = e.target.value
+                .replace(/[<>"'`\x00-\x1F\x7F]/g, "")
+                .slice(0, 200);
+              setQuery(sanitized);
+            }}
             placeholder="Jump to a page…"
             className="w-full bg-transparent outline-none text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
           />

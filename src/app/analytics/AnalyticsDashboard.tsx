@@ -658,7 +658,7 @@ export default function AnalyticsDashboard() {
                             : "bg-zinc-100 dark:bg-zinc-800 grayscale opacity-40 group-hover:opacity-60 border border-zinc-200 dark:border-zinc-700"
                         }`}
                       >
-                        <div className="w-full h-full rounded-[14px] bg-white dark:bg-zinc-955 flex items-center justify-center">
+                        <div className="w-full h-full rounded-[14px] bg-white dark:bg-zinc-950 flex items-center justify-center">
                           {/* Render SVG Badge */}
                           {badge.icon === "wifi" && (
                             <svg
@@ -735,7 +735,7 @@ export default function AnalyticsDashboard() {
                         </div>
                       </div>
 
-                      <span className="text-[8px] font-black uppercase tracking-tight mt-1.5 text-center text-zinc-700 dark:text-zinc-350">
+                      <span className="text-[8px] font-black uppercase tracking-tight mt-1.5 text-center text-zinc-700 dark:text-zinc-300">
                         {badge.name}
                       </span>
 

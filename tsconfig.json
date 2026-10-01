@@ -35,7 +35,12 @@
     "playwright.config.ts",
     "prisma.config.ts",
     "e2e/**/*",
-    "party/**/*"
+    "party/**/*",
+    "src/__tests__/**/*",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
   ]
 }
 // ts server reload

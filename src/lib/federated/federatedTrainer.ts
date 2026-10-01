@@ -2,10 +2,12 @@
  * Main-thread client for the federated venue trainer worker (#1022).
  *
  * Personalized scoring and gradient updates stay on-device — no raw
- * telemetry is posted to any backend.
+ * telemetry is posted to any backend. Training uses DP-SGD (per-example
+ * L2 clipping + Gaussian noise) by default (#1563).
  */
 
 import type {
+  DifferentialPrivacyConfig,
   FederatedWorkerRequest,
   FederatedWorkerResponse,
   ScoredVenue,
@@ -25,7 +27,14 @@ export class FederatedVenueTrainer {
   private seq = 0;
   private ready = false;
 
-  async init(learningRate?: number): Promise<void> {
+  /**
+   * @param dp Optional DP-SGD overrides; omitted fields fall back to
+   *   DEFAULT_DP_CONFIG (`maxGradNorm: 1.0`, `noiseMultiplier: 1.0`).
+   */
+  async init(
+    learningRate?: number,
+    dp?: Partial<DifferentialPrivacyConfig>,
+  ): Promise<void> {
     if (typeof Worker === "undefined") {
       throw new Error("Web Workers are not available in this environment");
     }
@@ -59,6 +68,7 @@ export class FederatedVenueTrainer {
       type: "init",
       id: this.nextId(),
       learningRate,
+      dp,
     });
     if (res.type !== "ready") {
       throw new Error("Federated trainer failed to initialize");
@@ -91,7 +101,7 @@ export class FederatedVenueTrainer {
     return res.scores;
   }
 
-  /** Apply on-device SGD updates from private engagement labels. */
+  /** Apply on-device DP-SGD updates from private engagement labels. */
   async train(
     examples: Array<{
       features: VenueFeatureVector | number[];

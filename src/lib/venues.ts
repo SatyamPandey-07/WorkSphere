@@ -404,11 +404,11 @@ function getFallbackPhotos(category: string): string[] {
 
   const query = queries[category] || "workspace";
 
-  // Unsplash Source URLs (free, no API key)
+  // Picsum Photos — stable seeded URLs, no API key required
   return [
-    `https://source.unsplash.com/800x600/?${query}&sig=1`,
-    `https://source.unsplash.com/800x600/?${query}&sig=2`,
-    `https://source.unsplash.com/800x600/?${query}&sig=3`,
+    `https://picsum.photos/seed/${query}-1/800/600`,
+    `https://picsum.photos/seed/${query}-2/800/600`,
+    `https://picsum.photos/seed/${query}-3/800/600`,
   ];
 }
 

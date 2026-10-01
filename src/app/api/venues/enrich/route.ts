@@ -62,8 +62,8 @@ export async function GET(req: NextRequest) {
       console.log('[Enrich] No venues found, returning fallback');
       // Return fallback photos even if no venue found
       const fallbackPhotos = [
-        `https://source.unsplash.com/800x600/?cafe-workspace&sig=${Date.now()}`,
-        `https://source.unsplash.com/800x600/?coffee-laptop&sig=${Date.now() + 1}`,
+        `https://picsum.photos/seed/cafe-workspace/800/600`,
+        `https://picsum.photos/seed/coffee-laptop/800/600`,
       ];
       return NextResponse.json({ 
         found: false,
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
             ...venue, 
             enriched: false,
             photos: [
-              `https://source.unsplash.com/800x600/?workspace&sig=${Date.now()}`,
+              `https://picsum.photos/seed/workspace/800/600`,
             ],
           };
         }

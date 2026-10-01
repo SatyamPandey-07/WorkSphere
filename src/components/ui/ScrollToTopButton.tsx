@@ -2,11 +2,15 @@
 
 import { useState, useEffect, useCallback } from "react";
 
+/** Scroll depth (px) at which the button becomes visible. */
+export const SCROLL_THRESHOLD_PX = 300;
+
 /**
  * ScrollToTopButton
  *
- * A floating action button that appears once the user scrolls more than 300px
- * down the page. Clicking it smoothly scrolls the window back to the top.
+ * A circular floating action button that appears once the user scrolls more
+ * than {@link SCROLL_THRESHOLD_PX} (300 px) down the page. Clicking it
+ * smoothly scrolls the window back to the top.
  *
  * Accessibility:
  *  - aria-label="Scroll to top of page"
@@ -17,7 +21,7 @@ export function ScrollToTopButton() {
   const [isVisible, setIsVisible] = useState(false);
 
   const handleScroll = useCallback(() => {
-    setIsVisible(window.scrollY > 300);
+    setIsVisible(window.scrollY > SCROLL_THRESHOLD_PX);
   }, []);
 
   useEffect(() => {

@@ -61,7 +61,10 @@ export async function withWebLock<T>(
       .then(resolve)
       .catch((err) => {
         if (err instanceof Error && err.message === "LOCK_TIMEOUT") {
-          runOnce().then(resolve).catch(reject);
+          // Running the callback without a lock would defeat serialization —
+          // exactly the scenario Web Locks are supposed to prevent.
+          // Reject instead so the caller can surface the error and retry if needed.
+          reject(new Error("Web Lock acquisition timed out after 5s — operation aborted to prevent unsafe concurrent execution"));
         } else {
           reject(err);
         }

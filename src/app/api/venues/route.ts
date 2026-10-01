@@ -9,6 +9,8 @@ import {
 } from "@/lib/validations";
 import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+import { ensureUserExists } from "@/lib/auth";
+import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 
 // Search/autocomplete is expected to fire on every keystroke (debounced client-side
 // to ~250-300ms), which can mean several requests per second while someone types a
@@ -378,6 +380,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    if (!(await rateLimit(`venue-create:${userId}`, 10))) {
+      return NextResponse.json(
+        { error: "Too many submissions. Please wait a minute." },
+        { status: 429 },
+      );
+    }
+
+    await ensureUserExists(userId);
+
     const body = await req.json();
 
     // Validate request body with Zod
@@ -420,6 +431,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "placeId is required" },
         { status: 400 },
+      );
+    }
+
+    const existing = await prisma.venue.findUnique({
+      where: { placeId },
+      select: { isClaimed: true, ownerId: true },
+    });
+    if (existing?.isClaimed && existing.ownerId !== userId) {
+      return NextResponse.json(
+        {
+          error:
+            "This venue is managed by its owner. Rate it instead to share your experience.",
+        },
+        { status: 403 },
       );
     }
 
@@ -507,6 +532,18 @@ export async function POST(req: NextRequest) {
         creatorId: userId,
       },
     });
+
+    if (venue.creatorId === userId) {
+      emitWebhookEvent(userId, "VENUE_CREATED", {
+        venueId: venue.id,
+        name: venue.name,
+        category: venue.category,
+        address: venue.address,
+        latitude: venue.latitude,
+        longitude: venue.longitude,
+        requiresReview: venue.requiresReview,
+      });
+    }
 
     return NextResponse.json({ venue }, { status: 201 });
   } catch (error) {

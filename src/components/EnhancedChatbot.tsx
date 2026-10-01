@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { apiFetch } from "@/lib/apiClient";
 import { motion, AnimatePresence } from "framer-motion";
@@ -212,6 +212,10 @@ export function EnhancedChatbot({
   } = useSpeechSynthesis();
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
   const [isExportingChatPdf, setIsExportingChatPdf] = useState(false);
+  // Stable IDs for voice-settings form controls — useId() prevents SSR hydration
+  // mismatches in React 19 (server-generated IDs must match client re-render).
+  const autoReadCheckboxId = useId();
+  const speechRateSliderId = useId();
 
   const handleExportMarkdown = () => {
     if (messages.length === 0) return;
@@ -1374,8 +1378,9 @@ export function EnhancedChatbot({
 
           {showVoiceSettings && (
             <div className="flex items-center gap-4 text-xs">
-              <label className="flex items-center gap-1 cursor-pointer text-zinc-700 dark:text-zinc-300">
+              <label htmlFor={autoReadCheckboxId} className="flex items-center gap-1 cursor-pointer text-zinc-700 dark:text-zinc-300">
                 <input
+                  id={autoReadCheckboxId}
                   type="checkbox"
                   checked={autoRead}
                   onChange={toggleAutoRead}
@@ -1384,8 +1389,10 @@ export function EnhancedChatbot({
                 Auto-read
               </label>
               <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
-                <span>Speed:</span>
+                <label htmlFor={speechRateSliderId} className="sr-only">Speech rate</label>
+                <span aria-hidden="true">Speed:</span>
                 <input
+                  id={speechRateSliderId}
                   type="range"
                   min="0.75"
                   max="2.0"

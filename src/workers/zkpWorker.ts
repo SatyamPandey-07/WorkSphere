@@ -14,15 +14,35 @@ type WorkerMessage = ProofRequest | CancelMessage;
 
 let generation = 0;
 
-function sanitizeError(error: unknown): string {
-  if (error instanceof Error && error.message) {
+type WorkerErrorType = "oom" | "internal" | "generic";
+
+function classifyError(error: unknown): WorkerErrorType {
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    // Out-of-memory signals from WASM runtime or browser
     if (
-      error.message.includes("wasm") ||
-      error.message.includes("memory") ||
-      error.message.includes("ENOENT")
+      msg.includes("out of memory") ||
+      msg.includes("memory access out of bounds") ||
+      msg.includes("allocation failed") ||
+      msg.includes("cannot allocate") ||
+      (error instanceof RangeError && msg.includes("memory"))
     ) {
-      return "Proof generation failed due to an internal error.";
+      return "oom";
     }
+    if (msg.includes("wasm") || msg.includes("enoent") || msg.includes("instantiate")) {
+      return "internal";
+    }
+  }
+  return "generic";
+}
+
+function sanitizeError(error: unknown): string {
+  const type = classifyError(error);
+  if (type === "oom") {
+    return "Your device does not have enough memory to generate the zero-knowledge proof. Please try again on a device with more RAM, or use the server-side verification option.";
+  }
+  if (type === "internal") {
+    return "Proof generation failed due to an internal error.";
   }
   return "Proof generation failed.";
 }
@@ -68,7 +88,13 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
     self.postMessage({ type: "success", proof, publicSignals });
   } catch (error) {
     if (myGeneration !== generation) return;
-    self.postMessage({ type: "error", error: sanitizeError(error) });
+    const errorType = classifyError(error);
+    self.postMessage({
+      type: "error",
+      error: sanitizeError(error),
+      // Signal OOM separately so the component can offer server-side fallback
+      isOom: errorType === "oom",
+    });
   } finally {
     const g = globalThis as typeof globalThis & {
       curve_bn128?: { terminate: () => Promise<void> };

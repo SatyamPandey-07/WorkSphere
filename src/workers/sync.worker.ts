@@ -9,6 +9,63 @@ import {
 // Circuit Breaker types and state
 type CircuitBreakerState = "CLOSED" | "OPEN" | "HALF_OPEN";
 
+// ─── Auth Token State ─────────────────────────────────────────────────────────
+// Clerk runs on the main thread only. The main thread passes its session JWT to
+// the worker via WAKE_UP (initial) and TOKEN_REFRESH (after AUTH_EXPIRED).
+let currentToken: string | null = null;
+let pendingTokenRefresh: ((token: string | null) => void) | null = null;
+
+/**
+ * Posts AUTH_EXPIRED to the main thread and awaits a TOKEN_REFRESH reply.
+ * Returns the refreshed token, or null if the session could not be renewed.
+ */
+function requestTokenRefresh(): Promise<string | null> {
+  return new Promise((resolve) => {
+    pendingTokenRefresh = resolve;
+    self.postMessage({ type: "AUTH_EXPIRED" });
+  });
+}
+
+/**
+ * Wraps fetch() with Clerk JWT injection and automatic 401 recovery.
+ *
+ * On a 401 response the worker posts AUTH_EXPIRED to the main thread,
+ * waits for a TOKEN_REFRESH message containing a fresh JWT, then retries
+ * the request once. If the refreshed token is unavailable or the retry
+ * also fails, the original/retry response is returned to the caller so
+ * the existing error-handling path can decide what to do.
+ */
+async function authenticatedFetch(
+  url: string,
+  options: RequestInit,
+): Promise<Response> {
+  const headersWithToken: Record<string, string> = {
+    ...(options.headers as Record<string, string>),
+  };
+  if (currentToken) {
+    headersWithToken["Authorization"] = `Bearer ${currentToken}`;
+  }
+
+  const response = await fetch(url, { ...options, headers: headersWithToken });
+
+  if (response.status === 401) {
+    const freshToken = await requestTokenRefresh();
+    if (!freshToken) {
+      // Session could not be renewed; return the 401 for the caller to handle.
+      return response;
+    }
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers as Record<string, string>),
+        Authorization: `Bearer ${freshToken}`,
+      },
+    });
+  }
+
+  return response;
+}
+
 let cbState: CircuitBreakerState = "CLOSED";
 let cbFailures = 0;
 const CB_MAX_FAILURES = 3;
@@ -26,11 +83,22 @@ let isProcessing = false;
 // Message Protocol
 // -----------------------------------------------------------------------------
 export type SyncWorkerMessage =
-  | { type: "WAKE_UP" }
+  // ── Inbound (main thread → worker) ──────────────────────────────────────
+  /** Wake the worker; optionally carry the current Clerk JWT. */
+  | { type: "WAKE_UP"; token?: string }
+  /** Deliver a refreshed Clerk JWT after the worker posted AUTH_EXPIRED. */
+  | { type: "TOKEN_REFRESH"; token: string }
+  // ── Outbound (worker → main thread) ─────────────────────────────────────
   | { type: "SYNC_STARTED" }
   | { type: "SYNC_SUCCESS"; remainingCount: number }
   | { type: "SYNC_ERROR"; error: string }
   | { type: "CIRCUIT_BREAKER_OPEN"; timeoutMs: number }
+  /**
+   * Posted when a fetch returns 401 (expired Clerk session).
+   * The main thread should call Clerk's getToken({ skipCache: true }) and
+   * reply with a TOKEN_REFRESH message.
+   */
+  | { type: "AUTH_EXPIRED" }
   | {
       type: "PERMANENT_FAILURE";
       venueId: string;
@@ -149,7 +217,7 @@ async function processOutbox() {
         if (!checkCircuitBreaker()) break;
 
         try {
-          const response = await fetch("/api/favorites", {
+          const response = await authenticatedFetch("/api/favorites", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -273,7 +341,13 @@ async function processOutbox() {
 // Message Listener
 // -----------------------------------------------------------------------------
 self.addEventListener("message", (event: MessageEvent<SyncWorkerMessage>) => {
-  if (event.data.type === "WAKE_UP") {
+  const { type } = event.data;
+
+  if (type === "WAKE_UP") {
+    // Accept a Clerk JWT forwarded by the main thread on each wake-up.
+    if ("token" in event.data && event.data.token) {
+      currentToken = event.data.token;
+    }
     if (
       typeof self !== "undefined" &&
       self.navigator &&
@@ -282,5 +356,18 @@ self.addEventListener("message", (event: MessageEvent<SyncWorkerMessage>) => {
       resetCircuitBreaker();
     }
     processOutbox().catch(console.error);
+    return;
+  }
+
+  if (type === "TOKEN_REFRESH") {
+    // Main thread has supplied a fresh JWT after an AUTH_EXPIRED signal.
+    const token = event.data.token || null;
+    currentToken = token;
+    if (pendingTokenRefresh) {
+      const resolve = pendingTokenRefresh;
+      pendingTokenRefresh = null;
+      resolve(token);
+    }
+    return;
   }
 });

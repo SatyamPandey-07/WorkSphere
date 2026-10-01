@@ -141,6 +141,31 @@ export async function GET(req: NextRequest) {
       : realIp || "";
     const ip = forwardedIp || "127.0.0.1";
 
+    // On Vercel the edge network already geolocates the caller; use that
+    // before calling third-party IP lookup services.
+    const vercelLat = parseFloat(req.headers.get("x-vercel-ip-latitude") ?? "");
+    const vercelLng = parseFloat(
+      req.headers.get("x-vercel-ip-longitude") ?? "",
+    );
+    if (Number.isFinite(vercelLat) && Number.isFinite(vercelLng)) {
+      const decode = (v: string | null) => {
+        try {
+          return v ? decodeURIComponent(v) : "";
+        } catch {
+          return v ?? "";
+        }
+      };
+      return NextResponse.json({
+        lat: vercelLat,
+        lng: vercelLng,
+        city: decode(req.headers.get("x-vercel-ip-city")),
+        region: decode(req.headers.get("x-vercel-ip-country-region")),
+        country: req.headers.get("x-vercel-ip-country") ?? "",
+        timezone: req.headers.get("x-vercel-ip-timezone") ?? undefined,
+        source: "vercel",
+      });
+    }
+
     // Rate limiting: 10 requests per minute per IP
     const identifier = `location:${ip}`;
     const allowed = await rateLimit(identifier, 10);

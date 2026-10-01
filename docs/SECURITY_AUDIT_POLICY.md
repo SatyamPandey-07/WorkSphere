@@ -36,7 +36,7 @@ API Route Handler ──(Zod Input Validation)──► Business Logic / Databas
 ```
 
 ### 5. Security Middleware
-Next.js Middleware ([middleware.ts](file:///c:/Codes/WorkSphere/src/middleware.ts)) acts as the primary gatekeeper, executing CSRF validation and Clerk route protection before request execution reaches the API handlers.
+Next.js Middleware ([middleware.ts](src/middleware.ts)) acts as the primary gatekeeper, executing CSRF validation and Clerk route protection before request execution reaches the API handlers.
 
 ---
 
@@ -47,27 +47,27 @@ WorkSphere delegates authentication to Clerk:
 2. Clerk maintains session state via secure, HTTP-only, SameSite cookies.
 3. API route handlers and server components extract session tokens using Clerk helpers `auth()` and `currentUser()`.
 4. If authentication fails, requests return `401 Unauthorized` (or redirect to `/` for page views).
-5. For user persistence, a Clerk webhook synchronizes accounts to the local PostgreSQL database. If webhook delivery is delayed, the local database synchronization helper `ensureUserExists()` ([auth.ts](file:///c:/Codes/WorkSphere/src/lib/auth.ts)) runs on demand as a fallback.
+5. For user persistence, a Clerk webhook synchronizes accounts to the local PostgreSQL database. If webhook delivery is delayed, the local database synchronization helper `ensureUserExists()` ([auth.ts](src/lib/auth.ts)) runs on demand as a fallback.
 
 ---
 
 ## Authorization Flow
 
 Authorization follows a strict server-side evaluation strategy:
-- **Administrative Access**: Admin-only routes call `getAdminUser()` ([admin.ts](file:///c:/Codes/WorkSphere/src/lib/admin.ts)), which retrieves metadata roles (`admin`, `super_admin`, or `superadmin`) from Clerk. If the role check fails, requests are rejected with `403 Forbidden` or redirected to `/`.
+- **Administrative Access**: Admin-only routes call `getAdminUser()` ([admin.ts](src/lib/admin.ts)), which retrieves metadata roles (`admin`, `super_admin`, or `superadmin`) from Clerk. If the role check fails, requests are rejected with `403 Forbidden` or redirected to `/`.
 - **Ownership Verification**: Endpoints querying user records (e.g., bookings, favorites, or conversations) scope Prisma calls using the Clerk-resolved `userId` (e.g., `prisma.booking.findFirst({ where: { id, userId } })`). If missing or owned by another user, handlers return a generic `404 Not Found` to prevent account enumeration and resource discovery.
 
 ---
 
 ## CSRF Protection
 
-WorkSphere implements a **Signed Double-Submit Cookie Pattern** in Next.js Middleware ([middleware.ts](file:///c:/Codes/WorkSphere/src/middleware.ts)) and helper functions ([csrf.ts](file:///c:/Codes/WorkSphere/src/lib/csrf.ts)):
+WorkSphere implements a **Signed Double-Submit Cookie Pattern** in Next.js Middleware ([middleware.ts](src/middleware.ts)) and helper functions ([csrf.ts](src/lib/csrf.ts)):
 1. **Cookie Generation**: The server generates a cryptographically random token value using the Web Crypto API, signs it using HMAC-SHA256 with the server-side `CSRF_SECRET` (or `CLERK_SECRET_KEY` fallback), and sets an HTTP-only, secure, SameSite=Lax cookie named `csrf_token` containing `${raw}.${signature}`.
-2. **Client Submission**: The client retrieves the raw token via `GET /api/auth/csrf-token` ([route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/csrf-token/route.ts)) on app initialization and attaches it as the `x-csrf-token` request header.
+2. **Client Submission**: The client retrieves the raw token via `GET /api/auth/csrf-token` ([route.ts](src/app/api/auth/csrf-token/route.ts)) on app initialization and attaches it as the `x-csrf-token` request header.
 3. **Middleware Verification**: On mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`), the middleware:
    - Verifies the `csrf_token` cookie signature using a constant-time comparison (`timingSafeEqual`) to prevent timing attacks.
    - Compares the `x-csrf-token` header value against the raw cookie part.
-4. **Auto-Recovery**: If a mutating request fails with a CSRF error (`403`), the client-side fetch interceptor ([useCsrfToken.ts](file:///c:/Codes/WorkSphere/src/hooks/useCsrfToken.ts)) fetches a fresh token and retries the request transparently.
+4. **Auto-Recovery**: If a mutating request fails with a CSRF error (`403`), the client-side fetch interceptor ([useCsrfToken.ts](src/hooks/useCsrfToken.ts)) fetches a fresh token and retries the request transparently.
 5. **Exemptions**: Public webhook paths (`/api/webhook(.*)`) and the CSRF token generator (`/api/auth/csrf-token`) are exempt from CSRF checks.
 
 ---
@@ -75,22 +75,22 @@ WorkSphere implements a **Signed Double-Submit Cookie Pattern** in Next.js Middl
 ## SSRF Validation Rules
 
 Server-Side Request Forgery (SSRF) validation is enforced on all user-controlled outbound fetches:
-1. **Validation Engine**: User-supplied URLs are evaluated prior to dispatching webhook delivery tests ([actions.ts](file:///c:/Codes/WorkSphere/src/app/dashboard/webhooks/actions.ts)) or sending WhatsApp webhook payloads ([whatsapp.ts](file:///c:/Codes/WorkSphere/src/lib/whatsapp.ts)).
+1. **Validation Engine**: User-supplied URLs are evaluated prior to dispatching webhook delivery tests ([actions.ts](src/app/dashboard/webhooks/actions.ts)) or sending WhatsApp webhook payloads ([whatsapp.ts](src/lib/whatsapp.ts)).
 2. **Validation Steps**:
    - Scheme is restricted exclusively to `http:` or `https:` (WhatsApp requires `https:`).
    - The hostname is matched against denylists (e.g., rejecting `localhost`, `*.local`).
    - Hostnames are resolved to IP addresses using native DNS lookup.
    - The resolved IP is verified to ensure it does not fall into loopback, private Class A/B/C networks, link-local ranges, tailscale CGNAT ranges (`100.64.0.0/10`), or wildcard ranges (`0.0.0.0/8`).
-3. **SSRF Utilities**: Implementations reside in `isSafeWebhookUrl()` ([ssrfValidation.ts](file:///c:/Codes/WorkSphere/src/lib/ssrfValidation.ts)) and `isValidWebhookUrl()` ([whatsapp.ts](file:///c:/Codes/WorkSphere/src/lib/whatsapp.ts)).
+3. **SSRF Utilities**: Implementations reside in `isSafeWebhookUrl()` ([ssrfValidation.ts](src/lib/ssrfValidation.ts)) and `isValidWebhookUrl()` ([whatsapp.ts](src/lib/whatsapp.ts)).
 
 ---
 
 ## Input Validation
 
-All incoming request payloads are validated at the server boundary using **Zod** schemas ([validations.ts](file:///c:/Codes/WorkSphere/src/lib/validations.ts)):
+All incoming request payloads are validated at the server boundary using **Zod** schemas ([validations.ts](src/lib/validations.ts)):
 - **Chat Messages**: Validates role types and limits text lengths to `min(1)` and `max(10000)` characters.
 - **Venue and Location Inputs**: Enforces latitude/longitude range limits (\([-90, 90]\) and \([-180, 180]\)) and radius constraints.
-- **Account Reset Routines**: Enforces strict password criteria (minimum 8 and maximum 128 characters, containing at least one uppercase, lowercase, and numeric character) in [reset-password/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/reset-password/route.ts).
+- **Account Reset Routines**: Enforces strict password criteria (minimum 8 and maximum 128 characters, containing at least one uppercase, lowercase, and numeric character) in [reset-password/route.ts](src/app/api/auth/reset-password/route.ts).
 - **Safe Parsing**: Schemas utilize `safeParse()` to return structured errors (e.g. returning `400 Bad Request` with field validation summaries) instead of throwing unhandled runtime exceptions.
 
 ---
@@ -98,9 +98,9 @@ All incoming request payloads are validated at the server boundary using **Zod**
 ## Input Sanitization
 
 WorkSphere neutralizes potential injection vectors at input and output boundaries:
-- **Log Injection**: Outbound messaging handlers sanitize inputs printed to terminal log output using `sanitizeLog()` ([whatsapp.ts](file:///c:/Codes/WorkSphere/src/lib/whatsapp.ts)) to strip carriage return (`\r`) and newline (`\n`) characters.
-- **Filename Sanitization**: Upload files routed to local storage fallback have their filenames sanitized ([route.ts](file:///c:/Codes/WorkSphere/src/app/api/upload/route.ts)) by replacing non-alphanumeric characters (except dots and dashes) with underscores (`[^a-zA-Z0-9.-]`), preventing path traversal.
-- **Unicode Normalization**: Unicode symbol mapping is applied to currency indicators using `sanitizeCurrencyForPDF()` ([pdfUtils.ts](file:///c:/Codes/WorkSphere/src/lib/pdfUtils.ts)) to replace unsupported characters with standard abbreviations before compilation.
+- **Log Injection**: Outbound messaging handlers sanitize inputs printed to terminal log output using `sanitizeLog()` ([whatsapp.ts](src/lib/whatsapp.ts)) to strip carriage return (`\r`) and newline (`\n`) characters.
+- **Filename Sanitization**: Upload files routed to local storage fallback have their filenames sanitized ([route.ts](src/app/api/upload/route.ts)) by replacing non-alphanumeric characters (except dots and dashes) with underscores (`[^a-zA-Z0-9.-]`), preventing path traversal.
+- **Unicode Normalization**: Unicode symbol mapping is applied to currency indicators using `sanitizeCurrencyForPDF()` ([pdfUtils.ts](src/lib/pdfUtils.ts)) to replace unsupported characters with standard abbreviations before compilation.
 
 ---
 
@@ -109,8 +109,8 @@ WorkSphere neutralizes potential injection vectors at input and output boundarie
 WorkSphere defends against SQL injection using the following database access practices:
 1. **Prisma Client**: Application features use standard Prisma ORM queries, which are automatically parameterized.
 2. **Raw Database Queries**:
-   - Queries with template tags utilize `prisma.$queryRaw` or `prisma.$executeRaw` ([semanticCache.ts](file:///c:/Codes/WorkSphere/src/lib/cache/semanticCache.ts)). Variables passed inside template tags are automatically parameterized by the Prisma engine.
-   - The AI memory vector search uses `prisma.$queryRawUnsafe` ([route.ts](file:///c:/Codes/WorkSphere/src/app/api/chat/route.ts)) but explicitly maps user arguments to parameters (`$1` and `$2`) instead of string interpolation, maintaining security.
+   - Queries with template tags utilize `prisma.$queryRaw` or `prisma.$executeRaw` ([semanticCache.ts](src/lib/cache/semanticCache.ts)). Variables passed inside template tags are automatically parameterized by the Prisma engine.
+   - The AI memory vector search uses `prisma.$queryRawUnsafe` ([route.ts](src/app/api/chat/route.ts)) but explicitly maps user arguments to parameters (`$1` and `$2`) instead of string interpolation, maintaining security.
 
 ---
 
@@ -118,13 +118,13 @@ WorkSphere defends against SQL injection using the following database access pra
 
 Cross-Site Scripting (XSS) prevention is structured as follows:
 - **React Escaping**: User inputs are rendered as standard JSX strings, which are escaped by React by default.
-- **Inner HTML Warning**: Direct rendering of HTML using `dangerouslySetInnerHTML` is prohibited unless subjected to prior security review and sanitized using a verified HTML sanitizer library ([SECURITY_POLICIES.md](file:///c:/Codes/WorkSphere/docs/SECURITY_POLICIES.md)).
+- **Inner HTML Warning**: Direct rendering of HTML using `dangerouslySetInnerHTML` is prohibited unless subjected to prior security review and sanitized using a verified HTML sanitizer library ([SECURITY_POLICIES.md](docs/SECURITY_POLICIES.md)).
 
 ---
 
 ## File Upload Security
 
-The venue media upload endpoint `/api/upload` ([route.ts](file:///c:/Codes/WorkSphere/src/app/api/upload/route.ts)) enforces file security:
+The venue media upload endpoint `/api/upload` ([route.ts](src/app/api/upload/route.ts)) enforces file security:
 - **Authentication Check**: Rejects requests missing a valid Clerk session.
 - **Size Boundaries**: Restricts files to a maximum size of 5MB.
 - **Type Restrictions**: Restricts file mime-types to `image/png`, `image/jpeg`, `image/jpg`, `image/gif`, and `image/webp`.
@@ -136,13 +136,13 @@ The venue media upload endpoint `/api/upload` ([route.ts](file:///c:/Codes/WorkS
 ## Rate Limiting
 
 Distributed rate-limiting is implemented to prevent DoS, LLM token exhaustion, and SMS/Email abuse:
-- **Limiting Provider**: Implemented using `@upstash/ratelimit` connected to an Upstash Redis database, using a rolling sliding window algorithm ([rateLimit.ts](file:///c:/Codes/WorkSphere/src/lib/rateLimit.ts)).
+- **Limiting Provider**: Implemented using `@upstash/ratelimit` connected to an Upstash Redis database, using a rolling sliding window algorithm ([rateLimit.ts](src/lib/rateLimit.ts)).
 - **Development Fallback**: Falls back to an in-memory sliding window when Redis variables are missing.
 - **Identifiers**: Keyed by `userId` (for authenticated routes) or client IP (extracted from `x-forwarded-for`/`x-real-ip`).
 - **Configured Thresholds**:
-  - **Venue Search**: 120 requests/minute per caller ([venues/route.ts](file:///c:/Codes/WorkSphere/src/app/api/venues/route.ts)).
-  - **AI Chat Message**: 20 requests/minute per caller ([chat/route.ts](file:///c:/Codes/WorkSphere/src/app/api/chat/route.ts)).
-  - **Auth OTP Actions**: 3–5 requests/minute per IP address ([verify-otp/route.ts](file:///c:/Codes/WorkSphere/src/app/api/auth/verify-otp/route.ts)).
+  - **Venue Search**: 120 requests/minute per caller ([venues/route.ts](src/app/api/venues/route.ts)).
+  - **AI Chat Message**: 20 requests/minute per caller ([chat/route.ts](src/app/api/chat/route.ts)).
+  - **Auth OTP Actions**: 3–5 requests/minute per IP address ([verify-otp/route.ts](src/app/api/auth/verify-otp/route.ts)).
 
 ---
 
@@ -159,15 +159,15 @@ Logging is designed to preserve application visibility while protecting user pri
 
 Application keys are managed using environment variables:
 - **Client Exposure**: Only client-side variables prefixed with `NEXT_PUBLIC_` are exposed in browser bundles.
-- **Local Fallbacks**: Secure offline development defaults are supplied for local database, mock Clerk keys, and optional integrations in `.env.local` to enable offline execution without credentials ([ENVIRONMENT_VARIABLES.md](file:///c:/Codes/WorkSphere/docs/ENV_VARS.md)).
+- **Local Fallbacks**: Secure offline development defaults are supplied for local database, mock Clerk keys, and optional integrations in `.env.local` to enable offline execution without credentials ([ENVIRONMENT_VARIABLES.md](docs/ENV_VARS.md)).
 - **Key Storage**: Production secrets must be managed using the hosting platform's secure key management infrastructure and never committed to source control.
 
 ---
 
 ## Secure Deployment Practices
 
-- **Build Pipeline**: Continuous Integration (CI) processes ([ci.yml](file:///c:/Codes/WorkSphere/.github/workflows/ci.yml)) compile Next.js and run full test suites prior to deployment, verifying compatibility.
-- **Containerization**: Deployments on container platforms (Azure Container Apps, GCP Cloud Run, AWS ECS) are optional strategies described in the documentation ([AZURE_CONTAINER_APPS.md](file:///c:/Codes/WorkSphere/docs/AZURE_CONTAINER_APPS.md)). There is no active container configuration in the repository root.
+- **Build Pipeline**: Continuous Integration (CI) processes ([ci.yml](.github/workflows/ci.yml)) compile Next.js and run full test suites prior to deployment, verifying compatibility.
+- **Containerization**: Deployments on container platforms (Azure Container Apps, GCP Cloud Run, AWS ECS) are optional strategies described in the documentation ([AZURE_CONTAINER_APPS.md](docs/AZURE_CONTAINER_APPS.md)). There is no active container configuration in the repository root.
 - **HTTPS Enforcement**: Cookies are restricted to secure configurations (`secure: true`) in production environments.
 
 ---
@@ -175,7 +175,7 @@ Application keys are managed using environment variables:
 ## Vulnerability Reporting
 
 While there is no dedicated bug bounty contact or public security registry page in this repository, the project manages vulnerability disclosure through the following policy:
-- **Reporting Contact**: Suspected vulnerabilities or security incidents must be reported privately to the maintainers ([SECURITY_POLICIES.md](file:///c:/Codes/WorkSphere/docs/SECURITY_POLICIES.md#L1029-L1049)).
+- **Reporting Contact**: Suspected vulnerabilities or security incidents must be reported privately to the maintainers ([SECURITY_POLICIES.md](docs/SECURITY_POLICIES.md#L1029-L1049)).
 - **Private Reporting**: Exploit details, proof-of-concept scripts, or credentials must never be shared in public issues or pull requests. Contributors should utilize GitHub's **Private Vulnerability Reporting** feature where supported on the repository.
 
 ---

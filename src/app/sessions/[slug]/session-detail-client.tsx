@@ -232,25 +232,25 @@ export default function SessionDetailClient({ session }: Props) {
             <div className="mt-8 flex flex-wrap gap-3">
               <button
                 onClick={() => respond("GOING")}
-                className="rounded-xl bg-violet-600 px-5 py-3 font-medium hover:bg-violet-500"
+                className="rounded-xl bg-violet-600 px-5 py-3 font-medium hover:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
               >
                 I’m going
               </button>
               <button
                 onClick={() => respond("MAYBE")}
-                className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 font-medium hover:bg-white/10"
+                className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
               >
                 Maybe
               </button>
               <button
                 onClick={share}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3 font-medium hover:bg-white/10"
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3 font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
               >
                 <Share2 className="h-4 w-4" /> Share
               </button>
               <button
                 onClick={copyInviteLink}
-                className="inline-flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/15 px-5 py-3 font-medium text-violet-200 hover:bg-violet-500/25 transition-colors"
+                className="inline-flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/15 px-5 py-3 font-medium text-violet-200 hover:bg-violet-500/25 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
                 title="Generate and copy WebCrypto secure invite link"
               >
                 {copiedInvite ? (

@@ -7,13 +7,27 @@ type AnalyticsEvent = {
   timestamp: number;
 };
 
-export type RangeKey = "7d" | "30d" | "90d";
+export type RangeKey = "7d" | "30d" | "90d" | "180d" | "ytd" | "1y";
 
-export const RANGE_DAYS: Record<RangeKey, number> = {
-  "7d": 7,
-  "30d": 30,
-  "90d": 90,
+function ytdDays(): number {
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  return Math.ceil((now.getTime() - yearStart.getTime()) / 86_400_000);
+}
+
+export const RANGE_DAYS: Record<RangeKey, number | (() => number)> = {
+  "7d":   7,
+  "30d":  30,
+  "90d":  90,
+  "180d": 180,
+  "ytd":  ytdDays,
+  "1y":   365,
 };
+
+export function getRangeDays(key: RangeKey): number {
+  const val = RANGE_DAYS[key];
+  return typeof val === "function" ? val() : val;
+}
 
 const STOP_WORDS = new Set([
   "a",
@@ -45,7 +59,7 @@ const STOP_WORDS = new Set([
 export function startDateForRange(range: RangeKey) {
   const start = new Date();
   start.setUTCHours(0, 0, 0, 0);
-  start.setUTCDate(start.getUTCDate() - (RANGE_DAYS[range] - 1));
+  start.setUTCDate(start.getUTCDate() - (getRangeDays(range) - 1));
   return start;
 }
 
@@ -361,5 +375,6 @@ export async function getAdminAnalytics(range: RangeKey) {
 }
 
 export function parseAnalyticsRange(value: string | null): RangeKey {
-  return value === "7d" || value === "90d" ? value : "30d";
+  const valid: RangeKey[] = ["7d", "30d", "90d", "180d", "ytd", "1y"];
+  return valid.includes(value as RangeKey) ? (value as RangeKey) : "30d";
 }

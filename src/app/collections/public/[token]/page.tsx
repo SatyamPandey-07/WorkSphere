@@ -92,7 +92,7 @@ export default async function PublicCollectionPage({ params }: PublicCollectionP
               <p className="text-xs text-zinc-500 mt-1">Check back later for updates.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))" }}>
               {folder.venues.map((fv) => {
                 const { venue } = fv;
                 return (

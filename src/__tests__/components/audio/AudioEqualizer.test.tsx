@@ -214,3 +214,136 @@ describe("AudioEqualizer Component (#859)", () => {
     expect(screen.getAllByText("0 dB")).toHaveLength(5);
   });
 });
+
+describe("AudioEqualizer Visibility & AudioContext Resumption (#2190)", () => {
+  afterEach(() => {
+    mockAudioContext.state = "suspended";
+    mockAudioContext.resume.mockReset().mockResolvedValue(undefined);
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it("resumes AudioContext when browser tab becomes visible again", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    // Start playback to initialize AudioContext
+    const playButton = screen.getByTitle("Listen to Ambience");
+    fireEvent.click(playButton);
+
+    mockAudioContext.resume.mockClear();
+
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+      writable: true,
+    });
+
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(mockAudioContext.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call resume() if document visibilityState is hidden", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const playButton = screen.getByTitle("Listen to Ambience");
+    fireEvent.click(playButton);
+
+    mockAudioContext.resume.mockClear();
+
+    Object.defineProperty(document, "visibilityState", {
+      value: "hidden",
+      configurable: true,
+      writable: true,
+    });
+
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(mockAudioContext.resume).not.toHaveBeenCalled();
+  });
+
+  it("does not call resume() if AudioContext is closed", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const playButton = screen.getByTitle("Listen to Ambience");
+    fireEvent.click(playButton);
+
+    mockAudioContext.resume.mockClear();
+    mockAudioContext.state = "closed";
+
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+      writable: true,
+    });
+
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(mockAudioContext.resume).not.toHaveBeenCalled();
+  });
+
+  it("handles resume() Promise rejection gracefully without unhandled rejections", async () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    const playButton = screen.getByTitle("Listen to Ambience");
+    fireEvent.click(playButton);
+
+    mockAudioContext.resume.mockClear();
+    mockAudioContext.resume.mockRejectedValueOnce(
+      new Error("AudioContext resume failed"),
+    );
+
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+      writable: true,
+    });
+
+    expect(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    }).not.toThrow();
+
+    expect(mockAudioContext.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it("cleans up visibilitychange event listener on unmount", () => {
+    const addListenerSpy = jest.spyOn(document, "addEventListener");
+    const removeListenerSpy = jest.spyOn(document, "removeEventListener");
+
+    const { unmount } = render(<AudioEqualizer venueName="Test Workspace" />);
+
+    expect(addListenerSpy).toHaveBeenCalledWith(
+      "visibilitychange",
+      expect.any(Function),
+    );
+
+    unmount();
+
+    expect(removeListenerSpy).toHaveBeenCalledWith(
+      "visibilitychange",
+      expect.any(Function),
+    );
+
+    addListenerSpy.mockRestore();
+    removeListenerSpy.mockRestore();
+  });
+
+  it("does not call resume() if AudioContext has not been initialized yet", () => {
+    render(<AudioEqualizer venueName="Test Workspace" />);
+
+    mockAudioContext.resume.mockClear();
+
+    Object.defineProperty(document, "visibilityState", {
+      value: "visible",
+      configurable: true,
+      writable: true,
+    });
+
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    expect(mockAudioContext.resume).not.toHaveBeenCalled();
+  });
+});

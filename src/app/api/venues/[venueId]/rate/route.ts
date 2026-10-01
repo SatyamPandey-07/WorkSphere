@@ -5,6 +5,8 @@ import { ensureUserExists } from "@/lib/auth";
 import { venueRatingSchema, validateRequest } from "@/lib/validations";
 import { updateUserPreferencesSummary } from "@/lib/agents/MemoryAgent";
 import { enqueueTelemetry } from "@/lib/telemetryQueue";
+import { resolveVenue } from "@/lib/venueResolver";
+import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 
 // POST /api/venues/[venueId]/rate - Add rating
 export async function POST(
@@ -61,50 +63,23 @@ export async function POST(
     } = validation.data;
     const { venue: venueData } = body; // venue data for creating new venues
 
-    const targetPlaceId = venueData?.placeId || venueId;
-
-    // Helper function to safely upsert venue handling concurrent creation/updates
-    async function executeVenueUpsert() {
-      let retries = 0;
-      while (retries < 3) {
-        try {
-          return await prisma.venue.upsert({
-            where: { placeId: targetPlaceId },
-            update: {
-              name: venueData?.name || "Unknown Venue",
-              address: venueData?.address || null,
-              category: venueData?.category || "other",
-            },
-            create: {
-              placeId: targetPlaceId,
-              name: venueData?.name || "Unknown Venue",
-              latitude: venueData?.lat || venueData?.latitude || 0,
-              longitude: venueData?.lng || venueData?.longitude || 0,
-              category: venueData?.category || "other",
-              address: venueData?.address || null,
-            },
-          });
-        } catch (err: any) {
-          retries++;
-          if (err?.code === "P2002" || err?.code === "P2034") {
-            const existing = await prisma.venue.findFirst({
-              where: {
-                OR: [{ placeId: targetPlaceId }, { id: targetPlaceId }],
-              },
-            });
-            if (existing) return existing;
-            await new Promise((res) => setTimeout(res, 50 * retries));
-          } else {
-            throw err;
-          }
-        }
-      }
-      return await prisma.venue.findFirstOrThrow({
-        where: { OR: [{ placeId: targetPlaceId }, { id: targetPlaceId }] },
-      });
+    const dbVenue = await resolveVenue({
+      id: venueId,
+      placeId: venueData?.placeId,
+      name: venueData?.name,
+      address: venueData?.address,
+      category: venueData?.category,
+      lat: venueData?.lat,
+      lng: venueData?.lng,
+      latitude: venueData?.latitude,
+      longitude: venueData?.longitude,
+    });
+    if (!dbVenue) {
+      return NextResponse.json(
+        { error: "Venue not found. Search for it again and retry." },
+        { status: 404 },
+      );
     }
-
-    const dbVenue = await executeVenueUpsert();
     const finalVenueId = dbVenue.id;
 
     const ratingUpdatePayload = {
@@ -116,6 +91,14 @@ export async function POST(
       hasErgonomic,
       outletDensity,
       wifiSpeed,
+      downloadMbps:
+        downloadSpeed !== undefined && downloadSpeed !== null
+          ? Number(downloadSpeed)
+          : null,
+      uploadMbps:
+        uploadSpeed !== undefined && uploadSpeed !== null
+          ? Number(uploadSpeed)
+          : null,
       comment,
       speedtestPhoto,
       hasPhoneBooths,
@@ -123,7 +106,6 @@ export async function POST(
       hasQuietZone,
       lighting,
       musicStyle,
-      socketCondition: (validation.data as any).socketCondition || null,
       powerTypes: powerTypes || [],
       outletLocations: outletLocations || [],
       petsAllowedIndoors,
@@ -144,6 +126,14 @@ export async function POST(
       hasErgonomic: hasErgonomic || false,
       outletDensity: outletDensity || "none",
       wifiSpeed: wifiSpeed || null,
+      downloadMbps:
+        downloadSpeed !== undefined && downloadSpeed !== null
+          ? Number(downloadSpeed)
+          : null,
+      uploadMbps:
+        uploadSpeed !== undefined && uploadSpeed !== null
+          ? Number(uploadSpeed)
+          : null,
       comment,
       speedtestPhoto,
       hasPhoneBooths: hasPhoneBooths || false,
@@ -151,7 +141,6 @@ export async function POST(
       hasQuietZone: hasQuietZone || false,
       lighting: lighting || null,
       musicStyle,
-      socketCondition: (validation.data as any).socketCondition || null,
       powerTypes: powerTypes || [],
       outletLocations: outletLocations || [],
       petsAllowedIndoors: petsAllowedIndoors || false,
@@ -392,6 +381,16 @@ export async function POST(
     } catch {
       runAfter();
     }
+
+    emitWebhookEvent(userId, "REVIEW_SUBMITTED", {
+      venueId: finalVenueId,
+      venueName: dbVenue.name,
+      ratingId: rating.id,
+      wifiQuality: rating.wifiQuality,
+      noiseLevel: rating.noiseLevel,
+      hasOutlets: rating.hasOutlets,
+      comment: rating.comment,
+    });
 
     return NextResponse.json({ rating }, { status: 201 });
   } catch (error) {

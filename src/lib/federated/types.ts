@@ -24,6 +24,22 @@ export type VenueFeatureKey = (typeof VENUE_FEATURE_KEYS)[number];
 export const FEATURE_DIM = VENUE_FEATURE_KEYS.length;
 
 export const DEFAULT_LEARNING_RATE = 0.05;
+
+/** DP-SGD settings applied to every on-device gradient step (#1563). */
+export type DifferentialPrivacyConfig = {
+  /** When false, plain SGD is used (no clipping, no noise). */
+  enabled: boolean;
+  /** Per-example L2 clipping bound C — the sensitivity of one update. */
+  maxGradNorm: number;
+  /** Noise std is `noiseMultiplier * maxGradNorm` (σ in DP-SGD). */
+  noiseMultiplier: number;
+};
+
+export const DEFAULT_DP_CONFIG: DifferentialPrivacyConfig = {
+  enabled: true,
+  maxGradNorm: 1.0,
+  noiseMultiplier: 1.0,
+};
 export const WEIGHT_DB_NAME = "federated-venue-weights";
 export const WEIGHT_STORE = "modelWeights";
 export const WEIGHT_KEY = "latest";
@@ -42,7 +58,12 @@ export type VenueTrainExample = {
 };
 
 export type FederatedWorkerRequest =
-  | { type: "init"; id: string; learningRate?: number }
+  | {
+      type: "init";
+      id: string;
+      learningRate?: number;
+      dp?: Partial<DifferentialPrivacyConfig>;
+    }
   | {
       type: "score";
       id: string;

@@ -314,6 +314,9 @@ self.addEventListener("sync", (event) => {
   if (event.tag === "sync-ratings") {
     event.waitUntil(syncRatings());
   }
+  if (event.tag === "sync-reviews") {
+    event.waitUntil(syncPendingReviews());
+  }
   if (event.tag === "sync-conversations") {
     event.waitUntil(syncConversations());
   }
@@ -550,6 +553,222 @@ async function syncRatings() {
     console.error("Sync ratings failed:", error);
   } finally {
     isSyncingRatings = false;
+  }
+}
+
+let isSyncingReviews = false;
+// Sync offline venue reviews when back online (Issue #3366)
+async function syncPendingReviews() {
+  if (isSyncingReviews) return;
+  isSyncingReviews = true;
+  try {
+    await withIdbLock(async () => {
+      const db = await openIndexedDB();
+      if (!db.objectStoreNames.contains("pendingReviews")) return;
+
+      const tx = db.transaction("pendingReviews", "readonly");
+      const store = tx.objectStore("pendingReviews");
+      const request = store.getAll();
+
+      const items = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result || []);
+        request.onerror = () => reject(request.error);
+      });
+
+      const candidates = items.filter(
+        (r) =>
+          r.status === "PENDING" ||
+          r.status === "FAILED" ||
+          (r.status === "SYNCING" && Date.now() - r.createdAt > 60000),
+      );
+      candidates.sort((a, b) => a.createdAt - b.createdAt);
+
+      for (const item of candidates) {
+        // Mark as SYNCING in IndexedDB
+        item.status = "SYNCING";
+        const writeTx = db.transaction("pendingReviews", "readwrite");
+        writeTx.objectStore("pendingReviews").put(item);
+        await new Promise((res) => {
+          writeTx.oncomplete = () => res();
+          writeTx.onerror = () => res();
+        });
+
+        // Acquire CSRF token from safe GET endpoint
+        let csrfToken = "";
+        try {
+          const csrfRes = await fetch("/api/auth/csrf-token", { credentials: "same-origin" });
+          if (csrfRes.ok) {
+            const csrfData = await csrfRes.json();
+            csrfToken = csrfData.csrfToken || "";
+          }
+        } catch (err) {
+          console.warn("[SW] Failed to fetch CSRF token for review sync:", err);
+        }
+
+        try {
+          const headers = {
+            "Content-Type": "application/json",
+            "X-Idempotency-Key": item.id,
+          };
+          if (csrfToken) {
+            headers["x-csrf-token"] = csrfToken;
+          }
+
+          const response = await fetch(
+            `/api/venues/${encodeURIComponent(item.venueId)}/reviews`,
+            {
+              method: "POST",
+              headers,
+              credentials: "same-origin",
+              body: JSON.stringify({
+                ...item.data,
+                idempotencyKey: item.id,
+                reviewId: item.reviewId,
+                baseVenueUpdatedAt: item.baseVenueUpdatedAt,
+                baseReviewUpdatedAt: item.baseReviewUpdatedAt,
+              }),
+            },
+          );
+
+          if (response.ok) {
+            // Delete from pendingReviews store
+            const delTx = db.transaction("pendingReviews", "readwrite");
+            delTx.objectStore("pendingReviews").delete(item.id);
+            await new Promise((res) => {
+              delTx.oncomplete = () => res();
+              delTx.onerror = () => res();
+            });
+
+            // Notify open window clients
+            const windowClients = await self.clients.matchAll({
+              type: "window",
+              includeUncontrolled: true,
+            });
+            for (const client of windowClients) {
+              client.postMessage({
+                type: "REVIEW_SYNC_SUCCESS",
+                id: item.id,
+                venueId: item.venueId,
+                venueName: item.venueName,
+              });
+            }
+            continue;
+          }
+
+          if (response.status === 409) {
+            // Conflict detected: preserve local item and store server conflict details
+            const conflictJson = await response.json().catch(() => ({}));
+            item.status = "CONFLICT";
+            item.conflictDetails = conflictJson;
+            const putTx = db.transaction("pendingReviews", "readwrite");
+            putTx.objectStore("pendingReviews").put(item);
+            await new Promise((res) => {
+              putTx.oncomplete = () => res();
+              putTx.onerror = () => res();
+            });
+
+            const windowClients = await self.clients.matchAll({
+              type: "window",
+              includeUncontrolled: true,
+            });
+            for (const client of windowClients) {
+              client.postMessage({
+                type: "REVIEW_SYNC_CONFLICT",
+                id: item.id,
+                venueId: item.venueId,
+                venueName: item.venueName,
+                conflictDetails: conflictJson,
+              });
+            }
+            continue;
+          }
+
+          if (response.status === 401 || response.status === 403) {
+            // Unauthorized or CSRF token mismatch: session needs refresh. Do NOT delete review.
+            item.status = "AUTH_REQUIRED";
+            const putTx = db.transaction("pendingReviews", "readwrite");
+            putTx.objectStore("pendingReviews").put(item);
+            await new Promise((res) => {
+              putTx.oncomplete = () => res();
+              putTx.onerror = () => res();
+            });
+
+            const windowClients = await self.clients.matchAll({
+              type: "window",
+              includeUncontrolled: true,
+            });
+            for (const client of windowClients) {
+              client.postMessage({
+                type: "REVIEW_SYNC_AUTH_REQUIRED",
+                id: item.id,
+                venueId: item.venueId,
+              });
+            }
+            break;
+          }
+
+          if (response.status >= 500) {
+            // Transient 5xx server error: exponential backoff retry (up to 3 times)
+            const nextRetry = (item.retryCount || 0) + 1;
+            item.retryCount = nextRetry;
+            item.status = nextRetry >= 3 ? "FAILED" : "PENDING";
+            const putTx = db.transaction("pendingReviews", "readwrite");
+            putTx.objectStore("pendingReviews").put(item);
+            await new Promise((res) => {
+              putTx.oncomplete = () => res();
+              putTx.onerror = () => res();
+            });
+            continue;
+          }
+
+          // 400, 422 etc - permanent validation error
+          item.status = "FAILED";
+          const putTx = db.transaction("pendingReviews", "readwrite");
+          putTx.objectStore("pendingReviews").put(item);
+          await new Promise((res) => {
+            putTx.oncomplete = () => res();
+            putTx.onerror = () => res();
+          });
+
+          const windowClients = await self.clients.matchAll({
+            type: "window",
+            includeUncontrolled: true,
+          });
+          for (const client of windowClients) {
+            client.postMessage({
+              type: "REVIEW_SYNC_FAILED",
+              id: item.id,
+              venueId: item.venueId,
+              error: "Validation error",
+            });
+          }
+        } catch (error) {
+          if (isNetworkError(error)) {
+            console.warn(`[SW] syncPendingReviews: Network error for ${item.id} — preserving in queue.`);
+            item.status = "PENDING";
+            const putTx = db.transaction("pendingReviews", "readwrite");
+            putTx.objectStore("pendingReviews").put(item);
+            await new Promise((res) => {
+              putTx.oncomplete = () => res();
+              putTx.onerror = () => res();
+            });
+            break;
+          }
+
+          item.status = "FAILED";
+          const putTx = db.transaction("pendingReviews", "readwrite");
+          putTx.objectStore("pendingReviews").put(item);
+          await new Promise((res) => {
+            putTx.oncomplete = () => res();
+            putTx.onerror = () => res();
+          });
+        }
+      }
+    });
+  } catch (err) {
+    console.error("[SW] syncPendingReviews failed:", err);
+  } finally {
+    isSyncingReviews = false;
   }
 }
 
@@ -860,7 +1079,7 @@ function openIndexedDB() {
   if (swDb) return Promise.resolve(swDb);
   return new Promise((resolve, reject) => {
     try {
-      const request = indexedDB.open("worksphere-offline", 6);
+      const request = indexedDB.open("worksphere-offline", 7);
 
       request.onblocked = () => {
         console.warn("[SW] IndexedDB upgrade blocked");
@@ -951,6 +1170,16 @@ function openIndexedDB() {
             keyPath: "venueId",
           });
           deltaStore.createIndex("timestamp", "timestamp", { unique: false });
+        }
+
+        // Dedicated offline reviews store (Issue #3366)
+        if (!db.objectStoreNames.contains("pendingReviews")) {
+          const reviewStore = db.createObjectStore("pendingReviews", {
+            keyPath: "id",
+          });
+          reviewStore.createIndex("venueId", "venueId", { unique: false });
+          reviewStore.createIndex("status", "status", { unique: false });
+          reviewStore.createIndex("createdAt", "createdAt", { unique: false });
         }
       };
     } catch (err) {

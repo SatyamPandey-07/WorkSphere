@@ -32,6 +32,7 @@ import {
   getAllVenuesOffline,
   OfflineVenue,
 } from "@/lib/offlineStorage";
+import { queueOfflineReview } from "@/lib/offlineReviewSync";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
 import { VenueSearchEmptyState } from "@/components/venues/VenueSearchEmptyState";
 import { Venue } from "@/components/chat/ChatMessages";
@@ -677,40 +678,72 @@ function AppPage() {
       ),
     );
 
+    const venuePayload = {
+      ...rating,
+      downloadSpeed: rating.downloadSpeed,
+      uploadSpeed: rating.uploadSpeed,
+      latency: rating.latency,
+      crowdLevel: rating.crowdLevel,
+      venue: {
+        placeId: ratingDialog.venue.id,
+        name: ratingDialog.venue.name,
+        lat: ratingDialog.venue.position.lat,
+        lng: ratingDialog.venue.position.lng,
+        category: ratingDialog.venue.category,
+        address: ratingDialog.venue.address,
+      },
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      try {
+        await queueOfflineReview({
+          venueId: ratingDialog.venue.id,
+          venueName: ratingDialog.venue.name,
+          data: venuePayload,
+        });
+        alert("Review saved offline. It will automatically sync when you reconnect.");
+      } catch (err) {
+        console.error("Failed to queue review offline:", err);
+        setMarkers(prevMarkers);
+        alert("Failed to save review offline. Please try again.");
+      }
+      return;
+    }
+
     try {
       const response = await fetch(
-        `/api/venues/${ratingDialog.venue.id}/rate`,
+        `/api/venues/${encodeURIComponent(ratingDialog.venue.id)}/reviews`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...rating,
-            downloadSpeed: rating.downloadSpeed,
-            uploadSpeed: rating.uploadSpeed,
-            latency: rating.latency,
-            crowdLevel: rating.crowdLevel,
-            venue: {
-              placeId: ratingDialog.venue.id,
-              name: ratingDialog.venue.name,
-              lat: ratingDialog.venue.position.lat,
-              lng: ratingDialog.venue.position.lng,
-              category: ratingDialog.venue.category,
-              address: ratingDialog.venue.address,
-            },
-          }),
+          body: JSON.stringify(venuePayload),
         },
       );
 
       if (!response.ok) {
+        if (response.status === 409) {
+          alert("A newer review exists for this venue on the server.");
+          return;
+        }
         throw new Error("Failed to submit rating");
       }
 
       console.log("Rating submitted successfully");
       alert("Rating submitted! Thank you for helping the community.");
     } catch (error) {
-      setMarkers(prevMarkers);
-      console.error("Error submitting rating:", error);
-      alert("Failed to submit rating. Please try again.");
+      // Network failure / offline transition: queue review offline
+      try {
+        await queueOfflineReview({
+          venueId: ratingDialog.venue.id,
+          venueName: ratingDialog.venue.name,
+          data: venuePayload,
+        });
+        alert("Review saved offline. It will automatically sync when you reconnect.");
+      } catch (queueErr) {
+        setMarkers(prevMarkers);
+        console.error("Error submitting and queueing rating:", error, queueErr);
+        alert("Failed to submit rating. Please try again.");
+      }
     }
   };
 

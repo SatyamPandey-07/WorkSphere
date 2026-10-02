@@ -31,6 +31,7 @@ import {
   applyPendingConversationEdits,
   flushConversationEditQueue,
 } from "@/lib/offlineStorage";
+import { queueOfflineReview } from "@/lib/offlineReviewSync";
 import {
   formatChatHistoryMarkdown,
   generateChatPdfReport,
@@ -738,30 +739,70 @@ export function EnhancedChatbot({
         }),
       );
 
-      const token = await getToken();
-      await fetch(`/api/venues/${targetVenue.id}/rate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+      const reviewPayload = {
+        ...rating,
+        venue: {
+          name: targetVenue.name,
+          lat: targetVenue.lat,
+          lng: targetVenue.lng,
+          category: targetVenue.category,
+          address: targetVenue.address,
         },
-        body: JSON.stringify({
-          ...rating,
-          venue: {
-            name: targetVenue.name,
-            lat: targetVenue.lat,
-            lng: targetVenue.lng,
-            category: targetVenue.category,
-            address: targetVenue.address,
+      };
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await queueOfflineReview({
+          venueId: targetVenue.id,
+          venueName: targetVenue.name,
+          data: reviewPayload,
+        });
+        alert(
+          "Review saved offline. It will automatically sync when you reconnect.",
+        );
+        setRatingVenue(null);
+        return;
+      }
+
+      try {
+        const token = await getToken();
+        await fetch(
+          `/api/venues/${encodeURIComponent(targetVenue.id)}/reviews`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(reviewPayload),
           },
-        }),
-      });
-      trackVenueInteraction("rated", {
-        id: targetVenue.id,
-        name: targetVenue.name,
-        category: targetVenue.category,
-      });
-      setRatingVenue(null);
+        );
+        trackVenueInteraction("rated", {
+          id: targetVenue.id,
+          name: targetVenue.name,
+          category: targetVenue.category,
+        });
+        setRatingVenue(null);
+      } catch (netErr) {
+        // Network error / offline transition
+        try {
+          await queueOfflineReview({
+            venueId: targetVenue.id,
+            venueName: targetVenue.name,
+            data: reviewPayload,
+          });
+          alert(
+            "Review saved offline. It will automatically sync when you reconnect.",
+          );
+          setRatingVenue(null);
+        } catch (queueErr) {
+          setMessages(previousMessages);
+          console.error("Failed to queue rating offline:", queueErr);
+          trackError(
+            netErr instanceof Error ? netErr : new Error(String(netErr)),
+            "rating_submit",
+          );
+        }
+      }
     } catch (e) {
       setMessages(previousMessages);
       console.error("Failed to submit rating:", e);

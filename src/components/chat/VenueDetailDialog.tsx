@@ -59,6 +59,12 @@ import {
   HourlyForecast,
 } from "@/components/noise/NoiseTimelineChart";
 import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
+import {
+  subscribeReviewSyncEvents,
+  getQueuedReviews,
+  resolveReviewConflict,
+  QueuedVenueReview,
+} from "@/lib/offlineReviewSync";
 
 interface VenueDetailDialogProps {
   venue: Venue | null;
@@ -228,6 +234,9 @@ export function VenueDetailDialog({
   );
   const [reviews, setReviews] = useState<any[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [conflictReview, setConflictReview] =
+    useState<QueuedVenueReview | null>(null);
+  const [resolvingConflict, setResolvingConflict] = useState(false);
   const [menuPhotos, setMenuPhotos] = useState<string[]>([]);
   const [uploadingMenu, setUploadingMenu] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
@@ -696,7 +705,7 @@ export function VenueDetailDialog({
     };
   }, [venue, isOpen]);
 
-  // Fetch reviews on dialog open / venue change to have stats ready
+  // Fetch reviews on dialog open / venue change and subscribe to offline sync events
   useEffect(() => {
     if (!venue || !isOpen) return;
     setReviewsLoading(true);
@@ -707,7 +716,63 @@ export function VenueDetailDialog({
       })
       .catch((err) => console.error(err))
       .finally(() => setReviewsLoading(false));
+
+    // Check for any pending review conflicts for this venue in IndexedDB
+    getQueuedReviews()
+      .then((items) => {
+        const found = items.find(
+          (i) => i.venueId === venue.id && i.status === "CONFLICT",
+        );
+        setConflictReview(found || null);
+      })
+      .catch(() => {});
+
+    // Listen for background sync success or conflict notifications without page refresh
+    const unsubscribe = subscribeReviewSyncEvents((event) => {
+      if (!event.venueId || event.venueId === venue.id) {
+        if (event.type === "REVIEW_SYNC_SUCCESS") {
+          fetch(`/api/venues/${encodeURIComponent(venue.id)}/reviews`)
+            .then((r) => r.json())
+            .then((data) => {
+              if (data.reviews) setReviews(data.reviews);
+            })
+            .catch(() => {});
+          setConflictReview(null);
+        } else if (event.type === "REVIEW_SYNC_CONFLICT") {
+          getQueuedReviews()
+            .then((items) => {
+              const found = items.find(
+                (i) => i.venueId === venue.id && i.status === "CONFLICT",
+              );
+              setConflictReview(found || null);
+            })
+            .catch(() => {});
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [venue, isOpen]);
+
+  const handleResolveConflict = async (choice: "KEEP_LOCAL" | "USE_REMOTE") => {
+    if (!conflictReview || !venue) return;
+    setResolvingConflict(true);
+    try {
+      await resolveReviewConflict(conflictReview.id, choice);
+      setConflictReview(null);
+      const res = await fetch(
+        `/api/venues/${encodeURIComponent(venue.id)}/reviews`,
+      );
+      const data = await res.json();
+      if (data.reviews) setReviews(data.reviews);
+    } catch (err) {
+      console.error("Failed to resolve review conflict:", err);
+    } finally {
+      setResolvingConflict(false);
+    }
+  };
 
   // Effect 3: Fetch predictions and menu photos based on active tab
   useEffect(() => {
@@ -1936,6 +2001,40 @@ export function VenueDetailDialog({
 
           {activeTab === "reviews" && (
             <div className="space-y-4">
+              {conflictReview && (
+                <div className="p-4 border border-amber-500/30 bg-amber-500/10 rounded-2xl space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-amber-200">
+                        Review Conflict Detected
+                      </p>
+                      <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                        This review was modified on the server while you were offline.
+                        Choose whether to overwrite with your offline review or keep the server version.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => handleResolveConflict("KEEP_LOCAL")}
+                      disabled={resolvingConflict}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-black transition-colors disabled:opacity-50"
+                    >
+                      {resolvingConflict
+                        ? "Resolving..."
+                        : "Keep Local (Overwrite)"}
+                    </button>
+                    <button
+                      onClick={() => handleResolveConflict("USE_REMOTE")}
+                      disabled={resolvingConflict}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-50"
+                    >
+                      Use Remote (Discard Local)
+                    </button>
+                  </div>
+                </div>
+              )}
               {reviewsLoading ? (
                 <div className="space-y-3">
                   {[0, 1, 2].map((i) => (

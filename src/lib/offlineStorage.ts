@@ -21,7 +21,7 @@ userDoc.on("update", async (update: Uint8Array) => {
 });
 
 const DB_NAME = "worksphere-offline";
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 export interface OfflineVenue {
   id: string;
@@ -171,6 +171,16 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
           database.createObjectStore("preference_rankings", {
             keyPath: "id",
           });
+        }
+
+        // Dedicated offline reviews store (Issue #3366)
+        if (!database.objectStoreNames.contains("pendingReviews")) {
+          const reviewStore = database.createObjectStore("pendingReviews", {
+            keyPath: "id",
+          });
+          reviewStore.createIndex("venueId", "venueId", { unique: false });
+          reviewStore.createIndex("status", "status", { unique: false });
+          reviewStore.createIndex("createdAt", "createdAt", { unique: false });
         }
 
         console.log("[OfflineDB] Database schema created");

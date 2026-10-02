@@ -38,7 +38,7 @@ interface VenueRatingDialogProps {
     waterBowlsProvided?: boolean;
     dogFriendly?: boolean;
     catsAllowed?: boolean;
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 export function VenueRatingDialog({

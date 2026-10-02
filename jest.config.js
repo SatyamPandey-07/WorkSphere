@@ -37,5 +37,13 @@ const customJestConfig = {
 
 module.exports = async () => {
   const config = await createJestConfig(customJestConfig)();
-  return config;
+  return {
+    ...config,
+    transform: {
+      '^.+\\.(ts|tsx)$': [
+        'ts-jest',
+        { tsconfig: { jsx: 'react-jsx', rootDir: '.' } },
+      ],
+    },
+  };
 };

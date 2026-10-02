@@ -10,6 +10,8 @@ import {
   DEFAULT_DP_CONFIG,
   type DifferentialPrivacyConfig,
 } from "./types";
+import { validateBudget } from "./privacyAccountant";
+import { resolveAdaptiveClipping } from "./adaptiveClipping";
 
 export type RandomSource = () => number;
 
@@ -81,6 +83,14 @@ export function resolveDpConfig(
   }
   if (!Number.isFinite(config.noiseMultiplier) || config.noiseMultiplier < 0) {
     throw new Error("noiseMultiplier must be a non-negative finite number");
+  }
+  if (config.budget) validateBudget(config.budget);
+  if (config.adaptiveClipping) {
+    resolveAdaptiveClipping(config.adaptiveClipping === true ? {} : config.adaptiveClipping);
+  }
+  const reportingDelta = config.reportingDelta ?? 1e-5;
+  if (!(reportingDelta > 0 && reportingDelta < 1)) {
+    throw new Error("reportingDelta must be in (0, 1)");
   }
   return config;
 }

@@ -893,7 +893,10 @@ export function EnhancedChatbot({
       }
     });
 
-    const response = await apiFetch(`/api/venues?${params.toString()}`);
+    // Idempotent GET: wait out a 429 and retry instead of failing (#1732).
+    const response = await apiFetch(`/api/venues?${params.toString()}`, undefined, {
+      retryOnRateLimit: true,
+    });
 
     if (!response.ok) {
       throw new Error("Failed to refresh venues");

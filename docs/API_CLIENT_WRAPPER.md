@@ -83,8 +83,11 @@ X-RateLimit-Reset
 
 Supported values include:
 
-- remaining seconds
-- Unix timestamp
+- remaining seconds (delta)
+- Unix timestamp in seconds
+- Unix timestamp in milliseconds (values above `1e12`)
+
+The IETF draft `RateLimit-Reset` header is accepted as well.
 
 ---
 
@@ -109,10 +112,14 @@ It also supports
 
 The wrapper categorises requests into:
 
-| Endpoint | Detection                                               |
+| Endpoint | Detection (request **path** only, query string ignored) |
 | -------- | ------------------------------------------------------- |
-| chat     | default                                                 |
-| book     | URLs containing `/book`, `/confirm`, or `/reservations` |
+| book     | path contains `/book`, `/confirm`, or `/reservations`   |
+| chat     | `/api/chat` and sub-paths                               |
+| other    | everything else — tracked under its own pathname bucket (e.g. `/api/venues`) |
+
+> Before #1732 every non-booking URL counted as `chat`, so a 429 from
+> `/api/venues` disabled the chat input.
 
 ---
 
@@ -128,10 +135,56 @@ Payload
 
 ```ts
 {
-  retryAfter: number;
-  endpoint: "chat" | "book";
+  retryAfter: number;            // seconds
+  endpoint: "chat" | "book" | "other";
+  bucket: string;                // "chat", "book" or the request pathname
+  retryAt: number;               // epoch ms when requests are accepted again
+  willRetry: boolean;            // apiFetch will re-send automatically
 }
 ```
+
+---
+
+# Quota Tracking
+
+Every response's `X-RateLimit-Limit` / `X-RateLimit-Remaining` /
+`X-RateLimit-Reset` headers (or the IETF `RateLimit-*` equivalents) are
+recorded per bucket. A 429 marks the bucket exhausted until `retryAt`; the
+next non-429 response clears that block.
+
+```ts
+import { useRateLimitQuota } from "@/hooks/useRateLimit";
+
+const { limit, remaining, usage, retryAfter, isLimited } = useRateLimitQuota("/api/venues");
+// usage is 0–1 when limit and remaining are known
+```
+
+---
+
+# Automatic Retry
+
+Pass `retryOnRateLimit` as the third argument to wait out a 429 and re-send:
+
+```ts
+// defaults: 2 retries, wait at most 60 s per attempt
+const res = await apiFetch("/api/venues?lat=1&lng=2", undefined, { retryOnRateLimit: true });
+
+// custom limits
+await apiFetch(url, init, { retryOnRateLimit: { maxRetries: 1, maxWaitSeconds: 30 } });
+```
+
+- Off by default: user-initiated mutations (bookings, chat) keep showing the
+  countdown and let the user retry.
+- A 429 means the server did not process the request, so re-sending is safe.
+- If `Retry-After` exceeds `maxWaitSeconds`, or retries are used up, the 429
+  `Response` is returned as before.
+- While a bucket is known to be blocked, a retrying request waits for
+  `retryAt` before hitting the server again.
+- `init.signal` aborts the wait (the promise rejects with the abort reason).
+- `Request` inputs are cloned per attempt so their body can be re-sent.
+- The toast says "Retrying automatically in N seconds" while a retry is pending.
+
+`EnhancedChatbot`'s venue refresh (an idempotent GET) uses this.
 
 ---
 
@@ -143,13 +196,15 @@ Location
 src/hooks/useRateLimit.ts
 ```
 
-The hook listens for the custom event and stores the countdown.
+The hook listens for the custom event (and the tracked quota) and returns
+the seconds left until requests to that endpoint are accepted.
 
 Features:
 
 - subscribes on mount
 - unsubscribes on unmount
-- updates every second
+- updates every second, computed from a deadline — stays accurate when the
+  browser throttles timers in background tabs
 - stops automatically at zero
 
 Example

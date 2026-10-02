@@ -34,3 +34,22 @@ class StoreAddRequest(BaseModel):
 
 class DeduplicateRequest(BaseModel):
     threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+
+
+class HealthResponse(BaseModel):
+    status: str = "ok"
+    uptime_seconds: float = Field(ge=0.0)
+    version: Optional[str] = None
+
+    def __getitem__(self, item):
+        return getattr(self, item)
+
+
+class MetricsResponse(BaseModel):
+    vector_count: int = Field(ge=0)
+    total_messages: int = Field(ge=0)
+    dimension: int = Field(gt=0)
+    memory_rss_mb: float = Field(ge=0.0)
+
+    def __getitem__(self, item):
+        return getattr(self, item)

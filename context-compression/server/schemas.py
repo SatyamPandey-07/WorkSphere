@@ -50,6 +50,11 @@ class MetricsResponse(BaseModel):
     total_messages: int = Field(ge=0)
     dimension: int = Field(gt=0)
     memory_rss_mb: float = Field(ge=0.0)
+    cache_size: int = Field(default=0, ge=0)
+    cache_capacity: int = Field(default=0, ge=0)
+    cache_hits: int = Field(default=0, ge=0)
+    cache_misses: int = Field(default=0, ge=0)
+    cache_hit_rate: float = Field(default=0.0, ge=0.0, le=1.0)
 
     def __getitem__(self, item):
         return getattr(self, item)

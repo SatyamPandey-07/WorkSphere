@@ -273,11 +273,18 @@ def create_app(
             getattr(active_compressor, "dimension", 128),
         )
         rss = get_memory_rss_mb()
+        cache_metrics = (
+            active_store.get_cache_metrics()
+            if hasattr(active_store, "get_cache_metrics")
+            and callable(active_store.get_cache_metrics)
+            else {}
+        )
         return MetricsResponse(
             vector_count=v_count,
             total_messages=t_messages,
             dimension=dim,
             memory_rss_mb=rss,
+            **cache_metrics,
         )
 
     @app.get("/api/health")

@@ -12,9 +12,35 @@ from fastapi.responses import JSONResponse, StreamingResponse
 try:
     from ..compression.compressor import ContextCompressor
     from ..storage.store import VectorStore
+    from .schemas import (
+        AddMessageRequest,
+        CompressRequest,
+        CompressResponse,
+        DeduplicateRequest,
+        SearchRequest,
+        StoreAddRequest,
+    )
 except (ImportError, ValueError):
     from compression.compressor import ContextCompressor
     from storage.store import VectorStore
+    try:
+        from server.schemas import (
+            AddMessageRequest,
+            CompressRequest,
+            CompressResponse,
+            DeduplicateRequest,
+            SearchRequest,
+            StoreAddRequest,
+        )
+    except (ImportError, ValueError):
+        from schemas import (
+            AddMessageRequest,
+            CompressRequest,
+            CompressResponse,
+            DeduplicateRequest,
+            SearchRequest,
+            StoreAddRequest,
+        )
 
 logger = logging.getLogger(__name__)
 
@@ -50,38 +76,19 @@ def create_app(
         }
 
     @app.post("/api/add")
-    async def add_message(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        role = body.get("role", "user")
-        content = body.get("content", "")
-        metadata = body.get("metadata")
-        node_id = compressor.add_message(role, content, metadata)
+    async def add_message(request: AddMessageRequest):
+        node_id = compressor.add_message(request.role, request.content, request.metadata)
         return {"node_id": node_id}
 
     @app.post("/api/search")
-    async def search(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        k = body.get("k", 10)
-        results = compressor.get_relevant_context(query, k)
+    async def search(request: SearchRequest):
+        results = compressor.get_relevant_context(request.query, request.k)
         return {"results": results}
 
-    @app.post("/api/compress")
-    async def compress(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        max_tokens = body.get("max_tokens")
+    @app.post("/api/compress", response_model=CompressResponse)
+    async def compress(request: CompressRequest):
         result, tokens = compressor.compress_context(
-            query, max_tokens=max_tokens
+            request.query, max_tokens=request.max_tokens
         )
         return {
             "compressed": result,
@@ -90,13 +97,18 @@ def create_app(
         }
 
     @app.post("/api/compress/stream")
-    async def compress_stream(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        max_tokens = body.get("max_tokens")
+    async def compress_stream(
+        payload: CompressRequest,
+        request: Request = None,
+    ):
+        if not isinstance(payload, CompressRequest):
+            raw_req = payload
+            data = await raw_req.json()
+            payload = CompressRequest.model_validate(data)
+            request = raw_req
+
+        query = payload.query
+        max_tokens = payload.max_tokens
 
         async def event_generator():
             try:
@@ -108,11 +120,11 @@ def create_app(
                         logger.info("Client disconnected, aborting compression stream early")
                         break
 
-                    payload = json.dumps({
+                    chunk_payload = json.dumps({
                         "chunk": chunk,
                         "done": False,
                     })
-                    yield f"data: {payload}\n\n"
+                    yield f"data: {chunk_payload}\n\n"
                     total_yielded += 1
                     await asyncio.sleep(0)
 
@@ -139,38 +151,21 @@ def create_app(
         )
 
     @app.post("/api/deduplicate")
-    async def deduplicate(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        threshold = body.get("threshold")
-        removed = compressor.deduplicate(threshold=threshold)
+    async def deduplicate(payload: DeduplicateRequest):
+        removed = compressor.deduplicate(threshold=payload.threshold)
         return {
             "removed": removed,
             "stats": compressor.get_stats(),
         }
 
     @app.post("/api/store/add")
-    async def store_add(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        text = body.get("text", "")
-        metadata = body.get("metadata")
-        node_id = store.add(text, metadata)
+    async def store_add(request: StoreAddRequest):
+        node_id = store.add(request.text, request.metadata)
         return {"node_id": node_id}
 
     @app.post("/api/store/search")
-    async def store_search(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        k = body.get("k", 10)
-        results = store.search(query, k)
+    async def store_search(request: SearchRequest):
+        results = store.search(request.query, request.k)
         return {"results": results}
 
     @app.delete("/api/clear")

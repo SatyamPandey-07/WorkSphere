@@ -150,6 +150,15 @@ class TestStreamingCompression(unittest.TestCase):
 
         asyncio.run(run_test())
 
+    def test_process_time_header(self):
+        app = create_app(compressor=self.compressor)
+        client = TestClient(app)
+
+        response = client.get("/api/health")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("x-process-time", response.headers)
+        self.assertTrue(response.headers["x-process-time"].endswith("ms"))
+
     def test_client_server_integration_streaming(self):
         server = CompressionServer(port=8895, dimension=64)
         server.compressor.add_message("user", "Hello streaming world")

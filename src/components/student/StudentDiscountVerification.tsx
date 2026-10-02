@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle2, Loader2, ShieldCheck, X } from "lucide-react";
 import { computeMembershipCommit } from "@/lib/zkp/commitment";
+import { getCachedProof, invalidateProof, storeProof } from "@/lib/zkp/proofCache";
 
 interface StudentDiscountVerificationProps {
   /** Called after the proof is accepted and the user is verified server-side. */
@@ -16,6 +17,9 @@ interface StudentDiscountVerificationProps {
    */
   onClose?: () => void;
 }
+
+/** IndexedDB proof-cache scope for student verification proofs (#3358). */
+const STUDENT_PROOF_SCOPE = "student-discount";
 
 const ZKP_CACHE_KEY = "worksphere-zkp-verified";
 const ZKP_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -157,6 +161,9 @@ export function StudentDiscountVerification({
 
           setIsSuccess(true);
           saveZkpCache(hashStudentId(studentId.trim()));
+          if (typeof publicSignals?.[0] === "string") {
+            void storeProof(STUDENT_PROOF_SCOPE, publicSignals[0], { proof, publicSignals });
+          }
           onVerifiedRef.current?.();
         } catch (err: any) {
           setError(err.message);
@@ -186,7 +193,30 @@ export function StudentDiscountVerification({
     };
   }, [spawnWorker, terminateWorker]);
 
-  const handleVerify = () => {
+  /**
+   * Re-submit a cached proof instead of re-proving (#3358). Returns true when
+   * the server accepted it; a rejected proof is evicted so we prove afresh.
+   */
+  const verifyWithCachedProof = async (commit: string): Promise<boolean> => {
+    const cached = await getCachedProof(STUDENT_PROOF_SCOPE, commit);
+    if (!cached) return false;
+    try {
+      const response = await fetch("/api/user/verify-student", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proof: cached.proof, publicSignals: cached.publicSignals }),
+      });
+      if (response.ok) return true;
+      if (response.status === 400 || response.status === 403) {
+        await invalidateProof(STUDENT_PROOF_SCOPE, commit);
+      }
+    } catch {
+      // network error: fall back to proving
+    }
+    return false;
+  };
+
+  const handleVerify = async () => {
     if (!studentId) return;
     setError(null);
 
@@ -205,12 +235,23 @@ export function StudentDiscountVerification({
       const t = BigInt(studentId.replace(/\D/g, "") || "0");
       const expectedCommit = computeMembershipCommit(t);
 
+      if (await verifyWithCachedProof(expectedCommit)) {
+        setIsProving(false);
+        setIsSuccess(true);
+        saveZkpCache(hashStudentId(studentId.trim()));
+        onVerifiedRef.current?.();
+        return;
+      }
+
       // If worker was terminated (after previous error), respawn it
       if (!workerRef.current) {
         spawnWorker();
       }
 
+      // zkpWorker ignores messages without type "prove": without it the
+      // request was silently dropped and verification never finished.
       workerRef.current?.postMessage({
+        type: "prove",
         identityToken: t.toString(),
         expectedCommit,
       });

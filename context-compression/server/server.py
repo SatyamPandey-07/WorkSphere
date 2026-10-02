@@ -1,14 +1,16 @@
 import asyncio
 import json
 import logging
+import os
 import threading
 import time
 from typing import Any, Dict, Optional
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 try:
     from ..compression.compressor import ContextCompressor
@@ -19,10 +21,13 @@ except (ImportError, ValueError):
 
 logger = logging.getLogger(__name__)
 
+security = HTTPBearer(auto_error=False)
+
 
 def create_app(
     compressor: Optional[ContextCompressor] = None,
     store: Optional[VectorStore] = None,
+    api_key: Optional[str] = None,
 ) -> FastAPI:
     if compressor is None:
         compressor = ContextCompressor()
@@ -50,18 +55,42 @@ def create_app(
         )
         return response
 
-    @app.get("/api/health")
+    def verify_api_key(
+        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    ):
+        expected_key = api_key or os.environ.get("COMPRESSION_API_KEY")
+        if not expected_key:
+            return None
+        if (
+            not credentials
+            or credentials.scheme.lower() != "bearer"
+            or credentials.credentials != expected_key
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized: Invalid or missing API key",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return credentials.credentials
+
+    @app.get("/health")
+    async def root_health():
+        return {"status": "ok"}
+
+    api_router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
+
+    @api_router.get("/health")
     async def health():
         return {"status": "ok"}
 
-    @app.get("/api/stats")
+    @api_router.get("/stats")
     async def stats():
         return {
             "compressor": compressor.get_stats(),
             "store": {"size": store.size()},
         }
 
-    @app.post("/api/add")
+    @api_router.post("/add")
     async def add_message(request: Request):
         try:
             body = await request.json()
@@ -73,7 +102,7 @@ def create_app(
         node_id = compressor.add_message(role, content, metadata)
         return {"node_id": node_id}
 
-    @app.post("/api/search")
+    @api_router.post("/search")
     async def search(request: Request):
         try:
             body = await request.json()
@@ -84,7 +113,7 @@ def create_app(
         results = compressor.get_relevant_context(query, k)
         return {"results": results}
 
-    @app.post("/api/compress")
+    @api_router.post("/compress")
     async def compress(request: Request):
         try:
             body = await request.json()
@@ -101,7 +130,7 @@ def create_app(
             "stats": compressor.get_stats(),
         }
 
-    @app.post("/api/compress/stream")
+    @api_router.post("/compress/stream")
     async def compress_stream(request: Request):
         try:
             body = await request.json()
@@ -150,7 +179,7 @@ def create_app(
             },
         )
 
-    @app.post("/api/deduplicate")
+    @api_router.post("/deduplicate")
     async def deduplicate(request: Request):
         try:
             body = await request.json()
@@ -163,7 +192,7 @@ def create_app(
             "stats": compressor.get_stats(),
         }
 
-    @app.post("/api/store/add")
+    @api_router.post("/store/add")
     async def store_add(request: Request):
         try:
             body = await request.json()
@@ -174,7 +203,7 @@ def create_app(
         node_id = store.add(text, metadata)
         return {"node_id": node_id}
 
-    @app.post("/api/store/search")
+    @api_router.post("/store/search")
     async def store_search(request: Request):
         try:
             body = await request.json()
@@ -185,11 +214,13 @@ def create_app(
         results = store.search(query, k)
         return {"results": results}
 
-    @app.delete("/api/clear")
+    @api_router.delete("/clear")
     async def clear():
         compressor.clear()
         store.clear()
         return {"status": "cleared"}
+
+    app.include_router(api_router)
 
     return app
 
@@ -203,10 +234,12 @@ class CompressionServer:
         max_tokens: int = 4096,
         similarity_threshold: float = 0.85,
         persist_path: Optional[str] = None,
+        api_key: Optional[str] = None,
     ):
         self.host = host
         self.port = port
         self.persist_path = persist_path
+        self.api_key = api_key or os.environ.get("COMPRESSION_API_KEY")
 
         self.compressor = ContextCompressor(
             dimension=dimension,
@@ -214,7 +247,11 @@ class CompressionServer:
             similarity_threshold=similarity_threshold,
         )
         self.store = VectorStore(dimension=dimension)
-        self.app = create_app(compressor=self.compressor, store=self.store)
+        self.app = create_app(
+            compressor=self.compressor,
+            store=self.store,
+            api_key=self.api_key,
+        )
 
         self._server: Optional[uvicorn.Server] = None
         self._thread: Optional[threading.Thread] = None

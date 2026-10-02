@@ -159,6 +159,45 @@ class TestStreamingCompression(unittest.TestCase):
         self.assertIn("x-process-time", response.headers)
         self.assertTrue(response.headers["x-process-time"].endswith("ms"))
 
+    def test_api_key_authentication(self):
+        # 1. When COMPRESSION_API_KEY is not configured
+        app_no_auth = create_app(compressor=self.compressor)
+        client_no_auth = TestClient(app_no_auth)
+        res = client_no_auth.post("/api/compress", json={"query": "quantum"})
+        self.assertEqual(res.status_code, 200)
+
+        # 2. When COMPRESSION_API_KEY is configured
+        app_with_auth = create_app(compressor=self.compressor, api_key="secret-token-123")
+        client_with_auth = TestClient(app_with_auth)
+
+        # Unauthenticated request to /api/compress gets 401
+        res_unauth = client_with_auth.post("/api/compress", json={"query": "quantum"})
+        self.assertEqual(res_unauth.status_code, 401)
+
+        # Invalid token gets 401
+        res_invalid = client_with_auth.post(
+            "/api/compress",
+            json={"query": "quantum"},
+            headers={"Authorization": "Bearer wrong-token"},
+        )
+        self.assertEqual(res_invalid.status_code, 401)
+
+        # Valid token succeeds (200)
+        res_valid = client_with_auth.post(
+            "/api/compress",
+            json={"query": "quantum"},
+            headers={"Authorization": "Bearer secret-token-123"},
+        )
+        self.assertEqual(res_valid.status_code, 200)
+        self.assertIn("compressed", res_valid.json())
+
+        # Public endpoints (/health and /docs) remain accessible without auth
+        res_health = client_with_auth.get("/health")
+        self.assertEqual(res_health.status_code, 200)
+
+        res_docs = client_with_auth.get("/docs")
+        self.assertEqual(res_docs.status_code, 200)
+
     def test_client_server_integration_streaming(self):
         server = CompressionServer(port=8895, dimension=64)
         server.compressor.add_message("user", "Hello streaming world")

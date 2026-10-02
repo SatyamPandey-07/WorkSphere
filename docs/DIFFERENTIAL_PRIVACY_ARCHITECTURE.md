@@ -125,3 +125,58 @@ Because the noise injected on the client side has a mean of zero ($\mu = 0$), ag
 
 1. **Law of Large Numbers**: As $N$ (number of user inputs) grows, the sample mean of the noisy data converges to the true mean of the underlying population.
 2. **Global Density Maps**: Heatmaps and density metrics remain statistically accurate for the venue at a macro level, but no individual user's specific pathway or precise desk location can be reverse-engineered (preventing centroid inversion attacks).
+
+## 6. DP-SGD in the Federated Venue Trainer
+
+The on-device venue recommender (`src/workers/federatedTrainer.worker.ts`) fine-tunes a linear scoring head with SGD on private engagement labels. Raw labels never leave the device, but the trained weights are a function of them — and the planned weight-sync architecture (see `federated-learning-architecture.md`) would upload those weights. To bound what any single interaction can reveal through the weights, every gradient step uses **DP-SGD** (Abadi et al., 2016): per-example L2 clipping followed by Gaussian noise.
+
+### 6.1 Algorithm
+
+For each training example $x_i$ with label $y_i$, the trainer:
+
+1. **Computes the gradient** of the binary cross-entropy loss over all parameters, weights and bias together:
+   $$ g_i = \big[(\hat{y}_i - y_i)\,x_i,\ \hat{y}_i - y_i\big] $$
+2. **Clips to a maximum L2 norm $C$** (`maxGradNorm`), which bounds the sensitivity of a single update:
+   $$ \bar{g}_i = g_i \cdot \min\!\left(1, \frac{C}{\lVert g_i \rVert_2}\right) $$
+3. **Adds Gaussian noise** scaled to that sensitivity, with $\sigma$ = `noiseMultiplier`:
+   $$ \tilde{g}_i = \bar{g}_i + \mathcal{N}(0,\ \sigma^2 C^2 I) $$
+4. **Applies the update**: $\theta \leftarrow \theta - \eta\,\tilde{g}_i$.
+
+Clipping covers the weights and the bias jointly. Clipping only the weights would leave the bias as an unbounded channel that leaks the label.
+
+### 6.2 Configuration
+
+| Field             | Default | Meaning                                                                 |
+| ----------------- | ------- | ----------------------------------------------------------------------- |
+| `enabled`         | `true`  | `false` falls back to plain SGD (no clipping, no noise).                |
+| `maxGradNorm`     | `1.0`   | Per-example clipping bound $C$. Must be finite and `> 0`.               |
+| `noiseMultiplier` | `1.0`   | Noise std is `noiseMultiplier * maxGradNorm`. Must be finite and `>= 0`. |
+
+Defaults live in `DEFAULT_DP_CONFIG` (`src/lib/federated/types.ts`). Override them when you start the trainer:
+
+```typescript
+import { FederatedVenueTrainer } from "@/lib/federated/federatedTrainer";
+
+const trainer = new FederatedVenueTrainer();
+await trainer.init(0.05, { maxGradNorm: 1.0, noiseMultiplier: 1.1 });
+await trainer.train([{ features, label: 1 }]);
+```
+
+The worker validates overrides with `resolveDpConfig`. An invalid value, such as `maxGradNorm: 0`, rejects `init()` and never runs training with a broken privacy guarantee.
+
+### 6.3 Implementation Map
+
+| File                                       | Responsibility                                                                          |
+| ------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `src/lib/federated/differentialPrivacy.ts` | `clipByL2Norm`, `addGaussianNoise`, Box–Muller `sampleStandardNormal`, `secureRandom`, `resolveDpConfig` |
+| `src/lib/federated/linearVenueModel.ts`    | `computeGradient`, `dpSgdStep`, and `trainBatch(model, examples, dp?)`                  |
+| `src/workers/federatedTrainer.worker.ts`   | Holds the resolved config and passes it to every `train` request                        |
+| `src/lib/federated/federatedTrainer.ts`    | Main-thread client; forwards `dp` overrides in the `init` message                       |
+
+**Randomness:** noise comes from `crypto.getRandomValues` (available in Web Workers). The DP guarantee assumes an adversary can't predict the noise, so `Math.random` is used only as a fallback when Web Crypto is unavailable. Every noise function also accepts an injectable `RandomSource`, which keeps the tests deterministic.
+
+### 6.4 Privacy / Utility Trade-off
+
+- The noise is zero-mean, so it averages out across many steps while each individual update stays masked. Higher `noiseMultiplier` gives stronger privacy and slower, noisier personalization.
+- A lower `maxGradNorm` reduces the noise added in absolute terms, but it also clips informative gradients more aggressively. `1.0` is the conventional starting point.
+- The overall $(\epsilon, \delta)$ guarantee depends on $\sigma$, the number of steps, and the sampling rate, under composition. The trainer does not yet run a privacy accountant (such as RDP / moments accountant). Add one before weights are shared off-device, and enforce a budget the same way §4 does for telemetry.

@@ -5,6 +5,7 @@ import {
   dataAgent,
   reasoningAgent,
   actionAgent,
+  parseSearchQuery,
 } from "@/lib/ai/chatAgents";
 import { auth } from "@clerk/nextjs/server";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
@@ -306,14 +307,107 @@ describe("5-Agent Pipeline Unit Tests", () => {
   });
 
   describe("Data Agent", () => {
-    it("should query Overpass API or fallback to simulation if Overpass fails", async () => {
+    it("never fabricates venues when OpenStreetMap is unavailable", async () => {
       (global.fetch as any).mockRejectedValue(new Error("Network Error"));
+      (prisma.venue.findMany as any).mockResolvedValue([]);
 
       const data = await dataAgent({
         location: { lat: 37.7749, lng: -122.4194 },
       });
-      expect(data.venues.length).toBeGreaterThan(0);
-      expect(data.meta.source).toBe("Simulation Fallback");
+      expect(data.venues).toEqual([]);
+      expect(data.meta.source).toBe("WorkSphere");
+      expect(data.meta.highTraffic).toBe(true);
+    });
+
+    it("merges WorkSphere venues with OpenStreetMap places and de-duplicates", async () => {
+      (prisma.venue.findMany as any).mockResolvedValue([
+        {
+          id: "db-1",
+          placeId: "osm-1",
+          name: "Blue Bottle",
+          latitude: 37.7751,
+          longitude: -122.4192,
+          category: "cafe",
+          address: "1 Market St",
+          wifiQuality: 5,
+          wifiSpeed: 120,
+          hasOutlets: true,
+          noiseLevel: "quiet",
+          rating: 4.6,
+          openingHours: null,
+          hasErgonomic: false,
+          outletDensity: "every_table",
+          hasPhoneBooths: false,
+          hasNoMusic: false,
+          hasQuietZone: false,
+          hasAncHeadsetRental: false,
+          _count: { ratings: 3 },
+        },
+      ]);
+      (global.fetch as any).mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          elements: [
+            {
+              id: "osm-1",
+              lat: 37.7751,
+              lon: -122.4192,
+              tags: { name: "Blue Bottle", amenity: "cafe" },
+            },
+            {
+              id: 2,
+              lat: 37.776,
+              lon: -122.418,
+              tags: { name: "City Library", amenity: "library" },
+            },
+          ],
+        }),
+      });
+
+      const data = await dataAgent({
+        location: { lat: 37.7749, lng: -122.4194 },
+      });
+      expect(data.venues.map((v) => v.name).sort()).toEqual([
+        "Blue Bottle",
+        "City Library",
+      ]);
+      expect(data.venues.find((v) => v.name === "Blue Bottle")?.source).toBe(
+        "worksphere",
+      );
+      expect(data.meta.sources).toEqual({ worksphere: 1, openstreetmap: 1 });
+    });
+  });
+
+  describe("Keyword query parsing (no LLM)", () => {
+    it("extracts categories, amenities, work type and radius", () => {
+      const { isSearch, parameters } = parseSearchQuery(
+        "quiet cafe or library with outlets for zoom calls within 3 km",
+      );
+      expect(isSearch).toBe(true);
+      expect(parameters.category.sort()).toEqual(["cafe", "library"]);
+      expect(parameters.amenities).toEqual(
+        expect.arrayContaining(["quiet", "outlets"]),
+      );
+      expect(parameters.workType).toBe("calls");
+      expect(parameters.radius).toBe(3000);
+    });
+
+    it("treats greetings as conversation", () => {
+      expect(parseSearchQuery("hello there!").isSearch).toBe(false);
+    });
+
+    it("routes searches without an LLM key", async () => {
+      const saved = process.env.GROQ_API_KEY;
+      delete process.env.GROQ_API_KEY;
+      mockCreateCompletions.mockClear();
+      try {
+        const decision = await orchestratorAgent("coworking space near me");
+        expect(decision.skipAgents).toBe(false);
+        expect(decision.parameters?.category).toEqual(["coworking"]);
+        expect(mockCreateCompletions).not.toHaveBeenCalled();
+      } finally {
+        process.env.GROQ_API_KEY = saved;
+      }
     });
   });
 

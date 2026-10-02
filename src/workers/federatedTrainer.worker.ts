@@ -1,7 +1,7 @@
 /**
  * Federated venue trainer Web Worker (#1022).
  *
- * Runs SGD gradient updates + personalized scoring off the main thread.
+ * Runs DP-SGD gradient updates (#1563) + personalized scoring off the main thread.
  * Model weights persist in IndexedDB; raw telemetry never leaves the device.
  */
 
@@ -10,6 +10,7 @@ import {
   featuresToOnnxTensor,
   warmupOnnxWasm,
 } from "../lib/federated/onnxBridge";
+import { resolveDpConfig } from "../lib/federated/differentialPrivacy";
 import {
   createInitialModel,
   featuresFromArray,
@@ -20,11 +21,13 @@ import {
 import { loadWeights, saveWeights } from "../lib/federated/weightDb";
 import {
   FEATURE_DIM,
+  type DifferentialPrivacyConfig,
   type FederatedWorkerRequest,
   type FederatedWorkerResponse,
 } from "../lib/federated/types";
 
 let model: LinearVenueModelState | null = null;
+let dpConfig: DifferentialPrivacyConfig = resolveDpConfig();
 
 async function ensureModel(learningRate?: number): Promise<LinearVenueModelState> {
   configureOnnxWasm();
@@ -67,6 +70,7 @@ self.onmessage = async (event: MessageEvent<FederatedWorkerRequest>) => {
   try {
     switch (msg.type) {
       case "init": {
+        if (msg.dp) dpConfig = resolveDpConfig(msg.dp);
         const m = await ensureModel(msg.learningRate);
         reply({ type: "ready", id: msg.id, weightCount: m.weights.length });
         break;
@@ -96,7 +100,7 @@ self.onmessage = async (event: MessageEvent<FederatedWorkerRequest>) => {
           features: featuresFromArray(ex.features),
           label: ex.label,
         }));
-        const steps = trainBatch(m, examples);
+        const steps = trainBatch(m, examples, dpConfig);
         await persist();
         reply({ type: "trained", id: msg.id, steps });
         break;

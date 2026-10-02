@@ -1,8 +1,12 @@
-import { Redis } from "@upstash/redis";
+import { getRedis } from "@/lib/redis";
 import { WebhookEvent } from "./schemas";
 
-// The redis instance will automatically pick up UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN from env
-const redis = Redis.fromEnv();
+// Resolved lazily so importing this module never throws when Redis is not configured.
+function requireRedis() {
+  const redis = getRedis();
+  if (!redis) throw new Error("Redis is not configured");
+  return redis;
+}
 const WEBHOOK_QUEUE_KEY = "work-sphere:webhook-events-queue";
 const WEBHOOK_PROCESSING_QUEUE_KEY = "work-sphere:webhook-events-processing";
 
@@ -20,7 +24,7 @@ export const EventBus = {
       };
 
       // Push to the background queue (left push)
-      await redis.lpush(WEBHOOK_QUEUE_KEY, JSON.stringify(fullEvent));
+      await requireRedis().lpush(WEBHOOK_QUEUE_KEY, JSON.stringify(fullEvent));
 
       console.log(`[EventBus] Emitted event ${fullEvent.type} to queue.`);
     } catch (error) {
@@ -35,7 +39,7 @@ export const EventBus = {
   popEvent: async (): Promise<WebhookEvent | null> => {
     try {
       // Pop from the right side of the list and push to the processing list
-      const raw = await redis.lmove(
+      const raw = await requireRedis().lmove(
         WEBHOOK_QUEUE_KEY,
         WEBHOOK_PROCESSING_QUEUE_KEY,
         "right",
@@ -61,7 +65,11 @@ export const EventBus = {
    */
   ackEvent: async (event: WebhookEvent) => {
     try {
-      await redis.lrem(WEBHOOK_PROCESSING_QUEUE_KEY, 1, JSON.stringify(event));
+      await requireRedis().lrem(
+        WEBHOOK_PROCESSING_QUEUE_KEY,
+        1,
+        JSON.stringify(event),
+      );
     } catch (error) {
       console.error("[EventBus] Failed to acknowledge event:", error);
     }
@@ -72,7 +80,7 @@ export const EventBus = {
    */
   recoverStaleEvents: async () => {
     try {
-      const processingEvents = await redis.lrange(
+      const processingEvents = await requireRedis().lrange(
         WEBHOOK_PROCESSING_QUEUE_KEY,
         0,
         -1,
@@ -93,8 +101,12 @@ export const EventBus = {
             console.log(
               `[EventBus] Webhook event ${event.id} is stale (age: ${Math.round(age / 1000)}s). Re-queuing...`,
             );
-            await redis.lpush(WEBHOOK_QUEUE_KEY, eventStr);
-            await redis.lrem(WEBHOOK_PROCESSING_QUEUE_KEY, 1, eventStr);
+            await requireRedis().lpush(WEBHOOK_QUEUE_KEY, eventStr);
+            await requireRedis().lrem(
+              WEBHOOK_PROCESSING_QUEUE_KEY,
+              1,
+              eventStr,
+            );
           }
         } catch (err) {
           console.error("[EventBus] Error parsing stale event:", eventStr, err);

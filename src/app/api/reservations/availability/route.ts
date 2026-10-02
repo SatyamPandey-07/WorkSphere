@@ -1,38 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureVenueLayout } from "@/lib/reservations/seed-layout";
-
-function toMinutes(value: string) {
-  const [hours, minutes] = value.split(":").map(Number);
-  return hours * 60 + minutes;
-}
-
-function overlaps(
-  bookingTime: string,
-  bookingDuration: number,
-  requestedTime: string,
-  requestedDuration: number,
-) {
-  const bookingStart = toMinutes(bookingTime);
-  const bookingEnd = bookingStart + bookingDuration;
-  const requestedStart = toMinutes(requestedTime);
-  const requestedEnd = requestedStart + requestedDuration;
-
-  return bookingStart < requestedEnd && requestedStart < bookingEnd;
-}
+import {
+  isValidBookingDate,
+  isValidTimeZone,
+  normalizeBookingTime,
+} from "@/lib/bookingTime";
+import {
+  conflictDateWindow,
+  findConflictingBookings,
+} from "@/lib/bookingOverlap";
 
 export async function GET(request: NextRequest) {
   const venueId = request.nextUrl.searchParams.get("venueId");
   const date = request.nextUrl.searchParams.get("date");
-  const time = request.nextUrl.searchParams.get("time");
+  const rawTime = request.nextUrl.searchParams.get("time");
   const duration = Number(request.nextUrl.searchParams.get("duration") ?? 60);
+  const rawTimeZone = request.nextUrl.searchParams.get("timeZone");
 
-  if (!venueId || !date || !time || !Number.isFinite(duration) || duration <= 0) {
+  if (!venueId || !date || !rawTime || !Number.isFinite(duration) || duration <= 0) {
     return NextResponse.json(
       { error: "venueId, date, time and positive duration are required" },
       { status: 400 },
     );
   }
+
+  // Validate like the booking endpoints do. An unparseable time used to turn
+  // into NaN, which made every comparison false and showed every seat as free.
+  const time = normalizeBookingTime(rawTime);
+  if (
+    !isValidBookingDate(date) ||
+    !time ||
+    !Number.isInteger(duration) ||
+    duration > 480
+  ) {
+    return NextResponse.json(
+      { error: "Invalid date, time or duration" },
+      { status: 400 },
+    );
+  }
+  const timeZone = isValidTimeZone(rawTimeZone) ? rawTimeZone : "UTC";
 
   const venue = await prisma.venue.findUnique({
     where: { id: venueId },
@@ -61,7 +68,9 @@ export async function GET(request: NextRequest) {
     prisma.booking.findMany({
       where: {
         venueId,
-        date,
+        // Include neighbouring dates: a booking that runs past midnight or was
+        // made in another timezone is stored under a different date string.
+        date: { in: conflictDateWindow(date) },
         status: {
           in: ["CONFIRMED", "PENDING"],
         },
@@ -71,22 +80,16 @@ export async function GET(request: NextRequest) {
       },
       select: {
         seatId: true,
+        date: true,
         time: true,
         duration: true,
+        timeZone: true,
       },
     }),
   ]);
 
   const unavailableSeatIds = new Set(
-    bookings
-      .filter((booking) =>
-        overlaps(
-          booking.time,
-          booking.duration ?? 60,
-          time,
-          duration,
-        ),
-      )
+    findConflictingBookings({ date, time, timeZone, duration }, bookings)
       .map((booking) => booking.seatId)
       .filter((seatId): seatId is string => Boolean(seatId)),
   );
@@ -95,6 +98,7 @@ export async function GET(request: NextRequest) {
     venue,
     date,
     time,
+    timeZone,
     duration,
     seats: seats.map((seat) => ({
       ...seat,

@@ -1,40 +1,170 @@
 import asyncio
 import json
 import logging
-import os
 import threading
+from contextlib import asynccontextmanager
+from pathlib import Path
 import time
 from typing import Any, Dict, Optional
 
 import uvicorn
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 try:
     from ..compression.compressor import ContextCompressor
     from ..storage.store import VectorStore
+    from .schemas import (
+        AddMessageRequest,
+        CompressRequest,
+        CompressResponse,
+        DeduplicateRequest,
+        HealthResponse,
+        MetricsResponse,
+        SearchRequest,
+        StoreAddRequest,
+    )
 except (ImportError, ValueError):
     from compression.compressor import ContextCompressor
     from storage.store import VectorStore
+    try:
+        from server.schemas import (
+            AddMessageRequest,
+            CompressRequest,
+            CompressResponse,
+            DeduplicateRequest,
+            HealthResponse,
+            MetricsResponse,
+            SearchRequest,
+            StoreAddRequest,
+        )
+    except (ImportError, ValueError):
+        from schemas import (
+            AddMessageRequest,
+            CompressRequest,
+            CompressResponse,
+            DeduplicateRequest,
+            HealthResponse,
+            MetricsResponse,
+            SearchRequest,
+            StoreAddRequest,
+        )
 
 logger = logging.getLogger(__name__)
 
-security = HTTPBearer(auto_error=False)
+_SERVICE_VERSION: Optional[str] = None
+_VERSION_INITIALIZED: bool = False
+
+
+def get_service_version() -> Optional[str]:
+    global _SERVICE_VERSION, _VERSION_INITIALIZED
+    if not _VERSION_INITIALIZED:
+        try:
+            pkg_path = Path(__file__).resolve().parents[2] / "package.json"
+            if pkg_path.is_file():
+                with open(pkg_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    _SERVICE_VERSION = data.get("version")
+        except Exception:
+            _SERVICE_VERSION = None
+        _VERSION_INITIALIZED = True
+    return _SERVICE_VERSION
+
+
+def get_memory_rss_mb() -> float:
+    # 1. psutil (preferred if installed)
+    try:
+        import psutil
+
+        process = psutil.Process()
+        return round(process.memory_info().rss / (1024 * 1024), 2)
+    except Exception:
+        pass
+
+    # 2. Linux /proc/self/status
+    try:
+        with open("/proc/self/status", "r") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    parts = line.split()
+                    return round(float(parts[1]) / 1024.0, 2)
+    except Exception:
+        pass
+
+    # 3. Windows ctypes K32GetProcessMemoryInfo
+    try:
+        import ctypes
+        import ctypes.wintypes
+
+        class PROCESS_MEMORY_COUNTERS_EX(ctypes.Structure):
+            _fields_ = [
+                ("cb", ctypes.wintypes.DWORD),
+                ("PageFaultCount", ctypes.wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+                ("PrivateUsage", ctypes.c_size_t),
+            ]
+
+        fn = getattr(ctypes.windll.kernel32, "K32GetProcessMemoryInfo", None)
+        if fn is None and hasattr(ctypes.windll, "psapi"):
+            fn = getattr(ctypes.windll.psapi, "GetProcessMemoryInfo", None)
+
+        if fn:
+            fn.argtypes = [
+                ctypes.wintypes.HANDLE,
+                ctypes.POINTER(PROCESS_MEMORY_COUNTERS_EX),
+                ctypes.wintypes.DWORD,
+            ]
+            fn.restype = ctypes.wintypes.BOOL
+            counters = PROCESS_MEMORY_COUNTERS_EX()
+            counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS_EX)
+            handle = ctypes.windll.kernel32.GetCurrentProcess()
+            if fn(handle, ctypes.byref(counters), counters.cb):
+                return round(counters.WorkingSetSize / (1024 * 1024), 2)
+    except Exception:
+        pass
+
+    # 4. Unix resource.getrusage (macOS / BSD / Unix)
+    try:
+        import resource
+        import sys
+
+        rusage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if sys.platform == "darwin":
+            return round(rusage / (1024 * 1024), 2)
+        else:
+            return round(rusage / 1024.0, 2)
+    except Exception:
+        pass
+
+    return 0.0
 
 
 def create_app(
     compressor: Optional[ContextCompressor] = None,
     store: Optional[VectorStore] = None,
-    api_key: Optional[str] = None,
 ) -> FastAPI:
     if compressor is None:
         compressor = ContextCompressor()
     if store is None:
         store = VectorStore()
 
-    app = FastAPI(title="Context Compression Server")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        app.state.start_time = time.monotonic()
+        yield
+
+    app = FastAPI(title="Context Compression Server", lifespan=lifespan)
+    app.state.start_time = time.monotonic()
+    app.state.compressor = compressor
+    app.state.store = store
 
     app.add_middleware(
         CORSMiddleware,
@@ -44,85 +174,74 @@ def create_app(
         allow_headers=["*"],
     )
 
-    @app.middleware("http")
-    async def add_process_time_header(request: Request, call_next):
-        start_time = time.perf_counter()
-        response = await call_next(request)
-        process_time_ms = (time.perf_counter() - start_time) * 1000
-        response.headers["X-Process-Time"] = f"{process_time_ms:.2f}ms"
-        logger.info(
-            f"{request.method} {request.url.path} - Status: {response.status_code} - Duration: {process_time_ms:.2f}ms"
+    @app.get("/health", response_model=HealthResponse)
+    async def get_health():
+        start_time = getattr(app.state, "start_time", None)
+        if start_time is None:
+            start_time = time.monotonic()
+            app.state.start_time = start_time
+        uptime = max(0.0, time.monotonic() - start_time)
+        return HealthResponse(
+            status="ok",
+            uptime_seconds=uptime,
+            version=get_service_version(),
         )
-        return response
 
-    def verify_api_key(
-        credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
-    ):
-        expected_key = api_key or os.environ.get("COMPRESSION_API_KEY")
-        if not expected_key:
-            return None
-        if (
-            not credentials
-            or credentials.scheme.lower() != "bearer"
-            or credentials.credentials != expected_key
+    @app.get("/api/metrics", response_model=MetricsResponse)
+    async def get_metrics():
+        active_store = getattr(app.state, "store", store)
+        active_compressor = getattr(app.state, "compressor", compressor)
+        v_count = (
+            active_store.size()
+            if hasattr(active_store, "size") and callable(active_store.size)
+            else 0
+        )
+        if hasattr(active_compressor, "get_stats") and callable(
+            active_compressor.get_stats
         ):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Unauthorized: Invalid or missing API key",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        return credentials.credentials
+            t_messages = active_compressor.get_stats().get("total_messages", 0)
+        elif hasattr(active_compressor, "_messages"):
+            t_messages = len(active_compressor._messages)
+        else:
+            t_messages = 0
+        dim = getattr(
+            active_store,
+            "dimension",
+            getattr(active_compressor, "dimension", 128),
+        )
+        rss = get_memory_rss_mb()
+        return MetricsResponse(
+            vector_count=v_count,
+            total_messages=t_messages,
+            dimension=dim,
+            memory_rss_mb=rss,
+        )
 
-    @app.get("/health")
-    async def root_health():
-        return {"status": "ok"}
-
-    api_router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
-
-    @api_router.get("/health")
+    @app.get("/api/health")
     async def health():
         return {"status": "ok"}
 
-    @api_router.get("/stats")
+    @app.get("/api/stats")
     async def stats():
         return {
             "compressor": compressor.get_stats(),
             "store": {"size": store.size()},
         }
 
-    @api_router.post("/add")
-    async def add_message(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        role = body.get("role", "user")
-        content = body.get("content", "")
-        metadata = body.get("metadata")
-        node_id = compressor.add_message(role, content, metadata)
+    @app.post("/api/add")
+    async def add_message(request: AddMessageRequest):
+        node_id = compressor.add_message(request.role, request.content, request.metadata)
         return {"node_id": node_id}
 
-    @api_router.post("/search")
-    async def search(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        k = body.get("k", 10)
-        results = compressor.get_relevant_context(query, k)
+    @app.post("/api/search")
+    async def search(request: SearchRequest):
+        results = compressor.get_relevant_context(request.query, request.k)
         return {"results": results}
 
-    @api_router.post("/compress")
-    async def compress(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        max_tokens = body.get("max_tokens")
+    @app.post("/api/compress", response_model=CompressResponse)
+    async def compress(request: CompressRequest):
         result, tokens = compressor.compress_context(
-            query, max_tokens=max_tokens
+            request.query, max_tokens=request.max_tokens
         )
         return {
             "compressed": result,
@@ -138,6 +257,19 @@ def create_app(
             body = {}
         query = body.get("query", "")
         max_tokens = body.get("max_tokens")
+    @app.post("/api/compress/stream")
+    async def compress_stream(
+        payload: CompressRequest,
+        request: Request = None,
+    ):
+        if not isinstance(payload, CompressRequest):
+            raw_req = payload
+            data = await raw_req.json()
+            payload = CompressRequest.model_validate(data)
+            request = raw_req
+
+        query = payload.query
+        max_tokens = payload.max_tokens
 
         async def event_generator():
             try:

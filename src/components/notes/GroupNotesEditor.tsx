@@ -156,7 +156,10 @@ export function GroupNotesEditor({
       ydoc.off("update", onUpdate);
       provider.off("status", onStatus);
       provider.off("sync", onSync);
-      provider.disconnect();
+      // provider.destroy() closes the underlying WebSocket and removes all
+      // internal Yjs bindings — more thorough than disconnect() alone, which
+      // only stops reconnection without guaranteed socket closure.
+      provider.destroy();
       ydoc.destroy();
       yDocRef.current = null;
       yTextRef.current = null;

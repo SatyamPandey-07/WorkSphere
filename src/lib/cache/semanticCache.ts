@@ -51,30 +51,23 @@ export async function checkSemanticCache(
     let results: any[];
 
     if (locationStr) {
-      results = await prisma.$queryRawUnsafe(
-        `
-        SELECT "response", 1 - ("embedding" <=> $1::vector) as similarity
+      results = await prisma.$queryRaw<{ response: string; similarity: number }[]>`
+        SELECT "response", 1 - ("embedding" <=> ${embeddingString}::vector) as similarity
         FROM "SemanticCache"
-        WHERE "location" = $2 
-          AND 1 - ("embedding" <=> $1::vector) > 0.85
+        WHERE "location" = ${locationStr}
+          AND 1 - ("embedding" <=> ${embeddingString}::vector) > 0.85
         ORDER BY similarity DESC
         LIMIT 1
-        `,
-        embeddingString,
-        locationStr,
-      );
+      `;
     } else {
-      results = await prisma.$queryRawUnsafe(
-        `
-        SELECT "response", 1 - ("embedding" <=> $1::vector) as similarity
+      results = await prisma.$queryRaw<{ response: string; similarity: number }[]>`
+        SELECT "response", 1 - ("embedding" <=> ${embeddingString}::vector) as similarity
         FROM "SemanticCache"
-        WHERE "location" IS NULL 
-          AND 1 - ("embedding" <=> $1::vector) > 0.85
+        WHERE "location" IS NULL
+          AND 1 - ("embedding" <=> ${embeddingString}::vector) > 0.85
         ORDER BY similarity DESC
         LIMIT 1
-        `,
-        embeddingString,
-      );
+      `;
     }
 
     if (results && results.length > 0) {

@@ -160,12 +160,13 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
     const bestNode = selectBestNode(REGION_NODES, clientRegion);
 
     let isViewer = false;
+    let userId: string | undefined;
 
     if (token) {
       try {
         const secretKey = process.env.CLERK_SECRET_KEY;
         const verifiedToken = await verifyToken(token, { secretKey });
-        const userId = verifiedToken.sub;
+        userId = verifiedToken.sub;
 
         if (this.room.id.startsWith("canvas-")) {
           isViewer = false;
@@ -198,6 +199,7 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
     }
 
     conn.setState({
+      userId,
       role: isViewer ? "VIEWER" : "EDITOR",
       region: clientRegion,
     });
@@ -283,7 +285,7 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
   }
 
   onMessage(message: string, sender: Party.Connection) {
-    const state = sender.state as { role?: string; region?: Region };
+    const state = sender.state as { userId?: string; role?: string; region?: Region };
 
     try {
       const parsed = JSON.parse(message);

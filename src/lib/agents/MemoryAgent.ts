@@ -1,9 +1,20 @@
 import { prisma } from "@/lib/prisma";
 import { Groq } from "groq-sdk";
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY || "dummy-key-for-build",
-});
+let _groq: Groq | null = null;
+
+function getGroqClient(): Groq {
+  if (!_groq) {
+    const groqApiKey = process.env.GROQ_API_KEY;
+    if (!groqApiKey) {
+      throw new Error("GROQ_API_KEY is not configured");
+    }
+    _groq = new Groq({
+      apiKey: groqApiKey,
+    });
+  }
+  return _groq;
+}
 
 export async function extractAndStoreMemories(conversationId: string) {
   const conversation = await prisma.conversation.findUnique({
@@ -40,7 +51,7 @@ I prefer quiet places.
 ${transcript}
 </transcript>`;
 
-  const completion = await groq.chat.completions.create({
+  const completion = await getGroqClient().chat.completions.create({
     messages: [
       { role: "system", content: systemInstruction },
       { role: "user", content: userContent },
@@ -49,7 +60,8 @@ ${transcript}
     temperature: 0,
   });
 
-  const responseText = completion.choices[0]?.message?.content?.trim() || "";
+  const responseText =
+    completion.choices[0]?.message?.content?.trim() || "";
 
   if (responseText === "NO_PREFERENCES" || responseText === "") {
     return { status: "no_preferences" };
@@ -57,18 +69,28 @@ ${transcript}
 
   const preferences = responseText
     .split("\n")
-    .filter((p) => p.trim().length > 0 && p.trim() !== "NO_PREFERENCES");
+    .map((p) => p.replace(/^[-*•\d.]\s*/, "").trim())
+    .filter(
+      (p) =>
+        p.length > 0 &&
+        p !== "NO_PREFERENCES" &&
+        p.length <= 500,
+    );
+
+  const cohereApiKey = process.env.COHERE_API_KEY;
+
+  if (!cohereApiKey) {
+    throw new Error("COHERE_API_KEY is not configured");
+  }
 
   const storedMemories = [];
 
-  for (const pref of preferences) {
-    const prefClean = pref.replace(/^[-*•\d.]\s*/, "").trim();
-
+  for (const prefClean of preferences) {
     // Generate embedding using Cohere
     const embedRes = await fetch("https://api.cohere.ai/v1/embed", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.COHERE_API_KEY}`,
+        Authorization: `Bearer ${cohereApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -152,9 +174,11 @@ export async function updateUserPreferencesSummary(
     }
 
     const memoryText = memories.map((m) => m.content).join(", ");
+
     const favoritesText = favorites
       .map((f) => `${f.venue.name} (${f.venue.category})`)
       .join(", ");
+
     const ratingsText = ratings
       .map((r) => {
         return `${r.venue.name}: rated WiFi ${r.wifiQuality}/5, Noise: ${r.noiseLevel}, Outlets: ${r.hasOutlets ? "yes" : "no"}`;
@@ -183,7 +207,7 @@ ${ratingsText || "None"}
 
 Summary:`;
 
-    const completion = await groq.chat.completions.create({
+    const completion = await getGroqClient().chat.completions.create({
       messages: [
         { role: "system", content: systemInstruction },
         { role: "user", content: userContent },
@@ -192,18 +216,21 @@ Summary:`;
       temperature: 0.3,
     });
 
-    const summary = completion.choices[0]?.message?.content?.trim() || "";
+    const summary =
+      completion.choices[0]?.message?.content?.trim() || "";
 
     if (summary) {
       await prisma.user.update({
         where: { id: userId },
         data: { preferencesSummary: summary },
       });
+
       return summary;
     }
   } catch (error) {
     console.error("Error updating user preferences summary:", error);
   }
+
   return null;
 }
 
@@ -227,10 +254,16 @@ export async function getRelevantMemory(
     }
 
     // Generate embedding for current query
+    const cohereApiKey = process.env.COHERE_API_KEY;
+
+    if (!cohereApiKey) {
+      return memoryContext;
+    }
+
     const embedRes = await fetch("https://api.cohere.ai/v1/embed", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.COHERE_API_KEY}`,
+        Authorization: `Bearer ${cohereApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -248,18 +281,16 @@ export async function getRelevantMemory(
     const embedding = embedData.embeddings[0];
     const embeddingString = `[${embedding.join(",")}]`;
 
-    const memories: any[] = await prisma.$queryRawUnsafe(
-      `
+    const memories = await prisma.$queryRaw<
+      { content: string; similarity: number }[]
+    >`
       SELECT content,
-             1 - (embedding <=> $1::vector) AS similarity
+             1 - (embedding <=> ${embeddingString}::vector) AS similarity
       FROM "UserMemory"
-      WHERE "userId" = $2
-      ORDER BY embedding <=> $1::vector
+      WHERE "userId" = ${userId}
+      ORDER BY embedding <=> ${embeddingString}::vector
       LIMIT 3
-      `,
-      embeddingString,
-      userId,
-    );
+    `;
 
     if (memories.length > 0) {
       memoryContext +=

@@ -63,7 +63,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       }
       recentMessagesRef.current.set(message, now);
 
-      const id = `${now}-${Math.random().toString(36).slice(2, 9)}-${recentMessagesRef.current.size}`;
+      const id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${now}-${Math.random().toString(36).slice(2, 9)}-${recentMessagesRef.current.size}`;
       setToasts((prev) => {
         if (countdown !== undefined && message.includes("Rate limit")) {
           const existingIndex = prev.findIndex(

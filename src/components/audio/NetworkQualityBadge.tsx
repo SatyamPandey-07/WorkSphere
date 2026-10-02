@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useRef, useCallback } from "react";
 import { SignalHigh, SignalLow, SignalMedium } from "lucide-react";
 
 export type NetworkQualityTier = "good" | "fair" | "poor" | "unknown";
@@ -136,11 +137,46 @@ export function NetworkQualityBadge({
       ? `${details.label} network quality · ${measurements.join(" · ")}`
       : `${details.label} network quality`;
 
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipStyle, setTooltipStyle] = useState<React.CSSProperties>({});
+  const badgeRef = useRef<HTMLDivElement>(null);
+
+  const positionTooltip = useCallback(() => {
+    if (!badgeRef.current) return;
+    const rect = badgeRef.current.getBoundingClientRect();
+    const tooltipWidth = 200;
+    let left = rect.left + rect.width / 2 - tooltipWidth / 2;
+
+    if (left < 8) left = 8;
+    if (left + tooltipWidth > window.innerWidth - 8) {
+      left = window.innerWidth - 8 - tooltipWidth;
+    }
+
+    setTooltipStyle({
+      position: "fixed",
+      top: rect.bottom + 6,
+      left,
+      width: tooltipWidth,
+    });
+  }, []);
+
+  const handleEnter = () => {
+    positionTooltip();
+    setShowTooltip(true);
+  };
+
+  const handleLeave = () => setShowTooltip(false);
+
   return (
     <div
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium transition-colors ${details.bgColor} ${details.borderColor} ${details.textColor} ${className}`}
-      title={tooltip}
+      ref={badgeRef}
+      className={`relative inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium transition-colors ${details.bgColor} ${details.borderColor} ${details.textColor} ${className}`}
       aria-label={tooltip}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
+      onFocus={handleEnter}
+      onBlur={handleLeave}
+      tabIndex={0}
     >
       {details.icon}
 
@@ -156,6 +192,16 @@ export function NetworkQualityBadge({
         <span className="font-mono text-[10px] opacity-75">
           {(packetLoss as number).toFixed(1)}%
         </span>
+      )}
+
+      {showTooltip && (
+        <div
+          role="tooltip"
+          style={tooltipStyle}
+          className="z-50 px-2.5 py-1.5 text-[11px] font-medium text-zinc-100 bg-zinc-900 dark:bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg pointer-events-none"
+        >
+          {tooltip}
+        </div>
       )}
     </div>
   );

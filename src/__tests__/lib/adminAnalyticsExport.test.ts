@@ -1,3 +1,4 @@
+import { PDFDocument } from "pdf-lib";
 import {
   generateAnalyticsCSV,
   downloadAnalyticsCSV,
@@ -114,6 +115,37 @@ describe("Client-side Admin Analytics CSV & PDF Export (#1530)", () => {
       expect(blob).toBeInstanceOf(Blob);
       expect(blob.type).toBe("application/pdf");
       expect(global.URL.createObjectURL).toHaveBeenCalled();
+    });
+
+    it("generates a multi-page PDF when the venue leaderboard exceeds one page height (#1930)", async () => {
+      // Build 50 venue rows — far more than fit on a single A4 page after the
+      // fixed header/overview/section-heading content (~300 pt overhead).
+      // Each leaderboard row occupies 20 pt; 50 rows = 1000 pt which forces at
+      // least one additional page via the ensureSpace() pagination mechanism.
+      const largeLeaderboard: AnalyticsExportData["venueLeaderboard"] =
+        Array.from({ length: 50 }, (_, i) => ({
+          id: `v-${i + 1}`,
+          name: `Test Venue ${String(i + 1).padStart(3, "0")}`,
+          category: i % 2 === 0 ? "coworking" : "cafe",
+          views: 100 + i * 3,
+          bookings: 10 + i,
+          rating: 3.5 + (i % 15) * 0.1,
+          score: 50 + i,
+        }));
+
+      const multiPageData: AnalyticsExportData = {
+        ...mockAnalyticsData,
+        venueLeaderboard: largeLeaderboard,
+      };
+
+      const pdfBytes = await generateAnalyticsPdfReport(multiPageData);
+
+      // Re-parse the raw bytes through pdf-lib to count actual rendered pages.
+      // This is NOT a mock — it exercises the real pagination path end-to-end.
+      const parsedDoc = await PDFDocument.load(pdfBytes);
+      const pageCount = parsedDoc.getPageCount();
+
+      expect(pageCount).toBeGreaterThanOrEqual(2);
     });
   });
 });

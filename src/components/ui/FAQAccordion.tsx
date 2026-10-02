@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface FAQItem {
   question: string;
@@ -52,7 +53,12 @@ const faqs: FAQItem[] = [
   },
 ];
 
-export default function FAQAccordion() {
+interface FAQAccordionProps {
+  /** Optional Tailwind classes to override or extend the outer wrapper */
+  className?: string;
+}
+
+export default function FAQAccordion({ className }: FAQAccordionProps = {}) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   const toggleItem = (index: number) => {
@@ -60,7 +66,7 @@ export default function FAQAccordion() {
   };
 
   return (
-    <div className="w-full max-w-3xl mx-auto my-24 px-6">
+    <div className={cn("w-full max-w-3xl mx-auto my-24 px-6", className)}>
       <div className="text-center mb-12">
         <span className="text-xs font-semibold tracking-widest text-blue-600 dark:text-blue-400 uppercase">
           Got Questions?

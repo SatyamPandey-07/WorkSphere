@@ -33,7 +33,7 @@ export default async function AdminFeedbackPage() {
                 <AlertCircle className="h-5 w-5 text-red-500" />
               </div>
               <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">Authorization Error</h3>
+               <h3 className="text-sm font-medium text-red-800">Failed to Load Feedback</h3>
                 <div className="mt-1 text-sm text-red-700">
                   <p>{error}</p>
                 </div>

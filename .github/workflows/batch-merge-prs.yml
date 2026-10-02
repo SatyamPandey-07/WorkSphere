@@ -1,0 +1,185 @@
+name: Batch Merge Unlinked PRs
+
+on:
+  workflow_dispatch:
+    inputs:
+      tracking_issue:
+        description: 'Issue number to link all merged PRs to (e.g. 3302)'
+        required: true
+        default: '3302'
+      max_prs:
+        description: 'Maximum number of PRs to merge in this run (recommended: 20-50)'
+        required: true
+        default: '25'
+      sort_order:
+        description: 'Order to process PRs'
+        type: choice
+        options:
+          - 'oldest-first'
+          - 'newest-first'
+        default: 'oldest-first'
+      dry_run:
+        description: 'Dry run mode (check mergeability without merging)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  batch-merge:
+    name: Batch Merge PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Process & Merge Conflict-Free PRs
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const trackingIssue = '${{ github.event.inputs.tracking_issue }}'.trim();
+            const maxPrs = parseInt('${{ github.event.inputs.max_prs }}', 10) || 25;
+            const isDryRun = '${{ github.event.inputs.dry_run }}' === 'true';
+            const sortOrder = '${{ github.event.inputs.sort_order }}' === 'newest-first' ? 'desc' : 'asc';
+
+            console.log(`Starting Batch Merge Workflow`);
+            console.log(`- Target Tracking Issue: #${trackingIssue}`);
+            console.log(`- Max PRs to Merge: ${maxPrs}`);
+            console.log(`- Order: ${sortOrder}`);
+            console.log(`- Dry Run: ${isDryRun}`);
+
+            // 1. Fetch open pull requests using pagination
+            let openPrs = [];
+            let page = 1;
+            const perPage = 100;
+
+            console.log('Fetching open pull requests...');
+            while (openPrs.length < 300) {
+              const res = await github.rest.pulls.list({
+                owner,
+                repo,
+                state: 'open',
+                sort: 'created',
+                direction: sortOrder,
+                per_page: perPage,
+                page: page
+              });
+              if (!res.data || res.data.length === 0) break;
+              openPrs.push(...res.data);
+              if (res.data.length < perPage) break;
+              page++;
+            }
+
+            console.log(`Found ${openPrs.length} open pull requests.`);
+
+            let attemptedCount = 0;
+            let mergedCount = 0;
+            let conflictCount = 0;
+            let skippedBotCount = 0;
+
+            for (const pr of openPrs) {
+              if (mergedCount >= maxPrs) {
+                console.log(`Reached limit of ${maxPrs} merged PRs for this run.`);
+                break;
+              }
+
+              const prNumber = pr.number;
+              const prAuthor = pr.user ? pr.user.login : 'unknown';
+
+              // Skip Dependabot or automated bot PRs if needed
+              if (prAuthor === 'dependabot[bot]') {
+                skippedBotCount++;
+                continue;
+              }
+
+              attemptedCount++;
+              console.log(`\nEvaluating PR #${prNumber} by @${prAuthor}: "${pr.title}"`);
+
+              // Check mergeability status (poll if GitHub has not computed it yet)
+              let prDetails;
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                const prRes = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: prNumber
+                });
+                prDetails = prRes.data;
+                if (prDetails.mergeable !== null) break;
+                console.log(`Waiting for GitHub mergeability check (attempt ${attempt}/3)...`);
+                await new Promise(r => setTimeout(r, 2000));
+              }
+
+              if (prDetails.mergeable === false || prDetails.mergeable_state === 'dirty') {
+                console.log(`⚠️ Skipping PR #${prNumber}: Has merge conflicts (state: ${prDetails.mergeable_state}).`);
+                conflictCount++;
+                continue;
+              }
+
+              if (isDryRun) {
+                console.log(`✅ [DRY RUN] PR #${prNumber} is clean and would be merged with credit.`);
+                mergedCount++;
+                continue;
+              }
+
+              // Non-dry run: approve and squash-merge
+              try {
+                // 1. Approve PR
+                try {
+                  await github.rest.pulls.createReview({
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                    event: 'APPROVE',
+                    body: `Auto-approved for batch merge (linked to issue #${trackingIssue}).`
+                  });
+                } catch (approveErr) {
+                  console.log(`Approval note for PR #${prNumber}: ${approveErr.message}`);
+                }
+
+                // 2. Squash merge with co-author credit
+                const cleanBody = (pr.body || '')
+                  .replace(/<!--[\s\S]*?-->/g, '')
+                  .trim();
+
+                const commitTitle = `${pr.title} (#${prNumber})`;
+                const commitMessage = `${cleanBody}\n\nFixes #${trackingIssue}\n\nCo-authored-by: Satyam Pandey <satyam53@tsecol.onmicrosoft.com>\nCo-authored-by: SatyamPandey-07 <186389297+SatyamPandey-07@users.noreply.github.com>`;
+
+                const mergeRes = await github.rest.pulls.merge({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  commit_title: commitTitle,
+                  commit_message: commitMessage,
+                  merge_method: 'squash'
+                });
+
+                console.log(`🎉 Successfully merged PR #${prNumber}! SHA: ${mergeRes.data.sha}`);
+                mergedCount++;
+
+                // 3. Post confirmation comment
+                const successMsg = `🚀 **Auto-merge complete!**\n\nThis pull request has been linked to issue #${trackingIssue} and squash-merged into \`main\` with co-author credit! 🎉\n\nThank you for contributing to **WorkSphere**! ✨`;
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: successMsg
+                }).catch(e => console.warn(`Comment note: ${e.message}`));
+
+                // 4. Rate-limit pause to ensure GitHub updates main ref and avoids hitting secondary limits
+                await new Promise(r => setTimeout(r, 3000));
+
+              } catch (mergeErr) {
+                console.error(`❌ Failed to merge PR #${prNumber}: ${mergeErr.message}`);
+              }
+            }
+
+            console.log(`\n==========================================`);
+            console.log(`Batch Merge Summary:`);
+            console.log(`- Evaluated: ${attemptedCount} PRs`);
+            console.log(`- Merged: ${mergedCount} PRs`);
+            console.log(`- Conflicts Skipped: ${conflictCount} PRs`);
+            console.log(`- Bots Skipped: ${skippedBotCount} PRs`);
+            console.log(`==========================================`);

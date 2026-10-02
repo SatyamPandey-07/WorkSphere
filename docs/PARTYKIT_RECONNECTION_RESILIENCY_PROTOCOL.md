@@ -453,3 +453,83 @@ onClose() {
 - `src/lib/edge/failoverSync.ts`
 - `src/lib/edge/geoRouter.ts`
 - `src/lib/edge/stateSync.ts`
+
+---
+
+## Reconnection Event Hooks
+
+`partysocket` (the WorkSphere PartyKit client) exposes WebSocket-compatible lifecycle events for monitoring reconnection state.
+
+### Registering event handlers
+
+```ts
+import PartySocket from "partysocket";
+
+const socket = new PartySocket({
+  host: process.env.NEXT_PUBLIC_PARTYKIT_HOST!,
+  room: `folder-${folderId}`,
+});
+
+// Fired when the socket has lost connection and is waiting to retry
+socket.addEventListener("close", (event) => {
+  console.log("PartyKit disconnected — code:", event.code);
+  setConnectionStatus("reconnecting");
+});
+
+// Fired on every retry attempt before the connection is re-established
+socket.addEventListener("error", (event) => {
+  console.warn("PartyKit connection error:", event);
+});
+
+// Fired when the socket successfully (re)connects
+socket.addEventListener("open", (event) => {
+  console.log("PartyKit connected");
+  setConnectionStatus("connected");
+  // Re-request room snapshot to recover any missed state
+  socket.send(JSON.stringify({ type: "room_snapshot_request" }));
+});
+```
+
+### Exponential backoff settings
+
+`partysocket` retries with exponential backoff out of the box. You can customise the delays:
+
+```ts
+const socket = new PartySocket({
+  host: process.env.NEXT_PUBLIC_PARTYKIT_HOST!,
+  room: `session-${sessionId}`,
+  // Backoff configuration (all values in milliseconds)
+  minDelay: 1000,         // First retry after 1 s
+  maxDelay: 30_000,       // Cap retries at 30 s
+  maxRetries: 10,         // Give up after 10 attempts
+});
+```
+
+| Setting | Default | Effect |
+|---------|---------|--------|
+| `minDelay` | 1000 ms | Delay before the first reconnect attempt |
+| `maxDelay` | 30 000 ms | Maximum backoff ceiling |
+| `maxRetries` | Infinity | Total retry attempts before giving up |
+
+### Status change event payload
+
+WorkSphere broadcasts a `connection_status` message to the React component tree via a custom DOM event when the reconnection state changes:
+
+```ts
+// src/lib/partyKitStatus.ts — example emitter
+window.dispatchEvent(
+  new CustomEvent("partykit:status", {
+    detail: {
+      status: "reconnecting" | "connected" | "disconnected",
+      attempt: number,       // current retry attempt (0 = first)
+      nextRetryMs: number,   // milliseconds until next retry
+    },
+  }),
+);
+
+// Consumer
+window.addEventListener("partykit:status", (e: Event) => {
+  const { status, attempt, nextRetryMs } = (e as CustomEvent).detail;
+  console.log(`PartyKit ${status} — attempt ${attempt}, retry in ${nextRetryMs}ms`);
+});
+```

@@ -42,6 +42,8 @@ import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
 import { getOpeningHoursStatus } from "@/lib/openingHours";
 import { MUSIC_GENRE_EMOJI, type MusicGenre } from "@/hooks/useLiveVenueData";
+import { HighlightedText } from "@/components/ui/HighlightedText";
+import { useSeatAvailability } from "@/hooks/useSeatAvailability";
 
 interface VenueEnrichData {
   found: boolean;
@@ -78,6 +80,8 @@ interface VenueCardProps {
   };
   checkedInVenueId?: string | null;
   onReportMusicGenre?: (genre: MusicGenre) => void;
+  /** Active search query — matching terms are highlighted in the venue name */
+  searchQuery?: string;
 }
 
 interface VoteMetricState {
@@ -99,18 +103,30 @@ export function VenueCard({
   liveData,
   checkedInVenueId,
   onReportMusicGenre,
+  searchQuery = "",
 }: VenueCardProps) {
   const [isFavorited, setIsFavorited] = useState(false);
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
   const [enrichData, setEnrichData] = useState<VenueEnrichData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const { availability } = useSeatAvailability();
+  const liveOccupancy = availability[venue.id];
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [photoError, setPhotoError] = useState(false);
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
   const [showGenreDropdown, setShowGenreDropdown] = useState(false);
 
   const isCheckedInHere = checkedInVenueId === venue.id;
   const activeMusicGenre = liveData?.musicGenre ?? null;
+
+  // Defer time-dependent rendering (open/closed status) to after hydration to
+  // prevent SSR/client mismatch caused by new Date() producing different values
+  // on server vs. client.
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const { currency } = useCurrency();
   const router = useRouter();
@@ -373,6 +389,7 @@ export function VenueCard({
   const nextPhoto = () => {
     if (enrichData?.photos && enrichData.photos.length > 1) {
       setPhotoIndex((prev) => (prev + 1) % enrichData.photos!.length);
+      setPhotoError(false);
     }
   };
 
@@ -452,11 +469,14 @@ export function VenueCard({
           onClick={nextPhoto}
         >
           <Image
-            src={photos[photoIndex]}
+            src={
+              photoError ? "/images/venue-placeholder.svg" : photos[photoIndex]
+            }
             alt={"Photo of " + venue.name}
             fill
             className="object-cover"
             unoptimized // External URLs from Foursquare
+            onError={() => setPhotoError(true)}
           />
           {photos.length > 1 && (
             <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 rounded-full text-xs text-white">
@@ -525,7 +545,7 @@ export function VenueCard({
         <div className="flex items-start justify-between mb-2 mt-4">
           <div className="flex-1">
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-              <span>{venue.name}</span>
+              <HighlightedText text={venue.name} query={searchQuery} />
               {venue.isClaimed && (
                 <span title="Verified Host" className="inline-flex shrink-0">
                   <BadgeCheck className="w-4 h-4 text-green-500 shrink-0" />
@@ -538,6 +558,35 @@ export function VenueCard({
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {venue.address || "Address not available"}
             </p>
+            {liveOccupancy && liveOccupancy.count > 0 && (
+              <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                {liveOccupancy.count}{" "}
+                {liveOccupancy.count === 1 ? "person" : "people"} here now
+              </span>
+            )}
+            {liveOccupancy && (() => {
+              // Crowding badge: Quiet (<40%), Moderate (40-75%), Busy (>75%)
+              const pct = liveOccupancy.capacity > 0
+                ? (liveOccupancy.count / liveOccupancy.capacity) * 100
+                : 0;
+              const label = pct < 40 ? "Quiet" : pct <= 75 ? "Moderate" : "Busy";
+              const style =
+                pct < 40
+                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                  : pct <= 75
+                    ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                    : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
+              return (
+                <span
+                  className={`mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${style}`}
+                  title={`${Math.round(pct)}% occupancy — ${label}`}
+                  aria-label={`Venue is currently ${label} — ${Math.round(pct)}% occupied`}
+                >
+                  {label}
+                </span>
+              );
+            })()}
           </div>
           <button
             onClick={handleFavorite}
@@ -666,37 +715,43 @@ export function VenueCard({
             );
           }
 
-          const now = new Date();
-          const currentMinutes = now.getHours() * 60 + now.getMinutes();
-          const [openH, openM] = match[1].split(":").map(Number);
-          const [closeH, closeM] = match[2].split(":").map(Number);
-
-          const openMinutes = openH * 60 + openM;
-          const closeMinutes = closeH * 60 + closeM;
-
+          // Gate the open/closed badge on isClient to prevent SSR hydration mismatch
+          // (new Date() differs between server and client render times).
           let legacyOpen = false;
-          if (closeMinutes < openMinutes) {
-            legacyOpen =
-              currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
-          } else {
-            legacyOpen =
-              currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+          if (isClient) {
+            const now = new Date();
+            const currentMinutes = now.getHours() * 60 + now.getMinutes();
+            const [openH, openM] = match[1].split(":").map(Number);
+            const [closeH, closeM] = match[2].split(":").map(Number);
+
+            const openMinutes = openH * 60 + openM;
+            const closeMinutes = closeH * 60 + closeM;
+
+            if (closeMinutes < openMinutes) {
+              legacyOpen =
+                currentMinutes >= openMinutes || currentMinutes <= closeMinutes;
+            } else {
+              legacyOpen =
+                currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+            }
           }
 
           return (
             <div className="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400">
               <Clock className="w-3 h-3 shrink-0" />
               <span>{hoursStr}</span>
-              <span
-                className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
-                  legacyOpen
-                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                    : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-                }`}
-                title={legacyOpen ? "Open Now" : "Closed"}
-              >
-                {legacyOpen ? "Open Now" : "Closed"}
-              </span>
+              {isClient && (
+                <span
+                  className={`px-2 py-0.5 rounded-full font-semibold truncate max-w-[150px] ${
+                    legacyOpen
+                      ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                      : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                  }`}
+                  title={legacyOpen ? "Open Now" : "Closed"}
+                >
+                  {legacyOpen ? "Open Now" : "Closed"}
+                </span>
+              )}
             </div>
           );
         })()}

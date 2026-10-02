@@ -39,9 +39,10 @@ export async function getRoute(
     const osrmBase = process.env.NEXT_PUBLIC_OSRM_URL || 'https://router.project-osrm.org';
     const url = `${osrmBase}/route/v1/${profile}/${coords}?overview=full&geometries=geojson`;
 
-    const response = await fetch(url, {
-      headers: { "Content-Type": "application/json" },
-    });
+    // GET request — no body, so no Content-Type header needed.
+    // Sending Content-Type on a bodyless GET is semantically incorrect and
+    // some CDN/proxy layers (Cloudflare, etc.) may reject or flag it.
+    const response = await fetch(url);
 
     if (!response.ok) {
       console.error("OSRM routing failed:", response.status, "at", url);

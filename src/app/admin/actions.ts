@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 
 async function verifyAdmin() {
   const { userId } = await auth();
+
   if (!userId) {
     throw new Error("Unauthorized");
   }
@@ -29,7 +30,11 @@ export async function getPendingFlags() {
     where: { status: "PENDING" },
     include: {
       reportedBy: {
-        select: { firstName: true, lastName: true, email: true },
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
       },
     },
     orderBy: { createdAt: "desc" },
@@ -39,15 +44,28 @@ export async function getPendingFlags() {
   const enhancedFlags = await Promise.all(
     flags.map(async (flag) => {
       let details = null;
+
       if (flag.type === "VENUE") {
         details = await prisma.venue.findUnique({
           where: { id: flag.itemId },
-          select: { name: true, category: true, address: true },
+          select: {
+            name: true,
+            category: true,
+            address: true,
+          },
         });
       } else if (flag.type === "REVIEW") {
         details = await prisma.venueRating.findUnique({
           where: { id: flag.itemId },
-          select: { comment: true, wifiQuality: true, venue: { select: { name: true } } },
+          select: {
+            comment: true,
+            wifiQuality: true,
+            venue: {
+              select: {
+                name: true,
+              },
+            },
+          },
         });
       }
 
@@ -55,7 +73,7 @@ export async function getPendingFlags() {
         ...flag,
         itemDetails: details,
       };
-    })
+    }),
   );
 
   return enhancedFlags;
@@ -79,45 +97,57 @@ export async function dismissFlag(flagId: string) {
   });
 
   revalidatePath("/admin/feedback");
+
   return flag;
 }
 
 export async function deleteFlaggedItem(flagId: string) {
   const adminId = await verifyAdmin();
 
-  const flag = await prisma.flaggedItem.findUnique({
-    where: { id: flagId },
-  });
-
-  if (!flag) throw new Error("Flag not found");
-
-  if (flag.type === "REVIEW") {
-    // Delete the review
-    await prisma.venueRating.delete({
-      where: { id: flag.itemId },
+  const result = await prisma.$transaction(async (tx) => {
+    const flag = await tx.flaggedItem.findUnique({
+      where: { id: flagId },
     });
-  } else if (flag.type === "VENUE") {
-    // Delete the venue
-    await prisma.venue.delete({
-      where: { id: flag.itemId },
+
+    if (!flag) {
+      throw new Error("Flag not found");
+    }
+
+    if (flag.type === "REVIEW") {
+      // Delete the review
+      await tx.venueRating.delete({
+        where: { id: flag.itemId },
+      });
+    } else if (flag.type === "VENUE") {
+      // Delete the venue
+      await tx.venue.delete({
+        where: { id: flag.itemId },
+      });
+    }
+
+    await tx.flaggedItem.update({
+      where: { id: flagId },
+      data: { status: "RESOLVED" },
     });
-  }
 
-  await prisma.flaggedItem.update({
-    where: { id: flagId },
-    data: { status: "RESOLVED" },
-  });
+    await tx.adminAuditLog.create({
+      data: {
+        adminId,
+        action: `DELETE_${flag.type}`,
+        entityType: "FlaggedItem",
+        entityId: flagId,
+        details: JSON.stringify({
+          itemIdDeleted: flag.itemId,
+        }),
+      },
+    });
 
-  await prisma.adminAuditLog.create({
-    data: {
-      adminId,
-      action: `DELETE_${flag.type}`,
-      entityType: "FlaggedItem",
-      entityId: flagId,
-      details: JSON.stringify({ itemIdDeleted: flag.itemId }),
-    },
+    return {
+      success: true,
+    };
   });
 
   revalidatePath("/admin/feedback");
-  return { success: true };
+
+  return result;
 }

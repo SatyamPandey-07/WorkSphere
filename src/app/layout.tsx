@@ -135,10 +135,6 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const publishableKey =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-    "pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ";
-
   const cookieStore = await cookies();
   const headersList = await headers();
   const nonce = headersList.get("x-csp-nonce") ?? "";
@@ -178,7 +174,6 @@ export default async function RootLayout({
   const bodyContent = (
     <ClerkProvider
       afterSignOutUrl="/"
-      publishableKey={publishableKey}
       appearance={{
         elements: {
           formButtonPrimary: "accent-bg hover:opacity-90",
@@ -216,7 +211,6 @@ export default async function RootLayout({
       >
         <ScrollProgress />
         <ScrollToTopButton />
-        <SyncManager />
         {bodyContent}
         <CookieBanner />
       </body>

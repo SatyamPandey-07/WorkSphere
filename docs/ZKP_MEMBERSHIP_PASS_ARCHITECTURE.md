@@ -34,8 +34,12 @@ The zero-knowledge circuit (`circuits/premium_membership.circom`) defines the ma
 - `expectedCommit` (public)
 
 **Logic:**
-The circuit enforces that the commitment matches the polynomial equation:
-`commit <== identityToken² + (identityToken * 5) + 17`
+The circuit enforces that the public commitment is the Poseidon hash of the private token:
+`expectedCommit === Poseidon(1)(identityToken)` (circomlib's `Poseidon` template over the BN254 scalar field).
+
+`src/lib/zkp/commitment.ts` computes the same hash in TypeScript (via `src/lib/zkp/poseidon.ts`), so the client, the server allow-list, and the revocation list all agree with the circuit. If you change the circuit, regenerate the artifacts with `scripts/compile-zkp.sh` and update `commitment.ts` in the same change.
+
+The script also writes `public/zkp/artifacts.manifest.json` (a hash of the circuit source the artifacts were built from). `src/__tests__/lib/zkpArtifactFreshness.test.ts` fails CI if the circuit is edited without rebuilding, or if the committed zkey is not a Poseidon circuit. Always commit `public/zkp/*` together with any circuit change.
 
 Because the `identityToken` is explicitly marked as a private signal in Circom, the final proof payload sent to the server never contains this value. The server only sees the proof string and the resulting `commit`.
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
+import { Breadcrumb as BreadcrumbNav } from "@/components/ui/Breadcrumb";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -379,6 +380,10 @@ export default function FolderDetailsPage({
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-4 sm:p-6 lg:p-8 pt-8">
       <div className="max-w-[1600px] mx-auto">
+        <BreadcrumbNav items={[
+          { label: "Collections", href: "/collections" },
+          { label: folder.name },
+        ]} className="mb-4" />
         <div className="flex items-start justify-between mb-8">
           <div className="flex items-center gap-4">
             <Link

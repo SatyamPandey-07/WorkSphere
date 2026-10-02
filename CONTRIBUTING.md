@@ -245,6 +245,62 @@ jest.mock('leaflet', () => ({
 
 Avoid connecting to actual databases or Redis caches in unit tests. Mock the client modules using `jest.mock`.
 
+#### 4. ZKP (Zero-Knowledge Proof) Module Configuration
+
+WorkSphere includes a student discount verification feature that uses `snarkjs` and `ffjavascript` for zero-knowledge proof generation. These packages ship as ES modules (ESM) but Jest runs in CommonJS (CJS) mode by default.
+
+`jest.config.js` maps both packages to their CJS builds to prevent `SyntaxError: Cannot use import statement` at test time:
+
+```js
+moduleNameMapper: {
+  '^snarkjs$': '<rootDir>/node_modules/snarkjs/build/main.cjs',
+  '^ffjavascript$': '<rootDir>/node_modules/ffjavascript/build/main.cjs',
+  '^uncrypto$': '<rootDir>/node_modules/uncrypto/dist/crypto.node.cjs',
+},
+```
+
+**What contributors should know:**
+- Tests that import ZKP-related modules work automatically — no manual mocking needed
+- If you add a new package that ships ESM-only and fails with `SyntaxError: Cannot use import statement`, add a similar entry to `moduleNameMapper` in `jest.config.js`
+- ZKP proof generation is CPU and memory intensive; the config sets `workerIdleMemoryLimit: '256MB'` and `maxWorkers: '50%'` to prevent heap exhaustion during the full test suite
+
+---
+
+#### 5. ZKP Circuit Compilation (`npm run zkp:compile`)
+
+The `zkp:compile` script compiles the [Circom](https://docs.circom.io/) circuit used for student discount verification and generates the Groth16 proving/verification keys.
+
+**When to run it:** Only when you modify `circuits/premium_membership.circom`. You do **not** need to run it for most features — the compiled outputs (`public/zkp/`) are committed and kept up to date.
+
+**Dependencies (install once):**
+
+```bash
+# Circom compiler
+npm install -g @iden3/circom
+
+# snarkjs and openssl must be available in PATH
+npm install                       # snarkjs is already in package.json
+openssl version                   # confirm openssl is installed
+```
+
+**Run the compile script:**
+
+```bash
+npm run zkp:compile
+```
+
+This will:
+1. Compile `circuits/premium_membership.circom` → R1CS, WASM, SYM files in `circuits/build/`
+2. Generate a small Powers-of-Tau ceremony (`pot12_final.ptau`) if one doesn't already exist
+3. Run the Groth16 trusted-setup → outputs `premium_membership_final.zkey`
+4. Export the verification key to `public/zkp/verification_key.json`
+5. Copy the WASM prover to `public/zkp/`
+
+**Notes:**
+- The build step can take 30–90 seconds on a typical laptop
+- The generated `.ptau` and `.zkey` files are large; they are committed to the repo so other contributors don't need to regenerate them
+- If `npm run zkp:compile` fails with "circom not found", ensure `@iden3/circom` is on your PATH
+
 ---
 
 ## 4. E2E Testing (Playwright)
@@ -291,8 +347,68 @@ Before pushing changes to GitHub, you **MUST** verify that all the checks below 
 | `npm test`         | Runs the full Jest test suite to check unit and component logic.    | Fix regressions; do not skip failing tests.                  |
 | `npm run build`    | Simulates a production build (Prisma generation + Next.js compile). | Critical check. Fix any build-blocking errors.               |
 
-### 2. Vercel Build Verification
+> **Note on TypeScript during `npm run build`:** TypeScript strict checking is enforced — `typescript.ignoreBuildErrors` is not set in `next.config.ts` (and must not be added), so type errors in the build graph will cause the build to fail. Run `npx tsc --noEmit` separately for faster, standalone type feedback during development without waiting for Prisma generation and full asset compilation.
+
+### 2. Vercel Build Verification & TypeScript Behavior
 
 Vercel builds use `npm run build` which runs `prisma generate && next build`. If this step fails locally, it **will** fail on Vercel deployment. Make sure you run `npm run build` successfully before submitting your PR!
 
-> **Note:** The current production build does **not** invoke `tsc` as a separate build step. For complete TypeScript type checking, run `npx tsc --noEmit` in addition to `npm run build` before opening a pull request.
+#### TypeScript Build Behavior & Validation
+
+- **What `npm run build` Validates**: `npm run build` runs `prisma generate` to build Prisma client type definitions, followed by `next build --webpack` to compile production application pages and components.
+- **TypeScript Errors Inclusion**: TypeScript errors are **included and enforced** during `npm run build` because Next.js has type checking enabled by default (`ignoreBuildErrors` is not set in `next.config.ts`). Any TypeScript compilation errors in the application build graph will fail the build.
+- **Separate Type-Checking Command**: Because `npm run build` does not run `tsc` as an independent script and involves Prisma code generation plus production asset compilation, contributors should run `npx tsc --noEmit` separately for fast, standalone TypeScript type checking during development.
+
+### 3. Recommended PR Validation Workflow
+
+Before submitting a pull request, run the following validation steps in order:
+
+1. `npm run lint` — Validates code style and ESLint rules.
+2. `npx tsc --noEmit` — Runs standalone TypeScript type-checking across the workspace.
+3. `npm test` — Executes the Jest unit and component test suites.
+4. `npm run build` — Verifies Prisma client generation and Next.js production build compilation.
+
+---
+
+## 6. PR Pre-flight Checklist
+
+Before opening a pull request, work through this checklist top-to-bottom. Each step is a gate — don't move to the next until the current one is green.
+
+```bash
+# 1. Sync your fork with upstream to avoid merge conflicts
+git fetch upstream
+git rebase upstream/main
+
+# 2. Install any new dependencies added since your last sync
+npm install
+
+# 3. Apply any pending Prisma schema migrations
+npx prisma generate
+npx prisma migrate dev   # only if schema.prisma changed
+
+# 4. Run the app locally and verify your change works end-to-end
+npm run dev
+
+# 5. Lint — fix all errors before continuing
+npm run lint
+
+# 6. Type-check — fix any TypeScript errors
+npx tsc --noEmit
+
+# 7. Unit tests — make sure nothing is broken
+npm test
+
+# 8. Production build — the definitive gate before pushing
+npm run build
+```
+
+Once all eight steps pass:
+
+- [ ] Branch is up-to-date with `upstream/main`
+- [ ] Feature/fix works as expected in `npm run dev`
+- [ ] `npm run lint` returns zero errors
+- [ ] `npx tsc --noEmit` returns zero errors
+- [ ] `npm test` passes with no regressions
+- [ ] `npm run build` completes successfully
+- [ ] PR title follows the Conventional Commits format (`feat:`, `fix:`, `docs:`, etc.)
+- [ ] PR description explains **what** changed and **why**, and references the issue (`Closes #N`)

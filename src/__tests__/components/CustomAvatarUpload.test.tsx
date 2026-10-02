@@ -47,9 +47,98 @@ jest.mock("@/components/AvatarCropModal", () => ({
   },
 }));
 
+function mockImageDimensions(width: number, height: number) {
+  const ImageConstructorSpy = jest.fn().mockImplementation(() => {
+    const img: Partial<HTMLImageElement> = {
+      naturalWidth: width,
+      naturalHeight: height,
+      set src(_value: string) {
+        setTimeout(() => {
+          if (typeof this.onload === "function") {
+            (this.onload as () => void)();
+          }
+        }, 0);
+      },
+    };
+    return img;
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (global as any).Image = ImageConstructorSpy;
+  return ImageConstructorSpy;
+}
+
+describe("CustomAvatarUpload Component Image Dimension Validation (#1866)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    global.URL.createObjectURL = jest
+      .fn()
+      .mockReturnValue("blob:http://localhost/tiny-image");
+    global.URL.revokeObjectURL = jest.fn();
+  });
+
+  it("shows error and does not open crop modal when image is below 100×100 px", async () => {
+    mockImageDimensions(50, 50);
+    render(<CustomAvatarUpload />);
+
+    const fileInput = screen.getByTestId("file-input");
+    const tinyImage = new File(["x"], "tiny.png", { type: "image/png" });
+
+    fireEvent.change(fileInput, { target: { files: [tinyImage] } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Image resolution too low. Minimum 100×100 required.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId("mock-crop-modal")).not.toBeInTheDocument();
+  });
+
+  it("shows error when only one dimension is below the minimum", async () => {
+    mockImageDimensions(200, 60);
+    render(<CustomAvatarUpload />);
+
+    const fileInput = screen.getByTestId("file-input");
+    const narrowImage = new File(["x"], "narrow.png", { type: "image/png" });
+
+    fireEvent.change(fileInput, { target: { files: [narrowImage] } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "Image resolution too low. Minimum 100×100 required.",
+        ),
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId("mock-crop-modal")).not.toBeInTheDocument();
+  });
+
+  it("opens crop modal when image meets the minimum 100×100 requirement", async () => {
+    mockImageDimensions(100, 100);
+    render(<CustomAvatarUpload />);
+
+    const fileInput = screen.getByTestId("file-input");
+    const validImage = new File(["x"], "valid.png", { type: "image/png" });
+
+    fireEvent.change(fileInput, { target: { files: [validImage] } });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("mock-crop-modal")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByText("Image resolution too low. Minimum 100×100 required."),
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe("CustomAvatarUpload Component EXIF Orientation & Preview (#1332)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockImageDimensions(200, 200);
     global.URL.createObjectURL = jest
       .fn()
       .mockReturnValue("blob:http://localhost/upright-preview");
@@ -99,6 +188,7 @@ describe("CustomAvatarUpload Component EXIF Orientation & Preview (#1332)", () =
 describe("CustomAvatarUpload Component Memory Leaks (#1432)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockImageDimensions(200, 200);
     let urlCounter = 0;
     global.URL.createObjectURL = jest
       .fn()

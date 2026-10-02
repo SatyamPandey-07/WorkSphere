@@ -109,6 +109,28 @@ export function VenueDetailDialog({
     "wifi" | "outlets" | "noise" | null
   >(null);
   const [copied, setCopied] = useState(false);
+  const [showFlagMenu, setShowFlagMenu] = useState(false);
+  const [flagSubmitted, setFlagSubmitted] = useState(false);
+  const [flagSubmitting, setFlagSubmitting] = useState(false);
+
+  const submitFlag = async (reason: string) => {
+    if (!venue) return;
+    setFlagSubmitting(true);
+    setShowFlagMenu(false);
+    try {
+      await fetch(`/api/venues/${venue.id}/flag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      setFlagSubmitted(true);
+      setTimeout(() => setFlagSubmitted(false), 3000);
+    } catch {
+      // silently fail — the UI will just reset
+    } finally {
+      setFlagSubmitting(false);
+    }
+  };
   // Floor plan seat selection state (used by floor plan component when rendered)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
@@ -204,6 +226,7 @@ export function VenueDetailDialog({
     "overview",
   );
   const [reviews, setReviews] = useState<any[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
   const [menuPhotos, setMenuPhotos] = useState<string[]>([]);
   const [uploadingMenu, setUploadingMenu] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
@@ -675,12 +698,14 @@ export function VenueDetailDialog({
   // Fetch reviews on dialog open / venue change to have stats ready
   useEffect(() => {
     if (!venue || !isOpen) return;
+    setReviewsLoading(true);
     fetch(`/api/venues/${encodeURIComponent(venue.id)}/reviews`)
       .then((r) => r.json())
       .then((data) => {
         if (data.reviews) setReviews(data.reviews);
       })
-      .catch((err) => console.error(err));
+      .catch((err) => console.error(err))
+      .finally(() => setReviewsLoading(false));
   }, [venue, isOpen]);
 
   // Effect 3: Fetch predictions and menu photos based on active tab
@@ -731,12 +756,14 @@ export function VenueDetailDialog({
           );
         });
     } else if (activeTab === "reviews") {
+      setReviewsLoading(true);
       fetch(`/api/venues/${encodeURIComponent(venue.id)}/reviews`)
         .then((r) => r.json())
         .then((data) => {
           if (data.reviews) setReviews(data.reviews);
         })
-        .catch((err) => console.error(err));
+        .catch((err) => console.error(err))
+        .finally(() => setReviewsLoading(false));
     } else if (activeTab === "menu") {
       setMenuPhotos([]);
       fetch(`/api/venues/${encodeURIComponent(venue.id)}/menu`)
@@ -1836,6 +1863,47 @@ export function VenueDetailDialog({
                       Rate
                     </button>
                   )}
+                  {/* Report Inaccurate Data */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowFlagMenu((v) => !v)}
+                      aria-label="Report inaccurate venue data"
+                      aria-haspopup="true"
+                      aria-expanded={showFlagMenu}
+                      className="flex items-center justify-center gap-1.5 bg-black/40 border-2 border-white/10 text-zinc-400 hover:text-amber-400 hover:border-amber-500/40 py-3 px-4 rounded-2xl transition-all shadow-md active:scale-[0.98]"
+                    >
+                      {flagSubmitted ? (
+                        <Check className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4" />
+                      )}
+                    </button>
+                    {showFlagMenu && (
+                      <div className="absolute bottom-full mb-2 right-0 z-50 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl w-52 py-1 text-sm">
+                        {[
+                          {
+                            id: "permanently_closed",
+                            label: "Permanently Closed",
+                          },
+                          { id: "wrong_hours", label: "Wrong Hours" },
+                          { id: "no_wifi", label: "No Longer Has WiFi" },
+                          { id: "wrong_address", label: "Wrong Address" },
+                          { id: "other", label: "Other Issue" },
+                        ].map(({ id, label }) => (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => submitFlag(id)}
+                            disabled={flagSubmitting}
+                            className="w-full text-left px-4 py-2 text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors disabled:opacity-50"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={handleShare}
                     aria-label={"Share " + venue.name}
@@ -1860,7 +1928,28 @@ export function VenueDetailDialog({
 
           {activeTab === "reviews" && (
             <div className="space-y-4">
-              {reviews.length === 0 ? (
+              {reviewsLoading ? (
+                <div className="space-y-3">
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="p-4 border border-white/10 bg-black/20 rounded-2xl space-y-3 animate-pulse"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="space-y-2">
+                          <div className="h-3 w-24 bg-zinc-700 rounded" />
+                          <div className="h-2 w-40 bg-zinc-800 rounded" />
+                        </div>
+                        <div className="h-3 w-12 bg-zinc-700 rounded" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="h-2 w-full bg-zinc-800 rounded" />
+                        <div className="h-2 w-3/4 bg-zinc-800 rounded" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : reviews.length === 0 ? (
                 <div className="py-12 border-2 border-dashed border-white/10 rounded-2xl text-center px-4">
                   <Info className="w-8 h-8 text-zinc-400 mx-auto mb-2" />
                   <p className="text-xs font-black uppercase tracking-wider text-zinc-400">

@@ -108,6 +108,17 @@ export function decompressYjsUpdate(input: Uint8Array): Uint8Array {
   const view = new DataView(input.buffer, input.byteOffset, input.byteLength);
   const uncompressedSize = view.getUint32(headerLen, false);
 
+  // Guard against maliciously large or corrupt size fields that would cause
+  // an out-of-memory crash when allocating the output buffer.
+  // 10 MB is well above any real Yjs document update; PartyKit caps messages at ~1 MB.
+  const MAX_UNCOMPRESSED_BYTES = 10 * 1024 * 1024; // 10 MB
+  if (uncompressedSize === 0 || uncompressedSize > MAX_UNCOMPRESSED_BYTES) {
+    console.warn(
+      `[yjsCompression] Refusing to decompress: claimed size ${uncompressedSize} bytes exceeds safe limit`,
+    );
+    return input;
+  }
+
   const output = new Uint8Array(uncompressedSize);
   let inIdx = headerLen + 4;
   let outIdx = 0;

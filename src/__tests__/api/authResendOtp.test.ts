@@ -270,4 +270,64 @@ describe("POST /api/auth/resend-otp", () => {
       expect(res.headers.get("Retry-After")).toBeDefined();
     });
   });
+
+  describe("Limiter identifier & guardrails (supplemental, from #3386)", () => {
+    it("uses resend-otp:<email>:<ip> as the limiter identifier", async () => {
+      const email = "identifier-check@example.com";
+      const ip = "203.0.113.5";
+
+      const first = await POST(makeRequest({ email }, { ip }));
+      expect(first.status).toBe(200);
+
+      const blocked = await POST(makeRequest({ email }, { ip }));
+      expect(blocked.status).toBe(429);
+
+      // Resetting the exact identifier must clear the block, proving the key format.
+      resetRateLimit(`resend-otp:${email}:${ip}`);
+      const afterReset = await POST(makeRequest({ email }, { ip }));
+      expect(afterReset.status).toBe(200);
+    });
+
+    it("does not consume rate-limit budget for invalid email", async () => {
+      const email = "guard-invalid@example.com";
+      const ip = "203.0.113.11";
+
+      const bad = await POST(makeRequest({ email: "not-an-email" }, { ip }));
+      expect(bad.status).toBe(400);
+
+      const good = await POST(makeRequest({ email }, { ip }));
+      expect(good.status).toBe(200);
+      const again = await POST(makeRequest({ email }, { ip }));
+      expect(again.status).toBe(429);
+    });
+
+    it("does not consume rate-limit budget for malformed JSON", async () => {
+      const ip = "203.0.113.12";
+      const bad = await POST(
+        makeRequest(null, { ip, rawBody: "{ this is not json" }),
+      );
+      expect(bad.status).toBe(400);
+      const data = await bad.json();
+      expect(data.error).toBe("Invalid JSON body.");
+
+      const good = await POST(
+        makeRequest({ email: "guard-json@example.com" }, { ip }),
+      );
+      expect(good.status).toBe(200);
+    });
+
+    it("does not consume rate-limit budget when CSRF validation fails", async () => {
+      const email = "csrf-guard@example.com";
+      const ip = "203.0.113.7";
+
+      (verifyCsrfToken as jest.Mock).mockResolvedValueOnce(false);
+      const forbidden = await POST(makeRequest({ email }, { ip }));
+      expect(forbidden.status).toBe(403);
+
+      const good = await POST(makeRequest({ email }, { ip }));
+      expect(good.status).toBe(200);
+      const blocked = await POST(makeRequest({ email }, { ip }));
+      expect(blocked.status).toBe(429);
+    });
+  });
 });

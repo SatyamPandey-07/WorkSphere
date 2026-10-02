@@ -1018,6 +1018,9 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 # (required) Groq API key — free at console.groq.com
 GROQ_API_KEY=gsk_...
 
+# (optional) Gemini API key — used for server-side venue summaries
+GEMINI_API_KEY=your_gemini_key_here
+
 # ── Venue Photos ─────────────────────────────────────────────────────
 # (optional) Pexels API key — falls back to placeholder images
 PEXELS_API_KEY=your_pexels_key_here
@@ -1145,6 +1148,10 @@ The UI shows each agent's contribution:
 ├─ 💡 Reasoning: Top pick - Blue Bottle Coffee (score: 8.5/10)
 └─ ⚡ Action: Updated map with 5 markers
 ```
+
+The venue summary endpoint sends its prompt to Gemini rather than the chat
+models. See [docs/GEMINI_INTEGRATION.md](docs/GEMINI_INTEGRATION.md) for the
+client contract, model choice, error handling, and test setup.
 
 ---
 

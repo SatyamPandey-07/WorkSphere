@@ -478,8 +478,9 @@ model XRAnchor {
   @@index([anchorPersistId])
 }
 
+/// Range-partitioned monthly on `timestamp` (#3362); PK must include the partition key.
 model WifiTelemetry {
-  id         String   @id @default(cuid())
+  id         String   @default(cuid())
   venueId    String
   venue      Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
   download   Float
@@ -488,6 +489,7 @@ model WifiTelemetry {
   crowdLevel String
   timestamp  DateTime @default(now())
 
+  @@id([id, timestamp])
   @@index([venueId])
   @@index([timestamp])
   @@index([venueId, timestamp])
@@ -519,8 +521,9 @@ model FlaggedItem {
   @@index([itemId])
 }
 
+/// Range-partitioned monthly on `createdAt` (#3362); PK must include the partition key.
 model AdminAuditLog {
-  id         String   @id @default(cuid())
+  id         String   @default(cuid())
   adminId    String
   admin      User     @relation(fields: [adminId], references: [id], onDelete: Cascade)
   action     String
@@ -529,6 +532,7 @@ model AdminAuditLog {
   details    String?
   createdAt  DateTime @default(now())
 
+  @@id([id, createdAt])
   @@index([createdAt])
 }
 

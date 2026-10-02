@@ -710,3 +710,96 @@ export async function runInIsolation<T>(
   });
 }
 ```
+
+---
+
+## Implemented: `WifiTelemetry` & `AdminAuditLog` Monthly Partitioning (#3362)
+
+The `WifiTelemetry` range partitioning recommended in §3 is now live, together
+with `AdminAuditLog`. (The issue called these "VenueTelemetry" and "AuditLog";
+no tables by those names exist.)
+
+### Schema
+
+Migration `20261003000000_partition_telemetry_audit_logs` converts both tables
+to `PARTITION BY RANGE` on their time column.
+
+- **Primary keys:** PostgreSQL requires the partition key in the primary key,
+  so the keys become `(id, "timestamp")` and `(id, "createdAt")`. `schema.prisma`
+  models them with `@@id`. The app only `create`s these rows, so no
+  `findUnique({ id })` call sites change.
+- **Existing data:** an existing table is renamed aside and its rows copied in.
+  Rows outside the pre-created months (6 back, 2 ahead) land in the `_default`
+  partition. The migration is idempotent.
+- **Naming:** constraint and index names are identical to the previous schema
+  (`WifiTelemetry_pkey`, `…_venueId_timestamp_idx`, …), so `prisma migrate diff`
+  reports no drift for these tables.
+
+### Retention
+
+| Table | Partition key | Keeps | Past retention |
+| --- | --- | --- | --- |
+| `WifiTelemetry` | `timestamp` | 6 months (~180 days) | Detached and **dropped** |
+| `AdminAuditLog` | `createdAt` | 24 months | Detached and **moved to `audit_log_archive`** (never deleted) |
+| `PushNotificationLog` | `createdAt` | 6 months | Archived (unchanged, `partitionMaintenance.ts`) |
+
+Override per table with `PARTITION_RETENTION_MONTHS_<TABLE>`, e.g.
+`PARTITION_RETENTION_MONTHS_WIFITELEMETRY=3`.
+
+### Maintenance (`GET /api/cron/partition-maintenance`)
+
+`runPartitionRetention()` (`src/lib/partitionRetention.ts`) runs on one
+dedicated connection (`DIRECT_URL`, falling back to `DATABASE_URL`):
+
+1. Takes an advisory lock, so overlapping runs skip instead of colliding.
+2. Sets `statement_timeout = 0` (the app pool's 10 s limit would abort large
+   DETACH/VACUUM operations) and `lock_timeout = 5s` (never queue behind live
+   traffic; the next run retries).
+3. **Per table, in one transaction:**
+   - Creates the current month and the next two months. Rows already in
+     `_default` for such a month are moved in first; otherwise PostgreSQL
+     refuses to create the partition.
+   - Detaches expired partitions and drops or archives them.
+   - Expires legacy rows past retention left in `_default` (deleted, or
+     archived into `audit_log_archive."AdminAuditLog_default_expired"`).
+
+   Any failure rolls the whole table back.
+4. Runs `VACUUM (ANALYZE)` on the current and previous month's partitions
+   (outside a transaction, as PostgreSQL requires).
+
+The response includes a per-table report (`created`, `dropped`, `archived`,
+`defaultRowsRehomed`, `defaultRowsExpired`, `vacuumed`, `errors`) and returns
+`207` if any table reported an error.
+
+> All timestamp parameters are bound as UTC ISO strings. node-postgres
+> serialises `Date` objects in the server's local time zone, which shifts
+> month boundaries for `timestamp without time zone` columns on any host that
+> isn't UTC.
+
+### Operations notes
+
+- **Large tables:** converting a large existing table copies every row. Apply
+  the migration in a maintenance window.
+- **Schedule:** run the cron at least monthly (`0 2 1 * *`). Running it daily
+  is harmless (idempotent) and gives earlier warning through the health report.
+
+### Verification
+
+`src/__tests__/lib/partitionRetention.test.ts`:
+
+- **Unit tests (always run):** planning, naming, retention config, UTC binding,
+  identifier safety.
+- **PostgreSQL suite** (opt-in with `PARTITION_TEST_DATABASE_URL`). Runs the
+  real migration on a populated pre-#3362 schema in a throwaway database and checks:
+  - a lossless conversion (row count + checksum) that is idempotent;
+  - creation of upcoming partitions, with default-partition rows rehomed;
+  - telemetry dropped and audit rows archived past retention;
+  - VACUUM/ANALYZE runs;
+  - full rollback when one step fails;
+  - the advisory-lock skip.
+
+```bash
+docker run -d --rm -p 55433:5432 -e POSTGRES_PASSWORD=pw pgvector/pgvector:pg17
+PARTITION_TEST_DATABASE_URL=postgresql://postgres:pw@127.0.0.1:55433/postgres \
+  npx jest src/__tests__/lib/partitionRetention.test.ts
+```

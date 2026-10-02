@@ -12,8 +12,18 @@ jest.mock("@/lib/partitionMaintenance", () => ({
   autoCreateUpcomingPartitions: jest
     .fn()
     .mockResolvedValue(["partition_2026_11"]),
-  archiveExpiredPushNotificationPartitions: jest.fn().mockResolvedValue([]),
+  archiveExpiredPushNotificationPartitions: jest
+    .fn()
+    .mockResolvedValue({ archived: [], retained: [] }),
   checkPartitionHealth: jest.fn().mockResolvedValue({ status: "OK" }),
+}));
+
+jest.mock("@/lib/partitionRetention", () => ({
+  runPartitionRetention: jest.fn().mockResolvedValue({
+    tables: [
+      { table: "WifiTelemetry", created: [], dropped: ["WifiTelemetry_y2026m03"], archived: [], defaultRowsRehomed: 0, defaultRowsExpired: 0, vacuumed: [], errors: [] },
+    ],
+  }),
 }));
 
 function makeRequest(secret?: string): NextRequest {
@@ -86,5 +96,33 @@ describe("GET /api/cron/partition-maintenance", () => {
     expect(response.status).toBe(207);
     expect(data.success).toBe(false);
     expect(data.errors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("GET /api/cron/partition-maintenance — telemetry retention (#3362)", () => {
+  const originalEnv = process.env;
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    delete process.env.CRON_SECRET;
+    jest.clearAllMocks();
+  });
+  afterAll(() => {
+    process.env = originalEnv;
+  });
+
+  it("runs telemetry/audit retention and reports it", async () => {
+    const res = await GET(makeRequest());
+    const data = await res.json();
+    expect(data.retention.tables[0].dropped).toEqual(["WifiTelemetry_y2026m03"]);
+  });
+
+  it("returns 207 with a table-scoped error when retention fails for a table", async () => {
+    const { runPartitionRetention } = jest.requireMock("@/lib/partitionRetention");
+    runPartitionRetention.mockResolvedValueOnce({
+      tables: [{ table: "AdminAuditLog", created: [], dropped: [], archived: [], defaultRowsRehomed: 0, defaultRowsExpired: 0, vacuumed: [], errors: ["lock timeout"] }],
+    });
+    const res = await GET(makeRequest());
+    expect(res.status).toBe(207);
+    expect((await res.json()).errors).toContain("AdminAuditLog: lock timeout");
   });
 });

@@ -51,6 +51,9 @@ The table below lists every environment variable currently used by WorkSphere.
 | `PASSKEY_OTP_SECRET` | Optional | HMAC key for passkey email OTPs. Falls back to `CSRF_SECRET` / `CLERK_SECRET_KEY`; one of them is required in production. |
 | `UPSTASH_REDIS_REST_URL` | Optional | REST endpoint for the Upstash Redis instance. |
 | `UPSTASH_REDIS_REST_TOKEN` | Optional | Authentication token for Upstash Redis. |
+| `PARTITION_RETENTION_MONTHS_WIFITELEMETRY` | Optional | Months of `WifiTelemetry` partitions to keep (default 6). Older partitions are dropped by `/api/cron/partition-maintenance`. |
+| `PARTITION_RETENTION_MONTHS_ADMINAUDITLOG` | Optional | Months of `AdminAuditLog` partitions to keep (default 24). Older partitions are moved to the `audit_log_archive` schema. |
+| `PARTITION_TEST_DATABASE_URL` | Tests only | Opt-in PostgreSQL server for the partition integration tests (needs CREATE/DROP DATABASE). |
 | `NEXT_PUBLIC_APP_URL` | Optional | Public application URL used for metadata and sharing links. |
 
 ---

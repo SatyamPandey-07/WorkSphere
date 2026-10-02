@@ -24,6 +24,7 @@ import {
   sanitizeUserInput,
   type RankedVenue,
 } from "@/lib/ai/chatAgents";
+import { generateGeminiStream, generateGeminiText } from "@/lib/ai/gemini";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 
 export const maxDuration = 60;
@@ -131,41 +132,84 @@ function streamResponse(
   });
 }
 
-/** Streams an LLM completion, falling back to `fallbackText` if it fails. */
+/** Converts chat turns into one prompt for providers that take plain text. */
+function promptFromMessages(
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+) {
+  const label = { system: "System", user: "User", assistant: "Assistant" };
+  return messages.map((m) => `${label[m.role]}: ${m.content}`).join("\n\n");
+}
+
+/**
+ * Streams Gemini as the secondary provider. When the stream fails before any
+ * text was emitted we retry once without streaming so the user still gets an
+ * answer instead of a silent empty reply.
+ */
+async function streamGemini(
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+  emit: (text: string) => void,
+): Promise<string> {
+  if (!process.env.GEMINI_API_KEY) return "";
+
+  const prompt = promptFromMessages(messages);
+  let full = "";
+  try {
+    for await (const chunk of generateGeminiStream(prompt)) {
+      full += chunk;
+      emit(chunk);
+    }
+    return full;
+  } catch (err) {
+    console.error("Gemini stream failed:", err);
+  }
+
+  // Keep whatever already reached the client instead of re-sending it.
+  if (full.trim()) return full;
+
+  try {
+    const text = await generateGeminiText(prompt);
+    emit(text);
+    return text;
+  } catch (err) {
+    console.error("Gemini fallback generation failed:", err);
+    return "";
+  }
+}
+
+/** Streams Groq first, then Gemini, then the deterministic reply. */
 async function streamLlm(
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
   emit: (text: string) => void,
   fallbackText: string,
 ): Promise<string> {
-  if (!isLlmConfigured()) {
-    emit(fallbackText);
-    return fallbackText;
-  }
-
-  let full = "";
-  try {
-    const completion = await getGroqClient().chat.completions.create({
-      model: LLM_MODEL,
-      stream: true,
-      temperature: 0.5,
-      messages,
-    });
-    for await (const chunk of completion) {
-      const text = chunk.choices[0]?.delta?.content || "";
-      if (text) {
-        full += text;
-        emit(text);
+  if (isLlmConfigured()) {
+    let full = "";
+    try {
+      const completion = await getGroqClient().chat.completions.create({
+        model: LLM_MODEL,
+        stream: true,
+        temperature: 0.5,
+        messages,
+      });
+      for await (const chunk of completion) {
+        const text = chunk.choices[0]?.delta?.content || "";
+        if (text) {
+          full += text;
+          emit(text);
+        }
       }
+    } catch (err) {
+      console.error("Groq stream failed, trying Gemini:", err);
     }
-  } catch (err) {
-    console.error("LLM stream failed, using deterministic reply:", err);
+
+    if (full.trim()) return full;
   }
 
-  if (!full.trim()) {
-    emit(fallbackText);
-    return fallbackText;
-  }
-  return full;
+  const geminiText = await streamGemini(messages, emit);
+  if (geminiText.trim()) return geminiText;
+
+  emit(fallbackText);
+  return fallbackText;
 }
 
 function historyForLlm(messages: ChatMessage[]) {

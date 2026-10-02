@@ -44,16 +44,22 @@ the session. The `WebGLContextRecoveryManager` prevents this by:
 import { WebGLContextRecoveryManager } from "@/lib/webgl/WebGLContextRecoveryManager";
 
 const recovery = new WebGLContextRecoveryManager(canvas, {
+  // Paused on loss; resumed only after onRestore succeeds (#1729).
+  renderLoop: {
+    start: () => renderer.startRenderLoop(),
+    stop: () => renderer.stopRenderLoop(),
+  },
   onLost() {
-    // Called immediately when context is lost.
-    // Stop any animation loops here.
-    renderer.stopRenderLoop();
+    // Optional extra teardown when the context is lost.
   },
   onRestore(gl) {
-    // Called when the context has been restored and a fresh gl context is ready.
-    // Re-upload all textures, buffers, and shaders here.
+    // A fresh context is ready. Rebuild shaders, buffers and textures here.
+    // Throw if that fails: the user sees a failure notice, not "restored".
     renderer.reinitialize(gl);
-    renderer.startRenderLoop();
+  },
+  onRestoreFailed(reason) {
+    // "timeout" | "error" | "loss-storm" — e.g. switch to a 2D / static fallback.
+    renderer.showStaticFallback();
   },
 });
 
@@ -67,6 +73,30 @@ listener leaks.
 **`WebGLContextRecoveryManager.reset()`** clears internal state and removes any
 leftover recovery banner from the DOM — useful between test cases.
 
+**`recovery.state`** is `"active"`, `"lost"` or `"failed"`.
+
+#### Options
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `onRestore(gl)` | required | Rebuild GPU resources on the restored context. Throwing marks recovery as failed. |
+| `onLost()` | — | Extra teardown when the context is lost. |
+| `renderLoop` | — | `{ start, stop }`. Stopped on loss so no GL calls hit a dead context; restarted after a successful `onRestore`. |
+| `onRestoreFailed(reason)` | — | Recovery abandoned: `"timeout"`, `"error"` or `"loss-storm"`. |
+| `restoreTimeoutMs` | `10000` | How long to wait for `webglcontextrestored` before reporting `"timeout"`. A late restore still recovers. |
+| `maxLosses` / `lossWindowMs` | `3` / `60000` | More losses than this inside the window is a **loss storm**: the manager stops calling `preventDefault()`, so the browser leaves the context lost instead of thrashing the GPU. |
+
+#### Failure handling
+
+Recovery is reported as failed, and the banner switches to an error state, when:
+
+- the browser never fires `webglcontextrestored` within `restoreTimeoutMs`;
+- no WebGL context can be obtained after restore;
+- `onRestore` throws (e.g. a shader fails to compile on the new context);
+- the canvas loses its context more than `maxLosses` times in `lossWindowMs`.
+
+A `webglcontextrestored` event with no preceding loss is ignored.
+
 ---
 
 ### `attachWebGLContextRecovery()` Helper
@@ -77,10 +107,12 @@ leftover recovery banner from the DOM — useful between test cases.
 import { attachWebGLContextRecovery } from "@/lib/webgl/contextManager";
 
 // Returns a cleanup function
-const cleanup = attachWebGLContextRecovery(canvas, () => {
-  // reinitialize callback — called after context restore
-  renderer.reinitialize();
-});
+const cleanup = attachWebGLContextRecovery(
+  canvas,
+  () => renderer.reinitialize(), // onRestore
+  undefined,                     // onLost
+  { renderLoop },                // any other manager option (optional)
+);
 
 // On unmount:
 cleanup();
@@ -102,10 +134,29 @@ banner at the top of `<body>`:
 └─────────────────────────────────────────────┘
 ```
 
-- The banner has `id="webgl-recovery-banner"` and sits at `z-index: 9999`.
-- When all active recoveries resolve, the banner removes itself automatically.
-- The banner is shared across all `WebGLContextRecoveryManager` instances —
-  multiple simultaneous canvas recoveries show only one banner.
+- The banner has `id="webgl-recovery-banner"` and sits at `z-index: 99999`.
+- It is shared across all `WebGLContextRecoveryManager` instances, and shows the most
+  important state across every managed canvas: **failed** > **recovering** > **restored**.
+
+| State | Text | Accessibility |
+| --- | --- | --- |
+| Recovering | "Recovering WebGL context…" with a spinner | `role="status"`, `aria-live="polite"`; spinner is `aria-hidden` |
+| Restored | "restored successfully" — auto-hides after 2.5 s | `role="status"` |
+| Failed | "Graphics couldn't be restored…" with **Reload** and **Dismiss** buttons | `role="alert"`; buttons are keyboard-focusable |
+
+The spinner animation and slide transition are disabled under
+`prefers-reduced-motion: reduce`. The Reload button calls
+`WebGLContextRecoveryManager.reloadPage()`, which you can stub in tests.
+
+### Consumers
+
+| Consumer | On restore |
+| --- | --- |
+| `webglHeatmapRenderer.ts` | Rebuilds the program and VBO, **re-uploads the last point data**, then calls `onContextRestored` so `WebGLHeatmapLayer` redraws immediately |
+| `useCloudRenderer.ts` | Passes its rAF loop as `renderLoop`, so it is paused while lost and resumed after shaders are rebuilt |
+| `useGodRaysRenderer.ts` | Stops / restarts its loop via `onLost` / `onRestore` |
+| `FloorPlan3D.tsx` | Re-renders the WebGL fallback |
+| `Map.tsx` | Attaches once per canvas (re-checks on tab focus without duplicating listeners) |
 
 ---
 

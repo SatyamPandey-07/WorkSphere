@@ -81,6 +81,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
         date,
         time,
         duration: String(duration),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
 
       const response = await fetch(`/api/reservations/availability?${params}`, {
@@ -208,6 +209,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       seatId: selected.id,
       date,
       time,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       duration,
       amenitiesNeeded: amenities,
       guests: guests.map((g) => ({

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200">
+  <rect width="400" height="200" fill="#f4f4f5"/>
+  <rect x="160" y="70" width="80" height="60" rx="4" fill="#d4d4d8"/>
+  <circle cx="180" cy="85" r="8" fill="#a1a1aa"/>
+  <polygon points="155,130 180,95 205,115 225,100 245,130" fill="#a1a1aa"/>
+  <text x="200" y="160" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#71717a">No photo available</text>
+</svg>

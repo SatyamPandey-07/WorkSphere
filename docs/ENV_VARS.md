@@ -455,6 +455,26 @@ Yes. Several integrations are optional. Features such as semantic search, image 
 
 ---
 
+## Web Push Notifications (VAPID)
+
+WorkSphere supports browser push notifications via the [Web Push Protocol](https://www.rfc-editor.org/rfc/rfc8030). These variables are **optional** — push notifications are simply disabled when they are not set.
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | No | VAPID public key. Exposed to the browser for push subscription registration via `PushManager.subscribe()`. |
+| `VAPID_PRIVATE_KEY` | No | VAPID private key. Used server-side to sign push messages. **Never expose to the browser or commit to source control.** |
+| `VAPID_SUBJECT` | No | Contact identifier included in push requests — typically `mailto:admin@yourdomain.com` or your app URL. |
+
+### Generating VAPID keys
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Copy the output into `.env.local`. Keep `VAPID_PRIVATE_KEY` secret.
+
+---
+
 # Summary
 
 Environment variables provide the configuration layer that allows WorkSphere to integrate securely with external services. Keeping these values organized, protected, and correctly configured helps ensure reliable development, testing, and production deployments.

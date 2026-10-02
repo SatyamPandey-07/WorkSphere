@@ -6,6 +6,7 @@ import ARNavigation from "./ARNavigation";
 import CompassFallback from "./CompassFallback";
 import { View } from "lucide-react";
 import usePartySocket from "@/hooks/usePartySocketReconnect";
+import { todayInTimeZone } from "@/lib/bookingTime";
 
 interface SeatData {
   id: string;
@@ -69,10 +70,13 @@ export default function NavigationContainer({
       try {
         const now = new Date();
         const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-        const dateStr = now.toISOString().slice(0, 10);
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        // toISOString() is UTC, which is the wrong calendar day for the local
+        // time above for several hours a day in most timezones.
+        const dateStr = todayInTimeZone(timeZone, now);
         const [seatsRes, anchorsRes] = await Promise.all([
           fetch(
-            `/api/reservations/availability?venueId=${venueId}&date=${dateStr}&time=${timeStr}&duration=60`,
+            `/api/reservations/availability?venueId=${venueId}&date=${dateStr}&time=${timeStr}&duration=60&timeZone=${encodeURIComponent(timeZone)}`,
           ),
           fetch(`/api/ar/anchors?venueId=${venueId}`),
         ]);

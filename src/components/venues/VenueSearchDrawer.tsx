@@ -49,6 +49,23 @@ export const PRICE_RANGES = [
   { id: "$$$", label: "$$$" },
 ];
 
+/** Table/desk size filter — matches the tableSize field on Venue */
+export const TABLE_SIZES = [
+  { id: "all", label: "Any Table Size" },
+  { id: "small",  label: "Small (cafe table, 1–2 people)" },
+  { id: "medium", label: "Medium (4-person table)" },
+  { id: "large",  label: "Large (6-8 person desk)" },
+  { id: "xl",     label: "XL (standing desk / monitor setup)" },
+];
+
+/** Equipment loadout preset — matches the equipmentLoadout field on Venue */
+export const EQUIPMENT_LOADOUTS = [
+  { id: "all",      label: "Any Loadout" },
+  { id: "minimal",  label: "Minimal (laptop only)" },
+  { id: "standard", label: "Standard (laptop + mouse)" },
+  { id: "heavy",    label: "Heavy (dual monitor, dock)" },
+];
+
 export function VenueSearchDrawer({
   isOpen,
   onClose,

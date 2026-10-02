@@ -59,9 +59,9 @@ describe("BookingModal", () => {
       />,
     );
 
-    expect(screen.getByText("Secure Booking")).toBeInTheDocument();
+    expect(screen.getByText("Book a workspace")).toBeInTheDocument();
     expect(screen.getByText("Cafe Coffee Day")).toBeInTheDocument();
-    expect(screen.getByLabelText("Allocation Date")).toBeInTheDocument();
+    expect(screen.getByLabelText("Date")).toBeInTheDocument();
   });
 
   it("calls onClose when close button is clicked", () => {

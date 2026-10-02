@@ -132,8 +132,8 @@ export function SeatingForecastChart({ venueId }: SeatingForecastChartProps) {
     <div className="w-full space-y-4">
       <RecommendedHoursBadge hours={data.recommendedHours} />
 
-      <div className="w-full h-64 bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm">
-        <ResponsiveContainer width="100%" height="100%">
+      <div className="w-full h-64 min-h-[200px] bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+        <ResponsiveContainer width="100%" height={200}>
           <AreaChart
             data={chartData}
             margin={{ top: 10, right: 10, left: -20, bottom: 0 }}

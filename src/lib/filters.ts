@@ -96,7 +96,7 @@ function matchesMusicStyle(venue: VenueLike, style: string): boolean {
   return venue.musicStyle === style;
 }
 
-export function applyFilters<T extends VenueLike>(
+export function applyFilters<T extends object>(
   venues: T[],
   filters: VenueFilters,
 ): T[] {
@@ -108,8 +108,9 @@ export function applyFilters<T extends VenueLike>(
   );
   if (active.length === 0) return venues;
 
-  return venues.filter((venue) =>
+  return venues.filter((item) =>
     active.every(([key, value]) => {
+      const venue = item as VenueLike;
       switch (key) {
         case "wifi":
           return venue.wifi === true;

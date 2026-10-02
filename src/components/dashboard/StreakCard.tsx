@@ -12,7 +12,32 @@ interface StreakData {
   currentStreak: number;
   longestStreak: number;
   lastCheckInDate: string | null;
+  timezone?: string | null;
   unlockedMilestones: StreakMilestone[];
+}
+
+function getDateKeyInTimeZone(timeZone?: string | null): string {
+  const tz = timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+
+    const parts = formatter.formatToParts(new Date());
+    const values = Object.fromEntries(
+      parts
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value]),
+    ) as Record<string, string>;
+
+    return `${values.year}-${values.month}-${values.day}`;
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
 }
 
 // ─── Milestone badge config ───────────────────────────────────────────────────
@@ -122,8 +147,8 @@ export function StreakCard() {
       const json: StreakData = await res.json();
       setData(json);
 
-      // Determine if the user already checked in today
-      const today = new Date().toISOString().slice(0, 10);
+      // Determine if the user already checked in in their local day
+      const today = getDateKeyInTimeZone(json.timezone);
       setCheckedInToday(json.lastCheckInDate === today);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;

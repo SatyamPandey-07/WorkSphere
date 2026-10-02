@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
@@ -33,8 +33,10 @@ import {
   OfflineVenue,
 } from "@/lib/offlineStorage";
 import { VenueDetailDialog } from "@/components/chat/VenueDetailDialog";
+import { VenueSearchEmptyState } from "@/components/venues/VenueSearchEmptyState";
 import { Venue } from "@/components/chat/ChatMessages";
 import { PartyKitPresenceWrapper } from "@/components/chat/PartyKitPresenceWrapper";
+import { useBatteryStatus } from "@/hooks/useBatteryStatus";
 
 // Dynamically import EnhancedChatbot to isolate WASM loading / client effects during streaming SSR and prevent hydration mismatches
 const EnhancedChatbot = dynamic(
@@ -83,6 +85,10 @@ const Map = dynamic(() => import("@/components/Map"), {
   ),
 });
 
+// Wi-Fi/cell positioning on laptops is often 50–500 m; IP geolocation is
+// usually several km off, so only discard browser fixes that are worse than that.
+const MAX_USABLE_ACCURACY_M = 3000;
+
 function AppPage() {
   const [location, setLocation] = useState<{
     latitude: number;
@@ -98,6 +104,7 @@ function AppPage() {
   const [selectedVenue, setSelectedVenue] = useState<MapMarker | null>(null);
   const [isOnline, setIsOnline] = useState(true);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+  const battery = useBatteryStatus();
   const [toast, setToast] = useState<{
     message: string;
     type: "error" | "warning" | "success";
@@ -122,6 +129,7 @@ function AppPage() {
   const [routeProfile, setRouteProfile] = useState<
     "walking" | "cycling" | "driving"
   >("walking");
+  const routeRequestId = useRef(0);
 
   // Stable venueIds reference — must be memoised or a new array every render
   // causes the SSE connection to be torn down and recreated on every render.
@@ -165,31 +173,37 @@ function AppPage() {
   // persists venues — the IndexedDB data is shared per-origin.
   useEffect(() => {
     if (markers.length > 0 && isOnline) {
-      if (
-        typeof window !== "undefined" &&
-        typeof (window as any).withLeaderLock === "function"
-      ) {
-        (window as any).withLeaderLock(
-          "worksphere-venue-cache-leader",
-          async () => {
-            await Promise.all(
-              markers.map(async (marker) => {
-                try {
-                  await saveVenueOffline({
-                    id: marker.id,
-                    name: marker.name,
-                    latitude: marker.position.lat,
-                    longitude: marker.position.lng,
-                    category: marker.category,
-                    address: marker.address,
-                  });
-                } catch (err) {
-                  console.warn("Failed to cache venue locally:", err);
-                }
-              }),
-            );
-          },
+      const cacheVenues = async () => {
+        await Promise.all(
+          markers.map(async (marker) => {
+            try {
+              await saveVenueOffline({
+                id: marker.id,
+                name: marker.name,
+                latitude: marker.position.lat,
+                longitude: marker.position.lng,
+                category: marker.category,
+                address: marker.address,
+              });
+            } catch (err) {
+              console.warn("Failed to cache venue locally:", err);
+            }
+          }),
         );
+      };
+
+      // IndexedDB is shared per origin, so let only one tab write at a time
+      // when the Web Locks API is available; otherwise just write.
+      if (typeof navigator !== "undefined" && navigator.locks?.request) {
+        navigator.locks
+          .request(
+            "worksphere-venue-cache-leader",
+            { ifAvailable: true },
+            (lock) => (lock ? cacheVenues() : undefined),
+          )
+          .catch(() => void cacheVenues());
+      } else {
+        void cacheVenues();
       }
     }
   }, [markers, isOnline]);
@@ -254,7 +268,7 @@ function AppPage() {
             async (position) => {
               if (
                 position.coords.accuracy !== undefined &&
-                position.coords.accuracy > 50
+                position.coords.accuracy > MAX_USABLE_ACCURACY_M
               ) {
                 console.warn(
                   `GPS accuracy too low on mount (${position.coords.accuracy}m). Falling back to IP location.`,
@@ -472,7 +486,7 @@ function AppPage() {
                 (position) => {
                   if (
                     position.coords.accuracy !== undefined &&
-                    position.coords.accuracy > 50
+                    position.coords.accuracy > MAX_USABLE_ACCURACY_M
                   ) {
                     console.warn(
                       `GPS accuracy too low during directions request (${position.coords.accuracy}m). Falling back.`,
@@ -799,10 +813,24 @@ function AppPage() {
           lg:flex flex-1 lg:flex-[7] relative
         `}
         >
+          {markers.length === 0 && !isLoadingLocation && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none">
+              <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded-2xl shadow-xl pointer-events-auto max-w-xs w-full mx-4">
+                <VenueSearchEmptyState />
+              </div>
+            </div>
+          )}
           <MapErrorBoundary>
             <Map
               location={location}
-              markers={markers}
+              markers={
+                // Battery Panic Mode: show only venues with outlets when battery is critical
+                battery.isPanic && !battery.charging
+                  ? markers.filter((m) => m.hasOutlets).length > 0
+                    ? markers.filter((m) => m.hasOutlets)
+                    : markers
+                  : markers
+              }
               routes={routes}
               mapView={mapView}
               roomId={sessionId}
@@ -856,35 +884,43 @@ function AppPage() {
                         <button
                           key={profile}
                           onClick={async () => {
-                            setRouteProfile(profile);
-                            // Re-calculate route with new profile
-                            if (routes.length > 0 && location) {
-                              const { getRoute } =
-                                await import("@/lib/routing");
-                              const lastRoute = routes[0];
-                              // We need the original destination. For now, we take the last point of the path.
-                              const destination =
-                                lastRoute.path[lastRoute.path.length - 1];
-                              const routeData = await getRoute(
-                                {
-                                  lat: location.latitude,
-                                  lng: location.longitude,
-                                },
-                                destination,
-                                profile,
-                              );
-                              if (routeData) {
-                                setRoutes([
-                                  {
-                                    ...lastRoute,
-                                    path: routeData.path,
-                                    distance: routeData.distance,
-                                    duration: routeData.duration,
-                                  },
-                                ]);
-                              }
-                            }
-                          }}
+                                setRouteProfile(profile);
+                              
+                                if (routes.length > 0 && location) {
+                                  const currentRequest = ++routeRequestId.current;
+                              
+                                  const { getRoute } = await import("@/lib/routing");
+                                  const lastRoute = routes[0];
+                              
+                                  const destination =
+                                    lastRoute.path[lastRoute.path.length - 1];
+                              
+                                  const routeData = await getRoute(
+                                    {
+                                      lat: location.latitude,
+                                      lng: location.longitude,
+                                    },
+                                    destination,
+                                    profile,
+                                  );
+                              
+                                  // Ignore older route requests
+                                  if (currentRequest !== routeRequestId.current) {
+                                    return;
+                                  }
+                              
+                                  if (routeData) {
+                                    setRoutes([
+                                      {
+                                        ...lastRoute,
+                                        path: routeData.path,
+                                        distance: routeData.distance,
+                                        duration: routeData.duration,
+                                      },
+                                    ]);
+                                  }
+                                }
+                              }}
                           className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${
                             routeProfile === profile
                               ? "accent-bg text-white shadow-lg shadow-[var(--primary-accent)]/20"
@@ -1048,6 +1084,15 @@ function AppPage() {
 
       {/* PWA Install Banner */}
       <PWABanner />
+
+      {/* Battery Panic Mode Banner */}
+      {battery.isPanic && !battery.charging && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[9998] flex items-center gap-2 px-4 py-2.5 rounded-full bg-red-600 text-white text-xs font-semibold shadow-xl animate-in slide-in-from-top duration-300">
+          <span aria-hidden="true">🔋</span>
+          Battery critical ({Math.round((battery.level ?? 0) * 100)}%) — showing
+          only venues with outlets nearby
+        </div>
+      )}
 
       {/* Glassmorphic Toast Warning Card */}
       {toast && (

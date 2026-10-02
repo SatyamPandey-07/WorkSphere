@@ -18,7 +18,7 @@ const customJestConfig = {
     '^ffjavascript$': '<rootDir>/node_modules/ffjavascript/build/main.cjs',
     '^uncrypto$': '<rootDir>/node_modules/uncrypto/dist/crypto.node.cjs',
   },
-  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/', 'e2e'],
+  testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/.next/', '<rootDir>/.kilo/', 'e2e'],
   // Canvas/WebGL/WASM-heavy suites accumulate memory across test files within
   // a worker; recycle a worker once it grows past this instead of letting it
   // run out of heap partway through the full suite. Capping workers keeps

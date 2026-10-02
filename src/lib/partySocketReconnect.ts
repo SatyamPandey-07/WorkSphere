@@ -242,12 +242,19 @@ export function attachJitteredBackoff<T extends object>(socket: T): T {
   }
 
   if (typeof window !== "undefined") {
-    window.addEventListener("online", () => {
+    const onlineHandler = () => {
       s._retryCount = 0;
       if (s.__worksphereState !== ConnectionState.CONNECTED) {
         (s as any).__worksphereForceReconnect?.();
       }
-    });
+    };
+    window.addEventListener("online", onlineHandler);
+
+    const prevDisconnect = s._disconnect;
+    s._disconnect = function (this: any, code?: number, reason?: string) {
+      window.removeEventListener("online", onlineHandler);
+      prevDisconnect?.call(this, code, reason);
+    };
   }
   s.__worksphereJitter = true;
   return socket;

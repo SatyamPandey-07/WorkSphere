@@ -95,6 +95,10 @@ model Venue {
   hasQuietZone        Boolean             @default(false)
   hasAncHeadsetRental Boolean             @default(false)
   petsAllowedIndoors  Boolean             @default(false)
+  largeDogsAllowed    Boolean             @default(false)
+  smallDogsOnly       Boolean             @default(false)
+  servicePetsOnly     Boolean             @default(false)
+  outdoorPetsOnly     Boolean             @default(false)
   patioOnly           Boolean             @default(false)
   waterBowlsProvided  Boolean             @default(false)
   dogFriendly         Boolean             @default(false)
@@ -103,6 +107,8 @@ model Venue {
   powerTypes          String[]            @default([])
   outletLocations     String[]            @default([])
   wifiSpeed           Int? // in Mbps
+  tableSize           String?  // "small", "medium", "large", "xl" — crowdsourced desk/table dimensions
+  equipmentLoadout    String?  // "minimal", "standard", "heavy" — typical equipment profile of regulars
   crowdsourced        Boolean             @default(false)
   requiresReview      Boolean             @default(false)
   imageUrl            String?
@@ -116,6 +122,9 @@ model Venue {
   updatedAt           DateTime            @updatedAt
   lighting            String?
   musicStyle          String?
+  isWellLit           Boolean             @default(false) // OSM lit=yes along walking route
+  hasCCTV             Boolean             @default(false) // CCTV visible on premises
+  safetyScore         Int?     // 1-5 crowdsourced safety rating for night workers
   ratings             VenueRating[]
   favorites           Favorite[]
   bookings            Booking[]
@@ -153,6 +162,8 @@ model VenueRating {
   specialtyEspresso  Boolean  @default(false)
   oatAlmondMilk      Boolean  @default(false)
   pourOverAvailable  Boolean  @default(false)
+  downloadMbps       Float?   // User-measured download speed in Mbps (optional)
+  uploadMbps         Float?   // User-measured upload speed in Mbps (optional)
   noiseLevel         String // quiet, moderate, loud
   hasErgonomic       Boolean  @default(false)
   hasPhoneBooths     Boolean  @default(false)
@@ -174,6 +185,7 @@ model VenueRating {
   waterBowlsProvided Boolean  @default(false)
   dogFriendly        Boolean  @default(false)
   catsAllowed        Boolean  @default(false)
+  tableSize          String?  // crowdsourced: "small", "medium", "large", "xl"
 
   @@unique([userId, venueId])
   @@index([venueId])
@@ -193,6 +205,7 @@ model Favorite {
 
   @@unique([userId, venueId])
   @@index([userId])
+  @@index([venueId])
 }
 
 model FavoriteTag {
@@ -240,6 +253,7 @@ model Booking {
   venue              Venue          @relation(fields: [venueId], references: [id], onDelete: Cascade)
   date               String
   time               String
+  timeZone           String? // IANA zone the date/time were chosen in (e.g. "Asia/Kolkata")
   customerEmail      String
   customerPhone      String?
   status             BookingStatus  @default(CONFIRMED)
@@ -260,6 +274,9 @@ model Booking {
   @@index([seatId])
   @@index([createdAt])
   @@index([recurringGroupId])
+  // Composite index for availability range queries: venueId + date + status
+  // Supports /api/reservations/availability which filters by venueId, date range, and status
+  @@index([venueId, date, status])
 }
 
 model BookingGuest {
@@ -419,6 +436,8 @@ model VenueSeat {
 
   amenities String[] @default([])
   isEnabled Boolean  @default(true)
+  isQuietZone Boolean @default(false) // seat is in a designated quiet zone
+  zoneName    String? // e.g. "Quiet Reading Room", "Collaborative Area"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -584,6 +603,8 @@ enum WebhookEventType {
   MAP_GEOFENCE_BREACHED
   VENUE_CREATED
   REVIEW_SUBMITTED
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
 }
 
 model WebhookEndpoint {
@@ -593,6 +614,7 @@ model WebhookEndpoint {
   url        String
   secret     String // For Svix HMAC signing
   eventTypes WebhookEventType[] // Array of subscribed events
+  headers    Json? // Extra request headers sent with every delivery (e.g. receiver auth)
   isActive   Boolean            @default(true)
   createdAt  DateTime           @default(now())
   updatedAt  DateTime           @updatedAt

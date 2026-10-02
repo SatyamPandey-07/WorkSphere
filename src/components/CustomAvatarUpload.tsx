@@ -15,6 +15,7 @@ import { dispatchAvatarUpdated } from "@/lib/avatar-events";
 
 const MAX_SOURCE_FILE_SIZE = 5 * 1024 * 1024;
 const HEIC_EXTENSIONS = [".heic", ".heif"];
+const MIN_IMAGE_DIMENSION = 100;
 
 const isHeicFile = (file: File) =>
   HEIC_EXTENSIONS.some((extension) =>
@@ -40,6 +41,17 @@ async function convertHeicToJpeg(file: File): Promise<File> {
       lastModified: Date.now(),
     },
   );
+}
+
+function getImageDimensions(
+  src: string,
+): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => reject(new Error("Failed to read image dimensions."));
+    img.src = src;
+  });
 }
 
 export function CustomAvatarUpload() {
@@ -135,6 +147,28 @@ export function CustomAvatarUpload() {
 
       const source = createSafeObjectURL(file);
 
+      let dimensions: { width: number; height: number };
+      try {
+        dimensions = await getImageDimensions(source);
+      } catch {
+        revokeSafeObjectURL(source);
+        setError("Failed to read image dimensions. Please try another file.");
+        clearInput();
+        return;
+      }
+
+      if (
+        dimensions.width < MIN_IMAGE_DIMENSION ||
+        dimensions.height < MIN_IMAGE_DIMENSION
+      ) {
+        revokeSafeObjectURL(source);
+        setError(
+          `Image resolution too low. Minimum ${MIN_IMAGE_DIMENSION}×${MIN_IMAGE_DIMENSION} required.`,
+        );
+        clearInput();
+        return;
+      }
+
       setCropSource((currentSource) => {
         if (currentSource) {
           revokeSafeObjectURL(currentSource);
@@ -158,6 +192,9 @@ export function CustomAvatarUpload() {
     setSuccess(null);
     setIsUploading(true);
 
+    const MAX_ATTEMPTS = 3;
+    const BASE_DELAY_MS = 500;
+
     try {
       if (!user) return;
       const normalizedFile = await normalizeImageOrientation(croppedFile);
@@ -170,10 +207,25 @@ export function CustomAvatarUpload() {
         return objectUrl;
       });
 
-      await user.setProfileImage({
-        file: normalizedFile,
-      });
-      await user.reload();
+      let lastError: unknown;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          await user.setProfileImage({ file: normalizedFile });
+          await user.reload();
+          lastError = undefined;
+          break;
+        } catch (err) {
+          lastError = err;
+          if (attempt < MAX_ATTEMPTS) {
+            // Exponential backoff: 500ms, 1000ms
+            await new Promise((resolve) =>
+              setTimeout(resolve, BASE_DELAY_MS * 2 ** (attempt - 1)),
+            );
+          }
+        }
+      }
+
+      if (lastError) throw lastError;
 
       dispatchAvatarUpdated(user.id, user.imageUrl);
       setSuccess("Profile picture updated.");
@@ -187,7 +239,7 @@ export function CustomAvatarUpload() {
       setSelectedFileName("");
       clearInput();
     } catch (uploadError: unknown) {
-      console.error("Failed to upload image:", uploadError);
+      console.error("Failed to upload image after retries:", uploadError);
 
       const clerkError = uploadError as {
         errors?: Array<{ message?: string }>;

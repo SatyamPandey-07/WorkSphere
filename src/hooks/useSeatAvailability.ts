@@ -74,9 +74,11 @@ export function useSeatAvailability() {
   const checkedInVenueRef = useRef<string | null>(null);
 
   useEffect(() => {
-    getToken()
-      .then(setToken)
-      .catch(() => setToken(null));
+    if (typeof getToken === "function") {
+      getToken()
+        .then(setToken)
+        .catch(() => setToken(null));
+    }
   }, [getToken]);
 
   const socket = usePartySocket({

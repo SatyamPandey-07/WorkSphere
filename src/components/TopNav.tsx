@@ -2,9 +2,20 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useUser } from "@clerk/nextjs";
 import { ReactiveUserButton } from "@/components/ReactiveUserButton";
-import { Coffee, LayoutGrid, Menu, Shield, X } from "lucide-react";
+import {
+  Bookmark,
+  CalendarCheck,
+  LayoutGrid,
+  Menu,
+  Search,
+  Settings,
+  Shield,
+  Users,
+  X,
+} from "lucide-react";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -16,30 +27,68 @@ interface TopNavProps {
   hideAuth?: boolean;
 }
 
-export function TopNav({ hideAuth = false }: TopNavProps) {
-  const { isSignedIn } = useUser();
+const APP_LINKS = [
+  { href: "/ai", label: "Discover", icon: Search },
+  { href: "/saved", label: "Saved", icon: Bookmark },
+  { href: "/collections", label: "Collections", icon: LayoutGrid },
+  { href: "/dashboard", label: "Bookings", icon: CalendarCheck },
+  { href: "/social", label: "Community", icon: Users },
+] as const;
 
-  console.log({
-    hideAuth,
-    isSignedIn,
-  });
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+/** Whether the signed-in user can see admin tools (checked server-side). */
+function useIsAdmin(isSignedIn: boolean | undefined): boolean {
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    if (isMenuOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
+    if (!isSignedIn) {
+      setIsAdmin(false);
+      return;
     }
+    let cancelled = false;
+    fetch("/api/user/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled) setIsAdmin(Boolean(data?.isAdmin));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isSignedIn]);
+
+  return isAdmin;
+}
+
+export function TopNav({ hideAuth = false }: TopNavProps) {
+  const { isSignedIn } = useUser();
+  const isAdmin = useIsAdmin(isSignedIn);
+  const pathname = usePathname() ?? "";
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const isActive = (href: string) =>
+    pathname === href || pathname.startsWith(href + "/");
+
+  const navLinkClass = (href: string) =>
+    [
+      "flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap",
+      isActive(href)
+        ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20"
+        : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 dark:text-white/70 dark:hover:text-white dark:hover:bg-white/5",
+    ].join(" ");
+
+  // Close the mobile menu on navigation.
+  useEffect(() => {
+    setIsMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    document.body.style.overflow = isMenuOpen ? "hidden" : "";
 
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") setIsMenuOpen(false);
     };
-
     const handleResize = () => {
-      if (window.innerWidth >= 768 && isMenuOpen) {
-        setIsMenuOpen(false);
-      }
+      if (window.innerWidth >= 1024) setIsMenuOpen(false);
     };
 
     if (isMenuOpen) {
@@ -54,101 +103,81 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
     };
   }, [isMenuOpen]);
 
+  const signedInLinks = [
+    ...APP_LINKS,
+    ...(isAdmin
+      ? [{ href: "/admin/performance", label: "Admin", icon: Shield }]
+      : []),
+  ];
+
   return (
     <nav className="sticky top-0 z-40 border-b border-zinc-200/80 dark:border-white/5 backdrop-blur-xl bg-white/70 dark:bg-black/40 transition-colors">
-      <div className="container mx-auto px-6 sm:px-10 h-[72px] flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5 group">
+      <div className="container mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+        <Link href="/" className="flex items-center gap-2.5 group shrink-0">
           <Image
             src="/icons/icon-512.png"
             alt="WorkSphere logo"
-            width={36}
-            height={36}
-            className="w-9 h-9 rounded-xl shadow-lg shadow-blue-500/30 group-hover:shadow-blue-500/50 transition-shadow"
-          />{" "}
-          <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            width={32}
+            height={32}
+            className="w-8 h-8 rounded-xl shadow-lg shadow-blue-500/30 group-hover:shadow-blue-500/50 transition-shadow"
+          />
+          <span className="text-lg font-bold bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text text-transparent">
             WorkSphere
           </span>
         </Link>
 
-        <div className="flex items-center gap-2 ml-auto">
-          <div className="flex items-center justify-center shrink-0">
-            <ThemeToggle />
+        {!hideAuth && isSignedIn && (
+          <div className="hidden lg:flex items-center gap-1 min-w-0">
+            {signedInLinks.map(({ href, label, icon: Icon }) => (
+              <Link
+                key={href}
+                href={href}
+                className={navLinkClass(href)}
+                aria-current={isActive(href) ? "page" : undefined}
+              >
+                <Icon className="w-4 h-4" />
+                {label}
+              </Link>
+            ))}
           </div>
+        )}
+
+        <div className="flex items-center gap-2 shrink-0">
+          <ThemeToggle />
 
           {!hideAuth && (
             <>
-              <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-700 hidden md:block" />
-
               {!isSignedIn ? (
-                <>
-                  {/* Desktop */}
-                  <div className="hidden md:flex items-center gap-3">
-                    <Link href="/sign-in">
-                      <button className="px-3 sm:px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium">
-                        Sign In
-                      </button>
-                    </Link>
-
-                    <Link href="/sign-up">
-                      <button className="px-4 sm:px-5 py-2 text-sm rounded-xl accent-bg text-white font-semibold">
-                        Get Started
-                      </button>
-                    </Link>
-                  </div>
-
-                  {/* Mobile */}
-                  <button
-                    onClick={() => setIsMenuOpen((prev) => !prev)}
-                    className="md:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                <div className="hidden sm:flex items-center gap-2">
+                  <Link
+                    href="/sign-in"
+                    className="px-3 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium"
                   >
-                    {isMenuOpen ? (
-                      <X className="w-5 h-5" />
-                    ) : (
-                      <Menu className="w-5 h-5" />
-                    )}
-                  </button>
-                </>
+                    Sign in
+                  </Link>
+                  <Link
+                    href="/sign-up"
+                    className="px-4 py-2 text-sm rounded-xl accent-bg text-white font-semibold hover:opacity-90"
+                  >
+                    Get started
+                  </Link>
+                </div>
               ) : (
                 <>
-                  {/* Mobile Menu Button */}
-                  <button
-                    onClick={() => setIsMenuOpen((prev) => !prev)}
-                    className="md:hidden p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                    aria-label="Toggle navigation menu"
-                  >
-                    {isMenuOpen ? (
-                      <X className="w-5 h-5" />
-                    ) : (
-                      <Menu className="w-5 h-5" />
-                    )}
-                  </button>
-
-                  {/* Desktop Links */}
-                  <Link
-                    href="/ai"
-                    className="hidden md:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
-                  >
-                    <Coffee className="w-4 h-4" />
-                    Dashboard
-                  </Link>
-
-                  <Link
-                    href="/collections"
-                    className="hidden md:flex items-center gap-2 px-4 py-2 text-sm text-zinc-600 hover:text-zinc-900 dark:text-white/70 dark:hover:text-white font-medium transition-colors whitespace-nowrap"
-                  >
-                    <LayoutGrid className="w-4 h-4" />
-                    Collections
-                  </Link>
-                  <Link
-                    href="/admin/performance"
-                    className="hidden md:flex items-center gap-2 px-4 py-2 text-sm text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 font-medium transition-colors whitespace-nowrap"
-                  >
-                    <Shield className="w-4 h-4" />
-                    Admin
-                  </Link>
                   <StreakBadge />
                   <NotificationBell />
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0 ml-1">
+                  <Link
+                    href="/settings"
+                    aria-label="Settings"
+                    className={`hidden lg:flex p-2 rounded-lg ${
+                      isActive("/settings")
+                        ? "text-blue-600 dark:text-blue-400"
+                        : "text-zinc-500 hover:text-zinc-900 dark:text-white/60 dark:hover:text-white"
+                    }`}
+                  >
+                    <Settings className="w-5 h-5" />
+                  </Link>
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden shrink-0">
                     <ReactiveUserButton
                       userProfileMode="navigation"
                       userProfileUrl="/user-profile"
@@ -156,6 +185,19 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
                   </div>
                 </>
               )}
+
+              <button
+                onClick={() => setIsMenuOpen((prev) => !prev)}
+                className={`${isSignedIn ? "lg:hidden" : "sm:hidden"} p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800`}
+                aria-label="Toggle navigation menu"
+                aria-expanded={isMenuOpen}
+              >
+                {isMenuOpen ? (
+                  <X className="w-5 h-5" />
+                ) : (
+                  <Menu className="w-5 h-5" />
+                )}
+              </button>
             </>
           )}
         </div>
@@ -163,37 +205,33 @@ export function TopNav({ hideAuth = false }: TopNavProps) {
 
       {isMenuOpen && (
         <>
-          {/* Backdrop Overlay */}
           <div
-            className="fixed inset-0 top-[72px] bg-black/60 backdrop-blur-sm md:hidden z-40"
+            className="fixed inset-0 top-16 bg-black/60 backdrop-blur-sm lg:hidden z-40"
             onClick={() => setIsMenuOpen(false)}
             aria-hidden="true"
           />
-
-          {/* Mobile Menu Drawer */}
-          <div className="md:hidden border-t bg-white dark:bg-black absolute top-full left-0 w-full z-50">
-            <div className="flex flex-col p-4 gap-3">
+          <div className="lg:hidden border-t border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black absolute top-full left-0 w-full z-50 shadow-xl">
+            <div className="flex flex-col p-3 gap-1">
               {!isSignedIn ? (
                 <>
-                  <Link href="/sign-in" onClick={() => setIsMenuOpen(false)}>
-                    Sign In
+                  <Link href="/sign-in" className={navLinkClass("/sign-in")}>
+                    Sign in
                   </Link>
-
-                  <Link href="/sign-up" onClick={() => setIsMenuOpen(false)}>
-                    Get Started
+                  <Link href="/sign-up" className={navLinkClass("/sign-up")}>
+                    Get started
                   </Link>
                 </>
               ) : (
                 <>
-                  <Link href="/ai" onClick={() => setIsMenuOpen(false)}>
-                    Dashboard
-                  </Link>
-
-                  <Link
-                    href="/collections"
-                    onClick={() => setIsMenuOpen(false)}
-                  >
-                    Collections
+                  {signedInLinks.map(({ href, label, icon: Icon }) => (
+                    <Link key={href} href={href} className={navLinkClass(href)}>
+                      <Icon className="w-4 h-4" />
+                      {label}
+                    </Link>
+                  ))}
+                  <Link href="/settings" className={navLinkClass("/settings")}>
+                    <Settings className="w-4 h-4" />
+                    Settings
                   </Link>
                 </>
               )}

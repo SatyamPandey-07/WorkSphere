@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { SignUp } from "@clerk/nextjs";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { PasswordStrengthMeter } from "@/components/ui/PasswordStrengthMeter";
 import {
   Mail,
   Lock,
@@ -208,6 +209,10 @@ export function SignUpClient() {
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
+              {/* Password strength feedback */}
+              {password && (
+                <PasswordStrengthMeter password={password} className="mt-2" />
+              )}
             </div>
 
             <button

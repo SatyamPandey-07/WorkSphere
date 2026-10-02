@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { updateUserPreferencesSummary } from "@/lib/agents/MemoryAgent";
+import { resolveVenue } from "@/lib/venueResolver";
 
 // GET /api/favorites - Get user's favorites
 export async function GET() {
@@ -29,6 +30,10 @@ export async function GET() {
             category: true,
             address: true,
             imageUrl: true,
+            wifiQuality: true,
+            wifiSpeed: true,
+            hasOutlets: true,
+            noiseLevel: true,
           },
         },
         tags: {
@@ -77,25 +82,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const targetPlaceId = placeId || venueId;
-
-    // Upsert venue first (identify by placeId)
-    const dbVenue = await prisma.venue.upsert({
-      where: { placeId: targetPlaceId },
-      update: {
-        name: name || "Unknown Venue",
-        address: address || null,
-        category: category || "other",
-      },
-      create: {
-        placeId: targetPlaceId,
-        name: name || "Unknown Venue",
-        latitude: latitude || 0,
-        longitude: longitude || 0,
-        category: category || "other",
-        address: address || null,
-      },
+    const dbVenue = await resolveVenue({
+      id: venueId,
+      placeId,
+      name,
+      latitude,
+      longitude,
+      category,
+      address,
     });
+    if (!dbVenue) {
+      return NextResponse.json(
+        { error: "Venue not found. Search for it again and retry." },
+        { status: 404 },
+      );
+    }
 
     const favorite = await prisma.favorite.upsert({
       where: {

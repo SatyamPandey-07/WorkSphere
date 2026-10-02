@@ -21,6 +21,12 @@ function isPrivateIPv4(ip: string): boolean {
   if (first === 169 && second === 254) return true;
   // 0.0.0.0 (Wildcard / Localhost)
   if (first === 0) return true;
+  // 100.64.0.0/10 (Carrier-grade NAT)
+  if (first === 100 && second >= 64 && second <= 127) return true;
+  // 198.18.0.0/15 (Benchmarking)
+  if (first === 198 && (second === 18 || second === 19)) return true;
+  // 224.0.0.0/4 multicast and 240.0.0.0/4 reserved/broadcast
+  if (first >= 224) return true;
 
   return false;
 }
@@ -77,18 +83,30 @@ export async function isSafeWebhookUrl(
     }
 
     // 2. Resolve DNS
-    const hostname = url.hostname;
-    const { address } = await lookupAsync(hostname);
+    const hostname = url.hostname.replace(/^\[|\]$/g, "");
+    // Check every resolved address — a host can publish both a public and a
+    // private record and the HTTP client may pick either.
+    const addresses = (await lookupAsync(hostname, {
+      all: true,
+    })) as unknown as {
+      address: string;
+    }[];
+    if (!addresses.length) {
+      return { isSafe: false, reason: "Hostname did not resolve." };
+    }
 
     // 3. Parse and Validate IP ranges natively without external packages
-    const isIPv6 = address.includes(":");
-    const isPrivate = isIPv6 ? isPrivateIPv6(address) : isPrivateIPv4(address);
-
-    if (isPrivate) {
-      return {
-        isSafe: false,
-        reason: `Resolved IP (${address}) falls into a forbidden private network range.`,
-      };
+    for (const { address } of addresses) {
+      const isIPv6 = address.includes(":");
+      const isPrivate = isIPv6
+        ? isPrivateIPv6(address)
+        : isPrivateIPv4(address);
+      if (isPrivate) {
+        return {
+          isSafe: false,
+          reason: `Resolved IP (${address}) falls into a forbidden private network range.`,
+        };
+      }
     }
 
     return { isSafe: true };

@@ -51,7 +51,7 @@ export async function generateTaxExportPdf(
     color: rgb(0, 0, 0),
   });
   y -= 15;
-  drawText(summaryPage, "CONSOLIDATED NEURAL LEDGER EXPORT", {
+  drawText(summaryPage, "BOOKING HISTORY EXPORT", {
     x: 165,
     y,
     size: 8,
@@ -257,28 +257,13 @@ export async function generateTaxExportPdf(
       size: 10,
       font: boldFont,
     });
-    py -= 40;
+    py -= 30;
 
-    drawText(page, "SECURITY PROTOCOL:", {
-      x: 50,
-      y: py,
-      size: 12,
-      font: boldFont,
-    });
-    py -= 18;
-    drawText(page, "MEMBERSHIP EXPENSE VALIDATION ACTIVE", {
-      x: 50,
-      y: py,
-      size: 10,
-      font,
-    });
-    py -= 18;
-    drawText(page, "ENCRYPTED VIA WORKSPHERE SECURE PROT", {
-      x: 50,
-      y: py,
-      size: 10,
-      font,
-    });
+    drawText(
+      page,
+      "Estimate based on a standard hourly rate; verify against the venue's invoice.",
+      { x: 50, y: py, size: 8, font, color: rgb(0.42, 0.45, 0.5) },
+    );
   }
 
   const pdfBytes = await pdfDoc.save();
@@ -341,126 +326,109 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
     }
   };
 
+  const accent = rgb(0.23, 0.51, 0.96);
+  const muted = rgb(0.42, 0.45, 0.5);
+  const left = 50;
+  const valueX = 190;
+  const maxValueWidth = width - valueX - left;
+
   page.drawRectangle({
     x: 0,
     y: height - 10,
     width,
     height: 10,
-    color: rgb(0.23, 0.51, 0.96),
+    color: accent,
   });
-  yPosition -= 60;
+  yPosition -= 30;
 
-  drawText("WORKSPHERE CONFIRMATION", {
-    x: 150,
+  drawText("WorkSphere", {
+    x: left,
     y: yPosition,
-    size: 24,
+    size: 22,
+    font: boldFont,
+    color: accent,
+  });
+  drawText("Booking confirmation", {
+    x: width - left - boldFont.widthOfTextAtSize("Booking confirmation", 14),
+    y: yPosition + 4,
+    size: 14,
     font: boldFont,
     color: rgb(0, 0, 0),
   });
-  yPosition -= 15;
-  drawText("SECURE NEURAL TRANSACTION RECEIPT", {
-    x: 180,
-    y: yPosition,
-    size: 8,
-    font,
-    color: rgb(0.5, 0.5, 0.5),
-  });
-  yPosition -= 50;
+  yPosition -= 40;
 
-  drawText("BOOKING DETAILS:", {
-    x: 50,
-    y: yPosition,
-    size: 12,
-    font: boldFont,
+  page.drawLine({
+    start: { x: left, y: yPosition },
+    end: { x: width - left, y: yPosition },
+    thickness: 0.5,
+    color: rgb(0.85, 0.87, 0.9),
   });
-  yPosition -= 15;
-  drawText("-".repeat(50), { x: 50, y: yPosition, size: 10, font });
+  yPosition -= 28;
+
+  const status = String(booking.status || "CONFIRMED");
+  const rows: [string, string][] = [
+    ["Confirmation", booking.confirmationId || booking.id],
+    ["Status", status.charAt(0) + status.slice(1).toLowerCase()],
+    ["Venue", booking.venue?.name || "Workspace"],
+    ["Address", booking.venue?.address || "—"],
+    ["Date", booking.date],
+    [
+      "Arrival time",
+      booking.timeZone ? `${booking.time} (${booking.timeZone})` : booking.time,
+    ],
+    ["Booked by", customerName || booking.customerEmail || "—"],
+    ["Email", booking.customerEmail || "—"],
+  ];
+  if (booking.projectBillingCode) {
+    rows.push(["Billing code", booking.projectBillingCode]);
+  }
+  if (booking.createdAt) {
+    rows.push([
+      "Booked on",
+      new Date(booking.createdAt).toISOString().slice(0, 10),
+    ]);
+  }
+
+  for (const [label, value] of rows) {
+    drawText(label, { x: left, y: yPosition, size: 10, font, color: muted });
+    const lines = breakTextIntoLines(
+      String(value),
+      [" ", ",", "-"],
+      maxValueWidth,
+      (t) => font.widthOfTextAtSize(t, 11),
+    );
+    for (const line of lines) {
+      drawText(line, { x: valueX, y: yPosition, size: 11, font: boldFont });
+      yPosition -= 15;
+    }
+    yPosition -= 7;
+  }
+
   yPosition -= 20;
-  drawText(`REFERENCE ID: ${booking.confirmationId || `WS-#${booking.id}`}`, {
-    x: 50,
-    y: yPosition,
-    size: 10,
-    font,
-  });
+  drawText("Good to know", { x: left, y: yPosition, size: 12, font: boldFont });
   yPosition -= 18;
-  const venueText = `VENUE: ${booking.venue.name}`;
-  const venueLines = breakTextIntoLines(
-    venueText,
-    [" ", ",", "-"],
-    495,
-    (t) => font.widthOfTextAtSize(t, 10),
-  );
-
-  for (const line of venueLines) {
-    drawText(line, {
-      x: 50,
+  const notes = [
+    "Show this confirmation number at the venue if asked.",
+    "Free cancellation up to 2 hours before your arrival time from your WorkSphere dashboard.",
+  ];
+  for (const note of notes) {
+    drawText(`• ${note}`, {
+      x: left,
       y: yPosition,
       size: 10,
       font,
+      color: muted,
     });
-    yPosition -= 12;
+    yPosition -= 15;
   }
-  yPosition -= 6;
-  drawText(
-    `CATEGORY: ${booking.venue.category?.toUpperCase() || "WORKSPACE"}`,
-    { x: 50, y: yPosition, size: 10, font },
-  );
-  yPosition -= 18;
-  drawText(`ADDRESS: ${booking.venue.address || "Verified Workspace"}`, {
-    x: 50,
-    y: yPosition,
-    size: 10,
-    font,
-  });
-  yPosition -= 18;
-  drawText(`SCHEDULE: ${booking.date} @ ${booking.time}`, {
-    x: 50,
-    y: yPosition,
-    size: 10,
-    font,
-  });
-  yPosition -= 18;
-  drawText(`BILLING CODE: ${booking.projectBillingCode || "N/A"}`, {
-    x: 50,
-    y: yPosition,
-    size: 10,
-    font,
-  });
-  yPosition -= 18;
-  drawText(`CUSTOMER: ${customerName || booking.customerEmail || "N/A"}`, {
-    x: 50,
-    y: yPosition,
-    size: 10,
-    font,
-  });
-  yPosition -= 40;
 
-  drawText("SECURITY PROTOCOL:", {
-    x: 50,
-    y: yPosition,
-    size: 12,
-    font: boldFont,
-  });
-  yPosition -= 18;
-  drawText("ZERO-FEE ACCESS PROTOCOL ACTIVE", {
-    x: 50,
-    y: yPosition,
-    size: 10,
+  drawText("Thank you for using WorkSphere.", {
+    x: left,
+    y: 50,
+    size: 9,
     font,
+    color: muted,
   });
-  yPosition -= 18;
-  drawText("ENCRYPTED VIA WORKSPHERE L3", {
-    x: 50,
-    y: yPosition,
-    size: 10,
-    font,
-  });
-  yPosition -= 80;
-
-  drawText(
-    "Thank you for choosing WorkSphere. Your workspace is ready for you.",
-    { x: 100, y: yPosition, size: 8, font, color: rgb(0.4, 0.4, 0.4) },
-  );
 
   return await pdfDoc.save();
 }

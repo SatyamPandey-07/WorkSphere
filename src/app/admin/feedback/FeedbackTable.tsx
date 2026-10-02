@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { dismissFlag, deleteFlaggedItem } from "../actions";
 
 type Flag = {
@@ -20,6 +20,10 @@ type Flag = {
 export default function FeedbackTable({ initialFlags }: { initialFlags: Flag[] }) {
   const [flags, setFlags] = useState<Flag[]>(initialFlags);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  useEffect(() => {
+  setFlags(initialFlags);
+}, [initialFlags]);
 
   const handleDismiss = async (flagId: string) => {
     setLoadingId(flagId);

@@ -1,10 +1,85 @@
-# Prisma Database Migrations Troubleshooting & Rollbacks Guide
+# Prisma Database Migrations Guide
 
 ## Overview
 
-WorkSphere uses **Prisma** as its Object-Relational Mapper (ORM) to manage schema synchronization, queries, and migrations across development and production environments. 
+WorkSphere uses **Prisma** as its ORM to manage schema synchronization and migrations across development, staging, and production environments.
 
-During local prototyping, team collaboration, or deployment cycles, the database state might drift from the Prisma schema or migration history. This guide details how to resolve database drift, perform rollbacks, and reset local database mock states.
+This guide covers the full migration lifecycle: creating and applying migrations in development, deploying to production/staging, and handling rollbacks and squashing.
+
+---
+
+## 0. Day-to-Day Migration Workflow
+
+### Creating a migration
+
+After editing `prisma/schema.prisma`, generate a migration file:
+
+```bash
+npx prisma migrate dev --name describe-what-changed
+```
+
+This command:
+1. Generates SQL in `prisma/migrations/<timestamp>_describe-what-changed/migration.sql`
+2. Applies the migration to your local database
+3. Regenerates the Prisma client
+
+Review the generated SQL before committing — never commit a migration you haven't read.
+
+### Regenerating the client without migrating
+
+```bash
+npx prisma generate
+```
+
+Run this after pulling changes that include new migrations to keep the TypeScript types in sync.
+
+### Applying pending migrations in CI / staging / production
+
+```bash
+npx prisma migrate deploy
+```
+
+`migrate deploy` applies any pending migrations without prompting and without creating new ones. Use this in your deployment pipeline (never `migrate dev` in production).
+
+### Checking migration status
+
+```bash
+npx prisma migrate status
+```
+
+Shows which migrations have been applied and whether any are pending.
+
+---
+
+## 4. Squashing Old Migrations
+
+As the migration history grows, you can squash a sequence of migrations into a single baseline migration. This is useful for new team members who want to avoid replaying many tiny early-development migrations.
+
+> **Warning:** Only squash migrations that have already been applied to all environments (development, staging, production). Never squash a migration that is pending in any environment.
+
+### Steps
+
+1. **Create a baseline from the current schema:**
+
+   ```bash
+   # Export the current database state to a single SQL file
+   npx prisma migrate diff \
+     --from-empty \
+     --to-schema-datamodel prisma/schema.prisma \
+     --script > prisma/migrations/0_init/migration.sql
+   ```
+
+2. **Mark the baseline as applied** (tells Prisma the DB is already in this state):
+
+   ```bash
+   npx prisma migrate resolve --applied 0_init
+   ```
+
+3. **Delete the old individual migration directories** that are now covered by the baseline.
+
+4. Commit the single `0_init` migration directory.
+
+After squashing, new environments will apply only the baseline migration, not every historical migration.
 
 ---
 

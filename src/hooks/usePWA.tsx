@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Download, Sparkles } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 import { purgeStaleWeights } from "@/lib/federated/weightDb";
+import { useWorkerTokenRefresh } from "@/hooks/useWorkerTokenRefresh";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -10,16 +12,29 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export function useSyncWorker() {
+  const { getToken } = useAuth();
+  const workerRef = useRef<Worker | null>(null);
+
+  // Handle AUTH_EXPIRED messages from the worker: refresh the Clerk session
+  // token on the main thread and send it back as TOKEN_REFRESH.
+  useWorkerTokenRefresh(workerRef);
+
+  // Keep a stable ref to getToken so the effect closure stays fresh without
+  // re-running the entire effect on every render.
+  const getTokenRef = useRef(getToken);
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
   useEffect(() => {
     if (typeof window === "undefined" || !window.Worker) return;
 
-    // Next.js Webpack automatically bundles this worker
+    // Next.js Webpack automatically bundles this worker.
     const worker = new Worker(
       new URL("../workers/sync.worker.ts", import.meta.url),
-      {
-        type: "module",
-      },
+      { type: "module" },
     );
+    workerRef.current = worker;
 
     const handleMessage = (event: MessageEvent) => {
       const msg = event.data;
@@ -47,21 +62,36 @@ export function useSyncWorker() {
 
     worker.addEventListener("message", handleMessage);
 
-    // Initial wake up to process any pending offline actions
-    worker.postMessage({ type: "WAKE_UP" });
+    // Forward the current Clerk JWT to the worker on each wake-up so it can
+    // attach it as an Authorization header when syncing favorites.
+    const sendWakeUp = () => {
+      getTokenRef.current()
+        .then((token) => {
+          worker.postMessage({ type: "WAKE_UP", token: token ?? undefined });
+        })
+        .catch(() => {
+          // Not signed in — wake the worker without a token.
+          worker.postMessage({ type: "WAKE_UP" });
+        });
+    };
 
-    // Wake up worker when connection is restored or manually triggered
-    const handleWakeUp = () => worker.postMessage({ type: "WAKE_UP" });
-    window.addEventListener("online", handleWakeUp);
-    window.addEventListener("trigger-sync", handleWakeUp);
+    // Initial wake-up to process any pending offline actions.
+    sendWakeUp();
+
+    // Wake up worker when connection is restored or manually triggered.
+    window.addEventListener("online", sendWakeUp);
+    window.addEventListener("trigger-sync", sendWakeUp);
 
     return () => {
+      workerRef.current = null;
       worker.removeEventListener("message", handleMessage);
-      window.removeEventListener("online", handleWakeUp);
-      window.removeEventListener("trigger-sync", handleWakeUp);
+      window.removeEventListener("online", sendWakeUp);
+      window.removeEventListener("trigger-sync", sendWakeUp);
       worker.terminate();
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // getToken identity is stable across Clerk re-renders; the getTokenRef above
+  // ensures we always call the latest version without restarting the worker.
 }
 
 /**

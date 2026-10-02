@@ -1,16 +1,40 @@
 import asyncio
 import json
 import logging
+import os
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+
+DEFAULT_CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+
+def parse_cors_allowed_origins(
+    origins_val: Optional[str] = None,
+) -> List[str]:
+    """Parse comma-separated allowed origins from a string or environment variable.
+
+    Defaults to http://localhost:3000,http://127.0.0.1:3000 if not set in the environment.
+    Splits by comma, strips whitespace, and filters out empty values.
+    """
+    if origins_val is None:
+        origins_val = os.getenv("CORS_ALLOWED_ORIGINS")
+    if origins_val is None:
+        return list(DEFAULT_CORS_ALLOWED_ORIGINS)
+    return [origin.strip() for origin in origins_val.split(",") if origin.strip()]
+
+
+get_cors_allowed_origins = parse_cors_allowed_origins
 
 try:
     from ..compression.compressor import ContextCompressor
@@ -150,6 +174,8 @@ def get_memory_rss_mb() -> float:
 def create_app(
     compressor: Optional[ContextCompressor] = None,
     store: Optional[VectorStore] = None,
+    api_key: Optional[str] = None,
+    cors_allowed_origins: Optional[Union[List[str], str]] = None,
 ) -> FastAPI:
     if compressor is None:
         compressor = ContextCompressor()
@@ -166,13 +192,50 @@ def create_app(
     app.state.compressor = compressor
     app.state.store = store
 
+    if cors_allowed_origins is None:
+        allowed_origins = parse_cors_allowed_origins()
+    elif isinstance(cors_allowed_origins, str):
+        allowed_origins = parse_cors_allowed_origins(cors_allowed_origins)
+    else:
+        allowed_origins = [
+            origin.strip()
+            for origin in cors_allowed_origins
+            if origin and origin.strip()
+        ]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=allowed_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization"],
     )
+
+    @app.middleware("http")
+    async def add_process_time_header(request: Request, call_next):
+        start = time.perf_counter()
+        response = await call_next(request)
+        process_time = (time.perf_counter() - start) * 1000
+        response.headers["x-process-time"] = f"{process_time:.2f}ms"
+        return response
+
+    @app.middleware("http")
+    async def api_key_auth_middleware(request: Request, call_next):
+        token_to_check = api_key or os.environ.get("COMPRESSION_API_KEY")
+        if not token_to_check:
+            return await call_next(request)
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        if (
+            request.url.path in {"/health", "/docs", "/openapi.json", "/redoc"}
+            or request.url.path.startswith("/docs")
+        ):
+            return await call_next(request)
+        auth_header = request.headers.get("Authorization", "")
+        parts = auth_header.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer" or parts[1] != token_to_check:
+            return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+        return await call_next(request)
 
     @app.get("/health", response_model=HealthResponse)
     async def get_health():
@@ -249,14 +312,6 @@ def create_app(
             "stats": compressor.get_stats(),
         }
 
-    @api_router.post("/compress/stream")
-    async def compress_stream(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        max_tokens = body.get("max_tokens")
     @app.post("/api/compress/stream")
     async def compress_stream(
         payload: CompressRequest,
@@ -281,11 +336,11 @@ def create_app(
                         logger.info("Client disconnected, aborting compression stream early")
                         break
 
-                    payload = json.dumps({
+                    chunk_payload = json.dumps({
                         "chunk": chunk,
                         "done": False,
                     })
-                    yield f"data: {payload}\n\n"
+                    yield f"data: {chunk_payload}\n\n"
                     total_yielded += 1
                     await asyncio.sleep(0)
 
@@ -311,48 +366,29 @@ def create_app(
             },
         )
 
-    @api_router.post("/deduplicate")
-    async def deduplicate(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        threshold = body.get("threshold")
-        removed = compressor.deduplicate(threshold=threshold)
+    @app.post("/api/deduplicate")
+    async def deduplicate(payload: DeduplicateRequest):
+        removed = compressor.deduplicate(threshold=payload.threshold)
         return {
             "removed": removed,
             "stats": compressor.get_stats(),
         }
 
-    @api_router.post("/store/add")
-    async def store_add(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        text = body.get("text", "")
-        metadata = body.get("metadata")
-        node_id = store.add(text, metadata)
+    @app.post("/api/store/add")
+    async def store_add(request: StoreAddRequest):
+        node_id = store.add(request.text, request.metadata)
         return {"node_id": node_id}
 
-    @api_router.post("/store/search")
-    async def store_search(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        k = body.get("k", 10)
-        results = store.search(query, k)
+    @app.post("/api/store/search")
+    async def store_search(request: SearchRequest):
+        results = store.search(request.query, request.k)
         return {"results": results}
 
-    @api_router.delete("/clear")
+    @app.delete("/api/clear")
     async def clear():
         compressor.clear()
         store.clear()
         return {"status": "cleared"}
-
-    app.include_router(api_router)
 
     return app
 
@@ -367,6 +403,7 @@ class CompressionServer:
         similarity_threshold: float = 0.85,
         persist_path: Optional[str] = None,
         api_key: Optional[str] = None,
+        cors_allowed_origins: Optional[Union[List[str], str]] = None,
     ):
         self.host = host
         self.port = port
@@ -383,6 +420,7 @@ class CompressionServer:
             compressor=self.compressor,
             store=self.store,
             api_key=self.api_key,
+            cors_allowed_origins=cors_allowed_origins,
         )
 
         self._server: Optional[uvicorn.Server] = None

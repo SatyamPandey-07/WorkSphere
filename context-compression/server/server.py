@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import threading
+from contextlib import asynccontextmanager
+from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional, Union
 
@@ -37,9 +39,41 @@ get_cors_allowed_origins = parse_cors_allowed_origins
 try:
     from ..compression.compressor import ContextCompressor
     from ..storage.store import VectorStore
+    from .schemas import (
+        AddMessageRequest,
+        CompressRequest,
+        CompressResponse,
+        DeduplicateRequest,
+        HealthResponse,
+        MetricsResponse,
+        SearchRequest,
+        StoreAddRequest,
+    )
 except (ImportError, ValueError):
     from compression.compressor import ContextCompressor
     from storage.store import VectorStore
+    try:
+        from server.schemas import (
+            AddMessageRequest,
+            CompressRequest,
+            CompressResponse,
+            DeduplicateRequest,
+            HealthResponse,
+            MetricsResponse,
+            SearchRequest,
+            StoreAddRequest,
+        )
+    except (ImportError, ValueError):
+        from schemas import (
+            AddMessageRequest,
+            CompressRequest,
+            CompressResponse,
+            DeduplicateRequest,
+            HealthResponse,
+            MetricsResponse,
+            SearchRequest,
+            StoreAddRequest,
+        )
 
 logger = logging.getLogger(__name__)
 
@@ -348,180 +382,6 @@ def create_app(
     @app.post("/api/store/search")
     async def store_search(request: SearchRequest):
         results = store.search(request.query, request.k)
-        return {"results": results}
-
-    @app.delete("/api/clear")
-    async def clear():
-        compressor.clear()
-        store.clear()
-        return {"status": "cleared"}
-
-    return app
-
-
-def create_app(
-    compressor: Optional[ContextCompressor] = None,
-    store: Optional[VectorStore] = None,
-) -> FastAPI:
-    if compressor is None:
-        compressor = ContextCompressor()
-    if store is None:
-        store = VectorStore()
-
-    app = FastAPI(title="Context Compression Server")
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-
-    @app.middleware("http")
-    async def add_process_time_header(request: Request, call_next):
-        start_time = time.perf_counter()
-        response = await call_next(request)
-        process_time_ms = (time.perf_counter() - start_time) * 1000
-        response.headers["X-Process-Time"] = f"{process_time_ms:.2f}ms"
-        logger.info(
-            f"{request.method} {request.url.path} - Status: {response.status_code} - Duration: {process_time_ms:.2f}ms"
-        )
-        return response
-
-    @app.get("/api/health")
-    async def health():
-        return {"status": "ok"}
-
-    @app.get("/api/stats")
-    async def stats():
-        return {
-            "compressor": compressor.get_stats(),
-            "store": {"size": store.size()},
-        }
-
-    @app.post("/api/add")
-    async def add_message(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        role = body.get("role", "user")
-        content = body.get("content", "")
-        metadata = body.get("metadata")
-        node_id = compressor.add_message(role, content, metadata)
-        return {"node_id": node_id}
-
-    @app.post("/api/search")
-    async def search(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        k = body.get("k", 10)
-        results = compressor.get_relevant_context(query, k)
-        return {"results": results}
-
-    @app.post("/api/compress")
-    async def compress(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        max_tokens = body.get("max_tokens")
-        result, tokens = compressor.compress_context(
-            query, max_tokens=max_tokens
-        )
-        return {
-            "compressed": result,
-            "total_tokens": tokens,
-            "stats": compressor.get_stats(),
-        }
-
-    @app.post("/api/compress/stream")
-    async def compress_stream(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        max_tokens = body.get("max_tokens")
-
-        async def event_generator():
-            try:
-                total_yielded = 0
-                async for chunk in compressor.compress_context_stream(
-                    query, max_tokens=max_tokens
-                ):
-                    if await request.is_disconnected():
-                        logger.info("Client disconnected, aborting compression stream early")
-                        break
-
-                    payload = json.dumps({
-                        "chunk": chunk,
-                        "done": False,
-                    })
-                    yield f"data: {payload}\n\n"
-                    total_yielded += 1
-                    await asyncio.sleep(0)
-
-                if not await request.is_disconnected():
-                    done_payload = json.dumps({
-                        "done": True,
-                        "total_yielded": total_yielded,
-                        "stats": compressor.get_stats(),
-                    })
-                    yield f"data: {done_payload}\n\n"
-                    yield "data: [DONE]\n\n"
-            except (asyncio.CancelledError, GeneratorExit):
-                logger.info("Compression streaming cancelled due to client disconnect")
-                raise
-
-        return StreamingResponse(
-            event_generator(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",
-            },
-        )
-
-    @app.post("/api/deduplicate")
-    async def deduplicate(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        threshold = body.get("threshold")
-        removed = compressor.deduplicate(threshold=threshold)
-        return {
-            "removed": removed,
-            "stats": compressor.get_stats(),
-        }
-
-    @app.post("/api/store/add")
-    async def store_add(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        text = body.get("text", "")
-        metadata = body.get("metadata")
-        node_id = store.add(text, metadata)
-        return {"node_id": node_id}
-
-    @app.post("/api/store/search")
-    async def store_search(request: Request):
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-        query = body.get("query", "")
-        k = body.get("k", 10)
-        results = store.search(query, k)
         return {"results": results}
 
     @app.delete("/api/clear")

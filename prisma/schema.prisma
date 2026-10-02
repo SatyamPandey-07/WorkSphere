@@ -57,6 +57,7 @@ model User {
   longestStreak      Int                @default(0)
   lastCheckInDate    String? // stored as "YYYY-MM-DD" UTC
   passkeys           PasskeyCredential[]
+  passkeyEmailOtps   PasskeyEmailOtp[]
   isVerifiedStudent  Boolean            @default(false)
   accurateVotes      Int                @default(0)
   badges             UserBadge[]
@@ -710,6 +711,26 @@ model PasskeyCredential {
   expiresAt         DateTime
 
   @@index([userId])
+}
+
+/// Single-use email OTP gating sensitive passkey actions (#1991).
+/// Only an HMAC of the code is stored; rows are scoped to one action on one credential.
+model PasskeyEmailOtp {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// "rotate" | "rename" | "revoke"
+  action       String
+  /// PasskeyCredential.id the code authorises
+  credentialId String
+  codeHash     String
+  attempts     Int       @default(0)
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId, action, credentialId])
+  @@index([expiresAt])
 }
 
 model PasskeyChallenge {

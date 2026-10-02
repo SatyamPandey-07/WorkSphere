@@ -109,20 +109,9 @@ describe("Passkey Rotation API Routes", () => {
       expect(data.deletedCount).toBe(2);
     });
 
-    it("rotates a specific passkey", async () => {
+    it("refuses to rotate without a new credential and email OTP (#1991)", async () => {
       (auth as unknown as jest.Mock).mockResolvedValue({
         userId: "user_test123",
-      });
-
-      const newExpiry = new Date();
-      newExpiry.setDate(newExpiry.getDate() + 90);
-
-      (prisma.passkeyCredential.findFirst as jest.Mock).mockResolvedValue({
-        id: "cred_1",
-        userId: "user_test123",
-      });
-      (prisma.passkeyCredential.update as jest.Mock).mockResolvedValue({
-        expiresAt: newExpiry,
       });
 
       const req = new Request(
@@ -136,10 +125,10 @@ describe("Passkey Rotation API Routes", () => {
 
       const res = await rotationAction(req);
 
-      expect(res.status).toBe(200);
-      const data = await res.json();
-      expect(data.success).toBe(true);
-      expect(data.newExpiresAt).toBeDefined();
+      // Rotation now registers a successor credential and revokes the old
+      // one; full flow is covered in passkeyEmailOtp.test.ts.
+      expect(res.status).toBe(400);
+      expect(prisma.passkeyCredential.update).not.toHaveBeenCalled();
     });
 
     it("returns error for invalid action", async () => {

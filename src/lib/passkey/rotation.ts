@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { getKeyExpiryDate, isKeyExpired } from "./attestation";
+import { isKeyExpired } from "./attestation";
+import { consumePasskeyOtp } from "./emailOtp";
+import type { VerifiedRegistration } from "./registration";
 
 export const KEY_ROTATION_INTERVAL_DAYS = 90;
 
@@ -41,25 +43,67 @@ export async function getPasskeyRotationStatus(
   });
 }
 
-export async function rotatePasskey(
-  userId: string,
-  credentialId: string,
-): Promise<{ success: boolean; newExpiresAt?: Date; error?: string }> {
-  const credential = await prisma.passkeyCredential.findFirst({
-    where: { id: credentialId, userId },
+export class PasskeyRotationConflictError extends Error {}
+
+/**
+ * Replace `oldCredentialId` with a freshly registered credential (#1991).
+ *
+ * Consuming the OTP, inserting the successor and revoking the old passkey
+ * happen in one transaction: the user is never left with zero passkeys if a
+ * step fails, and a replayed OTP cannot trigger a second rotation.
+ */
+export async function rotatePasskey(params: {
+  userId: string;
+  oldCredentialId: string;
+  otpId: string;
+  registration: VerifiedRegistration;
+  name: string;
+}): Promise<{
+  id: string;
+  credentialId: string;
+  name: string;
+  deviceType: string;
+  backedUp: boolean;
+  createdAt: Date;
+  expiresAt: Date;
+}> {
+  const { userId, oldCredentialId, otpId, registration, name } = params;
+
+  return prisma.$transaction(async (tx) => {
+    if (!(await consumePasskeyOtp(otpId, tx))) {
+      throw new PasskeyRotationConflictError(
+        "This verification code was already used. Request a new code.",
+      );
+    }
+
+    const revoked = await tx.passkeyCredential.deleteMany({
+      where: { id: oldCredentialId, userId },
+    });
+    if (revoked.count !== 1) {
+      throw new PasskeyRotationConflictError(
+        "The passkey being rotated no longer exists.",
+      );
+    }
+
+    const created = await tx.passkeyCredential.create({
+      data: { userId, ...registration.credential, name },
+      select: {
+        id: true,
+        credentialId: true,
+        name: true,
+        deviceType: true,
+        backedUp: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+    });
+
+    await tx.passkeyChallenge.deleteMany({
+      where: { id: registration.challengeId },
+    });
+
+    return created;
   });
-
-  if (!credential) {
-    return { success: false, error: "Credential not found" };
-  }
-
-  const newExpiresAt = getKeyExpiryDate();
-  await prisma.passkeyCredential.update({
-    where: { id: credentialId },
-    data: { lastUsedAt: new Date() },
-  });
-
-  return { success: true, newExpiresAt };
 }
 
 export async function cleanupExpiredPasskeys(

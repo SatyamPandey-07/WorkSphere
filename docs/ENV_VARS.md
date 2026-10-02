@@ -48,6 +48,7 @@ The table below lists every environment variable currently used by WorkSphere.
 | `SMTP_PORT` | Optional | SMTP server port. |
 | `SMTP_USER` | Optional | SMTP account username. |
 | `SMTP_PASS` | Optional | SMTP account password. |
+| `PASSKEY_OTP_SECRET` | Optional | HMAC key for passkey email OTPs. Falls back to `CSRF_SECRET` / `CLERK_SECRET_KEY`; one of them is required in production. |
 | `UPSTASH_REDIS_REST_URL` | Optional | REST endpoint for the Upstash Redis instance. |
 | `UPSTASH_REDIS_REST_TOKEN` | Optional | Authentication token for Upstash Redis. |
 | `NEXT_PUBLIC_APP_URL` | Optional | Public application URL used for metadata and sharing links. |
@@ -239,7 +240,7 @@ All three variables must be configured for image uploads to work correctly.
 
 ## SMTP Configuration
 
-SMTP credentials are used to send booking confirmations and notification emails.
+SMTP credentials are used to send booking confirmations and notification emails, and the one-time codes that authorise rotating, renaming or removing a passkey. Without SMTP in production, those passkey actions return `503`.
 
 ### Variables
 

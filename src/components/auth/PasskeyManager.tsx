@@ -22,6 +22,10 @@ import {
   Copy,
 } from "lucide-react";
 import { useCsrfToken } from "@/hooks/useCsrfToken";
+import {
+  PasskeyOtpDialog,
+  type PasskeyOtpAction,
+} from "@/components/auth/PasskeyOtpDialog";
 
 export interface PasskeyItem {
   id: string;
@@ -47,6 +51,19 @@ export interface RotationStatus {
   createdAt: string;
 }
 
+interface PendingAction {
+  action: PasskeyOtpAction;
+  id: string;
+  name: string;
+  /** New name, for rename */
+  newName?: string;
+}
+
+async function errorFrom(res: Response, fallback: string): Promise<Error> {
+  const data = await res.json().catch(() => ({}));
+  return new Error(data.error || fallback);
+}
+
 export function PasskeyManager() {
   useCsrfToken();
   const [passkeys, setPasskeys] = useState<PasskeyItem[]>([]);
@@ -63,6 +80,7 @@ export function PasskeyManager() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingAction | null>(null);
 
   const handleCopyId = async (credentialId: string) => {
     try {
@@ -170,40 +188,86 @@ export function PasskeyManager() {
     }
   };
 
-  const handleRename = async (id: string) => {
-    if (!editName.trim()) return;
-    try {
-      setError(null);
+  const handleRename = (pk: PasskeyItem) => {
+    const newName = editName.trim();
+    if (!newName || newName === pk.name) {
+      setEditingId(null);
+      return;
+    }
+    setPending({ action: "rename", id: pk.id, name: pk.name, newName });
+  };
+
+  const handleDelete = (pk: PasskeyItem) => {
+    if (!confirm("Are you sure you want to remove this passkey credential?"))
+      return;
+    setPending({ action: "revoke", id: pk.id, name: pk.name });
+  };
+
+  const handleRotate = (pk: PasskeyItem) => {
+    if (!isWebAuthnSupported) {
+      setError("WebAuthn biometric passkeys are not supported by this browser.");
+      return;
+    }
+    setPending({ action: "rotate", id: pk.id, name: pk.name });
+  };
+
+  /** Runs the pending action once the user has entered their email OTP (#1991). */
+  const performVerifiedAction = async (otp: string) => {
+    if (!pending) return;
+    const { action, id, newName } = pending;
+
+    if (action === "rename") {
       const res = await fetch(`/api/auth/passkey/credentials/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editName.trim() }),
+        body: JSON.stringify({ name: newName, otp }),
       });
-      if (!res.ok) throw new Error("Failed to rename passkey");
+      if (!res.ok) throw await errorFrom(res, "Failed to rename passkey.");
       setEditingId(null);
       setEditName("");
-      await fetchPasskeys();
-    } catch (err: unknown) {
-      console.error(err);
-      setError("Failed to update passkey name.");
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to remove this passkey credential?"))
-      return;
-    try {
-      setError(null);
+      setSuccess("Passkey renamed.");
+    } else if (action === "revoke") {
       const res = await fetch(`/api/auth/passkey/credentials/${id}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ otp }),
       });
-      if (!res.ok) throw new Error("Failed to delete passkey");
+      if (!res.ok) throw await errorFrom(res, "Failed to remove passkey.");
       setSuccess("Passkey removed.");
-      await fetchPasskeys();
-    } catch (err: unknown) {
-      console.error(err);
-      setError("Failed to delete passkey.");
+    } else {
+      const optRes = await fetch(
+        `/api/auth/passkey/register/options?rotate=${encodeURIComponent(id)}`,
+      );
+      if (!optRes.ok) throw await errorFrom(optRes, "Failed to start rotation.");
+      const optionsJSON = await optRes.json();
+
+      let registrationResponse;
+      try {
+        registrationResponse = await startRegistration({ optionsJSON });
+      } catch {
+        // The code is still valid — the user can retry without a new email.
+        throw new Error(
+          "Passkey creation was cancelled. Submit again to retry with the same code.",
+        );
+      }
+
+      const res = await fetch("/api/auth/passkey/rotation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "rotate",
+          credentialId: id,
+          otp,
+          registrationResponse,
+        }),
+      });
+      if (!res.ok) throw await errorFrom(res, "Failed to rotate passkey.");
+      setSuccess("Passkey rotated. The old credential has been revoked.");
     }
+
+    setPending(null);
+    setError(null);
+    await fetchPasskeys();
   };
 
   const handleCleanupExpired = async () => {
@@ -307,7 +371,8 @@ export function PasskeyManager() {
           <div className="flex items-center gap-3">
             <Clock className="h-5 w-5 shrink-0" />
             <span>
-              Some passkeys are due for rotation (90-day security policy).
+              Some passkeys are due for rotation (90-day security policy). Use
+              the rotate button next to a passkey to replace it.
             </span>
           </div>
           <button
@@ -362,12 +427,13 @@ export function PasskeyManager() {
                       <div className="flex items-center gap-2">
                         <input
                           type="text"
+                          maxLength={64}
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           className="px-2 py-1 text-sm rounded-lg border border-blue-500 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
                         />
                         <button
-                          onClick={() => handleRename(pk.id)}
+                          onClick={() => handleRename(pk)}
                           className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white"
                         >
                           Save
@@ -447,6 +513,14 @@ export function PasskeyManager() {
 
                 <div className="flex items-center gap-1">
                   <button
+                    onClick={() => handleRotate(pk)}
+                    title="Rotate passkey"
+                    aria-label={`Rotate passkey ${pk.name}`}
+                    className="p-2 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg hover:bg-blue-500/10 transition-colors"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                  <button
                     onClick={() => {
                       setEditingId(pk.id);
                       setEditName(pk.name);
@@ -457,7 +531,7 @@ export function PasskeyManager() {
                     <Edit3 className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => handleDelete(pk.id)}
+                    onClick={() => handleDelete(pk)}
                     title="Delete passkey"
                     className="p-2 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-colors"
                   >
@@ -469,6 +543,17 @@ export function PasskeyManager() {
           </div>
         )}
       </div>
+
+      {pending && (
+        <PasskeyOtpDialog
+          key={`${pending.action}-${pending.id}`}
+          action={pending.action}
+          credentialId={pending.id}
+          passkeyName={pending.name}
+          onCancel={() => setPending(null)}
+          onSubmit={performVerifiedAction}
+        />
+      )}
     </div>
   );
 }

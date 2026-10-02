@@ -1,5 +1,15 @@
 import type * as Party from "partykit/server";
 import { onConnect as onConnectYjs } from "y-partykit";
+
+/** Yjs rooms for collaborative collection notes: `folder-notes-{folderId}` (#3360). */
+export const FOLDER_NOTES_ROOM_PREFIX = "folder-notes-";
+
+/** Folder id for `folder-{id}` and `folder-notes-{id}` rooms (other rooms: the room id). */
+export function folderIdFromRoom(roomId: string): string {
+  if (roomId.startsWith(FOLDER_NOTES_ROOM_PREFIX)) return roomId.slice(FOLDER_NOTES_ROOM_PREFIX.length);
+  if (roomId.startsWith("folder-")) return roomId.slice("folder-".length);
+  return roomId;
+}
 import { verifyToken } from "@clerk/backend";
 
 type SeatStatus = "green" | "yellow" | "red";
@@ -109,6 +119,9 @@ export default class WorkspaceServer implements Party.Server {
 
     let isViewer = false;
     let verifiedUserId: string | undefined;
+    // Collection notes (#3360) hold private text: only folder members may join.
+    const isFolderNotesRoom = this.room.id.startsWith(FOLDER_NOTES_ROOM_PREFIX);
+    let isFolderMember = false;
 
     if (token) {
       try {
@@ -121,17 +134,18 @@ export default class WorkspaceServer implements Party.Server {
         if (this.room.id.startsWith("canvas-")) {
           isViewer = false;
         } else {
-          // Extract folder ID if room is named "folder-{id}"
-          let folderId = this.room.id;
-          if (folderId.startsWith("folder-")) {
-            folderId = folderId.replace("folder-", "");
-          }
+          const folderId = folderIdFromRoom(this.room.id);
 
           // Fetch user's role in the folder via Next.js internal API to avoid Edge Prisma errors
           const NEXT_PUBLIC_APP_URL =
             process.env.NEXT_PUBLIC_APP_URL || "http://127.0.0.1:3000";
+          const sharedSecret =
+            process.env.PARTYKIT_AUTH_SECRET || process.env.PARTYKIT_SHARED_SECRET;
           const authRes = await fetch(
-            `${NEXT_PUBLIC_APP_URL}/api/partykit/auth?userId=${userId}&folderId=${folderId}`,
+            `${NEXT_PUBLIC_APP_URL}/api/partykit/auth?userId=${encodeURIComponent(userId)}&folderId=${encodeURIComponent(folderId)}`,
+            // The auth route rejects calls without the shared secret; without
+            // this header every lookup failed and all users became viewers.
+            sharedSecret ? { headers: { Authorization: `Bearer ${sharedSecret}` } } : undefined,
           );
 
           if (authRes.ok) {
@@ -139,6 +153,7 @@ export default class WorkspaceServer implements Party.Server {
             if (authData.role === "MEMBER" || authData.role === "VIEWER") {
               isViewer = true;
             }
+            isFolderMember = authData.member === true || authData.role === "OWNER";
           } else {
             isViewer = true;
           }
@@ -150,6 +165,11 @@ export default class WorkspaceServer implements Party.Server {
       }
     } else {
       isViewer = true;
+    }
+
+    if (isFolderNotesRoom && !isFolderMember) {
+      conn.close(4003, "Forbidden: collection notes are limited to members");
+      return;
     }
 
     conn.setState({
@@ -173,10 +193,15 @@ export default class WorkspaceServer implements Party.Server {
 
     // Yjs connection for shared state (messages, markers)
     // Pass readOnly option so y-partykit automatically drops incoming updates
-    onConnectYjs(conn, this.room, {
-      gc: true,
-      readOnly: isViewer,
-    });
+    onConnectYjs(
+      conn,
+      this.room,
+      isFolderNotesRoom
+        ? // Notes must outlive the room's in-memory lifetime (#3360);
+          // y-partykit requires gc off when persisting.
+          { gc: false, readOnly: isViewer, persist: { mode: "snapshot" } }
+        : { gc: true, readOnly: isViewer },
+    );
 
     this.connectionStates.set(conn.id, { lastPong: Date.now() });
 

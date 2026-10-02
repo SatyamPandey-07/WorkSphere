@@ -94,8 +94,10 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // `member` lets PartyKit tell real members from outsiders, who also get
+    // role "VIEWER" (#3360: collection notes are members-only).
     if (membership) {
-      return NextResponse.json({ role: membership.role }, { headers: corsHeaders });
+      return NextResponse.json({ role: membership.role, member: true }, { headers: corsHeaders });
     }
 
     // Check if they are the owner
@@ -105,10 +107,10 @@ export async function GET(req: NextRequest) {
     });
 
     if (folder && folder.ownerId === userId) {
-      return NextResponse.json({ role: "OWNER" }, { headers: corsHeaders });
+      return NextResponse.json({ role: "OWNER", member: true }, { headers: corsHeaders });
     }
 
-    return NextResponse.json({ role: "VIEWER" }, { headers: corsHeaders });
+    return NextResponse.json({ role: "VIEWER", member: false }, { headers: corsHeaders });
   } catch (err) {
     console.error("PartyKit Auth API error:", err);
     return NextResponse.json({ role: "VIEWER" }, { headers: corsHeaders });

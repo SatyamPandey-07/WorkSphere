@@ -51,6 +51,7 @@ The table below lists every environment variable currently used by WorkSphere.
 | `PASSKEY_OTP_SECRET` | Optional | HMAC key for passkey email OTPs. Falls back to `CSRF_SECRET` / `CLERK_SECRET_KEY`; one of them is required in production. |
 | `UPSTASH_REDIS_REST_URL` | Optional | REST endpoint for the Upstash Redis instance. |
 | `UPSTASH_REDIS_REST_TOKEN` | Optional | Authentication token for Upstash Redis. |
+| `PARTYKIT_AUTH_SECRET` | Required for collaboration | Shared secret the PartyKit server sends (as `Authorization: Bearer …`) to `/api/partykit/auth` to look up folder roles. Must be set on both the Next.js app and the PartyKit deployment. Without it every user is treated as a read-only viewer and members-only rooms (collection notes) reject everyone. `PARTYKIT_SHARED_SECRET` is accepted as an alias. |
 | `NEXT_PUBLIC_APP_URL` | Optional | Public application URL used for metadata and sharing links. |
 
 ---

@@ -72,12 +72,12 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
     allowCredentials: [],
   };
   const mockAuthResponse = {
-    id: "cred_123",
-    rawId: "raw_123",
+    id: "mock_credential_id",
+    rawId: "mock_raw_id",
     response: {
-      clientDataJSON: "c29tZV9jbGllbnRfZGF0YQ",
-      authenticatorData: "c29tZV9hdXRoX2RhdGE",
-      signature: "c29tZV9zaWduYXR1cmU",
+      clientDataJSON: "mock_client_data_json",
+      authenticatorData: "mock_authenticator_data",
+      signature: "mock_signature",
     },
     type: "public-key",
   };

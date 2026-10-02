@@ -129,7 +129,7 @@ export function EnhancedChatbot({
   const { socket, isHydrated } = useMultiplayerSession(roomId || null);
   const sendSocketMessage = useCallback(
     (data: string) => {
-      if (socket && socket.readyState === 1) {
+      if (socket) {
         try {
           socket.send(data);
         } catch (err) {

@@ -210,18 +210,71 @@ export function isPrivateIp(ip: string): boolean {
   return true;
 }
 
+/**
+ * Resolves every published address for a hostname and returns the first one
+ * only when none of them are private.
+ *
+ * A hostname can answer with a public record and a private one, and the
+ * resolver order is not guaranteed. Validating a single record let a mixed
+ * answer through, so a later lookup could land on the internal entry. Any
+ * private record in the set now blocks the host outright, and the caller pins
+ * the connection to the address returned here instead of re-resolving.
+ */
+export async function resolveSafeAddress(
+  hostname: string,
+): Promise<string | null> {
+  let records: Array<{ address: string; family: number }>;
+  try {
+    records = await dns.promises.lookup(hostname, { all: true });
+  } catch (error) {
+    console.error(
+      `[WhatsApp] Webhook blocked: ${hostname} failed to resolve`,
+      error,
+    );
+    return null;
+  }
+
+  if (records.length === 0) {
+    console.error(`[WhatsApp] Webhook blocked: ${hostname} did not resolve`);
+    return null;
+  }
+
+  const privateRecord = records.find((record) => isPrivateIp(record.address));
+  if (privateRecord) {
+    console.error(
+      `[WhatsApp] Webhook blocked: ${hostname} resolved to private address ${privateRecord.address}`,
+    );
+    return null;
+  }
+
+  return records[0].address;
+}
+
 export async function isValidWebhookUrl(url: string): Promise<boolean> {
   try {
     const parsed = new URL(url.trim());
-    if (parsed.protocol !== "https:") return false;
-    if (BLOCKED_HOSTNAMES.test(parsed.hostname)) return false;
-    if (BLOCKED_IP.test(parsed.hostname)) return false;
+    if (parsed.protocol !== "https:") {
+      console.error(
+        `[WhatsApp] Webhook blocked: non-HTTPS scheme ${parsed.protocol}`,
+      );
+      return false;
+    }
+    if (BLOCKED_HOSTNAMES.test(parsed.hostname)) {
+      console.error(
+        `[WhatsApp] Webhook blocked: hostname ${parsed.hostname} is not allowed`,
+      );
+      return false;
+    }
+    if (BLOCKED_IP.test(parsed.hostname)) {
+      console.error(
+        `[WhatsApp] Webhook blocked: literal private address ${parsed.hostname}`,
+      );
+      return false;
+    }
 
-    const { address } = await dns.promises.lookup(parsed.hostname);
-    if (isPrivateIp(address)) return false;
-
-    return true;
-  } catch {
+    return (await resolveSafeAddress(parsed.hostname)) !== null;
+  } catch (error) {
+    console.error("[WhatsApp] Webhook blocked: URL could not be parsed", error);
     return false;
   }
 }
@@ -298,11 +351,8 @@ export class WhatsAppNotificationService {
 
     try {
       const parsed = new URL(webhookUrl);
-      const { address } = await dns.promises.lookup(parsed.hostname);
-      if (isPrivateIp(address)) {
-        console.error(`[WhatsApp] Webhook blocked: Resolved to private IP ${address}`);
-        return;
-      }
+      const address = await resolveSafeAddress(parsed.hostname);
+      if (!address) return;
 
       await new Promise<void>((resolve, reject) => {
         const bodyData = JSON.stringify({

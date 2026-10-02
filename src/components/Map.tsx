@@ -284,10 +284,15 @@ function WebGLContextWatcher() {
     const container = map.getContainer();
     if (!container) return;
     const cleanups: Array<() => void> = [];
+    // setupCanvases re-runs on every tab focus; attach once per canvas so
+    // listeners and recovery managers don't pile up (#1729).
+    const attached = new WeakSet<HTMLCanvasElement>();
 
     const setupCanvases = () => {
       const canvases = container.querySelectorAll("canvas");
       canvases.forEach((canvas) => {
+        if (attached.has(canvas as HTMLCanvasElement)) return;
+        attached.add(canvas as HTMLCanvasElement);
         const cleanup = attachWebGLContextRecovery(
           canvas as HTMLCanvasElement,
           () => {

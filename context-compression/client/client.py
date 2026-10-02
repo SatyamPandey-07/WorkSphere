@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional
 from urllib.error import URLError
 from urllib.request import Request, urlopen
@@ -8,8 +9,13 @@ logger = logging.getLogger(__name__)
 
 
 class CompressionClient:
-    def __init__(self, server_url: str = "http://127.0.0.1:8890"):
+    def __init__(
+        self,
+        server_url: str = "http://127.0.0.1:8890",
+        api_key: Optional[str] = None,
+    ):
         self.server_url = server_url.rstrip("/")
+        self.api_key = api_key or os.environ.get("COMPRESSION_API_KEY")
 
     def _request(
         self, method: str, path: str, data: Optional[Dict] = None
@@ -18,6 +24,8 @@ class CompressionClient:
         body = json.dumps(data).encode() if data is not None else None
         req = Request(url, data=body, method=method)
         req.add_header("Content-Type", "application/json")
+        if self.api_key:
+            req.add_header("Authorization", f"Bearer {self.api_key}")
         try:
             with urlopen(req, timeout=30) as resp:
                 return json.loads(resp.read().decode())

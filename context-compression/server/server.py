@@ -215,6 +215,14 @@ def create_app(
             "stats": compressor.get_stats(),
         }
 
+    @api_router.post("/compress/stream")
+    async def compress_stream(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        query = body.get("query", "")
+        max_tokens = body.get("max_tokens")
     @app.post("/api/compress/stream")
     async def compress_stream(
         payload: CompressRequest,
@@ -239,11 +247,11 @@ def create_app(
                         logger.info("Client disconnected, aborting compression stream early")
                         break
 
-                    chunk_payload = json.dumps({
+                    payload = json.dumps({
                         "chunk": chunk,
                         "done": False,
                     })
-                    yield f"data: {chunk_payload}\n\n"
+                    yield f"data: {payload}\n\n"
                     total_yielded += 1
                     await asyncio.sleep(0)
 
@@ -269,29 +277,48 @@ def create_app(
             },
         )
 
-    @app.post("/api/deduplicate")
-    async def deduplicate(payload: DeduplicateRequest):
-        removed = compressor.deduplicate(threshold=payload.threshold)
+    @api_router.post("/deduplicate")
+    async def deduplicate(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        threshold = body.get("threshold")
+        removed = compressor.deduplicate(threshold=threshold)
         return {
             "removed": removed,
             "stats": compressor.get_stats(),
         }
 
-    @app.post("/api/store/add")
-    async def store_add(request: StoreAddRequest):
-        node_id = store.add(request.text, request.metadata)
+    @api_router.post("/store/add")
+    async def store_add(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        text = body.get("text", "")
+        metadata = body.get("metadata")
+        node_id = store.add(text, metadata)
         return {"node_id": node_id}
 
-    @app.post("/api/store/search")
-    async def store_search(request: SearchRequest):
-        results = store.search(request.query, request.k)
+    @api_router.post("/store/search")
+    async def store_search(request: Request):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        query = body.get("query", "")
+        k = body.get("k", 10)
+        results = store.search(query, k)
         return {"results": results}
 
-    @app.delete("/api/clear")
+    @api_router.delete("/clear")
     async def clear():
         compressor.clear()
         store.clear()
         return {"status": "cleared"}
+
+    app.include_router(api_router)
 
     return app
 
@@ -479,10 +506,12 @@ class CompressionServer:
         max_tokens: int = 4096,
         similarity_threshold: float = 0.85,
         persist_path: Optional[str] = None,
+        api_key: Optional[str] = None,
     ):
         self.host = host
         self.port = port
         self.persist_path = persist_path
+        self.api_key = api_key or os.environ.get("COMPRESSION_API_KEY")
 
         self.compressor = ContextCompressor(
             dimension=dimension,
@@ -490,7 +519,11 @@ class CompressionServer:
             similarity_threshold=similarity_threshold,
         )
         self.store = VectorStore(dimension=dimension)
-        self.app = create_app(compressor=self.compressor, store=self.store)
+        self.app = create_app(
+            compressor=self.compressor,
+            store=self.store,
+            api_key=self.api_key,
+        )
 
         self._server: Optional[uvicorn.Server] = None
         self._thread: Optional[threading.Thread] = None

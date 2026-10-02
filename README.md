@@ -21,7 +21,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-83%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-91%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![CI Status](https://img.shields.io/badge/CI-Passing-brightgreen?style=flat-square&logo=githubactions)](https://github.com/SatyamPandey-07/WorkSphere/actions)
 [![Live Demo](https://img.shields.io/badge/Live-Deployment-success?style=flat-square&logo=vercel)](https://work-sphere-one.vercel.app/)
 
@@ -35,7 +35,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-83-active-rockstars"><b>👥 Contributors (83)</b></a> •
+  <a href="#-contributors-91-active-rockstars"><b>👥 Contributors (91)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -58,9 +58,9 @@
 
 ---
 
-### 🚀 Contributors (83 Active Rockstars)
+### 🚀 Contributors (91 Active Rockstars)
 
-A massive thank you to all **83 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **91 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table>
   <tr>

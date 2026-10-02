@@ -150,3 +150,106 @@ The suite instantiates the committed binaries from `public/` and checks:
 - The latency budget described in §5.
 
 If you change `audio_filter.c`, run `npm run build:wasm:audio-filter` and commit the regenerated `.wasm` files with your change. The tests run against the binaries, so they catch a stale build.
+
+## 7. Off-main-thread processing (#3361)
+
+The pipeline can run in Web Workers so audio filtering never blocks the main
+(render) thread.
+
+| Module | Role |
+| --- | --- |
+| `src/lib/wasm/audioFilterWorkerPool.ts` | `AudioFilterWorkerPool`: one WASM instance per worker, channels split across workers |
+| `src/lib/wasm/audioFilterWorkerCore.ts` | Worker message protocol + handler (testable without a Worker) |
+| `src/workers/audioFilter.worker.ts` | Thin worker glue |
+| `src/lib/wasm/createAudioFilterWorker.ts` | Browser `Worker` factory |
+| `src/lib/wasm/audioRingBuffer.ts` | Lock-free SPSC ring over `SharedArrayBuffer` + `Atomics` |
+| `scripts/bench-audio-filter-pool.mjs` | `npm run bench:audio-filter` |
+
+### 7.1 Usage
+
+```ts
+import { AudioFilterWorkerPool } from "@/lib/wasm/audioFilterWorkerPool";
+import { createAudioFilterWorker } from "@/lib/wasm/createAudioFilterWorker";
+import { designBiquad } from "@/lib/wasm/audioFilterPipeline";
+
+const wasm = await (await fetch("/audio-filter-simd.wasm")).arrayBuffer();
+const pool = await AudioFilterWorkerPool.create({
+  channels: 8,
+  wasm,
+  coefficients: [designBiquad({ type: "lowpass", frequency: 8000 }, 48000)],
+  createWorker: createAudioFilterWorker,
+});
+
+await pool.process(channels); // filtered in place, off the main thread
+pool.dispose();
+```
+
+### 7.2 How work is split
+
+Biquad filters keep per-channel state, so **a channel is always filtered by
+the same worker**: partitions are fixed when the pool is created
+(`planChannelPartitions`). Channels are split in groups of 4 to keep the SIMD
+build's 4-lane vectors full. With the pipeline's 8-channel limit that means at
+most **2 workers** (`maxWorkers` defaults to 2); more would sit idle.
+
+Buffers are copied once into fresh `Float32Array`s and **transferred** (not
+cloned) to the workers, so callers can pass `AudioBuffer` channel data, which
+cannot be detached.
+
+### 7.3 Real-time streaming with a ring buffer
+
+On a **cross-origin isolated** page, a single-worker pool (`maxWorkers: 1`)
+can stream through `SharedArrayBuffer` rings instead of one message per
+block:
+
+```ts
+import { AudioRingBuffer, isSharedMemoryAvailable } from "@/lib/wasm/audioRingBuffer";
+
+if (isSharedMemoryAvailable()) {
+  const input = AudioRingBuffer.create(2, 4096);   // capacity: power of two
+  const output = AudioRingBuffer.create(2, 4096);
+  await pool.attachRing(input.buffer, output.buffer, 128);
+  // AudioWorklet: input.write(inputs[0]) … output.read(outputs[0])
+}
+```
+
+The ring layout is plain shared memory: a 16-byte `Int32[4]` header
+`[read, write, channels, capacity]` followed by planar `Float32` data. An
+AudioWorklet can use it without importing anything. The worker waits with
+`Atomics.waitAsync`, so it keeps handling messages such as `setCoefficients`
+or `detachRing`. Frames dropped because the output ring was full are counted
+in `pool.stats()`.
+
+> **WorkSphere is not cross-origin isolated today.** `next.config.ts` sends
+> `Cross-Origin-Opener-Policy: same-origin-allow-popups` (needed for Clerk
+> OAuth popups) and no `Cross-Origin-Embedder-Policy`, so `SharedArrayBuffer`
+> is unavailable in the app and `isSharedMemoryAvailable()` returns `false`.
+> Use `pool.process()` (transferable buffers) there. Enabling isolation would
+> need COOP `same-origin` + COEP on the pages that stream audio, which can
+> break OAuth popups and third-party embeds without CORP headers, so it is
+> intentionally not changed here.
+
+### 7.4 Benchmark
+
+`npm run bench:audio-filter` (Node `worker_threads`, SIMD build, 8 channels,
+8 biquad stages; median per block, range over three runs):
+
+| Frames | Inline (blocks caller) | 1 worker | 2 workers (4 + 4 ch) | Pool vs 1 worker |
+| --- | --- | --- | --- | --- |
+| 128 | 7.8 µs | 46–48 µs | 34–43 µs | 1.12–1.37× |
+| 512 | 15 µs | 52–53 µs | 40–41 µs | 1.28–1.33× |
+| 1024 | 22 µs | 70–74 µs | 58–60 µs | 1.21–1.24× |
+| 4096 | 87–91 µs | 189–200 µs | 112–122 µs | 1.55–1.79× |
+
+`SharedArrayBuffer` ring, 1 worker, 128 frames: **16.7–17.8 µs** median round
+trip, about 3× cheaper than a `postMessage` round trip.
+
+Takeaways:
+
+- **Every path stays far below the 10 ms target.** A 128-frame quantum at
+  48 kHz lasts 2.67 ms; the slowest worker round trip here is ~0.2 ms (p99
+  < 0.6 ms).
+- **Inline processing has the lowest latency but runs on the caller's thread.**
+  Workers trade ~30–40 µs of messaging for zero main-thread work.
+- **The 4 + 4 channel split beats a single worker at every block size.** The
+  gain grows with block size because there's more work to share.

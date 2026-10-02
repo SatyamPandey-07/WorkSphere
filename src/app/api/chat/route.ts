@@ -22,9 +22,11 @@ import {
   parseSearchQuery,
   reasoningAgent,
   sanitizeUserInput,
+  classifyQueryComplexity,
+  routeChatStream,
   type RankedVenue,
+  type QueryComplexity,
 } from "@/lib/ai/chatAgents";
-import { generateGeminiStream, generateGeminiText } from "@/lib/ai/gemini";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import {
   deduplicateContext,
@@ -137,84 +139,41 @@ function streamResponse(
   });
 }
 
-/** Converts chat turns into one prompt for providers that take plain text. */
-function promptFromMessages(
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
-) {
-  const label = { system: "System", user: "User", assistant: "Assistant" };
-  return messages.map((m) => `${label[m.role]}: ${m.content}`).join("\n\n");
-}
-
-/**
- * Streams Gemini as the secondary provider. When the stream fails before any
- * text was emitted we retry once without streaming so the user still gets an
- * answer instead of a silent empty reply.
- */
-async function streamGemini(
-  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
-  emit: (text: string) => void,
-): Promise<string> {
-  if (!process.env.GEMINI_API_KEY) return "";
-
-  const prompt = promptFromMessages(messages);
-  let full = "";
-  try {
-    for await (const chunk of generateGeminiStream(prompt)) {
-      full += chunk;
-      emit(chunk);
-    }
-    return full;
-  } catch (err) {
-    console.error("Gemini stream failed:", err);
-  }
-
-  // Keep whatever already reached the client instead of re-sending it.
-  if (full.trim()) return full;
-
-  try {
-    const text = await generateGeminiText(prompt);
-    emit(text);
-    return text;
-  } catch (err) {
-    console.error("Gemini fallback generation failed:", err);
-    return "";
-  }
-}
-
-/** Streams Groq first, then Gemini, then the deterministic reply. */
+/** Streams an LLM completion, falling back to `fallbackText` if it fails. */
 async function streamLlm(
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
   emit: (text: string) => void,
   fallbackText: string,
+  complexity?: QueryComplexity,
+  userQuery?: string,
 ): Promise<string> {
-  if (isLlmConfigured()) {
-    let full = "";
-    try {
-      const completion = await getGroqClient().chat.completions.create({
-        model: LLM_MODEL,
-        stream: true,
-        temperature: 0.5,
-        messages,
-      });
-      for await (const chunk of completion) {
-        const text = chunk.choices[0]?.delta?.content || "";
-        if (text) {
-          full += text;
-          emit(text);
-        }
-      }
-    } catch (err) {
-      console.error("Groq stream failed, trying Gemini:", err);
-    }
-
-    if (full.trim()) return full;
+  if (!isLlmConfigured()) {
+    emit(fallbackText);
+    return fallbackText;
   }
 
-  const geminiText = await streamGemini(messages, emit);
-  if (geminiText.trim()) return geminiText;
+  let full = "";
+  try {
+    const result = await routeChatStream({
+      messages,
+      complexity,
+      userQuery,
+      temperature: 0.5,
+      onChunk: (text) => {
+        full += text;
+        emit(text);
+      },
+    });
+    full = result.text;
+  } catch (err) {
+    console.error("LLM stream failed, using deterministic reply:", err);
+  }
 
-  emit(fallbackText);
-  return fallbackText;
+  if (!full.trim()) {
+    emit(fallbackText);
+    return fallbackText;
+  }
+  return full;
 }
 
 function historyForLlm(messages: ChatMessage[]) {
@@ -349,6 +308,8 @@ export async function POST(req: Request) {
     if (decision.skipAgents) {
       const fallback = offlineConversationReply(userMessage);
       const compressedHistory = await prepareCompressedHistory(messages, userId);
+      const complexity =
+        decision.complexity ?? classifyQueryComplexity(userMessage, messages);
       return streamResponse(
         {
           venues: [],
@@ -359,7 +320,7 @@ export async function POST(req: Request) {
             "Coworking space within 3 km",
             "Library with outlets",
           ],
-          complexity: decision.complexity,
+          complexity,
         },
         (emit) =>
           streamLlm(
@@ -373,6 +334,8 @@ export async function POST(req: Request) {
             ],
             emit,
             fallback,
+            complexity,
+            userMessage,
           ),
         (full) =>
           persistExchange(
@@ -541,6 +504,9 @@ Reply in 2–5 short sentences or a brief list: recommend the best 2–3 for the
           ]
         : null;
 
+    const complexity =
+      decision.complexity ?? classifyQueryComplexity(userMessage, messages);
+
     return streamResponse(
       {
         venues,
@@ -548,7 +514,7 @@ Reply in 2–5 short sentences or a brief list: recommend the best 2–3 for the
         suggestions: action.suggestions,
         agentSteps,
         cached: isCached,
-        complexity: decision.complexity,
+        complexity,
         highTraffic,
       },
       async (emit) => {
@@ -556,7 +522,13 @@ Reply in 2–5 short sentences or a brief list: recommend the best 2–3 for the
           emit(action.message);
           return action.message;
         }
-        return streamLlm(llmMessages, emit, action.message);
+        return streamLlm(
+          llmMessages,
+          emit,
+          action.message,
+          complexity,
+          userMessage,
+        );
       },
       (full) =>
         persistExchange(

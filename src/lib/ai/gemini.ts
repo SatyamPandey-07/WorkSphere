@@ -2,14 +2,24 @@ import { GoogleGenAI } from "@google/genai";
 
 export const GEMINI_MODEL = "gemini-3.6-flash";
 
-function getGeminiClient() {
+let geminiClient: GoogleGenAI | null = null;
+
+export function isGeminiConfigured(): boolean {
+  return Boolean(process.env.GEMINI_API_KEY);
+}
+
+export function getGeminiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not configured");
   }
 
-  return new GoogleGenAI({ apiKey });
+  if (!geminiClient) {
+    geminiClient = new GoogleGenAI({ apiKey });
+  }
+
+  return geminiClient;
 }
 
 export async function generateGeminiText(prompt: string): Promise<string> {

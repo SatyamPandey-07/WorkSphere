@@ -16,7 +16,6 @@ const customJestConfig = {
     // snarkjs/ffjavascript resolve to browser ESM under jsdom — pin CJS for tests
     '^snarkjs$': '<rootDir>/node_modules/snarkjs/build/main.cjs',
     '^ffjavascript$': '<rootDir>/node_modules/ffjavascript/build/main.cjs',
-    '^uncrypto$': '<rootDir>/node_modules/uncrypto/dist/crypto.node.cjs',
     // @google/genai resolves to a browser ESM bundle under jsdom; pin the Node
     // CJS build so route handlers that import the Gemini client can load it.
     '^@google/genai$': '<rootDir>/node_modules/@google/genai/dist/node/index.cjs',

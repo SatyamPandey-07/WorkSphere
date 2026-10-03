@@ -1,3 +1,3 @@
-# Automated Documentation Task 3
+# Automated Task 3
 
-Automated record and documentation for item #3.
+Automated documentation for task #3.

@@ -78,6 +78,8 @@ const isPublicRoute = createRouteMatcher([
   "/api/webhooks/worker",
   "/api/cron/(.*)",
   "/api/auth/csrf-token",
+  // SAML ACS endpoint receives POSTs directly from the identity provider.
+  "/api/auth/sso/saml",
   // Passkey sign-in is used by signed-out visitors.
   "/api/auth/passkey/authenticate/(.*)",
 ]);
@@ -90,6 +92,8 @@ const isCsrfExemptMatcher = createRouteMatcher([
   "/api/webhooks/worker",
   "/api/cron/(.*)",
   "/api/auth/csrf-token",
+  // SAML responses are authenticated by the IdP XML signature.
+  "/api/auth/sso/saml",
   "/api/venues/updates",
 ]);
 

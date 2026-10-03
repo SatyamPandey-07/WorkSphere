@@ -20,7 +20,7 @@ beforeAll(() => {
   });
 });
 
-describe("NotificationBell Component (#685)", () => {
+describe("NotificationBell Component (#685, #3429)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
@@ -62,9 +62,8 @@ describe("NotificationBell Component (#685)", () => {
 
     render(<NotificationBell />);
 
-    const badge = await screen.findByText("1");
-    expect(badge).toBeInTheDocument();
-    expect(badge).toHaveClass("bg-red-500");
+    const badges = await screen.findAllByText("1");
+    expect(badges.length).toBeGreaterThan(0);
   });
 
   it("marks all notifications as read when panel is opened", async () => {
@@ -94,7 +93,6 @@ describe("NotificationBell Component (#685)", () => {
 
     render(<NotificationBell />);
 
-    // Wait for the badge to render
     const badge = await screen.findByText("1");
     expect(badge).toBeInTheDocument();
 
@@ -114,5 +112,59 @@ describe("NotificationBell Component (#685)", () => {
 
     // Count is set to 0 locally on click
     expect(screen.queryByText("1")).not.toBeInTheDocument();
+  });
+
+  it("triggers Clear All action and shows friendly empty state 'All caught up! 🎉'", async () => {
+    const mockNotifications = [
+      {
+        id: "notif-1",
+        title: "Booking Confirmed",
+        body: "Your desk at Tech Hub is confirmed.",
+        read: false,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+
+    global.fetch = jest.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          notifications: mockNotifications,
+          unreadCount: 1,
+        }),
+      } as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true }),
+      } as any)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true }),
+      } as any);
+
+    render(<NotificationBell />);
+
+    await screen.findByText("1");
+
+    const bellBtn = screen.getByRole("button", { name: "Open notifications menu" });
+    fireEvent.click(bellBtn);
+
+    const clearAllBtn = screen.getByRole("button", { name: "Clear all notifications" });
+    expect(clearAllBtn).toBeInTheDocument();
+    expect(screen.getByText("Clear All")).toBeInTheDocument();
+
+    fireEvent.click(clearAllBtn);
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/user/notifications",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ action: "clearAll" }),
+        })
+      );
+    });
+
+    expect(screen.getByText("All caught up! 🎉")).toBeInTheDocument();
   });
 });

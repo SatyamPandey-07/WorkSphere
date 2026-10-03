@@ -16,6 +16,7 @@ import { CollaborativeNotes } from "@/components/bookings/CollaborativeNotes"; /
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { VenueSummary } from "@/components/venue/VenueSummary";
 import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
+import { generateVenueJsonLd } from "@/lib/seo/venueJsonLd";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -70,11 +71,21 @@ export default async function VenuePage({ params }: PageProps) {
   const { id } = await params;
   const venue = await prisma.venue.findUnique({
     where: { id },
+    include: {
+      ratings: {
+        select: {
+          id: true,
+          wifiQuality: true,
+        },
+      },
+    },
   });
 
   if (!venue) {
     notFound();
   }
+
+  const jsonLd = generateVenueJsonLd(venue);
 
   const CategoryIcon =
     venue.category === "cafe"
@@ -98,6 +109,10 @@ export default async function VenuePage({ params }: PageProps) {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 flex flex-col font-sans">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <RecentlyViewedTracker
         venue={{
           id: venue.id,

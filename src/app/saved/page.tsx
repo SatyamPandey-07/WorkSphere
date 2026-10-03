@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
-import { ArrowLeft, Bookmark, Download, Search, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bookmark, Download, Heart, Search, X } from "lucide-react";
 import { useSavedVenues, type SavedVenue } from "@/hooks/useSavedVenues";
 import { SavedVenueCard, TagFilter } from "@/components/saved-venues";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -239,11 +239,33 @@ export default function SavedVenuesPage() {
             </button>
           </div>
         ) : favorites.length === 0 ? (
-          <EmptyState
-            illustration="collection"
-            message="No saved venues yet"
-            description="Start exploring and save your favorite workspaces!"
-          />
+          <section
+            role="region"
+            aria-label="Empty saved workspaces"
+            className="flex flex-col items-center justify-center p-8 sm:p-12 text-center bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl shadow-sm max-w-lg mx-auto"
+          >
+            <div
+              className="w-16 h-16 rounded-full bg-violet-100 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400 flex items-center justify-center mb-4"
+              aria-hidden="true"
+            >
+              <Heart className="w-8 h-8 fill-current" />
+            </div>
+            <h2 className="text-lg sm:text-xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">
+              No saved workspaces yet
+            </h2>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-sm mb-6 leading-relaxed">
+              Explore nearby cafes, coworking spaces, and quiet libraries and
+              tap the heart icon to save them for quick access.
+            </p>
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-sm font-medium transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-950"
+              aria-label="Explore Workspaces"
+            >
+              Explore Workspaces
+              <ArrowRight className="w-4 h-4" aria-hidden="true" />
+            </Link>
+          </section>
         ) : filteredFavorites.length === 0 ? (
           <div className="text-center p-16">
             <EmptyState

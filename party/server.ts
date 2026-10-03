@@ -63,6 +63,15 @@ export interface ReplayableSessionEvent {
   senderId?: string;
 }
 
+export interface PresenceUser {
+  userId: string;
+  userName: string;
+  avatarUrl?: string;
+  cursorPosition?: number | null;
+  isTyping?: boolean;
+  lastActive: number;
+}
+
 export default class WorkspaceServer implements Party.Server {
   // Real-time seat availability layer (#703): one check-in per connection,
   // keyed by connection id so we can always find & clear a user's previous
@@ -80,6 +89,10 @@ export default class WorkspaceServer implements Party.Server {
   // for each venueId. Overwritten on each update — last reporter wins.
   private venueMusic = new Map<string, VenueMusicState>();
 
+  // Active typing presence protocol (#3438)
+  private roomPresence = new Map<string, PresenceUser>();
+  private presenceCleanupInterval?: ReturnType<typeof setInterval>;
+
   private heartbeatInterval?: ReturnType<typeof setInterval>;
   private connectionStates = new Map<
     string,
@@ -87,6 +100,11 @@ export default class WorkspaceServer implements Party.Server {
   >();
 
   constructor(readonly room: Party.Room) {
+    // 5-second sweep for active typing presence cleanup (>15s inactivity) (#3438)
+    this.presenceCleanupInterval = setInterval(() => {
+      this.pruneInactivePresence();
+    }, 5000);
+
     this.heartbeatInterval = setInterval(() => {
       const now = Date.now();
       for (const [connId, state] of this.connectionStates.entries()) {
@@ -105,7 +123,7 @@ export default class WorkspaceServer implements Party.Server {
           continue;
         }
 
-        if (now - state.lastPong > 45000) {
+        if (now - state.lastPong >= 45000) {
           // 45-second timeout: broadcast departure and force-close stale socket
           if (state.name) {
             this.room.broadcast(
@@ -125,6 +143,31 @@ export default class WorkspaceServer implements Party.Server {
         }
       }
     }, 15000);
+  }
+
+  pruneInactivePresence(now: number = Date.now()): number {
+    let pruned = 0;
+    for (const [connId, presence] of this.roomPresence.entries()) {
+      const conn = this.room.getConnection(connId);
+      const isInactive = now - presence.lastActive > 15000;
+      if (!conn || isInactive) {
+        this.roomPresence.delete(connId);
+        this.room.broadcast(
+          JSON.stringify({
+            type: "presence_remove",
+            userId: presence.userId,
+            userName: presence.userName,
+            connId,
+          }),
+        );
+        pruned++;
+      }
+    }
+    return pruned;
+  }
+
+  getRoomPresence(): PresenceUser[] {
+    return Array.from(this.roomPresence.values());
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
@@ -230,6 +273,16 @@ export default class WorkspaceServer implements Party.Server {
 
     this.connectionStates.set(conn.id, { lastPong: Date.now() });
 
+    // Send initial presence state to newly connected client (#3438)
+    if (this.roomPresence.size > 0) {
+      conn.send(
+        JSON.stringify({
+          type: "presence_state",
+          users: Array.from(this.roomPresence.values()),
+        }),
+      );
+    }
+
     // Also handle simple presence via standard WebSockets
     conn.addEventListener("message", (event: { data: unknown }) => {
       try {
@@ -258,6 +311,83 @@ export default class WorkspaceServer implements Party.Server {
 
       if (parsed.type === "typing") {
         this.room.broadcast(message, [sender.id]);
+        return;
+      }
+
+      // Room awareness presence updates (#3438)
+      if (parsed.type === "presence_update") {
+        const presence: PresenceUser = {
+          userId: String(
+            parsed.userId || (sender.state as any)?.userId || sender.id,
+          ),
+          userName: String(
+            parsed.userName ||
+              (sender.state as any)?.name ||
+              "Collaborator",
+          ),
+          avatarUrl: parsed.avatarUrl ? String(parsed.avatarUrl) : undefined,
+          cursorPosition:
+            typeof parsed.cursorPosition === "number"
+              ? parsed.cursorPosition
+              : null,
+          isTyping: Boolean(parsed.isTyping),
+          lastActive:
+            typeof parsed.lastActive === "number"
+              ? parsed.lastActive
+              : Date.now(),
+        };
+
+        this.roomPresence.set(sender.id, presence);
+
+        this.room.broadcast(
+          JSON.stringify({
+            type: "presence_update",
+            ...presence,
+            connId: sender.id,
+          }),
+          [sender.id],
+        );
+        return;
+      }
+
+      // Presence heartbeat (every 5s from client) (#3438)
+      if (parsed.type === "presence_heartbeat") {
+        const now = Date.now();
+        const existing = this.roomPresence.get(sender.id);
+        if (existing) {
+          existing.lastActive = now;
+          if (typeof parsed.cursorPosition === "number") {
+            existing.cursorPosition = parsed.cursorPosition;
+          }
+          if (typeof parsed.isTyping === "boolean") {
+            existing.isTyping = parsed.isTyping;
+          }
+        } else if (parsed.userId) {
+          this.roomPresence.set(sender.id, {
+            userId: String(parsed.userId),
+            userName: String(parsed.userName || "Collaborator"),
+            avatarUrl: parsed.avatarUrl ? String(parsed.avatarUrl) : undefined,
+            cursorPosition:
+              typeof parsed.cursorPosition === "number"
+                ? parsed.cursorPosition
+                : null,
+            isTyping: Boolean(parsed.isTyping),
+            lastActive: now,
+          });
+        }
+        return;
+      }
+
+      if (
+        parsed.type === "request_presence" ||
+        parsed.type === "presence_sync"
+      ) {
+        sender.send(
+          JSON.stringify({
+            type: "presence_state",
+            users: Array.from(this.roomPresence.values()),
+          }),
+        );
         return;
       }
 
@@ -413,6 +543,19 @@ export default class WorkspaceServer implements Party.Server {
   onClose(conn: Party.Connection) {
     this.connectionStates.delete(conn.id);
     this.handleSeatCheckout(conn);
+
+    if (this.roomPresence.has(conn.id)) {
+      const presence = this.roomPresence.get(conn.id)!;
+      this.roomPresence.delete(conn.id);
+      this.room.broadcast(
+        JSON.stringify({
+          type: "presence_remove",
+          userId: presence.userId,
+          userName: presence.userName,
+          connId: conn.id,
+        }),
+      );
+    }
   }
 
   private handleSeatCheckin(

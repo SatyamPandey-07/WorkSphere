@@ -1,4 +1,4 @@
-import { haversineKm } from "@/lib/distance";
+import { haversineKm, haversineMiles, getWalkingMinutes, formatWalkingTimeBadge } from "@/lib/distance";
 import { calculateHaversineDistance } from "@/lib/utils";
 
 describe("distance utility (haversineKm)", () => {
@@ -125,5 +125,49 @@ describe("distance utility (haversineKm)", () => {
       expect(typeof dist).toBe("number");
       expect(dist).toBe(0);
     });
+  });
+});
+
+describe("haversineMiles", () => {
+  it("converts kilometers to miles correctly", () => {
+    // New York to London
+    const miles = haversineMiles(40.7128, -74.006, 51.5074, -0.1278);
+    // 5570 km * 0.621371 = 3461 miles
+    expect(miles).toBeGreaterThan(3400);
+    expect(miles).toBeLessThan(3550);
+  });
+});
+
+describe("getWalkingMinutes", () => {
+  it("calculates correct walking minutes at 4.8 km/h", () => {
+    // 4.8 km = 60 mins
+    expect(getWalkingMinutes(4.8)).toBe(60);
+    // 2.4 km = 30 mins
+    expect(getWalkingMinutes(2.4)).toBe(30);
+    // 0.8 km = 10 mins
+    expect(getWalkingMinutes(0.8)).toBe(10);
+  });
+
+  it("always rounds up using ceil", () => {
+    // 0.1 km = 1.25 mins -> 2 mins
+    expect(getWalkingMinutes(0.1)).toBe(2);
+    // 0.05 km = 0.625 mins -> 1 min
+    expect(getWalkingMinutes(0.05)).toBe(1);
+  });
+});
+
+describe("formatWalkingTimeBadge", () => {
+  it("formats distances >= 1 km correctly", () => {
+    // 1.2 km -> 15 min walk
+    expect(formatWalkingTimeBadge(1.2)).toBe("15 min walk · 1.2km");
+    // 2.5 km -> 32 min walk
+    expect(formatWalkingTimeBadge(2.5)).toBe("32 min walk · 2.5km");
+  });
+
+  it("formats distances < 1 km correctly using meters", () => {
+    // 0.65 km -> 9 min walk
+    expect(formatWalkingTimeBadge(0.65)).toBe("9 min walk · 650m");
+    // 0.5 km -> 7 min walk
+    expect(formatWalkingTimeBadge(0.5)).toBe("7 min walk · 500m");
   });
 });

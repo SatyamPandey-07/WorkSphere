@@ -44,6 +44,7 @@ import { getOpeningHoursStatus } from "@/lib/openingHours";
 import { MUSIC_GENRE_EMOJI, type MusicGenre } from "@/hooks/useLiveVenueData";
 import { HighlightedText } from "@/components/ui/HighlightedText";
 import { useSeatAvailability } from "@/hooks/useSeatAvailability";
+import { formatWalkingTimeBadge, haversineKm } from "@/lib/distance";
 
 interface VenueEnrichData {
   found: boolean;
@@ -116,6 +117,19 @@ export function VenueCard({
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
   const [showGenreDropdown, setShowGenreDropdown] = useState(false);
+  const [userLocation, setUserLocation] = useState<{lat: number; lng: number} | null>(null);
+
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => setUserLocation(null),
+        { maximumAge: 60000, timeout: 5000 }
+      );
+    }
+  }, []);
+
+  const distanceKm = userLocation ? haversineKm(userLocation.lat, userLocation.lng, venue.position.lat, venue.position.lng) : null;
 
   const isCheckedInHere = checkedInVenueId === venue.id;
   const activeMusicGenre = liveData?.musicGenre ?? null;
@@ -558,6 +572,14 @@ export function VenueCard({
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
               {venue.address || "Address not available"}
             </p>
+            {distanceKm !== null && (
+              <div className="mt-1.5 mb-1 flex items-center">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-100 dark:border-blue-800/50">
+                  <Navigation className="w-3 h-3" />
+                  {formatWalkingTimeBadge(distanceKm)}
+                </span>
+              </div>
+            )}
             {liveOccupancy && liveOccupancy.count > 0 && (
               <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />

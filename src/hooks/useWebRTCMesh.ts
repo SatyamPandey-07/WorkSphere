@@ -119,6 +119,7 @@ import { adaptVideoBitrate } from "@/lib/screenShareBitrate";
 import { calculateRMS, rmsToDecibels } from "@/lib/audio";
 import {
   configureSimulcastSender,
+  createSimulcastEncodings,
   SimulcastAdaptiveController,
 } from "@/lib/webrtcSimulcast";
 
@@ -388,7 +389,23 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
       if (localStreamRef.current) {
         for (const track of localStreamRef.current.getTracks()) {
-          const sender = pc.addTrack(track, localStreamRef.current);
+          let sender: RTCRtpSender | undefined;
+          if (track.kind === "video" && typeof pc.addTransceiver === "function") {
+            try {
+              const encodings = createSimulcastEncodings();
+              const transceiver = pc.addTransceiver(track, {
+                direction: "sendrecv",
+                streams: [localStreamRef.current],
+                sendEncodings: encodings,
+              });
+              sender = transceiver.sender;
+            } catch {
+              // fallback to addTrack
+            }
+          }
+          if (!sender) {
+            sender = pc.addTrack(track, localStreamRef.current);
+          }
           if (track.kind === "video") {
             const videoSender =
               sender ||
@@ -690,7 +707,11 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, frameRate: 15 },
+        video: {
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: 30, max: 60 },
+        },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
 
@@ -704,7 +725,23 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       for (const [peerId, pc] of peersRef.current.entries()) {
         for (const track of stream.getTracks()) {
           try {
-            const sender = pc.addTrack(track, stream);
+            let sender: RTCRtpSender | undefined;
+            if (track.kind === "video" && typeof pc.addTransceiver === "function") {
+              try {
+                const encodings = createSimulcastEncodings();
+                const transceiver = pc.addTransceiver(track, {
+                  direction: "sendrecv",
+                  streams: [stream],
+                  sendEncodings: encodings,
+                });
+                sender = transceiver.sender;
+              } catch {
+                // fallback to addTrack
+              }
+            }
+            if (!sender) {
+              sender = pc.addTrack(track, stream);
+            }
             if (track.kind === "video") {
               const videoSender =
                 sender ||

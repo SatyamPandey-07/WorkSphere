@@ -549,10 +549,65 @@ describe("WebRTC Simulcast & Adaptive Degradation", () => {
       const res1 = extractRTCPStats(report1);
       expect(res1.stats.packetLossFraction).toBeCloseTo(0.10, 2);
 
-      // Second report: +2 lost, +98 received in delta interval (2/100 = 2% loss in interval)
       const report2 = buildStatsReport({ packetsLost: 12, packetsReceived: 188 });
       const res2 = extractRTCPStats(report2, res1.cumulative);
       expect(res2.stats.packetLossFraction).toBeCloseTo(0.02, 2);
+    });
+
+    it("strictly isolates video statistics and ignores audio stats", () => {
+      const map = new Map<string, any>();
+      // Audio stat with 50% packet loss and 800ms RTT
+      map.set("audio-inbound", {
+        type: "remote-inbound-rtp",
+        kind: "audio",
+        fractionLost: 0.5,
+        roundTripTime: 0.8,
+      });
+      // Video stat with 0% packet loss and 50ms RTT
+      map.set("video-inbound", {
+        type: "remote-inbound-rtp",
+        kind: "video",
+        fractionLost: 0.0,
+        roundTripTime: 0.05,
+      });
+
+      const { stats } = extractRTCPStats(map as unknown as RTCStatsReport);
+      expect(stats.packetLossFraction).toBe(0.0);
+      expect(stats.rttMs).toBe(50);
+    });
+
+    it("queries videoSender.getStats() when available", async () => {
+      const senderMock = createMockSender("video");
+      const senderGetStats = jest.fn().mockResolvedValue(new Map());
+      (senderMock.sender as any).getStats = senderGetStats;
+
+      const pcGetStats = jest.fn().mockResolvedValue(new Map());
+      const pc = createMockPeerConnection(pcGetStats);
+
+      const controller = new SimulcastAdaptiveController(pc, senderMock.sender);
+      await controller.pollStats();
+
+      expect(senderGetStats).toHaveBeenCalledTimes(1);
+      expect(pcGetStats).not.toHaveBeenCalled();
+      controller.destroy();
+    });
+
+    it("updates pre-existing encodings in-place when present", async () => {
+      const existingEncodings = [
+        { rid: "high", active: true, maxBitrate: 100 },
+        { rid: "medium", active: true, maxBitrate: 50 },
+        { rid: "low", active: true, maxBitrate: 20 },
+      ];
+      const { sender, setParameters } = createMockSender("video", existingEncodings);
+
+      await configureSimulcastSender(sender);
+
+      expect(setParameters).toHaveBeenCalledTimes(1);
+      const params = setParameters.mock.calls[0][0];
+      expect(params.encodings[0].maxBitrate).toBe(1_500_000);
+      expect(params.encodings[0].rid).toBe("high");
+      expect(params.encodings[1].maxBitrate).toBe(500_000);
+      expect(params.encodings[2].maxBitrate).toBe(150_000);
     });
   });
 

@@ -127,7 +127,16 @@ export async function configureSimulcastSender(
   );
 
   const params = sender.getParameters() || {};
-  params.encodings = encodings;
+  if (params.encodings && params.encodings.length === encodings.length) {
+    params.encodings.forEach((enc, i) => {
+      enc.maxBitrate = encodings[i].maxBitrate;
+      enc.maxFramerate = encodings[i].maxFramerate;
+      enc.scaleResolutionDownBy = encodings[i].scaleResolutionDownBy;
+      enc.active = encodings[i].active;
+    });
+  } else {
+    params.encodings = encodings;
+  }
   await sender.setParameters(params);
   return params;
 }
@@ -149,10 +158,12 @@ export interface CumulativeStatsState {
 /**
  * Extracts network hints (packet loss fraction, RTT, jitter) from an RTCStatsReport.
  * Handles both fractionLost (spec) and cumulative packet counts (calculating delta loss ratio).
+ * Explicitly associates statistics with the video stream and filters out audio streams.
  */
 export function extractRTCPStats(
   report: RTCStatsReport,
   previous?: CumulativeStatsState,
+  videoSender?: RTCRtpSender,
 ): { stats: NetworkStats; cumulative: CumulativeStatsState } {
   let rttMs: number | undefined;
   let jitterMs: number | undefined;
@@ -162,6 +173,19 @@ export function extractRTCPStats(
   let cumPacketsSent: number | undefined;
 
   report.forEach((stat: any) => {
+    // Audio safety: Never extract video loss/rtt/jitter from audio RTP streams
+    if (stat.kind === "audio" || stat.mediaType === "audio") {
+      return;
+    }
+
+    // If videoSender has a known track ID, ensure outbound-rtp matches if trackId is provided
+    if (
+      videoSender?.track?.id &&
+      stat.trackId &&
+      stat.trackId !== videoSender.track.id
+    ) {
+      return;
+    }
     // 1. Candidate Pair (currentRoundTripTime is in seconds)
     if (stat.type === "candidate-pair" && (stat.state === "succeeded" || stat.nominated === true)) {
       if (typeof stat.currentRoundTripTime === "number") {
@@ -433,12 +457,22 @@ export class SimulcastAdaptiveController {
 
     this.isPolling = true;
     try {
-      const report = await this.pc.getStats();
+      let report: RTCStatsReport;
+      if (typeof this.videoSender.getStats === "function") {
+        try {
+          report = await this.videoSender.getStats();
+        } catch {
+          report = await this.pc.getStats();
+        }
+      } else {
+        report = await this.pc.getStats();
+      }
       if (this.isDestroyed) return;
 
       const { stats, cumulative } = extractRTCPStats(
         report,
         this.prevCumulativeStats,
+        this.videoSender,
       );
       this.prevCumulativeStats = cumulative;
 

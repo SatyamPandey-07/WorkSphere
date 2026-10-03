@@ -117,19 +117,33 @@ export function VenueCard({
   const [showFolderModal, setShowFolderModal] = useState(false);
   const [enableTransition, setEnableTransition] = useState(false);
   const [showGenreDropdown, setShowGenreDropdown] = useState(false);
-  const [userLocation, setUserLocation] = useState<{lat: number; lng: number} | null>(null);
+  const [userLocation, setUserLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
 
   useEffect(() => {
     if (typeof navigator !== "undefined" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        (pos) =>
+          setUserLocation({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          }),
         () => setUserLocation(null),
-        { maximumAge: 60000, timeout: 5000 }
+        { maximumAge: 60000, timeout: 5000 },
       );
     }
   }, []);
 
-  const distanceKm = userLocation ? haversineKm(userLocation.lat, userLocation.lng, venue.position.lat, venue.position.lng) : null;
+  const distanceKm = userLocation
+    ? haversineKm(
+        userLocation.lat,
+        userLocation.lng,
+        venue.position.lat,
+        venue.position.lng,
+      )
+    : null;
 
   const isCheckedInHere = checkedInVenueId === venue.id;
   const activeMusicGenre = liveData?.musicGenre ?? null;
@@ -289,18 +303,26 @@ export function VenueCard({
 
   // Load real vote metrics from the database on mount
   useEffect(() => {
+    let ignore = false;
     async function loadVoteMetrics() {
       try {
         const response = await fetch(`/api/venues/${venue.id}/amenity-votes`);
         if (response.ok) {
           const data = await response.json();
-          setVoteMetrics((prev) => ({ ...prev, ...data.metrics }));
+          if (!ignore) {
+            setVoteMetrics((prev) => ({ ...prev, ...data.metrics }));
+          }
         }
       } catch (error) {
-        console.error("Failed to load amenity vote metrics:", error);
+        if (!ignore) {
+          console.error("Failed to load amenity vote metrics:", error);
+        }
       }
     }
     loadVoteMetrics();
+    return () => {
+      ignore = true;
+    };
   }, [venue.id]);
 
   useEffect(() => {
@@ -357,6 +379,7 @@ export function VenueCard({
 
   // Fetch venue data from OSM + Unsplash (FREE)
   useEffect(() => {
+    let ignore = false;
     async function enrichVenue() {
       if (!venue.position) return;
 
@@ -371,16 +394,25 @@ export function VenueCard({
         const response = await fetch(`/api/venues/enrich?${params}`);
         if (response.ok) {
           const data = await response.json();
-          setEnrichData(data);
+          if (!ignore) {
+            setEnrichData(data);
+          }
         }
       } catch (error) {
-        console.error("Failed to enrich venue:", error);
+        if (!ignore) {
+          console.error("Failed to enrich venue:", error);
+        }
       } finally {
-        setIsLoading(false);
+        if (!ignore) {
+          setIsLoading(false);
+        }
       }
     }
 
     enrichVenue();
+    return () => {
+      ignore = true;
+    };
   }, [venue.name, venue.position]);
 
   const handleFavorite = async () => {
@@ -587,28 +619,31 @@ export function VenueCard({
                 {liveOccupancy.count === 1 ? "person" : "people"} here now
               </span>
             )}
-            {liveOccupancy && (() => {
-              // Crowding badge: Quiet (<40%), Moderate (40-75%), Busy (>75%)
-              const pct = liveOccupancy.capacity > 0
-                ? (liveOccupancy.count / liveOccupancy.capacity) * 100
-                : 0;
-              const label = pct < 40 ? "Quiet" : pct <= 75 ? "Moderate" : "Busy";
-              const style =
-                pct < 40
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  : pct <= 75
-                    ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
-                    : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
-              return (
-                <span
-                  className={`mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${style}`}
-                  title={`${Math.round(pct)}% occupancy — ${label}`}
-                  aria-label={`Venue is currently ${label} — ${Math.round(pct)}% occupied`}
-                >
-                  {label}
-                </span>
-              );
-            })()}
+            {liveOccupancy &&
+              (() => {
+                // Crowding badge: Quiet (<40%), Moderate (40-75%), Busy (>75%)
+                const pct =
+                  liveOccupancy.capacity > 0
+                    ? (liveOccupancy.count / liveOccupancy.capacity) * 100
+                    : 0;
+                const label =
+                  pct < 40 ? "Quiet" : pct <= 75 ? "Moderate" : "Busy";
+                const style =
+                  pct < 40
+                    ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                    : pct <= 75
+                      ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+                      : "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400";
+                return (
+                  <span
+                    className={`mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ${style}`}
+                    title={`${Math.round(pct)}% occupancy — ${label}`}
+                    aria-label={`Venue is currently ${label} — ${Math.round(pct)}% occupied`}
+                  >
+                    {label}
+                  </span>
+                );
+              })()}
           </div>
           <button
             onClick={handleFavorite}

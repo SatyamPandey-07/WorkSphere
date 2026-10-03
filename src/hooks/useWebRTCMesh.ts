@@ -390,6 +390,7 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       if (localStreamRef.current) {
         for (const track of localStreamRef.current.getTracks()) {
           let sender: RTCRtpSender | undefined;
+          let isSimulcastTransceiver = false;
           if (track.kind === "video" && typeof pc.addTransceiver === "function") {
             try {
               const encodings = createSimulcastEncodings();
@@ -399,6 +400,7 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
                 sendEncodings: encodings,
               });
               sender = transceiver.sender;
+              isSimulcastTransceiver = true;
             } catch {
               // fallback to addTrack
             }
@@ -411,10 +413,19 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
               sender ||
               pc.getSenders?.().find((s) => s.track === track || s.track?.kind === "video");
             if (videoSender) {
-              void configureSimulcastSender(videoSender);
-              const controller = new SimulcastAdaptiveController(pc, videoSender);
-              controller.start();
-              simulcastControllersRef.current.set(peerId, controller);
+              const encodingsCount = videoSender.getParameters?.()?.encodings?.length ?? (isSimulcastTransceiver ? 3 : 1);
+              if (isSimulcastTransceiver || encodingsCount >= 3) {
+                void configureSimulcastSender(videoSender);
+                const controller = new SimulcastAdaptiveController(pc, videoSender);
+                controller.start();
+                simulcastControllersRef.current.set(peerId, controller);
+              } else {
+                const existingController = simulcastControllersRef.current.get(peerId);
+                if (existingController) {
+                  existingController.destroy();
+                  simulcastControllersRef.current.delete(peerId);
+                }
+              }
             }
           }
         }
@@ -726,6 +737,7 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
         for (const track of stream.getTracks()) {
           try {
             let sender: RTCRtpSender | undefined;
+            let isSimulcastTransceiver = false;
             if (track.kind === "video" && typeof pc.addTransceiver === "function") {
               try {
                 const encodings = createSimulcastEncodings();
@@ -735,6 +747,7 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
                   sendEncodings: encodings,
                 });
                 sender = transceiver.sender;
+                isSimulcastTransceiver = true;
               } catch {
                 // fallback to addTrack
               }
@@ -747,12 +760,21 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
                 sender ||
                 pc.getSenders?.().find((s) => s.track === track || s.track?.kind === "video");
               if (videoSender) {
-                void configureSimulcastSender(videoSender);
-                let controller = simulcastControllersRef.current.get(peerId);
-                if (!controller) {
-                  controller = new SimulcastAdaptiveController(pc, videoSender);
-                  controller.start();
-                  simulcastControllersRef.current.set(peerId, controller);
+                const encodingsCount = videoSender.getParameters?.()?.encodings?.length ?? (isSimulcastTransceiver ? 3 : 1);
+                if (isSimulcastTransceiver || encodingsCount >= 3) {
+                  void configureSimulcastSender(videoSender);
+                  let controller = simulcastControllersRef.current.get(peerId);
+                  if (!controller) {
+                    controller = new SimulcastAdaptiveController(pc, videoSender);
+                    controller.start();
+                    simulcastControllersRef.current.set(peerId, controller);
+                  }
+                } else {
+                  const existingController = simulcastControllersRef.current.get(peerId);
+                  if (existingController) {
+                    existingController.destroy();
+                    simulcastControllersRef.current.delete(peerId);
+                  }
                 }
               }
             }

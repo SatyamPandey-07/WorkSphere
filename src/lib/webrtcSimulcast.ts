@@ -134,10 +134,13 @@ export async function configureSimulcastSender(
       enc.scaleResolutionDownBy = encodings[i].scaleResolutionDownBy;
       enc.active = encodings[i].active;
     });
-  } else {
+    await sender.setParameters(params);
+  } else if (!params.encodings || params.encodings.length === 0) {
     params.encodings = encodings;
+    await sender.setParameters(params);
   }
-  await sender.setParameters(params);
+  // If params.encodings exists and its length differs from encodings.length,
+  // do not replace the browser-owned encoding array with a different-length array.
   return params;
 }
 
@@ -250,14 +253,25 @@ export function extractRTCPStats(
   if (fractionLost === undefined && cumPacketsLost !== undefined) {
     const currentTotalPackets = (cumPacketsReceived ?? cumPacketsSent);
     if (previous && previous.packetsLost !== undefined) {
-      const deltaLost = Math.max(0, cumPacketsLost - (previous.packetsLost ?? 0));
       const prevTotal = (previous.packetsReceived ?? previous.packetsSent ?? 0);
-      const deltaPackets = currentTotalPackets !== undefined
-        ? Math.max(0, currentTotalPackets - prevTotal)
-        : 0;
-      const totalDelta = deltaLost + deltaPackets;
-      if (totalDelta > 0) {
-        fractionLost = Math.max(0, Math.min(1, deltaLost / totalDelta));
+      const isCounterReset =
+        (previous.packetsLost !== undefined && cumPacketsLost < previous.packetsLost) ||
+        (currentTotalPackets !== undefined && prevTotal > 0 && currentTotalPackets < prevTotal);
+
+      if (isCounterReset) {
+        // Counter restarted: establish a fresh baseline without calculating skewed deltas
+        if (currentTotalPackets !== undefined && (cumPacketsLost + currentTotalPackets) > 0) {
+          fractionLost = Math.max(0, Math.min(1, cumPacketsLost / (cumPacketsLost + currentTotalPackets)));
+        }
+      } else {
+        const deltaLost = Math.max(0, cumPacketsLost - (previous.packetsLost ?? 0));
+        const deltaPackets = currentTotalPackets !== undefined
+          ? Math.max(0, currentTotalPackets - prevTotal)
+          : 0;
+        const totalDelta = deltaLost + deltaPackets;
+        if (totalDelta > 0) {
+          fractionLost = Math.max(0, Math.min(1, deltaLost / totalDelta));
+        }
       }
     } else if (currentTotalPackets !== undefined && (cumPacketsLost + currentTotalPackets) > 0) {
       fractionLost = Math.max(0, Math.min(1, cumPacketsLost / (cumPacketsLost + currentTotalPackets)));
@@ -324,7 +338,12 @@ export async function setHighLayerActive(
     (e) => e.rid === "high" || e.rid === "h",
   );
   if (highIndex === -1) {
-    highIndex = 0;
+    if (params.encodings.length > 1) {
+      highIndex = 0;
+    } else {
+      // Unicast stream without simulcast RID — do not disable
+      return false;
+    }
   }
 
   const highEncoding = params.encodings[highIndex];

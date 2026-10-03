@@ -609,6 +609,39 @@ describe("WebRTC Simulcast & Adaptive Degradation", () => {
       expect(params.encodings[1].maxBitrate).toBe(500_000);
       expect(params.encodings[2].maxBitrate).toBe(150_000);
     });
+
+    it("does not replace the browser-owned encoding array when sender has a different number of encodings", async () => {
+      const singleEncoding = [{ active: true, maxBitrate: 500_000 }];
+      const { sender, setParameters } = createMockSender("video", singleEncoding);
+
+      const res = await configureSimulcastSender(sender);
+
+      expect(res.encodings).toHaveLength(1);
+      expect(setParameters).not.toHaveBeenCalled();
+    });
+
+    it("handles counter reset/restart without producing a false huge loss spike", () => {
+      const baseline = {
+        packetsLost: 500,
+        packetsReceived: 50000,
+        timestamp: Date.now() - 2000,
+      };
+      // Counter resets to fresh session: 1 lost, 99 received
+      const report = buildStatsReport({ packetsLost: 1, packetsReceived: 99 });
+      const { stats } = extractRTCPStats(report, baseline);
+
+      // Should calculate ~1% (0.01), NOT 100% loss
+      expect(stats.packetLossFraction).toBeCloseTo(0.01, 2);
+    });
+
+    it("guards unicast senders without simulcast RID from being deactivated by setHighLayerActive", async () => {
+      const singleEncoding = [{ active: true, maxBitrate: 500_000 }];
+      const { sender, setParameters } = createMockSender("video", singleEncoding);
+
+      const modified = await setHighLayerActive(sender, false);
+      expect(modified).toBe(false);
+      expect(setParameters).not.toHaveBeenCalled();
+    });
   });
 
   describe("9. Mesh Connection Helper attachSimulcastVideoTrack", () => {

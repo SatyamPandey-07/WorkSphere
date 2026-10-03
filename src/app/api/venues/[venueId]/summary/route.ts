@@ -1,22 +1,29 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateGeminiText } from "@/lib/ai/gemini";
+import {
+  checkTieredRateLimit,
+  createRateLimitResponse,
+  applyRateLimitHeaders,
+} from "@/lib/rateLimit";
 
 interface RouteContext {
   params: Promise<{ venueId: string }>;
 }
 
-export async function GET(
-  _request: Request,
-  { params }: RouteContext
-) {
+export async function GET(request: Request, { params }: RouteContext) {
   try {
+    const rateLimitResult = await checkTieredRateLimit(request);
+    if (!rateLimitResult.allowed) {
+      return createRateLimitResponse(rateLimitResult);
+    }
+
     const { venueId } = await params;
 
     if (!venueId) {
       return NextResponse.json(
         { error: "Venue ID is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -25,10 +32,7 @@ export async function GET(
     });
 
     if (!venue) {
-      return NextResponse.json(
-        { error: "Venue not found" },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
     }
 
     const venueContext = {
@@ -57,13 +61,14 @@ Return only the summary text.
 
     const summary = await generateGeminiText(prompt);
 
-    return NextResponse.json({ summary });
+    const response = NextResponse.json({ summary });
+    return applyRateLimitHeaders(response, rateLimitResult);
   } catch (error) {
     console.error("Failed to generate venue summary:", error);
 
     return NextResponse.json(
-      {  error: "Failed to generate venue summary" },
-      { status: 500 }
+      { error: "Failed to generate venue summary" },
+      { status: 500 },
     );
   }
 }

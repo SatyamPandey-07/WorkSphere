@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { translateVenueDescription } from "@/lib/deeplTranslation";
+import {
+  checkTieredRateLimit,
+  createRateLimitResponse,
+  applyRateLimitHeaders,
+} from "@/lib/rateLimit";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -8,6 +13,11 @@ interface RouteContext {
 
 export async function POST(req: NextRequest, context: RouteContext) {
   try {
+    const rateLimitResult = await checkTieredRateLimit(req);
+    if (!rateLimitResult.allowed) {
+      return createRateLimitResponse(rateLimitResult);
+    }
+
     const { id } = await context.params;
     const body = await req.json();
     const { targetLang, text } = body;
@@ -15,7 +25,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     if (!targetLang) {
       return NextResponse.json(
         { error: "Target language (targetLang) is required" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -29,7 +39,8 @@ export async function POST(req: NextRequest, context: RouteContext) {
     }
 
     if (!descriptionToTranslate) {
-      return NextResponse.json({ translatedDescription: "" });
+      const emptyResponse = NextResponse.json({ translatedDescription: "" });
+      return applyRateLimitHeaders(emptyResponse, rateLimitResult);
     }
 
     const translatedDescription = await translateVenueDescription({
@@ -37,18 +48,19 @@ export async function POST(req: NextRequest, context: RouteContext) {
       targetLang,
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       venueId: id,
       targetLang: targetLang.toUpperCase(),
       translatedDescription,
       success: true,
       timestamp: new Date().toISOString(),
     });
+    return applyRateLimitHeaders(response, rateLimitResult);
   } catch (error: any) {
     console.error("Venue Translation API Error:", error);
     return NextResponse.json(
       { error: "Internal Server Error", details: error.message },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

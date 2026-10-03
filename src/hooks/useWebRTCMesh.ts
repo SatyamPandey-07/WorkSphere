@@ -117,6 +117,10 @@ import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "partysocket/react";
 import { adaptVideoBitrate } from "@/lib/screenShareBitrate";
 import { calculateRMS, rmsToDecibels } from "@/lib/audio";
+import {
+  configureSimulcastSender,
+  SimulcastAdaptiveController,
+} from "@/lib/webrtcSimulcast";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
@@ -178,6 +182,9 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     isSettingRemoteAnswerPending: boolean;
   };
   const peerStatesRef = useRef<Map<string, PeerState>>(new Map());
+  const simulcastControllersRef = useRef<
+    Map<string, SimulcastAdaptiveController>
+  >(new Map());
 
   const socketRef = useRef<{ send: (data: string) => void } | null>(null);
 
@@ -252,6 +259,12 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       analysersRef.current.delete(peerId);
     }
     emaDecibelsRef.current.delete(peerId);
+
+    const controller = simulcastControllersRef.current.get(peerId);
+    if (controller) {
+      controller.destroy();
+      simulcastControllersRef.current.delete(peerId);
+    }
   }, []);
 
   const setupAudioMonitoring = useCallback(
@@ -375,7 +388,18 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
       if (localStreamRef.current) {
         for (const track of localStreamRef.current.getTracks()) {
-          pc.addTrack(track, localStreamRef.current);
+          const sender = pc.addTrack(track, localStreamRef.current);
+          if (track.kind === "video") {
+            const videoSender =
+              sender ||
+              pc.getSenders?.().find((s) => s.track === track || s.track?.kind === "video");
+            if (videoSender) {
+              void configureSimulcastSender(videoSender);
+              const controller = new SimulcastAdaptiveController(pc, videoSender);
+              controller.start();
+              simulcastControllersRef.current.set(peerId, controller);
+            }
+          }
         }
       }
 
@@ -609,6 +633,7 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     const peersMap = peersRef.current;
     const analysersMap = analysersRef.current;
     const emaDecibelsMap = emaDecibelsRef.current;
+    const simulcastControllersMap = simulcastControllersRef.current;
 
     return () => {
       if (bitrateTimerRef.current) clearInterval(bitrateTimerRef.current);
@@ -629,6 +654,11 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       }
       analysersMap.clear();
       emaDecibelsMap.clear();
+
+      for (const controller of simulcastControllersMap.values()) {
+        controller.destroy();
+      }
+      simulcastControllersMap.clear();
 
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localScreenStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -671,10 +701,24 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       setLocalStream(stream);
       setupAudioMonitoring("local", stream);
 
-      for (const pc of peersRef.current.values()) {
+      for (const [peerId, pc] of peersRef.current.entries()) {
         for (const track of stream.getTracks()) {
           try {
-            pc.addTrack(track, stream);
+            const sender = pc.addTrack(track, stream);
+            if (track.kind === "video") {
+              const videoSender =
+                sender ||
+                pc.getSenders?.().find((s) => s.track === track || s.track?.kind === "video");
+              if (videoSender) {
+                void configureSimulcastSender(videoSender);
+                let controller = simulcastControllersRef.current.get(peerId);
+                if (!controller) {
+                  controller = new SimulcastAdaptiveController(pc, videoSender);
+                  controller.start();
+                  simulcastControllersRef.current.set(peerId, controller);
+                }
+              }
+            }
           } catch {}
         }
       }

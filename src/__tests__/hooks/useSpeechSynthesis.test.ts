@@ -3,6 +3,8 @@ import {
   useSpeechSynthesis,
   splitTextIntoSentences,
   SPEED_OPTIONS,
+  getPersistedVolume,
+  persistVolume,
 } from "@/hooks/useSpeechSynthesis";
 
 describe("splitTextIntoSentences", () => {
@@ -47,6 +49,7 @@ describe("useSpeechSynthesis hook", () => {
     text: string;
     rate: number = 1;
     pitch: number = 1;
+    volume: number = 1;
     lang: string = "";
     voice: any = null;
     onstart: (() => void) | null = null;
@@ -308,5 +311,130 @@ describe("useSpeechSynthesis hook", () => {
 
     const utterance = createdUtterances[createdUtterances.length - 1];
     expect(utterance.voice?.voiceURI).toBe("spanish-voice");
+  });
+
+  it("defaults to volume 1.0 and applies volume to SpeechSynthesisUtterance", () => {
+    const { result } = renderHook(() =>
+      useSpeechSynthesis("Volume default test"),
+    );
+    expect(result.current.volume).toBe(1);
+
+    act(() => {
+      result.current.speak();
+    });
+
+    const utterance = createdUtterances[createdUtterances.length - 1];
+    expect(utterance.volume).toBe(1);
+  });
+
+  it("respects custom defaultVolume option", () => {
+    const { result } = renderHook(() =>
+      useSpeechSynthesis("Custom volume", { defaultVolume: 0.6 }),
+    );
+    expect(result.current.volume).toBe(0.6);
+
+    act(() => {
+      result.current.speak();
+    });
+
+    const utterance = createdUtterances[createdUtterances.length - 1];
+    expect(utterance.volume).toBe(0.6);
+  });
+
+  it("updates volume state and clamps values between 0.0 and 1.0", () => {
+    const { result } = renderHook(() =>
+      useSpeechSynthesis("Clamp volume test"),
+    );
+
+    act(() => {
+      result.current.setVolume(0.75);
+    });
+    expect(result.current.volume).toBe(0.75);
+
+    // Below 0 should clamp to 0
+    act(() => {
+      result.current.setVolume(-0.5);
+    });
+    expect(result.current.volume).toBe(0);
+
+    // Above 1 should clamp to 1
+    act(() => {
+      result.current.changeVolume(1.8);
+    });
+    expect(result.current.volume).toBe(1);
+
+    act(() => {
+      result.current.speak();
+    });
+    const utterance = createdUtterances[createdUtterances.length - 1];
+    expect(utterance.volume).toBe(1);
+  });
+
+  it("persists volume to localStorage and restores it across hook remounts", () => {
+    const { result, unmount } = renderHook(() =>
+      useSpeechSynthesis("Persist test"),
+    );
+
+    act(() => {
+      result.current.setVolume(0.45);
+    });
+
+    expect(result.current.volume).toBe(0.45);
+    expect(window.localStorage.getItem("worksphere_speech_volume")).toBe("0.45");
+
+    unmount();
+    const { result: remountedResult } = renderHook(() =>
+      useSpeechSynthesis("Persist test"),
+    );
+    expect(remountedResult.current.volume).toBe(0.45);
+
+    act(() => {
+      remountedResult.current.speak();
+    });
+    const utterance = createdUtterances[createdUtterances.length - 1];
+    expect(utterance.volume).toBe(0.45);
+  });
+
+  it("applies volume to all sentence utterances in speakMessage", () => {
+    const { result } = renderHook(() => useSpeechSynthesis());
+
+    act(() => {
+      result.current.setVolume(0.3);
+    });
+
+    act(() => {
+      result.current.speakMessage("msg-vol", "Sentence A. Sentence B.");
+    });
+
+    expect(createdUtterances.length).toBeGreaterThanOrEqual(2);
+    const lastTwo = createdUtterances.slice(-2);
+    expect(lastTwo[0].volume).toBe(0.3);
+    expect(lastTwo[1].volume).toBe(0.3);
+  });
+});
+
+describe("volume persistence helpers", () => {
+  it("getPersistedVolume returns null when storage is empty or invalid", () => {
+    window.localStorage.removeItem("worksphere_speech_volume");
+    expect(getPersistedVolume()).toBeNull();
+
+    window.localStorage.setItem("worksphere_speech_volume", "invalid-number");
+    expect(getPersistedVolume()).toBeNull();
+  });
+
+  it("getPersistedVolume clamps stored values into [0, 1] range", () => {
+    window.localStorage.setItem("worksphere_speech_volume", "0.85");
+    expect(getPersistedVolume()).toBe(0.85);
+
+    window.localStorage.setItem("worksphere_speech_volume", "2.5");
+    expect(getPersistedVolume()).toBe(1);
+
+    window.localStorage.setItem("worksphere_speech_volume", "-0.2");
+    expect(getPersistedVolume()).toBe(0);
+  });
+
+  it("persistVolume writes stringified volume to localStorage", () => {
+    persistVolume(0.7);
+    expect(window.localStorage.getItem("worksphere_speech_volume")).toBe("0.7");
   });
 });

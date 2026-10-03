@@ -1,6 +1,8 @@
 "use client";
 
 import Tesseract from "tesseract.js";
+import { Languages, Sparkles } from "lucide-react";
+import { useTransition } from "react";
 
 import {
   X,
@@ -252,6 +254,54 @@ export function VenueDetailDialog({
   const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   // Quick Save state
+  
+  const [selectedVenueLang, setSelectedVenueLang] = useState<string>("EN");
+  const [translatedDescription, setTranslatedDescription] = useState<string>("");
+  const [isTranslatingDesc, startDescTransition] = useTransition();
+  const [descTranslationError, setDescTranslationError] = useState<string | null>(null);
+  const [descriptionCache, setDescriptionCache] = useState<Record<string, string>>({});
+
+  const handleVenueDescriptionTranslation = async (targetLang: string) => {
+    if (!venue) return;
+    setSelectedVenueLang(targetLang);
+    setDescTranslationError(null);
+
+    const rawDescription = venue.description || `Analysis based on Multi-Agent telemetry suggests this ${venue.category || "workspace"} is optimal for collaborative sessions.`;
+
+    if (targetLang === "EN") {
+      setTranslatedDescription("");
+      return;
+    }
+
+    const cacheKey = `${venue.id}-${targetLang}`;
+    if (descriptionCache[cacheKey]) {
+      setTranslatedDescription(descriptionCache[cacheKey]);
+      return;
+    }
+
+    startDescTransition(async () => {
+      try {
+        const response = await fetch(`/api/venues/${encodeURIComponent(venue.id)}/translate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetLang, text: rawDescription }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to translate venue description");
+        }
+
+        const translatedText = data.translatedDescription || rawDescription;
+        setTranslatedDescription(translatedText);
+        setDescriptionCache((prev) => ({ ...prev, [cacheKey]: translatedText }));
+      } catch (err: any) {
+        console.error("Venue Description Translation Error:", err);
+        setDescTranslationError(err.message || "Translation unavailable.");
+      }
+    });
+  };
+
   const [quickSaveLoading, setQuickSaveLoading] = useState(false);
 
   const handleQuickSave = async () => {
@@ -1156,6 +1206,52 @@ export function VenueDetailDialog({
         <div className="p-8 bg-transparent overflow-y-auto flex-1 min-h-0 text-zinc-100">
           {activeTab === "overview" && (
             <>
+
+              {/* MULTI-LANGUAGE VENUE DESCRIPTION TRANSLATOR */}
+              <div className="mb-6 p-5 bg-zinc-800/50 border border-zinc-700/50 rounded-2xl shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-zinc-700">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-indigo-400" />
+                    <h3 className="font-semibold text-lg text-white">Venue Description</h3>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Languages className="w-4 h-4 text-zinc-400 shrink-0" />
+                    <select
+                      value={selectedVenueLang}
+                      onChange={(e) => handleVenueDescriptionTranslation(e.target.value)}
+                      disabled={isTranslatingDesc}
+                      aria-label="Select venue description language"
+                      className="w-full sm:w-48 text-sm rounded-md border border-zinc-700 bg-zinc-900 text-zinc-200 px-3 py-1.5 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                    >
+                      {[
+                        { code: "EN", label: "English" },
+                        { code: "ES", label: "Spanish" },
+                        { code: "FR", label: "French" },
+                        { code: "DE", label: "German" },
+                        { code: "HI", label: "Hindi" },
+                        { code: "JA", label: "Japanese" },
+                        { code: "ZH", label: "Chinese (Simplified)" },
+                      ].map((loc) => (
+                        <option key={loc.code} value={loc.code}>
+                          {loc.label}
+                        </option>
+                      ))}
+                    </select>
+                    {isTranslatingDesc && <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />}
+                  </div>
+                </div>
+
+                <div className="relative min-h-[60px] text-zinc-300 leading-relaxed text-sm">
+                  {descTranslationError && (
+                    <p className="text-xs text-amber-400 mb-2 font-medium">{descTranslationError}</p>
+                  )}
+                  <p className="whitespace-pre-line">
+                    {translatedDescription || venue.description || `Analysis based on Multi-Agent telemetry suggests this ${venue.category || "workspace"} is optimal for collaborative sessions.`}
+                  </p>
+                </div>
+              </div>
+
               {/* Verified Host Pinned Message */}
               {venue.isClaimed && venue.hostMessage && (
                 <div className="mb-6 p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 rounded-2xl shadow-sm">

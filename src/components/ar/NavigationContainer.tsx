@@ -26,12 +26,20 @@ interface AnchorData {
   seat: { id: string; seatNumber: string; type: string } | null;
 }
 
+interface VenueLocation {
+  name?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
 interface NavigationContainerProps {
   venueId: string;
+  venue?: VenueLocation | null;
 }
 
 export default function NavigationContainer({
   venueId,
+  venue,
 }: NavigationContainerProps) {
   const { isSupported, requestSession } = useWebXR();
   const [session, setSession] = useState<XRSession | null>(null);
@@ -187,7 +195,14 @@ export default function NavigationContainer({
   }
 
   if (useFallback || isSupported === false) {
-    return <CompassFallback />;
+    return (
+      <CompassFallback
+        destinationLat={venue?.latitude}
+        destinationLng={venue?.longitude}
+        destinationName={venue?.name}
+        onRetryAR={isSupported ? () => setUseFallback(false) : undefined}
+      />
+    );
   }
 
   return (

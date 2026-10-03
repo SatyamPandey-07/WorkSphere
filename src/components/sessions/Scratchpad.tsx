@@ -8,6 +8,11 @@ import { KeyStore } from "@/lib/e2ee/KeyStore";
 import { Unlock, Key, Loader2, Share2 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 import {
+  createYjsUpdateBatcher,
+  decodeYjsWirePayload,
+  encodeYjsWirePayload,
+} from "@/lib/crdt/yjsCompression";
+import {
   generateKeyPair,
   exportPublicKey,
   importPublicKey,
@@ -146,8 +151,11 @@ export default function Scratchpad({ sessionId }: Props) {
             iv,
           );
 
-          // Compute delta missing from remote peer's state vector
-          const delta = Y.encodeStateAsUpdate(docRef.current, remoteVector);
+          // Compute delta missing from remote peer's state vector, then
+          // compress before encrypting (ciphertext is incompressible) (#1728)
+          const delta = await encodeYjsWirePayload(
+            Y.encodeStateAsUpdate(docRef.current, remoteVector),
+          );
           const encryptedDelta = await CryptoManager.encryptPayload(
             cryptoKeyRef.current,
             delta,
@@ -171,10 +179,8 @@ export default function Scratchpad({ sessionId }: Props) {
           docRef.current
         ) {
           const { ciphertext, iv } = msg.payload;
-          const decryptedDelta = await CryptoManager.decryptPayload(
-            cryptoKeyRef.current,
-            ciphertext,
-            iv,
+          const decryptedDelta = await decodeYjsWirePayload(
+            await CryptoManager.decryptPayload(cryptoKeyRef.current, ciphertext, iv),
           );
 
           updateQueueRef.current.push(decryptedDelta);
@@ -191,10 +197,8 @@ export default function Scratchpad({ sessionId }: Props) {
           docRef.current
         ) {
           const { ciphertext, iv } = msg.payload;
-          const decryptedUpdate = await CryptoManager.decryptPayload(
-            cryptoKeyRef.current,
-            ciphertext,
-            iv,
+          const decryptedUpdate = await decodeYjsWirePayload(
+            await CryptoManager.decryptPayload(cryptoKeyRef.current, ciphertext, iv),
           );
 
           updateQueueRef.current.push(decryptedUpdate);
@@ -313,19 +317,17 @@ export default function Scratchpad({ sessionId }: Props) {
     }
   }, [isNegotiating, socket.readyState, socket, sessionId]);
 
-  // Handle local Yjs updates and encrypt them
+  // Handle local Yjs updates: batch keystrokes, compress, encrypt, send (#1728)
   useEffect(() => {
     if (!docRef.current) return;
 
     const doc = docRef.current;
-    const handleUpdate = async (update: Uint8Array, _origin: any) => {
-      if (isLocalUpdateRef.current || !cryptoKeyRef.current) return;
-
+    const sendDelta = async (update: Uint8Array) => {
+      const key = cryptoKeyRef.current;
+      if (!key) return;
       try {
-        const encrypted = await CryptoManager.encryptPayload(
-          cryptoKeyRef.current,
-          update,
-        );
+        const encoded = await encodeYjsWirePayload(update);
+        const encrypted = await CryptoManager.encryptPayload(key, encoded);
         socket.send(
           JSON.stringify({
             type: "e2ee-delta",
@@ -337,9 +339,26 @@ export default function Scratchpad({ sessionId }: Props) {
       }
     };
 
+    // Coalesce high-frequency typing into one message per window instead of
+    // one per keystroke; the first keystroke after a pause is sent at once.
+    const batcher = createYjsUpdateBatcher({
+      onFlush: (merged) => void sendDelta(merged),
+    });
+
+    const handleUpdate = (update: Uint8Array, _origin: any) => {
+      if (isLocalUpdateRef.current || !cryptoKeyRef.current) return;
+      batcher.push(update);
+    };
+
+    // Don't lose the last keystrokes when the tab is closed or hidden.
+    const flushPending = () => batcher.flush();
+
     doc.on("update", handleUpdate);
+    window.addEventListener("pagehide", flushPending);
     return () => {
       doc.off("update", handleUpdate);
+      window.removeEventListener("pagehide", flushPending);
+      batcher.dispose();
     };
   }, [socket, hasKey]);
 

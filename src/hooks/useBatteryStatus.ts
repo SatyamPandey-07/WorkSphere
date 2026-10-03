@@ -38,13 +38,18 @@ export function useBatteryStatus(): BatteryState {
   const [state, setState] = useState<BatteryState>(INITIAL_STATE);
 
   useEffect(() => {
-    if (typeof navigator === "undefined" || !("getBattery" in navigator)) {
+    if (
+      typeof navigator === "undefined" ||
+      typeof (navigator as any).getBattery !== "function"
+    ) {
       return;
     }
 
+    let isMounted = true;
     let battery: BatteryManager | null = null;
 
     const update = (b: BatteryManager) => {
+      if (!isMounted) return;
       const level = b.level;
       const charging = b.charging;
       setState({
@@ -58,24 +63,32 @@ export function useBatteryStatus(): BatteryState {
       });
     };
 
+    const handleBatteryChange = () => {
+      if (battery && isMounted) {
+        update(battery);
+      }
+    };
+
     (navigator as Navigator & { getBattery(): Promise<BatteryManager> })
       .getBattery()
       .then((b) => {
+        if (!isMounted) return;
         battery = b;
         update(b);
-        b.addEventListener("levelchange", () => update(b));
-        b.addEventListener("chargingchange", () => update(b));
-        b.addEventListener("dischargingtimechange", () => update(b));
+        b.addEventListener("levelchange", handleBatteryChange);
+        b.addEventListener("chargingchange", handleBatteryChange);
+        b.addEventListener("dischargingtimechange", handleBatteryChange);
       })
       .catch(() => {
         // API rejected (e.g. Firefox 106+ disabling it for privacy)
       });
 
     return () => {
+      isMounted = false;
       if (battery) {
-        battery.removeEventListener("levelchange", () => {});
-        battery.removeEventListener("chargingchange", () => {});
-        battery.removeEventListener("dischargingtimechange", () => {});
+        battery.removeEventListener("levelchange", handleBatteryChange);
+        battery.removeEventListener("chargingchange", handleBatteryChange);
+        battery.removeEventListener("dischargingtimechange", handleBatteryChange);
       }
     };
   }, []);

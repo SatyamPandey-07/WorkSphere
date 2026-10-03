@@ -74,6 +74,292 @@ export enum ConnectionState {
   CONNECTED = "CONNECTED",
 }
 
+export interface ReplayableSessionEvent<T = any> {
+  sequenceId: number;
+  epoch: number;
+  messageId: string;
+  type: string;
+  payload: T;
+  timestamp: number;
+  senderId?: string;
+}
+
+export interface SyncRequestMessage {
+  type: "sync_request";
+  lastSeq: number;
+  epoch?: number;
+  clientRegion?: string;
+}
+
+export interface SyncReplayMessage {
+  type: "sync_replay";
+  epoch: number;
+  fromSeq: number;
+  toSeq: number;
+  events: any[];
+}
+
+export interface SyncAckMessage {
+  type: "sync_ack";
+  epoch: number;
+  latestSeq: number;
+  status: "synchronized";
+}
+
+export interface SyncFallbackMessage {
+  type: "sync_fallback";
+  reason: "epoch_mismatch" | "history_unavailable" | "invalid_sequence";
+  epoch: number;
+  latestSeq: number;
+  seats?: any;
+  presence?: any;
+}
+
+export interface MsgAckMessage {
+  type: "msg_ack";
+  messageId: string;
+  status: "processed" | "duplicate";
+  sequenceId: number;
+  epoch: number;
+}
+
+export interface SessionResyncOptions {
+  maxQueueSize?: number;
+  maxProcessedIds?: number;
+}
+
+const NON_REPLAYABLE_TYPES = new Set([
+  "cursor",
+  "presence",
+  "typing",
+  "ping",
+  "pong",
+  "spatial_listener_update",
+]);
+
+/**
+ * Manages client-side offline message queueing, sequence tracking,
+ * ordered catch-up replay, and deduplication for PartyKit sessions.
+ */
+export class SessionResyncQueue {
+  public lastSeq = 0;
+  public lastEpoch: number | null = null;
+  public isCatchingUp = false;
+  private offlineActions: string[] = [];
+  private offlineCrdt: any[] = [];
+  private processedMessageIds = new Set<string>();
+  private pendingLiveEvents = new Map<number, any>();
+  private readonly maxQueueSize: number;
+  private readonly maxProcessedIds: number;
+
+  constructor(options: SessionResyncOptions = {}) {
+    this.maxQueueSize = options.maxQueueSize ?? 100;
+    this.maxProcessedIds = options.maxProcessedIds ?? 1000;
+  }
+
+  isEphemeral(data: any): boolean {
+    if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+      return false;
+    }
+    if (typeof data === "string") {
+      try {
+        const parsed = JSON.parse(data);
+        return NON_REPLAYABLE_TYPES.has(parsed.type);
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  enqueue(data: any): boolean {
+    if (this.isEphemeral(data)) {
+      return false;
+    }
+
+    if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
+      if (this.offlineCrdt.length >= this.maxQueueSize) {
+        this.offlineCrdt.shift();
+      }
+      this.offlineCrdt.push(data);
+      return true;
+    }
+
+    if (this.offlineActions.length >= this.maxQueueSize) {
+      this.offlineActions.shift();
+    }
+    this.offlineActions.push(data);
+    return true;
+  }
+
+  getOfflineActions(): string[] {
+    return this.offlineActions;
+  }
+
+  getOfflineCrdt(): any[] {
+    return this.offlineCrdt;
+  }
+
+  hasPending(): boolean {
+    return this.offlineCrdt.length > 0 || this.offlineActions.length > 0;
+  }
+
+  flush(sendFn: (data: any) => void): { crdtCount: number; actionsCount: number } {
+    const crdtToSend = [...this.offlineCrdt];
+    const actionsToSend = [...this.offlineActions];
+    this.offlineCrdt.length = 0;
+    this.offlineActions.length = 0;
+
+    for (const msg of crdtToSend) {
+      sendFn(msg);
+    }
+    for (const msg of actionsToSend) {
+      sendFn(msg);
+    }
+
+    return { crdtCount: crdtToSend.length, actionsCount: actionsToSend.length };
+  }
+
+  hasProcessed(messageId: string): boolean {
+    return this.processedMessageIds.has(messageId);
+  }
+
+  markProcessed(messageId: string): void {
+    this.processedMessageIds.add(messageId);
+    if (this.processedMessageIds.size > this.maxProcessedIds) {
+      const oldest = this.processedMessageIds.values().next().value;
+      if (oldest) this.processedMessageIds.delete(oldest);
+    }
+  }
+
+  createSyncRequest(): string {
+    return JSON.stringify({
+      type: "sync_request",
+      lastSeq: this.lastSeq,
+      epoch: this.lastEpoch ?? undefined,
+    });
+  }
+
+  handleSyncReplay(events: any[]): any[] {
+    this.isCatchingUp = true;
+    const sorted = [...events].sort((a, b) => {
+      const seqA =
+        typeof a === "object" && a !== null
+          ? a.sequenceId ?? 0
+          : typeof a === "string"
+            ? (JSON.parse(a).sequenceId ?? 0)
+            : 0;
+      const seqB =
+        typeof b === "object" && b !== null
+          ? b.sequenceId ?? 0
+          : typeof b === "string"
+            ? (JSON.parse(b).sequenceId ?? 0)
+            : 0;
+      return seqA - seqB;
+    });
+
+    const eventsToApply: any[] = [];
+    for (const raw of sorted) {
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      const seq = parsed.sequenceId;
+      const msgId = parsed.messageId || parsed.message?.id;
+
+      if (msgId && this.hasProcessed(msgId)) {
+        continue;
+      }
+
+      if (typeof seq === "number") {
+        if (seq <= this.lastSeq && parsed.epoch === this.lastEpoch) {
+          continue;
+        }
+        this.lastSeq = seq;
+        if (typeof parsed.epoch === "number") {
+          this.lastEpoch = parsed.epoch;
+        }
+      }
+
+      if (msgId) {
+        this.markProcessed(msgId);
+      }
+      eventsToApply.push(parsed);
+    }
+
+    this.isCatchingUp = false;
+    const drained = this.drainPendingLiveEvents();
+    return [...eventsToApply, ...drained];
+  }
+
+  handleLiveEvent(data: any): { shouldApply: boolean; event: any } {
+    const parsed =
+      typeof data === "string"
+        ? (() => {
+            try {
+              return JSON.parse(data);
+            } catch {
+              return null;
+            }
+          })()
+        : data;
+
+    if (!parsed || typeof parsed !== "object") {
+      return { shouldApply: true, event: data };
+    }
+
+    const seq = parsed.sequenceId;
+    const msgId = parsed.messageId || parsed.message?.id;
+
+    if (typeof seq !== "number") {
+      return { shouldApply: true, event: parsed };
+    }
+
+    if (msgId && this.hasProcessed(msgId)) {
+      return { shouldApply: false, event: parsed };
+    }
+
+    if (seq <= this.lastSeq && (parsed.epoch === this.lastEpoch || !this.lastEpoch)) {
+      return { shouldApply: false, event: parsed };
+    }
+
+    if (this.isCatchingUp || seq > this.lastSeq + 1) {
+      this.pendingLiveEvents.set(seq, parsed);
+      return { shouldApply: false, event: parsed };
+    }
+
+    this.lastSeq = seq;
+    if (typeof parsed.epoch === "number") {
+      this.lastEpoch = parsed.epoch;
+    }
+    if (msgId) {
+      this.markProcessed(msgId);
+    }
+
+    return { shouldApply: true, event: parsed };
+  }
+
+  drainPendingLiveEvents(): any[] {
+    const drained: any[] = [];
+    while (this.pendingLiveEvents.has(this.lastSeq + 1)) {
+      const nextSeq = this.lastSeq + 1;
+      const nextEvent = this.pendingLiveEvents.get(nextSeq);
+      this.pendingLiveEvents.delete(nextSeq);
+
+      const msgId = nextEvent.messageId || nextEvent.message?.id;
+      if (msgId && this.hasProcessed(msgId)) {
+        continue;
+      }
+      this.lastSeq = nextSeq;
+      if (typeof nextEvent.epoch === "number") {
+        this.lastEpoch = nextEvent.epoch;
+      }
+      if (msgId) {
+        this.markProcessed(msgId);
+      }
+      drained.push(nextEvent);
+    }
+    return drained;
+  }
+}
+
 type DelaySocket = {
   _retryCount: number;
   _getNextDelay: () => number;
@@ -85,6 +371,11 @@ type DelaySocket = {
     event: string,
     callback: (...args: any[]) => void,
   ) => void;
+  removeEventListener?: (
+    event: string,
+    callback: (...args: any[]) => void,
+  ) => void;
+  onmessage?: ((event: any) => void) | null;
   send?: (data: any) => void;
   __worksphereJitter?: boolean;
   __worksphereState?: ConnectionState;
@@ -92,9 +383,11 @@ type DelaySocket = {
   __lastCloseReason?: string | null;
   __offlineActionsQueue?: string[];
   __offlineCrdtQueue?: any[];
+  __worksphereResyncQueue?: SessionResyncQueue;
   __worksphereForceReconnect?: () => void;
 };
-/** Swap in jittered backoff on a live PartySocket instance (idempotent). */
+
+/** Swap in jittered backoff and session state resynchronization on a live PartySocket instance (idempotent). */
 export function attachJitteredBackoff<T extends object>(socket: T): T {
   const s = socket as T & DelaySocket;
   if (s.__worksphereJitter) return socket;
@@ -104,8 +397,11 @@ export function attachJitteredBackoff<T extends object>(socket: T): T {
   s.__worksphereState = ConnectionState.CLOSED;
   s.__lastCloseCode = null;
   s.__lastCloseReason = null;
-  s.__offlineActionsQueue = [];
-  s.__offlineCrdtQueue = [];
+
+  const resyncQueue = new SessionResyncQueue();
+  s.__worksphereResyncQueue = resyncQueue;
+  s.__offlineActionsQueue = resyncQueue.getOfflineActions();
+  s.__offlineCrdtQueue = resyncQueue.getOfflineCrdt();
 
   s._getNextDelay = function (this: DelaySocket) {
     return jitteredReconnectDelay(this._retryCount);
@@ -153,6 +449,7 @@ export function attachJitteredBackoff<T extends object>(socket: T): T {
   const originalDisconnect = s._disconnect;
   s._disconnect = function (this: any, code?: number, reason?: string) {
     s.__worksphereState = ConnectionState.CLOSED;
+    resyncQueue.isCatchingUp = false;
     if (pendingTimeoutId) {
       clearTimeout(pendingTimeoutId);
       pendingTimeoutId = null;
@@ -186,58 +483,149 @@ export function attachJitteredBackoff<T extends object>(socket: T): T {
       if (s.__worksphereState === ConnectionState.CONNECTED) {
         originalSend.call(this, data);
       } else {
-        if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) {
-          if (!s.__offlineCrdtQueue) s.__offlineCrdtQueue = [];
-          s.__offlineCrdtQueue.push(data);
-        } else if (typeof data === "string") {
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed.type === "cursor" || parsed.type === "presence") {
-              return;
-            }
-          } catch {
-            // Not valid JSON, keep it in queue
-          }
-          if (!s.__offlineActionsQueue) s.__offlineActionsQueue = [];
-          s.__offlineActionsQueue.push(data);
-        } else {
-          if (!s.__offlineActionsQueue) s.__offlineActionsQueue = [];
-          s.__offlineActionsQueue.push(data);
-        }
+        resyncQueue.enqueue(data);
       }
     };
   }
 
-  if (typeof s.addEventListener === "function") {
+  const messageListeners = new Set<(event: any) => void>();
+
+  const dispatchToListeners = (payload: any) => {
+    const rawData = typeof payload === "string" ? payload : JSON.stringify(payload);
+    const mockEvent = {
+      type: "message",
+      data: rawData,
+      target: s,
+    };
+    for (const listener of messageListeners) {
+      try {
+        listener(mockEvent);
+      } catch (err) {
+        console.error("[PartySocketResync] Listener error:", err);
+      }
+    }
+    if (typeof s.onmessage === "function") {
+      try {
+        s.onmessage(mockEvent);
+      } catch (err) {
+        console.error("[PartySocketResync] onmessage error:", err);
+      }
+    }
+  };
+
+  const flushQueues = () => {
+    if (originalSend && resyncQueue.hasPending()) {
+      resyncQueue.flush((msg) => {
+        originalSend.call(s, msg);
+      });
+    }
+  };
+
+  const handleIncomingMessage = (event: any) => {
+    const raw = typeof event?.data === "string" ? event.data : null;
+    if (!raw) {
+      dispatchToListeners(event?.data ?? event);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+
+      if (parsed.type === "sync_replay" && Array.isArray(parsed.events)) {
+        const eventsToApply = resyncQueue.handleSyncReplay(parsed.events);
+        flushQueues();
+        for (const ev of eventsToApply) {
+          dispatchToListeners(ev);
+        }
+        return;
+      }
+
+      if (parsed.type === "sync_ack") {
+        if (typeof parsed.latestSeq === "number") {
+          resyncQueue.lastSeq = parsed.latestSeq;
+        }
+        if (typeof parsed.epoch === "number") {
+          resyncQueue.lastEpoch = parsed.epoch;
+        }
+        flushQueues();
+        const drained = resyncQueue.drainPendingLiveEvents();
+        for (const ev of drained) {
+          dispatchToListeners(ev);
+        }
+        return;
+      }
+
+      if (parsed.type === "sync_fallback") {
+        if (typeof parsed.latestSeq === "number") {
+          resyncQueue.lastSeq = parsed.latestSeq;
+        }
+        if (typeof parsed.epoch === "number") {
+          resyncQueue.lastEpoch = parsed.epoch;
+        }
+        flushQueues();
+        dispatchToListeners(parsed);
+        return;
+      }
+
+      const { shouldApply, event: filteredEvent } = resyncQueue.handleLiveEvent(parsed);
+      if (shouldApply) {
+        dispatchToListeners(filteredEvent);
+        const drained = resyncQueue.drainPendingLiveEvents();
+        for (const ev of drained) {
+          dispatchToListeners(ev);
+        }
+      }
+    } catch {
+      dispatchToListeners(raw);
+    }
+  };
+
+  const originalAddEventListener = s.addEventListener;
+  if (typeof originalAddEventListener === "function") {
+    s.addEventListener = function (event: string, callback: (...args: any[]) => void) {
+      if (event === "message") {
+        messageListeners.add(callback);
+        return;
+      }
+      originalAddEventListener.call(this, event, callback);
+    };
+
+    const originalRemoveEventListener = s.removeEventListener;
+    s.removeEventListener = function (event: string, callback: (...args: any[]) => void) {
+      if (event === "message") {
+        messageListeners.delete(callback);
+        return;
+      }
+      if (typeof originalRemoveEventListener === "function") {
+        originalRemoveEventListener.call(this, event, callback);
+      }
+    };
+
+    // Attach internal message listener to process incoming frames
+    originalAddEventListener.call(s, "message", handleIncomingMessage);
+
     s.addEventListener("open", () => {
       s.__worksphereState = ConnectionState.CONNECTED;
       s._retryCount = 0;
-      if (originalSend) {
-        if (s.__offlineCrdtQueue && s.__offlineCrdtQueue.length > 0) {
-          const crdtQueue = [...s.__offlineCrdtQueue];
-          s.__offlineCrdtQueue = [];
-          crdtQueue.forEach((msg) => {
-            originalSend.call(s, msg);
-          });
-        }
-        if (s.__offlineActionsQueue && s.__offlineActionsQueue.length > 0) {
-          const actionsQueue = [...s.__offlineActionsQueue];
-          s.__offlineActionsQueue = [];
-          actionsQueue.forEach((msg) => {
-            originalSend.call(s, msg);
-          });
-        }
+
+      // If reconnecting with previous sequence history, request delta resync
+      if (resyncQueue.lastSeq > 0 && originalSend) {
+        originalSend.call(s, resyncQueue.createSyncRequest());
+      } else {
+        flushQueues();
       }
     });
 
     s.addEventListener("close", (event?: any) => {
       s.__worksphereState = ConnectionState.CLOSED;
+      resyncQueue.isCatchingUp = false;
       s.__lastCloseCode = event?.code ?? null;
       s.__lastCloseReason = event?.reason ?? null;
     });
 
     s.addEventListener("error", () => {
       s.__worksphereState = ConnectionState.CLOSED;
+      resyncQueue.isCatchingUp = false;
     });
   }
 

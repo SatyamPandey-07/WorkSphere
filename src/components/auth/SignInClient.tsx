@@ -15,12 +15,16 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react";
+import { WebAuthnAbortService } from "@simplewebauthn/browser";
 import { PasskeySignInButton } from "./PasskeySignInButton";
 import { PasskeyFrameNotice } from "@/components/PasskeyFrameNotice";
 
 export function SignInClient() {
   const router = useRouter();
-  const [useFallback, setUseFallback] = useState(false);
+  const [useFallback, setUseFallback] = useState(() => {
+    const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+    return !key || key.includes("dummy") || key === "pk_test_dummy";
+  });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -48,6 +52,7 @@ export function SignInClient() {
   }, []);
 
   const handleDemoSignIn = async () => {
+    WebAuthnAbortService.cancelCeremony();
     setLoading(true);
     setError(null);
     try {
@@ -70,6 +75,7 @@ export function SignInClient() {
       setError("Please enter both email and password.");
       return;
     }
+    WebAuthnAbortService.cancelCeremony();
     setLoading(true);
     setError(null);
     try {
@@ -176,6 +182,9 @@ export function SignInClient() {
                 <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                 <input
                   type="email"
+                  name="email"
+                  id="email"
+                  autoComplete="username webauthn"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@company.com"
@@ -193,6 +202,9 @@ export function SignInClient() {
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
                 <input
                   type={showPassword ? "text" : "password"}
+                  name="password"
+                  id="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••••••"

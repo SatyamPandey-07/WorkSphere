@@ -6,6 +6,7 @@ const DEFAULT_CONFIG: HnswConfig = {
   efConstruction: 200,
   efSearch: 50,
   ml: 1 / Math.log(16),
+  metric: "cosine",
 };
 
 export class HNSWIndex {
@@ -32,6 +33,22 @@ export class HNSWIndex {
     return 1 - dot / denom;
   }
 
+  private euclideanDistance(a: number[], b: number[]): number {
+    let sum = 0;
+    for (let i = 0; i < a.length; i++) {
+      const diff = a[i] - b[i];
+      sum += diff * diff;
+    }
+    return Math.sqrt(sum);
+  }
+
+  private distance(a: number[], b: number[]): number {
+    if (this.config.metric === "euclidean") {
+      return this.euclideanDistance(a, b);
+    }
+    return this.cosineDistance(a, b);
+  }
+
   private randomLevel(): number {
     let level = 0;
     while (Math.random() < this.config.ml && level < 32) {
@@ -53,7 +70,7 @@ export class HNSWIndex {
     const entry = this.nodes.get(entryId);
     if (!entry) return [];
 
-    const entryDist = this.cosineDistance(query, entry.vector);
+    const entryDist = this.distance(query, entry.vector);
     candidates.push({ id: entryId, distance: entryDist });
     results.push({ id: entryId, distance: entryDist });
     visited.add(entryId);
@@ -78,7 +95,7 @@ export class HNSWIndex {
         const neighbor = this.nodes.get(neighborId);
         if (!neighbor) continue;
 
-        const dist = this.cosineDistance(query, neighbor.vector);
+        const dist = this.distance(query, neighbor.vector);
         const farthestResult = results[results.length - 1];
 
         if (results.length < ef || dist < farthestResult.distance) {
@@ -130,7 +147,7 @@ export class HNSWIndex {
     }
 
     let currEntry = this.entryPoint;
-    const _currDist = this.cosineDistance(
+    const _currDist = this.distance(
       vector,
       this.nodes.get(currEntry)!.vector,
     );
@@ -172,7 +189,7 @@ export class HNSWIndex {
               return n
                 ? {
                     id: nid,
-                    distance: this.cosineDistance(
+                    distance: this.distance(
                       n.vector,
                       neighborNode.vector,
                     ),
@@ -274,7 +291,7 @@ export class HNSWIndex {
             return cNode
               ? {
                   id: cid,
-                  distance: this.cosineDistance(
+                  distance: this.distance(
                     neighborNode.vector,
                     cNode.vector,
                   ),
@@ -304,7 +321,7 @@ export class HNSWIndex {
                       return n
                         ? {
                             id: nid,
-                            distance: this.cosineDistance(
+                            distance: this.distance(
                               n.vector,
                               targetNode.vector,
                             ),

@@ -14,6 +14,7 @@ export function validateSamlAssertion(
   xmlString: string,
   expectedCert: string,
   expectedAudience?: string,
+  expectedRecipient?: string,
 ) {
   // 1. Verify XML Signature using xml-crypto
   const doc = new DOMParser().parseFromString(xmlString, "text/xml");
@@ -31,11 +32,14 @@ export function validateSamlAssertion(
     .replace(/-----END CERTIFICATE-----/g, "")
     .replace(/\s+/g, "");
 
-  const sig = new SignedXml();
-  // Provide the certificate to the verifier
-  sig.publicCert = Buffer.from(
+  const publicCert = Buffer.from(
     `-----BEGIN CERTIFICATE-----\n${normalizedCert.replace(/(.{64})/g, "$1\n")}\n-----END CERTIFICATE-----`,
   );
+
+  const sig = new SignedXml({
+    publicCert,
+    getCertFromKeyInfo: () => null,
+  });
 
   sig.loadSignature(signature.toString());
 
@@ -52,14 +56,22 @@ export function validateSamlAssertion(
     throw new Error("SAML Signature validation failed");
   }
 
-  // 2. Parse the validated XML to extract details
+  const signedReferences = sig.getSignedReferences();
+
+  if (signedReferences.length !== 1) {
+    throw new Error("Invalid SAML: Expected exactly one signed reference");
+  }
+
+  // 2. Parse only the XML content that was actually covered by the signature
+  const verifiedXml = signedReferences[0];
+
   const parser = new XMLParser({
     ignoreAttributes: false,
     attributeNamePrefix: "@_",
     removeNSPrefix: true,
   });
 
-  const parsed = parser.parse(xmlString);
+  const parsed = parser.parse(verifiedXml);
   const response = parsed.Response;
 
   if (!response) {
@@ -71,7 +83,53 @@ export function validateSamlAssertion(
     throw new Error("Invalid SAML: No Assertion found in Response");
   }
 
-  // 3. Validate Conditions (Time and Audience)
+  // 3. Validate Subject Confirmation
+  const subject = assertion.Subject;
+
+  if (!subject) {
+    throw new Error("Invalid SAML: No Subject found in Assertion");
+  }
+
+  const subjectConfirmations = Array.isArray(subject.SubjectConfirmation)
+    ? subject.SubjectConfirmation
+    : subject.SubjectConfirmation
+      ? [subject.SubjectConfirmation]
+      : [];
+
+  const bearerConfirmation = subjectConfirmations.find(
+    (confirmation: any) =>
+      confirmation["@_Method"] === "urn:oasis:names:tc:SAML:2.0:cm:bearer",
+  );
+
+  if (!bearerConfirmation) {
+    throw new Error("Invalid SAML: No bearer SubjectConfirmation found");
+  }
+
+  const confirmationData = bearerConfirmation.SubjectConfirmationData;
+
+  if (!confirmationData) {
+    throw new Error("Invalid SAML: Missing SubjectConfirmationData");
+  }
+
+  if (expectedRecipient) {
+    if (confirmationData["@_Recipient"] !== expectedRecipient) {
+      throw new Error("SAML SubjectConfirmation Recipient mismatch");
+    }
+  }
+
+  const confirmationNotOnOrAfter = confirmationData["@_NotOnOrAfter"];
+
+  if (!confirmationNotOnOrAfter) {
+    throw new Error(
+      "Invalid SAML: SubjectConfirmationData missing NotOnOrAfter",
+    );
+  }
+
+  if (new Date(confirmationNotOnOrAfter) <= new Date()) {
+    throw new Error("SAML SubjectConfirmation has expired");
+  }
+
+  // 4. Validate Conditions (Time and Audience)
   const conditions = assertion.Conditions;
   if (conditions) {
     const notBefore = conditions["@_NotBefore"];
@@ -88,19 +146,22 @@ export function validateSamlAssertion(
 
     if (expectedAudience) {
       const audienceRestriction = conditions.AudienceRestriction;
-      if (audienceRestriction) {
-        const audiences = Array.isArray(audienceRestriction.Audience)
-          ? audienceRestriction.Audience
-          : [audienceRestriction.Audience];
 
-        if (!audiences.includes(expectedAudience)) {
-          throw new Error("SAML Assertion Audience restriction mismatch");
-        }
+      if (!audienceRestriction) {
+        throw new Error("Invalid SAML: Missing AudienceRestriction");
+      }
+
+      const audiences = Array.isArray(audienceRestriction.Audience)
+        ? audienceRestriction.Audience
+        : [audienceRestriction.Audience];
+
+      if (!audiences.includes(expectedAudience)) {
+        throw new Error("SAML Assertion Audience restriction mismatch");
       }
     }
   }
 
-  // 4. Extract NameID and Attributes
+  // 5. Extract NameID and Attributes
   const nameId = assertion.Subject?.NameID;
   const attributes: Record<string, string> = {};
 

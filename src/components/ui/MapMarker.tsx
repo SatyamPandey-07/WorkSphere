@@ -3,6 +3,7 @@
 import { Marker, Popup } from "react-leaflet";
 import type { Marker as LeafletMarker } from "leaflet";
 import { useCallback, useEffect, useRef, memo } from "react";
+import { getVenueShape } from "@/lib/mapAccessibility";
 
 export interface AccessibleMarkerProps {
   position: [number, number];
@@ -12,6 +13,7 @@ export interface AccessibleMarkerProps {
   rating?: number;
   score?: number;
   isDestination?: boolean;
+  isHighContrast?: boolean;
   children?: React.ReactNode;
   telemetryData?: {
     seatCount?: number;
@@ -32,6 +34,7 @@ export const AccessibleMarker = memo(
     rating,
     score,
     isDestination,
+    isHighContrast = false,
     children,
     telemetryData: _telemetryData,
     zIndexOffset = 0,
@@ -79,8 +82,23 @@ export const AccessibleMarker = memo(
         el.setAttribute("role", "button");
         el.setAttribute("tabindex", "0");
         el.classList.add("interactive-map-pin");
+        if (isHighContrast) {
+          el.setAttribute("data-high-contrast", "true");
+          const shape = getVenueShape(category);
+          el.setAttribute("data-shape", shape);
+          el.classList.add("high-contrast-pin", `hc-shape-${shape}`);
+        } else {
+          el.removeAttribute("data-high-contrast");
+          el.removeAttribute("data-shape");
+          el.classList.remove(
+            "high-contrast-pin",
+            "hc-shape-circle",
+            "hc-shape-square",
+            "hc-shape-diamond",
+          );
+        }
       },
-      [buildAriaLabel],
+      [buildAriaLabel, isHighContrast, category],
     );
 
     const handleAdd = useCallback(
@@ -173,7 +191,8 @@ export const AccessibleMarker = memo(
       prevProps.category !== nextProps.category ||
       prevProps.rating !== nextProps.rating ||
       prevProps.score !== nextProps.score ||
-      prevProps.isDestination !== nextProps.isDestination
+      prevProps.isDestination !== nextProps.isDestination ||
+      prevProps.isHighContrast !== nextProps.isHighContrast
     ) {
       return false;
     }

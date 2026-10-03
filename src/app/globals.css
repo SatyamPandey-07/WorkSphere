@@ -499,15 +499,25 @@ textarea:focus::placeholder {
   }
 }
 
-/* ─── Interactive Map Pin Keyboard Focus Rings (Issue #3342) ─── */
+/* ─── Interactive Map Pin Keyboard Focus Rings (Issue #3342, #3446) ─── */
+.interactive-map-pin:focus,
 .interactive-map-pin:focus-visible,
+.leaflet-marker-icon:focus,
 .leaflet-marker-icon:focus-visible,
+.venue-marker:focus,
 .venue-marker:focus-visible,
+.destination-marker:focus,
 .destination-marker:focus-visible,
+.custom-user-marker:focus,
 .custom-user-marker:focus-visible {
-  outline: 3px solid #3b82f6 !important;
-  outline-offset: 3px !important;
+  outline: 3px solid var(--primary-accent, #3b82f6) !important;
+  outline-offset: 2px !important;
   box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.45) !important;
-  border-radius: 50% !important;
   z-index: 1000 !important;
 }
+
+.interactive-map-pin:not(.hc-shape-square):not(.hc-shape-diamond):focus-visible,
+.venue-marker:not(.hc-marker-square):not(.hc-marker-diamond):focus-visible {
+  border-radius: 50% !important;
+}
+

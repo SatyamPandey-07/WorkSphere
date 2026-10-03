@@ -1,10 +1,35 @@
 import { generateEmbedding } from "@/lib/cache/semanticCache";
 import { HNSWIndex } from "@/lib/hnsw/hnsw";
 
-interface DedupResult {
+export interface DedupResult {
   deduplicated: { role: string; content: string }[];
   removedCount: number;
   savings: number;
+}
+
+export interface VenueLike {
+  id?: string;
+  name: string;
+  lat?: number;
+  lng?: number;
+  address?: string;
+  category?: string;
+  score?: number;
+  [key: string]: unknown;
+}
+
+export interface VenueDedupOptions {
+  existingHistory?: Array<{ role: string; content: string }>;
+  seenVenueIds?: Set<string>;
+  distanceThresholdKm?: number;
+  excludeAlreadyRecommended?: boolean;
+}
+
+export interface VenueDedupResult<T> {
+  deduplicated: T[];
+  removedCount: number;
+  duplicateIds: string[];
+  savingsTokens: number;
 }
 
 const SEMANTIC_SIMILARITY_THRESHOLD = 0.88;
@@ -24,7 +49,7 @@ function _cosineSimilarity(a: number[], b: number[]): number {
   return dot / denom;
 }
 
-function estimateTokens(text: string): number {
+export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
@@ -44,11 +69,161 @@ function isPromptTemplate(content: string): boolean {
   return promptPatterns.some((p) => p.test(content));
 }
 
-function normalizeText(text: string): string {
+export function normalizeText(text: string): string {
   return text
     .toLowerCase()
     .replace(/[^\w\s]/g, "")
     .trim();
+}
+
+export function cleanVenueName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\b(the|cafe|coffee|coworking|workspace|space|library|branch)\b/gi, "")
+    .replace(/[^\w\s]/g, "")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function haversineDistanceKm(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+): number {
+  const R = 6371; // Earth radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Deduplicates repetitive venue query results before passing context to Groq LLM.
+ * Identifies duplicate venues by:
+ * 1. Exact ID matching
+ * 2. Normalized name matching with geographic proximity (< 100m) or identical address
+ * 3. Already-recommended venues from earlier conversation turns (if options.existingHistory is given)
+ */
+export function deduplicateVenueResults<T extends VenueLike>(
+  venues: T[],
+  options?: VenueDedupOptions,
+): VenueDedupResult<T> {
+  if (!venues || venues.length === 0) {
+    return { deduplicated: [], removedCount: 0, duplicateIds: [], savingsTokens: 0 };
+  }
+
+  const seenIds = new Set<string>(options?.seenVenueIds || []);
+  const seenNamesAndLocs: Array<{ cleanName: string; lat?: number; lng?: number; address?: string }> = [];
+  const distanceThreshold = options?.distanceThresholdKm ?? 0.1; // 100 meters
+  const duplicateIds: string[] = [];
+  const deduplicated: T[] = [];
+
+  // If existing history is provided, extract names of venues already recommended in past assistant turns
+  const previouslyRecommended = new Set<string>();
+  if (options?.existingHistory) {
+    for (const msg of options.existingHistory) {
+      if (msg.role === "assistant") {
+        for (const venue of venues) {
+          if (venue.name && msg.content.toLowerCase().includes(venue.name.toLowerCase())) {
+            previouslyRecommended.add(venue.name.toLowerCase());
+          }
+        }
+      }
+    }
+  }
+
+  for (const venue of venues) {
+    // 1. Check ID duplicate
+    if (venue.id && seenIds.has(venue.id)) {
+      duplicateIds.push(venue.id);
+      continue;
+    }
+
+    // 2. Check if already recommended in past history (if requested)
+    if (
+      options?.excludeAlreadyRecommended &&
+      venue.name &&
+      previouslyRecommended.has(venue.name.toLowerCase())
+    ) {
+      if (venue.id) duplicateIds.push(venue.id);
+      continue;
+    }
+
+    // 3. Check address and name/proximity duplicates
+    const cName = cleanVenueName(venue.name);
+    let isDuplicate = false;
+
+    for (const seen of seenNamesAndLocs) {
+      // Direct address match
+      if (
+        venue.address &&
+        seen.address &&
+        normalizeText(venue.address).length > 5 &&
+        normalizeText(venue.address) === normalizeText(seen.address)
+      ) {
+        isDuplicate = true;
+        break;
+      }
+
+      const nameMatch =
+        cName.length > 0 &&
+        seen.cleanName.length > 0 &&
+        (cName === seen.cleanName ||
+          cName.includes(seen.cleanName) ||
+          seen.cleanName.includes(cName));
+
+      if (nameMatch) {
+        if (
+          typeof venue.lat === "number" &&
+          typeof venue.lng === "number" &&
+          typeof seen.lat === "number" &&
+          typeof seen.lng === "number"
+        ) {
+          const dist = haversineDistanceKm(venue.lat, venue.lng, seen.lat, seen.lng);
+          if (dist <= distanceThreshold) {
+            isDuplicate = true;
+            break;
+          }
+        } else {
+          isDuplicate = true;
+          break;
+        }
+      }
+    }
+
+    if (isDuplicate) {
+      if (venue.id) duplicateIds.push(venue.id);
+      continue;
+    }
+
+    // Record as seen
+    if (venue.id) seenIds.add(venue.id);
+    seenNamesAndLocs.push({
+      cleanName: cName,
+      lat: venue.lat,
+      lng: venue.lng,
+      address: venue.address,
+    });
+    deduplicated.push(venue);
+  }
+
+  const removedCount = venues.length - deduplicated.length;
+  // Estimate ~65 tokens saved per redundant venue fact payload
+  const savingsTokens = removedCount * 65;
+
+  return {
+    deduplicated,
+    removedCount,
+    duplicateIds,
+    savingsTokens,
+  };
 }
 
 export class ContextDeduplicator {
@@ -183,7 +358,7 @@ export class ContextDeduplicator {
     return {
       deduplicated,
       removedCount,
-      savings: originalTokens - dedupTokens,
+      savings: Math.max(0, originalTokens - dedupTokens),
     };
   }
 
@@ -221,6 +396,37 @@ export class ContextDeduplicator {
     this.seenHashes.clear();
     this.recentContents = [];
   }
+}
+
+const userDeduplicators = new Map<string, ContextDeduplicator>();
+
+export function getOrCreateIndexDeduplicator(userId?: string): ContextDeduplicator {
+  if (!userId) return new ContextDeduplicator();
+  if (!userDeduplicators.has(userId)) {
+    userDeduplicators.set(userId, new ContextDeduplicator());
+  }
+  return userDeduplicators.get(userId)!;
+}
+
+export function clearUserDeduplicators(): void {
+  userDeduplicators.clear();
+}
+
+/**
+ * Public high-level API matching docs/CONTEXT_COMPRESSION.md
+ */
+export async function deduplicateContext(
+  messages: Array<{ role: string; content: string }>,
+  userId?: string,
+  options?: { similarityThreshold?: number; windowSize?: number },
+): Promise<{
+  deduplicated: Array<{ role: string; content: string }>;
+  removedCount: number;
+  savings: number;
+}> {
+  const deduplicator = getOrCreateIndexDeduplicator(userId);
+  const result = await deduplicator.deduplicateMessages(messages);
+  return result;
 }
 
 export async function deduplicatePromptHistory(

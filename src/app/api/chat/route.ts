@@ -26,6 +26,11 @@ import {
 } from "@/lib/ai/chatAgents";
 import { generateGeminiStream, generateGeminiText } from "@/lib/ai/gemini";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
+import {
+  deduplicateContext,
+  deduplicateVenueResults,
+} from "@/lib/context-compression/contextDeduplicator";
+import { compressContext } from "@/lib/context-compression/contextCompressor";
 
 export const maxDuration = 60;
 
@@ -219,6 +224,25 @@ function historyForLlm(messages: ChatMessage[]) {
   }));
 }
 
+async function prepareCompressedHistory(
+  messages: ChatMessage[],
+  userId?: string | null,
+): Promise<Array<{ role: "system" | "user" | "assistant"; content: string }>> {
+  try {
+    const rawMessages = messages.map((m) => ({ role: m.role, content: m.content }));
+    const { deduplicated } = await deduplicateContext(rawMessages, userId ?? undefined);
+    const { compressed } = await compressContext(deduplicated, userId ?? undefined);
+
+    return compressed.map((m) => ({
+      role: (m.role === "system" || m.role === "user" || m.role === "assistant" ? m.role : "assistant") as "system" | "user" | "assistant",
+      content: sanitizeUserInput(m.content),
+    }));
+  } catch (err) {
+    console.error("Context compression fallback:", err);
+    return historyForLlm(messages);
+  }
+}
+
 function venueFacts(venues: RankedVenue[]) {
   return venues.slice(0, 8).map((v) => ({
     name: v.name,
@@ -324,6 +348,7 @@ export async function POST(req: Request) {
     // ====== GENERAL CONVERSATION ======
     if (decision.skipAgents) {
       const fallback = offlineConversationReply(userMessage);
+      const compressedHistory = await prepareCompressedHistory(messages, userId);
       return streamResponse(
         {
           venues: [],
@@ -344,7 +369,7 @@ export async function POST(req: Request) {
                 content:
                   "You are WorkSphere's assistant. WorkSphere helps people find cafes, coworking spaces and libraries to work from, and book a spot. Be friendly and brief (2–4 sentences). If the user wants a workspace, ask what area and what they need (Wi-Fi, quiet, outlets, calls). Never invent specific venues.",
               },
-              ...historyForLlm(messages),
+              ...compressedHistory,
             ],
             emit,
             fallback,
@@ -497,16 +522,22 @@ export async function POST(req: Request) {
       });
     }
 
+    // Deduplicate repetitive venue query results before passing context to Groq LLM
+    const { deduplicated: dedupedVenues } = deduplicateVenueResults(venues, {
+      existingHistory: messages,
+    });
+    const compressedHistory = await prepareCompressedHistory(messages, userId);
+
     const llmMessages =
-      venues.length > 0
+      dedupedVenues.length > 0
         ? [
             {
               role: "system" as const,
               content: `You are WorkSphere's assistant. The user asked for a place to work. These venues were found and ranked (best first); the map already shows them:
-${JSON.stringify(venueFacts(venues))}
+${JSON.stringify(venueFacts(dedupedVenues))}
 Reply in 2–5 short sentences or a brief list: recommend the best 2–3 for the user's needs and say why using only the facts above. Never invent venues, prices, ratings or amenities. Mention that they can tap a pin for details, directions or booking.`,
             },
-            ...historyForLlm(messages),
+            ...compressedHistory,
           ]
         : null;
 

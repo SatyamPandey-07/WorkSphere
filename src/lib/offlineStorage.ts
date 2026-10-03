@@ -1149,3 +1149,42 @@ export async function executeWithRetry<T>(
   }
   throw new Error("Max retries exceeded");
 }
+
+/**
+ * Returns total count of pending mutations queued across IndexedDB stores for offline sync.
+ */
+export async function getTotalPendingMutationsCount(): Promise<number> {
+  if (typeof indexedDB === "undefined") return 0;
+  try {
+    const database = await initOfflineDB();
+    const candidateStores = [
+      "pendingActions",
+      "pendingFavorites",
+      "pendingReviews",
+      "receiptExports",
+    ];
+    const availableStores = candidateStores.filter((name) =>
+      database.objectStoreNames.contains(name),
+    );
+    if (availableStores.length === 0) return 0;
+
+    let total = 0;
+    const tx = database.transaction(availableStores, "readonly");
+    await Promise.all(
+      availableStores.map(
+        (storeName) =>
+          new Promise<void>((resolve) => {
+            const req = tx.objectStore(storeName).count();
+            req.onsuccess = () => {
+              total += req.result || 0;
+              resolve();
+            };
+            req.onerror = () => resolve();
+          }),
+      ),
+    );
+    return total;
+  } catch {
+    return 0;
+  }
+}

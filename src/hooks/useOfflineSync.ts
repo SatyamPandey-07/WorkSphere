@@ -1,10 +1,18 @@
 import { useState, useEffect } from "react";
-import { getPendingFavorites } from "@/lib/offlineStorage";
+import { getPendingFavorites, getTotalPendingMutationsCount } from "@/lib/offlineStorage";
 
-export function useOfflineSync() {
+export interface UseOfflineSyncReturn {
+  isOffline: boolean;
+  hasPendingChanges: boolean;
+  isSyncing: boolean;
+  pendingCount: number;
+}
+
+export function useOfflineSync(): UseOfflineSyncReturn {
   const [isOffline, setIsOffline] = useState(false);
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -14,13 +22,20 @@ export function useOfflineSync() {
 
     const checkPendingChanges = async () => {
       try {
-        const pending = await getPendingFavorites();
+        let count = 0;
+        try {
+          count = await getTotalPendingMutationsCount();
+        } catch {
+          const pending = await getPendingFavorites();
+          count = pending.length;
+        }
 
         if (isMounted) {
-          setHasPendingChanges(pending.length > 0);
+          setPendingCount(count);
+          setHasPendingChanges(count > 0);
         }
       } catch (e) {
-        console.error("Failed to check pending favorites:", e);
+        console.error("Failed to check pending changes:", e);
       }
     };
 
@@ -40,6 +55,8 @@ export function useOfflineSync() {
             setIsSyncing(false);
           }
         }, 3000);
+      } else {
+        checkPendingChanges();
       }
     };
 
@@ -71,5 +88,6 @@ export function useOfflineSync() {
     isOffline,
     hasPendingChanges,
     isSyncing,
+    pendingCount,
   };
 }

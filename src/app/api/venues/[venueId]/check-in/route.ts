@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { rateLimit } from "@/lib/rateLimit";
 import { recordCheckIn, CHECK_IN_TTL_MS } from "@/lib/checkIn";
+import { applyPrivacyFilter } from "@/lib/privacy/differentialPrivacy";
 
 type RouteContext = { params: Promise<{ venueId: string }> };
 
@@ -86,8 +87,13 @@ export async function GET(_req: Request, context: RouteContext) {
       : null,
   ]);
 
+  // Apply differential privacy filter to public venue occupancy queries 
+  // when active visitors are below threshold N < 10
+  const maxCapacity = 1000; // arbitrary max capacity for clamping
+  const noisyActiveCount = applyPrivacyFilter(activeCount, maxCapacity, 1.0, 10);
+
   return NextResponse.json({
-    activeCount,
+    activeCount: noisyActiveCount,
     checkedIn: Boolean(mine),
     expiresAt: mine?.expiresAt ?? null,
     ttlMinutes: CHECK_IN_TTL_MS / 60_000,

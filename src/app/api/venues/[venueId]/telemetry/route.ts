@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { enqueueTelemetry } from "@/lib/telemetryQueue";
+import { applyPrivacyFilter } from "@/lib/privacy/differentialPrivacy";
 
 export async function POST(
   req: NextRequest,
@@ -120,6 +121,12 @@ export async function GET(
           Math.max(0, avgOccupancy + (Math.random() * 10 - 5)),
         );
         avgOccupancy = Math.round(avgOccupancy);
+      }
+
+      let numActiveVisitors = hourlyData[hour] ? hourlyData[hour].length : 0;
+      if (numActiveVisitors > 0 && numActiveVisitors < 10) {
+        // Apply the privacy filter to public venue occupancy queries when active visitors are below threshold N < 10
+        avgOccupancy = applyPrivacyFilter(avgOccupancy, 100, 1.0, 10);
       }
 
       occupancy.push({

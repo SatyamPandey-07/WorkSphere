@@ -1,3 +1,5 @@
+/// <reference types="jest" />
+
 import {
   compressContext,
   extractIntentParameters,
@@ -68,7 +70,7 @@ describe("AI Context Compression & Intent Parameter Preservation (#1724)", () =>
 
       const params = extractIntentParameters(messages);
       expect(params.decisions).toBeDefined();
-      expect(params.decisions?.some((d) => d.includes("booked"))).toBe(true);
+      expect(params.decisions?.some((d: string) => d.includes("booked"))).toBe(true);
     });
   });
 
@@ -134,7 +136,7 @@ describe("AI Context Compression & Intent Parameter Preservation (#1724)", () =>
       expect(result.extractedParameters.location).toContain("Seattle");
 
       // Verify token reduction >= 50% on older turns
-      const olderTokens = olderMessages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+      const olderTokens = olderMessages.reduce((sum: number, m: { role: string; content: string }) => sum + estimateTokens(m.content), 0);
       const summaryTokens = estimateTokens(summaryMsg.content);
       expect(summaryTokens).toBeLessThan(olderTokens * 0.5);
 
@@ -181,7 +183,7 @@ describe("AI Context Compression & Intent Parameter Preservation (#1724)", () =>
         { role: "user", content: "Awesome. Can you summarize the best plan for my afternoon: phone call at 2pm followed by quiet laptop work?" },
       ];
 
-      const rawTokens = turns.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+      const rawTokens = turns.reduce((sum: number, m: { role: string; content: string }) => sum + estimateTokens(m.content), 0);
 
       // Step 1: Deduplicate history
       const { deduplicated } = await deduplicateContext(turns, "benchmark_user");

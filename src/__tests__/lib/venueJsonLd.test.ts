@@ -288,11 +288,7 @@ describe("Venue JSON-LD SEO Structured Data", () => {
 
       const jsonLd = generateVenueJsonLd(venue);
 
-      expect(jsonLd.aggregateRating).toEqual({
-        "@type": "AggregateRating",
-        ratingValue: 0,
-        reviewCount: 0,
-      });
+      expect(jsonLd.aggregateRating).toBeUndefined();
       expect(jsonLd.telephone).toBe("");
     });
 

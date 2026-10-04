@@ -31,7 +31,7 @@ export interface VenueJsonLd {
   address: PostalAddressSchema;
   geo: GeoCoordinatesSchema;
   telephone: string;
-  aggregateRating: AggregateRatingSchema;
+  aggregateRating?: AggregateRatingSchema;
   amenityFeature: LocationFeatureSpecificationSchema[];
   [key: string]: any;
 }
@@ -281,8 +281,6 @@ export function generateVenueJsonLd(venue: VenueLike): VenueJsonLd {
     reviewCount = venue.ratings.length;
   } else if (venue._count?.ratings != null) {
     reviewCount = venue._count.ratings;
-  } else if (typeof venue.rating === "number" && venue.rating > 0) {
-    reviewCount = 1;
   }
 
   const telephone = String(venue.telephone || venue.phoneNumber || "");
@@ -298,11 +296,15 @@ export function generateVenueJsonLd(venue: VenueLike): VenueJsonLd {
       longitude: Number(venue.longitude),
     },
     telephone,
-    aggregateRating: {
-      "@type": "AggregateRating",
-      ratingValue,
-      reviewCount,
-    },
+    ...(reviewCount > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue,
+            reviewCount,
+          },
+        }
+      : {}),
     amenityFeature: extractAmenityFeatures(venue),
   };
 }

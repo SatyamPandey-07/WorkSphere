@@ -498,7 +498,15 @@ export async function flushPendingReviewsClientFallback(
           const db = await openReviewDB();
           const tx = db.transaction([REVIEW_STORE_NAME], "readwrite");
           const store = tx.objectStore(REVIEW_STORE_NAME);
-          store.put({ ...item, retryCount: nextRetry, status: newStatus });
+          await new Promise<void>((resolve, reject) => {
+            const req = store.put({
+              ...item,
+              retryCount: nextRetry,
+              status: newStatus,
+            });
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+          });
         });
         continue;
       }

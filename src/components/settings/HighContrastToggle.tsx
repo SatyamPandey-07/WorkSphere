@@ -1,0 +1,1 @@
+export { HighContrastToggle } from "../HighContrastToggle";

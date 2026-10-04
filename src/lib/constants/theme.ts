@@ -41,6 +41,7 @@ export const ACCENT_COLORS: Record<AccentColor, AccentColorConfig> = {
 export const DEFAULT_ACCENT: AccentColor = "blue";
 
 export const ACCENT_STORAGE_KEY = "worksphere-accent";
+export const HIGH_CONTRAST_STORAGE_KEY = "worksphere-high-contrast";
 
 export const ACCENT_OPTIONS: AccentColorConfig[] = Object.values(ACCENT_COLORS);
 

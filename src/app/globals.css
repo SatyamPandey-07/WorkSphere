@@ -551,3 +551,33 @@ textarea:focus::placeholder {
   }
 }
 
+/* ─── High-Contrast Mode Styles ───────────────────────────────────── */
+html.high-contrast {
+  --contrast-border: #000000;
+}
+
+html.high-contrast.dark {
+  --contrast-border: #ffffff;
+}
+
+html.high-contrast button,
+html.high-contrast a,
+html.high-contrast input,
+html.high-contrast select,
+html.high-contrast textarea {
+  outline-width: 2px;
+}
+
+html.high-contrast .border-zinc-200,
+html.high-contrast .border-zinc-300 {
+  border-color: #71717a;
+}
+
+html.high-contrast .dark .border-zinc-800,
+html.high-contrast .dark .border-zinc-700,
+html.high-contrast.dark .border-zinc-800,
+html.high-contrast.dark .border-zinc-700 {
+  border-color: #a1a1aa;
+}
+
+

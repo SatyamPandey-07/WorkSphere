@@ -6,6 +6,7 @@ import { ChevronRight, UserCircle, Webhook } from "lucide-react";
 import { UserPreferenceToggle } from "@/components/UserPreferenceToggle";
 import { AccentPicker } from "@/components/AccentPicker";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { HighContrastToggle } from "@/components/HighContrastToggle";
 import { PasskeyManager } from "@/components/auth/PasskeyManager";
 import { TelegramStatusBanner } from "@/components/dashboard/TelegramStatusBanner";
 import { WorkStyleProfile } from "@/app/dashboard/WorkStyleProfile";
@@ -173,17 +174,20 @@ export default function SettingsPage() {
           <Section
             id="appearance"
             title="Appearance"
-            description="Theme and accent colour."
+            description="Theme, accent colour, and contrast preferences."
           >
-            <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium">Theme</span>
-                <ThemeToggle />
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-6 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium">Theme</span>
+                  <ThemeToggle />
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium">Accent</span>
+                  <AccentPicker />
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium">Accent</span>
-                <AccentPicker />
-              </div>
+              <HighContrastToggle />
             </div>
           </Section>
         </div>

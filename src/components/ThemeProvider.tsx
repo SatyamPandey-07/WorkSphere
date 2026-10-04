@@ -15,6 +15,7 @@ import {
   ACCENT_HEX_MAP,
   ACCENT_STORAGE_KEY,
   DEFAULT_ACCENT,
+  HIGH_CONTRAST_STORAGE_KEY,
   parseAccentColor,
 } from "@/lib/constants/theme";
 
@@ -27,6 +28,9 @@ export interface ThemeContextValue {
   accent: AccentColor;
   accentHex: string;
   setAccent: (accent: AccentColor) => void;
+  highContrast: boolean;
+  setHighContrast: (enabled: boolean) => void;
+  toggleHighContrast: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -48,6 +52,18 @@ function applyTheme(theme: Theme) {
   root.style.colorScheme = theme === "light" ? "light" : "dark";
 }
 
+function applyHighContrast(enabled: boolean) {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (enabled) {
+    root.classList.add("high-contrast");
+    root.setAttribute("data-high-contrast", "true");
+  } else {
+    root.classList.remove("high-contrast");
+    root.removeAttribute("data-high-contrast");
+  }
+}
+
 function applyAccent(accent: AccentColor) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
@@ -66,12 +82,14 @@ interface ThemeProviderProps {
   children: ReactNode;
   initialTheme?: Theme;
   initialAccent?: AccentColor;
+  initialHighContrast?: boolean;
 }
 
 export function ThemeProvider({
   children,
   initialTheme = "light",
   initialAccent = DEFAULT_ACCENT,
+  initialHighContrast = false,
 }: ThemeProviderProps) {
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof document === "undefined") return initialTheme;
@@ -90,6 +108,15 @@ export function ThemeProvider({
     return parseAccentColor(saved);
   });
 
+  const [highContrast, setHighContrastState] = useState<boolean>(() => {
+    if (typeof document === "undefined") return initialHighContrast;
+    const root = document.documentElement;
+    if (root.classList.contains("high-contrast") || root.getAttribute("data-high-contrast") === "true") return true;
+    const saved = window.localStorage.getItem(HIGH_CONTRAST_STORAGE_KEY);
+    if (saved !== null) return saved === "true";
+    return initialHighContrast;
+  });
+
   const accentHex = useMemo(
     () => ACCENT_HEX_MAP[accent] || ACCENT_HEX_MAP[DEFAULT_ACCENT],
     [accent],
@@ -102,6 +129,10 @@ export function ThemeProvider({
   useEffect(() => {
     applyAccent(accent);
   }, [accent]);
+
+  useEffect(() => {
+    applyHighContrast(highContrast);
+  }, [highContrast]);
 
   const setTheme = useCallback((next: Theme) => {
     setThemeState(next);
@@ -130,6 +161,29 @@ export function ThemeProvider({
     applyAccent(next);
   }, []);
 
+  const setHighContrast = useCallback((next: boolean) => {
+    setHighContrastState(next);
+    window.localStorage.setItem(HIGH_CONTRAST_STORAGE_KEY, String(next));
+    document.cookie = `${HIGH_CONTRAST_STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
+    applyHighContrast(next);
+    window.dispatchEvent(
+      new CustomEvent("worksphere_high_contrast_change", { detail: next })
+    );
+  }, []);
+
+  const toggleHighContrast = useCallback(() => {
+    setHighContrastState((prev) => {
+      const next = !prev;
+      window.localStorage.setItem(HIGH_CONTRAST_STORAGE_KEY, String(next));
+      document.cookie = `${HIGH_CONTRAST_STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
+      applyHighContrast(next);
+      window.dispatchEvent(
+        new CustomEvent("worksphere_high_contrast_change", { detail: next })
+      );
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (
@@ -146,14 +200,39 @@ export function ThemeProvider({
         setAccentState(parsedAccent);
         applyAccent(parsedAccent);
       }
+      if (e.key === HIGH_CONTRAST_STORAGE_KEY) {
+        const next = e.newValue === "true";
+        setHighContrastState(next);
+        applyHighContrast(next);
+      }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ theme, setTheme, toggleTheme, accent, accentHex, setAccent }),
-    [theme, setTheme, toggleTheme, accent, accentHex, setAccent],
+    () => ({
+      theme,
+      setTheme,
+      toggleTheme,
+      accent,
+      accentHex,
+      setAccent,
+      highContrast,
+      setHighContrast,
+      toggleHighContrast,
+    }),
+    [
+      theme,
+      setTheme,
+      toggleTheme,
+      accent,
+      accentHex,
+      setAccent,
+      highContrast,
+      setHighContrast,
+      toggleHighContrast,
+    ],
   );
 
   return (
@@ -179,6 +258,9 @@ export function useTheme() {
       accent: DEFAULT_ACCENT,
       accentHex: ACCENT_HEX_MAP[DEFAULT_ACCENT],
       setAccent: () => {},
+      highContrast: false,
+      setHighContrast: () => {},
+      toggleHighContrast: () => {},
     };
   }
   return ctx;

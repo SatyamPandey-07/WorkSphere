@@ -1,6 +1,5 @@
 import { prisma } from "@/lib/prisma";
 import { HNSWIndex } from "@/lib/hnsw/hnsw";
-import { HnswCache } from "@/lib/cache/hnswCache";
 
 export interface SemanticMemory {
   id: string;

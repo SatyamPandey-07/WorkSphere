@@ -82,7 +82,7 @@ export function generateAnalyticsCSV(data: AnalyticsExportData): string {
   lines.push("=== REQUESTED AMENITIES ===");
   lines.push("Amenity,Count");
   data.amenities.forEach((a) => {
-    lines.push(`"${a.amenity}",${a.count}`);
+    lines.push(`"${a.amenity.replace(/"/g, '""')}",${a.count}`);
   });
   lines.push("");
 

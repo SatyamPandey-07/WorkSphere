@@ -49,7 +49,9 @@ export function useFFTNoiseFilter(
   const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const callbacksRef = useRef(callbacks);
-  callbacksRef.current = callbacks;
+  useEffect(() => {
+    callbacksRef.current = callbacks;
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -184,6 +186,13 @@ export function useFFTNoiseFilter(
         throw new Error("FFT Noise Filter not initialized");
       }
 
+      if (streamRef.current || sourceNodeRef.current) {
+        sourceNodeRef.current?.disconnect();
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        sourceNodeRef.current = null;
+        streamRef.current = null;
+      }
+
       const ctx = audioContextRef.current;
       if (ctx.state === "suspended") await ctx.resume();
 
@@ -211,6 +220,7 @@ export function useFFTNoiseFilter(
 
   const stop = useCallback(() => {
     sourceNodeRef.current?.disconnect();
+    workletNodeRef.current?.disconnect();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     workletNodeRef.current?.port.postMessage({ type: "reset" });
 

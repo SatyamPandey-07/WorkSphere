@@ -42,6 +42,17 @@ describe("QR Code SVG Generator", () => {
     expect(svg).not.toContain('<rect width=');
   });
 
+  it("escapes markup in the title so venue names cannot break out", () => {
+    const svg = generateQRCodeSVG("https://worksphere.app/venues/1", {
+      title: '"><img src=x onerror=alert(1)> QR Code',
+    });
+
+    expect(svg).not.toContain('"><img');
+    expect(svg).toContain(
+      "&quot;&gt;&lt;img src=x onerror=alert(1)&gt; QR Code",
+    );
+  });
+
   it("triggers download in browser environment without throwing", () => {
     const createObjectURLMock = jest.fn(() => "blob:mock-url");
     const revokeObjectURLMock = jest.fn();

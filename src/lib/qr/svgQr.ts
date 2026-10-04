@@ -387,6 +387,20 @@ export interface QRCodeSVGOptions {
 }
 
 /**
+ * Encodes the five XML-significant characters so caller supplied text such
+ * as venue names can be embedded in element content and double quoted
+ * attribute values without altering the document structure.
+ */
+export function escapeXmlText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
  * Generates an SVG string representation of a QR code encoding `text`.
  */
 export function generateQRCodeSVG(
@@ -404,6 +418,7 @@ export function generateQRCodeSVG(
   const matrix = generateQRMatrix(text);
   const moduleCount = matrix.length;
   const viewBoxSize = moduleCount + padding * 2;
+  const safeTitle = escapeXmlText(title);
 
   let pathData = "";
   for (let r = 0; r < moduleCount; r++) {
@@ -418,8 +433,8 @@ export function generateQRCodeSVG(
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxSize} ${viewBoxSize}" ` +
-    `width="${size}" height="${size}" shape-rendering="crispEdges" role="img" aria-label="${title}">` +
-    `<title>${title}</title>` +
+    `width="${size}" height="${size}" shape-rendering="crispEdges" role="img" aria-label="${safeTitle}">` +
+    `<title>${safeTitle}</title>` +
     (bgColor && bgColor !== "transparent"
       ? `<rect width="${viewBoxSize}" height="${viewBoxSize}" fill="${bgColor}" />`
       : "") +

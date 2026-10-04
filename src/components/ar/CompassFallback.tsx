@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useDeviceOrientation } from "@/hooks/useDeviceOrientation";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { CompassKalmanFilter } from "@/lib/spatial/compassFilter";
 import {
   calculateBearing,
   calculateRelativeBearing,
@@ -17,6 +19,7 @@ import {
   AlertCircle,
   RotateCw,
   LocateFixed,
+  X,
 } from "lucide-react";
 
 interface CompassFallbackProps {
@@ -24,6 +27,10 @@ interface CompassFallbackProps {
   destinationLng?: number | null;
   destinationName?: string | null;
   onRetryAR?: () => void;
+  onClose?: () => void;
+  trapFocus?: boolean;
+  kalmanQ?: number;
+  kalmanR?: number;
 }
 
 interface UserCoordinates {
@@ -37,9 +44,44 @@ export default function CompassFallback({
   destinationLng,
   destinationName,
   onRetryAR,
+  onClose,
+  trapFocus = true,
+  kalmanQ = 0.05,
+  kalmanR = 0.5,
 }: CompassFallbackProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(containerRef, {
+    isActive: trapFocus,
+    onEscape: onClose,
+  });
+
   const { heading, error: orientationError, isSupported, permissionState, requestPermission } =
     useDeviceOrientation();
+
+  const [filteredHeading, setFilteredHeading] = useState<number | null>(null);
+  const kalmanFilterRef = useRef<CompassKalmanFilter | null>(null);
+
+  if (!kalmanFilterRef.current) {
+    kalmanFilterRef.current = new CompassKalmanFilter({ q: kalmanQ, r: kalmanR });
+  }
+
+  useEffect(() => {
+    kalmanFilterRef.current?.setParameters({ q: kalmanQ, r: kalmanR });
+  }, [kalmanQ, kalmanR]);
+
+  useEffect(() => {
+    if (heading !== null && !isNaN(heading)) {
+      const smoothed = kalmanFilterRef.current?.update(heading);
+      if (smoothed !== null && smoothed !== undefined) {
+        setFilteredHeading(Math.round(smoothed * 10) / 10);
+      }
+    } else {
+      setFilteredHeading(null);
+    }
+  }, [heading]);
+
+  const activeHeading = filteredHeading !== null ? filteredHeading : heading;
 
   const [userLocation, setUserLocation] = useState<UserCoordinates | null>(null);
   const [geoError, setGeoError] = useState<string | null>(null);
@@ -111,21 +153,31 @@ export default function CompassFallback({
       : null;
 
   const relativeBearing =
-    targetBearing !== null && heading !== null
-      ? calculateRelativeBearing(targetBearing, heading)
+    targetBearing !== null && activeHeading !== null
+      ? calculateRelativeBearing(targetBearing, activeHeading)
       : null;
 
   const isGuidingToVenue = mode === "venue" && relativeBearing !== null;
   const arrowRotation = isGuidingToVenue
     ? relativeBearing
-    : heading !== null
-      ? -heading
+    : activeHeading !== null
+      ? -activeHeading
       : 0;
 
   const turnGuidance = getRelativeDirectionDescription(relativeBearing);
 
   return (
-    <div className="flex flex-col items-center justify-between w-full h-full min-h-[460px] bg-slate-900 rounded-xl p-6 text-white relative overflow-hidden select-none border border-slate-800 shadow-2xl">
+    <div
+      ref={containerRef}
+      role="region"
+      aria-label={
+        hasDestination
+          ? `Compass navigation for ${destinationName || "Venue"}`
+          : "Compass navigation"
+      }
+      tabIndex={-1}
+      className="flex flex-col items-center justify-between w-full h-full min-h-[460px] bg-slate-900 rounded-xl p-6 text-white relative overflow-hidden select-none border border-slate-800 shadow-2xl focus:outline-none"
+    >
       {/* Top Banner */}
       <div className="w-full flex items-center justify-between z-10">
         <div className="flex items-center gap-2">
@@ -137,15 +189,29 @@ export default function CompassFallback({
           </span>
         </div>
 
-        {onRetryAR && (
-          <button
-            onClick={onRetryAR}
-            className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
-          >
-            <RotateCw className="w-3.5 h-3.5" />
-            Retry AR
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onRetryAR && (
+            <button
+              type="button"
+              onClick={onRetryAR}
+              className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>Retry AR</span>
+            </button>
+          )}
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close compass navigation"
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Content Area */}
@@ -206,11 +272,11 @@ export default function CompassFallback({
 
         {/* Compass & 2D Directional Arrow Dial */}
         <div className="relative w-64 h-64 flex items-center justify-center">
-          {/* Compass Base Ring (Cardinal Points rotate with -heading) */}
+          {/* Compass Base Ring (Cardinal Points rotate with -activeHeading) */}
           <div
             className="absolute inset-0 rounded-full border-4 border-slate-700/80 bg-slate-800/90 shadow-[0_0_40px_rgba(0,0,0,0.6)] backdrop-blur-sm transition-transform duration-200 ease-out flex items-center justify-center"
             style={{
-              transform: `rotate(${heading !== null ? -heading : 0}deg)`,
+              transform: `rotate(${activeHeading !== null ? -activeHeading : 0}deg)`,
             }}
           >
             {/* Cardinal Markers */}
@@ -280,8 +346,8 @@ export default function CompassFallback({
           {/* Heading Readout */}
           <div className="flex items-center gap-3 font-mono text-xs text-slate-400">
             <span className="bg-slate-800/80 px-2.5 py-1 rounded-md border border-slate-700/60">
-              Heading: <strong className="text-white">{heading !== null ? `${Math.round(heading)}°` : "---°"}</strong>{" "}
-              {getCompassDirection(heading)}
+              Heading: <strong className="text-white">{activeHeading !== null ? `${Math.round(activeHeading)}°` : "---°"}</strong>{" "}
+              {getCompassDirection(activeHeading)}
             </span>
 
             {targetBearing !== null && (

@@ -152,8 +152,9 @@ export function sanitizeSvg(svgContent: string): string {
 
   // 4. Sanitize href, xlink:href, src, formaction, data attributes
   sanitized = sanitized.replace(
-    /\s+(?:href|xlink:href|src|action|formaction|data)\s*=\s*(["'])(.*?)\1/gi,
-    (match, quote, val) => {
+    /\s+(?:href|xlink:href|src|action|formaction|data)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+    (match, dq, sq, bare) => {
+      const val = dq ?? sq ?? bare ?? "";
       if (isDangerousUri(val)) {
         return "";
       }

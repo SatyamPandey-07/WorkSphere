@@ -7,19 +7,37 @@ import {
   issueCsrfToken,
   verifyCsrfToken,
 } from "./lib/csrf";
+import {
+  matchRateTier,
+  getClientIp,
+  checkTokenBucketRateLimit,
+} from "./lib/tokenBucketRateLimit";
 
 function getClerkFrontendApiHost(): string | null {
   const key = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
   const match = key?.match(/^pk_(?:test|live)_(.+)$/);
   if (!match) return null;
   try {
-    return Buffer.from(match[1], "base64").toString("utf-8").replace(/\$$/, "");
+    return atob(match[1]).replace(/\$$/, "");
   } catch {
     return null;
   }
 }
 
-function generateCsp(nonce: string): string {
+function getPartyKitOrigins(): string[] {
+  const host = process.env.NEXT_PUBLIC_PARTYKIT_HOST;
+  const origins = ["https://*.partykit.dev", "wss://*.partykit.dev"];
+  if (host) {
+    const bare = host.replace(/^(https?|wss?):\/\//, "").replace(/\/.*$/, "");
+    origins.push(`https://${bare}`, `wss://${bare}`);
+    if (process.env.NODE_ENV === "development") {
+      origins.push(`http://${bare}`, `ws://${bare}`);
+    }
+  }
+  return origins;
+}
+
+export function generateCsp(nonce: string): string {
   const isDev = process.env.NODE_ENV === "development";
   const clerkFrontendApi = getClerkFrontendApiHost();
   const clerkHosts = [
@@ -27,17 +45,22 @@ function generateCsp(nonce: string): string {
     "https://*.clerk.accounts.dev",
     ...(clerkFrontendApi ? [`https://${clerkFrontendApi}`] : []),
   ].join(" ");
+
   return [
-    `base-uri 'self'`,
     `default-src 'self'`,
-    `script-src 'self' 'nonce-${nonce}' https://cdn.clerk.com ${clerkFrontendApi ? `https://${clerkFrontendApi}` : ""} ${isDev ? "'unsafe-eval' https://*.clerk.accounts.dev" : ""}`,
+    `base-uri 'self'`,
+    `object-src 'none'`,
+    `frame-ancestors 'self'`,
+    `form-action 'self'`,
+    `script-src 'self' 'nonce-${nonce}' ${clerkHosts} https://challenges.cloudflare.com${isDev ? " 'unsafe-eval'" : ""}`,
     `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
     `font-src 'self' https://fonts.gstatic.com data:`,
-    `img-src 'self' https://images.unsplash.com https://*.unsplash.com https://res.cloudinary.com data: blob:`,
-    `connect-src 'self' ${clerkHosts} https://api.groq.com https://router.project-osrm.org wss://*.partykit.dev`,
-    `frame-src 'self' ${clerkHosts}`,
+    // Map tiles, avatars, venue photos and user uploads come from many hosts.
+    `img-src 'self' data: blob: https:`,
+    `media-src 'self' blob: data:`,
+    `connect-src 'self' ${clerkHosts} https://clerk-telemetry.com https://router.project-osrm.org https://nominatim.openstreetmap.org ${getPartyKitOrigins().join(" ")}`,
+    `frame-src 'self' ${clerkHosts} https://challenges.cloudflare.com`,
     `worker-src 'self' blob:`,
-    `object-src 'none'`,
   ].join("; ");
 }
 
@@ -48,43 +71,51 @@ const isPublicRoute = createRouteMatcher([
   "/venues(.*)",
   "/collections/public(.*)",
   "/collections/join(.*)",
+  "/s/(.*)",
+  "/offline",
+  "/privacy(.*)",
+  "/terms(.*)",
   "/api/venues(.*)",
   "/api/map/(.*)",
   "/api/collections/public(.*)",
-  "/api/webhook(.*)",
+  // Clerk user-sync webhook (Svix-signed) and the queue worker (secret-authenticated).
+  "/api/webhook",
+  "/api/webhooks/worker",
+  "/api/cron/(.*)",
   "/api/auth/csrf-token",
-  "/api/auth/resend-otp",
-  "/api/auth/verify-otp",
-  "/api/auth/forgot-password",
-  "/api/auth/reset-password",
-  "/api/auth/webauthn/verify",
-  "/privacy(.*)",
-  "/terms(.*)",
+  // SAML ACS endpoint receives POSTs directly from the identity provider.
+  "/api/auth/sso/saml",
+  // Passkey sign-in is used by signed-out visitors.
+  "/api/auth/passkey/authenticate/(.*)",
+  // Session refresh and logout endpoints
+  "/api/auth/session(.*)",
 ]);
 
-// Routes exempt from CSRF validation even though they're mutating — webhooks are
-// authenticated via their own provider signature (Stripe/Clerk/etc.), not a browser
-// session, so there's no browser-held CSRF cookie to check against.
+// Routes exempt from CSRF validation even though they're mutating:
+// - webhooks and cron are authenticated by their own signature/secret, not a browser session;
+// - the SSE venue-updates stream must not have cookies rewritten mid-stream.
 const isCsrfExemptMatcher = createRouteMatcher([
-  "/api/webhook(.*)",
+  "/api/webhook",
+  "/api/webhooks/worker",
+  "/api/cron/(.*)",
   "/api/auth/csrf-token",
+  // SAML responses are authenticated by the IdP XML signature.
+  "/api/auth/sso/saml",
+  "/api/venues/updates",
+  "/api/auth/session(.*)",
 ]);
 
-export function isCsrfExemptRoute(req: any): boolean {
-  const url = new URL(req.url);
-  const path = url.pathname;
+export function isCsrfExemptRoute(req: Request): boolean {
+  const path = new URL(req.url).pathname;
   const staticAssetRegex = /\.(png|jpg|jpeg|gif|svg|mp3|wav|ico|css|js)$/i;
-  return isCsrfExemptMatcher(req) || staticAssetRegex.test(path);
+  return isCsrfExemptMatcher(req as any) || staticAssetRegex.test(path);
 }
 
 const isAdminRoute = createRouteMatcher(["/admin(.*)", "/api/admin(.*)"]);
 
 /**
  * Ensures a valid signed CSRF cookie exists on safe (GET/HEAD/OPTIONS) requests,
- * and validates the cookie+header pair on mutating requests. This runs independently
- * of locale switching, auth state, or any other client-side transition — the token
- * lifecycle lives entirely in this middleware, so a locale change can never leave a
- * stale/missing cookie behind for a subsequent form submission.
+ * and validates the cookie+header pair on mutating requests.
  */
 async function applyCsrfProtection(
   req: Request,
@@ -102,7 +133,7 @@ async function applyCsrfProtection(
 
   if (
     isApiRoute &&
-    !isCsrfExemptRoute(req as any) &&
+    !isCsrfExemptRoute(req) &&
     CSRF_PROTECTED_METHODS.has(req.method)
   ) {
     const headerToken = req.headers.get(CSRF_HEADER_NAME);
@@ -116,9 +147,8 @@ async function applyCsrfProtection(
     return res;
   }
 
-  // Safe request (GET/HEAD): issue a fresh token cookie if one isn't already set
-  // (first visit, OAuth redirect return, expired cookie, or cleared client state).
-  if (!existingCookie && !isCsrfExemptRoute(req as any)) {
+  // Safe request: issue a token cookie if one isn't already set.
+  if (!existingCookie && !isCsrfExemptRoute(req)) {
     const { cookieValue } = await issueCsrfToken();
     res.cookies.set(CSRF_COOKIE_NAME, cookieValue, {
       httpOnly: true,
@@ -131,71 +161,117 @@ async function applyCsrfProtection(
   return res;
 }
 
-export default function middleware(request: any, event: any) {
-  if (!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY =
-      "pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ";
+function isAdminSession(sessionClaims: Record<string, any> | null): boolean {
+  const role = (
+    sessionClaims?.metadata?.role as string | undefined
+  )?.toLowerCase();
+  if (role === "admin" || role === "super_admin" || role === "superadmin") {
+    return true;
   }
-  const clerkMw = clerkMiddleware(async (auth, req) => {
-    if (!isPublicRoute(req)) {
-      await auth.protect();
-    }
 
-    if (isAdminRoute(req)) {
-      const authObj = await auth();
-      const role = (
-        authObj.sessionClaims?.metadata?.role as string | undefined
-      )?.toLowerCase();
-      const isAdminRole =
-        role === "admin" || role === "super_admin" || role === "superadmin";
-
-      const adminEmails = (
-        process.env.ADMIN_EMAILS ||
-        process.env.ADMIN_EMAIL ||
-        ""
-      )
-        .split(",")
-        .map((e) => e.trim().toLowerCase())
-        .filter(Boolean);
-
-      // Compare the user's actual email against the admin list.
-      // authObj.sessionClaims?.email contains the primary email address
-      // set in the JWT by Clerk's session token customization.
-      const userEmail = (
-        (authObj.sessionClaims?.email as string | undefined) ?? ""
-      ).toLowerCase();
-      const isEnvAdmin =
-        adminEmails.length > 0 &&
-        userEmail.length > 0 &&
-        adminEmails.includes(userEmail);
-
-      if (!isAdminRole && !isEnvAdmin) {
-        if (req.nextUrl.pathname.startsWith("/api")) {
-          return NextResponse.json(
-            { error: "Forbidden: Admin access required" },
-            { status: 403 },
-          );
-        }
-        return NextResponse.redirect(new URL("/", req.url));
-      }
-    }
-
-    const requestHeaders = new Headers(req.headers);
-    requestHeaders.set("x-pathname", req.nextUrl.pathname);
-    const nonce = crypto.randomUUID();
-    requestHeaders.set("x-csp-nonce", nonce);
-
-    const res = NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
-    res.headers.set("Content-Security-Policy", generateCsp(nonce));
-    return applyCsrfProtection(req, res);
-  });
-
-  return clerkMw(request, event);
+  const adminEmails = (
+    process.env.ADMIN_EMAILS ||
+    process.env.ADMIN_EMAIL ||
+    ""
+  )
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  // `email` is only present when the Clerk session token is customised to
+  // include it; pages and API routes re-check with getAdminUser() regardless.
+  const userEmail = (
+    (sessionClaims?.email as string | undefined) ?? ""
+  ).toLowerCase();
+  return (
+    adminEmails.length > 0 &&
+    userEmail.length > 0 &&
+    adminEmails.includes(userEmail)
+  );
 }
+
+export default clerkMiddleware(async (auth, req) => {
+  // CORS preflight requests bypass rate limits
+  if (req.method === "OPTIONS") {
+    return NextResponse.next();
+  }
+
+  // Multi-tier token bucket rate limiting for API routes
+  let rateLimitHeaders: Record<string, string> | null = null;
+  if (req.nextUrl.pathname.startsWith("/api")) {
+    const tier = matchRateTier(req.nextUrl.pathname);
+    if (tier) {
+      const clientIp = getClientIp(req);
+      const authState = await auth();
+      const userId = authState.userId;
+      const identifier = `${tier.name}:${userId || clientIp}`;
+      const rateLimitResult = await checkTokenBucketRateLimit(tier, identifier);
+
+      if (!rateLimitResult.success) {
+        return NextResponse.json(
+          {
+            error: "Too many requests. Please slow down and try again.",
+            retryAfter: rateLimitResult.retryAfter,
+          },
+          {
+            status: 429,
+            headers: {
+              "Retry-After": String(rateLimitResult.retryAfter),
+              "X-RateLimit-Limit": String(rateLimitResult.limit),
+              "X-RateLimit-Remaining": String(rateLimitResult.remaining),
+              "X-RateLimit-Reset": String(rateLimitResult.reset),
+            },
+          },
+        );
+      }
+
+      rateLimitHeaders = {
+        "X-RateLimit-Limit": String(rateLimitResult.limit),
+        "X-RateLimit-Remaining": String(rateLimitResult.remaining),
+        "X-RateLimit-Reset": String(rateLimitResult.reset),
+      };
+    }
+  }
+
+  if (!isPublicRoute(req)) {
+    await auth.protect();
+  }
+
+  if (isAdminRoute(req)) {
+    const { sessionClaims } = await auth();
+    if (!isAdminSession(sessionClaims as Record<string, any> | null)) {
+      if (req.nextUrl.pathname.startsWith("/api")) {
+        return NextResponse.json(
+          { error: "Forbidden: Admin access required" },
+          { status: 403 },
+        );
+      }
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+  }
+
+  const nonce = btoa(crypto.randomUUID());
+  const csp = generateCsp(nonce);
+
+  // Next.js reads the nonce from the request's CSP header and applies it to
+  // its own inline bootstrap scripts; the layout reads x-csp-nonce.
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", req.nextUrl.pathname);
+  requestHeaders.set("x-csp-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", csp);
+
+  const res = NextResponse.next({ request: { headers: requestHeaders } });
+  res.headers.set("Content-Security-Policy", csp);
+
+  const protectedRes = await applyCsrfProtection(req, res);
+  if (rateLimitHeaders) {
+    for (const [key, value] of Object.entries(rateLimitHeaders)) {
+      protectedRes.headers.set(key, value);
+    }
+  }
+  return protectedRes;
+});
+
+export { matchRateTier, getClientIp } from "./lib/tokenBucketRateLimit";
 
 export const config = {
   matcher: [

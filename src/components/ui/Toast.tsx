@@ -76,6 +76,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             const updated = [...prev];
             updated[existingIndex] = {
               ...updated[existingIndex],
+              message,
               countdown: Math.max(
                 updated[existingIndex].countdown || 0,
                 countdown,
@@ -99,10 +100,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       const customEvent = e as CustomEvent<{
         retryAfter: number;
         endpoint: string;
+        willRetry?: boolean;
       }>;
       const retryAfter = customEvent.detail?.retryAfter || 60;
       addToast(
-        "Rate limit reached. Try again in {countdown} seconds",
+        customEvent.detail?.willRetry
+          ? "Rate limit reached. Retrying automatically in {countdown} seconds"
+          : "Rate limit reached. Try again in {countdown} seconds",
         "error",
         undefined,
         retryAfter,
@@ -166,8 +170,13 @@ function ToastItem({
   const [isFocusedWithin, setIsFocusedWithin] = useState(false);
   const isInteracting = isPointerOver || isFocusedWithin;
 
+  // Count down against a fixed deadline rather than decrementing, so the
+  // number stays accurate when timers are throttled in background tabs (#1732).
+  const deadlineRef = useRef<number | null>(null);
+
   useEffect(() => {
     if (toast.countdown === undefined) return;
+    deadlineRef.current = Date.now() + toast.countdown * 1000;
     setCountdown(toast.countdown);
   }, [toast.countdown]);
 
@@ -178,7 +187,14 @@ function ToastItem({
       return;
     }
     const timer = setInterval(() => {
-      setCountdown((prev) => (prev !== undefined ? prev - 1 : undefined));
+      const deadline = deadlineRef.current;
+      setCountdown((prev) =>
+        deadline === null
+          ? prev !== undefined
+            ? prev - 1
+            : undefined
+          : Math.max(0, Math.ceil((deadline - Date.now()) / 1000)),
+      );
     }, 1000);
     return () => clearInterval(timer);
   }, [countdown, toast.id, onRemove]);
@@ -211,7 +227,8 @@ function ToastItem({
     countdown !== undefined
       ? toast.message
           .replace("{countdown}", String(countdown))
-          .replace("1 seconds", "1 second")
+          // Singular only for exactly 1 — "11 seconds" must stay plural.
+          .replace(/(^|\D)1 seconds\b/, (_, before) => `${before}1 second`)
       : toast.message;
 
   return (

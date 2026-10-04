@@ -6,6 +6,7 @@ import {
   processAudioFrame,
   resetNoiseProcessor,
 } from "@/lib/wasm/noiseProcessor";
+import { getMicCalibration, rmsToCalibratedDb } from "@/lib/noise/calibration";
 
 export type NoiseMeasurement = {
   averageDb: number;
@@ -17,10 +18,7 @@ type Props = {
 };
 
 function rmsToApproxDb(rms: number) {
-  if (rms <= 0.00001) return 20;
-
-  const dbfs = 20 * Math.log10(rms);
-  return Math.max(20, Math.min(120, Math.round((dbfs + 100) * 10) / 10));
+  return rmsToCalibratedDb(rms, getMicCalibration());
 }
 
 // Environment classification mapping helper

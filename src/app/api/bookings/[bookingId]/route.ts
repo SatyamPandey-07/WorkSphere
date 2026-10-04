@@ -6,6 +6,7 @@ import {
   getBookingCancellationEligibility,
 } from "@/lib/bookingCancellation";
 import { prisma } from "@/lib/prisma";
+import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 
 type RouteContext = {
   params: Promise<{
@@ -54,7 +55,11 @@ export async function DELETE(_request: Request, context: RouteContext) {
         id: true,
         date: true,
         time: true,
+        timeZone: true,
         status: true,
+        confirmationId: true,
+        venueId: true,
+        user: { select: { timezone: true } },
       },
     });
 
@@ -81,6 +86,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     const eligibility = getBookingCancellationEligibility({
       date: booking.date,
       time: booking.time,
+      timeZone: booking.timeZone || booking.user?.timezone || null,
     });
 
     if (!eligibility.allowed) {
@@ -150,6 +156,15 @@ export async function DELETE(_request: Request, context: RouteContext) {
         { status: 409 },
       );
     }
+
+    emitWebhookEvent(userId, "BOOKING_CANCELLED", {
+      bookingId: booking.id,
+      confirmationId: booking.confirmationId,
+      venueId: booking.venueId,
+      date: booking.date,
+      time: booking.time,
+      cancelledAt: cancelledAt.toISOString(),
+    });
 
     return NextResponse.json({
       success: true,

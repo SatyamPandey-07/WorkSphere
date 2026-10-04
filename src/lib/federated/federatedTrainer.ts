@@ -2,10 +2,13 @@
  * Main-thread client for the federated venue trainer worker (#1022).
  *
  * Personalized scoring and gradient updates stay on-device — no raw
- * telemetry is posted to any backend.
+ * telemetry is posted to any backend. Training uses DP-SGD (per-example
+ * L2 clipping + Gaussian noise) by default (#1563).
  */
 
+import type { PrivacyReport } from "./privacyAccountant";
 import type {
+  DifferentialPrivacyConfig,
   FederatedWorkerRequest,
   FederatedWorkerResponse,
   ScoredVenue,
@@ -24,8 +27,17 @@ export class FederatedVenueTrainer {
   private pending = new Map<string, Pending>();
   private seq = 0;
   private ready = false;
+  /** Cumulative privacy loss reported after the last training round (#3359). */
+  lastPrivacyReport: PrivacyReport | null = null;
 
-  async init(learningRate?: number): Promise<void> {
+  /**
+   * @param dp Optional DP-SGD overrides; omitted fields fall back to
+   *   DEFAULT_DP_CONFIG (`maxGradNorm: 1.0`, `noiseMultiplier: 1.0`).
+   */
+  async init(
+    learningRate?: number,
+    dp?: Partial<DifferentialPrivacyConfig>,
+  ): Promise<void> {
     if (typeof Worker === "undefined") {
       throw new Error("Web Workers are not available in this environment");
     }
@@ -59,6 +71,7 @@ export class FederatedVenueTrainer {
       type: "init",
       id: this.nextId(),
       learningRate,
+      dp,
     });
     if (res.type !== "ready") {
       throw new Error("Federated trainer failed to initialize");
@@ -91,7 +104,7 @@ export class FederatedVenueTrainer {
     return res.scores;
   }
 
-  /** Apply on-device SGD updates from private engagement labels. */
+  /** Apply on-device DP-SGD updates from private engagement labels. */
   async train(
     examples: Array<{
       features: VenueFeatureVector | number[];
@@ -112,7 +125,18 @@ export class FederatedVenueTrainer {
     if (res.type !== "trained") {
       throw new Error("Unexpected train response");
     }
+    this.lastPrivacyReport = res.privacy ?? null;
     return res.steps;
+  }
+
+  /** Cumulative (ε, δ) spent on this device, plus the current clip bound. */
+  async getPrivacyReport(): Promise<PrivacyReport & { clipNorm: number }> {
+    await this.ensureReady();
+    const res = await this.send({ type: "privacy", id: this.nextId() });
+    if (res.type !== "privacy") {
+      throw new Error("Unexpected privacy response");
+    }
+    return { ...res.privacy, clipNorm: res.clipNorm };
   }
 
   terminate(): void {

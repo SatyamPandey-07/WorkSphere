@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { apiError } from "@/lib/apiResponse";
 
 export async function GET(
   _req: NextRequest,
@@ -7,6 +8,13 @@ export async function GET(
 ) {
   try {
     const { venueId } = await context.params;
+
+    const venue = await prisma.venue.findUnique({
+      where: { id: venueId },
+    });
+    if (!venue) {
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
+    }
 
     const validations = await prisma.amenityValidation.findMany({
       where: { venueId },
@@ -76,15 +84,31 @@ export async function GET(
       .sort((a, b) => b.totalVotes - a.totalVotes)
       .slice(0, 20);
 
-    return NextResponse.json({ success: true, leaderboard });
+    const amenities = validations
+      .map((v) => {
+        const total = v.upvotes + v.downvotes;
+        const confidenceScore =
+          total > 0 ? Math.round((v.upvotes / total) * 100) : 100;
+        return {
+          amenity: v.amenity,
+          upvotes: v.upvotes,
+          downvotes: v.downvotes,
+          totalVotes: total,
+          confidenceScore,
+        };
+      })
+      .sort((a, b) => b.upvotes - a.upvotes || b.totalVotes - a.totalVotes);
+
+    return NextResponse.json({ success: true, leaderboard, amenities });
   } catch (error: any) {
     console.error(
       "GET /api/venues/[venueId]/amenity-votes/leaderboard error:",
       error,
     );
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 },
+    return apiError(
+      error instanceof Error ? error.message : "Internal server error",
+      500,
+      "INTERNAL_ERROR",
     );
   }
 }

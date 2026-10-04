@@ -3,15 +3,16 @@ name: Continuous Integration
 on:
   pull_request:
     branches: [main, master, dev, development]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main, master]
+
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      contents: read
     env:
       DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ
@@ -37,21 +38,21 @@ jobs:
       UPSTASH_REDIS_REST_URL: https://dummy.upstash.io
       UPSTASH_REDIS_REST_TOKEN: dummy
       NEXT_PUBLIC_OSRM_URL: https://router.project-osrm.org
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "22"
+          cache: npm
 
       - name: Cache Next.js build output
         uses: actions/cache@v4
         with:
-          path: |
-            .next/cache
+          path: .next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
@@ -75,16 +76,48 @@ jobs:
       - name: Build Next.js application
         run: npm run build
 
-  auto-approve:
+  e2e-test:
+    name: Run Playwright E2E Tests
     runs-on: ubuntu-latest
     needs: build-and-test
-    if: github.event_name == 'pull_request' && success()
-    permissions:
-      pull-requests: write
-    continue-on-error: true
+    env:
+      DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ
+      CLERK_SECRET_KEY: sk_test_dummy
+      NEXT_PUBLIC_CLERK_SIGN_IN_URL: /sign-in
+      NEXT_PUBLIC_CLERK_SIGN_UP_URL: /sign-up
+      NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL: /ai
+      NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL: /ai
+      NEXT_PUBLIC_CLERK_SIGN_IN_FORCE_REDIRECT_URL: /ai
+      NEXT_PUBLIC_CLERK_SIGN_UP_FORCE_REDIRECT_URL: /ai
+      GROQ_API_KEY: gsk_dummy
     steps:
-      - name: Auto Approve PR
-        uses: hmarr/auto-approve-action@v4
-        continue-on-error: true
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+
+      - name: Run Playwright tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+

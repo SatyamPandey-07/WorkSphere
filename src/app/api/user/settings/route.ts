@@ -20,6 +20,8 @@ export async function GET() {
         telegramWebhookUrl: true,
         notificationStart: true,
         notificationEnd: true,
+        quietHoursStart: true,
+        quietHoursEnd: true,
         timezone: true,
         imageUrl: true,
         workStyleProfile: true, // <-- NEW: Fetching the profile
@@ -34,6 +36,8 @@ export async function GET() {
       telegramConfigured: Boolean(user?.telegramWebhookUrl),
       notificationStart: user?.notificationStart || "",
       notificationEnd: user?.notificationEnd || "",
+      quietHoursStart: user?.quietHoursStart || "",
+      quietHoursEnd: user?.quietHoursEnd || "",
       timezone: user?.timezone || "UTC",
       imageUrl: user?.imageUrl || "",
       workStyleProfile: user?.workStyleProfile || "", // <-- NEW: Returning it to the frontend
@@ -73,6 +77,8 @@ export async function POST(req: Request) {
       telegramWebhookUrl,
       notificationStart,
       notificationEnd,
+      quietHoursStart,
+      quietHoursEnd,
       timezone,
       imageUrl,
       workStyleProfile,
@@ -93,6 +99,12 @@ export async function POST(req: Request) {
       }),
       ...(notificationEnd !== undefined && {
         notificationEnd: notificationEnd || null,
+      }),
+      ...(quietHoursStart !== undefined && {
+        quietHoursStart: quietHoursStart || null,
+      }),
+      ...(quietHoursEnd !== undefined && {
+        quietHoursEnd: quietHoursEnd || null,
       }),
       ...(timezone !== undefined && { timezone: timezone || "UTC" }),
       ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
@@ -120,6 +132,8 @@ export async function POST(req: Request) {
       telegramConfigured: Boolean(updatedUser.telegramWebhookUrl),
       notificationStart: updatedUser.notificationStart || "",
       notificationEnd: updatedUser.notificationEnd || "",
+      quietHoursStart: updatedUser.quietHoursStart || "",
+      quietHoursEnd: updatedUser.quietHoursEnd || "",
       timezone: updatedUser.timezone || "UTC",
       imageUrl: updatedUser.imageUrl || "",
       workStyleProfile: updatedUser.workStyleProfile || "", // <-- NEW: Returning success
@@ -141,20 +155,34 @@ export async function PATCH(req: Request) {
     }
 
     const body = await req.json();
+    const parsed = userSettingsSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: "Invalid parameters",
+          details: parsed.error.flatten().fieldErrors,
+        },
+        { status: 400 },
+      );
+    }
+    const validated = parsed.data;
+
     const allowedKeys = [
       "phoneNumber",
       "smsAlertsEnabled",
       "whatsappWebhookUrl",
       "notificationStart",
       "notificationEnd",
+      "quietHoursStart",
+      "quietHoursEnd",
       "timezone",
     ] as const;
 
     const dataToUpdate: Prisma.UserUpdateInput = {};
     for (const key of allowedKeys) {
-      if (key in body) {
+      if (key in validated) {
         (dataToUpdate as any)[key] =
-          body[key] ?? (key === "smsAlertsEnabled" ? false : null);
+          (validated as any)[key] ?? (key === "smsAlertsEnabled" ? false : null);
       }
     }
 
@@ -175,6 +203,8 @@ export async function PATCH(req: Request) {
       whatsappWebhookUrl: updated.whatsappWebhookUrl || "",
       notificationStart: updated.notificationStart || "",
       notificationEnd: updated.notificationEnd || "",
+      quietHoursStart: updated.quietHoursStart || "",
+      quietHoursEnd: updated.quietHoursEnd || "",
       timezone: updated.timezone || "UTC",
     });
   } catch (error: any) {

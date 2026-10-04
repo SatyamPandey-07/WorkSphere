@@ -5,6 +5,7 @@ import { X, Download, Sparkles } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { purgeStaleWeights } from "@/lib/federated/weightDb";
 import { useWorkerTokenRefresh } from "@/hooks/useWorkerTokenRefresh";
+import { flushPendingReviewsClientFallback } from "@/lib/offlineReviewSync";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -106,6 +107,32 @@ export function SyncManager() {
   useEffect(() => {
     // Non-blocking purge of stale federated learning model weights on startup
     purgeStaleWeights().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    // Client fallback sync for pending reviews when Background Sync API is unavailable
+    const handleReconnect = () => {
+      flushPendingReviewsClientFallback().catch((err) => {
+        console.error("[SyncManager] Fallback review sync failed:", err);
+      });
+    };
+
+    if (navigator.onLine) {
+      handleReconnect();
+    }
+
+    window.addEventListener("online", handleReconnect);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible" && navigator.onLine) {
+        handleReconnect();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("online", handleReconnect);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, []);
 
   return null;

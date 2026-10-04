@@ -22,6 +22,8 @@ export interface WebGLHeatmapOptions {
   opacity?: number;
   blur?: number;
   maxPoints?: number;
+  /** Called after a lost GL context is rebuilt and point data re-uploaded, so the owner can redraw (#1729). */
+  onContextRestored?: () => void;
 }
 
 export class WebGLHeatmapRenderer {
@@ -32,6 +34,8 @@ export class WebGLHeatmapRenderer {
   private cleanupContextRecovery?: () => void;
 
   private pointsCount = 0;
+  /** Last uploaded vertex data, re-uploaded after context restore (#1729). */
+  private lastBufferData: Float32Array | null = null;
   private maxPoints: number;
   private opacity: number;
   private blur: number;
@@ -56,7 +60,20 @@ export class WebGLHeatmapRenderer {
 
     this.initGL();
     this.cleanupContextRecovery = attachWebGLContextRecovery(canvas, () => {
+      if (this.isDestroyed) return;
+      // Handles from the lost context are dead — drop them, don't delete them.
+      this.program = null;
+      this.vbo = null;
       this.initGL();
+      if (!this.program || !this.vbo) {
+        throw new Error("[WebGLHeatmap] Failed to rebuild GL resources after restore");
+      }
+      // A fresh VBO is empty: restore the points or render() draws nothing.
+      if (this.lastBufferData && this.pointsCount > 0) {
+        this.gl!.bindBuffer(this.gl!.ARRAY_BUFFER, this.vbo);
+        this.gl!.bufferSubData(this.gl!.ARRAY_BUFFER, 0, this.lastBufferData);
+      }
+      options.onContextRestored?.();
     });
   }
 
@@ -182,6 +199,7 @@ export class WebGLHeatmapRenderer {
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, bufferData);
+    this.lastBufferData = bufferData;
   }
 
   /**

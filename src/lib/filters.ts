@@ -96,7 +96,7 @@ function matchesMusicStyle(venue: VenueLike, style: string): boolean {
   return venue.musicStyle === style;
 }
 
-export function applyFilters<T extends VenueLike>(
+export function applyFilters<T extends object>(
   venues: T[],
   filters: VenueFilters,
 ): T[] {
@@ -108,8 +108,9 @@ export function applyFilters<T extends VenueLike>(
   );
   if (active.length === 0) return venues;
 
-  return venues.filter((venue) =>
+  return venues.filter((item) =>
     active.every(([key, value]) => {
+      const venue = item as VenueLike;
       switch (key) {
         case "wifi":
           return venue.wifi === true;
@@ -155,11 +156,18 @@ export function buildVenueSearchSchema() {
     radius: z.coerce.number().min(100).max(50000).default(5000),
     category: z.enum(["cafe", "coworking", "library", "all"]).optional(),
     cities: z.string().optional(),
+    query: z.string().optional(),
   };
 
   for (const [key, config] of Object.entries(VENUE_FILTERS)) {
     if (config.type === "boolean") {
-      shape[key] = z.coerce.boolean().optional();
+      shape[key] = z
+        .preprocess((v) => {
+          if (v === "true") return true;
+          if (v === "false") return false;
+          return v;
+        }, z.boolean())
+        .optional();
     } else if (config.type === "enum" && config.values) {
       shape[key] = z
         .enum(config.values as unknown as [string, ...string[]])

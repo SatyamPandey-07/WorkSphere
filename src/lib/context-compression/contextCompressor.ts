@@ -1,11 +1,18 @@
 import { CompressedContext, ContextChunk } from "@/lib/hnsw/types";
 import { HNSWIndex } from "@/lib/hnsw/hnsw";
 import { generateEmbedding } from "@/lib/cache/semanticCache";
-import { Groq } from "groq-sdk";
+import Groq from "groq-sdk";
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY || "dummy-key-for-build",
-});
+function getGroqClient(): any {
+  const GroqCtor = (Groq as any)?.Groq || Groq;
+  try {
+    return new GroqCtor({
+      apiKey: process.env.GROQ_API_KEY || "dummy-key-for-build",
+    });
+  } catch {
+    return null;
+  }
+}
 
 const MAX_TOKENS_PER_COMPRESSED = 500;
 const _MAX_MESSAGES_PER_COMPRESSED = 20;
@@ -13,21 +20,259 @@ const SIMILARITY_THRESHOLD = 0.82;
 
 const hnswIndexes = new Map<string, HNSWIndex>();
 
-function getOrCreateIndex(userId: string): HNSWIndex {
+export function getOrCreateIndex(userId: string): HNSWIndex {
   if (!hnswIndexes.has(userId)) {
     hnswIndexes.set(userId, new HNSWIndex({ dim: 1024 }));
   }
   return hnswIndexes.get(userId)!;
 }
 
-function estimateTokens(text: string): number {
+export function clearIndexes(): void {
+  hnswIndexes.clear();
+}
+
+export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+export interface ExtractedParameters {
+  workType?: string;
+  category?: string[];
+  amenities?: string[];
+  location?: string;
+  radius?: number;
+  constraints?: string[];
+  decisions?: string[];
+}
+
+export interface CompressContextOptions {
+  maxTokens?: number;
+  recentTurnsToKeep?: number; // default: 4 messages (2 user + 2 assistant)
+  thresholdTokens?: number; // default: 400 tokens
+}
+
+export interface CompressContextResult {
+  compressed: Array<{ role: string; content: string }>;
+  originalTokens: number;
+  compressedTokens: number;
+  savedTokens: number;
+  reductionPercentage: number;
+  extractedParameters: ExtractedParameters;
+  summary?: string;
+}
+
+/**
+ * Extracts key user intent and parameters (amenities, work type, location, constraints, decisions)
+ * from conversation messages so they can be explicitly preserved across compression.
+ */
+export function extractIntentParameters(
+  messages: Array<{ role: string; content: string }>,
+): ExtractedParameters {
+  const params: ExtractedParameters = {
+    category: [],
+    amenities: [],
+    constraints: [],
+    decisions: [],
+  };
+
+  const fullText = messages.map((m) => m.content).join(" ");
+  const lower = fullText.toLowerCase();
+
+  // 1. Work Type
+  if (/\b(call|calls|zoom|phone|meeting|interview)\b/i.test(lower)) {
+    params.workType = "calls";
+  } else if (/\b(focus|deep work|quiet work|study|studying|exam)\b/i.test(lower)) {
+    params.workType = "focus";
+  } else if (/\b(team|group|collaborat\w+|co-working)\b/i.test(lower)) {
+    params.workType = "team";
+  } else if (/\b(casual|reading|browse|light work)\b/i.test(lower)) {
+    params.workType = "casual";
+  }
+
+  // 2. Categories
+  const categories = new Set<string>();
+  if (/\b(cafe|cafes|coffee shop|coffee)\b/i.test(lower)) categories.add("cafe");
+  if (/\b(coworking|co-working|shared office|hot desk)\b/i.test(lower)) categories.add("coworking");
+  if (/\b(library|libraries|public library)\b/i.test(lower)) categories.add("library");
+  params.category = Array.from(categories);
+
+  // 3. Amenities
+  const amenities = new Set<string>();
+  if (/\b(wifi|wi-fi|internet|fast connection)\b/i.test(lower)) amenities.add("wifi");
+  if (/\b(outlet|outlets|power|plug|charging)\b/i.test(lower)) amenities.add("outlets");
+  if (/\b(quiet|silent|low noise|calm)\b/i.test(lower)) amenities.add("quiet");
+  if (/\b(ergonomic|chair|ergonomic seat|standing desk)\b/i.test(lower)) amenities.add("ergonomic");
+  if (/\b(phone booth|call booth|private booth)\b/i.test(lower)) amenities.add("phoneBooths");
+  if (/\b(24\/7|late night|open late)\b/i.test(lower)) amenities.add("24/7");
+  params.amenities = Array.from(amenities);
+
+  // 4. Location & Radius
+  const radiusMatch = lower.match(/(?:within|in|radius of)\s*(\d+(?:\.\d+)?)\s*(km|kilometer|kilometers|m|meter|meters|mile|miles)/i);
+  if (radiusMatch) {
+    const val = parseFloat(radiusMatch[1]);
+    const unit = radiusMatch[2].toLowerCase();
+    if (unit.startsWith("k") || unit.startsWith("mile")) {
+      params.radius = Math.round(val * 1000);
+    } else {
+      params.radius = Math.round(val);
+    }
+  }
+
+  const locMatch = fullText.match(/(?:in|near|around|at)\s+([A-Z][a-zA-Z\s]+?)(?:,|\.|\bwith\b|\bfor\b|\bwithin\b|$)/);
+  if (locMatch && locMatch[1].trim().length > 2) {
+    params.location = locMatch[1].trim();
+  }
+
+  // 5. Constraints & Decisions
+  for (const msg of messages) {
+    const decisionMatch = msg.content.match(/\b(booked [^,.]*|reserved [^,.]*|selected [^,.]*)/i);
+    if (decisionMatch) {
+      params.decisions?.push(decisionMatch[0].trim());
+    }
+    const constraintMatch = msg.content.match(/\b(under \$\d+|budget[^,.]*|free[^,.]*|strict[^,.]*|must have[^,.]*)/i);
+    if (constraintMatch) {
+      params.constraints?.push(constraintMatch[0].trim());
+    }
+  }
+
+  return params;
+}
+
+function buildDeterministicSummary(
+  turns: Array<{ role: string; content: string }>,
+  params: ExtractedParameters,
+): string {
+  const elements: string[] = [];
+  if (params.workType) elements.push(`Work: ${params.workType}`);
+  if (params.category && params.category.length > 0) elements.push(`Type: ${params.category.join(", ")}`);
+  if (params.amenities && params.amenities.length > 0) elements.push(`Amenities: ${params.amenities.join(", ")}`);
+  if (params.location) elements.push(`Location: ${params.location}${params.radius ? ` (${params.radius}m)` : ""}`);
+  if (params.constraints && params.constraints.length > 0) elements.push(`Constraints: ${params.constraints.slice(0, 2).join("; ")}`);
+  if (params.decisions && params.decisions.length > 0) elements.push(`Decisions: ${params.decisions.slice(0, 2).join("; ")}`);
+
+  if (elements.length > 0) {
+    return `Prior Context: ${elements.join(" | ")}`;
+  }
+  return "Prior Context: User explored workspace options.";
+}
+
+async function compressOlderTurnsWithLLM(
+  olderTurns: Array<{ role: string; content: string }>,
+  params: ExtractedParameters,
+): Promise<string> {
+  const transcript = olderTurns.map((c) => `${c.role}: ${c.content}`).join("\n");
+
+  try {
+    const client = getGroqClient();
+    if (!client) throw new Error("Groq client not available");
+    const completion = await client.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "system",
+          content: `You are a Context Compression Engine. Compress the following earlier conversation turns into a high-density summary (under 100 words).
+You MUST explicitly preserve:
+1. User Intent and search goals
+2. Extracted Parameters:
+   - Work type: ${params.workType || "unspecified"}
+   - Categories: ${params.category?.join(", ") || "unspecified"}
+   - Amenities: ${params.amenities?.join(", ") || "unspecified"}
+   - Location/Radius: ${params.location || "unspecified"}
+3. Any confirmed decisions or user feedback
+Output ONLY the structured summary.`,
+        },
+        {
+          role: "user",
+          content: `<transcript>\n${transcript}\n</transcript>`,
+        },
+      ],
+      temperature: 0.1,
+      max_tokens: 200,
+    });
+
+    const content = completion.choices[0]?.message?.content?.trim();
+    if (content) return content;
+  } catch {
+    // Graceful fallback if Groq API call fails or is mocked
+  }
+
+  return buildDeterministicSummary(olderTurns, params);
+}
+
+/**
+ * Public high-level context compression API matching docs/CONTEXT_COMPRESSION.md
+ * Summarizes older conversation turns while preserving key user intent and extracted parameters.
+ * Reduces prompt token count by >= 50% for extended conversation sessions.
+ */
+export async function compressContext(
+  messages: Array<{ role: string; content: string }>,
+  userId?: string,
+  options?: CompressContextOptions,
+): Promise<CompressContextResult> {
+  const originalTokens = messages.reduce((s, m) => s + estimateTokens(m.content), 0);
+  const extractedParameters = extractIntentParameters(messages);
+
+  const recentCount = options?.recentTurnsToKeep ?? 4;
+  const thresholdTokens = options?.thresholdTokens ?? 400;
+
+  // If the conversation is short, keep as is
+  if (messages.length <= recentCount || originalTokens <= thresholdTokens) {
+    return {
+      compressed: messages,
+      originalTokens,
+      compressedTokens: originalTokens,
+      savedTokens: 0,
+      reductionPercentage: 0,
+      extractedParameters,
+    };
+  }
+
+  // Split into older turns to compress and recent turns to preserve verbatim
+  const recentTurns = messages.slice(-recentCount);
+  const olderTurns = messages.slice(0, messages.length - recentCount);
+
+  // Compress older turns preserving user intent & parameters
+  const summaryText = await compressOlderTurnsWithLLM(olderTurns, extractedParameters);
+
+  const summaryMessage = {
+    role: "system" as const,
+    content: `[PRIOR CONTEXT & PARAMETERS]\n${summaryText}`,
+  };
+
+  const compressed = [summaryMessage, ...recentTurns];
+  const compressedTokens = compressed.reduce((s, m) => s + estimateTokens(m.content), 0);
+  const savedTokens = Math.max(0, originalTokens - compressedTokens);
+  const reductionPercentage = Math.round((savedTokens / originalTokens) * 100);
+
+  // Index the compressed summary into the user's HNSW vector index
+  if (userId) {
+    try {
+      const embedding = await generateEmbedding(summaryText);
+      const index = getOrCreateIndex(userId);
+      index.insert(`ctx_${Date.now()}_${Math.random().toString(36).slice(2)}`, embedding);
+    } catch {
+      // Ignore indexing failure
+    }
+  }
+
+  return {
+    compressed,
+    originalTokens,
+    compressedTokens,
+    savedTokens,
+    reductionPercentage,
+    extractedParameters,
+    summary: summaryText,
+  };
 }
 
 async function compressWithLLM(chunks: ContextChunk[]): Promise<string> {
   const transcript = chunks.map((c) => `${c.role}: ${c.content}`).join("\n");
 
-  const completion = await groq.chat.completions.create({
+  const client = getGroqClient();
+  if (!client) return "No summary generated.";
+
+  const completion = await client.chat.completions.create({
     model: "llama-3.3-70b-versatile",
     messages: [
       {
@@ -246,7 +491,10 @@ export async function compressFullConversation(
     return { compressed: fullText, saved: 0 };
   }
 
-  const completion = await groq.chat.completions.create({
+  const client = getGroqClient();
+  if (!client) return { compressed: fullText, saved: 0 };
+
+  const completion = await client.chat.completions.create({
     model: "llama-3.3-70b-versatile",
     messages: [
       {

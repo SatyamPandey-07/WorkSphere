@@ -1,5 +1,6 @@
 "use client";
 
+import { ThemeProvider as NextThemesProvider } from "next-themes";
 import {
   createContext,
   useCallback,
@@ -156,7 +157,15 @@ export function ThemeProvider({
   );
 
   return (
-    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+    <NextThemesProvider
+      attribute="class"
+      defaultTheme="system"
+      enableSystem
+      disableTransitionOnChange
+      themes={["light", "dark", "cyberpunk"]}
+    >
+      <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+    </NextThemesProvider>
   );
 }
 

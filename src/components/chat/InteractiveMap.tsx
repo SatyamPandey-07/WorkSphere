@@ -117,27 +117,50 @@ export default function InteractiveMap({ markers }: { markers: any[] }) {
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         />
-        {spiderfiedMarkers.map((marker, idx) => (
-          <Marker
-            key={idx}
-            position={[marker.renderedLat, marker.renderedLng]}
-            title={marker.name}
-            alt={marker.name}
-            keyboard={true}
-            eventHandlers={markerEventHandlers}
-          >
-            <Popup
-              autoPanPadding={[20, 20]}
-              autoPanPaddingTopLeft={[20, 90]}
-              autoPanPaddingBottomRight={[20, 20]}
+        {spiderfiedMarkers.map((marker, idx) => {
+          const ratingVal = marker.score ?? marker.rating;
+          const parts = [`Venue: ${marker.name}`];
+          if (marker.category) {
+            parts.push(`Category: ${marker.category.replace("_", " ")}`);
+          }
+          if (ratingVal != null && !isNaN(Number(ratingVal))) {
+            parts.push(`Rating: ${ratingVal}`);
+          }
+          const markerAriaLabel = parts.join(", ");
+
+          return (
+            <Marker
+              key={idx}
+              position={[marker.renderedLat, marker.renderedLng]}
+              title={markerAriaLabel}
+              alt={marker.name}
+              keyboard={true}
+              eventHandlers={{
+                ...markerEventHandlers,
+                add: (e: any) => {
+                  const el = e.target.getElement();
+                  if (el) {
+                    el.setAttribute("aria-label", markerAriaLabel);
+                    el.setAttribute("role", "button");
+                    el.setAttribute("tabindex", "0");
+                    el.classList.add("interactive-map-pin");
+                  }
+                },
+              }}
             >
-              <div className="font-bold text-sm">{marker.name}</div>
-              <div className="text-xs text-gray-500 capitalize">
-                {marker.category?.replace("_", " ")}
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+              <Popup
+                autoPanPadding={[20, 20]}
+                autoPanPaddingTopLeft={[20, 90]}
+                autoPanPaddingBottomRight={[20, 20]}
+              >
+                <div className="font-bold text-sm">{marker.name}</div>
+                <div className="text-xs text-gray-500 capitalize">
+                  {marker.category?.replace("_", " ")}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
       </MapContainer>
     </div>
   );

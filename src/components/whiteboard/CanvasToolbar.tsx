@@ -35,6 +35,11 @@ const TOOLS: { id: ToolType; label: string; icon: string }[] = [
     icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z",
   },
   { id: "line", label: "Line", icon: "M3 17.25L20.25 4l-3.75 13.25L3 17.25z" },
+  {
+    id: "sticky",
+    label: "Sticky Note",
+    icon: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z",
+  },
 ];
 
 const PRESET_COLORS = [

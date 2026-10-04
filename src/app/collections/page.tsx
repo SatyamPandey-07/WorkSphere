@@ -33,15 +33,28 @@ export default function CollectionsPage() {
   const [newFolderPublic, setNewFolderPublic] = useState(false);
   const [newFolderColor, setNewFolderColor] = useState("#3b82f6");
   const [activeTab, setActiveTab] = useState<"my" | "public">("my");
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const isDraggingRef = useRef(false);
+
+  // The empty state CTA points at the inline creation form on the left of the
+  // page. There is no modal here, so the button scrolls the form into view and
+  // focuses the name field so the user can start typing straight away.
+  const focusCreateForm = () => {
+    const input = nameInputRef.current;
+    if (!input) return;
+    input.scrollIntoView({ behavior: "smooth", block: "center" });
+    input.focus();
+  };
 
   const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedIndex(index);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", index.toString());
+  isDraggingRef.current = true;
+  setDraggedIndex(index);
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", index.toString());
   };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
@@ -53,6 +66,10 @@ export default function CollectionsPage() {
   const handleDragEnd = () => {
     setDraggedIndex(null);
     setDragOverIndex(null);
+  
+    setTimeout(() => {
+      isDraggingRef.current = false;
+    }, 0);
   };
 
   const handleDrop = (e: React.DragEvent, targetIndex: number) => {
@@ -272,6 +289,7 @@ export default function CollectionsPage() {
               </h2>
               <form onSubmit={createFolder} className="flex flex-col gap-3">
                 <input
+                  ref={nameInputRef}
                   type="text"
                   placeholder="Collection Name"
                   value={newFolderName}
@@ -346,8 +364,18 @@ export default function CollectionsPage() {
               ) : folders.length === 0 ? (
                 <EmptyState
                   illustration="collection"
-                  message="No collections yet"
+                  message="No Collections Yet"
                   description="Create a collection to start saving your favorite venues."
+                  action={
+                    <button
+                      type="button"
+                      onClick={focusCreateForm}
+                      className="inline-flex items-center gap-2 px-4 py-2 accent-bg hover:opacity-90 text-white font-medium rounded-xl text-sm transition-all"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Create Collection
+                    </button>
+                  }
                 />
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -355,8 +383,8 @@ export default function CollectionsPage() {
                     <div
                       key={folder.id}
                       onClick={(e) => {
-                        if ((e.target as HTMLElement).closest(".drag-handle"))
-                          return;
+                        if (isDraggingRef.current) return;
+                        if ((e.target as HTMLElement).closest(".drag-handle")) return;
                         router.push(`/collections/${folder.id}`);
                       }}
                       onDragOver={(e) => handleDragOver(e, index)}

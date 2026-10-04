@@ -21,6 +21,9 @@ import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";
 import FloorPlanViewer3D from "@/components/floorplan/FloorPlanViewer3D";
 import { apiFetch } from "@/lib/apiClient";
 import { useRateLimit } from "@/hooks/useRateLimit";
+import { SeatOccupancyHeatmap } from "@/components/venue/SeatOccupancyHeatmap";
+import { useSeatHoldLock } from "@/hooks/useSeatHoldLock";
+import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
 
 type Seat = {
   id: string;
@@ -72,6 +75,30 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
   const [endDate, setEndDate] = useState("");
   const [occurrences, setOccurrences] = useState<number>(12);
 
+  // Distributed real-time seat-hold locking (#3522)
+  const {
+    activeHolds,
+    myHeldSeatId,
+    remainingSeconds,
+    acquireHold,
+    releaseHold,
+    confirmCheckout,
+    isSeatHeldByOther,
+  } = useSeatHoldLock({
+    venueId: venue.id,
+    onHoldExpired: (seatId) => {
+      if (selectedSeat === seatId) {
+        setSelectedSeat(null);
+        setMessage("Your 5-minute checkout hold expired. The seat has been released.");
+      }
+    },
+    onHoldRejected: (_seatId, _reason, _heldBy, heldByName) => {
+      setMessage(
+        `This seat is temporarily on hold by ${heldByName || "another user"} during checkout.`,
+      );
+    },
+  });
+
   const loadAvailability = useCallback(async () => {
     setLoading(true);
 
@@ -81,6 +108,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
         date,
         time,
         duration: String(duration),
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
 
       const response = await fetch(`/api/reservations/availability?${params}`, {
@@ -208,6 +236,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       seatId: selected.id,
       date,
       time,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       duration,
       amenitiesNeeded: amenities,
       guests: guests.map((g) => ({
@@ -256,6 +285,9 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
       setConfirmationId(payload.confirmationId);
     }
 
+    if (selectedSeat) {
+      await confirmCheckout(selectedSeat);
+    }
     setSelectedSeat(null);
     setBooking(false);
     setGuests([]);
@@ -292,6 +324,20 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
             <p className="font-semibold">{message}</p>
             {confirmationId && (
               <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-600/10 px-4 py-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-violet-300/80">
+                    Booking reference
+                  </span>
+                  <span className="font-mono text-sm text-violet-100">
+                    {confirmationId}
+                  </span>
+                  <CopyToClipboardButton
+                    textToCopy={confirmationId}
+                    label="Copy"
+                    toastMessage="Booking reference copied!"
+                    className="!px-2 !py-1 text-xs font-semibold"
+                  />
+                </div>
                 <a
                   href={
                     getCalendarUrls(
@@ -344,282 +390,340 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
           </div>
         )}
 
-        <div className="grid gap-6 xl:grid-cols-[1.5fr_.7fr]">
-          <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 md:p-7">
-            <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">Interactive layout</h2>
-                <p className="mt-1 text-sm text-zinc-500">
-                  Select a green desk. Changes made by other viewers appear
-                  live.
-                </p>
-              </div>
+        <div className="space-y-6">
+          <SeatOccupancyHeatmap
+            venueId={venue.id}
+            selectedDate={date}
+            selectedTime={time}
+            onSelectSlot={({ date: selectedDate, time: selectedTime }) => {
+              setDate(selectedDate);
+              setTime(selectedTime);
+            }}
+          />
 
-              <button
-                onClick={loadAvailability}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5"
-              >
-                <RefreshCw
-                  className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-                />
-                Refresh
-              </button>
-            </div>
-
-            <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b0f]">
-              <FloorPlanViewer3D
-                seats={seats}
-                selectedSeat={selectedSeat}
-                onSelectSeat={(id) => {
-                  if (id === null) {
-                    setSelectedSeat(null);
-                    return;
-                  }
-                  const seat = seats.find((s) => s.id === id);
-                  if (seat && seat.available) {
-                    setSelectedSeat(id);
-                  }
-                }}
-              />
-            </div>
-
-            <div className="mt-5 flex flex-wrap gap-4 text-xs text-zinc-400">
-              <Legend color="bg-green-800" label="Available desk" />
-              <Legend color="bg-cyan-800" label="Available room" />
-              <Legend color="bg-violet-500" label="Selected" />
-              <Legend color="bg-zinc-700" label="Taken" />
-            </div>
-          </section>
-
-          <form
-            onSubmit={reserve}
-            className="h-fit rounded-3xl border border-white/10 bg-white/[0.04] p-5 md:p-6"
-          >
-            <h2 className="text-xl font-semibold">Reservation details</h2>
-
-            <div className="mt-6 space-y-4">
-              <Field label="Date" icon={<CalendarDays className="h-4 w-4" />}>
-                <input
-                  type="date"
-                  min={todayString()}
-                  value={date}
-                  onChange={(event) => setDate(event.target.value)}
-                  className="reserve-input"
-                />
-              </Field>
-
-              <Field label="Start time" icon={<Clock3 className="h-4 w-4" />}>
-                <input
-                  type="time"
-                  value={time}
-                  onChange={(event) => setTime(event.target.value)}
-                  className="reserve-input"
-                />
-              </Field>
-
-              <Field label="Duration" icon={<Clock3 className="h-4 w-4" />}>
-                <select
-                  value={duration}
-                  onChange={(event) => setDuration(Number(event.target.value))}
-                  className="reserve-input"
-                >
-                  <option value={30}>30 minutes</option>
-                  <option value={60}>1 hour</option>
-                  <option value={90}>1.5 hours</option>
-                  <option value={120}>2 hours</option>
-                  <option value={240}>4 hours</option>
-                  <option value={480}>Full day</option>
-                </select>
-              </Field>
-            </div>
-
-            <div className="mt-6">
-              <p className="text-sm text-zinc-400">Amenities needed</p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {amenityOptions.map((option) => {
-                  const enabled = amenities.includes(option.id);
-                  const Icon = option.icon;
-
-                  return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() =>
-                        setAmenities((current) =>
-                          enabled
-                            ? current.filter((item) => item !== option.id)
-                            : [...current, option.id],
-                        )
-                      }
-                      className={`rounded-xl border p-3 text-left text-xs transition ${
-                        enabled
-                          ? "border-violet-400/50 bg-violet-400/10 text-violet-100"
-                          : "border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06]"
-                      }`}
-                    >
-                      <Icon className="mb-2 h-4 w-4" />
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Recurring Booking */}
-            <div className="mt-6">
-              <button
-                type="button"
-                onClick={() => setRecurringEnabled(!recurringEnabled)}
-                className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left text-xs transition ${
-                  recurringEnabled
-                    ? "border-violet-400/50 bg-violet-400/10 text-violet-100"
-                    : "border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06]"
-                }`}
-              >
-                <Repeat className="h-4 w-4" />
+          <div className="grid gap-6 xl:grid-cols-[1.5fr_.7fr]">
+            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 md:p-7">
+              <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p className="font-medium">Recurring booking</p>
-                  <p className="mt-0.5 text-[10px] opacity-70">
-                    Book this workspace on a recurring schedule
+                  <h2 className="text-xl font-semibold">Interactive layout</h2>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Select a green desk. Changes made by other viewers appear
+                    live.
                   </p>
                 </div>
-              </button>
 
-              {recurringEnabled && (
-                <div className="mt-3 space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                  <Field
-                    label="Frequency"
-                    icon={<Repeat className="h-4 w-4" />}
-                  >
-                    <select
-                      value={frequency}
-                      onChange={(event) =>
-                        setFrequency(
-                          event.target.value as "daily" | "weekly" | "monthly",
-                        )
-                      }
-                      className="reserve-input"
-                    >
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="monthly">Monthly</option>
-                    </select>
-                  </Field>
-
-                  <Field
-                    label="End date (optional)"
-                    icon={<CalendarDays className="h-4 w-4" />}
-                  >
-                    <input
-                      type="date"
-                      min={date}
-                      value={endDate}
-                      onChange={(event) => setEndDate(event.target.value)}
-                      className="reserve-input"
-                    />
-                  </Field>
-
-                  <Field
-                    label="Number of occurrences (max 52)"
-                    icon={<CalendarDays className="h-4 w-4" />}
-                  >
-                    <input
-                      type="number"
-                      min={1}
-                      max={52}
-                      value={occurrences}
-                      onChange={(event) =>
-                        setOccurrences(
-                          Math.min(52, Math.max(1, Number(event.target.value))),
-                        )
-                      }
-                      disabled={!!endDate}
-                      className="reserve-input disabled:opacity-40"
-                    />
-                  </Field>
-
-                  {previewDates.length > 0 && (
-                    <div className="mt-2">
-                      <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">
-                        Preview ({previewDates.length} dates)
-                      </p>
-                      <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
-                        {previewDates.map((d) => (
-                          <span
-                            key={d}
-                            className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-zinc-400"
-                          >
-                            {d}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Guest Invitations */}
-            <div className="mt-6">
-              <div className="flex items-center gap-2 mb-3">
-                <UserPlus className="h-4 w-4 text-zinc-400" />
-                <p className="text-sm text-zinc-400">Invite guests</p>
+                <button
+                  onClick={loadAvailability}
+                  className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5"
+                >
+                  <RefreshCw
+                    className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+                  />
+                  Refresh
+                </button>
               </div>
-              <GuestsInput
-                guests={guests}
-                onChange={setGuests}
-                maxGuests={10}
-                disabled={booking}
-              />
-            </div>
 
-            <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
-              <p className="text-xs uppercase tracking-wider text-zinc-500">
-                Selected workspace
-              </p>
+              <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#0b0b0f]">
+                <FloorPlanViewer3D
+                  seats={seats}
+                  selectedSeat={selectedSeat}
+                  activeHolds={activeHolds}
+                  onHeldSeatClick={(seat, hold) => {
+                    setMessage(
+                      `Seat ${seat.seatNumber} is currently on hold by ${hold.heldByName || "another user"} (${hold.remainingSeconds ?? 300}s remaining).`,
+                    );
+                  }}
+                  onSelectSeat={async (id) => {
+                    if (id === null) {
+                      if (selectedSeat) {
+                        await releaseHold(selectedSeat);
+                      }
+                      setSelectedSeat(null);
+                      return;
+                    }
+                    const seat = seats.find((s) => s.id === id);
+                    if (!seat || !seat.available) return;
 
-              {selected ? (
-                <div className="mt-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-lg font-semibold">
-                      {selected.seatNumber}
-                    </span>
-                    <Check className="h-5 w-5 text-emerald-300" />
-                  </div>
-                  <p className="mt-1 text-xs capitalize text-zinc-500">
-                    {selected.type.toLowerCase().replaceAll("_", " ")}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {selected.amenities.map((amenity) => (
-                      <span
-                        key={amenity}
-                        className="rounded-full bg-white/5 px-2 py-1 text-[10px] text-zinc-400"
-                      >
-                        {amenity}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <p className="mt-3 text-sm text-zinc-500">
-                  Select a green desk or room on the layout.
-                </p>
-              )}
-            </div>
+                    if (isSeatHeldByOther(id)) {
+                      setMessage(`Seat ${seat.seatNumber} is currently held by someone else.`);
+                      return;
+                    }
 
-            <button
-              disabled={!selected || booking || retryAfter > 0}
-              className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
+                    if (selectedSeat && selectedSeat !== id) {
+                      await releaseHold(selectedSeat);
+                    }
+
+                    const acquired = await acquireHold(id);
+                    if (acquired) {
+                      setSelectedSeat(id);
+                      setMessage("");
+                    } else {
+                      setMessage(`Could not hold seat ${seat.seatNumber}: currently held by someone else.`);
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-4 text-xs text-zinc-400">
+                <Legend color="bg-green-800" label="Available desk" />
+                <Legend color="bg-cyan-800" label="Available room" />
+                <Legend color="bg-violet-500" label="Selected" />
+                <Legend color="bg-zinc-700" label="Taken" />
+              </div>
+            </section>
+
+            <form
+              onSubmit={reserve}
+              className="h-fit rounded-3xl border border-white/10 bg-white/[0.04] p-5 md:p-6"
             >
-              {booking
-                ? "Securing workspace..."
-                : retryAfter > 0
-                  ? `Retry in ${retryAfter}s`
-                  : recurringEnabled
-                    ? `Confirm ${previewDates.length} recurring bookings`
-                    : "Confirm reservation"}
-            </button>
-          </form>
+              <h2 className="text-xl font-semibold">Reservation details</h2>
+
+              {/* 5-minute Seat Hold Active Countdown Indicator (#3522) */}
+              {selectedSeat && myHeldSeatId === selectedSeat && (
+                <div className="mt-4 flex items-center justify-between rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+                  <span className="flex items-center gap-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                    </span>
+                    <span>
+                      Seat <strong>{seats.find((s) => s.id === selectedSeat)?.seatNumber}</strong> locked for checkout
+                    </span>
+                  </span>
+                  <span className="font-mono font-semibold text-amber-300">
+                    {Math.floor(remainingSeconds / 60)}:{(remainingSeconds % 60).toString().padStart(2, "0")} remaining
+                  </span>
+                </div>
+              )}
+
+              <div className="mt-6 space-y-4">
+                <Field label="Date" icon={<CalendarDays className="h-4 w-4" />}>
+                  <input
+                    type="date"
+                    min={todayString()}
+                    value={date}
+                    onChange={(event) => setDate(event.target.value)}
+                    className="reserve-input"
+                  />
+                </Field>
+
+                <Field label="Start time" icon={<Clock3 className="h-4 w-4" />}>
+                  <input
+                    type="time"
+                    value={time}
+                    onChange={(event) => setTime(event.target.value)}
+                    className="reserve-input"
+                  />
+                </Field>
+
+                <Field label="Duration" icon={<Clock3 className="h-4 w-4" />}>
+                  <select
+                    value={duration}
+                    onChange={(event) => setDuration(Number(event.target.value))}
+                    className="reserve-input"
+                  >
+                    <option value={30}>30 minutes</option>
+                    <option value={60}>1 hour</option>
+                    <option value={90}>1.5 hours</option>
+                    <option value={120}>2 hours</option>
+                    <option value={240}>4 hours</option>
+                    <option value={480}>Full day</option>
+                  </select>
+                </Field>
+              </div>
+
+              <div className="mt-6">
+                <p className="text-sm text-zinc-400">Amenities needed</p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {amenityOptions.map((option) => {
+                    const enabled = amenities.includes(option.id);
+                    const Icon = option.icon;
+
+                    return (
+                      <button
+                        key={option.id}
+                        type="button"
+                        onClick={() =>
+                          setAmenities((current) =>
+                            enabled
+                              ? current.filter((item) => item !== option.id)
+                              : [...current, option.id],
+                          )
+                        }
+                        className={`rounded-xl border p-3 text-left text-xs transition ${
+                          enabled
+                            ? "border-violet-400/50 bg-violet-400/10 text-violet-100"
+                            : "border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06]"
+                        }`}
+                      >
+                        <Icon className="mb-2 h-4 w-4" />
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Recurring Booking */}
+              <div className="mt-6">
+                <button
+                  type="button"
+                  onClick={() => setRecurringEnabled(!recurringEnabled)}
+                  className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left text-xs transition ${
+                    recurringEnabled
+                      ? "border-violet-400/50 bg-violet-400/10 text-violet-100"
+                      : "border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.06]"
+                  }`}
+                >
+                  <Repeat className="h-4 w-4" />
+                  <div>
+                    <p className="font-medium">Recurring booking</p>
+                    <p className="mt-0.5 text-[10px] opacity-70">
+                      Book this workspace on a recurring schedule
+                    </p>
+                  </div>
+                </button>
+
+                {recurringEnabled && (
+                  <div className="mt-3 space-y-3 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                    <Field
+                      label="Frequency"
+                      icon={<Repeat className="h-4 w-4" />}
+                    >
+                      <select
+                        value={frequency}
+                        onChange={(event) =>
+                          setFrequency(
+                            event.target.value as
+                              "daily" | "weekly" | "monthly",
+                          )
+                        }
+                        className="reserve-input"
+                      >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                      </select>
+                    </Field>
+
+                    <Field
+                      label="End date (optional)"
+                      icon={<CalendarDays className="h-4 w-4" />}
+                    >
+                      <input
+                        type="date"
+                        min={date}
+                        value={endDate}
+                        onChange={(event) => setEndDate(event.target.value)}
+                        className="reserve-input"
+                      />
+                    </Field>
+
+                    <Field
+                      label="Number of occurrences (max 52)"
+                      icon={<CalendarDays className="h-4 w-4" />}
+                    >
+                      <input
+                        type="number"
+                        min={1}
+                        max={52}
+                        value={occurrences}
+                        onChange={(event) =>
+                          setOccurrences(
+                            Math.min(
+                              52,
+                              Math.max(1, Number(event.target.value)),
+                            ),
+                          )
+                        }
+                        disabled={!!endDate}
+                        className="reserve-input disabled:opacity-40"
+                      />
+                    </Field>
+
+                    {previewDates.length > 0 && (
+                      <div className="mt-2">
+                        <p className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                          Preview ({previewDates.length} dates)
+                        </p>
+                        <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+                          {previewDates.map((d) => (
+                            <span
+                              key={d}
+                              className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-zinc-400"
+                            >
+                              {d}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Guest Invitations */}
+              <div className="mt-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <UserPlus className="h-4 w-4 text-zinc-400" />
+                  <p className="text-sm text-zinc-400">Invite guests</p>
+                </div>
+                <GuestsInput
+                  guests={guests}
+                  onChange={setGuests}
+                  maxGuests={10}
+                  disabled={booking}
+                />
+              </div>
+
+              <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="text-xs uppercase tracking-wider text-zinc-500">
+                  Selected workspace
+                </p>
+
+                {selected ? (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-lg font-semibold">
+                        {selected.seatNumber}
+                      </span>
+                      <Check className="h-5 w-5 text-emerald-300" />
+                    </div>
+                    <p className="mt-1 text-xs capitalize text-zinc-500">
+                      {selected.type.toLowerCase().replaceAll("_", " ")}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {selected.amenities.map((amenity) => (
+                        <span
+                          key={amenity}
+                          className="rounded-full bg-white/5 px-2 py-1 text-[10px] text-zinc-400"
+                        >
+                          {amenity}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-zinc-500">
+                    Select a green desk or room on the layout.
+                  </p>
+                )}
+              </div>
+
+              <button
+                disabled={!selected || booking || retryAfter > 0}
+                className="mt-6 w-full rounded-xl bg-violet-600 px-4 py-3 font-medium transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40 flex items-center justify-center gap-1.5"
+              >
+                {booking
+                  ? "Securing workspace..."
+                  : retryAfter > 0
+                    ? `Retry in ${retryAfter}s`
+                    : recurringEnabled
+                      ? `Confirm ${previewDates.length} recurring bookings`
+                      : "Confirm reservation"}
+              </button>
+            </form>
+          </div>
         </div>
       </div>
 

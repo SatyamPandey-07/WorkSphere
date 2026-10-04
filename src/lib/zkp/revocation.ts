@@ -1,9 +1,12 @@
 import crypto from "crypto";
+import { computeMembershipCommit } from "./commitment";
 
 // Simulated database of revoked credential hashes (commitments)
 export const REVOKED_CREDENTIAL_HASHES: string[] = [
   "12345678901234567890", // dummy
-  "152415827008091", // if student id is 12345678 => 12345678^2 + 5*12345678 + 17 = 152415827008091
+  // Demo revoked member: student id 12345678. Derived (not hardcoded) so it can
+  // never drift from the commitment scheme the circuit enforces.
+  computeMembershipCommit(12345678),
 ];
 
 function safeCompare(a: string, b: string): boolean {

@@ -1,12 +1,14 @@
-'use client';
+"use client";
 
-import { getWebhookLogs } from '@/app/dashboard/webhooks/actions';
-import { WebhookEndpoint, WebhookDeliveryLog } from '@prisma/client';
-import { useEffect, useState } from 'react';
+import { getWebhookLogs } from "@/app/dashboard/webhooks/actions";
+import { WebhookEndpoint, WebhookDeliveryLog } from "@prisma/client";
+import { useEffect, useState } from "react";
 
 export function DeliveryLogs({ endpoints }: { endpoints: WebhookEndpoint[] }) {
   const [logs, setLogs] = useState<WebhookDeliveryLog[]>([]);
-  const [selectedEndpoint, setSelectedEndpoint] = useState<string>(endpoints[0]?.id || '');
+  const [selectedEndpoint, setSelectedEndpoint] = useState<string>(
+    endpoints[0]?.id || "",
+  );
 
   useEffect(() => {
     if (selectedEndpoint) {
@@ -21,22 +23,26 @@ export function DeliveryLogs({ endpoints }: { endpoints: WebhookEndpoint[] }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-zinc-100">Delivery Logs</h3>
-        <select 
-          value={selectedEndpoint} 
+        <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+          Delivery Logs
+        </h3>
+        <select
+          value={selectedEndpoint}
           onChange={(e) => setSelectedEndpoint(e.target.value)}
-          className="bg-zinc-900 border border-zinc-700 rounded-md text-sm text-zinc-200 px-3 py-1.5 focus:ring-primary focus:border-primary"
+          className="bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-md text-sm text-zinc-800 dark:text-zinc-200 px-3 py-1.5 focus:ring-primary focus:border-primary"
         >
-          {endpoints.map(ep => (
-            <option key={ep.id} value={ep.id}>{ep.url}</option>
+          {endpoints.map((ep) => (
+            <option key={ep.id} value={ep.id}>
+              {ep.url}
+            </option>
           ))}
         </select>
       </div>
 
-      <div className="bg-zinc-950 border border-zinc-800 rounded-lg overflow-hidden">
+      <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
-            <thead className="bg-zinc-900 text-zinc-400 uppercase text-xs">
+            <thead className="bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 uppercase text-xs">
               <tr>
                 <th className="px-4 py-3">Event Type</th>
                 <th className="px-4 py-3">Status</th>
@@ -47,25 +53,40 @@ export function DeliveryLogs({ endpoints }: { endpoints: WebhookEndpoint[] }) {
             <tbody>
               {logs.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-zinc-500">
+                  <td
+                    colSpan={4}
+                    className="px-4 py-8 text-center text-zinc-500"
+                  >
                     No delivery logs found for this endpoint.
                   </td>
                 </tr>
               ) : (
-                logs.map(log => (
-                  <tr key={log.id} className="border-t border-zinc-800 text-zinc-300">
+                logs.map((log) => (
+                  <tr
+                    key={log.id}
+                    className="border-t border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
+                  >
                     <td className="px-4 py-3 font-medium">{log.eventType}</td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                        log.status === 'SUCCESS' || log.status === 'DISPATCHED_TO_SVIX' 
-                          ? 'bg-green-500/20 text-green-400' 
-                          : 'bg-red-500/20 text-red-400'
-                      }`}>
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-semibold ${
+                          log.status === "SUCCESS" ||
+                          log.status === "DISPATCHED_TO_SVIX"
+                            ? "bg-green-500/20 text-green-400"
+                            : log.status === "SKIPPED_OUTSIDE_WINDOW"
+                              ? "bg-amber-500/20 text-amber-400"
+                              : "bg-red-500/20 text-red-400"
+                        }`}
+                      >
                         {log.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono">{log.statusCode || '-'}</td>
-                    <td className="px-4 py-3 text-zinc-500">{new Date(log.createdAt).toLocaleString()}</td>
+                    <td className="px-4 py-3 font-mono">
+                      {log.statusCode || "-"}
+                    </td>
+                    <td className="px-4 py-3 text-zinc-500">
+                      {new Date(log.createdAt).toLocaleString()}
+                    </td>
                   </tr>
                 ))
               )}

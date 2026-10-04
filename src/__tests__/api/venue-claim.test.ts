@@ -96,6 +96,57 @@ describe("Venue Claiming & Management APIs", () => {
       expect(data.success).toBe(true);
       expect(data.venue.isClaimed).toBe(true);
     });
+
+    it("returns 400 when the request body is not valid JSON", async () => {
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
+      const req = new NextRequest("http://localhost/api/venues/claim", {
+        method: "POST",
+        body: "{",
+        headers: { "content-type": "application/json" },
+      });
+      const res = await claimPOST(req);
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toBe("Invalid JSON body");
+    });
+
+    it("returns 400 when venueId is not a string", async () => {
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
+      const req = new NextRequest("http://localhost/api/venues/claim", {
+        method: "POST",
+        body: JSON.stringify({ venueId: { nested: true } }),
+      });
+      const res = await claimPOST(req);
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toBe("Venue ID is required");
+    });
+
+    it("returns 400 when venueId is blank whitespace", async () => {
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
+      const req = new NextRequest("http://localhost/api/venues/claim", {
+        method: "POST",
+        body: JSON.stringify({ venueId: "   " }),
+      });
+      const res = await claimPOST(req);
+      expect(res.status).toBe(400);
+    });
+
+    it("does not leak internal error text when the database call fails", async () => {
+      (auth as unknown as jest.Mock).mockResolvedValue({ userId: "u1" });
+      (prisma.venue.findUnique as jest.Mock).mockRejectedValue(
+        new Error("SQLSTATE 42P01 relation venues does not exist"),
+      );
+      const req = new NextRequest("http://localhost/api/venues/claim", {
+        method: "POST",
+        body: JSON.stringify({ venueId: "v1" }),
+      });
+      const res = await claimPOST(req);
+      expect(res.status).toBe(500);
+      const data = await res.json();
+      expect(data.error).toBe("Internal Server Error");
+      expect(JSON.stringify(data)).not.toContain("SQLSTATE");
+    });
   });
 
   describe("GET /api/venues/managed", () => {

@@ -219,9 +219,16 @@ export function NotificationBell() {
           className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl z-[60] overflow-hidden animate-in slide-in-from-top-2 duration-150"
         >
           <div className="flex items-center justify-between p-4 border-b border-zinc-100 dark:border-zinc-800">
-            <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
-              Notifications
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-black uppercase tracking-widest text-zinc-800 dark:text-zinc-200">
+                Notifications
+              </h3>
+              {unreadCount > 0 && (
+                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20" aria-label={`${unreadCount} unread notifications`}>
+                  {unreadCount}
+                </span>
+              )}
+            </div>
 
             <div className="flex items-center gap-2">
               <button
@@ -255,9 +262,10 @@ export function NotificationBell() {
                   disabled={isClearing}
                   className="flex items-center gap-1 text-[10px] font-black uppercase tracking-wider text-red-500 hover:text-red-400 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   title="Clear all notifications"
+                  aria-label="Clear all notifications"
                 >
                   <Trash2 className="w-3 h-3" />
-                  Clear
+                  Clear All
                 </button>
               )}
             </div>
@@ -305,7 +313,7 @@ export function NotificationBell() {
               <div className="p-8 flex flex-col items-center justify-center text-center">
                 <Inbox className="w-8 h-8 text-zinc-300 dark:text-zinc-700 mb-2" />
                 <p className="text-xs text-zinc-500 dark:text-zinc-500">
-                  No notifications yet.
+                  All caught up! 🎉
                 </p>
               </div>
             )}

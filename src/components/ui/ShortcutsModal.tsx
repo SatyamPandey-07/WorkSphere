@@ -119,6 +119,22 @@ export function ShortcutsModal({ isOpen, onClose }: ShortcutsModalProps) {
                       </kbd>
                     </div>
                   </div>
+                  <div className="flex items-center justify-between py-1.5 border-b border-zinc-100/50 dark:border-zinc-800/50">
+                    <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                      Toggle AI chatbot sidebar
+                    </span>
+                    <div className="flex gap-1">
+                      <kbd className="px-2 py-1 text-xs font-mono font-black bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-sm text-zinc-800 dark:text-zinc-300">
+                        Ctrl / ⌘
+                      </kbd>
+                      <span className="text-zinc-400 dark:text-zinc-600 font-bold self-center text-xs">
+                        +
+                      </span>
+                      <kbd className="px-2 py-1 text-xs font-mono font-black bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-sm text-zinc-800 dark:text-zinc-300">
+                        /
+                      </kbd>
+                    </div>
+                  </div>
                 </div>
               </div>
 

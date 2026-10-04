@@ -221,10 +221,6 @@ export function useCloudRenderer(
     const initialized = initWebGL();
     if (!initialized) return;
 
-    const cleanupContextRecovery = attachWebGLContextRecovery(canvas, () => {
-      initWebGL();
-    });
-
     const startTime = performance.now();
     let lastFrameTime = startTime;
     let frameCount = 0;
@@ -316,16 +312,39 @@ export function useCloudRenderer(
       }
     };
 
-    if (animate) {
-      animFrameIdRef.current = requestAnimationFrame(renderFrame);
-    } else {
-      renderFrame(performance.now());
-    }
+    const renderLoop = {
+      start: () => {
+        if (animate) {
+          animFrameIdRef.current = requestAnimationFrame(renderFrame);
+        } else {
+          renderFrame(performance.now());
+        }
+      },
+      stop: () => {
+        if (animFrameIdRef.current !== null) {
+          cancelAnimationFrame(animFrameIdRef.current);
+          animFrameIdRef.current = null;
+        }
+      },
+    };
+
+    // Pause the loop while the context is lost (no GL calls on a dead
+    // context) and resume only once shaders and buffers are rebuilt (#1729).
+    const cleanupContextRecovery = attachWebGLContextRecovery(
+      canvas,
+      () => {
+        if (!initWebGL()) {
+          throw new Error("[CloudRenderer] Failed to rebuild WebGL resources");
+        }
+      },
+      undefined,
+      { renderLoop },
+    );
+
+    renderLoop.start();
 
     return () => {
-      if (animFrameIdRef.current !== null) {
-        cancelAnimationFrame(animFrameIdRef.current);
-      }
+      renderLoop.stop();
       cleanupContextRecovery();
       cleanupWebGL();
     };

@@ -117,6 +117,11 @@ import { useAuth } from "@clerk/nextjs";
 import usePartySocket from "partysocket/react";
 import { adaptVideoBitrate } from "@/lib/screenShareBitrate";
 import { calculateRMS, rmsToDecibels } from "@/lib/audio";
+import {
+  configureSimulcastSender,
+  createSimulcastEncodings,
+  SimulcastAdaptiveController,
+} from "@/lib/webrtcSimulcast";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
@@ -178,6 +183,9 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     isSettingRemoteAnswerPending: boolean;
   };
   const peerStatesRef = useRef<Map<string, PeerState>>(new Map());
+  const simulcastControllersRef = useRef<
+    Map<string, SimulcastAdaptiveController>
+  >(new Map());
 
   const socketRef = useRef<{ send: (data: string) => void } | null>(null);
 
@@ -252,6 +260,12 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       analysersRef.current.delete(peerId);
     }
     emaDecibelsRef.current.delete(peerId);
+
+    const controller = simulcastControllersRef.current.get(peerId);
+    if (controller) {
+      controller.destroy();
+      simulcastControllersRef.current.delete(peerId);
+    }
   }, []);
 
   const setupAudioMonitoring = useCallback(
@@ -348,17 +362,72 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       };
 
       pc.oniceconnectionstatechange = () => {
-        if (
-          pc?.iceConnectionState === "disconnected" ||
-          pc?.iceConnectionState === "failed"
-        ) {
-          cleanupPeer(peerId);
+        const state = pc?.iceConnectionState;
+        if (state === "failed") {
+          // Attempt ICE restart before tearing down — this recovers the call
+          // when the user switches from Wi-Fi to cellular (Issue #1932).
+          if (typeof pc?.restartIce === "function") {
+            console.log(`[WebRTCMesh] ICE failed for ${peerId} — attempting restart`);
+            try {
+              pc.restartIce();
+            } catch (err) {
+              console.warn("[WebRTCMesh] restartIce() failed:", err);
+              cleanupPeer(peerId);
+            }
+          } else {
+            cleanupPeer(peerId);
+          }
+        } else if (state === "disconnected") {
+          // "disconnected" is transient; give ICE 5s to recover before cleanup
+          setTimeout(() => {
+            if (pc?.iceConnectionState === "disconnected" || pc?.iceConnectionState === "failed") {
+              cleanupPeer(peerId);
+            }
+          }, 5000);
         }
       };
 
       if (localStreamRef.current) {
         for (const track of localStreamRef.current.getTracks()) {
-          pc.addTrack(track, localStreamRef.current);
+          let sender: RTCRtpSender | undefined;
+          let isSimulcastTransceiver = false;
+          if (track.kind === "video" && typeof pc.addTransceiver === "function") {
+            try {
+              const encodings = createSimulcastEncodings();
+              const transceiver = pc.addTransceiver(track, {
+                direction: "sendrecv",
+                streams: [localStreamRef.current],
+                sendEncodings: encodings,
+              });
+              sender = transceiver.sender;
+              isSimulcastTransceiver = true;
+            } catch {
+              // fallback to addTrack
+            }
+          }
+          if (!sender) {
+            sender = pc.addTrack(track, localStreamRef.current);
+          }
+          if (track.kind === "video") {
+            const videoSender =
+              sender ||
+              pc.getSenders?.().find((s) => s.track === track || s.track?.kind === "video");
+            if (videoSender) {
+              const encodingsCount = videoSender.getParameters?.()?.encodings?.length ?? (isSimulcastTransceiver ? 3 : 1);
+              if (isSimulcastTransceiver || encodingsCount >= 3) {
+                void configureSimulcastSender(videoSender);
+                const controller = new SimulcastAdaptiveController(pc, videoSender);
+                controller.start();
+                simulcastControllersRef.current.set(peerId, controller);
+              } else {
+                const existingController = simulcastControllersRef.current.get(peerId);
+                if (existingController) {
+                  existingController.destroy();
+                  simulcastControllersRef.current.delete(peerId);
+                }
+              }
+            }
+          }
         }
       }
 
@@ -592,6 +661,7 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
     const peersMap = peersRef.current;
     const analysersMap = analysersRef.current;
     const emaDecibelsMap = emaDecibelsRef.current;
+    const simulcastControllersMap = simulcastControllersRef.current;
 
     return () => {
       if (bitrateTimerRef.current) clearInterval(bitrateTimerRef.current);
@@ -612,6 +682,11 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       }
       analysersMap.clear();
       emaDecibelsMap.clear();
+
+      for (const controller of simulcastControllersMap.values()) {
+        controller.destroy();
+      }
+      simulcastControllersMap.clear();
 
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localScreenStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -643,7 +718,11 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, frameRate: 15 },
+        video: {
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 },
+          frameRate: { ideal: 30, max: 60 },
+        },
         audio: { echoCancellation: true, noiseSuppression: true },
       });
 
@@ -654,10 +733,51 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
       setLocalStream(stream);
       setupAudioMonitoring("local", stream);
 
-      for (const pc of peersRef.current.values()) {
+      for (const [peerId, pc] of peersRef.current.entries()) {
         for (const track of stream.getTracks()) {
           try {
-            pc.addTrack(track, stream);
+            let sender: RTCRtpSender | undefined;
+            let isSimulcastTransceiver = false;
+            if (track.kind === "video" && typeof pc.addTransceiver === "function") {
+              try {
+                const encodings = createSimulcastEncodings();
+                const transceiver = pc.addTransceiver(track, {
+                  direction: "sendrecv",
+                  streams: [stream],
+                  sendEncodings: encodings,
+                });
+                sender = transceiver.sender;
+                isSimulcastTransceiver = true;
+              } catch {
+                // fallback to addTrack
+              }
+            }
+            if (!sender) {
+              sender = pc.addTrack(track, stream);
+            }
+            if (track.kind === "video") {
+              const videoSender =
+                sender ||
+                pc.getSenders?.().find((s) => s.track === track || s.track?.kind === "video");
+              if (videoSender) {
+                const encodingsCount = videoSender.getParameters?.()?.encodings?.length ?? (isSimulcastTransceiver ? 3 : 1);
+                if (isSimulcastTransceiver || encodingsCount >= 3) {
+                  void configureSimulcastSender(videoSender);
+                  let controller = simulcastControllersRef.current.get(peerId);
+                  if (!controller) {
+                    controller = new SimulcastAdaptiveController(pc, videoSender);
+                    controller.start();
+                    simulcastControllersRef.current.set(peerId, controller);
+                  }
+                } else {
+                  const existingController = simulcastControllersRef.current.get(peerId);
+                  if (existingController) {
+                    existingController.destroy();
+                    simulcastControllersRef.current.delete(peerId);
+                  }
+                }
+              }
+            }
           } catch {}
         }
       }

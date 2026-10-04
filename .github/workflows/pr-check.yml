@@ -18,18 +18,31 @@ jobs:
           script: |
             try {
               const pr = context.payload.pull_request;
-              const body = pr.body || "";
+              const rawBody = pr.body || "";
+              // Strip HTML comments, code blocks, and inline code to prevent false positives from templates
+              const body = rawBody
+                .replace(/<!--[\s\S]*?-->/g, '')
+                .replace(/```[\s\S]*?```/g, '')
+                .replace(/`[^`]*`/g, '');
               
               // Check for keywords like Fixes #123, Closes #123, Resolves #123, etc.
-              const issueLinkRegex = /(closes|closed|fixes|fixed|resolves|resolved)\s+#\d+/i;
-              const hasIssueLink = issueLinkRegex.test(body);
+              const issueLinkRegex = /(?:closes|closed|fixes|fixed|resolves|resolved)\s*#(\d+)/gi;
+              let match;
+              let hasIssueLink = false;
+              while ((match = issueLinkRegex.exec(body)) !== null) {
+                const linkedNum = parseInt(match[1], 10);
+                if (linkedNum !== pr.number && linkedNum !== 123) {
+                  hasIssueLink = true;
+                  break;
+                }
+              }
               
               const skipLinking = pr.title.toLowerCase().includes('typo') || 
                                   pr.title.toLowerCase().includes('chore') || 
                                   pr.title.toLowerCase().includes('[skip-issue]');
                                   
               if (!hasIssueLink && !skipLinking) {
-                const noticeMsg = "💡 **Tip for contributor:** Please ensure your PR description links an issue (e.g. `Fixes #123`). If no issue exists, add `[skip-issue]` or `chore` to your PR title!";
+                const noticeMsg = "💡 **Tip for contributor:** Please ensure your PR description links an issue (e.g. `Fixes #<issue-number>`). If no issue exists, add `[skip-issue]` or `chore` to your PR title!";
                 core.warning(noticeMsg);
                 console.log(noticeMsg);
               } else {

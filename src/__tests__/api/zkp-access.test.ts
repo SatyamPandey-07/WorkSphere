@@ -199,7 +199,7 @@ describe("POST /api/venues/[venueId]/zkp-access", () => {
       rating: 4.9,
     });
 
-    // Token 12345678 has commitment 152415827008091 which is in REVOKED_CREDENTIAL_HASHES
+    // Token 12345678's Poseidon commitment is in REVOKED_CREDENTIAL_HASHES
     const { proof, publicSignals } = await proveMembership(12345678);
 
     const req = new NextRequest(

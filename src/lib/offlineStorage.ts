@@ -21,7 +21,7 @@ userDoc.on("update", async (update: Uint8Array) => {
 });
 
 const DB_NAME = "worksphere-offline";
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 export interface OfflineVenue {
   id: string;
@@ -173,6 +173,27 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
           });
         }
 
+// Recently viewed venues store (Issue #3512)
+        if (!database.objectStoreNames.contains("recentlyViewedVenues")) {
+          const recentStore = database.createObjectStore(
+            "recentlyViewedVenues",
+            {
+              keyPath: "id",
+            },
+          );
+          recentStore.createIndex("viewedAt", "viewedAt", { unique: false });
+        }
+
+        // Dedicated offline reviews store (Issue #3366)
+        if (!database.objectStoreNames.contains("pendingReviews")) {
+          const reviewStore = database.createObjectStore("pendingReviews", {
+            keyPath: "id",
+          });
+          reviewStore.createIndex("venueId", "venueId", { unique: false });
+          reviewStore.createIndex("status", "status", { unique: false });
+          reviewStore.createIndex("createdAt", "createdAt", { unique: false });
+        }
+
         console.log("[OfflineDB] Database schema created");
       };
     } catch (err: any) {
@@ -188,22 +209,83 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
 /**
  * Save venue to offline storage
  */
+/**
+ * Prune the oldest `count` venue records to reclaim quota.
+ */
+async function pruneOldestVenues(
+  database: IDBDatabase,
+  count = 10,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const tx = database.transaction(["venues"], "readwrite");
+    const store = tx.objectStore("venues");
+    const indexReq = store.index("savedAt").openCursor(null, "next");
+    let deleted = 0;
+
+    indexReq.onsuccess = (event) => {
+      const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+      if (!cursor || deleted >= count) {
+        resolve();
+        return;
+      }
+      cursor.delete();
+      deleted++;
+      cursor.continue();
+    };
+
+    indexReq.onerror = () => reject(indexReq.error);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
   return withWebLock(async () => {
     const database = await initOfflineDB();
 
-    return new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(["venues"], "readwrite");
-      const store = transaction.objectStore("venues");
+    const attemptWrite = (): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(["venues"], "readwrite");
+        const store = transaction.objectStore("venues");
 
-      const request = store.put({
-        ...venue,
-        savedAt: Date.now(),
+        const request = store.put({
+          ...venue,
+          savedAt: Date.now(),
+        });
+
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
       });
 
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
+    try {
+      await attemptWrite();
+    } catch (err) {
+      const isQuotaError =
+        err instanceof DOMException &&
+        (err.name === "QuotaExceededError" ||
+          err.name === "NS_ERROR_DOM_QUOTA_REACHED");
+
+      if (!isQuotaError) throw err;
+
+      // Offline storage full — prune the 10 oldest records and retry once
+      console.warn("[OfflineStorage] Quota exceeded; pruning 10 oldest venues.");
+      try {
+        await pruneOldestVenues(database, 10);
+        await attemptWrite();
+      } catch (retryErr) {
+        console.error(
+          "[OfflineStorage] Failed to save venue after pruning:",
+          retryErr,
+        );
+        // Dispatch a custom event so the UI can show a toast
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("offline-storage-full", {
+              detail: { venueName: venue.name },
+            }),
+          );
+        }
+      }
+    }
   });
 }
 
@@ -1077,4 +1159,212 @@ export async function executeWithRetry<T>(
     }
   }
   throw new Error("Max retries exceeded");
+}
+
+// ============================================================
+// Recently Viewed Venues Offline Store (#3512)
+// Persists up to 20 recently viewed venue payloads in IndexedDB
+// ============================================================
+
+export interface RecentlyViewedVenuePayload {
+  id: string;
+  name: string;
+  address?: string | null;
+  category?: string | null;
+  imageUrl?: string | null;
+  rating?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  wifiQuality?: boolean | number | string | null;
+  hasOutlets?: boolean | null;
+  amenities?: string[] | null;
+  floorplan?: unknown | null;
+  details?: Record<string, unknown> | null;
+  viewedAt?: number;
+  [key: string]: unknown;
+}
+
+export const MAX_RECENTLY_VIEWED_IDB = 20;
+
+export async function saveRecentlyViewedVenueOffline(
+  venue: RecentlyViewedVenuePayload,
+  maxItems: number = MAX_RECENTLY_VIEWED_IDB,
+): Promise<void> {
+  return withWebLock(async () => {
+    try {
+      const database = await initOfflineDB();
+      const viewedAt = venue.viewedAt || Date.now();
+      const payload: RecentlyViewedVenuePayload = {
+        ...venue,
+        viewedAt,
+      };
+
+      // 1. Put into recentlyViewedVenues store
+      await new Promise<void>((resolve, reject) => {
+        const tx = database.transaction(["recentlyViewedVenues"], "readwrite");
+        const store = tx.objectStore("recentlyViewedVenues");
+        const req = store.put(payload);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+
+      // 2. Also populate standard venues store so getVenueOffline(id) can locate it
+      try {
+        const vTx = database.transaction(["venues"], "readwrite");
+        const vStore = vTx.objectStore("venues");
+        vStore.put({
+          id: venue.id,
+          name: venue.name,
+          address: venue.address ?? undefined,
+          category: venue.category ?? undefined,
+          latitude: typeof venue.latitude === "number" ? venue.latitude : 0,
+          longitude: typeof venue.longitude === "number" ? venue.longitude : 0,
+          rating: typeof venue.rating === "number" ? venue.rating : undefined,
+          amenities: Array.isArray(venue.amenities) ? venue.amenities : undefined,
+          savedAt: viewedAt,
+        });
+      } catch {
+        // venues store write is best-effort fallback
+      }
+
+      // 3. Prune oldest if store exceeds maxItems (default 20)
+      await new Promise<void>((resolve, reject) => {
+        const tx = database.transaction(["recentlyViewedVenues"], "readwrite");
+        const store = tx.objectStore("recentlyViewedVenues");
+        const req = store.getAll();
+
+        req.onsuccess = () => {
+          const all = (req.result as RecentlyViewedVenuePayload[]) || [];
+          if (all.length > maxItems) {
+            // Sort ascending by viewedAt (oldest first)
+            all.sort((a, b) => (a.viewedAt || 0) - (b.viewedAt || 0));
+            const toDelete = all.slice(0, all.length - maxItems);
+            for (const item of toDelete) {
+              store.delete(item.id);
+            }
+          }
+          resolve();
+        };
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.error("[OfflineStorage] Failed to save recently viewed venue:", err);
+    }
+  });
+}
+
+export async function getRecentlyViewedVenuesOffline(): Promise<RecentlyViewedVenuePayload[]> {
+  return withWebLock(async () => {
+    try {
+      const database = await initOfflineDB();
+      return new Promise((resolve, reject) => {
+        const tx = database.transaction(["recentlyViewedVenues"], "readonly");
+        const store = tx.objectStore("recentlyViewedVenues");
+        const req = store.getAll();
+
+        req.onsuccess = () => {
+          const items = (req.result as RecentlyViewedVenuePayload[]) || [];
+          // Sort newest first
+          items.sort((a, b) => (b.viewedAt || 0) - (a.viewedAt || 0));
+          resolve(items);
+        };
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.error("[OfflineStorage] Failed to get recently viewed venues:", err);
+      return [];
+    }
+  });
+}
+
+export async function getRecentlyViewedVenueOffline(
+  id: string,
+): Promise<RecentlyViewedVenuePayload | null> {
+  return withWebLock(async () => {
+    try {
+      const database = await initOfflineDB();
+      return new Promise((resolve, reject) => {
+        const tx = database.transaction(["recentlyViewedVenues"], "readonly");
+        const store = tx.objectStore("recentlyViewedVenues");
+        const req = store.get(id);
+
+        req.onsuccess = () => {
+          if (req.result) {
+            resolve(req.result);
+          } else {
+            // Fall back to venues store
+            try {
+              const vTx = database.transaction(["venues"], "readonly");
+              const vStore = vTx.objectStore("venues");
+              const vReq = vStore.get(id);
+              vReq.onsuccess = () => resolve(vReq.result || null);
+              vReq.onerror = () => resolve(null);
+            } catch {
+              resolve(null);
+            }
+          }
+        };
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.error("[OfflineStorage] Failed to get venue by ID:", err);
+      return null;
+    }
+  });
+}
+
+export async function clearRecentlyViewedVenuesOffline(): Promise<void> {
+  return withWebLock(async () => {
+    try {
+      const database = await initOfflineDB();
+      return new Promise((resolve, reject) => {
+        const tx = database.transaction(["recentlyViewedVenues"], "readwrite");
+        const store = tx.objectStore("recentlyViewedVenues");
+        const req = store.clear();
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    } catch (err) {
+      console.error("[OfflineStorage] Failed to clear recently viewed venues:", err);
+    }
+  });
+}
+
+/**
+ * Returns total count of pending mutations queued across IndexedDB stores for offline sync.
+ */
+export async function getTotalPendingMutationsCount(): Promise<number> {
+  if (typeof indexedDB === "undefined") return 0;
+  try {
+    const database = await initOfflineDB();
+    const candidateStores = [
+      "pendingActions",
+      "pendingFavorites",
+      "pendingReviews",
+      "receiptExports",
+    ];
+    const availableStores = candidateStores.filter((name) =>
+      database.objectStoreNames.contains(name),
+    );
+    if (availableStores.length === 0) return 0;
+
+    let total = 0;
+    const tx = database.transaction(availableStores, "readonly");
+    await Promise.all(
+      availableStores.map(
+        (storeName) =>
+          new Promise<void>((resolve) => {
+            const req = tx.objectStore(storeName).count();
+            req.onsuccess = () => {
+              total += req.result || 0;
+              resolve();
+            };
+            req.onerror = () => resolve();
+          }),
+      ),
+    );
+    return total;
+  } catch {
+    return 0;
+  }
 }

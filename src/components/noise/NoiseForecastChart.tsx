@@ -139,19 +139,33 @@ export function NoiseForecastChart({ venueId }: NoiseForecastChartProps) {
                 return null;
               }}
             />
+            {/* Green highlights: quiet hours recommended by model */}
             {data.recommendedHours.map((hour) => {
               const label = `${hour.toString().padStart(2, "0")}:00`;
               return (
                 <ReferenceArea
-                  key={hour}
+                  key={`quiet-${hour}`}
                   x1={label}
-                  x2={label} // Since AreaChart groups by points, ReferenceArea with x1=x2 creates a line/highlight
+                  x2={label}
                   strokeOpacity={0.3}
                   fill="#22c55e"
                   fillOpacity={0.1}
                 />
               );
             })}
+            {/* Amber highlights: peak busy hours where predictedDb > 70 dB */}
+            {chartData
+              .filter((d) => d.predictedDb !== null && d.predictedDb > 70)
+              .map((d) => (
+                <ReferenceArea
+                  key={`peak-${d.hour}`}
+                  x1={d.hour}
+                  x2={d.hour}
+                  strokeOpacity={0.3}
+                  fill="#f59e0b"
+                  fillOpacity={0.15}
+                />
+              ))}
             <Area
               type="monotone"
               dataKey="predictedDb"

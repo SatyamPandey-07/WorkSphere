@@ -7,12 +7,14 @@ interface CopyToClipboardButtonProps {
   textToCopy: string;
   className?: string;
   label?: string;
+  toastMessage?: string;
 }
 
 export function CopyToClipboardButton({ 
   textToCopy, 
   className = "", 
-  label = "Copy Address" 
+  label = "Copy Address",
+  toastMessage = "Address copied!"
 }: CopyToClipboardButtonProps) {
   const [isCopied, setIsCopied] = useState(false);
   const [showToast, setShowToast] = useState(false);
@@ -41,7 +43,10 @@ export function CopyToClipboardButton({
   };
 
   // Requirement 2: Write text using navigator.clipboard
-  const handleCopy = async () => {
+  const handleCopy = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+
     if (!navigator.clipboard) {
       fallbackCopyTextToClipboard(textToCopy);
       triggerFeedback();
@@ -64,11 +69,11 @@ export function CopyToClipboardButton({
     setIsCopied(true);
     setShowToast(true);
     
-    // Reset back to normal after 2.5 seconds
+    // Reset back to normal after 2 seconds per issue criteria
     setTimeout(() => {
       setIsCopied(false);
       setShowToast(false);
-    }, 2500);
+    }, 2000);
   };
 
   return (
@@ -77,6 +82,7 @@ export function CopyToClipboardButton({
         onClick={handleCopy}
         type="button"
         title="Copy to clipboard"
+        aria-label="Copy to clipboard"
         className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
           isCopied 
             ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" 
@@ -89,9 +95,13 @@ export function CopyToClipboardButton({
 
       {/* Self-contained Toast Notification */}
       {showToast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 text-sm font-medium text-white bg-zinc-900 dark:bg-zinc-100 dark:text-black rounded-lg shadow-xl animate-in fade-in slide-in-from-bottom-5 duration-300">
+        <div 
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 text-sm font-medium text-white bg-zinc-900 dark:bg-zinc-100 dark:text-black rounded-lg shadow-xl animate-in fade-in slide-in-from-bottom-5 duration-300"
+        >
           <Check className="w-4 h-4 text-green-400 dark:text-green-600" />
-          Address copied to clipboard
+          {toastMessage}
         </div>
       )}
     </>

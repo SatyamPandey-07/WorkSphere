@@ -9,6 +9,9 @@ import {
 } from "@/lib/validations";
 import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
+import { ensureUserExists } from "@/lib/auth";
+import { emitWebhookEvent } from "@/lib/webhooks/deliver";
+import { sanitizeSearchQuery, splitSearchList } from "@/lib/searchSanitizer";
 
 // Search/autocomplete is expected to fire on every keystroke (debounced client-side
 // to ~250-300ms), which can mean several requests per second while someone types a
@@ -86,21 +89,38 @@ export async function GET(req: NextRequest) {
       : 50;
     const skip = (page - 1) * limit;
 
-    // Fallback: If no coordinates are provided, return all venues (or filtered by cities)
+    // Fallback: If no coordinates are provided, return all venues (or filtered by cities/query)
     if (!searchParams.get("lat") || !searchParams.get("lng")) {
       const citiesParam = searchParams.get("cities");
+      const queryParam = searchParams.get("query") || searchParams.get("q");
       const where: any = {};
+      const andConditions: any[] = [];
 
       if (citiesParam) {
-        const cityList = citiesParam
-          .split(",")
-          .map((c) => c.trim())
-          .filter(Boolean);
+        const cityList = splitSearchList(citiesParam);
         if (cityList.length > 0) {
-          where.OR = cityList.map((city) => ({
-            address: { contains: city, mode: "insensitive" },
-          }));
+          andConditions.push({
+            OR: cityList.map((city) => ({
+              address: { contains: city, mode: "insensitive" },
+            })),
+          });
         }
+      }
+
+      if (queryParam) {
+        andConditions.push({
+          OR: [
+            { name: { contains: queryParam, mode: "insensitive" } },
+            { address: { contains: queryParam, mode: "insensitive" } },
+            { description: { contains: queryParam, mode: "insensitive" } },
+          ],
+        });
+      }
+
+      if (andConditions.length === 1) {
+        Object.assign(where, andConditions[0]);
+      } else if (andConditions.length > 1) {
+        where.AND = andConditions;
       }
 
       const hasWhere = Object.keys(where).length > 0;
@@ -159,11 +179,12 @@ export async function GET(req: NextRequest) {
       "pourOverAvailable",
       "musicStyle",
       "cities",
+      "query",
     ];
     for (const key of keys) {
       const val = searchParams.get(key);
       if (val !== null) {
-        rawData[key] = val;
+        rawData[key] = sanitizeSearchQuery(val);
       }
     }
     const validation = validateRequest<VenueSearch>(venueSearchSchema, rawData);
@@ -320,10 +341,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (rawData.cities) {
-      const cityList = String(rawData.cities)
-        .split(",")
-        .map((c: string) => c.trim())
-        .filter(Boolean);
+      const cityList = splitSearchList(String(rawData.cities));
       if (cityList.length > 0) {
         const cityConditions = cityList.map((city: string) => ({
           address: { contains: city, mode: "insensitive" },
@@ -334,6 +352,21 @@ export async function GET(req: NextRequest) {
         } else {
           where.OR = cityConditions;
         }
+      }
+    }
+
+const querySearch = rawData.query || rawData.q;
+    if (querySearch) {
+      const queryConditions = [
+        { name: { contains: querySearch, mode: "insensitive" } },
+        { address: { contains: querySearch, mode: "insensitive" } },
+        { description: { contains: querySearch, mode: "insensitive" } },
+      ];
+      if (where.OR) {
+        where.AND = [{ OR: where.OR }, { OR: queryConditions }];
+        delete where.OR;
+      } else {
+        where.OR = queryConditions;
       }
     }
 
@@ -378,6 +411,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    if (!(await rateLimit(`venue-create:${userId}`, 10))) {
+      return NextResponse.json(
+        { error: "Too many submissions. Please wait a minute." },
+        { status: 429 },
+      );
+    }
+
+    await ensureUserExists(userId);
+
     const body = await req.json();
 
     // Validate request body with Zod
@@ -420,6 +462,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: "placeId is required" },
         { status: 400 },
+      );
+    }
+
+    const existing = await prisma.venue.findUnique({
+      where: { placeId },
+      select: { isClaimed: true, ownerId: true },
+    });
+    if (existing?.isClaimed && existing.ownerId !== userId) {
+      return NextResponse.json(
+        {
+          error:
+            "This venue is managed by its owner. Rate it instead to share your experience.",
+        },
+        { status: 403 },
       );
     }
 
@@ -507,6 +563,18 @@ export async function POST(req: NextRequest) {
         creatorId: userId,
       },
     });
+
+    if (venue.creatorId === userId) {
+      emitWebhookEvent(userId, "VENUE_CREATED", {
+        venueId: venue.id,
+        name: venue.name,
+        category: venue.category,
+        address: venue.address,
+        latitude: venue.latitude,
+        longitude: venue.longitude,
+        requiresReview: venue.requiresReview,
+      });
+    }
 
     return NextResponse.json({ venue }, { status: 201 });
   } catch (error) {

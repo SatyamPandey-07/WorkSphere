@@ -59,9 +59,9 @@ describe("BookingModal", () => {
       />,
     );
 
-    expect(screen.getByText("Secure Booking")).toBeInTheDocument();
+    expect(screen.getByText("Book a workspace")).toBeInTheDocument();
     expect(screen.getByText("Cafe Coffee Day")).toBeInTheDocument();
-    expect(screen.getByLabelText("Allocation Date")).toBeInTheDocument();
+    expect(screen.getByLabelText("Date")).toBeInTheDocument();
   });
 
   it("calls onClose when close button is clicked", () => {
@@ -92,7 +92,7 @@ describe("BookingModal", () => {
       />,
     );
 
-    expect(screen.getByText("Residency Secured")).toBeInTheDocument();
+    expect(screen.getByText("You're booked!")).toBeInTheDocument();
     expect(confetti).toHaveBeenCalled();
     expect(confetti).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -168,7 +168,7 @@ describe("BookingModal", () => {
       />,
     );
 
-    expect(screen.getByText("Residency Secured")).toBeInTheDocument();
+    expect(screen.getByText("You're booked!")).toBeInTheDocument();
     expect(confetti).not.toHaveBeenCalled();
 
     window.matchMedia = originalMatchMedia;

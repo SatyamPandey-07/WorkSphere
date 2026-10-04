@@ -26,6 +26,8 @@ import {
   type SeatStatus,
 } from "@/hooks/useSeatAvailability";
 import usePartySocket from "@/hooks/usePartySocketReconnect";
+import { Contrast } from "lucide-react";
+import { getVenueShape, type HighContrastShape } from "@/lib/mapAccessibility";
 
 function throttle<T extends (...args: any[]) => void>(
   func: T,
@@ -59,6 +61,48 @@ if (typeof window !== "undefined" && process.env.NODE_ENV !== "test") {
 let venueIcon: any;
 let destinationIcon: any;
 
+let highContrastCircleIcon: any;
+let highContrastSquareIcon: any;
+let highContrastDiamondIcon: any;
+
+export function getHighContrastIcon(shape: HighContrastShape): any {
+  if (typeof window === "undefined" || !L.divIcon) return venueIcon;
+  if (shape === "square") {
+    if (!highContrastSquareIcon) {
+      highContrastSquareIcon = L.divIcon({
+        className: "venue-marker high-contrast-marker hc-marker-square interactive-map-pin",
+        html: `<div class="hc-marker-wrapper hc-shape-square" data-shape="square" role="img" aria-label="Coworking marker (square)"><div class="hc-marker-inner hc-square-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1" /></svg></div></div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -14],
+      });
+    }
+    return highContrastSquareIcon;
+  }
+  if (shape === "diamond") {
+    if (!highContrastDiamondIcon) {
+      highContrastDiamondIcon = L.divIcon({
+        className: "venue-marker high-contrast-marker hc-marker-diamond interactive-map-pin",
+        html: `<div class="hc-marker-wrapper hc-shape-diamond" data-shape="diamond" role="img" aria-label="Library marker (diamond)"><div class="hc-marker-inner hc-diamond-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="12,3 21,12 12,21 3,12" /></svg></div></div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -14],
+      });
+    }
+    return highContrastDiamondIcon;
+  }
+  if (!highContrastCircleIcon) {
+    highContrastCircleIcon = L.divIcon({
+      className: "venue-marker high-contrast-marker hc-marker-circle interactive-map-pin",
+      html: `<div class="hc-marker-wrapper hc-shape-circle" data-shape="circle" role="img" aria-label="Cafe marker (circle)"><div class="hc-marker-inner hc-circle-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="12" cy="12" r="6" /></svg></div></div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+      popupAnchor: [0, -14],
+    });
+  }
+  return highContrastCircleIcon;
+}
+
 if (typeof window !== "undefined") {
   venueIcon = L.divIcon({
     className: "venue-marker",
@@ -75,6 +119,30 @@ if (typeof window !== "undefined") {
     iconSize: [32, 32],
     iconAnchor: [16, 32],
     popupAnchor: [0, -32],
+  });
+
+  highContrastCircleIcon = L.divIcon({
+    className: "venue-marker high-contrast-marker hc-marker-circle interactive-map-pin",
+    html: `<div class="hc-marker-wrapper hc-shape-circle" data-shape="circle" role="img" aria-label="Cafe marker (circle)"><div class="hc-marker-inner hc-circle-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="12" cy="12" r="6" /></svg></div></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+  });
+
+  highContrastSquareIcon = L.divIcon({
+    className: "venue-marker high-contrast-marker hc-marker-square interactive-map-pin",
+    html: `<div class="hc-marker-wrapper hc-shape-square" data-shape="square" role="img" aria-label="Coworking marker (square)"><div class="hc-marker-inner hc-square-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1" /></svg></div></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
+  });
+
+  highContrastDiamondIcon = L.divIcon({
+    className: "venue-marker high-contrast-marker hc-marker-diamond interactive-map-pin",
+    html: `<div class="hc-marker-wrapper hc-shape-diamond" data-shape="diamond" role="img" aria-label="Library marker (diamond)"><div class="hc-marker-inner hc-diamond-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="12,3 21,12 12,21 3,12" /></svg></div></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+    popupAnchor: [0, -14],
   });
 
   // Also fix the global default:
@@ -284,10 +352,15 @@ function WebGLContextWatcher() {
     const container = map.getContainer();
     if (!container) return;
     const cleanups: Array<() => void> = [];
+    // setupCanvases re-runs on every tab focus; attach once per canvas so
+    // listeners and recovery managers don't pile up (#1729).
+    const attached = new WeakSet<HTMLCanvasElement>();
 
     const setupCanvases = () => {
       const canvases = container.querySelectorAll("canvas");
       canvases.forEach((canvas) => {
+        if (attached.has(canvas as HTMLCanvasElement)) return;
+        attached.add(canvas as HTMLCanvasElement);
         const cleanup = attachWebGLContextRecovery(
           canvas as HTMLCanvasElement,
           () => {
@@ -337,24 +410,56 @@ const MemoizedCursorMarker = memo(function MemoizedCursorMarker({
   );
 });
 
+export interface MapProps {
+  location: { latitude: number; longitude: number };
+  markers: MapMarker[];
+  routes: MapRoute[];
+  mapView: MapView | null;
+  roomId?: string | null;
+  initialHighContrast?: boolean;
+  highContrast?: boolean;
+  onHighContrastChange?: (enabled: boolean) => void;
+}
+
 const Map = ({
   location,
   markers,
   routes,
   mapView,
   roomId,
-}: {
-  location: { latitude: number; longitude: number };
-  markers: MapMarker[];
-  routes: MapRoute[];
-  mapView: MapView | null;
-  roomId?: string | null;
-}) => {
+  initialHighContrast = false,
+  highContrast: controlledHighContrast,
+  onHighContrastChange,
+}: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+
+  const [internalHighContrast, setInternalHighContrast] =
+    useState(initialHighContrast);
+  const isHighContrast =
+    controlledHighContrast !== undefined
+      ? controlledHighContrast
+      : internalHighContrast;
+
+  const toggleHighContrast = useCallback(() => {
+    const next = !isHighContrast;
+    setInternalHighContrast(next);
+    onHighContrastChange?.(next);
+  }, [isHighContrast, onHighContrastChange]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.matchMedia) {
+      if (
+        window.matchMedia("(prefers-contrast: more)").matches &&
+        controlledHighContrast === undefined
+      ) {
+        setInternalHighContrast(true);
+      }
+    }
+  }, [controlledHighContrast]);
 
   useEffect(() => {
     setIsMounted(true);
@@ -1015,13 +1120,106 @@ const Map = ({
           margin: 12px 16px;
         }
         
-        /* Focus-visible ring for keyboard-navigated markers */
+        /* Focus-visible ring for keyboard-navigated markers (Issue #3446) */
+        .venue-marker:focus,
         .venue-marker:focus-visible,
+        .destination-marker:focus,
         .destination-marker:focus-visible,
-        .custom-user-marker:focus-visible {
-          outline: 2px solid #3b82f6;
-          outline-offset: 2px;
+        .custom-user-marker:focus,
+        .custom-user-marker:focus-visible,
+        .interactive-map-pin:focus,
+        .interactive-map-pin:focus-visible,
+        .leaflet-marker-icon:focus,
+        .leaflet-marker-icon:focus-visible,
+        [role="button"][tabindex="0"]:focus-visible,
+        [role="button"][tabindex="0"]:focus {
+          outline: 3px solid var(--primary-accent) !important;
+          outline-offset: 2px !important;
+          box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.45) !important;
+          z-index: 1000 !important;
+        }
+
+        .venue-marker:not(.high-contrast-marker):focus,
+        .venue-marker:not(.high-contrast-marker):focus-visible {
           border-radius: 50%;
+        }
+
+        .high-contrast-marker.hc-marker-circle:focus,
+        .high-contrast-marker.hc-marker-circle:focus-visible {
+          border-radius: 50% !important;
+        }
+
+        .high-contrast-marker.hc-marker-square:focus,
+        .high-contrast-marker.hc-marker-square:focus-visible {
+          border-radius: 4px !important;
+        }
+
+        .high-contrast-marker.hc-marker-diamond:focus,
+        .high-contrast-marker.hc-marker-diamond:focus-visible {
+          border-radius: 3px !important;
+        }
+
+        /* High-Contrast Mode Styles (WCAG 2.1 AA 3:1 Non-Text Contrast) */
+        .high-contrast-marker {
+          background: transparent !important;
+          border: none !important;
+        }
+
+        .hc-marker-wrapper {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          box-sizing: border-box;
+          border: 3px solid #000000;
+          box-shadow: 0 0 0 2px #ffffff, 0 3px 6px rgba(0, 0, 0, 0.6);
+          transition: transform 0.15s ease-in-out;
+        }
+
+        .hc-marker-wrapper:hover {
+          transform: scale(1.15);
+        }
+
+        /* Shape 1: Circle for cafe */
+        .hc-shape-circle,
+        .hc-marker-wrapper.hc-shape-circle {
+          border-radius: 50% !important;
+          background-color: #ffd600 !important;
+          color: #000000 !important;
+        }
+
+        /* Shape 2: Square for coworking */
+        .hc-shape-square,
+        .hc-marker-wrapper.hc-shape-square {
+          border-radius: 4px !important;
+          background-color: #00e5ff !important;
+          color: #000000 !important;
+        }
+
+        /* Shape 3: Diamond for library */
+        .hc-shape-diamond,
+        .hc-marker-wrapper.hc-shape-diamond {
+          border-radius: 3px !important;
+          transform: rotate(45deg);
+          background-color: #00e676 !important;
+          color: #000000 !important;
+        }
+
+        .hc-shape-diamond .hc-marker-inner {
+          transform: rotate(-45deg);
+        }
+
+        .hc-marker-inner {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100%;
+        }
+
+        .hc-glyph {
+          display: block;
         }
 
         /* Floating toggle position above canvas layers */
@@ -1062,6 +1260,7 @@ const Map = ({
       />
 
       <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {isHighContrast ? "High-contrast mode enabled. " : ""}
         {spiderfiedMarkers.length > 0
           ? `${spiderfiedMarkers.length} venue${spiderfiedMarkers.length === 1 ? "" : "s"} on map. Use Tab to navigate markers, Enter to open details.`
           : "No venues on map"}
@@ -1081,6 +1280,25 @@ const Map = ({
         }}
       >
         <ScaleControl position="bottomleft" metric={true} imperial={false} />
+
+        {/* Map Control Options: High-Contrast Mode Toggle (WCAG 2.1 AA) */}
+        <div className="map-accessibility-controls absolute top-3 left-16 z-[1000]">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isHighContrast}
+            aria-label="Toggle high-contrast mode"
+            onClick={toggleHighContrast}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-md border backdrop-blur-md transition-all cursor-pointer ${
+              isHighContrast
+                ? "bg-zinc-950 text-yellow-300 border-yellow-400 ring-2 ring-yellow-400"
+                : "bg-zinc-900/90 text-zinc-200 border-zinc-700 hover:bg-zinc-800 hover:text-white"
+            }`}
+          >
+            <Contrast className="w-3.5 h-3.5 text-current" />
+            <span>High Contrast</span>
+          </button>
+        </div>
         {/* Forecast selector UI */}
         <div className="map-forecast-controls">
           <label htmlFor="day-select">Day</label>
@@ -1145,6 +1363,13 @@ const Map = ({
           <LayersControl.Overlay name="Seat Availability">
             <LayerGroup>{memoizedSeatRings}</LayerGroup>
           </LayersControl.Overlay>
+
+          <LayersControl.Overlay
+            name="High-Contrast Mode"
+            checked={isHighContrast}
+          >
+            <LayerGroup />
+          </LayersControl.Overlay>
         </LayersControl>
 
         <MapController mapView={mapView} />
@@ -1183,14 +1408,23 @@ const Map = ({
               }
             : undefined;
 
+          const markerIcon = isDest
+            ? destinationIcon
+            : isHighContrast
+              ? getHighContrastIcon(getVenueShape(marker.category))
+              : venueIcon;
+
           return (
             <AccessibleMarker
               key={marker.id}
               position={[marker.renderedLat, marker.renderedLng]}
-              icon={isDest ? destinationIcon : venueIcon}
+              icon={markerIcon}
               name={marker.name}
               category={marker.category}
+              rating={marker.score}
+              score={marker.score}
               isDestination={isDest}
+              isHighContrast={isHighContrast}
               telemetryData={telemetry}
               zIndexOffset={selectedMarkerId === marker.id ? 1000 : 0}
               onClick={() => setSelectedMarkerId(marker.id)}

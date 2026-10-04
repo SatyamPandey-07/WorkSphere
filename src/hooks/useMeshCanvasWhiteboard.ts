@@ -17,6 +17,14 @@ import type {
   CanvasWhiteboardState,
 } from "@/hooks/useCanvasWhiteboard";
 
+/**
+ * Latency instrumentation for Issue #1318 mesh sync benchmarking.
+ * Maps a unique update identifier to the high-resolution timestamp
+ * when the local Yjs update was sent to the mesh.
+ * Tests and benchmarks can read these entries to measure round-trip latency.
+ */
+export const meshSendTimestamps = new Map<string, number>();
+
 const PARTYKIT_HOST = process.env.NEXT_PUBLIC_PARTYKIT_URL ?? "127.0.0.1:1999";
 
 const PRESET_COLORS = [
@@ -62,6 +70,10 @@ export function useMeshCanvasWhiteboard(
   const providerRef = useRef<YProvider | null>(null);
   const unsubDocUpdateRef = useRef<(() => void) | null>(null);
 
+  // Issue #1318: Track mesh connectivity for conditional routing in the
+  // synchronous doc update handler (avoids stale closure over mesh.isConnected).
+  const meshConnectedRef = useRef<boolean>(false);
+
   const [shapeSnapshots, setShapeSnapshots] = useState<ShapeData[]>([]);
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
   const [canUndo, setCanUndo] = useState(false);
@@ -95,6 +107,12 @@ export function useMeshCanvasWhiteboard(
     onData: onMeshData,
   });
 
+  // Issue #1318: Keep meshConnectedRef in sync with the reactive mesh state
+  // so the doc update handler always reads the latest connectivity status.
+  useEffect(() => {
+    meshConnectedRef.current = mesh.isConnected;
+  }, [mesh.isConnected]);
+
   useEffect(() => {
     if (!canvasId) return;
 
@@ -117,6 +135,7 @@ export function useMeshCanvasWhiteboard(
 
     try {
       newProvider = new YProvider(PARTYKIT_HOST, roomId, doc, {
+
         params: token ? { token } : {},
       });
 
@@ -179,11 +198,48 @@ export function useMeshCanvasWhiteboard(
     um.on("stack-item-popped", updateUndoState);
     updateUndoState();
 
+    // Issue #1318: Conditional mesh routing with PartyKit fallback.
+    // Local user edits (origin === localUserId) are sent through the mesh
+    // when WebRTC is connected. Updates from remote sources ("mesh" or the
+    // y-partykit provider) are never re-broadcast to prevent echo loops.
+    // PartyKit (y-partykit) always remains active as the authoritative sync
+    // channel — we do NOT suppress it when mesh is available, per the
+    // dual-path architecture described in the spec.
     const sendToAll = mesh.sendToAll;
     const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+      // Never re-broadcast updates received from the mesh
       if (origin === "mesh") return;
-      const compressed = compressYjsUpdate(update);
-      sendToAll(compressed.buffer as ArrayBuffer);
+
+      // Only send local edits through the mesh (direct user actions or local undo/redo);
+      // updates arriving from the y-partykit provider (or any other remote origin)
+      // are not re-relayed to avoid duplicate delivery and echo loops.
+      if (origin !== localUserId && origin !== um) return;
+
+      // Issue #1318: Route through mesh when WebRTC channels are open
+      if (meshConnectedRef.current) {
+        const compressed = compressYjsUpdate(update);
+        // Record send timestamp for latency benchmarking (Issue #1318)
+        const tsKey = `${Date.now()}-${update.byteLength}`;
+        meshSendTimestamps.set(tsKey, performance.now());
+        // Trim old entries to prevent memory leak in long sessions
+        if (meshSendTimestamps.size > 1000) {
+          const firstKey = meshSendTimestamps.keys().next().value;
+          if (firstKey !== undefined) meshSendTimestamps.delete(firstKey);
+        }
+        const exactBuffer = (
+          compressed.byteOffset === 0 &&
+          compressed.byteLength === compressed.buffer.byteLength
+            ? compressed.buffer
+            : compressed.buffer.slice(
+                compressed.byteOffset,
+                compressed.byteOffset + compressed.byteLength,
+              )
+        ) as ArrayBuffer;
+        sendToAll(exactBuffer);
+      }
+      // PartyKit provider is always active and independently syncs the
+      // same Y.Doc, so no explicit fallback send is needed here — the
+      // y-partykit provider's own update observer handles it.
     };
     doc.on("update", handleDocUpdate);
     unsubDocUpdateRef.current = () => {

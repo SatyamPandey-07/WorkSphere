@@ -9,6 +9,7 @@ import {
 } from "@/lib/zkp/verify";
 import { issueVenueAccessToken } from "@/lib/zkp/venueAccessToken";
 import { isCommitmentRevokedDirectly } from "@/lib/zkp/revocation";
+import { apiError } from "@/lib/apiResponse";
 
 // snarkjs requires Node.js runtime (uses fs, crypto, worker_threads)
 export const runtime = "nodejs";
@@ -44,9 +45,10 @@ export async function POST(
     req.headers.get("x-real-ip") ??
     "unknown";
   if (!(await rateLimit(`zkp-access:${ip}`, 10))) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
-      { status: 429 },
+    return apiError(
+      "Too many requests. Please try again later.",
+      429,
+      "RATE_LIMITED",
     );
   }
 
@@ -54,12 +56,12 @@ export async function POST(
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    return apiError("Invalid JSON body.", 400, "VALIDATION_FAILED");
   }
 
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Validation failed." }, { status: 400 });
+    return apiError("Validation failed.", 400, "VALIDATION_FAILED");
   }
 
   const venue = await prisma.venue.findUnique({
@@ -68,13 +70,14 @@ export async function POST(
   });
 
   if (!venue) {
-    return NextResponse.json({ error: "Venue not found." }, { status: 404 });
+    return apiError("Venue not found.", 404, "VENUE_NOT_FOUND");
   }
 
   if (!isPremiumVenue(venue)) {
-    return NextResponse.json(
-      { error: "This venue does not require premium ZKP access." },
-      { status: 400 },
+    return apiError(
+      "This venue does not require premium ZKP access.",
+      400,
+      "VALIDATION_FAILED",
     );
   }
 
@@ -82,17 +85,21 @@ export async function POST(
   const commit = publicSignals[0];
 
   if (!isAllowedCommit(commit)) {
-    return NextResponse.json(
-      { allowed: false, error: "Commitment is not a known member." },
-      { status: 403 },
+    return apiError(
+      "Commitment is not a known member.",
+      403,
+      "FORBIDDEN",
+      { allowed: false },
     );
   }
 
   // Server-side revocation check — always runs, never relies on client input.
   if (isCommitmentRevokedDirectly(commit)) {
-    return NextResponse.json(
-      { allowed: false, error: "Commitment has been revoked." },
-      { status: 403 },
+    return apiError(
+      "Commitment has been revoked.",
+      403,
+      "FORBIDDEN",
+      { allowed: false },
     );
   }
 
@@ -119,16 +126,20 @@ export async function POST(
       publicSignals,
     );
   } catch {
-    return NextResponse.json(
-      { allowed: false, error: "Proof verification error." },
-      { status: 400 },
+    return apiError(
+      "Proof verification error.",
+      400,
+      "VALIDATION_FAILED",
+      { allowed: false },
     );
   }
 
   if (!ok) {
-    return NextResponse.json(
-      { allowed: false, error: "Invalid proof." },
-      { status: 403 },
+    return apiError(
+      "Invalid proof.",
+      403,
+      "FORBIDDEN",
+      { allowed: false },
     );
   }
 

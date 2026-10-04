@@ -1,23 +1,21 @@
 frontend:
   - changed-files:
       - any-glob-to-any-file:
-          - 'src/components/**/*'
-          - 'src/app/components/**/*'
-          - 'src/hooks/**/*'
+          - 'src/components/**'
+          - 'src/app/components/**'
+          - 'src/hooks/**'
           - 'src/app/**/*.tsx'
           - 'src/app/**/*.css'
 
 backend:
   - changed-files:
       - any-glob-to-any-file:
-          - 'src/app/api/**/*'
-          - 'prisma/**/*'
-          - 'src/lib/**/*'
+          - 'src/app/api/**'
+          - 'prisma/**'
+          - 'src/lib/**'
           - 'src/middleware.ts'
 
 documentation:
   - changed-files:
       - any-glob-to-any-file:
-          - 'README.md'
-          - 'docs/**/*'
           - '**/*.md'

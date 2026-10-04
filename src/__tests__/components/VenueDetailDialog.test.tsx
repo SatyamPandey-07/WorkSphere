@@ -173,3 +173,98 @@ describe("VenueDetailDialog Rating Distribution Integration", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe("VenueDetailDialog keyboard accessibility", () => {
+  const mockOnClose = jest.fn();
+  const mockOnGetDirections = jest.fn();
+  const mockOnToggleFavorite = jest.fn();
+
+  beforeAll(() => {
+    global.EventSource = jest.fn().mockImplementation(() => ({
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      close: jest.fn(),
+    })) as any;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (global.fetch as jest.Mock).mockImplementation(() =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({}),
+      }),
+    );
+  });
+
+  const renderDialog = async (isOpen = true) => {
+    const utils = render(
+      <VenueDetailDialog
+        venue={mockVenue as any}
+        isOpen={isOpen}
+        isFavorited={false}
+        onClose={mockOnClose}
+        onGetDirections={mockOnGetDirections}
+        onToggleFavorite={mockOnToggleFavorite}
+      />,
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    return utils;
+  };
+
+  it("closes the dialog when Escape is pressed", async () => {
+    await renderDialog();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(mockOnClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks the container as a modal dialog and moves focus into it", async () => {
+    const { getByRole } = await renderDialog();
+
+    const dialog = getByRole("dialog");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+    expect(dialog).toHaveFocus();
+  });
+
+  it("wraps Tab focus from the last control back to the first", async () => {
+    const { getByRole } = await renderDialog();
+
+    const dialog = getByRole("dialog");
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>("button:not([disabled])"),
+    );
+    const last = focusable[focusable.length - 1];
+    last.focus();
+
+    fireEvent.keyDown(document, { key: "Tab" });
+
+    expect(focusable[0]).toHaveFocus();
+  });
+
+  it("returns focus to the trigger element once the dialog closes", async () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "Open venue details";
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const { rerender } = await renderDialog();
+
+    rerender(
+      <VenueDetailDialog
+        venue={mockVenue as any}
+        isOpen={false}
+        isFavorited={false}
+        onClose={mockOnClose}
+        onGetDirections={mockOnGetDirections}
+        onToggleFavorite={mockOnToggleFavorite}
+      />,
+    );
+
+    expect(trigger).toHaveFocus();
+    document.body.removeChild(trigger);
+  });
+});

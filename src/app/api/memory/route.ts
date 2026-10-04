@@ -75,8 +75,25 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { content, embedding } = body;
 
-    if (!content || !Array.isArray(embedding)) {
-      return NextResponse.json({ error: 'Missing content or invalid embedding format' }, { status: 400 });
+    // The embedding column is vector(1024): reject shapes the database
+    // could never store before any SQL runs.
+    const EMBEDDING_DIMENSIONS = 1024;
+    const MAX_CONTENT_LENGTH = 20000;
+
+    if (typeof content !== "string" || content.length === 0) {
+      return NextResponse.json({ error: "Memory content is required" }, { status: 400 });
+    }
+
+    if (content.length > MAX_CONTENT_LENGTH) {
+      return NextResponse.json({ error: "Memory content exceeds maximum length" }, { status: 400 });
+    }
+
+    if (
+      !Array.isArray(embedding) ||
+      embedding.length !== EMBEDDING_DIMENSIONS ||
+      !embedding.every((value) => typeof value === "number" && Number.isFinite(value))
+    ) {
+      return NextResponse.json({ error: "Embedding must be an array of 1024 finite numbers" }, { status: 400 });
     }
 
     // Use raw SQL to insert the embedding as a pgvector vector type

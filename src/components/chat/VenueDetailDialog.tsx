@@ -1,6 +1,8 @@
 "use client";
 
 import Tesseract from "tesseract.js";
+import { Languages, Sparkles } from "lucide-react";
+import { useTransition } from "react";
 
 import {
   X,
@@ -36,7 +38,7 @@ import {
   Trophy,
   BadgeCheck,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -58,6 +60,14 @@ import {
   NoiseTimelineChart,
   HourlyForecast,
 } from "@/components/noise/NoiseTimelineChart";
+import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
+import { ExportRatingsCSVButton } from "@/components/analytics/ExportRatingsCSVButton";
+import {
+  subscribeReviewSyncEvents,
+  getQueuedReviews,
+  resolveReviewConflict,
+  QueuedVenueReview,
+} from "@/lib/offlineReviewSync";
 
 interface VenueDetailDialogProps {
   venue: Venue | null;
@@ -109,6 +119,35 @@ export function VenueDetailDialog({
     "wifi" | "outlets" | "noise" | null
   >(null);
   const [copied, setCopied] = useState(false);
+  const [showFlagMenu, setShowFlagMenu] = useState(false);
+  const [flagSubmitted, setFlagSubmitted] = useState(false);
+  const [flagSubmitting, setFlagSubmitting] = useState(false);
+
+  // Accessibility plumbing for the dialog: the container ref is used to trap
+  // Tab, and the two refs below keep the keydown handler stable so the focus
+  // effect does not re-run (and steal focus) on unrelated renders.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const lightboxOpenRef = useRef(false);
+
+  const submitFlag = async (reason: string) => {
+    if (!venue) return;
+    setFlagSubmitting(true);
+    setShowFlagMenu(false);
+    try {
+      await fetch(`/api/venues/${venue.id}/flag`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason }),
+      });
+      setFlagSubmitted(true);
+      setTimeout(() => setFlagSubmitted(false), 3000);
+    } catch {
+      // silently fail — the UI will just reset
+    } finally {
+      setFlagSubmitting(false);
+    }
+  };
   // Floor plan seat selection state (used by floor plan component when rendered)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [selectedSeatId, setSelectedSeatId] = useState<string | null>(null);
@@ -205,6 +244,9 @@ export function VenueDetailDialog({
   );
   const [reviews, setReviews] = useState<any[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [conflictReview, setConflictReview] =
+    useState<QueuedVenueReview | null>(null);
+  const [resolvingConflict, setResolvingConflict] = useState(false);
   const [menuPhotos, setMenuPhotos] = useState<string[]>([]);
   const [uploadingMenu, setUploadingMenu] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<string | null>(null);
@@ -219,6 +261,54 @@ export function VenueDetailDialog({
   const [showLeaderboard, setShowLeaderboard] = useState(false);
 
   // Quick Save state
+  
+  const [selectedVenueLang, setSelectedVenueLang] = useState<string>("EN");
+  const [translatedDescription, setTranslatedDescription] = useState<string>("");
+  const [isTranslatingDesc, startDescTransition] = useTransition();
+  const [descTranslationError, setDescTranslationError] = useState<string | null>(null);
+  const [descriptionCache, setDescriptionCache] = useState<Record<string, string>>({});
+
+  const handleVenueDescriptionTranslation = async (targetLang: string) => {
+    if (!venue) return;
+    setSelectedVenueLang(targetLang);
+    setDescTranslationError(null);
+
+    const rawDescription = venue.description || `Analysis based on Multi-Agent telemetry suggests this ${venue.category || "workspace"} is optimal for collaborative sessions.`;
+
+    if (targetLang === "EN") {
+      setTranslatedDescription("");
+      return;
+    }
+
+    const cacheKey = `${venue.id}-${targetLang}`;
+    if (descriptionCache[cacheKey]) {
+      setTranslatedDescription(descriptionCache[cacheKey]);
+      return;
+    }
+
+    startDescTransition(async () => {
+      try {
+        const response = await fetch(`/api/venues/${encodeURIComponent(venue.id)}/translate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetLang, text: rawDescription }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to translate venue description");
+        }
+
+        const translatedText = data.translatedDescription || rawDescription;
+        setTranslatedDescription(translatedText);
+        setDescriptionCache((prev) => ({ ...prev, [cacheKey]: translatedText }));
+      } catch (err: any) {
+        console.error("Venue Description Translation Error:", err);
+        setDescTranslationError(err.message || "Translation unavailable.");
+      }
+    });
+  };
+
   const [quickSaveLoading, setQuickSaveLoading] = useState(false);
 
   const handleQuickSave = async () => {
@@ -673,7 +763,7 @@ export function VenueDetailDialog({
     };
   }, [venue, isOpen]);
 
-  // Fetch reviews on dialog open / venue change to have stats ready
+  // Fetch reviews on dialog open / venue change and subscribe to offline sync events
   useEffect(() => {
     if (!venue || !isOpen) return;
     setReviewsLoading(true);
@@ -684,7 +774,63 @@ export function VenueDetailDialog({
       })
       .catch((err) => console.error(err))
       .finally(() => setReviewsLoading(false));
+
+    // Check for any pending review conflicts for this venue in IndexedDB
+    getQueuedReviews()
+      .then((items) => {
+        const found = items.find(
+          (i) => i.venueId === venue.id && i.status === "CONFLICT",
+        );
+        setConflictReview(found || null);
+      })
+      .catch(() => {});
+
+    // Listen for background sync success or conflict notifications without page refresh
+    const unsubscribe = subscribeReviewSyncEvents((event) => {
+      if (!event.venueId || event.venueId === venue.id) {
+        if (event.type === "REVIEW_SYNC_SUCCESS") {
+          fetch(`/api/venues/${encodeURIComponent(venue.id)}/reviews`)
+            .then((r) => r.json())
+            .then((data) => {
+              if (data.reviews) setReviews(data.reviews);
+            })
+            .catch(() => {});
+          setConflictReview(null);
+        } else if (event.type === "REVIEW_SYNC_CONFLICT") {
+          getQueuedReviews()
+            .then((items) => {
+              const found = items.find(
+                (i) => i.venueId === venue.id && i.status === "CONFLICT",
+              );
+              setConflictReview(found || null);
+            })
+            .catch(() => {});
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [venue, isOpen]);
+
+  const handleResolveConflict = async (choice: "KEEP_LOCAL" | "USE_REMOTE") => {
+    if (!conflictReview || !venue) return;
+    setResolvingConflict(true);
+    try {
+      await resolveReviewConflict(conflictReview.id, choice);
+      setConflictReview(null);
+      const res = await fetch(
+        `/api/venues/${encodeURIComponent(venue.id)}/reviews`,
+      );
+      const data = await res.json();
+      if (data.reviews) setReviews(data.reviews);
+    } catch (err) {
+      console.error("Failed to resolve review conflict:", err);
+    } finally {
+      setResolvingConflict(false);
+    }
+  };
 
   // Effect 3: Fetch predictions and menu photos based on active tab
   useEffect(() => {
@@ -855,6 +1001,80 @@ export function VenueDetailDialog({
     }
   };
 
+  // Keep the latest callbacks/flags in refs so the keyboard effect only depends
+  // on the open state of the dialog.
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    lightboxOpenRef.current = lightboxIndex !== null;
+  }, [lightboxIndex]);
+
+  // While the dialog is open it owns the keyboard. Escape dismisses it (unless
+  // the photo lightbox is showing, which handles Escape itself), Tab is confined
+  // to the dialog, and focus returns to whatever opened it once it closes.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const focusableSelector = [
+      "a[href]",
+      "button:not([disabled])",
+      "textarea:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(",");
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (!lightboxOpenRef.current) {
+          onCloseRef.current();
+        }
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(focusableSelector),
+      );
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey) {
+        if (active === first || !dialog.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !dialog.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    dialogRef.current?.focus();
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      if (previouslyFocused && document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
+    };
+  }, [isOpen]);
+
   if (!isOpen || !venue) return null;
 
   const CategoryIcon =
@@ -916,7 +1136,12 @@ export function VenueDetailDialog({
         }}
       />
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom-12 zoom-in-95 duration-500 bg-zinc-900 supports-[backdrop-filter]:bg-white/[0.08] supports-[backdrop-filter]:backdrop-blur-[20px] glass-animated-border flex flex-col"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${venue.name} details`}
+        tabIndex={-1}
+        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom-12 zoom-in-95 duration-500 bg-zinc-900 supports-[backdrop-filter]:bg-white/[0.08] supports-[backdrop-filter]:backdrop-blur-[20px] glass-animated-border flex flex-col focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         {wifiLowConfidence && (
@@ -1026,11 +1251,18 @@ export function VenueDetailDialog({
                 </span>
               )}
             </h2>
-            <div className="flex items-center gap-1.5 text-zinc-300 text-sm font-medium">
-              <MapPin className="w-4 h-4 text-blue-400" />
-              <span className="truncate">
+            <div className="flex items-center gap-1.5 text-zinc-300 text-sm font-medium flex-wrap">
+              <MapPin className="w-4 h-4 text-blue-400 shrink-0" />
+              <span className="truncate max-w-[280px] sm:max-w-md">
                 {venue.address || "Location details loading..."}
               </span>
+              {venue.address && (
+                <CopyToClipboardButton
+                  textToCopy={venue.address}
+                  label="Copy"
+                  className="!py-0.5 !px-2 text-xs shrink-0 pointer-events-auto ml-1"
+                />
+              )}
             </div>
           </div>
         </div>
@@ -1060,6 +1292,52 @@ export function VenueDetailDialog({
         <div className="p-8 bg-transparent overflow-y-auto flex-1 min-h-0 text-zinc-100">
           {activeTab === "overview" && (
             <>
+
+              {/* MULTI-LANGUAGE VENUE DESCRIPTION TRANSLATOR */}
+              <div className="mb-6 p-5 bg-zinc-800/50 border border-zinc-700/50 rounded-2xl shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-zinc-700">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-indigo-400" />
+                    <h3 className="font-semibold text-lg text-white">Venue Description</h3>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <Languages className="w-4 h-4 text-zinc-400 shrink-0" />
+                    <select
+                      value={selectedVenueLang}
+                      onChange={(e) => handleVenueDescriptionTranslation(e.target.value)}
+                      disabled={isTranslatingDesc}
+                      aria-label="Select venue description language"
+                      className="w-full sm:w-48 text-sm rounded-md border border-zinc-700 bg-zinc-900 text-zinc-200 px-3 py-1.5 shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                    >
+                      {[
+                        { code: "EN", label: "English" },
+                        { code: "ES", label: "Spanish" },
+                        { code: "FR", label: "French" },
+                        { code: "DE", label: "German" },
+                        { code: "HI", label: "Hindi" },
+                        { code: "JA", label: "Japanese" },
+                        { code: "ZH", label: "Chinese (Simplified)" },
+                      ].map((loc) => (
+                        <option key={loc.code} value={loc.code}>
+                          {loc.label}
+                        </option>
+                      ))}
+                    </select>
+                    {isTranslatingDesc && <Loader2 className="w-4 h-4 animate-spin text-indigo-400" />}
+                  </div>
+                </div>
+
+                <div className="relative min-h-[60px] text-zinc-300 leading-relaxed text-sm">
+                  {descTranslationError && (
+                    <p className="text-xs text-amber-400 mb-2 font-medium">{descTranslationError}</p>
+                  )}
+                  <p className="whitespace-pre-line">
+                    {translatedDescription || venue.description || `Analysis based on Multi-Agent telemetry suggests this ${venue.category || "workspace"} is optimal for collaborative sessions.`}
+                  </p>
+                </div>
+              </div>
+
               {/* Verified Host Pinned Message */}
               {venue.isClaimed && venue.hostMessage && (
                 <div className="mb-6 p-5 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border border-emerald-500/20 rounded-2xl shadow-sm">
@@ -1230,6 +1508,7 @@ export function VenueDetailDialog({
                   <RatingDistribution
                     reviews={reviews}
                     activeMetric={activeDistribution}
+                    venueName={venue.name}
                     onClose={() => setActiveDistribution(null)}
                   />
                 </div>
@@ -1841,6 +2120,47 @@ export function VenueDetailDialog({
                       Rate
                     </button>
                   )}
+                  {/* Report Inaccurate Data */}
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setShowFlagMenu((v) => !v)}
+                      aria-label="Report inaccurate venue data"
+                      aria-haspopup="true"
+                      aria-expanded={showFlagMenu}
+                      className="flex items-center justify-center gap-1.5 bg-black/40 border-2 border-white/10 text-zinc-400 hover:text-amber-400 hover:border-amber-500/40 py-3 px-4 rounded-2xl transition-all shadow-md active:scale-[0.98]"
+                    >
+                      {flagSubmitted ? (
+                        <Check className="w-4 h-4 text-green-400" />
+                      ) : (
+                        <AlertTriangle className="w-4 h-4" />
+                      )}
+                    </button>
+                    {showFlagMenu && (
+                      <div className="absolute bottom-full mb-2 right-0 z-50 bg-zinc-900 border border-zinc-700 rounded-xl shadow-xl w-52 py-1 text-sm">
+                        {[
+                          {
+                            id: "permanently_closed",
+                            label: "Permanently Closed",
+                          },
+                          { id: "wrong_hours", label: "Wrong Hours" },
+                          { id: "no_wifi", label: "No Longer Has WiFi" },
+                          { id: "wrong_address", label: "Wrong Address" },
+                          { id: "other", label: "Other Issue" },
+                        ].map(({ id, label }) => (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => submitFlag(id)}
+                            disabled={flagSubmitting}
+                            className="w-full text-left px-4 py-2 text-zinc-300 hover:bg-zinc-800 hover:text-white transition-colors disabled:opacity-50"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={handleShare}
                     aria-label={"Share " + venue.name}
@@ -1865,6 +2185,52 @@ export function VenueDetailDialog({
 
           {activeTab === "reviews" && (
             <div className="space-y-4">
+              {conflictReview && (
+                <div className="p-4 border border-amber-500/30 bg-amber-500/10 rounded-2xl space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="text-xs font-bold text-amber-200">
+                        Review Conflict Detected
+                      </p>
+                      <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                        This review was modified on the server while you were offline.
+                        Choose whether to overwrite with your offline review or keep the server version.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      onClick={() => handleResolveConflict("KEEP_LOCAL")}
+                      disabled={resolvingConflict}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-black transition-colors disabled:opacity-50"
+                    >
+                      {resolvingConflict
+                        ? "Resolving..."
+                        : "Keep Local (Overwrite)"}
+                    </button>
+                    <button
+                      onClick={() => handleResolveConflict("USE_REMOTE")}
+                      disabled={resolvingConflict}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/10 hover:bg-white/20 text-white transition-colors disabled:opacity-50"
+                    >
+                      Use Remote (Discard Local)
+                    </button>
+                  </div>
+                </div>
+              )}
+              {reviews.length > 0 && (
+                <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-zinc-400">
+                    {reviews.length} {reviews.length === 1 ? "Review" : "Reviews"}
+                  </span>
+                  <ExportRatingsCSVButton
+                    ratings={reviews}
+                    venueName={venue.name}
+                    variant="compact"
+                  />
+                </div>
+              )}
               {reviewsLoading ? (
                 <div className="space-y-3">
                   {[0, 1, 2].map((i) => (

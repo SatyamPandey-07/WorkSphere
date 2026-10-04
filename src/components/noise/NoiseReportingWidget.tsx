@@ -1,12 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Volume2,
   Send,
   CheckCircle,
   AlertCircle,
   RefreshCw,
+  Mic,
+  Sliders,
+  Square,
+  Play,
 } from "lucide-react";
 import {
   BarChart,
@@ -17,6 +21,12 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import { MicCalibrationWizard } from "@/components/noise/MicCalibrationWizard";
+import {
+  getMicCalibration,
+  rmsToCalibratedDb,
+  MicCalibrationProfile,
+} from "@/lib/noise/calibration";
 
 type Bucket = {
   key: string;
@@ -44,6 +54,104 @@ export function NoiseReportingWidget({
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Calibration and Live Mic Measurement State
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [calibration, setCalibration] = useState<MicCalibrationProfile>(getMicCalibration());
+  const [isLiveMeasuring, setIsLiveMeasuring] = useState(false);
+  const [liveMicDb, setLiveMicDb] = useState<number | null>(null);
+
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleCalibrationChanged = (e: Event) => {
+      const detail = (e as CustomEvent<MicCalibrationProfile>).detail;
+      if (detail) setCalibration(detail);
+    };
+    window.addEventListener("worksphere:mic-calibration-changed", handleCalibrationChanged);
+    return () => {
+      window.removeEventListener("worksphere:mic-calibration-changed", handleCalibrationChanged);
+    };
+  }, []);
+
+  const stopLiveMic = useCallback(() => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    setIsLiveMeasuring(false);
+    setLiveMicDb(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopLiveMic();
+    };
+  }, [stopLiveMic]);
+
+  const startLiveMic = async () => {
+    try {
+      stopLiveMic();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+      streamRef.current = stream;
+
+      const AudioCtx =
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      const ctx = new AudioCtx();
+      audioContextRef.current = ctx;
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.4;
+      source.connect(analyser);
+      analyserRef.current = analyser;
+
+      setIsLiveMeasuring(true);
+
+      const buffer = new Float32Array(analyser.fftSize);
+
+      const sample = () => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getFloatTimeDomainData(buffer);
+        let sumSquares = 0;
+        for (let i = 0; i < buffer.length; i++) {
+          sumSquares += buffer[i] * buffer[i];
+        }
+        const rms = Math.sqrt(sumSquares / buffer.length);
+        const calibrated = rmsToCalibratedDb(rms, calibration);
+        const rounded = Math.round(calibrated);
+        setLiveMicDb(calibrated);
+        setDecibels(rounded);
+
+        animationFrameRef.current = requestAnimationFrame(sample);
+      };
+
+      sample();
+    } catch (err) {
+      console.error("Failed to start live mic measurement:", err);
+      setErrorMessage("Could not access microphone for live dB measurement.");
+      setIsLiveMeasuring(false);
+    }
+  };
+
   const fetchMetrics = useCallback(async () => {
     setLoading(true);
     setErrorMessage(null);
@@ -58,9 +166,9 @@ export function NoiseReportingWidget({
       if (Array.isArray(data.buckets)) {
         setBuckets(data.buckets);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error loading noise metrics:", err);
-      setErrorMessage(err.message || "Failed to load noise metrics");
+      setErrorMessage(err instanceof Error ? err.message : "Failed to load noise metrics");
     } finally {
       setLoading(false);
     }
@@ -101,10 +209,13 @@ export function NoiseReportingWidget({
       if (onSubmitted) {
         onSubmitted(decibels);
       }
+      if (isLiveMeasuring) {
+        stopLiveMic();
+      }
       setTimeout(() => setSubmitted(false), 4000);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error submitting noise metric:", err);
-      setErrorMessage(err.message || "Failed to submit reading");
+      setErrorMessage(err instanceof Error ? err.message : "Failed to submit reading");
     } finally {
       setSubmitting(false);
     }
@@ -169,25 +280,49 @@ export function NoiseReportingWidget({
           </div>
         </div>
 
-        <button
-          onClick={fetchMetrics}
-          disabled={loading}
-          className="p-2 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-zinc-800 transition-colors"
-          title="Refresh Data"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-        </button>
+        <div className="flex items-center gap-1.5">
+          {/* Mic Calibration Wizard Trigger */}
+          <button
+            type="button"
+            onClick={() => setIsWizardOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+            title="Open Microphone dB Calibration Wizard"
+          >
+            <Sliders className="w-3.5 h-3.5 text-blue-500" />
+            <span className="hidden sm:inline">Calibrate Mic</span>
+            {calibration.offsetDb !== 0 && (
+              <span className="text-[10px] font-mono text-blue-500">
+                ({calibration.offsetDb > 0 ? `+${calibration.offsetDb}` : calibration.offsetDb}dB)
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={fetchMetrics}
+            disabled={loading}
+            className="p-2 text-zinc-400 hover:text-zinc-200 rounded-lg hover:bg-zinc-800 transition-colors"
+            title="Refresh Data"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </div>
 
-      {/* Interactive Decibel Input Slider */}
+      {/* Interactive Decibel Input Slider & Mic Auto-Measure */}
       <form onSubmit={handleSubmit} className="mb-6 space-y-4">
-        <div className="bg-zinc-50 dark:bg-zinc-950/60 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800/80">
-          <div className="flex items-center justify-between mb-2">
+        <div className="bg-zinc-50 dark:bg-zinc-950/60 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800/80 space-y-3">
+          <div className="flex items-center justify-between">
             <label
               htmlFor="decibel-slider"
-              className="text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400"
+              className="text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400 flex items-center gap-1.5"
             >
-              Observed Decibels (dB)
+              <span>Observed Decibels (dB)</span>
+              {isLiveMeasuring && (
+                <span className="inline-flex items-center gap-1 text-[10px] text-red-500 font-mono animate-pulse">
+                  <span className="w-2 h-2 rounded-full bg-red-500" />
+                  Live Mic ({liveMicDb?.toFixed(1)} dB)
+                </span>
+              )}
             </label>
             <span
               className={`text-xs font-bold px-2.5 py-1 rounded-full border ${currentClassification.color}`}
@@ -203,13 +338,28 @@ export function NoiseReportingWidget({
             max={90}
             step={1}
             value={decibels}
-            onChange={(e) => setDecibels(Number(e.target.value))}
+            onChange={(e) => {
+              if (isLiveMeasuring) stopLiveMic();
+              setDecibels(Number(e.target.value));
+            }}
             className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none"
           />
 
-          <div className="flex justify-between text-[10px] text-zinc-400 mt-1 font-mono">
+          <div className="flex justify-between items-center text-[10px] text-zinc-400 font-mono">
             <span>30 dB (Quiet)</span>
-            <span>60 dB (Moderate)</span>
+            {/* Live Mic Auto-Detect Button */}
+            <button
+              type="button"
+              onClick={isLiveMeasuring ? stopLiveMic : startLiveMic}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
+                isLiveMeasuring
+                  ? "bg-red-500 text-white shadow-sm"
+                  : "bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/20"
+              }`}
+            >
+              <Mic className="w-3 h-3" />
+              <span>{isLiveMeasuring ? "Stop Live Sampling" : "Auto-Measure with Mic"}</span>
+            </button>
             <span>90 dB (Loud)</span>
           </div>
         </div>
@@ -323,6 +473,13 @@ export function NoiseReportingWidget({
           </div>
         )}
       </div>
+
+      {/* Mic Calibration Wizard Modal */}
+      <MicCalibrationWizard
+        isOpen={isWizardOpen}
+        onClose={() => setIsWizardOpen(false)}
+        onCalibrationSaved={(newProf) => setCalibration(newProf)}
+      />
     </div>
   );
 }

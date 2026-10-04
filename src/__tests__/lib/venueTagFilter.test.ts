@@ -60,6 +60,7 @@ describe("venueTagFilter - filterByTag", () => {
   });
 
   it("does not match partial tags", () => {
+    // 'qui' should not match 'quiet'
     const result = filterByTag(sampleVenues, "qui");
     expect(result).toHaveLength(0);
   });
@@ -73,6 +74,7 @@ describe("venueTagFilter - filterByTag", () => {
 describe("venueTagFilter - filterByTags (OR logic)", () => {
   it("returns venues matching any of the provided tags (OR)", () => {
     const result = filterByTags(sampleVenues, ["quiet", "bar"]);
+    // quiet: [1,3], bar: [2,4] => union [1,2,3,4]
     expect(result).toHaveLength(4);
     expect(result.map((v) => v.id)).toEqual(
       expect.arrayContaining(["1", "2", "3", "4"])

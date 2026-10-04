@@ -21,7 +21,7 @@ sequenceDiagram
     participant DB as PostgreSQL / Prisma
 
     User->>UI: Enter Numeric Student ID
-    UI->>UI: Compute expectedCommit locally (t^2 + 5t + 17)
+    UI->>UI: Compute expectedCommit locally (Poseidon(t))
     UI->>Worker: postMessage({ identityToken, expectedCommit })
     Note over Worker: Runs in background thread to prevent UI lockup
     Worker->>WASM: Load premium_membership.wasm & .zkey
@@ -71,9 +71,9 @@ To avoid freezing the browser's main execution/UI thread during CPU-intensive cr
 
 ### Mathematical Commitment
 
-To satisfy the Zero-Knowledge condition, the student identity token $t$ (a private input) is hidden inside a polynomial commitment $C(t)$:
-$$C(t) = t^2 + 5t + 17 \pmod{r}$$
-where $r$ is the BN128 scalar field order.
+To satisfy the Zero-Knowledge condition, the student identity token $t$ (a private input) is hidden inside a Poseidon hash commitment $C(t)$:
+$$C(t) = \text{Poseidon}(t)$$
+where $t$ is reduced modulo the BN128 scalar field order $r$.
 
 ### Input Configuration
 
@@ -96,17 +96,15 @@ Follow these step-by-step instructions to compile the circuit, perform a mock tr
 ```circom
 pragma circom 2.0.0;
 
+include "circomlib/circuits/poseidon.circom";
+
 template StudentDiscount() {
     signal input identityToken; // Private ID
     signal input expectedCommit; // Public Commitment
 
-    signal t2;
-    t2 <== identityToken * identityToken;
-
-    signal commit;
-    commit <== t2 + identityToken * 5 + 17;
-
-    expectedCommit === commit;
+    component hash = Poseidon(1);
+    hash.inputs[0] <== identityToken;
+    expectedCommit === hash.out;
 }
 
 component main {public [expectedCommit]} = StudentDiscount();
@@ -152,11 +150,11 @@ npx snarkjs zkey export verificationkey build/student_discount.zkey public/zkp/v
 
 ### Step 5: Generate Witness and Prove Locally
 
-1. Create a test input file `input.json` (e.g. for ID `12345`, expectedCommit = $12345^2 + 5 \times 12345 + 17 = 152461042$):
+1. Create a test input file `input.json` (e.g. for ID `12345`, expectedCommit = $\text{Poseidon}(12345)$ = `4267533774488295900887461483015112262021273608761099826938271132511348470966`):
    ```json
    {
      "identityToken": "12345",
-     "expectedCommit": "152461042"
+     "expectedCommit": "4267533774488295900887461483015112262021273608761099826938271132511348470966"
    }
    ```
 2. Calculate the witness:

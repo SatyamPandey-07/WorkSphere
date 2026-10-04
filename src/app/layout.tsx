@@ -17,6 +17,7 @@ import { ToastProvider } from "../components/ui/Toast";
 import { PWAUpdateListener } from "../components/PWAUpdateListener";
 import { KeyboardShortcutsModal } from "../components/KeyboardShortcutsModal";
 import { CommandPalette } from "../components/CommandPalette";
+import { IdleSessionDialog } from "../components/auth/IdleSessionDialog";
 
 const THEME_INIT_SCRIPT = `
 (function () {
@@ -97,6 +98,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://work-sphere-one.vercel.app",
+  ),
   title: "WorkSphere - AI-Powered Remote Workspace Finder",
   description:
     "Discover cafes, coworking spaces, and libraries with great WiFi, power outlets, and the perfect atmosphere for your work style.",
@@ -135,10 +139,6 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const publishableKey =
-    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-    "pk_test_Y2xvc2luZy12dWx0dXJlLTEwLmNsZXJrLmFjY291bnRzLmRldiQ";
-
   const cookieStore = await cookies();
   const headersList = await headers();
   const nonce = headersList.get("x-csp-nonce") ?? "";
@@ -167,6 +167,7 @@ export default async function RootLayout({
             <PWAUpdateListener />
             <KeyboardShortcutsModal />
             <CommandPalette />
+            <IdleSessionDialog />
             <I18nProvider>{children}</I18nProvider>
           </CurrencyProvider>
         </ToastProvider>
@@ -178,7 +179,6 @@ export default async function RootLayout({
   const bodyContent = (
     <ClerkProvider
       afterSignOutUrl="/"
-      publishableKey={publishableKey}
       appearance={{
         elements: {
           formButtonPrimary: "accent-bg hover:opacity-90",

@@ -438,3 +438,84 @@ src/lib/offlineStore.ts                  IndexedDB queue helpers
 src/app/api/partykit/auth/route.ts       Role lookup for PartyKit auth
 src/app/api/venues/updates/route.ts      SSE endpoint for venue updates
 ```
+
+---
+
+## Collaborative Collection Notes (#3360)
+
+Collection notes used to be the `Folder.description` string, saved with a
+whole-value `PUT /api/folders/:id`. Two people editing at once meant the later
+save silently erased the other's changes (last-write-wins). Notes are now a
+Yjs `Y.Text` that merges concurrent edits.
+
+### Data flow
+
+```
+textarea ──applyYTextDiff──▶ Y.Text "collection-notes"
+                                │  y-partykit (binary Yjs sync)
+                                ▼
+              PartyKit room  folder-notes-{folderId}   (persist: snapshot)
+                                │
+           debounced plain-text snapshot (editors only)
+                                ▼
+              Folder.description  →  list page, PDF export, public page
+```
+
+- **Minimal operations.** Each keystroke becomes character-level inserts and
+  deletes via `applyYTextDiff` (common prefix/suffix), never a full replace.
+  Edits to different paragraphs therefore never touch the same characters.
+- **Deterministic merge, no locking.** Yjs orders concurrent inserts by
+  `(clientID, clock)`, so every replica converges to the same text in any
+  delivery order. Offline edits merge on reconnect.
+- **Snapshot, not source of truth.** Editors write `Y.Text.toString()` back
+  to `Folder.description` 1.5 s after their last local edit (capped to the
+  field's 500-character limit). All replicas converge, so these writes can't
+  lose edits. The CRDT is authoritative.
+
+### Seeding existing notes
+
+The first editor to open an empty shared note seeds it from the legacy
+`Folder.description`. The seed update is built with a Yjs `clientID` derived
+from an FNV-1a hash of the text (`createSeedUpdate`). Two clients seeding the
+same text at the same moment produce **byte-identical** updates that Yjs
+de-duplicates, so the note is never doubled. Seeding never happens over a
+non-empty note.
+
+### Access control (`party/server.ts`)
+
+| Who | `folder-notes-{id}` room |
+| --- | --- |
+| No Clerk token | Rejected (`4003`) |
+| Signed in, not a member/owner of the folder | Rejected (`4003`) |
+| `VIEWER` / `MEMBER` | Read-only (`y-partykit` drops their updates) |
+| `OWNER` / `EDITOR` | Read/write |
+
+The role lookup to `/api/partykit/auth` now sends
+`Authorization: Bearer $PARTYKIT_AUTH_SECRET`. The route has always required
+this header, but the server never sent it, so every lookup failed and **all
+users were treated as viewers in every folder room**. The route also returns
+`member: true|false`, so outsiders (who also get role `VIEWER`) can be told
+apart from real viewers. Clients pass a fresh Clerk token on every
+(re)connect through the provider's async `params`.
+
+Notes rooms use `persist: { mode: "snapshot" }` (with `gc: false`, as
+y-partykit requires) so notes survive the room being evicted from memory.
+
+### Files
+
+| File | Role |
+| --- | --- |
+| `src/lib/crdt/collectionNotes.ts` | Room naming, deterministic seeding, length limit |
+| `src/components/collections/CollectionNotesEditor.tsx` | Textarea ↔ `Y.Text`, caret preservation via relative positions, snapshotting |
+| `party/server.ts` | Members-only notes rooms, authenticated role lookup, persistence |
+| `src/app/api/partykit/auth/route.ts` | Adds the `member` flag |
+
+### Tests
+
+- `src/__tests__/lib/collectionNotes.test.ts`:
+  - **Acceptance:** two concurrent edits to different paragraphs merge with no data loss; the old last-write-wins save is shown losing one of them.
+  - Order-independent convergence across three users.
+  - Same-paragraph edits and insert-vs-delete conflicts; offline edits.
+  - Idempotent concurrent seeding.
+- `party/__tests__/folderNotesAccess.test.ts`: the access table above, the shared-secret header, and persistence options.
+- `src/__tests__/components/CollectionNotesEditor.test.tsx`: seeding, a live merge of local typing with a remote edit, the debounced snapshot, read-only viewers, and offline state.

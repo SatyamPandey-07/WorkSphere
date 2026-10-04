@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { calculateStreak, getUnlockedMilestones } from "@/lib/streak";
+import { ensureUserExists } from "@/lib/auth";
 
 // ─── GET /api/user/streak ─────────────────────────────────────────────────────
 // Returns the current streak data for the authenticated user.
@@ -11,6 +12,8 @@ export async function GET() {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    await ensureUserExists(userId);
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -51,6 +54,8 @@ export async function POST() {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    await ensureUserExists(userId);
 
     // Fetch current streak state
     const user = await prisma.user.findUnique({

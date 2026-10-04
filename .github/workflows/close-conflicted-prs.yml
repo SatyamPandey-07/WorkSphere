@@ -1,0 +1,158 @@
+name: Close Conflicted PRs
+
+on:
+  workflow_dispatch:
+    inputs:
+      author:
+        description: 'GitHub username whose PRs to inspect (default: jasonjose007)'
+        required: true
+        default: 'jasonjose007'
+      only_conflicts:
+        description: 'Only close if there are merge conflicts (uncheck to close all open PRs by author)'
+        type: boolean
+        default: true
+      close_comment:
+        description: 'Comment to post before closing'
+        required: false
+        default: '⚠️ Closing this pull request automatically due to merge conflicts with `main`. Please resolve all conflicts against the latest `main` branch before reopening.'
+      max_prs:
+        description: 'Maximum number of PRs to close in this run'
+        required: true
+        default: '600'
+      dry_run:
+        description: 'Dry run mode (check which PRs have conflicts without closing them)'
+        type: boolean
+        default: false
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  close-prs:
+    name: Close Conflicted PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect and Close PRs
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const targetAuthor = '${{ github.event.inputs.author }}'.trim().toLowerCase();
+            const onlyConflicts = '${{ github.event.inputs.only_conflicts }}' === 'true';
+            const closeComment = '${{ github.event.inputs.close_comment }}'.trim();
+            const maxPrs = parseInt('${{ github.event.inputs.max_prs }}', 10) || 600;
+            const isDryRun = '${{ github.event.inputs.dry_run }}' === 'true';
+
+            console.log(`Starting Close PRs Workflow`);
+            console.log(`- Target Author: @${targetAuthor}`);
+            console.log(`- Only If Conflicts: ${onlyConflicts}`);
+            console.log(`- Max PRs to Process: ${maxPrs}`);
+            console.log(`- Dry Run: ${isDryRun}`);
+
+            // 1. Fetch all open PRs by this author using search API
+            console.log(`Searching for open PRs by @${targetAuthor}...`);
+            let matchingPrs = [];
+            let page = 1;
+
+            while (matchingPrs.length < maxPrs) {
+              const query = `repo:${owner}/${repo} is:pr is:open author:${targetAuthor}`;
+              const searchRes = await github.rest.search.issuesAndPullRequests({
+                q: query,
+                sort: 'created',
+                order: 'asc',
+                per_page: 100,
+                page: page
+              });
+
+              const items = searchRes.data.items || [];
+              if (items.length === 0) break;
+              matchingPrs.push(...items);
+              if (items.length < 100) break;
+              page++;
+              await new Promise(r => setTimeout(r, 1000));
+            }
+
+            console.log(`Found ${matchingPrs.length} open PRs by @${targetAuthor}.`);
+
+            let closedCount = 0;
+            let skippedCleanCount = 0;
+            let errorCount = 0;
+
+            for (const item of matchingPrs) {
+              if (closedCount >= maxPrs) {
+                console.log(`Reached limit of ${maxPrs} closed PRs.`);
+                break;
+              }
+
+              const prNumber = item.number;
+              console.log(`\nInspecting PR #${prNumber}: "${item.title}"`);
+
+              // Check mergeability status with up to 3 polling retries
+              let prDetails;
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                const prRes = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: prNumber
+                });
+                prDetails = prRes.data;
+                if (prDetails.mergeable !== null) break;
+                console.log(`Waiting for GitHub to evaluate mergeability (attempt ${attempt}/3)...`);
+                await new Promise(r => setTimeout(r, 2000));
+              }
+
+              const hasConflict = prDetails.mergeable === false || prDetails.mergeable_state === 'dirty';
+
+              if (onlyConflicts && !hasConflict) {
+                console.log(`PR #${prNumber} has NO merge conflict (state: ${prDetails.mergeable_state}, mergeable: ${prDetails.mergeable}). Skipping.`);
+                skippedCleanCount++;
+                continue;
+              }
+
+              console.log(`Target PR #${prNumber} matched for closure (conflict: ${hasConflict}, state: ${prDetails.mergeable_state}).`);
+
+              if (isDryRun) {
+                console.log(`[DRY RUN] Would close PR #${prNumber}`);
+                closedCount++;
+                continue;
+              }
+
+              // Post comment and close PR
+              try {
+                if (closeComment) {
+                  await github.rest.issues.createComment({
+                    owner,
+                    repo,
+                    issue_number: prNumber,
+                    body: closeComment
+                  });
+                }
+
+                await github.rest.pulls.update({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  state: 'closed'
+                });
+
+                console.log(`Closed PR #${prNumber}.`);
+                closedCount++;
+
+                // Pause to prevent hitting GitHub secondary rate limits
+                await new Promise(r => setTimeout(r, 1500));
+              } catch (err) {
+                console.error(`Failed to close PR #${prNumber}: ${err.message}`);
+                errorCount++;
+              }
+            }
+
+            console.log(`\n==========================================`);
+            console.log(`Summary:`);
+            console.log(`- Total Evaluated: ${matchingPrs.length}`);
+            console.log(`- Closed: ${closedCount}`);
+            console.log(`- Clean (Skipped): ${skippedCleanCount}`);
+            console.log(`- Errors: ${errorCount}`);
+            console.log(`==========================================`);

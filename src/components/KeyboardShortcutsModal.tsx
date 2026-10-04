@@ -2,16 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { X, Command } from "lucide-react";
-
-const SHORTCUTS = [
-  { key: "Ctrl+K", description: "Global Search" },
-  { key: "?", description: "Show Keyboard Shortcuts" },
-  { key: "Esc", description: "Close Modals" },
-  { key: "M", description: "Toggle Map View" },
-];
+import { usePlatformModifier } from "@/hooks/usePlatformModifier";
 
 export function KeyboardShortcutsModal() {
   const [isOpen, setIsOpen] = useState(false);
+  const { formatShortcut } = usePlatformModifier();
+
+  const shortcuts = [
+    { key: formatShortcut("K"), description: "Global Search" },
+    { key: formatShortcut("/"), description: "Toggle AI Chatbot" },
+    { key: "?", description: "Show Keyboard Shortcuts" },
+    { key: "Esc", description: "Close Modals" },
+    { key: "M", description: "Toggle Map View" },
+  ];
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -60,7 +63,7 @@ export function KeyboardShortcutsModal() {
         </div>
 
         <div className="space-y-2">
-          {SHORTCUTS.map((shortcut) => (
+          {shortcuts.map((shortcut) => (
             <div
               key={shortcut.key}
               className="flex items-center justify-between p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800"

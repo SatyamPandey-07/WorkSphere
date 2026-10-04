@@ -24,6 +24,14 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
 const ZOOM_STEP = 0.1;
 
+const ASPECT_PRESETS = [
+  { label: "1:1", value: 1, description: "Square (profile picture)" },
+  { label: "4:3", value: 4 / 3, description: "Standard" },
+  { label: "16:9", value: 16 / 9, description: "Widescreen" },
+] as const;
+
+type AspectPreset = typeof ASPECT_PRESETS[number]["value"];
+
 export function AvatarCropModal({
   imageSource,
   originalFileName,
@@ -36,6 +44,7 @@ export function AvatarCropModal({
   const [zoom, setZoom] = useState(1);
   const [croppedPixels, setCroppedPixels] = useState<PixelCrop | null>(null);
   const [cropError, setCropError] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<AspectPreset>(1);
 
   useEffect(() => {
     if (!isOpen) {
@@ -155,13 +164,41 @@ export function AvatarCropModal({
         </header>
 
         <div className="p-5">
-          <div className="relative aspect-square w-full max-h-[60vh] overflow-hidden rounded-xl bg-zinc-950">
+          {/* Aspect ratio presets */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              Aspect:
+            </span>
+            {ASPECT_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => {
+                  setAspectRatio(preset.value);
+                  setCrop({ x: 0, y: 0 });
+                  setZoom(1);
+                }}
+                aria-pressed={aspectRatio === preset.value}
+                title={preset.description}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  aspectRatio === preset.value
+                    ? "bg-blue-600 text-white border-blue-600"
+                    : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700 hover:border-blue-400"
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative w-full max-h-[55vh] overflow-hidden rounded-xl bg-zinc-950"
+               style={{ aspectRatio: `${aspectRatio}` }}>
             <Cropper
               image={imageSource}
               crop={crop}
               zoom={zoom}
-              aspect={1}
-              cropShape="round"
+              aspect={aspectRatio}
+              cropShape={aspectRatio === 1 ? "round" : "rect"}
               showGrid
               objectFit="contain"
               minZoom={MIN_ZOOM}

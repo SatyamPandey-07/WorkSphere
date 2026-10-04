@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
-import { verifyRegistrationResponse } from "@simplewebauthn/server";
 import { prisma } from "@/lib/prisma";
-import { parseClientDataJSON } from "@/lib/webauthn";
-import { getRpId, getExpectedOrigin } from "@/lib/passkey";
+import { verifyPasskeyRegistration } from "@/lib/passkey/registration";
 import type { RegistrationResponseJSON } from "@simplewebauthn/browser";
 
 export async function POST(req: Request) {
@@ -26,47 +24,21 @@ export async function POST(req: Request) {
       );
     }
 
-    // Find the most recent active challenge for this user
-    const challengeRecord = await prisma.passkeyChallenge.findFirst({
-      where: {
-        userId,
-        expiresAt: { gt: new Date() },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    if (!challengeRecord) {
-      return NextResponse.json(
-        { error: "Passkey challenge expired or missing. Please try again." },
-        { status: 400 },
-      );
+    const result = await verifyPasskeyRegistration(
+      req,
+      userId,
+      registrationResponse,
+    );
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
     }
 
-    const clientData = registrationResponse.response?.clientDataJSON
-      ? parseClientDataJSON(registrationResponse.response.clientDataJSON)
-      : null;
-
-    const verification = await verifyRegistrationResponse({
-      response: registrationResponse,
-      expectedChallenge: challengeRecord.challenge,
-      expectedOrigin: getExpectedOrigin(req, clientData?.origin),
-      expectedRPID: getRpId(req),
-    });
-
-    if (!verification.verified || !verification.registrationInfo) {
-      return NextResponse.json(
-        { error: "Passkey verification failed" },
-        { status: 400 },
-      );
-    }
-
-    const { credential, credentialDeviceType, credentialBackedUp, aaguid } =
-      verification.registrationInfo;
+    const { challengeId, credential } = result.registration;
 
     // Delete spent challenge
     await prisma.passkeyChallenge
       .delete({
-        where: { id: challengeRecord.id },
+        where: { id: challengeId },
       })
       .catch(() => {});
 
@@ -74,15 +46,8 @@ export async function POST(req: Request) {
     const newPasskey = await prisma.passkeyCredential.create({
       data: {
         userId,
-        credentialId: credential.id,
-        publicKey: Buffer.from(credential.publicKey),
-        counter: BigInt(credential.counter),
-        transports: credential.transports || [],
-        deviceType: credentialDeviceType,
-        backedUp: credentialBackedUp,
-        name: name?.trim() || "Passkey Credential",
-        aaguid: aaguid || null,
-        expiresAt: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+        ...credential,
+        name: name?.trim().slice(0, 64) || "Passkey Credential",
       },
     });
 

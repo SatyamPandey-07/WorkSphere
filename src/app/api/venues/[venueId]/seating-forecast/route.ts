@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { apiError } from "@/lib/apiResponse";
 
 export async function GET(
   request: Request,
@@ -14,7 +15,7 @@ export async function GET(
     });
 
     if (!venue) {
-      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
     const maxCapacity = venue.maxCapacity || 50;
@@ -76,9 +77,6 @@ export async function GET(
     });
   } catch (error) {
     console.error("Error generating seating forecast:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return apiError("Internal server error", 500, "INTERNAL_ERROR");
   }
 }

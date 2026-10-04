@@ -11,6 +11,7 @@ import {
   Users,
   Settings,
 } from "lucide-react";
+import { OPEN_COMMAND_PALETTE_EVENT } from "@/hooks/usePlatformModifier";
 
 interface CommandItem {
   label: string;
@@ -82,8 +83,16 @@ export function CommandPalette() {
       }
     };
 
+    const handleOpenEvent = () => {
+      setIsOpen(true);
+    };
+
     window.addEventListener("keydown", handleGlobalKeyDown);
-    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpenEvent);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpenEvent);
+    };
   }, []);
 
   useEffect(() => {
@@ -137,6 +146,7 @@ export function CommandPalette() {
           <input
             autoFocus
             value={query}
+            aria-keyshortcuts="Control+K Meta+K"
             onChange={(e) => {
               // Strip control characters (<, >, HTML/script injection chars,
               // and non-printable chars) before storing the query.

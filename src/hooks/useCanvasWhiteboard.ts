@@ -6,7 +6,7 @@ import * as Y from "yjs";
 import YProvider from "y-partykit/provider";
 import { FailoverSyncManager } from "@/lib/edge/failoverSync";
 
-export type ToolType = "pen" | "eraser" | "rect" | "circle" | "line";
+export type ToolType = "pen" | "eraser" | "rect" | "circle" | "line" | "sticky";
 
 export interface ShapeData {
   id: string;

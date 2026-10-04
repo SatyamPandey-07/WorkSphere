@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { apiFetch } from "@/lib/apiClient";
 import { motion, AnimatePresence } from "framer-motion";
@@ -31,6 +31,7 @@ import {
   applyPendingConversationEdits,
   flushConversationEditQueue,
 } from "@/lib/offlineStorage";
+import { queueOfflineReview } from "@/lib/offlineReviewSync";
 import {
   formatChatHistoryMarkdown,
   generateChatPdfReport,
@@ -128,7 +129,7 @@ export function EnhancedChatbot({
   const { socket, isHydrated } = useMultiplayerSession(roomId || null);
   const sendSocketMessage = useCallback(
     (data: string) => {
-      if (socket && socket.readyState === 1) {
+      if (socket) {
         try {
           socket.send(data);
         } catch (err) {
@@ -212,6 +213,10 @@ export function EnhancedChatbot({
   } = useSpeechSynthesis();
   const [showVoiceSettings, setShowVoiceSettings] = useState(false);
   const [isExportingChatPdf, setIsExportingChatPdf] = useState(false);
+  // Stable IDs for voice-settings form controls — useId() prevents SSR hydration
+  // mismatches in React 19 (server-generated IDs must match client re-render).
+  const autoReadCheckboxId = useId();
+  const speechRateSliderId = useId();
 
   const handleExportMarkdown = () => {
     if (messages.length === 0) return;
@@ -734,30 +739,70 @@ export function EnhancedChatbot({
         }),
       );
 
-      const token = await getToken();
-      await fetch(`/api/venues/${targetVenue.id}/rate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+      const reviewPayload = {
+        ...rating,
+        venue: {
+          name: targetVenue.name,
+          lat: targetVenue.lat,
+          lng: targetVenue.lng,
+          category: targetVenue.category,
+          address: targetVenue.address,
         },
-        body: JSON.stringify({
-          ...rating,
-          venue: {
-            name: targetVenue.name,
-            lat: targetVenue.lat,
-            lng: targetVenue.lng,
-            category: targetVenue.category,
-            address: targetVenue.address,
+      };
+
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        await queueOfflineReview({
+          venueId: targetVenue.id,
+          venueName: targetVenue.name,
+          data: reviewPayload,
+        });
+        alert(
+          "Review saved offline. It will automatically sync when you reconnect.",
+        );
+        setRatingVenue(null);
+        return;
+      }
+
+      try {
+        const token = await getToken();
+        await fetch(
+          `/api/venues/${encodeURIComponent(targetVenue.id)}/reviews`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify(reviewPayload),
           },
-        }),
-      });
-      trackVenueInteraction("rated", {
-        id: targetVenue.id,
-        name: targetVenue.name,
-        category: targetVenue.category,
-      });
-      setRatingVenue(null);
+        );
+        trackVenueInteraction("rated", {
+          id: targetVenue.id,
+          name: targetVenue.name,
+          category: targetVenue.category,
+        });
+        setRatingVenue(null);
+      } catch (netErr) {
+        // Network error / offline transition
+        try {
+          await queueOfflineReview({
+            venueId: targetVenue.id,
+            venueName: targetVenue.name,
+            data: reviewPayload,
+          });
+          alert(
+            "Review saved offline. It will automatically sync when you reconnect.",
+          );
+          setRatingVenue(null);
+        } catch (queueErr) {
+          setMessages(previousMessages);
+          console.error("Failed to queue rating offline:", queueErr);
+          trackError(
+            netErr instanceof Error ? netErr : new Error(String(netErr)),
+            "rating_submit",
+          );
+        }
+      }
     } catch (e) {
       setMessages(previousMessages);
       console.error("Failed to submit rating:", e);
@@ -848,7 +893,10 @@ export function EnhancedChatbot({
       }
     });
 
-    const response = await apiFetch(`/api/venues?${params.toString()}`);
+    // Idempotent GET: wait out a 429 and retry instead of failing (#1732).
+    const response = await apiFetch(`/api/venues?${params.toString()}`, undefined, {
+      retryOnRateLimit: true,
+    });
 
     if (!response.ok) {
       throw new Error("Failed to refresh venues");
@@ -1374,8 +1422,9 @@ export function EnhancedChatbot({
 
           {showVoiceSettings && (
             <div className="flex items-center gap-4 text-xs">
-              <label className="flex items-center gap-1 cursor-pointer text-zinc-700 dark:text-zinc-300">
+              <label htmlFor={autoReadCheckboxId} className="flex items-center gap-1 cursor-pointer text-zinc-700 dark:text-zinc-300">
                 <input
+                  id={autoReadCheckboxId}
                   type="checkbox"
                   checked={autoRead}
                   onChange={toggleAutoRead}
@@ -1384,8 +1433,10 @@ export function EnhancedChatbot({
                 Auto-read
               </label>
               <div className="flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
-                <span>Speed:</span>
+                <label htmlFor={speechRateSliderId} className="sr-only">Speech rate</label>
+                <span aria-hidden="true">Speed:</span>
                 <input
+                  id={speechRateSliderId}
                   type="range"
                   min="0.75"
                   max="2.0"

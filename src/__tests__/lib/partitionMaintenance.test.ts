@@ -1,5 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import {
+  buildPartmanRetentionConfigSql,
+  getTelemetryPartitionName,
+  getTelemetryPartitionRange,
+  getUpcomingTelemetryPartitionNames,
+} from "@/lib/db/partitionMaintenance";
+import {
   archiveExpiredPushNotificationPartitions,
   autoCreateUpcomingPartitions,
   getPartitionRetentionCutoff,
@@ -68,6 +74,47 @@ describe("partition naming and retention helpers", () => {
     expect(() =>
       getPartitionRetentionCutoff(new Date("2026-07-25T00:00:00.000Z"), 0),
     ).toThrow("retentionMonths must be a positive integer");
+  });
+});
+
+describe("pg_partman telemetry partition helpers", () => {
+  it("generates monthly partition names across year boundaries", () => {
+    expect(
+      getTelemetryPartitionName(
+        "WifiTelemetry",
+        new Date("2026-12-15T12:00:00.000Z"),
+      ),
+    ).toBe("WifiTelemetry_y2026m12");
+    expect(
+      getTelemetryPartitionName(
+        "AcousticTelemetry",
+        new Date("2027-01-01T00:00:00.000Z"),
+      ),
+    ).toBe("AcousticTelemetry_y2027m01");
+  });
+
+  it("calculates UTC half-open monthly ranges at leap-year boundaries", () => {
+    expect(getTelemetryPartitionRange(new Date("2028-02-29T23:59:00.000Z"))).toEqual({
+      start: "2028-02-01",
+      end: "2028-03-01",
+    });
+  });
+
+  it("plans the next two months for both telemetry parents", () => {
+    expect(getUpcomingTelemetryPartitionNames(new Date("2026-12-31T23:59:00Z"))).toEqual([
+      "WifiTelemetry_y2027m01",
+      "WifiTelemetry_y2027m02",
+      "AcousticTelemetry_y2027m01",
+      "AcousticTelemetry_y2027m02",
+    ]);
+  });
+
+  it("configures pg_partman to retain detached partitions in the archive schema", () => {
+    const sql = buildPartmanRetentionConfigSql();
+
+    expect(sql).toContain("retention = '90 days'");
+    expect(sql).toContain("retention_keep_table = true");
+    expect(sql).toContain("retention_schema = 'telemetry_archive'");
   });
 });
 

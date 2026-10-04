@@ -378,11 +378,34 @@ export function MultiCityComparison({
   };
 
   const [isExportingChartPdf, setIsExportingChartPdf] = useState(false);
+  const [sortColumn, setSortColumn] = useState<"city" | "avgWifi" | "quietPct" | "outletPct">("quietPct");
+  const [sortAsc, setSortAsc] = useState(false);
 
   const chartData = useMemo(
     () => buildComparisonChartData(selectedCities, venues),
     [selectedCities, venues],
   );
+
+  const sortedChartData = useMemo(() => {
+    return [...chartData].sort((a, b) => {
+      const av = a[sortColumn];
+      const bv = b[sortColumn];
+      const cmp =
+        typeof av === "string"
+          ? (av as string).localeCompare(bv as string)
+          : (av as number) - (bv as number);
+      return sortAsc ? cmp : -cmp;
+    });
+  }, [chartData, sortColumn, sortAsc]);
+
+  const handleSort = (col: typeof sortColumn) => {
+    if (sortColumn === col) {
+      setSortAsc((prev) => !prev);
+    } else {
+      setSortColumn(col);
+      setSortAsc(false);
+    }
+  };
 
   const handleExportChartPdf = async () => {
     if (chartData.length === 0) return;
@@ -1023,6 +1046,77 @@ export function MultiCityComparison({
               />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Sortable Summary Table */}
+      {sortedChartData.length > 0 && (
+        <div className="mt-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60 overflow-hidden shadow-sm">
+          <p className="px-4 pt-3 pb-2 text-xs font-bold uppercase tracking-tight text-zinc-500 dark:text-zinc-400">
+            Sortable Comparison Table
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50">
+                  {(
+                    [
+                      { col: "city", label: "City" },
+                      { col: "avgWifi", label: "Avg WiFi (Mbps)" },
+                      { col: "quietPct", label: "Quiet Venues (%)" },
+                      { col: "outletPct", label: "Outlets (%)" },
+                    ] as const
+                  ).map(({ col, label }) => (
+                    <th
+                      key={col}
+                      scope="col"
+                      onClick={() => handleSort(col)}
+                      className="px-3 py-2.5 text-left font-semibold text-zinc-600 dark:text-zinc-300 cursor-pointer hover:text-zinc-900 dark:hover:text-white select-none whitespace-nowrap"
+                      aria-sort={
+                        sortColumn === col
+                          ? sortAsc
+                            ? "ascending"
+                            : "descending"
+                          : "none"
+                      }
+                    >
+                      {label}
+                      {sortColumn === col && (
+                        <span aria-hidden="true" className="ml-1">
+                          {sortAsc ? "↑" : "↓"}
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedChartData.map((row, idx) => (
+                  <tr
+                    key={row.city}
+                    className={`border-b border-zinc-100 dark:border-zinc-800/60 ${
+                      idx % 2 === 0
+                        ? "bg-white dark:bg-zinc-900/60"
+                        : "bg-zinc-50/50 dark:bg-zinc-800/20"
+                    }`}
+                  >
+                    <td className="px-3 py-2 font-medium text-zinc-800 dark:text-zinc-200">
+                      {row.city}
+                    </td>
+                    <td className="px-3 py-2 text-blue-600 dark:text-blue-400 font-mono">
+                      {row.avgWifi ?? "—"}
+                    </td>
+                    <td className="px-3 py-2 text-emerald-600 dark:text-emerald-400 font-mono">
+                      {row.quietPct}%
+                    </td>
+                    <td className="px-3 py-2 text-amber-600 dark:text-amber-400 font-mono">
+                      {row.outletPct}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

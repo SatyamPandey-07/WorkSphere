@@ -170,3 +170,88 @@ State drift occurs when a client fails to receive or apply updates, leading to d
 ### 5.2 Resolving Mismatches
 
 If a user's local editor is desynchronized, call `resetNotesCrdtDbCache()` or wipe browser database stores to force a clean server sync and rebuild the state vector from scratch.
+
+---
+
+## 6. Scratchpad Wire Optimization over PartySocket (#1728)
+
+The E2EE session scratchpad (`src/components/sessions/Scratchpad.tsx`, room
+`session-scratchpad-<id>`) uses the v2 wire codec and a keystroke batcher, both
+in `src/lib/crdt/yjsCompression.ts`. The v1 LZ77 functions above are unchanged
+and still used by the WebRTC whiteboard.
+
+### 6.1 Where the bytes actually go
+
+A single keystroke produces a ~20-byte Yjs update, but each Scratchpad message
+also carries a 16-byte AES-GCM tag, a 12-byte IV, base64 inflation and a JSON
+envelope: **~120 bytes on the wire per keystroke**. Compressing a 20-byte
+update cannot help (it makes things slightly worse), so:
+
+| Payload | Technique | Why |
+| --- | --- | --- |
+| Typing (`e2ee-delta`) | **Batching** with `Y.mergeUpdates` | Removes per-message envelope overhead |
+| State sync (`sync-step-2`, from the state-vector handshake in §3.1) | **deflate-raw** | Large, repetitive text compresses 70%+ |
+
+### 6.2 Pipeline
+
+```
+send:    Y.Doc update ─▶ batcher (merge) ─▶ encodeYjsWirePayload ─▶ AES-GCM encrypt ─▶ PartySocket
+receive: PartySocket ─▶ AES-GCM decrypt ─▶ decodeYjsWirePayload ─▶ Y.applyUpdate
+```
+
+Compression always happens **before** encryption: ciphertext is incompressible.
+
+### 6.3 v2 frame
+
+```
+┌──────────────┬───────┬─────────────────────────┐
+│ 59 5A 43 02  │ codec │ body                    │
+│ "YZC" v2     │ 1 B   │ raw update or deflated  │
+└──────────────┴───────┴─────────────────────────┘
+codec 0x00 = raw, 0x01 = deflate-raw
+```
+
+- `encodeYjsWirePayload` always frames, and only deflates payloads ≥ 64 bytes
+  when that is actually smaller. Without native `CompressionStream` (older
+  Safari, jsdom) it emits raw frames.
+- `decodeYjsWirePayload` also accepts v1 LZ77 packets and bare updates from
+  clients that predate the codec. Corrupt frames, unknown codecs and payloads
+  that would inflate past **10 MB** (decompression bombs) throw `YjsWireError`.
+- (De)compression runs through the browser's native, asynchronous
+  `CompressionStream` / `DecompressionStream`, so large syncs don't block the
+  render thread.
+
+### 6.4 Batching
+
+```ts
+const batcher = createYjsUpdateBatcher({
+  onFlush: (merged) => void sendDelta(merged),
+  windowMs: 400,          // default; also the max added latency
+  maxPendingBytes: 65536, // flush early on large pastes
+});
+doc.on("update", (u) => batcher.push(u));
+window.addEventListener("pagehide", () => batcher.flush());
+```
+
+The first keystroke after a pause is sent immediately; keystrokes inside the
+window are merged into one update. `dispose()` flushes anything pending.
+
+### 6.5 Measured savings
+
+Wire bytes (exact Scratchpad envelope) for a typing session, default 400 ms window:
+
+| Typing speed | Reduction |
+| --- | --- |
+| 5 chars/s | 42% |
+| 10 chars/s | 65% |
+| 20 chars/s | 82% |
+| Full-state `sync-step-2` | 70%+ (grows with document size) |
+
+`src/__tests__/lib/yjsWireCodec.test.ts` asserts ≥ 60% for two users typing
+concurrently at 10 chars/s and that both replicas converge.
+
+### 6.6 Rollout note
+
+Clients running a pre-#1728 bundle cannot read v2 frames (their
+`Y.applyUpdate` rejects them, and the error is ignored). Users still on an open
+tab from the previous release need a reload to resume syncing.

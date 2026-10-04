@@ -6,8 +6,18 @@ import { getRpId, getExpectedOrigin } from "@/lib/passkey";
 import { parseClientDataJSON } from "@/lib/webauthn";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/browser";
 import type { AuthenticatorTransportFuture } from "@simplewebauthn/server";
+import { rateLimit } from "@/lib/rateLimit";
 
 export async function POST(req: Request) {
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "anonymous";
+  if (!(await rateLimit(`passkey-verify:${ip}`, 10))) {
+    return NextResponse.json(
+      { error: "Too many attempts. Please wait a minute." },
+      { status: 429 },
+    );
+  }
+
   try {
     const body = await req.json();
     const { authenticationResponse } = body as {
@@ -34,38 +44,62 @@ export async function POST(req: Request) {
       );
     }
 
-    // Find the active challenge matching this challenge session
-    const challengeRecord = await prisma.passkeyChallenge.findFirst({
-      where: {
-        expiresAt: { gt: new Date() },
-        OR: [{ userId: passkey.userId }, { userId: null }],
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    // Match the exact challenge this browser signed — never "the latest one",
+    // which would let concurrent sign-ins consume each other's challenges.
+    const clientData = authenticationResponse.response?.clientDataJSON
+      ? parseClientDataJSON(authenticationResponse.response.clientDataJSON)
+      : null;
 
-    if (!challengeRecord) {
+    const challengeRecord = clientData?.challenge
+      ? await prisma.passkeyChallenge.findUnique({
+          where: { challenge: clientData.challenge },
+        })
+      : null;
+
+    if (
+      !challengeRecord ||
+      challengeRecord.expiresAt <= new Date() ||
+      (challengeRecord.userId !== null &&
+        challengeRecord.userId !== passkey.userId)
+    ) {
       return NextResponse.json(
         { error: "Passkey challenge expired or missing. Please try again." },
         { status: 400 },
       );
     }
 
-    const clientData = authenticationResponse.response?.clientDataJSON
-      ? parseClientDataJSON(authenticationResponse.response.clientDataJSON)
-      : null;
-
-    const verification = await verifyAuthenticationResponse({
-      response: authenticationResponse,
-      expectedChallenge: challengeRecord.challenge,
-      expectedOrigin: getExpectedOrigin(req, clientData?.origin),
-      expectedRPID: getRpId(req),
-      credential: {
-        id: passkey.credentialId,
-        publicKey: new Uint8Array(passkey.publicKey),
-        counter: Number(passkey.counter),
-        transports: passkey.transports as AuthenticatorTransportFuture[],
-      },
-    });
+    let verification: Awaited<ReturnType<typeof verifyAuthenticationResponse>>;
+    try {
+      verification = await verifyAuthenticationResponse({
+        response: authenticationResponse,
+        expectedChallenge: challengeRecord.challenge,
+        expectedOrigin: getExpectedOrigin(req, clientData?.origin),
+        expectedRPID: getRpId(req),
+        credential: {
+          id: passkey.credentialId,
+          publicKey: new Uint8Array(passkey.publicKey),
+          counter: Number(passkey.counter),
+          transports: passkey.transports as AuthenticatorTransportFuture[],
+        },
+      });
+    } catch (verifyErr) {
+      // SimpleWebAuthn throws Error objects with descriptive messages when the
+      // challenge is expired or mismatched — return 400 instead of letting the
+      // outer catch return 500.
+      const msg =
+        verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+      const isChallengeError = /challenge|expired|unexpected.*challenge/i.test(
+        msg,
+      );
+      return NextResponse.json(
+        {
+          error: isChallengeError
+            ? "Passkey authentication challenge expired. Please try again."
+            : "Passkey assertion verification failed",
+        },
+        { status: 400 },
+      );
+    }
 
     if (!verification.verified || !verification.authenticationInfo) {
       return NextResponse.json(
@@ -74,13 +108,15 @@ export async function POST(req: Request) {
       );
     }
 
-    const { newCounter } = verification.authenticationInfo;
+    const { newCounter, credentialDeviceType, credentialBackedUp } = verification.authenticationInfo;
 
-    // Update signature counter and lastUsedAt timestamp
+    // Update signature counter, backup state, and lastUsedAt timestamp
     await prisma.passkeyCredential.update({
       where: { id: passkey.id },
       data: {
         counter: BigInt(newCounter),
+        backedUp: credentialBackedUp ?? passkey.backedUp,
+        deviceType: credentialDeviceType ?? passkey.deviceType,
         lastUsedAt: new Date(),
       },
     });

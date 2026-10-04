@@ -9,7 +9,23 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
+import {
+  addGaussianNoise,
+  calibrateGaussianSigma,
+  clipByL2Sensitivity,
+  composeRdp,
+  DEFAULT_RDP_ORDERS,
+  gaussianRdp,
+  rdpToEpsilon,
+} from "@/lib/privacy/rdpAccountant";
 import { z } from "zod";
+
+const DAILY_EPSILON_BUDGET = 1;
+const DAILY_DELTA = 1e-5;
+const DECIBEL_SENSITIVITY = 150;
+
+class PrivacyBudgetExhaustedError extends Error {}
 
 const noisePayloadSchema = z.object({
   venueId: z.string().min(1, "venueId is required"),
@@ -69,30 +85,110 @@ export async function POST(req: NextRequest) {
 
   const timestamp = measuredAt ? new Date(measuredAt) : new Date();
 
+  const epochKey = new Date().toISOString().slice(0, 10);
+
   try {
-    // Persist the noise reading — NoiseTelemetry model or a generic telemetry store
-    // Falls back to updating venue.noiseLevel as a derived category if no dedicated table exists
-    const avgDecibels = decibelLevel;
-    const noiseCategory =
-      avgDecibels < 50 ? "quiet" : avgDecibels < 70 ? "moderate" : "loud";
+    const result = await prisma.$transaction(
+      async (transaction) => {
+        const prior = await transaction.noiseTelemetryRelease.findUnique({
+          where: { venueId_epochKey: { venueId, epochKey } },
+          select: { rdpCosts: true, submissions: true },
+        });
+        const spentRdp = prior
+          ? (prior.rdpCosts as number[])
+          : DEFAULT_RDP_ORDERS.map(() => 0);
+        if (
+          spentRdp.length !== DEFAULT_RDP_ORDERS.length ||
+          spentRdp.some((cost) => !Number.isFinite(cost) || cost < 0)
+        ) {
+          throw new Error("Stored privacy accountant state is invalid");
+        }
 
-    await prisma.venue.update({
-      where: { id: venueId },
-      data: { noiseLevel: noiseCategory },
-    });
+        const sigma = calibrateGaussianSigma(
+          DECIBEL_SENSITIVITY,
+          DAILY_EPSILON_BUDGET,
+          DAILY_DELTA,
+          spentRdp,
+        );
+        if (sigma === null) throw new PrivacyBudgetExhaustedError();
 
-    return NextResponse.json(
-      {
-        success: true,
-        venueId,
-        decibelLevel,
-        noiseCategory,
-        timestamp: timestamp.toISOString(),
-        sensorId: sensorId ?? null,
+        const clipped = clipByL2Sensitivity(
+          [decibelLevel],
+          DECIBEL_SENSITIVITY,
+        );
+        const privateDecibels = Math.min(
+          150,
+          Math.max(0, addGaussianNoise(clipped, sigma)[0]),
+        );
+        const noiseCategory =
+          privateDecibels < 50
+            ? "quiet"
+            : privateDecibels < 70
+              ? "moderate"
+              : "loud";
+        const updatedRdp = composeRdp(
+          spentRdp,
+          gaussianRdp(sigma, DECIBEL_SENSITIVITY),
+        );
+        const submissions = (prior?.submissions ?? 0) + 1;
+
+        await transaction.noiseTelemetryRelease.upsert({
+          where: { venueId_epochKey: { venueId, epochKey } },
+          create: {
+            venueId,
+            epochKey,
+            avgDecibels: privateDecibels,
+            rdpCosts: updatedRdp,
+            submissions,
+          },
+          update: {
+            avgDecibels: privateDecibels,
+            rdpCosts: updatedRdp,
+            submissions,
+          },
+        });
+        await transaction.venue.update({
+          where: { id: venueId },
+          data: { noiseLevel: noiseCategory },
+        });
+
+        return {
+          noiseCategory,
+          submissions,
+          epsilon: rdpToEpsilon(updatedRdp, DAILY_DELTA),
+        };
       },
-      { status: 200 },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+
+    return NextResponse.json({
+      success: true,
+      venueId,
+      noiseCategory: result.noiseCategory,
+      timestamp: timestamp.toISOString(),
+      sensorId: sensorId ?? null,
+      privacy: {
+        epsilon: result.epsilon,
+        delta: DAILY_DELTA,
+        submissions: result.submissions,
+      },
+    });
   } catch (err) {
+    if (err instanceof PrivacyBudgetExhaustedError) {
+      return NextResponse.json(
+        { error: "Daily telemetry privacy budget exhausted" },
+        { status: 429 },
+      );
+    }
+    if (
+      err instanceof Prisma.PrismaClientKnownRequestError &&
+      err.code === "P2034"
+    ) {
+      return NextResponse.json(
+        { error: "Concurrent telemetry update; please retry" },
+        { status: 409 },
+      );
+    }
     console.error("[telemetry/noise] DB write failed:", err);
     return NextResponse.json(
       { error: "Failed to store telemetry" },

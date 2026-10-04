@@ -1,19 +1,55 @@
-# 🏢 WorkSphere - AI-Powered Remote Workspace Finder
-
 <div align="center">
 
-![WorkSphere Banner](https://img.shields.io/badge/WorkSphere-AI%20Workspace%20Finder-blue?style=for-the-badge)
+<a href="https://work-sphere-one.vercel.app/">
+  <img src="public/icons/icon-512.png" alt="WorkSphere Logo" width="84" height="84" style="border-radius: 20px;" />
+</a>
 
-[![Next.js](https://img.shields.io/badge/Next.js-15.5-black?style=flat-square&logo=next.js)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-[![Prisma](https://img.shields.io/badge/Prisma-7.2-2D3748?style=flat-square&logo=prisma)](https://www.prisma.io/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-38B2AC?style=flat-square&logo=tailwind-css)](https://tailwindcss.com/)
-[![Tests](https://img.shields.io/badge/Tests-57%20passing-success?style=flat-square)](./src/__tests__)
-[![PWA Ready](https://img.shields.io/badge/PWA-Ready-purple?style=flat-square)](https://web.dev/progressive-web-apps/)
+# WorkSphere
 
-**A multi-agent AI platform that helps remote workers discover ideal workspaces like cafes, coworking spaces, and libraries based on WiFi quality, power outlets, noise levels, and more.**
+### _The Intelligent Multi-Agent Workspace Discovery & Real-Time Booking Engine_
 
-[🚀 Live Demo](https://work-sphere-one.vercel.app/) • [🐛 Report Bug](https://github.com/SatyamPandey-07/WorkSphere/issues)
+<p align="center">
+  <img src="public/images/ecsoc-logo.png" alt="ECSoC 2026 - Elite Coders Summer of Code" height="56" />
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <img src="public/images/osci-logo.png" alt="OSCI 2026 - Open Source Contribution India" height="56" />
+</p>
+
+<p align="center">
+  <b>🌟 Official Selected Project for <a href="https://github.com/SatyamPandey-07/WorkSphere">ECSoC 2026</a> (Elite Coders Summer of Code) &amp; <a href="https://github.com/SatyamPandey-07/WorkSphere">OSCI 2026</a> (Open Source Contribution India) 🌟</b>
+</p>
+
+[![Next.js](https://img.shields.io/badge/Next.js-15.5-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4.0-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
+[![Prisma ORM](https://img.shields.io/badge/Prisma-7.2-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![PartyKit](https://img.shields.io/badge/PartyKit-WebSockets-FF5722?style=for-the-badge&logo=partykit&logoColor=white)](https://partykit.io/)
+[![PWA](https://img.shields.io/badge/PWA-Offline%20Ready-5A0FC8?style=for-the-badge&logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
+
+<br />
+
+[![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
+[![Contributors](https://img.shields.io/badge/Contributors-99%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
+[![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
+[![CI Status](https://img.shields.io/badge/CI-Passing-brightgreen?style=flat-square&logo=githubactions)](https://github.com/SatyamPandey-07/WorkSphere/actions)
+[![Live Demo](https://img.shields.io/badge/Live-Deployment-success?style=flat-square&logo=vercel)](https://work-sphere-one.vercel.app/)
+
+<p align="center">
+  <b>WorkSphere</b> is an autonomous multi-agent ecosystem engineered for remote professionals, digital nomads, and distributed teams.<br />
+  Discover top-tier cafes, coworking spaces, and quiet libraries dynamically ranked on <b>WiFi speeds, power outlet density, real-time noise metrics, and live seating occupancy</b>.
+</p>
+
+<p align="center">
+  <a href="https://work-sphere-one.vercel.app/"><b>🚀 Launch Live Demo</b></a> •
+  <a href="#-features"><b>✨ Features</b></a> •
+  <a href="#-architecture"><b>🏗️ Architecture</b></a> •
+  <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
+  <a href="#-contributors-99-active-rockstars"><b>👥 Contributors (99)</b></a> •
+  <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
+</p>
 
 </div>
 
@@ -21,26 +57,657 @@
 
 ### 👑 Project Leadership & Authorship
 
-- **Founder & CTO**: [Satyam Pandey](https://github.com/SatyamPandey-07)
+| Role                                  | Leader            | GitHub                                                 | Badges                                                                                                                                                                                                                                                                                                 |
+| :------------------------------------ | :---------------- | :----------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🚀 **Founder & Lead Architect / CTO** | **Satyam Pandey** | [@SatyamPandey-07](https://github.com/SatyamPandey-07) | [![GitHub Profile](https://img.shields.io/badge/GitHub-Profile-181717?style=flat-square&logo=github)](https://github.com/SatyamPandey-07) [![Pair Extraordinaire](https://img.shields.io/badge/GitHub-Pair%20Extraordinaire-58A6FF?style=flat-square&logo=github)](https://github.com/SatyamPandey-07) |
 
-> 🔔 **Update for Contributors:**
+> [!TIP]
+> **Issue Claiming & Auto-Merge Workflow:**
 >
-> The limit for active assigned issues per person has been increased to **10** (previously 5).
->
-> You can claim any open issue by posting a comment with exactly:
-> `/claim`
->
-> You will have **6 days** to complete it! 🚀
+> - Post `/claim` on any open issue to auto-assign it to yourself (limit: up to 10 active issues, 6-day completion window).
+> - Post `/unclaim` on an issue to unassign yourself if you need to release it for other contributors!
+> - When opening a PR, link the issue (e.g. `Closes #123`). Our CI will automatically approve and squash-merge your PR with co-author credit!
 
-### 🚀 Contributors (88 Active Rockstars)
+---
 
-Thanks to all **88 contributors** building WorkSphere!
+### 🚀 Contributors (99 Active Rockstars)
 
-<p align="center">
-  <a href="https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors">
-    <img src="https://contrib.rocks/image?repo=SatyamPandey-07/WorkSphere" alt="WorkSphere Contributors" />
-  </a>
-</p>
+A massive thank you to all **99 brilliant contributors and bots** building WorkSphere! 🌟
+
+<table>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/SatyamPandey-07">
+        <img src="https://avatars.githubusercontent.com/u/186389297?v=4" width="55px;" height="55px;" alt="SatyamPandey-07" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>SatyamPandey-07</b></sub><br /><sub><code>👑 Creator</code></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/jasonjose007">
+        <img src="https://avatars.githubusercontent.com/u/221943475?v=4" width="55px;" height="55px;" alt="jasonjose007" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>jasonjose007</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Ayush-0918">
+        <img src="https://avatars.githubusercontent.com/u/184804819?v=4" width="55px;" height="55px;" alt="Ayush-0918" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Ayush-0918</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/SanjanaTech19">
+        <img src="https://avatars.githubusercontent.com/u/235869546?v=4" width="55px;" height="55px;" alt="SanjanaTech19" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>SanjanaTech19</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/ErebAsh">
+        <img src="https://avatars.githubusercontent.com/u/156138261?v=4" width="55px;" height="55px;" alt="ErebAsh" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>ErebAsh</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/zainabhina05-png">
+        <img src="https://avatars.githubusercontent.com/u/233611462?v=4" width="55px;" height="55px;" alt="zainabhina05-png" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>zainabhina05-png</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Pratyush-Panda-2006">
+        <img src="https://avatars.githubusercontent.com/u/210313441?v=4" width="55px;" height="55px;" alt="Pratyush-Panda-2006" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Pratyush-Panda-2006</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Babin123456">
+        <img src="https://avatars.githubusercontent.com/u/265290994?v=4" width="55px;" height="55px;" alt="Babin123456" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Babin123456</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/sanskarcoder29">
+        <img src="https://avatars.githubusercontent.com/u/235847249?v=4" width="55px;" height="55px;" alt="sanskarcoder29" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>sanskarcoder29</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/prasiddhi-105">
+        <img src="https://avatars.githubusercontent.com/u/200559194?v=4" width="55px;" height="55px;" alt="prasiddhi-105" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>prasiddhi-105</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/sanjana2505006">
+        <img src="https://avatars.githubusercontent.com/u/183577111?v=4" width="55px;" height="55px;" alt="sanjana2505006" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>sanjana2505006</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/harshit-kumar-dev">
+        <img src="https://avatars.githubusercontent.com/u/225372840?v=4" width="55px;" height="55px;" alt="harshit-kumar-dev" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>harshit-kumar-dev</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Vachhani-Tapan">
+        <img src="https://avatars.githubusercontent.com/u/225343394?v=4" width="55px;" height="55px;" alt="Vachhani-Tapan" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Vachhani-Tapan</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Jivan-Patel">
+        <img src="https://avatars.githubusercontent.com/u/225341922?v=4" width="55px;" height="55px;" alt="Jivan-Patel" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Jivan-Patel</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/leenacags">
+        <img src="https://avatars.githubusercontent.com/u/231031668?v=4" width="55px;" height="55px;" alt="leenacags" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>leenacags</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Chirag1724">
+        <img src="https://avatars.githubusercontent.com/u/197275459?v=4" width="55px;" height="55px;" alt="Chirag1724" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Chirag1724</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Jidnyasa-P">
+        <img src="https://avatars.githubusercontent.com/u/183466159?v=4" width="55px;" height="55px;" alt="Jidnyasa-P" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Jidnyasa-P</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Jashvanthan">
+        <img src="https://avatars.githubusercontent.com/u/199629688?v=4" width="55px;" height="55px;" alt="Jashvanthan" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Jashvanthan</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/diksha78dev">
+        <img src="https://avatars.githubusercontent.com/u/184750994?v=4" width="55px;" height="55px;" alt="diksha78dev" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>diksha78dev</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/MILAN-123865">
+        <img src="https://avatars.githubusercontent.com/u/196552402?v=4" width="55px;" height="55px;" alt="MILAN-123865" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>MILAN-123865</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Prathvikmehra">
+        <img src="https://avatars.githubusercontent.com/u/224969038?v=4" width="55px;" height="55px;" alt="Prathvikmehra" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Prathvikmehra</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/rishab11250">
+        <img src="https://avatars.githubusercontent.com/u/224525950?v=4" width="55px;" height="55px;" alt="rishab11250" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>rishab11250</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/gauri9368gupta-maker">
+        <img src="https://avatars.githubusercontent.com/u/256281044?v=4" width="55px;" height="55px;" alt="gauri9368gupta-maker" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>gauri9368gupta-maker</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/sumittiwari1302">
+        <img src="https://avatars.githubusercontent.com/u/251316528?v=4" width="55px;" height="55px;" alt="sumittiwari1302" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>sumittiwari1302</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Shruti070107">
+        <img src="https://avatars.githubusercontent.com/u/218780746?v=4" width="55px;" height="55px;" alt="Shruti070107" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Shruti070107</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/shahkhushi0307">
+        <img src="https://avatars.githubusercontent.com/u/247197666?v=4" width="55px;" height="55px;" alt="shahkhushi0307" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>shahkhushi0307</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Huzaifaahmedbhutto">
+        <img src="https://avatars.githubusercontent.com/u/259001188?v=4" width="55px;" height="55px;" alt="Huzaifaahmedbhutto" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Huzaifaahmedbhutto</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Aditya8369">
+        <img src="https://avatars.githubusercontent.com/u/178887069?v=4" width="55px;" height="55px;" alt="Aditya8369" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Aditya8369</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/hemnath-hub">
+        <img src="https://avatars.githubusercontent.com/u/228287026?v=4" width="55px;" height="55px;" alt="hemnath-hub" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>hemnath-hub</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Tanishkkkkk">
+        <img src="https://avatars.githubusercontent.com/u/226301910?v=4" width="55px;" height="55px;" alt="Tanishkkkkk" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Tanishkkkkk</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Aryanbuha890">
+        <img src="https://avatars.githubusercontent.com/u/273169945?v=4" width="55px;" height="55px;" alt="Aryanbuha890" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Aryanbuha890</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Kushal-prime">
+        <img src="https://avatars.githubusercontent.com/u/196733029?v=4" width="55px;" height="55px;" alt="Kushal-prime" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Kushal-prime</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/vigneshwaran484">
+        <img src="https://avatars.githubusercontent.com/u/181625917?v=4" width="55px;" height="55px;" alt="vigneshwaran484" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>vigneshwaran484</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Diwakar-odds">
+        <img src="https://avatars.githubusercontent.com/u/170966675?v=4" width="55px;" height="55px;" alt="Diwakar-odds" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Diwakar-odds</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/revatikadam0607">
+        <img src="https://avatars.githubusercontent.com/u/261348571?v=4" width="55px;" height="55px;" alt="revatikadam0607" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>revatikadam0607</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/marisa-mmm">
+        <img src="https://avatars.githubusercontent.com/u/203952873?v=4" width="55px;" height="55px;" alt="marisa-mmm" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>marisa-mmm</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/anushkanikam05">
+        <img src="https://avatars.githubusercontent.com/u/251041306?v=4" width="55px;" height="55px;" alt="anushkanikam05" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>anushkanikam05</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/khushimalani16">
+        <img src="https://avatars.githubusercontent.com/u/269352454?v=4" width="55px;" height="55px;" alt="khushimalani16" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>khushimalani16</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/varshu55">
+        <img src="https://avatars.githubusercontent.com/u/202724176?v=4" width="55px;" height="55px;" alt="varshu55" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>varshu55</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Ruchira807">
+        <img src="https://avatars.githubusercontent.com/u/222549911?v=4" width="55px;" height="55px;" alt="Ruchira807" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Ruchira807</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Janvi-kapoor">
+        <img src="https://avatars.githubusercontent.com/u/216144189?v=4" width="55px;" height="55px;" alt="Janvi-kapoor" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Janvi-kapoor</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/anshika-guleria">
+        <img src="https://avatars.githubusercontent.com/u/111104918?v=4" width="55px;" height="55px;" alt="anshika-guleria" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>anshika-guleria</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Aakansha-saroj-05">
+        <img src="https://avatars.githubusercontent.com/u/180135448?v=4" width="55px;" height="55px;" alt="Aakansha-saroj-05" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Aakansha-saroj-05</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/csxark">
+        <img src="https://avatars.githubusercontent.com/u/166234658?v=4" width="55px;" height="55px;" alt="csxark" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>csxark</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/shadab-6718">
+        <img src="https://avatars.githubusercontent.com/u/289595358?v=4" width="55px;" height="55px;" alt="shadab-6718" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>shadab-6718</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/harshith7002">
+        <img src="https://avatars.githubusercontent.com/u/180102080?v=4" width="55px;" height="55px;" alt="harshith7002" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>harshith7002</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Aakif-Kohari">
+        <img src="https://avatars.githubusercontent.com/u/159609181?v=4" width="55px;" height="55px;" alt="Aakif-Kohari" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Aakif-Kohari</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/nithinoffizial">
+        <img src="https://avatars.githubusercontent.com/u/215864026?v=4" width="55px;" height="55px;" alt="nithinoffizial" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>nithinoffizial</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Kadaliswarna">
+        <img src="https://avatars.githubusercontent.com/u/180524407?v=4" width="55px;" height="55px;" alt="Kadaliswarna" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Kadaliswarna</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/SoumalyaSaha">
+        <img src="https://avatars.githubusercontent.com/u/191320906?v=4" width="55px;" height="55px;" alt="SoumalyaSaha" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>SoumalyaSaha</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Senthil455">
+        <img src="https://avatars.githubusercontent.com/u/181909908?v=4" width="55px;" height="55px;" alt="Senthil455" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Senthil455</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/pranav28042007-boop">
+        <img src="https://avatars.githubusercontent.com/u/231544295?v=4" width="55px;" height="55px;" alt="pranav28042007-boop" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>pranav28042007-boop</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Sahan20030814">
+        <img src="https://avatars.githubusercontent.com/u/184366552?v=4" width="55px;" height="55px;" alt="Sahan20030814" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Sahan20030814</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/khedkaravani-rgb">
+        <img src="https://avatars.githubusercontent.com/u/276637444?v=4" width="55px;" height="55px;" alt="khedkaravani-rgb" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>khedkaravani-rgb</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Komal290106">
+        <img src="https://avatars.githubusercontent.com/u/179382143?v=4" width="55px;" height="55px;" alt="Komal290106" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Komal290106</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/hirthicksundar1980-debug">
+        <img src="https://avatars.githubusercontent.com/u/231521833?v=4" width="55px;" height="55px;" alt="hirthicksundar1980-debug" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>hirthicksundar1980-debug</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/rudreshborle">
+        <img src="https://avatars.githubusercontent.com/u/99067426?v=4" width="55px;" height="55px;" alt="rudreshborle" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>rudreshborle</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Vishvapatel2047">
+        <img src="https://avatars.githubusercontent.com/u/218197129?v=4" width="55px;" height="55px;" alt="Vishvapatel2047" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Vishvapatel2047</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Yuva-Deekshitha-N">
+        <img src="https://avatars.githubusercontent.com/u/153242050?v=4" width="55px;" height="55px;" alt="Yuva-Deekshitha-N" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Yuva-Deekshitha-N</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/yashvi-3106">
+        <img src="https://avatars.githubusercontent.com/u/187176611?v=4" width="55px;" height="55px;" alt="yashvi-3106" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>yashvi-3106</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/afifasyed123">
+        <img src="https://avatars.githubusercontent.com/u/149395730?v=4" width="55px;" height="55px;" alt="afifasyed123" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>afifasyed123</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/itsaditi05">
+        <img src="https://avatars.githubusercontent.com/u/175183822?v=4" width="55px;" height="55px;" alt="itsaditi05" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>itsaditi05</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/SpiliosDimakopoulos">
+        <img src="https://avatars.githubusercontent.com/u/150211937?v=4" width="55px;" height="55px;" alt="SpiliosDimakopoulos" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>SpiliosDimakopoulos</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/panditshubham766-dotcom">
+        <img src="https://avatars.githubusercontent.com/u/233032889?v=4" width="55px;" height="55px;" alt="panditshubham766-dotcom" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>panditshubham766-dotcom</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/HimanshuPathak2725">
+        <img src="https://avatars.githubusercontent.com/u/179665853?v=4" width="55px;" height="55px;" alt="HimanshuPathak2725" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>HimanshuPathak2725</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Daksh7785">
+        <img src="https://avatars.githubusercontent.com/u/208130543?v=4" width="55px;" height="55px;" alt="Daksh7785" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Daksh7785</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/badshahaditya57-sketch">
+        <img src="https://avatars.githubusercontent.com/u/255833496?v=4" width="55px;" height="55px;" alt="badshahaditya57-sketch" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>badshahaditya57-sketch</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/SujalKamate">
+        <img src="https://avatars.githubusercontent.com/u/198301009?v=4" width="55px;" height="55px;" alt="SujalKamate" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>SujalKamate</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/RitikaSen27">
+        <img src="https://avatars.githubusercontent.com/u/224510033?v=4" width="55px;" height="55px;" alt="RitikaSen27" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>RitikaSen27</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Parshant-12">
+        <img src="https://avatars.githubusercontent.com/u/167954691?v=4" width="55px;" height="55px;" alt="Parshant-12" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Parshant-12</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/punithkumar-060308">
+        <img src="https://avatars.githubusercontent.com/u/236218573?v=4" width="55px;" height="55px;" alt="punithkumar-060308" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>punithkumar-060308</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Bheemeswari497">
+        <img src="https://avatars.githubusercontent.com/u/180012790?v=4" width="55px;" height="55px;" alt="Bheemeswari497" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Bheemeswari497</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/AndrewJefrin">
+        <img src="https://avatars.githubusercontent.com/u/221453981?v=4" width="55px;" height="55px;" alt="AndrewJefrin" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>AndrewJefrin</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/onitshubham14">
+        <img src="https://avatars.githubusercontent.com/u/225330486?v=4" width="55px;" height="55px;" alt="onitshubham14" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>onitshubham14</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/nishthagupta09">
+        <img src="https://avatars.githubusercontent.com/u/196954416?v=4" width="55px;" height="55px;" alt="nishthagupta09" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>nishthagupta09</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/karrisanthoshigayatri">
+        <img src="https://avatars.githubusercontent.com/u/268634585?v=4" width="55px;" height="55px;" alt="karrisanthoshigayatri" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>karrisanthoshigayatri</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/jenniferramesh423-cmyk">
+        <img src="https://avatars.githubusercontent.com/u/227623102?v=4" width="55px;" height="55px;" alt="jenniferramesh423-cmyk" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>jenniferramesh423-cmyk</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/VarunikaShreeS">
+        <img src="https://avatars.githubusercontent.com/u/234432364?v=4" width="55px;" height="55px;" alt="VarunikaShreeS" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>VarunikaShreeS</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Aditya90456">
+        <img src="https://avatars.githubusercontent.com/u/153073510?v=4" width="55px;" height="55px;" alt="Aditya90456" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Aditya90456</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Suprita736">
+        <img src="https://avatars.githubusercontent.com/u/179369760?v=4" width="55px;" height="55px;" alt="Suprita736" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Suprita736</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/saurabhwagh01">
+        <img src="https://avatars.githubusercontent.com/u/288387055?v=4" width="55px;" height="55px;" alt="saurabhwagh01" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>saurabhwagh01</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/sagar-18-07-2006">
+        <img src="https://avatars.githubusercontent.com/u/203533113?v=4" width="55px;" height="55px;" alt="sagar-18-07-2006" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>sagar-18-07-2006</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/s-reeshma">
+        <img src="https://avatars.githubusercontent.com/u/195129046?v=4" width="55px;" height="55px;" alt="s-reeshma" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>s-reeshma</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/RajD2910">
+        <img src="https://avatars.githubusercontent.com/u/183004101?v=4" width="55px;" height="55px;" alt="RajD2910" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>RajD2910</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/piush365">
+        <img src="https://avatars.githubusercontent.com/u/173165525?v=4" width="55px;" height="55px;" alt="piush365" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>piush365</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/prajapati-pankaj-31">
+        <img src="https://avatars.githubusercontent.com/u/226159531?v=4" width="55px;" height="55px;" alt="prajapati-pankaj-31" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>prajapati-pankaj-31</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Gautam-Bharadwaj">
+        <img src="https://avatars.githubusercontent.com/u/136326437?v=4" width="55px;" height="55px;" alt="Gautam-Bharadwaj" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Gautam-Bharadwaj</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/keshav33450">
+        <img src="https://avatars.githubusercontent.com/u/199642062?v=4" width="55px;" height="55px;" alt="keshav33450" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>keshav33450</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Keerthi-10-05">
+        <img src="https://avatars.githubusercontent.com/u/230191942?v=4" width="55px;" height="55px;" alt="Keerthi-10-05" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Keerthi-10-05</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Jaswanth1617">
+        <img src="https://avatars.githubusercontent.com/u/233746094?v=4" width="55px;" height="55px;" alt="Jaswanth1617" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Jaswanth1617</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/jiahshifana08">
+        <img src="https://avatars.githubusercontent.com/u/229965483?v=4" width="55px;" height="55px;" alt="jiahshifana08" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>jiahshifana08</b></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Gunjan10-droid">
+        <img src="https://avatars.githubusercontent.com/u/142145209?v=4" width="55px;" height="55px;" alt="Gunjan10-droid" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Gunjan10-droid</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Gabyee17">
+        <img src="https://avatars.githubusercontent.com/u/209272594?v=4" width="55px;" height="55px;" alt="Gabyee17" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Gabyee17</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Falguni-105">
+        <img src="https://avatars.githubusercontent.com/u/194253298?v=4" width="55px;" height="55px;" alt="Falguni-105" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Falguni-105</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Kruthica">
+        <img src="https://avatars.githubusercontent.com/u/218139794?v=4" width="55px;" height="55px;" alt="Kruthica" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Kruthica</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/Prathibha-ui">
+        <img src="https://avatars.githubusercontent.com/u/271908347?v=4" width="55px;" height="55px;" alt="Prathibha-ui" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>Prathibha-ui</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/codinggujarat">
+        <img src="https://avatars.githubusercontent.com/u/155058144?v=4" width="55px;" height="55px;" alt="codinggujarat" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>codinggujarat</b></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/apps/dependabot">
+        <img src="https://avatars.githubusercontent.com/in/29110?v=4" width="55px;" height="55px;" alt="dependabot[bot]" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>dependabot[bot]</b></sub><br /><sub><code>🤖 Bot</code></sub>
+      </a>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/apps/github-actions">
+        <img src="https://avatars.githubusercontent.com/in/15368?v=4" width="55px;" height="55px;" alt="github-actions[bot]" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>github-actions[bot]</b></sub><br /><sub><code>🤖 Bot</code></sub>
+      </a>
+    </td>
+    <td align="center" width="14.28%"></td>
+    <td align="center" width="14.28%"></td>
+    <td align="center" width="14.28%"></td>
+    <td align="center" width="14.28%"></td>
+    <td align="center" width="14.28%"></td>
+    <td align="center" width="14.28%"></td>
+  </tr>
+</table>
+
+---
 
 ## 📋 Table of Contents
 
@@ -152,7 +819,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 - **User Profiles**: Personalized experience
 - **Webhook Sync**: Real-time user data updates
 
-### � PDF Receipt System
+### 🧾 PDF Receipt System
 
 - **Serverless-Compatible**: Uses **pdf-lib** (not PDFKit) for AWS Lambda compatibility
 - **Instant Generation**: PDF receipts generated on-demand for confirmed bookings
@@ -161,7 +828,7 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 - **Direct Download**: One-click download with loading states and error handling
 - **Fixed Build Issues**: Resolved Buffer/Uint8Array compatibility and cuid ID string handling
 
-### �📱 Progressive Web App (PWA)
+### 📱 Progressive Web App (PWA)
 
 - **Installable**: Add to home screen on mobile/desktop
 - **Offline Support**: IndexedDB storage for venues and favorites
@@ -189,6 +856,22 @@ When voice input is unavailable, a clear warning banner is displayed and the fea
 - **E2E Testing**: Playwright configuration for end-to-end tests
 - **API Tests**: Route handler testing
 - **Component Tests**: UI component validation
+
+---
+
+## 🌟 Core Platform Capabilities
+
+WorkSphere brings together geospatial data, ambient intelligence, and real-time collaboration into a unified, responsive interface:
+
+| Capability                          | Experience                                                                                                      | Technical Highlight                                                                                       |
+| :---------------------------------- | :-------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------- |
+| 🗺️ **Interactive Geospatial Map**   | Dynamic CartoDB Dark Matter tiles with color-coded venue noise markers (green=quiet, amber=moderate, red=busy). | Real road routing with OSRM, Haversine proximity, custom Clerk user pins.                                 |
+| 🤖 **Autonomous Multi-Agent AI**    | Conversational discovery agent that reasons across amenities, seating availability, and workspace preferences.  | 5-agent pipeline (Orchestrator → Context → Data → Reasoning → Action) with transparent thought telemetry. |
+| 📡 **Live Presence & Telemetry**    | Real-time seat occupancy badges (Quiet, Moderate, Busy) and collaborative workspace notes.                      | Sub-50ms WebSocket synchronization powered by PartyKit mesh network.                                      |
+| 🔋 **Battery Panic Mode**           | Automatically re-ranks search results when battery drops below 20%, prioritizing verified desk outlets.         | Web Battery API integration with graceful degradation on non-supported viewports.                         |
+| 📴 **Offline-First PWA**            | Browse cached venues, view floor plans, and queue check-ins completely offline.                                 | Service Worker background sync + IndexedDB storage + Web Locks API synchronization.                       |
+| 🧾 **Cryptographic PDF Invoicing**  | Instant one-click PDF receipts generated for verified bookings.                                                 | 100% serverless, zero-filesystem execution via `pdf-lib` with embedded Helvetica glyphs.                  |
+| 🎓 **Zero-Knowledge Student Perks** | Claim verified student discounts without revealing personal academic credentials.                               | Client-side WASM ZKP proof generation with offline localStorage verification caching.                     |
 
 ---
 
@@ -405,6 +1088,9 @@ NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 # (required) Groq API key — free at console.groq.com
 GROQ_API_KEY=gsk_...
 
+# (optional) Gemini API key — used for server-side venue summaries
+GEMINI_API_KEY=your_gemini_key_here
+
 # ── Venue Photos ─────────────────────────────────────────────────────
 # (optional) Pexels API key — falls back to placeholder images
 PEXELS_API_KEY=your_pexels_key_here
@@ -435,7 +1121,7 @@ For production or multi-instance deployments, configuring Upstash Redis is recom
 
 ---
 
-## � Pages
+## Pages
 
 | Route        | Page                | Description                                               |
 | ------------ | ------------------- | --------------------------------------------------------- |
@@ -448,7 +1134,7 @@ For production or multi-instance deployments, configuring Upstash Redis is recom
 
 ---
 
-## �🔌 API Routes
+## 🔌 API Routes
 
 | Method   | Route                     | Description                            |
 | -------- | ------------------------- | -------------------------------------- |
@@ -533,6 +1219,10 @@ The UI shows each agent's contribution:
 └─ ⚡ Action: Updated map with 5 markers
 ```
 
+The venue summary endpoint sends its prompt to Gemini rather than the chat
+models. See [docs/GEMINI_INTEGRATION.md](docs/GEMINI_INTEGRATION.md) for the
+client contract, model choice, error handling, and test setup.
+
 ---
 
 ## 📁 Project Structure
@@ -585,28 +1275,28 @@ worksphere/
 
 ### Key directories at a glance
 
-| Directory | What it contains |
-| --------- | ---------------- |
-| `prisma/` | `schema.prisma` (data model), auto-generated migrations, and a seed script for local development |
-| `party/` | PartyKit server (`server.ts`, `multiRegionServer.ts`) that powers real-time collaborative features via WebSockets |
-| `docs/` | Hundreds of developer-facing guides covering architecture, testing, deployment, security, and more |
-| `e2e/` | Playwright end-to-end test suites for full browser flows |
-| `public/` | Static files served directly: service worker (`sw.js`), PWA manifest, and app icons |
-| `scripts/` | One-off and CI utility scripts (database seeding, asset generation, etc.) |
-| `src/app/` | Next.js 15 App Router — every page, layout, and API route handler lives here |
-| `src/components/` | Reusable React components: map, chatbot, venue cards, rating dialog, error boundary, and design-system primitives |
-| `src/context/` | React context providers that share global state (currency, events, etc.) across the component tree |
-| `src/core/` | Framework-agnostic business logic and domain services, kept separate from Next.js specifics |
-| `src/hooks/` | Custom React hooks: `usePWA`, `useRealTime` (SSE), and `useSpeechRecognition` |
-| `src/lib/` | Shared back-end helpers: Prisma client, Zod validation schemas, rate limiter, analytics, OSM/Pexels integration, and OSRM routing |
-| `src/locales/` | Translation JSON files used by the i18n layer |
-| `src/shaders/` | GLSL/WebGL shader programs for any GPU-accelerated rendering |
-| `src/types/` | Project-wide TypeScript interfaces and enums |
-| `src/utils/` | Lightweight, stateless helper functions shared across the codebase |
-| `src/wasm/` | Compiled WebAssembly modules (e.g. FFT, noise filtering, SQLite FTS) |
-| `src/worker/` | Service worker source and offline/background-sync logic |
-| `src/workers/` | Additional dedicated web worker scripts (heavy computation off the main thread) |
-| `src/__tests__/` | Unit and integration tests mirroring the `src/` directory layout |
+| Directory         | What it contains                                                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `prisma/`         | `schema.prisma` (data model), auto-generated migrations, and a seed script for local development                                  |
+| `party/`          | PartyKit server (`server.ts`, `multiRegionServer.ts`) that powers real-time collaborative features via WebSockets                 |
+| `docs/`           | Hundreds of developer-facing guides covering architecture, testing, deployment, security, and more                                |
+| `e2e/`            | Playwright end-to-end test suites for full browser flows                                                                          |
+| `public/`         | Static files served directly: service worker (`sw.js`), PWA manifest, and app icons                                               |
+| `scripts/`        | One-off and CI utility scripts (database seeding, asset generation, etc.)                                                         |
+| `src/app/`        | Next.js 15 App Router — every page, layout, and API route handler lives here                                                      |
+| `src/components/` | Reusable React components: map, chatbot, venue cards, rating dialog, error boundary, and design-system primitives                 |
+| `src/context/`    | React context providers that share global state (currency, events, etc.) across the component tree                                |
+| `src/core/`       | Framework-agnostic business logic and domain services, kept separate from Next.js specifics                                       |
+| `src/hooks/`      | Custom React hooks: `usePWA`, `useRealTime` (SSE), and `useSpeechRecognition`                                                     |
+| `src/lib/`        | Shared back-end helpers: Prisma client, Zod validation schemas, rate limiter, analytics, OSM/Pexels integration, and OSRM routing |
+| `src/locales/`    | Translation JSON files used by the i18n layer                                                                                     |
+| `src/shaders/`    | GLSL/WebGL shader programs for any GPU-accelerated rendering                                                                      |
+| `src/types/`      | Project-wide TypeScript interfaces and enums                                                                                      |
+| `src/utils/`      | Lightweight, stateless helper functions shared across the codebase                                                                |
+| `src/wasm/`       | Compiled WebAssembly modules (e.g. FFT, noise filtering, SQLite FTS)                                                              |
+| `src/worker/`     | Service worker source and offline/background-sync logic                                                                           |
+| `src/workers/`    | Additional dedicated web worker scripts (heavy computation off the main thread)                                                   |
+| `src/__tests__/`  | Unit and integration tests mirroring the `src/` directory layout                                                                  |
 
 ---
 
@@ -673,7 +1363,7 @@ Try these natural language queries:
 | Priority  | Feature                 | Description                                                      |
 | --------- | ----------------------- | ---------------------------------------------------------------- |
 | 🔴 High   | **Analytics Dashboard** | Admin page to view search patterns, popular venues, user metrics |
-| � Medium  | **Mobile App**          | React Native version sharing the same API backend                |
+| 🟡 Medium | **Mobile App**          | React Native version sharing the same API backend                |
 | 🟡 Medium | **AI Memory**           | Cross-conversation learning for personalized recommendations     |
 | 🟡 Medium | **Social Features**     | Share favorite workspaces, follow other remote workers           |
 | 🟢 Low    | **Booking Integration** | Reserve desks at coworking spaces via API                        |
@@ -681,23 +1371,20 @@ Try these natural language queries:
 
 ---
 
-## 🤝 Contributing
+## 🤝 Contributing & Issue Workflow
 
-Contributions are welcome! Please refer to our comprehensive [Contributing Guide](CONTRIBUTING.md) for details on:
+Contributions are warmly welcomed! We aim to make contributing as smooth and rewarding as possible.
 
-- Coding standards and styling.
-- Testing guidelines (Jest unit tests and Playwright E2E integration).
-- Required pre-commit quality checks to ensure Vercel build compatibility.
+### ⚡ Automated Issue Assignment
 
-Please read our [Code of Conduct](CODE_OF_CONDUCT.md).
+1. **Find an Issue:** Explore our [Open Issues](https://github.com/SatyamPandey-07/WorkSphere/issues).
+2. **Claim with `/claim`:** Drop a comment containing `/claim` on any unassigned issue. The automation will assign it to you instantly!
+   - You can hold up to **10 active assigned issues** at once.
+   - Recommended completion window is **6 days**.
+3. **Release with `/unclaim`:** If you need to step away from an issue, simply comment `/unclaim` to release it for other contributors.
+4. **Auto-Merge on PR:** Include `Closes #<issue_number>` in your PR description. When opened, CI checks the issue link and automatically squash-merges your PR with co-author credit!
 
-To get started quickly:
-
-1. Fork the repository and create your feature branch (`git checkout -b feature/amazing-feature`).
-2. Implement your changes.
-3. Make sure all pre-commit checks pass (`npm run lint`, `npx tsc --noEmit`, and `npm test`).
-4. Commit your changes (`git commit -m 'feat: Add amazing feature'`) and push to your branch.
-5. Open a Pull Request against the `main` branch.
+Please refer to our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
 

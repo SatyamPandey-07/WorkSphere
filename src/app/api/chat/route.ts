@@ -9,728 +9,209 @@ import {
   checkSemanticCache,
   setSemanticCache,
 } from "@/lib/cache/semanticCache";
+import {
+  LLM_MODEL,
+  actionAgent,
+  contextAgent,
+  dataAgent,
+  getGroqClient,
+  isLlmConfigured,
+  isRateLimitError,
+  offlineConversationReply,
+  orchestratorAgent,
+  parseSearchQuery,
+  reasoningAgent,
+  sanitizeUserInput,
+  classifyQueryComplexity,
+  routeChatStream,
+  type RankedVenue,
+  type QueryComplexity,
+} from "@/lib/ai/chatAgents";
+import { emitWebhookEvent } from "@/lib/webhooks/deliver";
+import {
+  deduplicateContext,
+  deduplicateVenueResults,
+} from "@/lib/context-compression/contextDeduplicator";
+import { compressContext } from "@/lib/context-compression/contextCompressor";
 
 export const maxDuration = 60;
 
-// Lazy init Groq client to avoid build-time errors
-let groq: Groq | null = null;
-function getGroqClient(): Groq {
-  if (!process.env.GROQ_API_KEY) {
-    throw new Error("GROQ_API_KEY is not configured");
-  }
-  if (!groq) {
-    groq = new Groq({
-      apiKey: process.env.GROQ_API_KEY || "",
-      // Explicit bounds so sustained rate-limit exhaustion (HTTP 429)
-      // fails fast with a catchable error instead of the SDK's default
-      // internal retry behavior hanging the request indefinitely,
-      // which was surfacing as an infinite loading state on the client.
-      maxRetries: 2,
-      timeout: 20000, // 20s
-    });
-  }
-  return groq;
-}
+const MAX_HISTORY_MESSAGES = 12;
+const encoder = new TextEncoder();
 
-// ============================================================
-// AGENT 1: ORCHESTRATOR - Determines which agents to use
-// ============================================================
-async function orchestratorAgent(
-  userMessage: string,
-  context?: any,
-): Promise<{
-  agentsToUse: string[];
-  reasoning: string;
-  skipAgents: boolean;
-  complexity?: "simple" | "complex";
-  parameters?: {
-    workType?: string;
-    amenities?: string[];
-    location?: string;
-  };
-}> {
-  const systemPrompt = `You are the Orchestrator Agent for WorkHub. Analyze user messages and determine which agents are needed.
+type ChatMessage = { role: "user" | "assistant"; content: string };
 
-Available agents:
-- ContextAgent: Extracts search parameters (workType, amenities, location)
-- DataAgent: Fetches venue data
-- ReasoningAgent: Scores and ranks venues
-- ActionAgent: Updates map UI and generates responses
+const ALLOWED_UI_COMPONENTS = ["DataTable", "DataChart", "Map"];
 
-Rules:
-1. Finding/searching workspaces → Use agents.
-2. Determine "complexity". If the user is just asking for a basic category (e.g., "cafes in Brooklyn", "coworking spaces near me"), it is "simple". If they specify exact needs (e.g., "quiet cafe with fast wifi for zoom calls"), it is "complex".
-3. If "complexity" is "simple", you must provide "parameters" with basic workType (e.g., "cafe") and location.
-4. Asking about specific venue → DataAgent + ActionAgent
-5. Directions to venue → ActionAgent only
-6. General conversation → Skip agents
-
-Output ONLY valid JSON:
-{"agentsToUse": ["ContextAgent", "DataAgent", "ReasoningAgent", "ActionAgent"], "reasoning": "Complex requirements", "skipAgents": false, "complexity": "complex"}
-
-For simple searches: {"agentsToUse": ["DataAgent", "ActionAgent"], "reasoning": "Simple search", "skipAgents": false, "complexity": "simple", "parameters": {"workType": "cafe", "location": "Brooklyn", "amenities": []}}
-
-For general chat: {"skipAgents": true, "reasoning": "General conversation"}`;
-
-  try {
-    const response = await getGroqClient().chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: `User message: "${userMessage}"\nContext: ${context ? JSON.stringify(context) : "None"}\nNote: This is a multiplayer session.`,
-        },
-      ],
-      temperature: 0.3,
-    });
-
-    const text = response.choices[0]?.message?.content || "";
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
-    }
-  } catch (error) {
-    console.error("Orchestrator error:", error);
-  }
-
-  return {
-    agentsToUse: ["ContextAgent", "DataAgent", "ReasoningAgent", "ActionAgent"],
-    reasoning: "Defaulting to full pipeline",
-    skipAgents: false,
-  };
-}
-
-// ============================================================
-// AGENT 2: CONTEXT - Extracts search parameters from user intent
-// ============================================================
-async function contextAgent(
-  userMessage: string,
-  userLocation?: { lat: number; lng: number },
-  userId?: string | null,
-): Promise<{
-  intent: string;
-  parameters: {
-    workType: string;
-    amenities: string[];
-    location: any;
-    radius: number;
-    category: string[];
-    timeOfDay?: string;
-    duration?: number;
-  };
-  reasoning: string;
-}> {
-  let memoryContext = "";
-  if (userId) {
-    try {
-      const dbUser = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { preferencesSummary: true },
-      });
-      if (dbUser?.preferencesSummary) {
-        memoryContext += `\n\nUSER PROFILE PREFERENCES SUMMARY (Must be considered): ${dbUser.preferencesSummary}`;
-      }
-
-      if (process.env.COHERE_API_KEY) {
-        const embedRes = await fetch("https://api.cohere.ai/v1/embed", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.COHERE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            texts: [userMessage],
-            model: "embed-english-v3.0",
-            input_type: "search_query",
-          }),
-        });
-
-        if (embedRes.ok) {
-          const embedData = await embedRes.json();
-          const embedding = embedData.embeddings[0];
-          const embeddingString = `[${embedding.join(",")}]`;
-
-          const memories = await prisma.$queryRaw<{ content: string; similarity: number }[]>`
-            SELECT content, 1 - (embedding <=> ${embeddingString}::vector) AS similarity
-            FROM "UserMemory"
-            WHERE "userId" = ${userId}
-            ORDER BY embedding <=> ${embeddingString}::vector
-            LIMIT 3
-          `;
-
-          if (memories.length > 0) {
-            memoryContext +=
-              "\n\nRECENT SEMANTIC USER MEMORIES:\n" +
-              memories.map((m) => `- ${m.content}`).join("\n");
-          }
-        }
-      }
-    } catch (e) {
-      console.error("Error fetching AI memories:", e);
-    }
-  }
-
-  const systemPrompt = `You are the Context Agent. Extract search parameters from user queries.${memoryContext}
-
-Extract:
-1. workType: "focus" | "calls" | "collaboration" | "casual"
-2. amenities: ["wifi", "outlets", "quiet", "parking", "outdoor"]
-3. radius: meters (nearby=1000, close=2000, "2 miles"=3200)
-4. category: ["cafe", "coworking", "library"]
-5. timeOfDay: "morning" | "afternoon" | "evening" | null
-6. duration: minutes
-
-Output ONLY valid JSON:
-{"intent": "Find quiet cafe", "parameters": {"workType": "focus", "amenities": ["wifi", "quiet"], "radius": 2000, "category": ["cafe", "coworking"], "timeOfDay": null, "duration": 120}, "reasoning": "User needs quiet focus space"}`;
-
-  try {
-    const response = await getGroqClient().chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: `Message: "${userMessage}"\nLocation: ${userLocation ? `${userLocation.lat}, ${userLocation.lng}` : "unknown"}`,
-        },
-      ],
-      temperature: 0.4,
-    });
-
-    const text = response.choices[0]?.message?.content || "";
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const result = JSON.parse(jsonMatch[0]);
-      result.parameters.location = userLocation || null;
-      return result;
-    }
-  } catch (error) {
-    console.error("Context agent error:", error);
-  }
-
-  return {
-    intent: userMessage,
-    parameters: {
-      workType: "focus",
-      amenities: ["wifi"],
-      location: userLocation,
-      radius: 2000,
-      category: ["cafe", "coworking", "library"],
-    },
-    reasoning: "Default parameters",
-  };
-}
-
-// ============================================================
-// AGENT 3: DATA - Fetches venues from Overpass API
-// ============================================================
-async function dataAgent(
-  params: any,
-  filters?: {
-    wifi?: boolean;
-    outlets?: boolean;
-    quiet?: boolean;
-    ergonomic?: boolean;
-    outletDensity?: string;
-    wifiSpeedBand?: string;
-    hasPhoneBooths?: boolean;
-    hasNoMusic?: boolean;
-    hasQuietZone?: boolean;
-    hasAncHeadsetRental?: boolean;
-    singleOriginBeans?: boolean;
-    specialtyEspresso?: boolean;
-    oatAlmondMilk?: boolean;
-    pourOverAvailable?: boolean;
-    musicStyle?: string;
-  },
-): Promise<{
-  venues: any[];
-  meta: { total: number; source: string; highTraffic?: boolean };
-  reasoning: string;
-}> {
-  const { location, radius = 2000, category: _category = ["all"] } = params;
-
-  if (!location?.lat || !location?.lng) {
-    return {
-      venues: [],
-      meta: { total: 0, source: "none" },
-      reasoning: "No location provided",
-    };
-  }
-
-  const categoryMap: Record<string, string> = {
-    cafe: '["amenity"="cafe"]',
-    coworking: '["amenity"="coworking_space"]',
-    library: '["amenity"="library"]',
-    all: '["amenity"~"cafe|coworking_space|library"]',
-  };
-
-  const query = `
-    [out:json][timeout:25];
-    (
-      node${categoryMap.all}(around:${radius},${location.lat},${location.lng});
-      way${categoryMap.all}(around:${radius},${location.lat},${location.lng});
-    );
-    out center body;
-  `;
-
-  const endpoints = [
-    "https://overpass-api.de/api/interpreter",
-    "https://lz4.overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-  ];
-
-  // Race all mirrors in parallel — 3.5 s per mirror, first success wins.
-  // Previously this queried sequentially (up to 20 s total); now the
-  // effective timeout is just 3.5 s regardless of how many mirrors are used.
-  const MIRROR_TIMEOUT_MS = 3500;
-
-  let overpassFailed = true;
-
-  const raceResult = await Promise.any(
-    endpoints.map(async (endpoint) => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), MIRROR_TIMEOUT_MS);
+/** Drops generative-UI tags that aren't whitelisted or don't carry valid JSON. */
+function sanitizeAssistantContent(content: string): string {
+  return content.replace(
+    /<ui-component\s+name="([^"]+)"\s+props='([^']*)'\s*\/>/g,
+    (tag, name, props) => {
+      if (!ALLOWED_UI_COMPONENTS.includes(name)) return "";
       try {
-        const response = await fetch(endpoint, {
-          method: "POST",
-          body: `data=${encodeURIComponent(query)}`,
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "WorkSphere-Dev-App/1.0",
-            Accept: "application/json",
-          },
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`${endpoint} returned ${response.status}`);
-        const data = await response.json();
-        return { endpoint, data };
-      } finally {
-        clearTimeout(timeout);
+        JSON.parse(props.replace(/&quot;/g, '"').replace(/&#x27;/g, "'"));
+        return tag;
+      } catch {
+        return "";
       }
-    }),
-  ).catch(() => null);
-
-  if (raceResult) {
-    const { data } = raceResult;
-    overpassFailed = false;
-
-      let venues = data.elements.slice(0, 15).map((el: any) => {
-        const hasErgonomic =
-          el.tags?.office === "coworking" ||
-          el.tags?.ergonomic === "yes" ||
-          el.tags?.standing_desk === "yes" ||
-          el.tags?.backrest === "yes" ||
-          el.tags?.amenity === "coworking_space";
-        let wifiSpeed: number | null = null;
-        const speedTag =
-          el.tags?.["internet_access:speed"] || el.tags?.["download:speed"];
-        if (speedTag) {
-          const match = speedTag.match(/\d+/);
-          if (match) {
-            wifiSpeed = parseInt(match[0], 10);
-          }
-        }
-
-        let outletDensity = "none";
-        if (
-          el.tags?.socket === "yes" ||
-          el.tags?.["socket:count"] ||
-          el.tags?.["power:outlet"] === "yes"
-        ) {
-          outletDensity = "some_tables";
-          const count = parseInt(el.tags?.["socket:count"] || "0", 10);
-          if (count > 10) {
-            outletDensity = "every_table";
-          }
-        } else if (el.tags?.amenity === "coworking_space") {
-          outletDensity = "every_table";
-        } else if (el.tags?.amenity === "library") {
-          outletDensity = "wall_seats";
-        }
-
-        return {
-          id: el.id.toString(),
-          name: el.tags?.name || "Unknown Venue",
-          lat: el.lat || el.center?.lat,
-          lng: el.lon || el.center?.lon,
-          category: el.tags?.amenity || "venue",
-          address: el.tags?.["addr:street"]
-            ? `${el.tags["addr:housenumber"] || ""} ${el.tags["addr:street"]}`.trim()
-            : null,
-          wifi:
-            el.tags?.internet_access === "wlan" ||
-            el.tags?.internet_access === "yes",
-          hasOutlets:
-            el.tags?.socket === "yes" ||
-            el.tags?.["socket:count"] ||
-            el.tags?.internet_access
-              ? true
-              : false,
-          noiseLevel: el.tags?.amenity === "library" ? "quiet" : "moderate",
-          rating: null,
-          wifiQuality: el.tags?.internet_access ? 3 : null,
-          openingHours: el.tags?.opening_hours || null,
-          hasErgonomic,
-          outletDensity,
-          wifiSpeed,
-          hasPhoneBooths: false,
-          hasNoMusic: false,
-          hasQuietZone: false,
-          hasAncHeadsetRental: false,
-          singleOriginBeans: false,
-          specialtyEspresso: false,
-          oatAlmondMilk: false,
-          pourOverAvailable: false,
-        };
-      });
-
-      // Apply filters if provided
-      if (filters) {
-        venues = applyFilters(venues, filters);
-      }
-
-      return {
-        venues,
-        meta: { total: venues.length, source: "Overpass API" },
-        reasoning: `Found ${venues.length} venues within ${radius}m`,
-      };
-  }
-
-  // Fallback to mock data if Overpass API is completely down/rate-limited
-  console.log("Using mock data fallback for location:", location);
-  const mockVenues = [
-    {
-      id: "mock-1",
-      name: "Downtown Creative Coworking",
-      lat: location.lat + 0.002,
-      lng: location.lng - 0.002,
-      category: "coworking_space",
-      address: "123 Main St, Tech District",
-      wifi: true,
-      hasOutlets: true,
-      noiseLevel: "quiet",
-      rating: 4.8,
-      wifiQuality: 5,
-      openingHours: "08:00-22:00",
-      hasErgonomic: true,
-      outletDensity: "every_table",
-      wifiSpeed: 120,
-      hasPhoneBooths: true,
-      hasNoMusic: true,
-      hasQuietZone: true,
-      hasAncHeadsetRental: true,
-      singleOriginBeans: true,
-      specialtyEspresso: true,
-      oatAlmondMilk: true,
-      pourOverAvailable: true,
     },
-    {
-      id: "mock-2",
-      name: "The Daily Grind Cafe",
-      lat: location.lat - 0.003,
-      lng: location.lng + 0.001,
-      category: "cafe",
-      address: "456 Oak Avenue",
-      wifi: true,
-      hasOutlets: true,
-      noiseLevel: "moderate",
-      rating: 4.2,
-      wifiQuality: 4,
-      openingHours: "07:00-19:00",
-      hasErgonomic: false,
-      outletDensity: "some_tables",
-      wifiSpeed: 45,
-      singleOriginBeans: false,
-      specialtyEspresso: true,
-      oatAlmondMilk: true,
-      pourOverAvailable: true,
-    },
-    {
-      id: "mock-3",
-      name: "City Central Library",
-      lat: location.lat + 0.001,
-      lng: location.lng + 0.003,
-      category: "library",
-      address: "789 Library Plaza",
-      wifi: true,
-      hasOutlets: true,
-      noiseLevel: "quiet",
-      rating: 4.6,
-      wifiQuality: 3,
-      openingHours: "09:00-20:00",
-      hasErgonomic: false,
-      outletDensity: "wall_seats",
-      wifiSpeed: 15,
-      singleOriginBeans: false,
-      specialtyEspresso: false,
-      oatAlmondMilk: false,
-      pourOverAvailable: false,
-    },
-  ];
-
-  // Apply filters to mock data as well so the user can test filters
-  const filteredMock = filters ? applyFilters(mockVenues, filters) : mockVenues;
-
-  return {
-    venues: filteredMock,
-    meta: {
-      total: filteredMock.length,
-      source: "Simulation Fallback",
-      highTraffic: overpassFailed,
-    },
-    reasoning: `Returned ${filteredMock.length} simulated fallback venues due to Overpass API offline status`,
-  };
+  );
 }
 
-// ============================================================
-// DB ENRICHMENT — joins Prisma VenueRating data onto OSM venues
-// ============================================================
-
-interface RawVenue {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  category: string;
-  address: string | null;
-  wifi: boolean;
-  hasOutlets: boolean;
-  noiseLevel: string;
-  rating: number | null;
-  wifiQuality: number | null;
-  openingHours: string | null;
-  hasErgonomic: boolean;
-  outletDensity: string;
-  wifiSpeed: number | null;
-  hasPhoneBooths: boolean;
-  hasNoMusic: boolean;
-  hasQuietZone: boolean;
-  hasAncHeadsetRental: boolean;
+/** Rounds coordinates (~1 km) so nearby users share semantic-cache entries. */
+function cacheLocationKey(location: { lat: number; lng: number } | null) {
+  return location
+    ? `${location.lat.toFixed(2)},${location.lng.toFixed(2)}`
+    : null;
 }
 
-async function enrichVenuesWithDBRatings(
-  venues: RawVenue[],
-): Promise<RawVenue[]> {
-  if (venues.length === 0) return venues;
-
+async function persistExchange(
+  userId: string | null,
+  conversationId: string | null | undefined,
+  userMessage: string,
+  assistantContent: string,
+  agentName: string,
+) {
+  if (!userId || !conversationId || !assistantContent) return;
   try {
-    // Look up any stored ratings by placeId (OSM id stored as placeId)
-    const placeIds = venues.map((v) => v.id);
-    const dbVenues = await prisma.venue.findMany({
-      where: { placeId: { in: placeIds } },
+    // Only write into conversations the caller owns.
+    const owned = await prisma.conversation.findFirst({
+      where: { id: conversationId, userId },
+      select: { id: true },
     });
+    if (!owned) return;
 
-    // Build a lookup map: placeId → cached venue data
-    const dbMap = new Map<
-      string,
-      {
-        avgWifi: number | null;
-        outletPct: number;
-        noiseMode: string | null;
-        hasErgonomic: boolean;
-        hasPhoneBooths: boolean;
-        hasNoMusic: boolean;
-        hasQuietZone: boolean;
-        hasAncHeadsetRental: boolean;
-        outletDensity: string | null;
-        wifiSpeed: number | null;
-      }
-    >();
-
-    for (const dbV of dbVenues) {
-      dbMap.set(dbV.placeId, {
-        avgWifi: dbV.wifiQuality ? dbV.wifiQuality * 2 : null, // convert 1-5 → 2-10
-        outletPct: dbV.hasOutlets ? 100 : 0,
-        noiseMode: dbV.noiseLevel ?? null,
-        hasErgonomic: dbV.hasErgonomic,
-        hasPhoneBooths: dbV.hasPhoneBooths,
-        hasNoMusic: dbV.hasNoMusic,
-        hasQuietZone: dbV.hasQuietZone,
-        hasAncHeadsetRental: dbV.hasAncHeadsetRental,
-        outletDensity: dbV.outletDensity ?? null,
-        wifiSpeed: dbV.wifiSpeed ?? null,
-      });
-    }
-
-    // Merge DB data back onto OSM venues
-    return venues.map((venue) => {
-      const db = dbMap.get(venue.id);
-      if (!db) return venue; // No DB record → keep OSM data as-is
-
-      return {
-        ...venue,
-        // Override wifi only if we have richer information
-        wifi: venue.wifi || (db.avgWifi !== null && db.avgWifi >= 5),
-        hasOutlets: db.outletPct >= 50,
-        noiseLevel: db.noiseMode ?? venue.noiseLevel,
-        wifiQuality: db.avgWifi,
-        hasErgonomic: db.hasErgonomic,
-        hasPhoneBooths: db.hasPhoneBooths,
-        hasNoMusic: db.hasNoMusic,
-        hasQuietZone: db.hasQuietZone,
-        hasAncHeadsetRental: db.hasAncHeadsetRental,
-        outletDensity: db.outletDensity ?? venue.outletDensity,
-        wifiSpeed: db.wifiSpeed ?? venue.wifiSpeed,
-      };
+    await prisma.message.createMany({
+      data: [
+        { conversationId, role: "user", content: userMessage },
+        {
+          conversationId,
+          role: "assistant",
+          content: sanitizeAssistantContent(assistantContent),
+          agentName,
+        },
+      ],
     });
-  } catch (err) {
-    console.error("[Enrichment] DB lookup failed, using OSM-only data:", err);
-    return venues;
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { updatedAt: new Date() },
+    });
+    triggerBackgroundMemorySync(conversationId, userId);
+  } catch (dbError) {
+    console.error("Database save error:", dbError);
   }
 }
 
-// ============================================================
-// AGENT 4: REASONING - Scores and ranks venues
-// Uses enriched DB data (wifiQuality 0-10, outletPct, noiseMode)
-// ============================================================
-function reasoningAgent(
-  venues: RawVenue[],
-  preferences: { workType?: string; amenities?: string[] },
-): {
-  rankedVenues: Array<
-    RawVenue & { score: number; scoreBreakdown: Record<string, number> }
-  >;
-  summary: string;
-  reasoning: string;
-} {
-  const { workType = "focus", amenities = [] } = preferences;
-
-  const weights: Record<
-    string,
-    { wifi: number; noise: number; outlets: number; rating: number }
-  > = {
-    focus: { wifi: 0.25, noise: 0.35, outlets: 0.25, rating: 0.15 },
-    calls: { wifi: 0.4, noise: 0.3, outlets: 0.15, rating: 0.15 },
-    collaboration: { wifi: 0.3, noise: 0.2, outlets: 0.25, rating: 0.25 },
-    casual: { wifi: 0.25, noise: 0.25, outlets: 0.25, rating: 0.25 },
-  };
-
-  const w = weights[workType] || weights.focus;
-
-  const scoredVenues = venues.map((venue) => {
-    // WiFi: use crowdsourced wifiQuality (0-10) if available, else boolean tag
-    const wifiScore =
-      venue.wifiQuality != null
-        ? Math.min(10, venue.wifiQuality) // crowdsourced 0-10
-        : venue.wifi
-          ? 7 // OSM wlan tag present
-          : 3; // unknown
-
-    // Noise: crowdsourced mode from DB, or OSM tag
-    const noiseScore =
-      venue.noiseLevel === "quiet"
-        ? 9
-        : venue.noiseLevel === "moderate"
-          ? 6
-          : 3;
-
-    // Outlets: crowdsourced boolean (outletPct >= 50%) or OSM
-    const outletsScore = venue.hasOutlets ? 8 : 4;
-
-    // Rating: from OSM/DB avg
-    const ratingScore =
-      venue.rating != null ? Math.min(10, venue.rating * 2) : 5;
-
-    // Extra bonus for explicitly-requested features
-    let amenityBonus = 0;
-    const safeAmenities = amenities || [];
-    if (safeAmenities.includes("wifi") && wifiScore >= 6) amenityBonus += 1;
-    if (safeAmenities.includes("quiet") && venue.noiseLevel === "quiet")
-      amenityBonus += 1;
-    if (safeAmenities.includes("outlets") && venue.hasOutlets)
-      amenityBonus += 1;
-
-    const totalScore =
-      wifiScore * w.wifi +
-      noiseScore * w.noise +
-      outletsScore * w.outlets +
-      ratingScore * w.rating +
-      amenityBonus;
-
-    return {
-      ...venue,
-      score: Math.min(10, Math.round(totalScore * 10) / 10),
-      scoreBreakdown: {
-        wifi: wifiScore,
-        noise: noiseScore,
-        outlets: outletsScore,
-        rating: ratingScore,
-      },
-    };
+/**
+ * Streams the response in the format the chat client expects:
+ * `METADATA:{json}\n\n` followed by `TEXT:<chunk>` frames.
+ */
+function streamResponse(
+  metadata: Record<string, unknown>,
+  produceText: (emit: (text: string) => void) => Promise<string>,
+  onComplete: (fullText: string) => Promise<void>,
+): Response {
+  const stream = new ReadableStream({
+    async start(controller) {
+      controller.enqueue(
+        encoder.encode(`METADATA:${JSON.stringify(metadata)}\n\n`),
+      );
+      let fullText = "";
+      try {
+        fullText = await produceText((text) => {
+          if (text) controller.enqueue(encoder.encode(`TEXT:${text}`));
+        });
+      } catch (e) {
+        console.error("Stream error:", e);
+      }
+      await onComplete(fullText);
+      controller.close();
+    },
   });
 
-  scoredVenues.sort((a, b) => b.score - a.score);
-
-  const topVenue = scoredVenues[0];
-  const summary = topVenue
-    ? `Top pick: ${topVenue.name} (score: ${topVenue.score}/10)`
-    : "No venues found";
-
-  return {
-    rankedVenues: scoredVenues,
-    summary,
-    reasoning: `Scored ${scoredVenues.length} venues using "${workType}" weights (WiFi ${Math.round(w.wifi * 100)}%, Noise ${Math.round(w.noise * 100)}%, Outlets ${Math.round(w.outlets * 100)}%). DB ratings applied where available.`,
-  };
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
 }
 
-// ============================================================
-// AGENT 5: ACTION - Generates final response and map updates
-// ============================================================
-async function actionAgent(
-  rankedVenues: any[],
-  _userQuery: string,
-): Promise<{
-  message: string;
-  mapUpdates: any;
-  suggestions: string[];
-}> {
-  const venueList = rankedVenues
-    .slice(0, 5)
-    .map(
-      (v, i) =>
-        `${i + 1}. **${v.name}** (${v.category}) - Score: ${v.score}/10${v.wifi ? " 📶" : ""}${v.hasOutlets ? " 🔌" : ""}`,
-    )
-    .join("\n");
-
-  const message =
-    rankedVenues.length > 0
-      ? `I found ${rankedVenues.length} great workspaces near you!\n\n${venueList}\n\nThe markers are now on your map. Click any venue for more details.`
-      : "I couldn't find any workspaces matching your criteria. Try expanding your search radius or adjusting your filters.";
-
-  const markers = rankedVenues.slice(0, 10).map((v) => ({
-    id: v.id,
-    lat: v.lat,
-    lng: v.lng,
-    name: v.name,
-    category: v.category,
-    address: v.address,
-    wifi: v.wifi,
-    hasOutlets: v.hasOutlets,
-    noiseLevel: v.noiseLevel,
-    score: v.score,
-  }));
-
-  let center = { lat: 0, lng: 0 };
-  if (rankedVenues.length > 0) {
-    center = {
-      lat:
-        rankedVenues.reduce((sum, v) => sum + v.lat, 0) / rankedVenues.length,
-      lng:
-        rankedVenues.reduce((sum, v) => sum + v.lng, 0) / rankedVenues.length,
-    };
+/** Streams an LLM completion, falling back to `fallbackText` if it fails. */
+async function streamLlm(
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+  emit: (text: string) => void,
+  fallbackText: string,
+  complexity?: QueryComplexity,
+  userQuery?: string,
+): Promise<string> {
+  if (!isLlmConfigured()) {
+    emit(fallbackText);
+    return fallbackText;
   }
 
-  return {
-    message,
-    mapUpdates: { markers, view: { center, zoom: 14, animate: true } },
-    suggestions: [
-      "Show me only cafes",
-      "Find places with better WiFi",
-      "Get directions to the top pick",
-      "Show quieter options",
-    ],
-  };
+  let full = "";
+  try {
+    const result = await routeChatStream({
+      messages,
+      complexity,
+      userQuery,
+      temperature: 0.5,
+      onChunk: (text) => {
+        full += text;
+        emit(text);
+      },
+    });
+    full = result.text;
+  } catch (err) {
+    console.error("LLM stream failed, using deterministic reply:", err);
+  }
+
+  if (!full.trim()) {
+    emit(fallbackText);
+    return fallbackText;
+  }
+  return full;
+}
+
+function historyForLlm(messages: ChatMessage[]) {
+  return messages.slice(-MAX_HISTORY_MESSAGES).map((m) => ({
+    role: m.role,
+    content: sanitizeUserInput(m.content),
+  }));
+}
+
+async function prepareCompressedHistory(
+  messages: ChatMessage[],
+  userId?: string | null,
+): Promise<Array<{ role: "system" | "user" | "assistant"; content: string }>> {
+  try {
+    const rawMessages = messages.map((m) => ({ role: m.role, content: m.content }));
+    const { deduplicated } = await deduplicateContext(rawMessages, userId ?? undefined);
+    const { compressed } = await compressContext(deduplicated, userId ?? undefined);
+
+    return compressed.map((m) => ({
+      role: (m.role === "system" || m.role === "user" || m.role === "assistant" ? m.role : "assistant") as "system" | "user" | "assistant",
+      content: sanitizeUserInput(m.content),
+    }));
+  } catch (err) {
+    console.error("Context compression fallback:", err);
+    return historyForLlm(messages);
+  }
+}
+
+function venueFacts(venues: RankedVenue[]) {
+  return venues.slice(0, 8).map((v) => ({
+    name: v.name,
+    category: v.category,
+    score: v.score,
+    distanceKm: v.distanceKm,
+    address: v.address,
+    highlights: v.highlights,
+    openingHours: v.openingHours,
+  }));
 }
 
 // ============================================================
@@ -738,12 +219,10 @@ async function actionAgent(
 // ============================================================
 export async function POST(req: Request) {
   try {
-    // Rate limiting - get IP or user ID
     const { userId } = await auth();
     const forwarded = req.headers.get("x-forwarded-for");
     const identifier = userId || forwarded?.split(",")[0] || "anonymous";
 
-    // Rate limiting (now async)
     if (!(await rateLimit(identifier, 10))) {
       const info = await getRateLimitInfo(identifier, 10);
       const retryAfter = info?.resetTime
@@ -770,18 +249,23 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-
-    // Validate request with Zod
     const validation = validateRequest(chatRequestSchema, body);
     if (!validation.success) {
-      console.error("Chat validation error:", validation.error);
       return Response.json({ error: validation.error }, { status: 400 });
     }
 
-    const { messages, location, conversationId } = validation.data;
-    const { filters } = body; // filters is optional, not in schema
+    const { location, conversationId } = validation.data;
+    // Clients may only speak as the user or replay assistant turns — never as "system".
+    const messages: ChatMessage[] = validation.data.messages
+      .filter(
+        (m): m is ChatMessage => m.role === "user" || m.role === "assistant",
+      )
+      .map((m) => ({ role: m.role, content: m.content }));
+    const filters =
+      body.filters && typeof body.filters === "object"
+        ? body.filters
+        : undefined;
 
-    // Normalize location - use null if not valid
     const validLocation =
       location &&
       typeof location.lat === "number" &&
@@ -789,426 +273,290 @@ export async function POST(req: Request) {
         ? location
         : null;
 
-    console.log("Chat request:", {
-      messagesCount: messages?.length,
-      location: validLocation,
-      filters,
-    });
+    const userMessage =
+      messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
+    if (!userMessage.trim()) {
+      return Response.json(
+        { error: "messages must include a user message" },
+        { status: 400 },
+      );
+    }
 
-    const userMessage = messages[messages.length - 1]?.content || "";
-    const agentSteps: any[] = [];
+    const agentSteps: Array<Record<string, unknown>> = [];
+    const step = async <T>(
+      agent: string,
+      run: () => Promise<T> | T,
+      summarize?: (r: T) => unknown,
+    ) => {
+      const start = Date.now();
+      const result = await run();
+      agentSteps.push({
+        agent,
+        result: summarize ? summarize(result) : result,
+        timestamp: Date.now(),
+        latencyMs: Date.now() - start,
+      });
+      return result;
+    };
 
     // ====== STEP 1: ORCHESTRATOR ======
-    console.log("Running Orchestrator Agent...");
-    const orchStart = Date.now();
-    const orchestratorResult = await orchestratorAgent(userMessage, {
-      location: validLocation,
-    });
-    agentSteps.push({
-      agent: "Orchestrator",
-      result: orchestratorResult,
-      timestamp: Date.now(),
-      latencyMs: Date.now() - orchStart,
-    });
-
-    // If general conversation, respond directly
-    if (orchestratorResult.skipAgents) {
-      const responseStream = await getGroqClient().chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        stream: true,
-        messages: [
-          {
-            role: "system",
-            content:
-              'You are WorkHub AI, a friendly assistant for finding workspaces. Be helpful and conversational. When appropriate to show data, output <ui-component name="DataTable" props=\'{"columns": [...], "data": [...]}\' /> or <ui-component name="Map" props=\'{"markers": [...]}\' />.',
-          },
-          ...messages.map((m: any) => ({
-            role: m.role,
-            content: m.name ? `[User: ${m.name}] ${m.content}` : m.content,
-          })),
-        ],
-      });
-
-      const stream = new ReadableStream({
-        async start(controller) {
-          const metadata = {
-            venues: [],
-            agentSteps,
-            cached: false,
-            suggestions: [],
-            complexity: orchestratorResult.complexity,
-          };
-          controller.enqueue(
-            new TextEncoder().encode(
-              `METADATA:${JSON.stringify(metadata)}\n\n`,
-            ),
-          );
-
-          let fullContent = "";
-          try {
-            for await (const chunk of responseStream) {
-              const text = chunk.choices[0]?.delta?.content || "";
-              if (text) {
-                fullContent += text;
-                controller.enqueue(new TextEncoder().encode(`TEXT:${text}`));
-              }
-            }
-          } catch (e) {
-            console.error("Stream error:", e);
-          }
-
-          if (userId && conversationId) {
-            try {
-              await prisma.message.create({
-                data: { conversationId, role: "user", content: userMessage },
-              });
-              await prisma.message.create({
-                data: {
-                  conversationId,
-                  role: "assistant",
-                  content: fullContent,
-                  agentName: "GeneralChat",
-                },
-              });
-              await prisma.conversation.update({
-                where: { id: conversationId },
-                data: { updatedAt: new Date() },
-              });
-
-              // Trigger background preference learning & summary updates
-              triggerBackgroundMemorySync(conversationId, userId);
-            } catch (dbError) {
-              console.error("Database save error:", dbError);
-            }
-          }
-
-          controller.close();
-        },
-      });
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          Connection: "keep-alive",
-        },
-      });
-    }
-
-    // ====== CACHE & ROUTING ======
-    let contextResult: any = null;
-    let dataResult: any = null;
-    let enrichedVenues: any[] = [];
-    let reasoningResult: any = null;
-    let isCached = false;
-
-    if (orchestratorResult.complexity === "complex") {
-      // Try semantic cache
-      console.log("Checking Semantic Cache...");
-      const cachedResponse = await checkSemanticCache(
-        userMessage,
-        validLocation ? `${validLocation.lat},${validLocation.lng}` : null,
-      );
-
-      if (cachedResponse) {
-        console.log("Semantic Cache Hit!");
-        isCached = true;
-        reasoningResult = cachedResponse;
-
-        agentSteps.push({
-          agent: "Context",
-          result: { skipped: true, reason: "Cache hit" },
-          timestamp: Date.now(),
-          latencyMs: 1,
-        });
-
-        agentSteps.push({
-          agent: "Data",
-          result: { skipped: true, reason: "Cache hit" },
-          timestamp: Date.now(),
-          latencyMs: 1,
-        });
-
-        agentSteps.push({
-          agent: "Reasoning",
-          result: {
-            summary: "Served from cache",
-            reasoning: "Matched a highly similar recent query",
-            topVenues: reasoningResult.rankedVenues
-              .slice(0, 3)
-              .map((v: any) => ({
-                name: v.name,
-                score: v.score,
-              })),
-          },
-          timestamp: Date.now(),
-          latencyMs: 50,
-        });
-      }
-    }
-
-    if (!isCached) {
-      if (
-        orchestratorResult.complexity === "simple" &&
-        orchestratorResult.parameters
-      ) {
-        console.log("Bypassing Context Agent for Simple query...");
-        contextResult = { parameters: orchestratorResult.parameters };
-        agentSteps.push({
-          agent: "Context",
-          result: { skipped: true, parameters: contextResult.parameters },
-          timestamp: Date.now(),
-          latencyMs: 10,
-        });
-      } else {
-        // ====== STEP 2: CONTEXT AGENT ======
-        console.log("Running Context Agent...");
-        const contextStart = Date.now();
-        contextResult = await contextAgent(
-          userMessage,
-          validLocation ?? undefined,
-          userId,
-        );
-        agentSteps.push({
-          agent: "Context",
-          result: contextResult,
-          timestamp: Date.now(),
-          latencyMs: Date.now() - contextStart,
-        });
-      }
-
-      // ====== STEP 3: DATA AGENT ======
-      console.log("Running Data Agent...");
-      const dataStart = Date.now();
-      dataResult = await dataAgent(contextResult.parameters, filters);
-      agentSteps.push({
-        agent: "Data",
-        result: {
-          venueCount: dataResult.venues.length,
-          meta: dataResult.meta,
-          reasoning: dataResult.reasoning,
-        },
-        timestamp: Date.now(),
-        latencyMs: Date.now() - dataStart,
-      });
-
-      // ====== STEP 3b: DB ENRICHMENT ======
-      console.log("Enriching venues with DB ratings...");
-      enrichedVenues = await enrichVenuesWithDBRatings(
-        dataResult.venues as RawVenue[],
-      );
-
-      // Apply advanced filters post-DB enrichment
-      const finalFilteredVenues = filters
-        ? applyFilters(enrichedVenues, filters)
-        : enrichedVenues;
-
-      if (orchestratorResult.complexity === "simple") {
-        console.log("Bypassing Reasoning Agent for Simple query...");
-        reasoningResult = {
-          summary: "Here are some basic matches.",
-          reasoning: "Simple query routing",
-          rankedVenues: finalFilteredVenues.map((v) => ({
-            ...v,
-            score: 50,
-            pros: [],
-            cons: [],
-            aiSummary: "Matches basic criteria",
-          })),
-        };
-        agentSteps.push({
-          agent: "Reasoning",
-          result: { skipped: true },
-          timestamp: Date.now(),
-          latencyMs: 10,
-        });
-      } else {
-        // ====== STEP 4: REASONING AGENT ======
-        console.log("Running Reasoning Agent...");
-        const reasoningStart = Date.now();
-        reasoningResult = reasoningAgent(finalFilteredVenues, {
-          workType: contextResult.parameters.workType,
-          amenities: contextResult.parameters.amenities,
-        });
-        agentSteps.push({
-          agent: "Reasoning",
-          result: {
-            summary: reasoningResult.summary,
-            reasoning: reasoningResult.reasoning,
-            topVenues: reasoningResult.rankedVenues
-              .slice(0, 3)
-              .map((v: any) => ({
-                name: v.name,
-                score: v.score,
-              })),
-          },
-          timestamp: Date.now(),
-          latencyMs: Date.now() - reasoningStart,
-        });
-
-        // Save to cache
-        await setSemanticCache(
-          userMessage,
-          validLocation ? `${validLocation.lat},${validLocation.lng}` : null,
-          reasoningResult,
-        );
-      }
-    }
-
-    // ====== STEP 5: ACTION AGENT ======
-    console.log("Running Action Agent...");
-    const actionStart = Date.now();
-    const actionResult = await actionAgent(
-      reasoningResult.rankedVenues,
-      userMessage,
+    const decision = await step("Orchestrator", () =>
+      orchestratorAgent(userMessage, { hasLocation: Boolean(validLocation) }),
     );
-    agentSteps.push({
-      agent: "Action",
-      result: {
-        markerCount: actionResult.mapUpdates.markers.length,
-        suggestions: actionResult.suggestions,
-      },
-      timestamp: Date.now(),
-      latencyMs: Date.now() - actionStart,
-    });
 
-    // ====== GENERATE STREAM RESPONSE ======
-    const groq = getGroqClient();
-    const systemPrompt = `You are WorkHub AI, a helpful workspace assistant. 
-You can use Generative UI. When you need to show a map, use:
-<ui-component name="Map" props='{"markers": [{"lat": ..., "lng": ..., "name": "...", "category": "..."}]}' />
-When you need to show a table, use:
-<ui-component name="DataTable" props='{"columns": ["Name", "Category", "Score"], "data": [{"Name": "...", "Category": "...", "Score": "..."}]}' />
-Here are the top venues found: ${JSON.stringify(reasoningResult.rankedVenues.map((v: any) => ({ name: v.name, category: v.category, lat: v.lat, lng: v.lng, score: v.score })))}
-Address the user's query and include UI components if helpful.`;
-
-    const llmMessages = [
-      { role: "system", content: systemPrompt },
-      ...messages.map((m: any) => ({
-        role: m.role,
-        content: m.name ? `[User: ${m.name}] ${m.content}` : m.content,
-      })),
-    ];
-
-    const responseStream = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      stream: true,
-      messages: llmMessages as any,
-    });
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        const metadata = {
-          venues: reasoningResult.rankedVenues,
-          mapUpdates: actionResult.mapUpdates,
-          suggestions: actionResult.suggestions,
+    // ====== GENERAL CONVERSATION ======
+    if (decision.skipAgents) {
+      const fallback = offlineConversationReply(userMessage);
+      const compressedHistory = await prepareCompressedHistory(messages, userId);
+      const complexity =
+        decision.complexity ?? classifyQueryComplexity(userMessage, messages);
+      return streamResponse(
+        {
+          venues: [],
           agentSteps,
-          cached: isCached,
-          complexity: orchestratorResult.complexity,
-          highTraffic: dataResult?.meta?.highTraffic || false,
-        };
-        controller.enqueue(
-          new TextEncoder().encode(`METADATA:${JSON.stringify(metadata)}\n\n`),
+          cached: false,
+          suggestions: [
+            "Quiet cafe near me",
+            "Coworking space within 3 km",
+            "Library with outlets",
+          ],
+          complexity,
+        },
+        (emit) =>
+          streamLlm(
+            [
+              {
+                role: "system",
+                content:
+                  "You are WorkSphere's assistant. WorkSphere helps people find cafes, coworking spaces and libraries to work from, and book a spot. Be friendly and brief (2–4 sentences). If the user wants a workspace, ask what area and what they need (Wi-Fi, quiet, outlets, calls). Never invent specific venues.",
+              },
+              ...compressedHistory,
+            ],
+            emit,
+            fallback,
+            complexity,
+            userMessage,
+          ),
+        (full) =>
+          persistExchange(
+            userId,
+            conversationId,
+            userMessage,
+            full,
+            "GeneralChat",
+          ),
+      );
+    }
+
+    // ====== SEARCH ======
+    if (!validLocation) {
+      const text =
+        "I need your location to find nearby workspaces. Allow location access in your browser, or move the map to the area you want to search.";
+      return streamResponse(
+        {
+          venues: [],
+          agentSteps,
+          cached: false,
+          suggestions: [],
+          complexity: decision.complexity,
+        },
+        async (emit) => {
+          emit(text);
+          return text;
+        },
+        (full) =>
+          persistExchange(
+            userId,
+            conversationId,
+            userMessage,
+            full,
+            "ActionAgent",
+          ),
+      );
+    }
+
+    const cacheKey = cacheLocationKey(validLocation);
+    const useCache =
+      decision.complexity === "complex" &&
+      !filters &&
+      Boolean(process.env.COHERE_API_KEY);
+    let rankedVenues: RankedVenue[] | null = null;
+    let isCached = false;
+    let highTraffic = false;
+    let parameters = {
+      ...parseSearchQuery(userMessage).parameters,
+      ...(decision.parameters ?? {}),
+    };
+
+    if (useCache) {
+      const cached = await checkSemanticCache(userMessage, cacheKey);
+      if (cached?.rankedVenues) {
+        isCached = true;
+        rankedVenues = cached.rankedVenues;
+        agentSteps.push({
+          agent: "Cache",
+          result: { hit: true, venues: rankedVenues?.length ?? 0 },
+          timestamp: Date.now(),
+          latencyMs: 0,
+        });
+      }
+    }
+
+    if (!rankedVenues) {
+      // ====== STEP 2: CONTEXT ======
+      if (decision.complexity === "complex") {
+        const context = await step("Context", () =>
+          contextAgent(userMessage, validLocation, userId),
         );
+        parameters = { ...parameters, ...context.parameters };
+      } else {
+        agentSteps.push({
+          agent: "Context",
+          result: { skipped: true, parameters },
+          timestamp: Date.now(),
+          latencyMs: 0,
+        });
+      }
 
-        let fullContent = "";
-        try {
-          for await (const chunk of responseStream) {
-            const text = chunk.choices[0]?.delta?.content || "";
-            if (text) {
-              fullContent += text;
-              controller.enqueue(new TextEncoder().encode(`TEXT:${text}`));
-            }
-          }
-        } catch (e) {
-          console.error("Stream error", e);
-        }
+      // ====== STEP 3: DATA ======
+      const data = await step(
+        "Data",
+        () => dataAgent({ ...parameters, location: validLocation }, filters),
+        (r) => ({
+          venueCount: r.venues.length,
+          meta: r.meta,
+          reasoning: r.reasoning,
+        }),
+      );
+      highTraffic = Boolean(data.meta.highTraffic);
 
-        if (userId && conversationId) {
-          try {
-            await prisma.message.create({
-              data: { conversationId, role: "user", content: userMessage },
-            });
+      // ====== STEP 4: REASONING ======
+      const reasoning = await step(
+        "Reasoning",
+        () =>
+          reasoningAgent(
+            filters ? applyFilters(data.venues, filters) : data.venues,
+            parameters,
+          ),
+        (r) => ({
+          summary: r.summary,
+          reasoning: r.reasoning,
+          topVenues: r.rankedVenues
+            .slice(0, 3)
+            .map((v) => ({ name: v.name, score: v.score })),
+        }),
+      );
+      rankedVenues = reasoning.rankedVenues;
 
-            const sanitized = fullContent.replace(
-              /<ui-component\s+name="([^"]+)"\s+props='([^']*)'\s*\/>/g,
-              (_, name, props) => {
-                const allowed = ["DataTable", "DataChart", "Map"];
-                if (!allowed.includes(name)) return "";
-                try {
-                  JSON.parse(
-                    props.replace(/&quot;/g, '"').replace(/&#x27;/g, "'"),
-                  );
-                  return _;
-                } catch {
-                  return "";
-                }
-              },
-            );
+      if (useCache && rankedVenues.length > 0) {
+        await setSemanticCache(userMessage, cacheKey, { rankedVenues });
+      }
+    }
 
-            await prisma.message.create({
-              data: {
-                conversationId,
-                role: "assistant",
-                content: sanitized,
-                agentName: "ActionAgent",
-              },
-            });
-            await prisma.conversation.update({
-              where: { id: conversationId },
-              data: { updatedAt: new Date() },
-            });
+    // ====== STEP 5: ACTION ======
+    const venues = rankedVenues ?? [];
+    const action = await step(
+      "Action",
+      () =>
+        actionAgent(venues, userMessage, {
+          highTraffic,
+          radius: parameters.radius,
+        }),
+      (r) => ({
+        markerCount: r.mapUpdates.markers.length,
+        suggestions: r.suggestions,
+      }),
+    );
 
-            // Trigger background preference learning & summary updates
-            triggerBackgroundMemorySync(conversationId, userId);
-          } catch (dbError) {
-            console.error("Database save error:", dbError);
-          }
-        }
+    if (userId) {
+      emitWebhookEvent(userId, "AI_WORKFLOW_COMPLETED", {
+        query: userMessage.slice(0, 500),
+        parameters: {
+          workType: parameters.workType,
+          categories: parameters.category,
+          amenities: parameters.amenities,
+          radiusMeters: parameters.radius,
+        },
+        resultCount: venues.length,
+        topVenues: venues
+          .slice(0, 5)
+          .map((v) => ({ id: v.id, name: v.name, score: v.score })),
+        cached: isCached,
+      });
+    }
 
-        controller.close();
-      },
+    // Deduplicate repetitive venue query results before passing context to Groq LLM
+    const { deduplicated: dedupedVenues } = deduplicateVenueResults(venues, {
+      existingHistory: messages,
     });
+    const compressedHistory = await prepareCompressedHistory(messages, userId);
 
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
+    const llmMessages =
+      dedupedVenues.length > 0
+        ? [
+            {
+              role: "system" as const,
+              content: `You are WorkSphere's assistant. The user asked for a place to work. These venues were found and ranked (best first); the map already shows them:
+${JSON.stringify(venueFacts(dedupedVenues))}
+Reply in 2–5 short sentences or a brief list: recommend the best 2–3 for the user's needs and say why using only the facts above. Never invent venues, prices, ratings or amenities. Mention that they can tap a pin for details, directions or booking.`,
+            },
+            ...compressedHistory,
+          ]
+        : null;
+
+    const complexity =
+      decision.complexity ?? classifyQueryComplexity(userMessage, messages);
+
+    return streamResponse(
+      {
+        venues,
+        mapUpdates: action.mapUpdates,
+        suggestions: action.suggestions,
+        agentSteps,
+        cached: isCached,
+        complexity,
+        highTraffic,
       },
-    });
+      async (emit) => {
+        if (!llmMessages) {
+          emit(action.message);
+          return action.message;
+        }
+        return streamLlm(
+          llmMessages,
+          emit,
+          action.message,
+          complexity,
+          userMessage,
+        );
+      },
+      (full) =>
+        persistExchange(
+          userId,
+          conversationId,
+          userMessage,
+          full,
+          "ActionAgent",
+        ),
+    );
   } catch (error) {
     console.error("Chat API error:", error);
     const message =
       error instanceof Error ? error.message : "An unexpected error occurred";
 
-    const isRateLimitError =
-      (error as any)?.status === 429 ||
-      (error as any)?.statusCode === 429 ||
-      error instanceof Groq.RateLimitError ||
-      (error as any)?.name === "RateLimitError" ||
-      message.includes("429") ||
-      message.toLowerCase().includes("rate limit") ||
-      message.toLowerCase().includes("ratelimit");
-
-    if (isRateLimitError) {
+    if (isRateLimitError(error) || error instanceof Groq.RateLimitError) {
       let retryAfter = 60;
-
-      if (
-        typeof (error as any)?.retryAfter === "number" &&
-        (error as any).retryAfter > 0
-      ) {
-        retryAfter = (error as any).retryAfter;
+      const err = error as any;
+      if (typeof err?.retryAfter === "number" && err.retryAfter > 0) {
+        retryAfter = err.retryAfter;
       } else {
-        const headers =
-          (error as any)?.headers || (error as any)?.response?.headers;
-        let rawHeader: any = null;
-
+        const headers = err?.headers || err?.response?.headers;
+        let rawHeader: unknown = null;
         if (headers) {
           if (typeof headers.get === "function") {
             try {
               rawHeader =
                 headers.get("retry-after") ??
-                headers.get("Retry-After") ??
                 headers.get("x-ratelimit-reset-requests") ??
                 headers.get("x-ratelimit-reset-tokens");
             } catch {
@@ -1223,24 +571,22 @@ Address the user's query and include UI components if helpful.`;
               headers["x-ratelimit-reset-tokens"];
           }
         }
-
-        if (rawHeader !== null && rawHeader !== undefined) {
-          const parsed = parseInt(String(rawHeader), 10);
-          if (!isNaN(parsed) && parsed > 0) retryAfter = parsed;
-        } else if (typeof message === "string") {
+        const parsed =
+          rawHeader != null ? parseInt(String(rawHeader), 10) : NaN;
+        if (!isNaN(parsed) && parsed > 0) {
+          retryAfter = parsed;
+        } else {
           const match =
             message.match(/try again in ([0-9.]+)\s*s/i) ||
             message.match(/retry after ([0-9.]+)/i);
-          if (match && match[1]) {
-            const seconds = Math.ceil(parseFloat(match[1]));
-            if (!isNaN(seconds) && seconds > 0) retryAfter = seconds;
-          }
+          if (match?.[1])
+            retryAfter = Math.ceil(parseFloat(match[1])) || retryAfter;
         }
       }
 
       return Response.json(
         {
-          error: "Groq AI rate limit exceeded. Exponential backoff active.",
+          error: "Groq AI rate limit exceeded. Please try again shortly.",
           retryAfter,
         },
         {
@@ -1252,23 +598,6 @@ Address the user's query and include UI components if helpful.`;
             ),
           },
         },
-      );
-    }
-
-    if (
-      message.includes("Invalid API Key") ||
-      message.includes("Unauthorized") ||
-      message.includes("401") ||
-      message.includes("GROQ_API_KEY") ||
-      message.includes("Cohere API") ||
-      message.includes("COHERE_API_KEY")
-    ) {
-      return Response.json(
-        {
-          error:
-            "AI services are not configured. Please configure the required API keys in your environment variables.",
-        },
-        { status: 503 },
       );
     }
 
@@ -1287,9 +616,7 @@ Address the user's query and include UI components if helpful.`;
     }
 
     return Response.json(
-      {
-        error: "An unexpected server error occurred. Please try again later.",
-      },
+      { error: "An unexpected server error occurred. Please try again later." },
       { status: 500 },
     );
   }

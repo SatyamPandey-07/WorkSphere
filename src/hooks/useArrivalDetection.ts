@@ -334,14 +334,16 @@ export function useArrivalDetection(
 
     try {
       if (venueId) {
-        const res = await fetch(`/api/bookings/${venueId}/check-in`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
+        const res = await fetch(
+          `/api/venues/${encodeURIComponent(venueId)}/check-in`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          },
+        );
         if (!res.ok) {
-          console.warn(
-            "Check-in API endpoint not found or failed, completing check-in locally.",
-          );
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Check-in failed. Please try again.");
         }
       } else {
         await new Promise((resolve) => setTimeout(resolve, 800));

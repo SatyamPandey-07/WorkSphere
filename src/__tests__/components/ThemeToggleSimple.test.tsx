@@ -1,12 +1,15 @@
 import { render, screen, fireEvent } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 // Stub the View Transitions API — jsdom does not implement it
 const startViewTransitionMock = jest.fn((callback: () => void) => {
   callback();
-  return { finished: Promise.resolve(), ready: Promise.resolve(), updateCallbackDone: Promise.resolve() };
+  return {
+    finished: Promise.resolve(),
+    ready: Promise.resolve(),
+    updateCallbackDone: Promise.resolve(),
+  };
 });
 
 beforeEach(() => {

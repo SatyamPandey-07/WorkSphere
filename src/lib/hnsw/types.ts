@@ -16,6 +16,7 @@ export interface HnswConfig {
   efConstruction: number;
   efSearch: number;
   ml: number;
+  metric: "cosine" | "euclidean";
 }
 
 export interface CompressedContext {

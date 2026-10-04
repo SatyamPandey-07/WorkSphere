@@ -30,6 +30,8 @@ The table below lists every environment variable currently used by WorkSphere.
 | Variable | Required | Description |
 |-----------|----------|-------------|
 | `DATABASE_URL` | ✅ Yes | PostgreSQL connection string used by Prisma ORM. |
+| `CRON_SECRET` | ✅ Production | Bearer token required by scheduled cron endpoints, including partition maintenance. |
+| `PARTITION_MAINTENANCE_ADMIN_ID` | ✅ Production | ID of an existing admin user used as the actor for partition maintenance audit records. |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | ✅ Yes | Public Clerk authentication key used by the frontend. |
 | `CLERK_SECRET_KEY` | ✅ Yes | Private Clerk secret used by server-side authentication. |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | ✅ Yes | Route used for the sign-in page. |
@@ -48,8 +50,10 @@ The table below lists every environment variable currently used by WorkSphere.
 | `SMTP_PORT` | Optional | SMTP server port. |
 | `SMTP_USER` | Optional | SMTP account username. |
 | `SMTP_PASS` | Optional | SMTP account password. |
+| `PASSKEY_OTP_SECRET` | Optional | HMAC key for passkey email OTPs. Falls back to `CSRF_SECRET` / `CLERK_SECRET_KEY`; one of them is required in production. |
 | `UPSTASH_REDIS_REST_URL` | Optional | REST endpoint for the Upstash Redis instance. |
 | `UPSTASH_REDIS_REST_TOKEN` | Optional | Authentication token for Upstash Redis. |
+| `PARTYKIT_AUTH_SECRET` | Required for collaboration | Shared secret the PartyKit server sends (as `Authorization: Bearer …`) to `/api/partykit/auth` to look up folder roles. Must be set on both the Next.js app and the PartyKit deployment. Without it every user is treated as a read-only viewer and members-only rooms (collection notes) reject everyone. `PARTYKIT_SHARED_SECRET` is accepted as an alias. |
 | `NEXT_PUBLIC_APP_URL` | Optional | Public application URL used for metadata and sharing links. |
 
 ---
@@ -239,7 +243,7 @@ All three variables must be configured for image uploads to work correctly.
 
 ## SMTP Configuration
 
-SMTP credentials are used to send booking confirmations and notification emails.
+SMTP credentials are used to send booking confirmations and notification emails, and the one-time codes that authorise rotating, renaming or removing a passkey. Without SMTP in production, those passkey actions return `503`.
 
 ### Variables
 

@@ -7,6 +7,30 @@ export const SPEED_OPTIONS: SpeedOption[] = [0.75, 1, 1.25, 1.5, 1.75, 2];
 const VOICE_STORAGE_KEY = "worksphere_selected_voice_uri";
 const AUTO_READ_STORAGE_KEY = "worksphere_auto_read";
 const RATE_STORAGE_KEY = "worksphere_speech_rate";
+const VOLUME_STORAGE_KEY = "worksphere_speech_volume";
+
+export function getPersistedVolume(): number | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const saved = localStorage.getItem(VOLUME_STORAGE_KEY);
+    if (saved !== null) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed)) return Math.max(0, Math.min(1, parsed));
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function persistVolume(volume: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(VOLUME_STORAGE_KEY, String(volume));
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 export function getPersistedVoiceURI(): string | null {
   if (typeof window === "undefined") return null;
@@ -43,13 +67,17 @@ export function splitTextIntoSentences(text: string): string[] {
 
   // Split on sentence boundaries (. ! ?) avoiding numbered list prefixes like "1."
   const sentences = cleanText.split(/(?<=[!?])\s+|(?<=(?<!\b\d+)\.)\s+/g);
-  return sentences.map((s) => s.trim()).filter((s) => s.length > 0);
+  return sentences
+    .filter(Boolean)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }
 
 export interface UseSpeechSynthesisOptions {
   textToSpeakDefault?: string;
   defaultRate?: number;
   defaultPitch?: number;
+  defaultVolume?: number;
   lang?: string;
   onStart?: () => void;
   onEnd?: () => void;
@@ -62,6 +90,7 @@ export interface UseSpeechSynthesisReturn {
   isPaused: boolean;
   rate: number;
   pitch: number;
+  volume: number;
   voices: SpeechSynthesisVoice[];
   voice: SpeechSynthesisVoice | null;
   error: string | null;
@@ -78,6 +107,8 @@ export interface UseSpeechSynthesisReturn {
   setRate: (rate: number) => void;
   changeRate: (rate: number) => void; // Alias for compatibility
   setPitch: (pitch: number) => void;
+  setVolume: (volume: number) => void;
+  changeVolume: (volume: number) => void; // Alias for compatibility
   setVoice: (voice: SpeechSynthesisVoice | null) => void;
   toggleAutoRead: () => void;
 }
@@ -95,6 +126,7 @@ export function useSpeechSynthesis(
     textToSpeakDefault = "",
     defaultRate = 1,
     defaultPitch = 1,
+    defaultVolume = 1,
     lang = "en-US",
     onStart,
     onEnd,
@@ -106,6 +138,7 @@ export function useSpeechSynthesis(
   const [isPaused, setIsPaused] = useState(false);
   const [rate, setRateState] = useState(defaultRate);
   const [pitch, setPitchState] = useState(defaultPitch);
+  const [volume, setVolumeState] = useState(defaultVolume);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voice, setVoiceState] = useState<SpeechSynthesisVoice | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -132,6 +165,9 @@ export function useSpeechSynthesis(
 
       const savedRate = localStorage.getItem(RATE_STORAGE_KEY);
       if (savedRate) setRateState(parseFloat(savedRate));
+
+      const savedVolume = getPersistedVolume();
+      if (savedVolume !== null) setVolumeState(savedVolume);
     }
   }, []);
 
@@ -184,8 +220,8 @@ export function useSpeechSynthesis(
         // Cancel any active or queued utterances when the component unmounts
         // (e.g. user navigates away) so speech doesn't continue in the background.
         window.speechSynthesis.cancel();
-        setIsReading(false);
-        setSentenceIndex(0);
+        setIsSpeaking(false);
+        setSpeakingSentenceIndex(null);
       };
     } else {
       setIsSupported(false);
@@ -291,6 +327,7 @@ export function useSpeechSynthesis(
       const utterance = new SpeechSynthesisUtterance(textToRead);
       utterance.rate = rate;
       utterance.pitch = pitch;
+      utterance.volume = volume;
 
       const resolvedVoice = resolveVoice();
       if (resolvedVoice) {
@@ -340,6 +377,7 @@ export function useSpeechSynthesis(
     [
       rate,
       pitch,
+      volume,
       resolveVoice,
       lang,
       onStart,
@@ -372,6 +410,7 @@ export function useSpeechSynthesis(
         const utterance = new SpeechSynthesisUtterance(sentenceText.trim());
         utterance.rate = rate;
         utterance.pitch = pitch;
+        utterance.volume = volume;
         if (resolvedVoice) utterance.voice = resolvedVoice;
 
         utterance.onstart = () => {
@@ -409,6 +448,7 @@ export function useSpeechSynthesis(
       stopSpeech,
       rate,
       pitch,
+      volume,
       resolveVoice,
       onStart,
       onEnd,
@@ -438,6 +478,15 @@ export function useSpeechSynthesis(
     setPitchState(clampedPitch);
   }, []);
 
+  const setVolume = useCallback((newVolume: number) => {
+    const clampedVolume = Math.max(0, Math.min(1, newVolume));
+    setVolumeState(clampedVolume);
+
+    if (typeof window !== "undefined") {
+      persistVolume(clampedVolume);
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       cancel();
@@ -459,6 +508,7 @@ export function useSpeechSynthesis(
     isPaused,
     rate,
     pitch,
+    volume,
     voices,
     voice,
     error,
@@ -475,6 +525,8 @@ export function useSpeechSynthesis(
     setRate,
     changeRate: setRate, // Alias to match EnhancedChatbot requirements
     setPitch,
+    setVolume,
+    changeVolume: setVolume, // Alias for compatibility
     setVoice,
     toggleAutoRead,
   };

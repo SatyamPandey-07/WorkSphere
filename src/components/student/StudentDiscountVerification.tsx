@@ -4,6 +4,8 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle2, Loader2, ShieldCheck, X } from "lucide-react";
+import { computeMembershipCommit } from "@/lib/zkp/commitment";
+import { getCachedProof, invalidateProof, storeProof } from "@/lib/zkp/proofCache";
 
 interface StudentDiscountVerificationProps {
   /** Called after the proof is accepted and the user is verified server-side. */
@@ -14,6 +16,53 @@ interface StudentDiscountVerificationProps {
    * Focus is returned to the element that triggered the dialog on close.
    */
   onClose?: () => void;
+}
+
+/** IndexedDB proof-cache scope for student verification proofs (#3358). */
+const STUDENT_PROOF_SCOPE = "student-discount";
+
+const ZKP_CACHE_KEY = "worksphere-zkp-verified";
+const ZKP_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+interface ZkpCacheEntry {
+  studentIdHash: string;
+  verifiedAt: number;
+}
+
+function hashStudentId(id: string): string {
+  // Simple non-cryptographic hash — only used as a cache key; actual security
+  // is enforced server-side via the ZKP proof verification.
+  let h = 5381;
+  for (let i = 0; i < id.length; i++) {
+    h = (((h << 5) + h) ^ id.charCodeAt(i)) >>> 0;
+  }
+  return h.toString(36);
+}
+
+function loadZkpCache(): ZkpCacheEntry | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(ZKP_CACHE_KEY);
+    if (!raw) return null;
+    const entry: ZkpCacheEntry = JSON.parse(raw);
+    if (Date.now() - entry.verifiedAt > ZKP_CACHE_TTL_MS) {
+      localStorage.removeItem(ZKP_CACHE_KEY);
+      return null;
+    }
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+function saveZkpCache(studentIdHash: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const entry: ZkpCacheEntry = { studentIdHash, verifiedAt: Date.now() };
+    localStorage.setItem(ZKP_CACHE_KEY, JSON.stringify(entry));
+  } catch {
+    // Storage quota exceeded — skip caching
+  }
 }
 
 function createZkpWorker(): Worker {
@@ -29,7 +78,12 @@ export function StudentDiscountVerification({
   const [studentId, setStudentId] = useState("");
   const [isProving, setIsProving] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  // Pre-populate isSuccess if there's a valid cached proof so the success
+  // state is shown immediately without re-running the expensive ZKP worker.
+  const [isSuccess, setIsSuccess] = useState(() => {
+    const cached = loadZkpCache();
+    return cached !== null;
+  });
   const [error, setError] = useState<string | null>(null);
 
   const workerRef = useRef<Worker | null>(null);
@@ -54,7 +108,37 @@ export function StudentDiscountVerification({
 
       if (type === "error") {
         setIsProving(false);
-        setError(workerError || "Failed to generate zero-knowledge proof");
+        const { isOom } = e.data;
+        if (isOom) {
+          // OOM during WASM instantiation — fall back to server-side verification
+          // which does not require client-side snarkjs proof generation.
+          setError(
+            "Your device ran out of memory for local proof generation. Attempting server-side verification…",
+          );
+          setIsVerifying(true);
+          try {
+            const response = await fetch("/api/user/verify-student", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ serverSideFallback: true, studentId }),
+            });
+            const data = await response.json();
+            if (response.ok) {
+              setError(null);
+              setIsSuccess(true);
+              saveZkpCache(hashStudentId(studentId.trim()));
+              onVerifiedRef.current?.();
+            } else {
+              setError(data.error || "Server-side verification failed");
+            }
+          } catch {
+            setError("Server-side verification unavailable. Please try on a device with more memory.");
+          } finally {
+            setIsVerifying(false);
+          }
+        } else {
+          setError(workerError || "Failed to generate zero-knowledge proof");
+        }
         // Terminate the worker after failure so snarkjs WASM resources are freed
         terminateWorker();
         return;
@@ -76,6 +160,10 @@ export function StudentDiscountVerification({
           }
 
           setIsSuccess(true);
+          saveZkpCache(hashStudentId(studentId.trim()));
+          if (typeof publicSignals?.[0] === "string") {
+            void storeProof(STUDENT_PROOF_SCOPE, publicSignals[0], { proof, publicSignals });
+          }
           onVerifiedRef.current?.();
         } catch (err: any) {
           setError(err.message);
@@ -105,21 +193,65 @@ export function StudentDiscountVerification({
     };
   }, [spawnWorker, terminateWorker]);
 
-  const handleVerify = () => {
+  /**
+   * Re-submit a cached proof instead of re-proving (#3358). Returns true when
+   * the server accepted it; a rejected proof is evicted so we prove afresh.
+   */
+  const verifyWithCachedProof = async (commit: string): Promise<boolean> => {
+    const cached = await getCachedProof(STUDENT_PROOF_SCOPE, commit);
+    if (!cached) return false;
+    try {
+      const response = await fetch("/api/user/verify-student", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ proof: cached.proof, publicSignals: cached.publicSignals }),
+      });
+      if (response.ok) return true;
+      if (response.status === 400 || response.status === 403) {
+        await invalidateProof(STUDENT_PROOF_SCOPE, commit);
+      }
+    } catch {
+      // network error: fall back to proving
+    }
+    return false;
+  };
+
+  const handleVerify = async () => {
     if (!studentId) return;
     setError(null);
+
+    // Skip expensive ZKP proof generation if a valid cached result exists
+    // for this student ID within the 24-hour verification window.
+    const cached = loadZkpCache();
+    if (cached && cached.studentIdHash === hashStudentId(studentId.trim())) {
+      setIsSuccess(true);
+      onVerifiedRef.current?.();
+      return;
+    }
+
     setIsProving(true);
 
     try {
       const t = BigInt(studentId.replace(/\D/g, "") || "0");
-      const expectedCommit = (t * t + BigInt(5) * t + BigInt(17)).toString();
+      const expectedCommit = computeMembershipCommit(t);
+
+      if (await verifyWithCachedProof(expectedCommit)) {
+        setIsProving(false);
+        setIsSuccess(true);
+        saveZkpCache(hashStudentId(studentId.trim()));
+        onVerifiedRef.current?.();
+        return;
+      }
 
       // If worker was terminated (after previous error), respawn it
       if (!workerRef.current) {
         spawnWorker();
       }
 
+      // zkpWorker ignores messages without type "prove": without it the
+      // request was silently dropped and verification never finished.
       workerRef.current?.postMessage({
+        type: "prove",
         identityToken: t.toString(),
         expectedCommit,
       });

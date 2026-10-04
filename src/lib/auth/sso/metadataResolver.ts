@@ -1,4 +1,15 @@
 import { XMLParser } from "fast-xml-parser";
+import { isSafeWebhookUrl } from "@/lib/ssrfValidation";
+
+const METADATA_FETCH_TIMEOUT_MS = 5_000;
+
+/** Thrown when a caller-supplied IdP metadata URL fails SSRF validation. */
+export class UnsafeMetadataUrlError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "UnsafeMetadataUrlError";
+  }
+}
 
 export interface IDPMetadata {
   entityId: string;
@@ -13,9 +24,22 @@ export interface IDPMetadata {
  * @returns Parsed metadata containing the entityId, ssoUrl (HTTP-Redirect), and signing certificates
  */
 export async function resolveIdpMetadata(metadataUrl: string): Promise<IDPMetadata> {
+  // Reject loopback/private/internal targets and non-HTTP(S) schemes before
+  // making any outbound request (defense-in-depth against SSRF).
+  const safety = await isSafeWebhookUrl(metadataUrl);
+  if (!safety.isSafe) {
+    throw new UnsafeMetadataUrlError(
+      safety.reason ?? "Metadata URL is not allowed.",
+    );
+  }
+
   try {
     const response = await fetch(metadataUrl, {
       method: "GET",
+      // Never follow redirects: a public URL must not be able to bounce us to
+      // an internal address after the validation above.
+      redirect: "manual",
+      signal: AbortSignal.timeout(METADATA_FETCH_TIMEOUT_MS),
       headers: {
         Accept: "application/xml, text/xml",
       },

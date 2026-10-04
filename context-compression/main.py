@@ -20,6 +20,7 @@ def run_server(args):
         dimension=args.dimension,
         max_tokens=args.max_tokens,
         similarity_threshold=args.threshold,
+        api_key=getattr(args, "api_key", None),
     )
     logger.info(
         f"Starting compression server on {args.host}:{args.port} "
@@ -125,6 +126,9 @@ def main():
     )
     server_parser.add_argument(
         "--port", type=int, default=8890, help="Server port"
+    )
+    server_parser.add_argument(
+        "--api-key", type=str, default=None, help="Optional API key for Bearer authentication"
     )
 
     demo_parser = subparsers.add_parser("demo", help="Run a demo of the engine")

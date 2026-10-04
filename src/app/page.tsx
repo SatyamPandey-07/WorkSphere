@@ -26,9 +26,6 @@ import SiteFooter from "@/components/site-footer";
 import { TopNav } from "@/components/TopNav";
 import FAQAccordion from "@/components/ui/FAQAccordion";
 
-// 1. IMPORT YOUR NEW TEST COMPONENT HERE
-import SpatialAudioTest from "@/components/SpatialAudioTest";
-
 export default function Home() {
   const [isVisible, setIsVisible] = useState(false);
   const [scrollY, setScrollY] = useState(0);
@@ -63,7 +60,6 @@ export default function Home() {
         {/* Grid overlay */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:60px_60px]" />
       </div>
-      {/* doubling up in production  */}
       <TopNav />
 
       {/* Hero */}
@@ -71,18 +67,13 @@ export default function Home() {
         <div
           className={`text-center max-w-5xl mx-auto pt-20 pb-16 transition-all duration-1000 ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-10"}`}
         >
-          {/* 2. ADD YOUR TEST COMPONENT TO THE SCREEN HERE */}
-          <div className="flex justify-center mb-10 relative z-50">
-            <SpatialAudioTest />
-          </div>
-
           {/* Live badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-zinc-200 dark:border-white/10 bg-white/80 dark:bg-white/5 text-sm text-zinc-700 dark:text-white/70 mb-8 backdrop-blur-sm shadow-sm dark:shadow-none">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-green-400"></span>
             </span>
-            Real-time venue updates &nbsp;&bull;&nbsp; AI-Powered
+            Cafés, coworking spaces &amp; libraries &nbsp;&bull;&nbsp; AI search
             &nbsp;&bull;&nbsp; Free to use
           </div>
 
@@ -116,9 +107,10 @@ export default function Home() {
           </h1>
 
           <p className="text-lg md:text-xl text-zinc-600 dark:text-white/50 mb-10 max-w-2xl mx-auto leading-relaxed">
-            AI-powered workspace discovery with real-time updates, venue
-            ratings, booking history, and PDF receipts. Find cafes, coworking
-            spaces, and libraries with great WiFi, outlets, and vibes.
+            Describe what you need — &ldquo;quiet café with fast Wi-Fi and
+            outlets&rdquo; — and WorkSphere finds and ranks nearby places to
+            work, rated by people who actually worked there. Reserve a spot in
+            seconds.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -165,24 +157,24 @@ export default function Home() {
         >
           {[
             {
-              value: "500+",
-              label: "Venues indexed",
+              value: "Worldwide",
+              label: "Live map coverage",
               icon: <Building2 className="w-4 h-4" />,
             },
             {
-              value: "5-step",
-              label: "AI agent pipeline",
+              value: "Plain English",
+              label: "AI search",
               icon: <Sparkles className="w-4 h-4" />,
             },
             {
-              value: "24hrs",
-              label: "Feature sprint",
-              icon: <Radio className="w-4 h-4" />,
+              value: "Wi-Fi · noise",
+              label: "Community ratings",
+              icon: <Star className="w-4 h-4" />,
             },
             {
-              value: "100%",
-              label: "Free APIs used",
-              icon: <Star className="w-4 h-4" />,
+              value: "Free",
+              label: "Desk reservations",
+              icon: <Radio className="w-4 h-4" />,
             },
           ].map((stat, i) => (
             <div
@@ -223,10 +215,10 @@ export default function Home() {
             </div>
             <div>
               <p className="text-zinc-900 dark:text-white text-sm font-semibold">
-                AI Pipeline
+                AI search
               </p>
               <p className="text-zinc-500 dark:text-white/40 text-xs">
-                5-step reasoning
+                Ask in plain English
               </p>
             </div>
           </div>
@@ -236,10 +228,10 @@ export default function Home() {
             </div>
             <div>
               <p className="text-zinc-900 dark:text-white text-sm font-semibold">
-                Live Updates
+                Live updates
               </p>
               <p className="text-zinc-500 dark:text-white/40 text-xs">
-                Real-time SSE stream
+                Ratings &amp; availability
               </p>
             </div>
           </div>
@@ -249,10 +241,10 @@ export default function Home() {
             </div>
             <div>
               <p className="text-zinc-900 dark:text-white text-sm font-semibold">
-                Venue Photos
+                Venue photos
               </p>
               <p className="text-zinc-500 dark:text-white/40 text-xs">
-                Powered by Pexels
+                See it before you go
               </p>
             </div>
           </div>
@@ -290,69 +282,52 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 max-w-5xl mx-auto">
             <FeatureCard
+              icon={<Sparkles className="w-5 h-5" />}
+              title="Ask in plain English"
+              description="Describe how you want to work today and get a ranked shortlist of nearby places, with the reasons each one fits."
+              accent="indigo"
+            />
+            <FeatureCard
               icon={<Wifi className="w-5 h-5" />}
-              title="WiFi Quality"
-              description="Find spaces with reliable, fast internet perfect for video calls and heavy uploads."
+              title="Wi-Fi you can trust"
+              description="Speeds and quality reported by people who worked there, so video calls and big uploads don't catch you out."
               accent="blue"
             />
             <FeatureCard
               icon={<Volume2 className="w-5 h-5" />}
-              title="Noise Levels"
-              description="Filter by quiet zones for deep focus or moderate noise for casual sessions."
+              title="Noise levels"
+              description="Filter for quiet zones when you need deep focus, or livelier spots for casual sessions."
               accent="green"
             />
             <FeatureCard
               icon={<Zap className="w-5 h-5" />}
-              title="Power Outlets"
-              description="Never run out of battery. Find venues with accessible power outlets nearby."
+              title="Power outlets"
+              description="Know before you go whether there are outlets at every table or just a few by the wall."
               accent="yellow"
             />
             <FeatureCard
               icon={<Clock className="w-5 h-5" />}
-              title="Busy Times"
-              description="Avoid crowds with insights on peak hours and the best times to visit."
+              title="Busy times"
+              description="See how crowded a place usually is and pick the best time to arrive."
               accent="purple"
             />
             <FeatureCard
-              icon={<Camera className="w-5 h-5" />}
-              title="Venue Photos"
-              description="Browse beautiful real photos of every workspace before you visit, powered by Pexels."
-              accent="pink"
-              isNew
-            />
-            <FeatureCard
-              icon={<Radio className="w-5 h-5" />}
-              title="Real-time Updates"
-              description="Live venue availability, new ratings, and crowd info stream directly to your screen."
-              accent="cyan"
-              isNew
-            />
-            <FeatureCard
               icon={<Star className="w-5 h-5" />}
-              title="Venue Ratings"
-              description="Rate workspaces on WiFi quality, outlets, noise, and quietness. Help the community decide."
+              title="Community ratings"
+              description="Rate Wi-Fi, outlets and noise after a session to help the next person find a great spot."
               accent="orange"
-              isNew
             />
             <FeatureCard
               icon={<BarChart3 className="w-5 h-5" />}
-              title="Profile Dashboard"
-              description="Track your booking history in the sleek NEURAL LEDGER with status badges and timeline."
+              title="Bookings in one place"
+              description="Reserve a desk, invite teammates, add it to your calendar, and cancel in a tap if plans change."
               accent="teal"
-              isNew
             />
             <FeatureCard
               icon={<FileText className="w-5 h-5" />}
-              title="PDF Receipts"
-              description="Download professional booking receipts instantly. Built serverless with pdf-lib."
+              title="Receipts & exports"
+              description="Download a PDF receipt for any booking, or export your history as CSV or PDF for expenses."
               accent="violet"
-              isNew
-            />
-            <FeatureCard
-              icon={<Sparkles className="w-5 h-5" />}
-              title="AI-Powered"
-              description="5-agent pipeline understands plain English queries and finds the perfect match."
-              accent="indigo"
             />
           </div>
         </div>
@@ -378,13 +353,13 @@ export default function Home() {
               },
               {
                 n: 2,
-                title: "5 agents work in parallel",
-                desc: "Orchestrator, Context, Data, Reasoning, and Action agents collaborate to find and rank the best matches.",
+                title: "We rank real places for you",
+                desc: "Community ratings are combined with live map data, and every place is scored on Wi-Fi, noise, outlets and distance.",
               },
               {
                 n: 3,
-                title: "Explore with photos on the map",
-                desc: "See all options on a dark interactive map with real photos, ratings, live updates, and routing.",
+                title: "Explore on the map",
+                desc: "Compare options on an interactive map with photos, ratings, opening hours and directions.",
               },
               {
                 n: 4,
@@ -426,11 +401,10 @@ export default function Home() {
               perfect workspace?
             </h2>
             <p className="text-blue-100/70 text-lg mb-10 max-w-lg mx-auto">
-              10 powerful features. AI-powered search. Real-time updates. All
-              free, forever.
+              AI-powered search, community ratings and free desk reservations.
             </p>
             <Link
-              href="/ai"
+              href={isSignedIn ? "/ai" : "/sign-up"}
               className="group inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-white accent-text font-bold text-base hover:bg-zinc-100 transition-all shadow-2xl hover:shadow-white/20 hover:scale-105"
             >
               Get Started Free

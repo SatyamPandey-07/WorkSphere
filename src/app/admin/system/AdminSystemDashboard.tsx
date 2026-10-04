@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -78,7 +78,7 @@ const ranges: Array<{ key: RangeKey; label: string }> = [
 ];
 
 function formatDuration(value: number) {
-  if (!value) return "—";
+  if (value === 0) return "0 ms";
   if (value < 1000) return `${Math.round(value)} ms`;
   return `${(value / 1000).toFixed(1)} s`;
 }
@@ -126,32 +126,46 @@ export default function AdminSystemDashboard() {
   const [data, setData] = useState<SystemMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const requestId = useRef(0);
 
   async function loadMetrics(selectedRange: RangeKey) {
-    setLoading(true);
-    setError("");
+  const currentRequest = ++requestId.current;
 
-    try {
-      const response = await fetch(`/api/admin/system?range=${selectedRange}`, {
-        cache: "no-store",
-      });
+  setLoading(true);
+  setError("");
 
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error ?? "Unable to load system metrics");
-      }
+  try {
+    const response = await fetch(
+      `/api/admin/system?range=${selectedRange}`,
+      { cache: "no-store" },
+    );
 
-      setData(await response.json());
-    } catch (requestError) {
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Unable to load system metrics",
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(
+        payload?.error ?? "Unable to load system metrics",
       );
-    } finally {
+    }
+
+    const result = await response.json();
+
+    if (currentRequest !== requestId.current) return;
+
+    setData(result);
+  } catch (requestError) {
+    if (currentRequest !== requestId.current) return;
+
+    setError(
+      requestError instanceof Error
+        ? requestError.message
+        : "Unable to load system metrics",
+    );
+  } finally {
+    if (currentRequest === requestId.current) {
       setLoading(false);
     }
   }
+}
 
   useEffect(() => {
     loadMetrics(range);

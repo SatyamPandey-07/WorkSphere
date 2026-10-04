@@ -1,0 +1,212 @@
+name: Auto-Merge Linked PR
+
+on:
+  pull_request_target:
+    branches: [main, master, dev, development]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  auto-merge-linked-pr:
+    name: Check Issue Link & Auto-Merge
+    runs-on: ubuntu-latest
+    steps:
+      - name: Auto-merge if linked to an issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              const pr = context.payload.pull_request;
+              if (!pr) {
+                console.log('No pull request found in event payload.');
+                return;
+              }
+
+              const prNumber = pr.number;
+              const owner = context.repo.owner;
+              const repo = context.repo.repo;
+              const title = pr.title || '';
+              const rawBody = pr.body || '';
+              // Strip HTML comments, code blocks, and inline code to prevent false positives from templates
+              const body = rawBody
+                .replace(/<!--[\s\S]*?-->/g, '')
+                .replace(/```[\s\S]*?```/g, '')
+                .replace(/`[^`]*`/g, '');
+              const headRef = pr.head ? pr.head.ref : '';
+
+              console.log(`Evaluating PR #${prNumber}: "${title}" for linked issues...`);
+
+              let candidateIssueNumbers = new Set();
+
+              // 1. Check official GitHub closingIssuesReferences via GraphQL
+              try {
+                const query = `
+                  query($owner: String!, $repo: String!, $number: Int!) {
+                    repository(owner: $owner, name: $repo) {
+                      pullRequest(number: $number) {
+                        closingIssuesReferences(first: 10) {
+                          nodes {
+                            number
+                          }
+                        }
+                      }
+                    }
+                  }
+                `;
+                const gqlRes = await github.graphql(query, { owner, repo, number: prNumber });
+                const closingNodes = gqlRes?.repository?.pullRequest?.closingIssuesReferences?.nodes || [];
+                for (const node of closingNodes) {
+                  if (node.number && node.number !== prNumber) {
+                    candidateIssueNumbers.add(node.number);
+                  }
+                }
+              } catch (gqlErr) {
+                console.warn('GraphQL closingIssuesReferences query note:', gqlErr.message);
+              }
+
+              // 2. Check title / body / branch name with issue keywords
+              const issuePattern = /(?:closes?|closed|fixes?|fixed|resolves?|resolved)\s*#?(\d+)/gi;
+              let m;
+              while ((m = issuePattern.exec(title)) !== null) {
+                const num = parseInt(m[1], 10);
+                if (num !== prNumber) candidateIssueNumbers.add(num);
+              }
+              while ((m = issuePattern.exec(body)) !== null) {
+                const num = parseInt(m[1], 10);
+                if (num !== prNumber) candidateIssueNumbers.add(num);
+              }
+
+              // Check branch ref (e.g. fix/issue-456 or issue-456)
+              const branchMatch = headRef.match(/(?:fix|close|resolve|issue)[-/](\d+)/i);
+              if (branchMatch) {
+                const num = parseInt(branchMatch[1], 10);
+                if (num !== prNumber) candidateIssueNumbers.add(num);
+              }
+
+              // 3. Validate candidate numbers against GitHub API (must be an existing Issue, NOT a PR)
+              let linkedIssues = [];
+              for (const num of candidateIssueNumbers) {
+                if (num === 123) {
+                  console.log(`Candidate #${num} ignored as standard template placeholder.`);
+                  continue;
+                }
+                try {
+                  const issueRes = await github.rest.issues.get({
+                    owner,
+                    repo,
+                    issue_number: num
+                  });
+                  if (issueRes.data && !issueRes.data.pull_request) {
+                    linkedIssues.push(`#${num}`);
+                  } else {
+                    console.log(`Reference #${num} is a Pull Request, not an Issue. Ignored.`);
+                  }
+                } catch (err) {
+                  console.warn(`Could not verify #${num} as a valid issue:`, err.message);
+                }
+              }
+
+              const hasLinkedIssue = linkedIssues.length > 0;
+
+              // ==========================================
+              // UNLINKED PR: Leave for manual review & notify contributor
+              // ==========================================
+              if (!hasLinkedIssue) {
+                console.log(`PR #${prNumber} is NOT linked to any valid issue.`);
+                console.log('Skipping auto-merge. PR is left open for manual maintainer review.');
+                
+                const noticeMsg = `⚠️ **Issue Link Required for Auto-Merge**\n\n` +
+                  `Hi @${pr.user.login}, this pull request does not appear to be linked to an open issue.\n\n` +
+                  `Please update your PR description to link the issue number this fixes:\n` +
+                  `> \`Fixes #<issue_number>\` or \`Closes #<issue_number>\`\n\n` +
+                  `*Auto-approval and auto-merge will remain paused until a valid issue is linked.*`;
+
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: noticeMsg
+                }).catch(e => console.warn('Comment notice note:', e.message));
+
+                try {
+                  await github.rest.issues.addLabels({
+                    owner,
+                    repo,
+                    issue_number: prNumber,
+                    labels: ['needs-issue']
+                  });
+                } catch (e) {
+                  console.warn('Label note:', e.message);
+                }
+                return;
+              }
+
+              // ==========================================
+              // LINKED PR: Auto-approve & auto-merge
+              // ==========================================
+              console.log(`PR #${prNumber} is linked to issue(s): ${linkedIssues.join(', ')}. Initiating auto-merge...`);
+
+              // Auto-approve PR if needed
+              try {
+                await github.rest.pulls.createReview({
+                  owner,
+                  repo,
+                  pull_number: prNumber,
+                  event: 'APPROVE',
+                  body: `Auto-approved by CI: PR is linked to issue(s) ${linkedIssues.join(', ')}.`
+                });
+              } catch (e) {
+                console.log('PR approval notice:', e.message);
+              }
+
+              // Fetch mergeable status (poll with delay if GitHub is computing)
+              let prDetails;
+              for (let attempt = 1; attempt <= 4; attempt++) {
+                const res = await github.rest.pulls.get({ owner, repo, pull_number: prNumber });
+                prDetails = res.data;
+                if (prDetails.mergeable !== null) break;
+                console.log(`Waiting for GitHub to compute mergeability (attempt ${attempt}/4)...`);
+                await new Promise(r => setTimeout(r, 2500));
+              }
+
+              if (prDetails.mergeable === false || prDetails.mergeable_state === 'dirty') {
+                const conflictMsg = `⚠️ **Auto-merge paused**: PR #${prNumber} is linked to issue(s) ${linkedIssues.join(', ')}, but cannot be auto-merged due to merge conflicts with \`main\` (state: \`${prDetails.mergeable_state}\`). Please resolve any merge conflicts to proceed!`;
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: conflictMsg
+                }).catch(e => console.warn('Conflict comment note:', e.message));
+                return;
+              }
+
+              // Execute squash merge with co-author attribution
+              const commitTitle = `${title} (#${prNumber})`;
+              const commitMessage = `${body}\n\nCo-authored-by: Satyam Pandey <satyam53@tsecol.onmicrosoft.com>\nCo-authored-by: SatyamPandey-07 <186389297+SatyamPandey-07@users.noreply.github.com>`;
+
+              const mergeResponse = await github.rest.pulls.merge({
+                owner,
+                repo,
+                pull_number: prNumber,
+                commit_title: commitTitle,
+                commit_message: commitMessage,
+                merge_method: 'squash'
+              });
+
+              console.log(`PR #${prNumber} successfully auto-merged! SHA: ${mergeResponse.data.sha}`);
+
+              const successMsg = `🚀 **Auto-merge complete!**\n\nThis pull request is linked to issue(s) ${linkedIssues.join(', ')} and has been automatically squash-merged into \`main\` with co-author credit! 🎉\n\nThank you for contributing to **WorkSphere**! ✨`;
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: prNumber,
+                body: successMsg
+              }).catch(e => console.warn('Success comment note:', e.message));
+
+            } catch (err) {
+              console.error('Auto-merge step error (gracefully caught):', err.message);
+            }

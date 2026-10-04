@@ -59,7 +59,7 @@ export function bookingsToCSV(bookings: ExportableBooking[]): string {
 
   const escapeCsv = (value: string) => {
     const v = value ?? "";
-    if (v.includes(",") || v.includes('"') || v.includes("\n")) {
+    if (v.includes(",") || v.includes('"') || v.includes("\n") || v.includes("\r")) {
       return `"${v.replace(/"/g, '""')}"`;
     }
     return v;

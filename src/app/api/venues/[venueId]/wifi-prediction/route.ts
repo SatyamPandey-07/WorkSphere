@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { apiError } from "@/lib/apiResponse";
 
 export async function GET(
   request: NextRequest,
@@ -8,7 +9,7 @@ export async function GET(
   try {
     const { venueId } = await params;
     if (!venueId) {
-      return NextResponse.json({ error: "Venue ID is required" }, { status: 400 });
+      return apiError("Venue ID is required", 400, "VALIDATION_FAILED");
     }
 
     const venue = await prisma.venue.findUnique({
@@ -22,7 +23,7 @@ export async function GET(
     });
 
     if (!venue && !venueId.startsWith("mock-")) {
-      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
     const baseSpeed = venue?.wifiSpeed || 50; // Fallback to 50 Mbps if no base speed known
@@ -104,9 +105,6 @@ export async function GET(
     return NextResponse.json({ predictions });
   } catch (error) {
     console.error("Wifi prediction error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate wifi prediction" },
-      { status: 500 }
-    );
+    return apiError("Failed to generate wifi prediction", 500, "INTERNAL_ERROR");
   }
 }

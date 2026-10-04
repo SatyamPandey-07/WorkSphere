@@ -1,6 +1,7 @@
 import webPush from "web-push";
 import { prisma } from "@/lib/prisma";
 import { resolveWebPushContentEncoding } from "@/lib/webPushContentEncoding";
+import { isWithinNotificationWindow } from "@/lib/notificationWindow";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY ?? "";
@@ -11,10 +12,13 @@ let isConfigured = false;
 
 function configureVapid() {
   if (isConfigured) return;
-  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+  const pubKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || VAPID_PUBLIC_KEY;
+  const privKey = process.env.VAPID_PRIVATE_KEY || VAPID_PRIVATE_KEY;
+  if (!pubKey || !privKey) {
     throw new Error("VAPID keys are not configured");
   }
-  webPush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+  const subject = process.env.VAPID_SUBJECT || VAPID_SUBJECT;
+  webPush.setVapidDetails(subject, pubKey, privKey);
   isConfigured = true;
 }
 
@@ -26,12 +30,173 @@ export interface PushPayload {
   badge?: string;
   tag?: string;
   data?: Record<string, unknown>;
+  isCritical?: boolean;
+}
+
+export interface PushNotificationOptions {
+  isCritical?: boolean;
+  force?: boolean;
+  ignoreQuietHours?: boolean;
+  now?: Date;
+}
+
+export interface PushNotificationResult {
+  sent: number;
+  failed: number;
+  suppressed?: boolean;
+  deferred?: boolean;
+  reason?: string;
+}
+
+/**
+ * Checks whether the current time falls within a user's quiet hours window.
+ * Supports overnight windows (e.g. 22:00 to 07:00) and user timezone conversion.
+ */
+export function isWithinQuietHours(
+  now: Date,
+  quietStart: string | null | undefined,
+  quietEnd: string | null | undefined,
+  timezone: string | null | undefined,
+): boolean {
+  if (!quietStart || !quietEnd) {
+    return false;
+  }
+
+  const tz = timezone || "UTC";
+
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+
+    const formatted = formatter.format(now);
+    const parts = formatted.split(":");
+    let currentHour = parseInt(parts[0], 10);
+    const currentMin = parseInt(parts[1], 10);
+    if (currentHour === 24) currentHour = 0;
+    const currentMinutes = currentHour * 60 + currentMin;
+
+    const parseTimeToMinutes = (timeStr: string): number => {
+      const match12 = timeStr.match(/^\s*(\d+):(\d+)\s*(AM|PM)\s*$/i);
+      if (match12) {
+        let h = parseInt(match12[1], 10);
+        const m = parseInt(match12[2], 10);
+        const ampm = match12[3].toUpperCase();
+        if (ampm === "PM" && h < 12) h += 12;
+        if (ampm === "AM" && h === 12) h = 0;
+        return h * 60 + m;
+      }
+
+      const match24 = timeStr.match(/^\s*(\d+):(\d+)\s*$/);
+      if (match24) {
+        return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
+      }
+      return 0;
+    };
+
+    const startMinutes = parseTimeToMinutes(quietStart);
+    const endMinutes = parseTimeToMinutes(quietEnd);
+
+    if (startMinutes <= endMinutes) {
+      return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+    } else {
+      // Overnight quiet hours (e.g. 22:00 to 07:00)
+      return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+    }
+  } catch (error) {
+    console.error(`Error calculating quiet hours for timezone ${tz}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Determines whether push notifications for a user should be suppressed
+ * based on quiet hours or allowed notification windows.
+ */
+export function isUserInQuietHours(
+  now: Date,
+  user: {
+    quietHoursStart?: string | null;
+    quietHoursEnd?: string | null;
+    notificationStart?: string | null;
+    notificationEnd?: string | null;
+    timezone?: string | null;
+  } | null | undefined,
+): boolean {
+  if (!user) return false;
+
+  if (user.quietHoursStart && user.quietHoursEnd) {
+    return isWithinQuietHours(
+      now,
+      user.quietHoursStart,
+      user.quietHoursEnd,
+      user.timezone,
+    );
+  }
+
+  if (user.notificationStart && user.notificationEnd) {
+    return !isWithinNotificationWindow(
+      now,
+      user.notificationStart,
+      user.notificationEnd,
+      user.timezone,
+    );
+  }
+
+  return false;
 }
 
 export async function sendPushNotification(
   userId: string,
   payload: PushPayload,
-): Promise<{ sent: number; failed: number }> {
+  options?: PushNotificationOptions,
+): Promise<PushNotificationResult> {
+  const isCritical = Boolean(
+    payload.isCritical ||
+      options?.isCritical ||
+      options?.force ||
+      options?.ignoreQuietHours,
+  );
+
+  // Check user quiet hours before dispatching non-critical notifications
+  if (!isCritical) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        quietHoursStart: true,
+        quietHoursEnd: true,
+        notificationStart: true,
+        notificationEnd: true,
+        timezone: true,
+      },
+    });
+
+    const checkTime = options?.now ?? new Date(Date.now());
+    if (isUserInQuietHours(checkTime, user)) {
+      await prisma.pushNotificationLog.create({
+        data: {
+          userId,
+          venueId: (payload.data?.venueId as string) ?? null,
+          title: payload.title,
+          body: payload.body,
+          status: "DEFERRED_QUIET_HOURS",
+          error: "Notification suppressed during user quiet hours",
+        },
+      });
+
+      return {
+        sent: 0,
+        failed: 0,
+        suppressed: true,
+        deferred: true,
+        reason: "QUIET_HOURS",
+      };
+    }
+  }
+
   configureVapid();
 
   const subscriptions = await prisma.pushSubscription.findMany({
@@ -108,7 +273,7 @@ export async function sendPushNotification(
     },
   });
 
-  return { sent, failed };
+  return { sent, failed, suppressed: false, deferred: false };
 }
 
 export async function sendVenueAvailabilityNotification(

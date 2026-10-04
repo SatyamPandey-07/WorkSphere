@@ -2,6 +2,8 @@
 
 import React, { useState } from "react";
 import { X, Search, SlidersHorizontal, RotateCcw, Check } from "lucide-react";
+import { usePlatformModifier } from "@/hooks/usePlatformModifier";
+import { KeyboardShortcutBadge } from "@/components/ui/KeyboardShortcutBadge";
 
 export interface VenueSearchDrawerProps {
   isOpen: boolean;
@@ -16,6 +18,8 @@ export interface VenueSearchDrawerProps {
   onPriceRangeChange?: (price: string) => void;
   category?: string;
   onCategoryChange?: (category: string) => void;
+  maxDistance?: number;
+  onMaxDistanceChange?: (distance: number) => void;
   onClearFilters?: () => void;
   onApplyFilters?: () => void;
 }
@@ -35,6 +39,15 @@ export const CATEGORIES_LIST = [
   { id: "library", label: "Libraries" },
 ];
 
+export const DISTANCE_OPTIONS = [
+  { id: 0, label: "Any Distance" },
+  { id: 0.5, label: "500m" },
+  { id: 1, label: "1km" },
+  { id: 3, label: "3km" },
+  { id: 5, label: "5km" },
+];
+
+
 export const NOISE_LEVELS = [
   { id: "all", label: "Any Noise" },
   { id: "quiet", label: "Quiet" },
@@ -47,6 +60,23 @@ export const PRICE_RANGES = [
   { id: "$", label: "$" },
   { id: "$$", label: "$$" },
   { id: "$$$", label: "$$$" },
+];
+
+/** Table/desk size filter — matches the tableSize field on Venue */
+export const TABLE_SIZES = [
+  { id: "all", label: "Any Table Size" },
+  { id: "small",  label: "Small (cafe table, 1–2 people)" },
+  { id: "medium", label: "Medium (4-person table)" },
+  { id: "large",  label: "Large (6-8 person desk)" },
+  { id: "xl",     label: "XL (standing desk / monitor setup)" },
+];
+
+/** Equipment loadout preset — matches the equipmentLoadout field on Venue */
+export const EQUIPMENT_LOADOUTS = [
+  { id: "all",      label: "Any Loadout" },
+  { id: "minimal",  label: "Minimal (laptop only)" },
+  { id: "standard", label: "Standard (laptop + mouse)" },
+  { id: "heavy",    label: "Heavy (dual monitor, dock)" },
 ];
 
 export function VenueSearchDrawer({
@@ -62,6 +92,8 @@ export function VenueSearchDrawer({
   onPriceRangeChange,
   category: externalCategory,
   onCategoryChange,
+  maxDistance: externalMaxDistance,
+  onMaxDistanceChange,
   onClearFilters,
   onApplyFilters,
 }: VenueSearchDrawerProps) {
@@ -71,12 +103,31 @@ export function VenueSearchDrawer({
   const [internalNoise, setInternalNoise] = useState("all");
   const [internalPrice, setInternalPrice] = useState("all");
   const [internalCategory, setInternalCategory] = useState("all");
+  const [internalDistance, setInternalDistance] = useState(0);
+  const { formatShortcut, getAriaKeyshortcuts } = usePlatformModifier();
 
   const search = externalSearchText ?? internalSearch;
   const amenities = externalAmenities ?? internalAmenities;
   const noise = externalNoiseLevel ?? internalNoise;
   const price = externalPriceRange ?? internalPrice;
   const cat = externalCategory ?? internalCategory;
+  const distance = externalMaxDistance ?? internalDistance;
+
+  const hasActiveFilters =
+    search.trim() !== "" ||
+    amenities.length > 0 ||
+    noise !== "all" ||
+    price !== "all" ||
+    cat !== "all" ||
+    distance > 0;
+
+  const activeFilterCount =
+    (search.trim() !== "" ? 1 : 0) +
+    amenities.length +
+    (noise !== "all" ? 1 : 0) +
+    (price !== "all" ? 1 : 0) +
+    (cat !== "all" ? 1 : 0) +
+    (distance > 0 ? 1 : 0);
 
   const handleSearchInput = (val: string) => {
     if (onSearchChange) onSearchChange(val);
@@ -106,6 +157,11 @@ export function VenueSearchDrawer({
     else setInternalCategory(val);
   };
 
+  const handleDistanceChange = (val: number) => {
+    if (onMaxDistanceChange) onMaxDistanceChange(val);
+    else setInternalDistance(val);
+  };
+
   const handleClear = () => {
     // Reset all filter state parameters simultaneously
     if (onSearchChange) onSearchChange("");
@@ -122,6 +178,9 @@ export function VenueSearchDrawer({
 
     if (onCategoryChange) onCategoryChange("all");
     setInternalCategory("all");
+
+    if (onMaxDistanceChange) onMaxDistanceChange(0);
+    setInternalDistance(0);
 
     if (onClearFilters) onClearFilters();
   };
@@ -147,16 +206,149 @@ export function VenueSearchDrawer({
             <h3 className="text-base font-black uppercase tracking-tight text-zinc-900 dark:text-white">
               Search & Filter Venues
             </h3>
+            {activeFilterCount > 0 && (
+              <span
+                data-testid="active-filter-badge"
+                className="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 animate-in zoom-in-75 duration-200"
+              >
+                {activeFilterCount}
+              </span>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-            aria-label="Close search filters"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {hasActiveFilters && (
+              <button
+                type="button"
+                data-testid="header-clear-all-btn"
+                onClick={handleClear}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all animate-in fade-in zoom-in-95 duration-200"
+                aria-label="Clear all active filters"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>Clear All</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              aria-label="Close search filters"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+
+        {/* Active Filters Bar (shown when any filter is modified) */}
+        {hasActiveFilters && (
+          <div
+            data-testid="active-filters-bar"
+            className="flex flex-wrap items-center gap-1.5 p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800/80 animate-in fade-in slide-in-from-top-2 duration-200"
+          >
+            <span className="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mr-1">
+              Active:
+            </span>
+            {search.trim() !== "" && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 animate-in zoom-in-95 duration-150">
+                "{search}"
+                <button
+                  type="button"
+                  data-testid="clear-search-chip"
+                  onClick={() => handleSearchInput("")}
+                  className="hover:text-rose-500 transition-colors"
+                  aria-label="Remove search filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {cat !== "all" && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 animate-in zoom-in-95 duration-150">
+                {CATEGORIES_LIST.find((c) => c.id === cat)?.label ?? cat}
+                <button
+                  type="button"
+                  data-testid="clear-category-chip"
+                  onClick={() => handleCategoryChange("all")}
+                  className="hover:text-rose-500 transition-colors"
+                  aria-label="Remove category filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {distance > 0 && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 animate-in zoom-in-95 duration-150">
+                Within {DISTANCE_OPTIONS.find((d) => d.id === distance)?.label ?? distance}
+                <button
+                  type="button"
+                  data-testid="clear-distance-chip"
+                  onClick={() => handleDistanceChange(0)}
+                  className="hover:text-rose-500 transition-colors"
+                  aria-label="Remove distance filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {amenities.map((amenityId) => {
+              const item = AMENITIES_LIST.find((a) => a.id === amenityId);
+              return (
+                <span
+                  key={amenityId}
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 animate-in zoom-in-95 duration-150"
+                >
+                  {item?.label ?? amenityId}
+                  <button
+                    type="button"
+                    data-testid={`clear-amenity-chip-${amenityId}`}
+                    onClick={() => handleToggleAmenity(amenityId)}
+                    className="hover:text-rose-500 transition-colors"
+                    aria-label={`Remove ${item?.label ?? amenityId} filter`}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              );
+            })}
+            {noise !== "all" && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 animate-in zoom-in-95 duration-150">
+                Noise: {NOISE_LEVELS.find((n) => n.id === noise)?.label ?? noise}
+                <button
+                  type="button"
+                  data-testid="clear-noise-chip"
+                  onClick={() => handleNoiseChange("all")}
+                  className="hover:text-rose-500 transition-colors"
+                  aria-label="Remove noise filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {price !== "all" && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 animate-in zoom-in-95 duration-150">
+                Price: {price}
+                <button
+                  type="button"
+                  data-testid="clear-price-chip"
+                  onClick={() => handlePriceChange("all")}
+                  className="hover:text-rose-500 transition-colors"
+                  aria-label="Remove price filter"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            <button
+              type="button"
+              data-testid="clear-all-filters-btn"
+              onClick={handleClear}
+              className="ml-auto inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Clear All Filters
+            </button>
+          </div>
+        )}
 
         {/* Text Search Input */}
         <div className="space-y-1.5">
@@ -171,8 +363,14 @@ export function VenueSearchDrawer({
               value={search}
               onChange={(e) => handleSearchInput(e.target.value)}
               placeholder="Search by venue name, street, or tag..."
-              className="w-full pl-9 pr-4 py-2.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label={`Search venues (${formatShortcut("K")})`}
+              aria-keyshortcuts={getAriaKeyshortcuts("K")}
+              title={`Search venues (${formatShortcut("K")})`}
+              className="w-full pl-9 pr-16 py-2.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none hidden sm:flex items-center">
+              <KeyboardShortcutBadge shortcut="K" size="xs" variant="subtle" />
+            </div>
           </div>
         </div>
 
@@ -190,6 +388,30 @@ export function VenueSearchDrawer({
                 onClick={() => handleCategoryChange(item.id)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                   cat === item.id
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Distance Filter */}
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            Within Distance
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {DISTANCE_OPTIONS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                data-testid={`distance-${item.id}`}
+                onClick={() => handleDistanceChange(item.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  distance === item.id
                     ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
                     : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
                 }`}
@@ -280,15 +502,17 @@ export function VenueSearchDrawer({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-3 pt-3 border-t border-zinc-200 dark:border-zinc-800">
-          <button
-            type="button"
-            data-testid="clear-filters-btn"
-            onClick={handleClear}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-all"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Clear Filters</span>
-          </button>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              data-testid="clear-filters-btn"
+              onClick={handleClear}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition-all animate-in fade-in duration-200"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Clear Filters</span>
+            </button>
+          )}
           <button
             type="button"
             data-testid="apply-filters-btn"

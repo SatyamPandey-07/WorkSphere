@@ -20,8 +20,15 @@ import {
   RefreshCw,
   Clock,
   Copy,
+  Shield,
+  HardDrive,
 } from "lucide-react";
 import { useCsrfToken } from "@/hooks/useCsrfToken";
+import {
+  PasskeyOtpDialog,
+  type PasskeyOtpAction,
+} from "@/components/auth/PasskeyOtpDialog";
+import { StepUpReAuthModal } from "@/components/auth/StepUpReAuthModal";
 
 export interface PasskeyItem {
   id: string;
@@ -47,6 +54,19 @@ export interface RotationStatus {
   createdAt: string;
 }
 
+interface PendingAction {
+  action: PasskeyOtpAction;
+  id: string;
+  name: string;
+  /** New name, for rename */
+  newName?: string;
+}
+
+async function errorFrom(res: Response, fallback: string): Promise<Error> {
+  const data = await res.json().catch(() => ({}));
+  return new Error(data.error || fallback);
+}
+
 export function PasskeyManager() {
   useCsrfToken();
   const [passkeys, setPasskeys] = useState<PasskeyItem[]>([]);
@@ -62,6 +82,10 @@ export function PasskeyManager() {
   const [customName, setCustomName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [pending, setPending] = useState<PendingAction | null>(null);
+  const [showStepUpModal, setShowStepUpModal] = useState(false);
+  const [stepUpAction, setStepUpAction] = useState("passkey_management");
+  const [stepUpVerifiedToken, setStepUpVerifiedToken] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const handleCopyId = async (credentialId: string) => {
@@ -170,40 +194,86 @@ export function PasskeyManager() {
     }
   };
 
-  const handleRename = async (id: string) => {
-    if (!editName.trim()) return;
-    try {
-      setError(null);
+  const handleRename = (pk: PasskeyItem) => {
+    const newName = editName.trim();
+    if (!newName || newName === pk.name) {
+      setEditingId(null);
+      return;
+    }
+    setPending({ action: "rename", id: pk.id, name: pk.name, newName });
+  };
+
+  const handleDelete = (pk: PasskeyItem) => {
+    if (!confirm("Are you sure you want to remove this passkey credential?"))
+      return;
+    setPending({ action: "revoke", id: pk.id, name: pk.name });
+  };
+
+  const handleRotate = (pk: PasskeyItem) => {
+    if (!isWebAuthnSupported) {
+      setError("WebAuthn biometric passkeys are not supported by this browser.");
+      return;
+    }
+    setPending({ action: "rotate", id: pk.id, name: pk.name });
+  };
+
+  /** Runs the pending action once the user has entered their email OTP (#1991). */
+  const performVerifiedAction = async (otp: string) => {
+    if (!pending) return;
+    const { action, id, newName } = pending;
+
+    if (action === "rename") {
       const res = await fetch(`/api/auth/passkey/credentials/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: editName.trim() }),
+        body: JSON.stringify({ name: newName, otp }),
       });
-      if (!res.ok) throw new Error("Failed to rename passkey");
+      if (!res.ok) throw await errorFrom(res, "Failed to rename passkey.");
       setEditingId(null);
       setEditName("");
-      await fetchPasskeys();
-    } catch (err: unknown) {
-      console.error(err);
-      setError("Failed to update passkey name.");
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to remove this passkey credential?"))
-      return;
-    try {
-      setError(null);
+      setSuccess("Passkey renamed.");
+    } else if (action === "revoke") {
       const res = await fetch(`/api/auth/passkey/credentials/${id}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ otp }),
       });
-      if (!res.ok) throw new Error("Failed to delete passkey");
+      if (!res.ok) throw await errorFrom(res, "Failed to remove passkey.");
       setSuccess("Passkey removed.");
-      await fetchPasskeys();
-    } catch (err: unknown) {
-      console.error(err);
-      setError("Failed to delete passkey.");
+    } else {
+      const optRes = await fetch(
+        `/api/auth/passkey/register/options?rotate=${encodeURIComponent(id)}`,
+      );
+      if (!optRes.ok) throw await errorFrom(optRes, "Failed to start rotation.");
+      const optionsJSON = await optRes.json();
+
+      let registrationResponse;
+      try {
+        registrationResponse = await startRegistration({ optionsJSON });
+      } catch {
+        // The code is still valid — the user can retry without a new email.
+        throw new Error(
+          "Passkey creation was cancelled. Submit again to retry with the same code.",
+        );
+      }
+
+      const res = await fetch("/api/auth/passkey/rotation", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "rotate",
+          credentialId: id,
+          otp,
+          registrationResponse,
+        }),
+      });
+      if (!res.ok) throw await errorFrom(res, "Failed to rotate passkey.");
+      setSuccess("Passkey rotated. The old credential has been revoked.");
     }
+
+    setPending(null);
+    setError(null);
+    await fetchPasskeys();
   };
 
   const handleCleanupExpired = async () => {
@@ -250,20 +320,36 @@ export function PasskeyManager() {
           </p>
         </div>
 
-        {isWebAuthnSupported && (
-          <button
-            onClick={handleAddPasskey}
-            disabled={registering}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium text-sm shadow-md transition-all disabled:opacity-50 shrink-0"
-          >
-            {registering ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
-            Add New Passkey
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {isWebAuthnSupported && (
+            <>
+              <button
+                onClick={() => {
+                  setStepUpAction("passkey_management");
+                  setShowStepUpModal(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-750 text-zinc-800 dark:text-zinc-200 font-medium text-sm transition-all shrink-0"
+                title="Perform biometric step-up re-authentication"
+              >
+                <Shield className="h-4 w-4 text-blue-500" />
+                Step-Up Verify
+              </button>
+
+              <button
+                onClick={handleAddPasskey}
+                disabled={registering}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium text-sm shadow-md transition-all disabled:opacity-50 shrink-0"
+              >
+                {registering ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                Add New Passkey
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {!isWebAuthnSupported && (
@@ -307,7 +393,8 @@ export function PasskeyManager() {
           <div className="flex items-center gap-3">
             <Clock className="h-5 w-5 shrink-0" />
             <span>
-              Some passkeys are due for rotation (90-day security policy).
+              Some passkeys are due for rotation (90-day security policy). Use
+              the rotate button next to a passkey to replace it.
             </span>
           </div>
           <button
@@ -362,12 +449,13 @@ export function PasskeyManager() {
                       <div className="flex items-center gap-2">
                         <input
                           type="text"
+                          maxLength={64}
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
                           className="px-2 py-1 text-sm rounded-lg border border-blue-500 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white"
                         />
                         <button
-                          onClick={() => handleRename(pk.id)}
+                          onClick={() => handleRename(pk)}
                           className="text-xs px-2 py-1 rounded-md bg-blue-600 text-white"
                         >
                           Save
@@ -384,11 +472,15 @@ export function PasskeyManager() {
                         <p className="font-medium text-sm text-zinc-900 dark:text-zinc-100">
                           {pk.name}
                         </p>
-                        {pk.backedUp && (
+                        {pk.backedUp ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                             <ShieldCheck className="h-3 w-3" /> Synced Passkey
                           </span>
-                        )}
+                        ) : pk.deviceType === "singleDevice" || pk.deviceType === "single_device" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                            <HardDrive className="h-3 w-3" /> Single Device Key
+                          </span>
+                        ) : null}
                         {(() => {
                           const rot = getRotationInfo(pk.id);
                           if (!rot) return null;
@@ -447,6 +539,14 @@ export function PasskeyManager() {
 
                 <div className="flex items-center gap-1">
                   <button
+                    onClick={() => handleRotate(pk)}
+                    title="Rotate passkey"
+                    aria-label={`Rotate passkey ${pk.name}`}
+                    className="p-2 text-zinc-400 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg hover:bg-blue-500/10 transition-colors"
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </button>
+                  <button
                     onClick={() => {
                       setEditingId(pk.id);
                       setEditName(pk.name);
@@ -457,7 +557,7 @@ export function PasskeyManager() {
                     <Edit3 className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() => handleDelete(pk.id)}
+                    onClick={() => handleDelete(pk)}
                     title="Delete passkey"
                     className="p-2 text-zinc-400 hover:text-red-600 dark:hover:text-red-400 rounded-lg hover:bg-red-500/10 transition-colors"
                   >
@@ -469,6 +569,35 @@ export function PasskeyManager() {
           </div>
         )}
       </div>
+
+      {pending && (
+        <PasskeyOtpDialog
+          key={`${pending.action}-${pending.id}`}
+          action={pending.action}
+          credentialId={pending.id}
+          passkeyName={pending.name}
+          onCancel={() => setPending(null)}
+          onSubmit={performVerifiedAction}
+        />
+      )}
+
+      {showStepUpModal && (
+        <StepUpReAuthModal
+          isOpen={showStepUpModal}
+          action={stepUpAction}
+          onSuccess={(token, backupHealth) => {
+            setStepUpVerifiedToken(token);
+            setShowStepUpModal(false);
+            setSuccess(
+              `Step-up re-authentication verified successfully!${
+                backupHealth ? ` Backup status: ${backupHealth}.` : ""
+              }`,
+            );
+            setTimeout(() => setSuccess(null), 5000);
+          }}
+          onCancel={() => setShowStepUpModal(false)}
+        />
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import {
 } from "@/lib/rateLimit";
 
 interface RouteContext {
-  params: Promise<{ id: string }>;
+  params: Promise<{ venueId: string }>;
 }
 
 export async function POST(req: NextRequest, context: RouteContext) {
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
       return createRateLimitResponse(rateLimitResult);
     }
 
-    const { id } = await context.params;
+    const { venueId } = await context.params;
     const body = await req.json();
     const { targetLang, text } = body;
 
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     let descriptionToTranslate = text;
     if (!descriptionToTranslate) {
       const venue = await prisma.venue.findUnique({
-        where: { id },
+        where: { id: venueId },
         select: { hostMessage: true, name: true },
       });
       descriptionToTranslate = venue?.hostMessage || venue?.name || "";
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     });
 
     const response = NextResponse.json({
-      venueId: id,
+      venueId,
       targetLang: targetLang.toUpperCase(),
       translatedDescription,
       success: true,

@@ -171,18 +171,27 @@ export async function PATCH(req: Request) {
       "phoneNumber",
       "smsAlertsEnabled",
       "whatsappWebhookUrl",
+      "telegramWebhookUrl",
       "notificationStart",
       "notificationEnd",
       "quietHoursStart",
       "quietHoursEnd",
       "timezone",
+      "imageUrl",
+      "workStyleProfile",
+      "distanceUnit",
     ] as const;
 
     const dataToUpdate: Prisma.UserUpdateInput = {};
     for (const key of allowedKeys) {
       if (key in validated) {
-        (dataToUpdate as any)[key] =
-          (validated as any)[key] ?? (key === "smsAlertsEnabled" ? false : null);
+        const value = (validated as any)[key];
+        if (value === "") {
+          (dataToUpdate as any)[key] =
+            key === "smsAlertsEnabled" ? false : key === "timezone" ? "UTC" : null;
+        } else {
+          (dataToUpdate as any)[key] = value ?? (key === "smsAlertsEnabled" ? false : null);
+        }
       }
     }
 
@@ -201,11 +210,15 @@ export async function PATCH(req: Request) {
       phoneNumber: updated.phoneNumber || "",
       smsAlertsEnabled: updated.smsAlertsEnabled,
       whatsappWebhookUrl: updated.whatsappWebhookUrl || "",
+      telegramWebhookUrl: (updated as any).telegramWebhookUrl || "",
       notificationStart: updated.notificationStart || "",
       notificationEnd: updated.notificationEnd || "",
       quietHoursStart: updated.quietHoursStart || "",
       quietHoursEnd: updated.quietHoursEnd || "",
       timezone: updated.timezone || "UTC",
+      imageUrl: (updated as any).imageUrl || "",
+      workStyleProfile: (updated as any).workStyleProfile || "",
+      distanceUnit: (updated as any).distanceUnit || "",
     });
   } catch (error: any) {
     console.error("PATCH /api/user/settings error:", error);

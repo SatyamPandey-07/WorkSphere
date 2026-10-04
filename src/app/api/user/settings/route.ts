@@ -155,6 +155,18 @@ export async function PATCH(req: Request) {
     }
 
     const body = await req.json();
+    const parsed = userSettingsSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          error: "Invalid parameters",
+          details: parsed.error.flatten().fieldErrors,
+        },
+        { status: 400 },
+      );
+    }
+    const validated = parsed.data;
+
     const allowedKeys = [
       "phoneNumber",
       "smsAlertsEnabled",
@@ -168,9 +180,9 @@ export async function PATCH(req: Request) {
 
     const dataToUpdate: Prisma.UserUpdateInput = {};
     for (const key of allowedKeys) {
-      if (key in body) {
+      if (key in validated) {
         (dataToUpdate as any)[key] =
-          body[key] ?? (key === "smsAlertsEnabled" ? false : null);
+          (validated as any)[key] ?? (key === "smsAlertsEnabled" ? false : null);
       }
     }
 

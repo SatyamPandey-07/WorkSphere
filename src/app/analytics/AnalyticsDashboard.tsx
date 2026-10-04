@@ -21,6 +21,10 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import { ReceiptVerificationModal } from "@/components/receipt/ReceiptVerificationModal";
+import {
+  MetricCardSkeleton,
+  ChartSkeleton,
+} from "@/components/analytics/DashboardSkeletons";
 
 interface Badge {
   id: string;
@@ -182,41 +186,15 @@ export default function AnalyticsDashboard() {
             </div>
           </div>
 
-          {/* Grid Skeleton */}
+          {/* Metric cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {[1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-[2.5rem] shadow-sm"
-              >
-                <div className="w-16 h-16 rounded-2xl bg-zinc-200 dark:bg-zinc-800 animate-pulse mb-6"></div>
-                <div className="w-20 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse mb-3"></div>
-                <div className="w-16 h-8 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
-              </div>
+              <MetricCardSkeleton key={i} />
             ))}
           </div>
 
-          {/* Progress Card Skeleton */}
-          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-[2.5rem] shadow-sm">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6">
-              <div className="space-y-3">
-                <div className="flex gap-3">
-                  <div className="w-20 h-5 rounded-full bg-zinc-200 dark:bg-zinc-800 animate-pulse"></div>
-                  <div className="w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse mt-1"></div>
-                </div>
-                <div className="w-64 h-8 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
-              </div>
-              <div className="space-y-3 md:text-right">
-                <div className="w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse md:ml-auto"></div>
-                <div className="flex flex-wrap gap-4">
-                  <div className="w-20 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
-                  <div className="w-20 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
-                  <div className="w-24 h-3 bg-zinc-200 dark:bg-zinc-800 rounded animate-pulse"></div>
-                </div>
-              </div>
-            </div>
-            <div className="w-full h-4 bg-zinc-200 dark:bg-zinc-800 rounded-full animate-pulse"></div>
-          </div>
+          {/* Progress / forecast panel */}
+          <ChartSkeleton height="h-4" />
 
           {/* Lists Skeleton */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">

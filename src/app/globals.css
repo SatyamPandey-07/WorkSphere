@@ -521,3 +521,33 @@ textarea:focus::placeholder {
   border-radius: 50% !important;
 }
 
+/* Analytics dashboard skeleton shimmer (Issue #3503). One keyframe definition
+   shared by every placeholder so they animate in lockstep. */
+@keyframes ws-skeleton-shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+.ws-skeleton {
+  background-color: rgba(161, 161, 170, 0.15);
+  background-image: linear-gradient(
+    90deg,
+    rgba(161, 161, 170, 0.05) 0%,
+    rgba(161, 161, 170, 0.28) 50%,
+    rgba(161, 161, 170, 0.05) 100%
+  );
+  background-size: 800px 100%;
+  background-repeat: no-repeat;
+  animation: ws-skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-skeleton {
+    animation: none;
+  }
+}
+

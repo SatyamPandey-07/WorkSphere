@@ -38,11 +38,13 @@ export class CompassKalmanFilter {
   private p: number;
   private q: number;
   private r: number;
+  private initialP: number;
 
   constructor(options: CompassKalmanFilterOptions = {}) {
     this.q = options.q ?? 0.05;
     this.r = options.r ?? 0.5;
     this.p = options.p ?? 1.0;
+    this.initialP = this.p;
   }
 
   /**
@@ -96,7 +98,7 @@ export class CompassKalmanFilter {
    */
   public reset(initialState: number | null = null): void {
     this.state = initialState !== null ? normalizeDegrees(initialState) : null;
-    this.p = 1.0;
+    this.p = this.initialP;
   }
 
   /**

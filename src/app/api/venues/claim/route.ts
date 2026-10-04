@@ -9,10 +9,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
-    const { venueId } = body;
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
 
-    if (!venueId) {
+    const venueId =
+      body && typeof body === "object" && !Array.isArray(body)
+        ? (body as { venueId?: unknown }).venueId
+        : undefined;
+
+    if (typeof venueId !== "string" || venueId.trim().length === 0) {
       return NextResponse.json({ error: "Venue ID is required" }, { status: 400 });
     }
 
@@ -39,8 +48,11 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true, venue: updatedVenue });
-  } catch (error: any) {
+  } catch (error) {
     console.error("[CLAIM_POST]", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Internal Server Error" },
+      { status: 500 },
+    );
   }
 }

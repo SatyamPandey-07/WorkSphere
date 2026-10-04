@@ -49,7 +49,15 @@ export async function resolveIdpMetadata(metadataUrl: string): Promise<IDPMetada
       throw new Error(`Failed to fetch metadata. Status: ${response.status}`);
     }
 
+    const contentLength = Number(response.headers.get("content-length"));
+    if (Number.isFinite(contentLength) && contentLength > 512000) {
+      throw new Error("Metadata response too large");
+    }
+
     const xmlData = await response.text();
+    if (xmlData.length > 512000) {
+      throw new Error("Metadata response too large");
+    }
     const parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: "@_",

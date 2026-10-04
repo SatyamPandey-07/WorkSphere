@@ -8,8 +8,8 @@ export function cosineSimilarity(
   let normB = 0;
 
   for (const key of keys) {
-    const valA = vecA[key] || 0;
-    const valB = vecB[key] || 0;
+    const valA = vecA[key] ?? 0;
+    const valB = vecB[key] ?? 0;
     dotProduct += valA * valB;
     normA += valA * valA;
     normB += valB * valB;

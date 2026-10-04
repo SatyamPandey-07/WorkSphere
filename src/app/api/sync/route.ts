@@ -5,6 +5,12 @@ import * as Y from "yjs";
 import { ensureUserExists } from "@/lib/auth";
 import { recordCheckIn, CHECK_IN_TTL_MS } from "@/lib/checkIn";
 
+// Bounds for CRDT update ingestion: decoding and merging are billed to the
+// request, so oversized batches are rejected before any work happens.
+const MAX_SYNC_UPDATES = 100;
+const MAX_SYNC_UPDATE_BYTES = 1024 * 1024;
+const MAX_SYNC_TOTAL_BYTES = 5 * 1024 * 1024;
+
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await auth();
@@ -42,12 +48,46 @@ export async function POST(req: NextRequest) {
     }
 
     if (updates && Array.isArray(updates)) {
+      if (updates.length > MAX_SYNC_UPDATES) {
+        return NextResponse.json(
+          { error: "Too many updates in a single sync request" },
+          { status: 400 },
+        );
+      }
+
+      let totalBytes = 0;
+      const decodedUpdates: Uint8Array[] = [];
       for (const updateBase64 of updates) {
+        if (typeof updateBase64 !== "string" || updateBase64.length === 0) {
+          return NextResponse.json(
+            { error: "Invalid updates format" },
+            { status: 400 },
+          );
+        }
+        // atob length approximates decoded size (4 chars -> 3 bytes).
+        const approxBytes = Math.floor((updateBase64.length * 3) / 4);
+        if (approxBytes > MAX_SYNC_UPDATE_BYTES) {
+          return NextResponse.json(
+            { error: "Sync update exceeds maximum size" },
+            { status: 400 },
+          );
+        }
+        totalBytes += approxBytes;
+        if (totalBytes > MAX_SYNC_TOTAL_BYTES) {
+          return NextResponse.json(
+            { error: "Sync payload exceeds maximum size" },
+            { status: 400 },
+          );
+        }
         const binaryString = atob(updateBase64);
         const updateArray = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
           updateArray[i] = binaryString.charCodeAt(i);
         }
+        decodedUpdates.push(updateArray);
+      }
+
+      for (const updateArray of decodedUpdates) {
         Y.applyUpdate(ydoc, updateArray);
       }
 

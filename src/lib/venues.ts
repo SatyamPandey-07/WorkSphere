@@ -179,7 +179,7 @@ export async function searchVenuesOSM(
     let finalResult = landVenues;
     if (query) {
       const q = query.toLowerCase();
-      finalResult = venues.filter(
+      finalResult = landVenues.filter(
         (v) =>
           v.name.toLowerCase().includes(q) ||
           v.categories.some((c) => c.name.toLowerCase().includes(q)),

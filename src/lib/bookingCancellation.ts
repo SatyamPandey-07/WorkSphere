@@ -1,4 +1,8 @@
-import { parseBookingDateTime } from "./bookingTime";
+import {
+  isValidBookingDate,
+  normalizeBookingTime,
+  parseBookingDateTime,
+} from "./bookingTime";
 
 export const BOOKING_CANCELLATION_WINDOW_HOURS = 2;
 export const BOOKING_CANCELLATION_WINDOW_MS =
@@ -22,7 +26,6 @@ export type BookingCancellationEligibility =
       message: string;
     };
 
-const BOOKING_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const BOOKING_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /**
@@ -31,12 +34,14 @@ const BOOKING_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
  * so cancellation checks intentionally follow the same local-time convention.
  */
 export function parseBookingStart(date: string, time: string): Date | null {
-  if (!BOOKING_DATE_PATTERN.test(date) || !BOOKING_TIME_PATTERN.test(time)) {
+  if (!isValidBookingDate(date)) return null;
+  const normalized = normalizeBookingTime(time);
+  if (!normalized || !BOOKING_TIME_PATTERN.test(normalized)) {
     return null;
   }
 
   const [year, month, day] = date.split("-").map(Number);
-  const [hour, minute] = time.split(":").map(Number);
+  const [hour, minute] = normalized.split(":").map(Number);
 
   const bookingStart = new Date(year, month - 1, day, hour, minute, 0, 0);
 

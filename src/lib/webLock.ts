@@ -45,14 +45,17 @@ export async function withWebLock<T>(
 
   return new Promise<T>((resolve, reject) => {
     let timeoutId: ReturnType<typeof setTimeout>;
+    let timedOut = false;
 
     const lockPromise = navigator.locks.request(lockName, async () => {
+      if (timedOut) return undefined as unknown as T;
       clearTimeout(timeoutId);
       return runOnce();
     });
 
     const timeoutPromise = new Promise<T>((_, timeoutReject) => {
       timeoutId = setTimeout(() => {
+        timedOut = true;
         timeoutReject(new Error("LOCK_TIMEOUT"));
       }, 5000);
     });

@@ -24,7 +24,7 @@
   --foreground: #171717;
   --primary-accent: #3b82f6;
   --primary-accent-rgb: 59, 130, 246;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 .cyberpunk {
@@ -43,6 +43,11 @@
 .dark {
   --background: #0a0a0a;
   --foreground: #ededed;
+}
+
+.dark,
+.cyberpunk {
+  color-scheme: dark;
 }
 
 /* ─── Base Styles ─────────────────────────────────────────────────── */
@@ -579,5 +584,4 @@ html.high-contrast.dark .border-zinc-800,
 html.high-contrast.dark .border-zinc-700 {
   border-color: #a1a1aa;
 }
-
 

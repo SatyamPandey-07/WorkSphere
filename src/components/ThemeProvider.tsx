@@ -1,6 +1,5 @@
 "use client";
 
-import { ThemeProvider as NextThemesProvider } from "next-themes";
 import {
   createContext,
   useCallback,
@@ -41,6 +40,7 @@ function applyTheme(theme: Theme) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
 
+  root.setAttribute("data-theme", theme);
   root.classList.remove("dark", "cyberpunk");
 
   if (theme === "dark") {
@@ -50,6 +50,10 @@ function applyTheme(theme: Theme) {
   }
 
   root.style.colorScheme = theme === "light" ? "light" : "dark";
+  root.style.backgroundColor =
+    theme === "dark" ? "#0a0a0a" : theme === "cyberpunk" ? "#090014" : "#ffffff";
+  root.style.color =
+    theme === "dark" ? "#ededed" : theme === "cyberpunk" ? "#f4f4ff" : "#171717";
 }
 
 function applyHighContrast(enabled: boolean) {
@@ -94,6 +98,15 @@ export function ThemeProvider({
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof document === "undefined") return initialTheme;
     const root = document.documentElement;
+    // Keep hydration aligned with the theme already applied before first paint.
+    const rootTheme = root.getAttribute("data-theme");
+    if (
+      rootTheme === "dark" ||
+      rootTheme === "cyberpunk" ||
+      rootTheme === "light"
+    ) {
+      return rootTheme;
+    }
     if (root.classList.contains("cyberpunk")) return "cyberpunk";
     if (root.classList.contains("dark")) return "dark";
     const saved = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
@@ -236,15 +249,7 @@ export function ThemeProvider({
   );
 
   return (
-    <NextThemesProvider
-      attribute="class"
-      defaultTheme="system"
-      enableSystem
-      disableTransitionOnChange
-      themes={["light", "dark", "cyberpunk"]}
-    >
-      <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
-    </NextThemesProvider>
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
   );
 }
 

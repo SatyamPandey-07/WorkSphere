@@ -19,74 +19,7 @@ import { KeyboardShortcutsModal } from "../components/KeyboardShortcutsModal";
 import { CommandPalette } from "../components/CommandPalette";
 import { IdleSessionDialog } from "../components/auth/IdleSessionDialog";
 import { StorageQuotaWarningBanner } from "../components/ui/StorageQuotaWarningBanner";
-
-const THEME_INIT_SCRIPT = `
-(function () {
-  try {
-    var stored = localStorage.getItem("worksphere-theme");
-    var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    var theme = stored === "light" || stored === "dark" || stored === "cyberpunk"
-      ? stored
-      : (prefersDark ? "dark" : "light");
-
-    var root = document.documentElement;
-    root.classList.remove("dark", "cyberpunk");
-
-    if (theme === "dark") {
-      root.classList.add("dark");
-    } else if (theme === "cyberpunk") {
-      root.classList.add("cyberpunk");
-    }
-
-    root.style.colorScheme = theme === "light" ? "light" : "dark";
-
-    // ─── Inline background/foreground to prevent white flash ───
-    // Set colors directly on <html> before external CSS loads
-    if (theme === "dark") {
-      root.style.backgroundColor = "#0a0a0a";
-      root.style.color = "#ededed";
-    } else if (theme === "cyberpunk") {
-      root.style.backgroundColor = "#090014";
-      root.style.color = "#f4f4ff";
-    } else {
-      root.style.backgroundColor = "#ffffff";
-      root.style.color = "#171717";
-    }
-
-    if (document.cookie.indexOf("worksphere-theme=") === -1) {
-      document.cookie =
-        "worksphere-theme=" +
-        theme +
-        "; path=/; max-age=31536000; SameSite=Lax";
-    }
-  } catch (e) {}
-
-  try {
-    var accentStored = localStorage.getItem("worksphere-accent");
-    var accentColors = {
-      blue: "#3b82f6",
-      purple: "#a855f7",
-      emerald: "#10b981",
-      amber: "#f59e0b"
-    };
-    var accent = accentColors[accentStored] || accentColors.blue;
-    document.documentElement.style.setProperty("--primary-accent", accent);
-  } catch {}
-
-  try {
-    window.addEventListener("error", function (event) {
-      if (
-        event.message &&
-        (event.message.indexOf("ResizeObserver") >= 0 ||
-          event.message.indexOf("Resize observer") >= 0)
-      ) {
-        event.stopImmediatePropagation();
-      }
-    });
-  } catch {}
-
-})();
-`;
+import { THEME_INIT_SCRIPT } from "../lib/theme-init-script";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -161,7 +94,7 @@ export default async function RootLayout({
       : "blue";
 
   const appContent = (
-    <ThemeProvider initialTheme={theme as any} initialAccent={accent}>
+    <ThemeProvider initialTheme={theme} initialAccent={accent}>
       <SoundProvider>
         <ToastProvider>
           <CurrencyProvider>
@@ -195,6 +128,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
+      data-theme={theme}
       className={
         theme === "dark" ? "dark" : theme === "cyberpunk" ? "cyberpunk" : ""
       }

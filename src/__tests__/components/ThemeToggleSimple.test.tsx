@@ -20,11 +20,13 @@ beforeEach(() => {
   });
   startViewTransitionMock.mockClear();
   document.documentElement.classList.remove("dark", "cyberpunk");
+  document.documentElement.removeAttribute("data-theme");
   window.localStorage.clear();
 });
 
 afterEach(() => {
   document.documentElement.classList.remove("dark", "cyberpunk");
+  document.documentElement.removeAttribute("data-theme");
 });
 
 describe("ThemeToggle — click behavior", () => {

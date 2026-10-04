@@ -68,7 +68,7 @@ export {
  * @returns Cardinal direction string (e.g. "N", "NE", "E", "SW")
  */
 export function getCompassDirection(heading: number | null): string {
-  if (heading === null || isNaN(heading)) return "--";
+  if (heading === null || !Number.isFinite(heading)) return "--";
   const directions = [
     "N", "NNE", "NE", "ENE",
     "E", "ESE", "SE", "SSE",
@@ -89,7 +89,7 @@ export function getCompassDirection(heading: number | null): string {
 export function getRelativeDirectionDescription(
   relativeBearing: number | null,
 ): string {
-  if (relativeBearing === null || isNaN(relativeBearing)) return "";
+  if (relativeBearing === null || !Number.isFinite(relativeBearing)) return "";
 
   const norm = ((relativeBearing % 360) + 360) % 360;
   if (norm <= 22.5 || norm >= 337.5) {

@@ -203,7 +203,8 @@ async function sendWithCsrf(
       const data = await clone.json();
       if (
         data?.code === "CSRF_INVALID" ||
-        data?.error?.toLowerCase().includes("csrf")
+        (typeof data?.error === "string" &&
+          data.error.toLowerCase().includes("csrf"))
       ) {
         const freshToken = await fetchCsrfToken();
         if (freshToken) {

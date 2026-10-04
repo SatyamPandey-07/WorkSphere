@@ -23,6 +23,7 @@ import { apiFetch } from "@/lib/apiClient";
 import { useRateLimit } from "@/hooks/useRateLimit";
 import { SeatOccupancyHeatmap } from "@/components/venue/SeatOccupancyHeatmap";
 import { useSeatHoldLock } from "@/hooks/useSeatHoldLock";
+import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
 
 type Seat = {
   id: string;
@@ -323,6 +324,20 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
             <p className="font-semibold">{message}</p>
             {confirmationId && (
               <div className="mt-4 flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-600/10 px-4 py-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-violet-300/80">
+                    Booking reference
+                  </span>
+                  <span className="font-mono text-sm text-violet-100">
+                    {confirmationId}
+                  </span>
+                  <CopyToClipboardButton
+                    textToCopy={confirmationId}
+                    label="Copy"
+                    toastMessage="Booking reference copied!"
+                    className="!px-2 !py-1 text-xs font-semibold"
+                  />
+                </div>
                 <a
                   href={
                     getCalendarUrls(

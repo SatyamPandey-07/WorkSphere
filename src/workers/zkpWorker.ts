@@ -203,7 +203,17 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
     const myGeneration = ++generation;
     const { secret, epoch, root, pathElements, pathIndices } = e.data;
 
-    if (!secret || !epoch || !root || !Array.isArray(pathElements) || !Array.isArray(pathIndices)) {
+    const hasSecret = typeof secret === "string" ? secret !== "" : secret != null;
+    const hasEpoch =
+      typeof epoch === "number" ? true : epoch != null && epoch !== "";
+    const hasRoot = typeof root === "string" ? root !== "" : root != null;
+    if (
+      !hasSecret ||
+      !hasEpoch ||
+      !hasRoot ||
+      !Array.isArray(pathElements) ||
+      !Array.isArray(pathIndices)
+    ) {
       self.postMessage({ type: "error", error: "Invalid student membership proof parameters." });
       return;
     }

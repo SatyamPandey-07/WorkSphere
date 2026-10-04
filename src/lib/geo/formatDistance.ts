@@ -39,7 +39,10 @@ export function detectDefaultDistanceUnit(locale?: string): DistanceUnit {
   }
 
   const parts = lang.split(/[-_]/);
-  const region = parts.length > 1 ? parts[1].toUpperCase() : parts[0].toUpperCase();
+  const regionCandidate = parts
+    .slice(1)
+    .find((p) => /^[A-Za-z]{2}$/.test(p) || /^\d{3}$/.test(p));
+  const region = (regionCandidate ?? parts[parts.length - 1]).toUpperCase();
 
   if (IMPERIAL_REGIONS.has(region) || lang.toUpperCase() === "EN-US" || lang.toUpperCase() === "EN-GB") {
     return "IMPERIAL";

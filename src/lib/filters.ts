@@ -161,7 +161,13 @@ export function buildVenueSearchSchema() {
 
   for (const [key, config] of Object.entries(VENUE_FILTERS)) {
     if (config.type === "boolean") {
-      shape[key] = z.coerce.boolean().optional();
+      shape[key] = z
+        .preprocess((v) => {
+          if (v === "true") return true;
+          if (v === "false") return false;
+          return v;
+        }, z.boolean())
+        .optional();
     } else if (config.type === "enum" && config.values) {
       shape[key] = z
         .enum(config.values as unknown as [string, ...string[]])

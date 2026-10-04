@@ -24,6 +24,7 @@ import {
   DEVICE_PRESETS,
   rmsToCalibratedDb,
 } from "@/lib/noise/calibration";
+import { useWebAudioAutoPause } from "@/hooks/useWebAudioAutoPause";
 
 interface MicCalibrationWizardProps {
   isOpen: boolean;
@@ -80,6 +81,11 @@ export function MicCalibrationWizard({
       stopAudioStream();
     }
   }, [isOpen, stopAudioStream]);
+
+  useWebAudioAutoPause({
+    isActive: isListening,
+    onPause: stopAudioStream,
+  });
 
   // Cleanup on unmount
   useEffect(() => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useWebAudioAutoPause } from "./useWebAudioAutoPause";
 
 // ─── Web Speech API type declarations ────────────────────────────────────────
 //
@@ -266,13 +267,21 @@ export function useSpeechRecognition(
     setStatus("idle");
   }, [releaseMediaTracks]);
 
+  useWebAudioAutoPause({
+    isActive: status === "listening",
+    onPause: () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+      releaseMediaTracks();
+    },
+  });
+
   // Cleanup on unmount and visibilitychange
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden && recognitionRef.current) {
         recognitionRef.current.abort();
-        // We do not call setStatus("idle") here because abort() triggers onend
-        // which will handle the status update naturally.
       }
     };
 

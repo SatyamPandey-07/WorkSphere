@@ -22,6 +22,7 @@ import {
   Cell,
 } from "recharts";
 import { MicCalibrationWizard } from "@/components/noise/MicCalibrationWizard";
+import { useWebAudioAutoPause } from "@/hooks/useWebAudioAutoPause";
 import {
   getMicCalibration,
   rmsToCalibratedDb,
@@ -92,6 +93,11 @@ export function NoiseReportingWidget({
     setIsLiveMeasuring(false);
     setLiveMicDb(null);
   }, []);
+
+  useWebAudioAutoPause({
+    isActive: isLiveMeasuring,
+    onPause: stopLiveMic,
+  });
 
   useEffect(() => {
     return () => {

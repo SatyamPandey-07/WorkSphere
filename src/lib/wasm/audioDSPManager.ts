@@ -5,6 +5,8 @@
  * Provides a high-level API for real-time noise suppression with <2ms latency.
  */
 
+import { attachWebAudioAutoPause, type WebAudioAutoPauseController } from "@/lib/audio/autoPause";
+
 interface DSPManagerState {
   audioContext: AudioContext | null;
   workletNode: AudioWorkletNode | null;
@@ -13,6 +15,7 @@ interface DSPManagerState {
   isProcessing: boolean;
   rmsCallback: ((rms: number) => void) | null;
   noiseProfileCallback: ((profile: Float32Array) => void) | null;
+  autoPauseController: WebAudioAutoPauseController | null;
 }
 
 /**
@@ -37,6 +40,7 @@ const state: DSPManagerState = {
   isProcessing: false,
   rmsCallback: null,
   noiseProfileCallback: null,
+  autoPauseController: null,
 };
 
 async function fetchWasmBinary(): Promise<ArrayBuffer> {
@@ -157,6 +161,12 @@ export async function startAudioProcessing(
 
   state.isProcessing = true;
 
+  // Auto-pause when document is hidden or on battery saver
+  state.autoPauseController?.disconnect();
+  state.autoPauseController = attachWebAudioAutoPause(() => {
+    stopAudioProcessing();
+  });
+
   // Return cleanup function
   return () => {
     stopAudioProcessing();
@@ -167,6 +177,11 @@ export async function startAudioProcessing(
  * Stop audio processing and release resources.
  */
 export function stopAudioProcessing(): void {
+  if (state.autoPauseController) {
+    state.autoPauseController.disconnect();
+    state.autoPauseController = null;
+  }
+
   if (state.sourceNode) {
     state.sourceNode.disconnect();
     state.sourceNode = null;

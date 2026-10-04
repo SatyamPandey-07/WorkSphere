@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { resetFFTNoiseFilter } from "@/lib/wasm/fftNoiseFilter";
+import { useWebAudioAutoPause } from "./useWebAudioAutoPause";
 
 export interface FFTNoiseFilterState {
   isReady: boolean;
@@ -217,6 +218,11 @@ export function useFFTNoiseFilter(
     streamRef.current = null;
     setState((prev) => ({ ...prev, isProcessing: false }));
   }, []);
+
+  useWebAudioAutoPause({
+    isActive: state.isProcessing,
+    onPause: stop,
+  });
 
   const setSensitivity = useCallback((value: number) => {
     workletNodeRef.current?.port.postMessage({

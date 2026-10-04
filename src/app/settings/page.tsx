@@ -14,6 +14,7 @@ import { NotificationSettings } from "@/app/dashboard/NotificationSettings";
 import { MemoryManager } from "@/app/dashboard/MemoryManager";
 import { DistanceUnitToggle } from "@/components/settings/DistanceUnitToggle";
 import { ChatSoundToggle } from "@/components/settings/ChatSoundToggle";
+import { TimezoneBadge } from "@/components/TimezoneBadge";
 
 const PERSONALIZATION_KEY = "ai_personalization_enabled";
 
@@ -136,6 +137,7 @@ export default function SettingsPage() {
             title="Notifications"
             description="Reminders before bookings and sessions, and quiet hours."
           >
+            <TimezoneBadge />
             <NotificationSettings />
           </Section>
 

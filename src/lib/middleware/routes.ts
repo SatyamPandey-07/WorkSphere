@@ -1,4 +1,5 @@
 import { createRouteMatcher } from "@clerk/nextjs/server";
+import { CSRF_PROTECTED_METHODS } from "@/lib/csrf";
 
 /**
  * Public routes accessible without active Clerk authentication.
@@ -51,6 +52,9 @@ export const isCsrfExemptMatcher = createRouteMatcher([
  */
 export function isCsrfExemptRoute(req: Request): boolean {
   const path = new URL(req.url).pathname;
+  if (path.startsWith("/api") && CSRF_PROTECTED_METHODS.has(req.method)) {
+    return isCsrfExemptMatcher(req as any);
+  }
   const staticAssetRegex = /\.(png|jpg|jpeg|gif|svg|mp3|wav|ico|css|js)$/i;
   return isCsrfExemptMatcher(req as any) || staticAssetRegex.test(path);
 }

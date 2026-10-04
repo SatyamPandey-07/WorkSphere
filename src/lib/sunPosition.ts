@@ -156,7 +156,11 @@ export function calculateSunPosition(
   const t = julianCentury(jd);
 
   // True solar time in minutes
-  const utcMinutes = date.getUTCHours() * 60 + date.getUTCMinutes();
+  const utcMinutes =
+    date.getUTCHours() * 60 +
+    date.getUTCMinutes() +
+    date.getUTCSeconds() / 60 +
+    date.getUTCMilliseconds() / 60000;
   const eot = equationOfTimeMinutes(t);
   const trueSolarTime =
     (((utcMinutes + eot + 4 * longitude) % 1440) + 1440) % 1440;

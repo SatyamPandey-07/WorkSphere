@@ -293,10 +293,10 @@ export function ChatPanel({
   const prevMessageCountRef = useRef(messages.length);
 
   useEffect(() => {
-    // When a new message arrives, check if it's an incoming assistant/system message
+    // When a new message arrives, chime only for incoming assistant replies
     if (messages.length > prevMessageCountRef.current) {
       const lastMsg = messages[messages.length - 1];
-      if (lastMsg && lastMsg.role !== "user") {
+      if (lastMsg?.role === "assistant") {
         playChatMessageSound();
       }
     }

@@ -16,7 +16,8 @@ function persistFailed(record: TelemetryRecord) {
       ? JSON.parse(existingStr)
       : [];
     existing.push(record);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
+    const capped = existing.slice(-100);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(capped));
   } catch (err) {
     console.error("[clientTelemetry] Failed to persist", err);
   }
@@ -27,8 +28,8 @@ export function retryFailedTelemetry() {
   try {
     const existingStr = localStorage.getItem(STORAGE_KEY);
     if (!existingStr) return;
-    localStorage.removeItem(STORAGE_KEY);
     const records = JSON.parse(existingStr) as TelemetryRecord[];
+    localStorage.removeItem(STORAGE_KEY);
     records.forEach(flushToServer);
   } catch (err) {
     console.error("[clientTelemetry] Failed to retry", err);

@@ -59,4 +59,53 @@ describe("WebAssembly SIMD Groth16 Vectorization & Optimization", () => {
     expect(options.proverOptions.singleThread).toBe(true);
     expect(options.witnessOptions).toHaveProperty("memorySize");
   });
+
+  it("degrades gracefully to scalar WASM when SIMD bytecode validation fails", async () => {
+    const { _resetSimdCacheForTests } = await import("@/lib/zkp/wasmSimd");
+    _resetSimdCacheForTests();
+
+    const originalValidate = WebAssembly.validate;
+    WebAssembly.validate = jest.fn().mockReturnValue(false);
+
+    try {
+      const isSupported = await isWasmSimdSupported();
+      expect(isSupported).toBe(false);
+
+      const options = await getOptimizedZkpOptions();
+      expect(options.simdEnabled).toBe(false);
+      expect(options.proverOptions.useSimd).toBe(false);
+      expect(options.witnessOptions.simd).toBe(false);
+      expect(options.witnessOptions.memorySize).toBe(0);
+    } finally {
+      WebAssembly.validate = originalValidate;
+      _resetSimdCacheForTests();
+    }
+  });
+
+  it("enables SIMD options and logs telemetry when SIMD bytecode validation succeeds", async () => {
+    const { _resetSimdCacheForTests } = await import("@/lib/zkp/wasmSimd");
+    _resetSimdCacheForTests();
+
+    const originalValidate = WebAssembly.validate;
+    const consoleSpy = jest.spyOn(console, "info").mockImplementation(() => {});
+    WebAssembly.validate = jest.fn().mockReturnValue(true);
+
+    try {
+      const isSupported = await isWasmSimdSupported();
+      expect(isSupported).toBe(true);
+
+      const options = await getOptimizedZkpOptions();
+      expect(options.simdEnabled).toBe(true);
+      expect(options.proverOptions.useSimd).toBe(true);
+      expect(options.witnessOptions.simd).toBe(true);
+      expect(options.witnessOptions.memorySize).toBe(16);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("SIMD (v128) enabled"),
+      );
+    } finally {
+      WebAssembly.validate = originalValidate;
+      consoleSpy.mockRestore();
+      _resetSimdCacheForTests();
+    }
+  });
 });

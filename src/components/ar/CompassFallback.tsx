@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useDeviceOrientation } from "@/hooks/useDeviceOrientation";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
-import { CompassKalmanFilter } from "@/lib/spatial/compassFilter";
 import {
   calculateBearing,
   calculateRelativeBearing,
@@ -29,8 +28,6 @@ interface CompassFallbackProps {
   onRetryAR?: () => void;
   onClose?: () => void;
   trapFocus?: boolean;
-  kalmanQ?: number;
-  kalmanR?: number;
 }
 
 interface UserCoordinates {
@@ -46,8 +43,6 @@ export default function CompassFallback({
   onRetryAR,
   onClose,
   trapFocus = true,
-  kalmanQ = 0.05,
-  kalmanR = 0.5,
 }: CompassFallbackProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +50,6 @@ export default function CompassFallback({
     isActive: trapFocus,
     onEscape: onClose,
   });
-
   const { heading, error: orientationError, isSupported, permissionState, requestPermission } =
     useDeviceOrientation();
 

@@ -122,6 +122,10 @@ export function simdBatchMontgomeryMul(
   return result;
 }
 
+export function _resetSimdCacheForTests(): void {
+  isSimdCached = null;
+}
+
 /**
  * Optimizes SnarkJS witness calculation and Groth16 prover execution options
  * based on the host environment's WebAssembly SIMD and thread capabilities.
@@ -139,6 +143,15 @@ export async function getOptimizedZkpOptions(): Promise<{
   };
 }> {
   const simdSupported = await isWasmSimdSupported();
+
+  // Log acceleration status in performance telemetry
+  if (typeof console !== "undefined" && console.info) {
+    console.info(
+      `[ZKP:Telemetry] Groth16 WebAssembly acceleration: ${
+        simdSupported ? "SIMD (v128) enabled" : "scalar WASM fallback"
+      }`,
+    );
+  }
 
   return {
     simdEnabled: simdSupported,

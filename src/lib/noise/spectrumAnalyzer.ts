@@ -99,7 +99,6 @@ export function analyzeFrequencyBands(
 ): FrequencyBandSpectrum {
   const binCount = frequencyBins.length;
   if (binCount === 0) {
-    const profile = getFrequencyProfile(33.3, 33.3, 33.4);
     return {
       lowEnergy: 0,
       midEnergy: 0,
@@ -107,10 +106,10 @@ export function analyzeFrequencyBands(
       lowPercentage: 33.3,
       midPercentage: 33.3,
       highPercentage: 33.4,
-      dominantBand: profile.dominantBand,
-      profileTag: profile.tag,
-      description: profile.description,
-      badgeColor: profile.badgeColor,
+      dominantBand: "balanced",
+      profileTag: "Balanced Ambience",
+      description: "Evenly distributed acoustic spectrum across all frequency bands",
+      badgeColor: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
     };
   }
 
@@ -155,6 +154,21 @@ export function analyzeFrequencyBands(
     lowPercentage = Math.round((lowEnergy / totalEnergy) * 1000) / 10;
     midPercentage = Math.round((midEnergy / totalEnergy) * 1000) / 10;
     highPercentage = Math.round((highEnergy / totalEnergy) * 1000) / 10;
+  }
+
+  if (totalEnergy <= 0) {
+    return {
+      lowEnergy: Math.round(lowEnergy * 10000) / 10000,
+      midEnergy: Math.round(midEnergy * 10000) / 10000,
+      highEnergy: Math.round(highEnergy * 10000) / 10000,
+      lowPercentage,
+      midPercentage,
+      highPercentage,
+      dominantBand: "balanced",
+      profileTag: "Balanced Ambience",
+      description: "Evenly distributed acoustic spectrum across all frequency bands",
+      badgeColor: "text-emerald-400 bg-emerald-500/10 border-emerald-500/30",
+    };
   }
 
   const profile = getFrequencyProfile(lowPercentage, midPercentage, highPercentage);

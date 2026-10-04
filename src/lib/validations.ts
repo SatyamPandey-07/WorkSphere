@@ -8,9 +8,19 @@ import { buildVenueSearchSchema } from "@/lib/filters";
 const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD")
-  .refine((v) => !isNaN(Date.parse(v)), "Invalid calendar date");
+  .refine((v) => {
+    const [y, m, d] = v.split("-").map(Number);
+    const probe = new Date(Date.UTC(y, m - 1, d));
+    return (
+      probe.getUTCFullYear() === y &&
+      probe.getUTCMonth() === m - 1 &&
+      probe.getUTCDate() === d
+    );
+  }, "Invalid calendar date");
 
-const hhMm = z.string().regex(/^\d{2}:\d{2}$/, "Time must be HH:mm");
+const hhMm = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Time must be HH:mm");
 
 export const bookingRequestSchema = z.object({
   venueId: z.string().min(1, "venueId is required"),

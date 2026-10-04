@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Share2, Copy, Check, Download, X, QrCode, MapPin } from "lucide-react";
 import { generateQRCodeSVG, downloadSVG } from "@/lib/qr/svgQr";
 import { sanitizeSvg } from "@/lib/security/svgSanitizer";
@@ -25,6 +25,14 @@ export function VenueShareModal({
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [origin, setOrigin] = useState("");
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -37,6 +45,7 @@ export function VenueShareModal({
   }, [origin, venue.id]);
 
   const qrSvg = useMemo(() => {
+    if (!isOpen) return "";
     return generateQRCodeSVG(shortUrl, {
       size: 200,
       title: `${venue.name} QR Code`,
@@ -44,7 +53,7 @@ export function VenueShareModal({
       bgColor: "#ffffff",
       padding: 3,
     });
-  }, [shortUrl, venue.name]);
+  }, [isOpen, shortUrl, venue.name]);
 
   const handleClose = useCallback(() => {
     setIsOpen(false);
@@ -93,7 +102,8 @@ export function VenueShareModal({
       if (typeof navigator !== "undefined" && navigator.clipboard) {
         await navigator.clipboard.writeText(shortUrl);
         setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+        timerRef.current = window.setTimeout(() => setCopied(false), 2000);
       }
     } catch (err) {
       console.error("Failed to copy shortlink:", err);

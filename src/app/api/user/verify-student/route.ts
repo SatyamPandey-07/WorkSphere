@@ -40,16 +40,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { proof, publicSignals, witness, studentId, serverSideFallback } = body;
-
-    // Server-side fallback for devices that ran out of memory
-    if (serverSideFallback && studentId) {
-      await prisma.user.update({
-        where: { id: userId },
-        data: { isVerifiedStudent: true },
-      });
-      return NextResponse.json({ success: true, verified: true });
-    }
+    const { proof, publicSignals, witness } = body;
 
     if (!proof || !publicSignals || !Array.isArray(publicSignals)) {
       return NextResponse.json(

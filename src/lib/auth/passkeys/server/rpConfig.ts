@@ -102,8 +102,15 @@ export function isOriginAllowedForRpId(
  * Resolves the Relying Party ID (hostname) from the incoming request.
  */
 export function getRpId(req: Request): string {
-  const host = req.headers.get("host") || "localhost";
-  return host.split(":")[0];
+  const host = (req.headers.get("host") || "localhost").trim();
+  if (host.startsWith("[")) {
+    const end = host.indexOf("]");
+    if (end !== -1) return host.slice(1, end) || "localhost";
+    return "localhost";
+  }
+  const parts = host.split(":");
+  if (parts.length === 2) return parts[0] || "localhost";
+  return host;
 }
 
 /**

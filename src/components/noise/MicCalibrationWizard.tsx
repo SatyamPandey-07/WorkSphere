@@ -24,6 +24,10 @@ import {
   DEVICE_PRESETS,
   rmsToCalibratedDb,
 } from "@/lib/noise/calibration";
+import {
+  FrequencyBandSpectrum,
+  analyzeFrequencyBands,
+} from "@/lib/noise/spectrumAnalyzer";
 
 interface MicCalibrationWizardProps {
   isOpen: boolean;
@@ -44,6 +48,7 @@ export function MicCalibrationWizard({
   const [liveCalibratedDb, setLiveCalibratedDb] = useState(40);
   const [_liveRms, setLiveRms] = useState(0.01);
   const [peakDb, setPeakDb] = useState(40);
+  const [spectrum, setSpectrum] = useState<FrequencyBandSpectrum | null>(null);
   const [isSamplingNoiseFloor, setIsSamplingNoiseFloor] = useState(false);
   const [samplingCountdown, setSamplingCountdown] = useState(3);
   const [micError, setMicError] = useState<string | null>(null);
@@ -126,6 +131,7 @@ export function MicCalibrationWizard({
       setIsListening(true);
 
       const buffer = new Float32Array(analyser.fftSize);
+      const freqBuffer = new Float32Array(analyser.frequencyBinCount);
 
       const processAudio = () => {
         if (!analyserRef.current) return;
@@ -138,6 +144,15 @@ export function MicCalibrationWizard({
         }
         const rms = Math.sqrt(sumSquares / buffer.length);
         setLiveRms(rms);
+
+        // Calculate Frequency Band Spectrum (Bass vs Mid vs Treble)
+        analyserRef.current.getFloatFrequencyData(freqBuffer);
+        const bandSpectrum = analyzeFrequencyBands(
+          freqBuffer,
+          ctx.sampleRate,
+          analyserRef.current.fftSize,
+        );
+        setSpectrum(bandSpectrum);
 
         // Uncalibrated raw dB (offset = 0, sensitivity = 1)
         const uncalibrated = rmsToCalibratedDb(rms, {
@@ -489,6 +504,120 @@ export function MicCalibrationWizard({
                     </span>
                   </div>
                 </div>
+              </div>
+
+              {/* Frequency Band Spectrum Analyzer (Bass vs Treble Rumble Detector) */}
+              <div className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                      <span>Frequency Band Spectrum</span>
+                    </h4>
+                    <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                      Rumble vs. Speech vs. Clatter breakdown
+                    </p>
+                  </div>
+                  {isListening && spectrum && (
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${spectrum.badgeColor}`}
+                    >
+                      {spectrum.profileTag}
+                    </span>
+                  )}
+                </div>
+
+                {/* 3-Band Spectrum Bar */}
+                <div className="space-y-2">
+                  {/* Low Band (20 - 250 Hz) */}
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="font-semibold text-purple-600 dark:text-purple-400">
+                        Low (Bass & HVAC Rumble){" "}
+                        <span className="text-[10px] text-zinc-400 font-normal">
+                          20–250Hz
+                        </span>
+                      </span>
+                      <span className="font-mono font-bold text-zinc-700 dark:text-zinc-300">
+                        {isListening && spectrum
+                          ? `${spectrum.lowPercentage.toFixed(1)}%`
+                          : "--%"}
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-purple-500 rounded-full transition-all duration-75"
+                        style={{
+                          width:
+                            isListening && spectrum
+                              ? `${spectrum.lowPercentage}%`
+                              : "0%",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Mid Band (250 - 4000 Hz) */}
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="font-semibold text-amber-600 dark:text-amber-400">
+                        Mid (Speech & Murmur){" "}
+                        <span className="text-[10px] text-zinc-400 font-normal">
+                          250–4000Hz
+                        </span>
+                      </span>
+                      <span className="font-mono font-bold text-zinc-700 dark:text-zinc-300">
+                        {isListening && spectrum
+                          ? `${spectrum.midPercentage.toFixed(1)}%`
+                          : "--%"}
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-500 rounded-full transition-all duration-75"
+                        style={{
+                          width:
+                            isListening && spectrum
+                              ? `${spectrum.midPercentage}%`
+                              : "0%",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* High Band (4000 - 20000 Hz) */}
+                  <div>
+                    <div className="flex justify-between text-[11px] mb-1">
+                      <span className="font-semibold text-cyan-600 dark:text-cyan-400">
+                        High (Clatter, Clicks & Hiss){" "}
+                        <span className="text-[10px] text-zinc-400 font-normal">
+                          4–20kHz
+                        </span>
+                      </span>
+                      <span className="font-mono font-bold text-zinc-700 dark:text-zinc-300">
+                        {isListening && spectrum
+                          ? `${spectrum.highPercentage.toFixed(1)}%`
+                          : "--%"}
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cyan-500 rounded-full transition-all duration-75"
+                        style={{
+                          width:
+                            isListening && spectrum
+                              ? `${spectrum.highPercentage}%`
+                              : "0%",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {isListening && spectrum && (
+                  <p className="text-[10px] text-zinc-500 dark:text-zinc-400 italic pt-1">
+                    {spectrum.description}
+                  </p>
+                )}
               </div>
 
               {/* Sample Noise Floor baseline */}

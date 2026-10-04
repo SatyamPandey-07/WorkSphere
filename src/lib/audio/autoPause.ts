@@ -18,6 +18,7 @@ export function attachWebAudioAutoPause(
 ): WebAudioAutoPauseController {
   let isPaused = false;
   let batteryManager: any = null;
+  let cancelled = false;
 
   const checkConditions = (b?: any) => {
     const isHidden = typeof document !== "undefined" && document.hidden;
@@ -57,6 +58,7 @@ export function attachWebAudioAutoPause(
     (navigator as any)
       .getBattery()
       .then((b: any) => {
+        if (cancelled) return;
         batteryManager = b;
         checkConditions(b);
         b.addEventListener("levelchange", handleBattery);
@@ -69,6 +71,7 @@ export function attachWebAudioAutoPause(
 
   return {
     disconnect: () => {
+      cancelled = true;
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", handleVisibility);
       }

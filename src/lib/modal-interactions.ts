@@ -16,7 +16,7 @@ export interface ModalBackdropEvent {
  * dialog from accidentally closing it.
  */
 export function isModalBackdropClick(event: ModalBackdropEvent): boolean {
-  return event.target === event.currentTarget;
+  return event.target !== null && event.target === event.currentTarget;
 }
 
 /**

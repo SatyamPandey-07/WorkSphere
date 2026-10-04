@@ -57,12 +57,13 @@ export async function POST(req: NextRequest) {
   const { email, otp: _otp } = validation.data;
 
   // 3. Identify the caller
-  const ip =
+  const ip = (
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     req.headers.get("x-real-ip") ??
-    "anonymous";
+    "anonymous"
+  ).trim() || "anonymous";
 
-  const identifier = `verify-otp:${email}:${ip}`;
+  const identifier = `verify-otp:${email.trim().toLowerCase()}:${ip}`;
 
   // 4. Rate limit — 5 requests per 1-minute sliding window per email+IP
   const allowed = await rateLimit(identifier, 5);

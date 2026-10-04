@@ -63,6 +63,7 @@ export function haversineMiles(
  */
 export function getWalkingMinutes(km: number): number {
   // 4.8 km/h = 4.8 / 60 km/min = 0.08 km/min
+  if (!Number.isFinite(km) || km <= 0) return 0;
   return Math.ceil(km / 0.08);
 }
 
@@ -78,6 +79,7 @@ export function getWalkingMinutes(km: number): number {
  * @returns A badge string such as "15 min walk" followed by the distance label.
  */
 export function formatWalkingTimeBadge(km: number): string {
+  if (!Number.isFinite(km) || km < 0) return "--";
   const mins = getWalkingMinutes(km);
   const distance = km >= 1 ? `${km.toFixed(1)}km` : `${Math.round(km * 1000)}m`;
   return `${mins} min walk · ${distance}`;

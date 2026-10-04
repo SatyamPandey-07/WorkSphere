@@ -440,6 +440,81 @@ export class ExtendedKalmanFilter6D {
   }
 
   /**
+   * Non-linear range measurement update for a single BLE beacon or anchor point.
+   * Measurement model: h(x) = sqrt((x - x_b)^2 + (y - y_b)^2)
+   * Jacobian: H = [ (x - x_b)/d, (y - y_b)/d, 0, 0, 0, 0 ]
+   *
+   * @param beaconX Beacon X coordinate (meters)
+   * @param beaconY Beacon Y coordinate (meters)
+   * @param measuredDistance Distance in meters derived from RSSI
+   * @param rVariance Measurement error variance in m^2 (default 3.0)
+   * @returns boolean true if accepted, false if gated as outlier
+   */
+  updateRange(
+    beaconX: number,
+    beaconY: number,
+    measuredDistance: number,
+    rVariance = 3.0,
+  ): boolean {
+    const dx = this.x[0] - beaconX;
+    const dy = this.x[1] - beaconY;
+    const estimatedDistance = Math.max(0.05, Math.hypot(dx, dy));
+
+    // Innovation residual
+    const y = measuredDistance - estimatedDistance;
+
+    // Measurement Jacobian H components: dh/dx and dh/dy
+    const h0 = dx / estimatedDistance;
+    const h1 = dy / estimatedDistance;
+
+    // P * H^T (6x1 vector)
+    const phT = new Float64Array(6);
+    for (let i = 0; i < 6; i++) {
+      phT[i] = this.P[i * 6 + 0] * h0 + this.P[i * 6 + 1] * h1;
+    }
+
+    // Innovation scalar variance S = H * P * H^T + R
+    const s = h0 * phT[0] + h1 * phT[1] + rVariance;
+    if (s <= 1e-12 || !Number.isFinite(s)) return false;
+
+    // 1-DOF Mahalanobis distance gating (chi-square 99% confidence = 6.63)
+    const normalizedResidualSq = (y * y) / s;
+    if (normalizedResidualSq > Math.min(this.outlierThreshold, 9.21)) {
+      return false; // Outlier rejected
+    }
+
+    // Kalman gain K = (P * H^T) / S (6x1 vector)
+    const k = new Float64Array(6);
+    for (let i = 0; i < 6; i++) {
+      k[i] = phT[i] / s;
+    }
+
+    // State update x = x + K * y
+    this.x[0] += k[0] * y;
+    this.x[1] += k[1] * y;
+    this.x[2] += k[2] * y;
+    this.x[3] += k[3] * y;
+
+    // Covariance update P = P - K * (H * P)
+    // H * P is 1x6 vector: (H*P)_j = h0 * P[0, j] + h1 * P[1, j]
+    const hp = new Float64Array(6);
+    for (let j = 0; j < 6; j++) {
+      hp[j] = h0 * this.P[0 * 6 + j] + h1 * this.P[1 * 6 + j];
+    }
+
+    for (let i = 0; i < 6; i++) {
+      for (let j = 0; j < 6; j++) {
+        const idx = i * 6 + j;
+        this.P[idx] -= k[i] * hp[j];
+      }
+      // Ensure positive semi-definite diagonal
+      this.P[i * 6 + i] = Math.max(0.001, this.P[i * 6 + i]);
+    }
+
+    return true;
+  }
+
+  /**
    * Measurement update for heading orientation.
    */
   updateHeading(measuredHeadingRad: number, variance = 0.1): void {
@@ -756,6 +831,40 @@ export class IndoorPdrEngine {
     }
 
     return fix;
+  }
+
+  /**
+   * Directly fuses a single BLE beacon RSSI measurement into the EKF.
+   * Enables continuous drift correction even when fewer than 3 beacons are visible.
+   *
+   * @param beacon Single BeaconReading
+   * @returns boolean true if range update was accepted by EKF
+   */
+  processSingleBeaconRssi(beacon: BeaconReading): boolean {
+    if (!beacon || !Number.isFinite(beacon.rssi) || beacon.rssi >= 0) {
+      return false;
+    }
+
+    const distance = calculateRssiDistance(
+      beacon.rssi,
+      beacon.txPower ?? -59,
+      beacon.pathLossExponent ?? 2.5,
+    );
+
+    // Variance grows with distance due to log-distance shadow fading
+    const rVariance = Math.max(1.0, Math.pow(0.25 * distance, 2) + 1.5);
+    const accepted = this.ekf.updateRange(beacon.x, beacon.y, distance, rVariance);
+
+    if (accepted) {
+      const state = this.ekf.getState();
+      this.trajectory.push({
+        x: Math.round(state.x * 100) / 100,
+        y: Math.round(state.y * 100) / 100,
+        timestamp: Date.now(),
+      });
+    }
+
+    return accepted;
   }
 
   /**

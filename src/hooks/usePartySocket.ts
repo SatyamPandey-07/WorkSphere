@@ -347,11 +347,12 @@ export function usePartySocket(options: PartySocketOptions) {
 
   // Return augmented socket proxy supporting followers
   const proxySocket = useRef<any>(null);
-  if (!proxySocket.current || proxySocket.current.__target !== attachedSocket) {
+  const proxyTargetRef = useRef<any>(null);
+  if (!proxySocket.current || proxyTargetRef.current !== attachedSocket) {
     proxySocket.current = new Proxy(attachedSocket, {
       get(target, prop, receiver) {
         if (prop === "isLeader") {
-          return isLeader;
+          return isLeaderRef.current;
         }
         if (prop === "addEventListener") {
           return (eventName: string, listener: (...args: any[]) => void) => {
@@ -393,7 +394,7 @@ export function usePartySocket(options: PartySocketOptions) {
         return typeof value === "function" ? value.bind(target) : value;
       },
     });
-    proxySocket.current.__target = attachedSocket;
+    proxyTargetRef.current = attachedSocket;
   }
 
   return proxySocket.current;

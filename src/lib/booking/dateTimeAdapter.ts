@@ -243,6 +243,7 @@ export function conflictDateWindow(
   date: string,
   radiusDays: number = 3,
 ): string[] {
+  if (!isValidBookingDate(date)) return [];
   const [y, m, d] = date.split("-").map(Number);
   const dates: string[] = [];
   for (let offset = -radiusDays; offset <= radiusDays; offset++) {

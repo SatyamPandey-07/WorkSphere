@@ -233,7 +233,7 @@ export function getNoiseProfile(
  * Check if the DSP engine is ready.
  */
 export function isDSPReady(): boolean {
-  return state.isProcessing;
+  return state.audioContext !== null && state.workletNode !== null;
 }
 
 /**

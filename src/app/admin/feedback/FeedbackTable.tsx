@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Download } from "lucide-react";
 import { dismissFlag, deleteFlaggedItem } from "../actions";
+import { downloadFeedbackCSV } from "@/lib/feedbackCsvExport";
 
 type Flag = {
   id: string;
@@ -53,6 +55,10 @@ export default function FeedbackTable({ initialFlags }: { initialFlags: Flag[] }
     }
   };
 
+  const handleExport = () => {
+    downloadFeedbackCSV(flags);
+  };
+
   if (flags.length === 0) {
     return (
 <div className="bg-white dark:bg-zinc-900 rounded-xl p-8 text-center shadow-sm border border-gray-100 dark:border-zinc-800">        
@@ -63,6 +69,16 @@ export default function FeedbackTable({ initialFlags }: { initialFlags: Flag[] }
 
   return (
     <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-gray-100 dark:border-zinc-800 overflow-hidden">
+      <div className="flex justify-end border-b border-gray-100 dark:border-zinc-800 px-6 py-3">
+        <button
+          type="button"
+          onClick={handleExport}
+          className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-gray-300 dark:border-zinc-700 rounded-md hover:bg-gray-50 dark:hover:bg-zinc-700 transition-colors"
+        >
+          <Download className="h-4 w-4" />
+          Export CSV
+        </button>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
 <thead className="bg-gray-50 dark:bg-zinc-800/50 text-gray-700 dark:text-zinc-300 border-b border-gray-100 dark:border-zinc-800">            <tr>

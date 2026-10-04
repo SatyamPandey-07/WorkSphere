@@ -38,7 +38,7 @@ import {
   Trophy,
   BadgeCheck,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -122,6 +122,13 @@ export function VenueDetailDialog({
   const [showFlagMenu, setShowFlagMenu] = useState(false);
   const [flagSubmitted, setFlagSubmitted] = useState(false);
   const [flagSubmitting, setFlagSubmitting] = useState(false);
+
+  // Accessibility plumbing for the dialog: the container ref is used to trap
+  // Tab, and the two refs below keep the keydown handler stable so the focus
+  // effect does not re-run (and steal focus) on unrelated renders.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  const lightboxOpenRef = useRef(false);
 
   const submitFlag = async (reason: string) => {
     if (!venue) return;
@@ -994,6 +1001,80 @@ export function VenueDetailDialog({
     }
   };
 
+  // Keep the latest callbacks/flags in refs so the keyboard effect only depends
+  // on the open state of the dialog.
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    lightboxOpenRef.current = lightboxIndex !== null;
+  }, [lightboxIndex]);
+
+  // While the dialog is open it owns the keyboard. Escape dismisses it (unless
+  // the photo lightbox is showing, which handles Escape itself), Tab is confined
+  // to the dialog, and focus returns to whatever opened it once it closes.
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const focusableSelector = [
+      "a[href]",
+      "button:not([disabled])",
+      "textarea:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(",");
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (!lightboxOpenRef.current) {
+          onCloseRef.current();
+        }
+        return;
+      }
+
+      if (event.key !== "Tab") return;
+
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(focusableSelector),
+      );
+
+      if (focusable.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey) {
+        if (active === first || !dialog.contains(active)) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else if (active === last || !dialog.contains(active)) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    dialogRef.current?.focus();
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      if (previouslyFocused && document.contains(previouslyFocused)) {
+        previouslyFocused.focus();
+      }
+    };
+  }, [isOpen]);
+
   if (!isOpen || !venue) return null;
 
   const CategoryIcon =
@@ -1055,7 +1136,12 @@ export function VenueDetailDialog({
         }}
       />
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom-12 zoom-in-95 duration-500 bg-zinc-900 supports-[backdrop-filter]:bg-white/[0.08] supports-[backdrop-filter]:backdrop-blur-[20px] glass-animated-border flex flex-col"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${venue.name} details`}
+        tabIndex={-1}
+        className="w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-t-3xl sm:rounded-3xl shadow-[0_20px_100px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom-12 zoom-in-95 duration-500 bg-zinc-900 supports-[backdrop-filter]:bg-white/[0.08] supports-[backdrop-filter]:backdrop-blur-[20px] glass-animated-border flex flex-col focus:outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         {wifiLowConfidence && (

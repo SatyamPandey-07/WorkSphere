@@ -80,7 +80,7 @@ export interface NioshDoseResult {
  * T(L) = 8 / (2 ^ ((L - 85) / 3))
  */
 export function calculateNioshAllowableHours(decibelLevel: number): number {
-  if (!Number.isFinite(decibelLevel)) return Infinity;
+  if (!Number.isFinite(decibelLevel)) return 0;
   return NIOSH_CRITERION_HOURS / Math.pow(2, (decibelLevel - NIOSH_CRITERION_DB) / NIOSH_EXCHANGE_RATE);
 }
 
@@ -155,6 +155,9 @@ export function calculateNioshDoseFromSeconds(
   decibelLevel: number,
   durationSeconds: number,
 ): number {
+  if (!Number.isFinite(decibelLevel)) {
+    return durationSeconds > 0 ? 100 : 0;
+  }
   const allowableSeconds = calculateNioshAllowableSeconds(decibelLevel);
   if (allowableSeconds <= 0 || !Number.isFinite(allowableSeconds)) return 0;
   return (Math.max(0, durationSeconds) / allowableSeconds) * 100;

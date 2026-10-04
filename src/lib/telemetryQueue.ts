@@ -95,6 +95,7 @@ async function flushTelemetryQueue(): Promise<void> {
         for (const record of batch) {
           await redis.lpush(QUEUE_KEY, JSON.stringify(record));
         }
+        return;
       } catch {
         console.error(
           "[telemetryQueue] Re-enqueue failed, records lost:",
@@ -102,6 +103,7 @@ async function flushTelemetryQueue(): Promise<void> {
         );
       }
     }
+    memoryBuffer.unshift(...batch);
   }
 }
 

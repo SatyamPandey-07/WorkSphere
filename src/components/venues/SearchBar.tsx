@@ -88,6 +88,9 @@ export function SearchBar({
               setIsOpen(true);
             }
           }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setIsOpen(false);
+          }}
           placeholder={placeholder}
           autoFocus={autoFocus}
           aria-label={placeholder}
@@ -127,7 +130,14 @@ export function SearchBar({
               key={venue.id}
               role="option"
               aria-selected={false}
+              tabIndex={0}
               onClick={() => handleSelectVenue(venue)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleSelectVenue(venue);
+                }
+              }}
               className="px-4 py-2.5 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors flex items-center justify-between"
             >
               <div>

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { calculateRMS, rmsToDecibels } from "@/lib/audio";
 import { useWebAudioAutoPause } from "./useWebAudioAutoPause";
 
@@ -45,6 +45,8 @@ export function useDecibelMeter(): UseDecibelMeterResult {
     setIsMeasuring(false);
   }, []);
 
+  useEffect(() => () => stop(), [stop]);
+
   useWebAudioAutoPause({
     isActive: isMeasuring,
     onPause: stop,
@@ -81,6 +83,7 @@ export function useDecibelMeter(): UseDecibelMeterResult {
   );
 
   const start = useCallback(async () => {
+    stop();
     setError(null);
     setDecibel(null);
     dbFramesRef.current = [];

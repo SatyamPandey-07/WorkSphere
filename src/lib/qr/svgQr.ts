@@ -3,6 +3,8 @@
  * Compliant with ISO/IEC 18004 (Byte Mode, Error Correction L / M).
  */
 
+import { sanitizeColor, sanitizeSvg } from "@/lib/security/svgSanitizer";
+
 // GF(256) with primitive polynomial x^8 + x^4 + x^3 + x^2 + 1 (0x11d = 285)
 const EXP_TABLE = new Uint8Array(512);
 const LOG_TABLE = new Uint8Array(256);
@@ -392,7 +394,7 @@ export interface QRCodeSVGOptions {
  * attribute values without altering the document structure.
  */
 export function escapeXmlText(value: string): string {
-  return value
+  return String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -401,19 +403,21 @@ export function escapeXmlText(value: string): string {
 }
 
 /**
- * Generates an SVG string representation of a QR code encoding `text`.
+ * Generates a sanitized SVG string representation of a QR code encoding `text`.
  */
 export function generateQRCodeSVG(
   text: string,
   options: QRCodeSVGOptions = {}
 ): string {
-  const {
-    size = 240,
-    padding = 4,
-    fgColor = "#000000",
-    bgColor = "#ffffff",
-    title = "QR Code",
-  } = options;
+  const size = Math.max(1, Number(options.size) || 240);
+  const padding = Math.max(0, Number(options.padding) || 4);
+  const fgColor = sanitizeColor(options.fgColor, "#000000");
+  const isBgTransparent =
+    options.bgColor === "transparent" || options.bgColor === "none";
+  const bgColor = isBgTransparent
+    ? "transparent"
+    : sanitizeColor(options.bgColor, "#ffffff");
+  const title = options.title || "QR Code";
 
   const matrix = generateQRMatrix(text);
   const moduleCount = matrix.length;
@@ -431,7 +435,7 @@ export function generateQRCodeSVG(
     }
   }
 
-  return (
+  const rawSvg = (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBoxSize} ${viewBoxSize}" ` +
     `width="${size}" height="${size}" shape-rendering="crispEdges" role="img" aria-label="${safeTitle}">` +
     `<title>${safeTitle}</title>` +
@@ -441,6 +445,8 @@ export function generateQRCodeSVG(
     `<path d="${pathData.trim()}" fill="${fgColor}" />` +
     `</svg>`
   );
+
+  return sanitizeSvg(rawSvg);
 }
 
 /**

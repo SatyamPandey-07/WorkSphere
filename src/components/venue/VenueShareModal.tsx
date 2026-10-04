@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Share2, Copy, Check, Download, X, QrCode, MapPin } from "lucide-react";
 import { generateQRCodeSVG, downloadSVG } from "@/lib/qr/svgQr";
+import { sanitizeSvg } from "@/lib/security/svgSanitizer";
 
 export interface VenueShareProps {
   venue: {
@@ -280,7 +281,7 @@ export function VenueShareModal({
               <div className="flex flex-col items-center justify-center p-4 bg-zinc-50 dark:bg-zinc-800/40 rounded-2xl border border-zinc-100 dark:border-zinc-800">
                 <div
                   className="p-3 bg-white rounded-xl shadow-md border border-zinc-200/60 inline-flex items-center justify-center"
-                  dangerouslySetInnerHTML={{ __html: qrSvg }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeSvg(qrSvg) }}
                 />
                 <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-2.5 text-center font-medium">
                   Scan with your phone camera to instantly view this venue.

@@ -3,6 +3,8 @@
  * Used for WebAuthn Passkey Master Secret Recovery
  */
 
+import { sanitizeSvg } from "@/lib/security/svgSanitizer";
+
 const getCrypto = () => {
   if (
     typeof globalThis !== "undefined" &&
@@ -215,10 +217,11 @@ export function generateRecoveryQRCodeSVG(
   payload: EmergencyKitPayload,
   size = 240,
 ): string {
+  const safeSize = Math.max(1, Number(size) || 240);
   const data = JSON.stringify(payload);
   const matrix = encodeQRMatrix(data);
   const moduleCount = matrix.length;
-  const cellSize = size / moduleCount;
+  const cellSize = safeSize / moduleCount;
 
   let cells = "";
   for (let row = 0; row < moduleCount; row++) {
@@ -231,13 +234,15 @@ export function generateRecoveryQRCodeSVG(
     }
   }
 
-  return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" ` +
-    `width="${size}" height="${size}" shape-rendering="crispEdges">` +
-    `<rect width="${size}" height="${size}" fill="#ffffff" />` +
+  const rawSvg = (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${safeSize} ${safeSize}" ` +
+    `width="${safeSize}" height="${safeSize}" shape-rendering="crispEdges">` +
+    `<rect width="${safeSize}" height="${safeSize}" fill="#ffffff" />` +
     `<g fill="#000000">${cells}</g>` +
     `</svg>`
   );
+
+  return sanitizeSvg(rawSvg);
 }
 
 /**

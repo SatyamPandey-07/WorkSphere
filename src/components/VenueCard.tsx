@@ -45,6 +45,7 @@ import { MUSIC_GENRE_EMOJI, type MusicGenre } from "@/hooks/useLiveVenueData";
 import { HighlightedText } from "@/components/ui/HighlightedText";
 import { useSeatAvailability } from "@/hooks/useSeatAvailability";
 import { formatWalkingTimeBadge, haversineKm } from "@/lib/distance";
+import { generateBlurSvgDataUri } from "@/lib/image/blurPlaceholder";
 
 interface VenueEnrichData {
   found: boolean;
@@ -511,7 +512,7 @@ export function VenueCard({
       {/* Photo Section */}
       {photos.length > 0 && (
         <div
-          className="relative h-32 bg-zinc-100 dark:bg-zinc-800 cursor-pointer"
+          className="relative h-32 bg-zinc-100 dark:bg-zinc-800 cursor-pointer overflow-hidden"
           onClick={nextPhoto}
         >
           <Image
@@ -520,7 +521,9 @@ export function VenueCard({
             }
             alt={"Photo of " + venue.name}
             fill
-            className="object-cover"
+            className="object-cover transition-opacity duration-300 ease-in-out"
+            placeholder="blur"
+            blurDataURL={generateBlurSvgDataUri(photos[photoIndex] || venue.name)}
             unoptimized // External URLs from Foursquare
             onError={() => setPhotoError(true)}
           />

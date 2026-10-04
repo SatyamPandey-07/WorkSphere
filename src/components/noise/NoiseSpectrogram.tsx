@@ -12,6 +12,7 @@ import {
   spectrogramColor,
   type NoiseClass,
 } from "@/lib/noise/fftSpectrogram";
+import { useWebAudioAutoPause } from "@/hooks/useWebAudioAutoPause";
 
 type Status = "idle" | "requesting" | "running" | "error";
 
@@ -30,14 +31,19 @@ export function NoiseSpectrogram() {
   const cleanupRef = useRef<(() => void) | null>(null);
   const sessionPeakRef = useRef(20);
 
-  useEffect(() => {
-    return () => cleanupRef.current?.();
-  }, []);
-
   const stop = useCallback(() => {
     cleanupRef.current?.();
     cleanupRef.current = null;
     setStatus("idle");
+  }, []);
+
+  useWebAudioAutoPause({
+    isActive: status === "running",
+    onPause: stop,
+  });
+
+  useEffect(() => {
+    return () => cleanupRef.current?.();
   }, []);
 
   const start = useCallback(async () => {

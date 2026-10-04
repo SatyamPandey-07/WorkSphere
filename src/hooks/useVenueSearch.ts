@@ -23,7 +23,7 @@ export interface UseVenueSearchOptions {
   query?: string;
   /** Initial query string for uncontrolled mode */
   initialQuery?: string;
-  /** Debounce delay in milliseconds before dispatching fetch (default: 300ms) */
+  /** Debounce delay in milliseconds before dispatching fetch (default: 250ms) */
   debounceMs?: number;
   /** Minimum query length required to trigger search (default: 1) */
   minQueryLength?: number;
@@ -45,8 +45,8 @@ export interface UseVenueSearchReturn<T = VenueSearchResult> {
 }
 
 /**
- * Custom hook for debounced, cancelable venue search with AbortController (#3513):
- * - 300ms debounce before dispatching network requests to avoid rapid request flooding.
+ * Custom hook for debounced, cancelable venue search with AbortController (#3513, #3773):
+ * - 250ms debounce before dispatching network requests to avoid rapid request flooding.
  * - AbortController stored in a useRef to cancel any in-flight HTTP request prior to dispatching new queries.
  * - Silent handling of AbortError so canceled requests never overwrite newer responses.
  * - Prevents out-of-order race conditions when fast typing occurs.
@@ -63,7 +63,7 @@ export function useVenueSearch<T = VenueSearchResult>(
   const {
     query: controlledQuery,
     initialQuery = "",
-    debounceMs = 300,
+    debounceMs = 250,
     minQueryLength = 1,
     apiEndpoint = "/api/venues",
   } = options;

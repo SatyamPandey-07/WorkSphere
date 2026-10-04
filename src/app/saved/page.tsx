@@ -412,7 +412,10 @@ export default function SavedVenuesPage() {
             />
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div
+            data-testid="venue-discovery-grid"
+            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+          >
             {filteredFavorites.map((fav) => (
               <SavedVenueCard
                 key={fav.id}

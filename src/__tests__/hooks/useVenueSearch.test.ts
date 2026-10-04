@@ -30,7 +30,7 @@ describe("useVenueSearch (#3513)", () => {
     expect(result.current.error).toBeNull();
   });
 
-  it("debounces rapid keystrokes by 300ms and fires at most one request", async () => {
+  it("debounces rapid keystrokes by 250ms and fires at most one request", async () => {
     const mockVenues = [
       { id: "v1", name: "Central Cafe", category: "cafe" },
       { id: "v2", name: "Central Library", category: "library" },
@@ -43,42 +43,42 @@ describe("useVenueSearch (#3513)", () => {
 
     const { result } = renderHook(() => useVenueSearch());
 
-    // Rapid keystroke simulation (typing 'central' with 80ms intervals between strokes)
+    // Rapid keystroke simulation (typing 'central' with 50ms intervals between strokes)
     act(() => {
       result.current.setQuery("c");
     });
     act(() => {
-      jest.advanceTimersByTime(80);
+      jest.advanceTimersByTime(50);
     });
     act(() => {
       result.current.setQuery("ce");
     });
     act(() => {
-      jest.advanceTimersByTime(80);
+      jest.advanceTimersByTime(50);
     });
     act(() => {
       result.current.setQuery("cen");
     });
     act(() => {
-      jest.advanceTimersByTime(80);
+      jest.advanceTimersByTime(50);
     });
     act(() => {
       result.current.setQuery("cent");
     });
     act(() => {
-      jest.advanceTimersByTime(80);
+      jest.advanceTimersByTime(50);
     });
     act(() => {
       result.current.setQuery("central");
     });
 
-    // Advance 299ms: Still no request should have been dispatched
+    // Advance 249ms: Still no request should have been dispatched
     act(() => {
-      jest.advanceTimersByTime(299);
+      jest.advanceTimersByTime(249);
     });
     expect(mockFetch).not.toHaveBeenCalled();
 
-    // Advance final 1ms (reaching 300ms debounce threshold): Only 'central' should be queried
+    // Advance final 1ms (reaching 250ms debounce threshold): Only 'central' should be queried
     await act(async () => {
       jest.advanceTimersByTime(1);
     });
@@ -109,31 +109,31 @@ describe("useVenueSearch (#3513)", () => {
       result.current.setQuery("c");
     });
     act(() => {
-      jest.advanceTimersByTime(100);
+      jest.advanceTimersByTime(80);
     });
     act(() => {
       result.current.setQuery("ce");
     });
     act(() => {
-      jest.advanceTimersByTime(100);
+      jest.advanceTimersByTime(80);
     });
     act(() => {
       result.current.setQuery("cen");
     });
     act(() => {
-      jest.advanceTimersByTime(100);
+      jest.advanceTimersByTime(80);
     });
     act(() => {
       result.current.setQuery("central");
     });
 
-    // Advance 299ms: Still no request should have been dispatched
+    // Advance 249ms: Still no request should have been dispatched
     act(() => {
-      jest.advanceTimersByTime(299);
+      jest.advanceTimersByTime(249);
     });
     expect(mockFetch).not.toHaveBeenCalled();
 
-    // Advance final 1ms (reaching 300ms debounce threshold): Only 'central' should be queried
+    // Advance final 1ms (reaching 250ms debounce threshold): Only 'central' should be queried
     await act(async () => {
       jest.advanceTimersByTime(1);
     });

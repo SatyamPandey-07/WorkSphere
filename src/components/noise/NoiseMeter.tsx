@@ -7,6 +7,7 @@ import {
   resetNoiseProcessor,
 } from "@/lib/wasm/noiseProcessor";
 import { getMicCalibration, rmsToCalibratedDb } from "@/lib/noise/calibration";
+import { useWebAudioAutoPause } from "@/hooks/useWebAudioAutoPause";
 
 export type NoiseMeasurement = {
   averageDb: number;
@@ -72,6 +73,17 @@ export function NoiseMeter({ onMeasured }: Props) {
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+
+  useWebAudioAutoPause({
+    isActive: status === "measuring",
+    onPause: () => {
+      if (cleanupRef.current) {
+        cleanupRef.current();
+        cleanupRef.current = null;
+      }
+      setStatus("error");
+    },
+  });
 
   useEffect(() => {
     return () => cleanupRef.current?.();

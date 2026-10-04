@@ -60,6 +60,11 @@ export function generateMembershipProof(input: {
     const finish = (error?: string, proof?: CachedProof) => {
       if (timeoutId) clearTimeout(timeoutId);
       timeoutId = null;
+      try {
+        worker?.postMessage({ type: "terminate" });
+      } catch {
+        // Ignore if worker is already terminated
+      }
       worker?.terminate();
       worker = null;
       signal?.removeEventListener("abort", onAbort);

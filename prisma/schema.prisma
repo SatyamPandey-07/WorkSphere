@@ -149,10 +149,23 @@ model Venue {
   isClaimed           Boolean             @default(false)
   ownerId             String?
   hostMessage         String?
+  photos              VenuePhoto[]
   openingHours        String?
 
   @@index([latitude, longitude])
   @@index([category])
+}
+
+model VenuePhoto {
+  id        String   @id @default(cuid())
+  venueId   String
+  venue     Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  url       String
+  blurhash  String?  @db.VarChar(32)
+  caption   String?
+  createdAt DateTime @default(now())
+
+  @@index([venueId])
 }
 
 model VenueRating {

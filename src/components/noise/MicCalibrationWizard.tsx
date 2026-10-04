@@ -24,10 +24,7 @@ import {
   DEVICE_PRESETS,
   rmsToCalibratedDb,
 } from "@/lib/noise/calibration";
-import {
-  FrequencyBandSpectrum,
-  analyzeFrequencyBands,
-} from "@/lib/noise/spectrumAnalyzer";
+import { useWebAudioAutoPause } from "@/hooks/useWebAudioAutoPause";
 
 interface MicCalibrationWizardProps {
   isOpen: boolean;
@@ -85,6 +82,11 @@ export function MicCalibrationWizard({
       stopAudioStream();
     }
   }, [isOpen, stopAudioStream]);
+
+  useWebAudioAutoPause({
+    isActive: isListening,
+    onPause: stopAudioStream,
+  });
 
   // Cleanup on unmount
   useEffect(() => {

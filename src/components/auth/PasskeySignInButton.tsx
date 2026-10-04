@@ -122,6 +122,8 @@ export function PasskeySignInButton({
         const optionsJSON = await fetchAuthOptions();
         if (!isMounted || isAuthenticatingRef.current) return;
 
+        // startAuthentication delegates to navigator.credentials.get with mediation: "conditional"
+        // for Safari iOS 16+ and Android Chrome autofill integration
         const authenticationResponse = await startAuthentication({
           optionsJSON,
           useBrowserAutofill: true,
@@ -132,8 +134,15 @@ export function PasskeySignInButton({
 
         await verifyAuthResponse(authenticationResponse);
       } catch (err: unknown) {
-        // Conditional UI errors (cancellation, abort, or no passkeys) must be silently
-        // ignored so the user's normal login form is unaffected.
+        // Conditional UI errors (cancellation, AbortSignal abort, or no passkeys) must be silently
+        // ignored so manual email/password login is completely uninterrupted.
+        if (
+          err instanceof Error &&
+          (err.name === "AbortError" || err.name === "NotAllowedError")
+        ) {
+          console.debug("Passkey conditional autofill dismissed or aborted:", err.name);
+          return;
+        }
         console.debug("Passkey conditional UI dismissed or skipped:", err);
       }
     }

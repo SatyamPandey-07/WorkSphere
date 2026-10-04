@@ -14,14 +14,14 @@ export interface SearchBarProps {
 }
 
 /**
- * Reusable SearchBar component with 300ms input debounce and AbortController (#3513)
+ * Reusable SearchBar component with 250ms input debounce and AbortController (#3513, #3773)
  * Cancels stale in-flight requests and avoids race conditions on fast typing.
  */
 export function SearchBar({
   placeholder = "Search venues by name, address, or tag...",
   onSelect,
   className = "",
-  debounceMs = 300,
+  debounceMs = 250,
   initialQuery = "",
   autoFocus = false,
 }: SearchBarProps) {

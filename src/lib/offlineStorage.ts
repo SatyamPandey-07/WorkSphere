@@ -36,6 +36,9 @@ export interface OfflineVenue {
   amenities?: string[];
   hasAncHeadsetRental?: boolean;
   savedAt?: number;
+  lastAccessedAt?: number;
+  isPinned?: boolean;
+  isFavorite?: boolean;
 }
 
 interface OfflineSearch {
@@ -207,40 +210,65 @@ export async function initOfflineDB(): Promise<IDBDatabase> {
 }
 
 /**
- * Save venue to offline storage
+ * Maximum number of unpinned offline venues to retain in storage (LRU limit).
  */
+export const MAX_OFFLINE_VENUES = 50;
+
 /**
- * Prune the oldest `count` venue records to reclaim quota.
+ * Prune the least recently accessed unpinned/unfavorited venue records to enforce LRU limit.
+ */
+export async function pruneLruVenuesOffline(
+  database: IDBDatabase,
+  maxVenues = MAX_OFFLINE_VENUES,
+): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const tx = database.transaction(["venues"], "readwrite");
+    const store = tx.objectStore("venues");
+    const req = store.getAll();
+
+    req.onsuccess = () => {
+      const venues = (req.result as OfflineVenue[]) || [];
+      let overflow = venues.length - maxVenues;
+      if (overflow <= 0) {
+        resolve(0);
+        return;
+      }
+
+      // Evict oldest accessed unpinned and unfavorited venues
+      const evictable = venues
+        .filter((v) => !v.isPinned && !v.isFavorite)
+        .sort((a, b) => (a.lastAccessedAt || a.savedAt || 0) - (b.lastAccessedAt || b.savedAt || 0));
+
+      let deleted = 0;
+      for (const v of evictable) {
+        if (overflow <= 0) break;
+        store.delete(v.id);
+        deleted++;
+        overflow--;
+      }
+
+      tx.oncomplete = () => resolve(deleted);
+      tx.onerror = () => reject(tx.error);
+    };
+
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Prune the oldest `count` venue records to reclaim quota (legacy fallback).
  */
 async function pruneOldestVenues(
   database: IDBDatabase,
   count = 10,
 ): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const tx = database.transaction(["venues"], "readwrite");
-    const store = tx.objectStore("venues");
-    const indexReq = store.index("savedAt").openCursor(null, "next");
-    let deleted = 0;
-
-    indexReq.onsuccess = (event) => {
-      const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
-      if (!cursor || deleted >= count) {
-        resolve();
-        return;
-      }
-      cursor.delete();
-      deleted++;
-      cursor.continue();
-    };
-
-    indexReq.onerror = () => reject(indexReq.error);
-    tx.onerror = () => reject(tx.error);
-  });
+  await pruneLruVenuesOffline(database, MAX_OFFLINE_VENUES - count);
 }
 
 export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
   return withWebLock(async () => {
     const database = await initOfflineDB();
+    const now = Date.now();
 
     const attemptWrite = (): Promise<void> =>
       new Promise<void>((resolve, reject) => {
@@ -249,7 +277,8 @@ export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
 
         const request = store.put({
           ...venue,
-          savedAt: Date.now(),
+          savedAt: venue.savedAt ?? now,
+          lastAccessedAt: now,
         });
 
         request.onsuccess = () => resolve();
@@ -258,6 +287,7 @@ export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
 
     try {
       await attemptWrite();
+      await pruneLruVenuesOffline(database, MAX_OFFLINE_VENUES);
     } catch (err) {
       const isQuotaError =
         err instanceof DOMException &&
@@ -267,7 +297,7 @@ export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
       if (!isQuotaError) throw err;
 
       // Offline storage full — prune the 10 oldest records and retry once
-      console.warn("[OfflineStorage] Quota exceeded; pruning 10 oldest venues.");
+      console.warn("[OfflineStorage] Quota exceeded; pruning oldest venues via LRU.");
       try {
         await pruneOldestVenues(database, 10);
         await attemptWrite();
@@ -290,7 +320,7 @@ export async function saveVenueOffline(venue: OfflineVenue): Promise<void> {
 }
 
 /**
- * Get venue from offline storage
+ * Get venue from offline storage and update lastAccessedAt timestamp
  */
 export async function getVenueOffline(
   id: string,
@@ -299,12 +329,27 @@ export async function getVenueOffline(
     const database = await initOfflineDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = database.transaction(["venues"], "readonly");
+      const transaction = database.transaction(["venues"], "readwrite");
       const store = transaction.objectStore("venues");
 
       const request = store.get(id);
 
-      request.onsuccess = () => resolve(request.result || null);
+      request.onsuccess = () => {
+        const result = request.result as OfflineVenue | undefined;
+        if (!result) {
+          resolve(null);
+          return;
+        }
+
+        // Update lastAccessedAt for LRU tracking
+        const now = Date.now();
+        const updated: OfflineVenue = {
+          ...result,
+          lastAccessedAt: now,
+        };
+        store.put(updated);
+        resolve(updated);
+      };
       request.onerror = () => reject(request.error);
     });
   });

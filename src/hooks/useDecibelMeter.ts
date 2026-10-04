@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { calculateRMS, rmsToDecibels } from "@/lib/audio";
+import { useWebAudioAutoPause } from "./useWebAudioAutoPause";
 
 interface UseDecibelMeterResult {
   start: () => Promise<void>;
@@ -43,6 +44,11 @@ export function useDecibelMeter(): UseDecibelMeterResult {
 
     setIsMeasuring(false);
   }, []);
+
+  useWebAudioAutoPause({
+    isActive: isMeasuring,
+    onPause: stop,
+  });
 
   const tick = useCallback(
     function tickFn() {

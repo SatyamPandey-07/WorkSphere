@@ -280,7 +280,10 @@ export default function Home() {
               workspace for your day.
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 max-w-5xl mx-auto">
+          <div
+            data-testid="venue-grid"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 max-w-5xl mx-auto"
+          >
             <FeatureCard
               icon={<Sparkles className="w-5 h-5" />}
               title="Ask in plain English"

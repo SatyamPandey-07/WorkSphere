@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   Loader2,
@@ -14,6 +14,26 @@ import {
 export interface HeatmapSelection {
   date: string;
   time: string;
+}
+
+export interface SeatStatusUpdate {
+  seatId?: string;
+  id?: string;
+  seatNumber: string;
+  available: boolean;
+}
+
+/**
+ * Formats a concise status update for screen reader users when a seat changes availability.
+ * e.g., "Seat 4B is now available" or "Seat 12A was just reserved".
+ */
+export function formatSeatStatusAnnouncement(
+  seatNumber: string,
+  isAvailable: boolean,
+): string {
+  return isAvailable
+    ? `Seat ${seatNumber} is now available`
+    : `Seat ${seatNumber} was just reserved`;
 }
 
 interface HeatmapCell {
@@ -47,6 +67,11 @@ interface SeatOccupancyHeatmapProps {
   onSelectSlot?: (selection: HeatmapSelection) => void;
   selectedDate?: string;
   selectedTime?: string;
+  /** Real-time seat availability updates for live assistive screen-reader announcements */
+  seats?: SeatStatusUpdate[];
+  realtimeSeats?: SeatStatusUpdate[];
+  /** Minimum delay between consecutive aria-live updates in ms (default: 300ms) */
+  announcementThrottleMs?: number;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index);
@@ -113,11 +138,87 @@ export function SeatOccupancyHeatmap({
   onSelectSlot,
   selectedDate,
   selectedTime,
+  seats,
+  realtimeSeats,
+  announcementThrottleMs = 300,
 }: SeatOccupancyHeatmapProps) {
   const [cells, setCells] = useState<HeatmapCell[]>([]);
   const [forecastData, setForecastData] = useState<SeatingForecastResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState<string>("");
+
+  const previousSeatsMapRef = useRef<Map<string, boolean>>(new Map());
+  const pendingAnnouncementsRef = useRef<string[]>([]);
+  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isInitialMountRef = useRef<boolean>(true);
+
+  const effectiveSeats = seats || realtimeSeats;
+
+  // Track real-time seat transitions and throttle screen-reader announcements
+  useEffect(() => {
+    if (!effectiveSeats || effectiveSeats.length === 0) return;
+
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      const initialMap = new Map<string, boolean>();
+      for (const s of effectiveSeats) {
+        const key = s.seatNumber || s.seatId || s.id || "";
+        if (key) initialMap.set(key, s.available);
+      }
+      previousSeatsMapRef.current = initialMap;
+      return;
+    }
+
+    const currentMap = previousSeatsMapRef.current;
+    const newAnnouncements: string[] = [];
+
+    for (const seat of effectiveSeats) {
+      const key = seat.seatNumber || seat.seatId || seat.id || "";
+      if (!key) continue;
+
+      const previousAvailable = currentMap.get(key);
+      if (previousAvailable !== undefined && previousAvailable !== seat.available) {
+        const msg = formatSeatStatusAnnouncement(seat.seatNumber || key, seat.available);
+        newAnnouncements.push(msg);
+      }
+      currentMap.set(key, seat.available);
+    }
+
+    if (newAnnouncements.length > 0) {
+      pendingAnnouncementsRef.current.push(...newAnnouncements);
+
+      if (!throttleTimerRef.current) {
+        throttleTimerRef.current = setTimeout(() => {
+          if (pendingAnnouncementsRef.current.length > 0) {
+            const textToAnnounce = pendingAnnouncementsRef.current.join(". ");
+            pendingAnnouncementsRef.current = [];
+            setAnnouncement(textToAnnounce);
+          }
+          throttleTimerRef.current = null;
+        }, announcementThrottleMs);
+      }
+    }
+  }, [effectiveSeats, announcementThrottleMs]);
+
+  // Listen for global custom seat status events if dispatched from WebSocket / PartyKit
+  useEffect(() => {
+    const handleSeatEvent = (e: Event) => {
+      const detail = (e as CustomEvent<{ seatNumber: string; available: boolean }>).detail;
+      if (detail && typeof detail.seatNumber === "string" && typeof detail.available === "boolean") {
+        const msg = formatSeatStatusAnnouncement(detail.seatNumber, detail.available);
+        setAnnouncement(msg);
+      }
+    };
+
+    window.addEventListener("worksphere:seat-status-changed", handleSeatEvent);
+    return () => {
+      window.removeEventListener("worksphere:seat-status-changed", handleSeatEvent);
+      if (throttleTimerRef.current) {
+        clearTimeout(throttleTimerRef.current);
+      }
+    };
+  }, []);
 
   const initialHour = useMemo(() => parseHourFromTime(selectedTime), [selectedTime]);
   const [scrubHour, setScrubHour] = useState<number>(initialHour);
@@ -269,6 +370,17 @@ export function SeatOccupancyHeatmap({
       data-testid="seat-occupancy-heatmap"
       className="rounded-2xl border border-white/10 bg-black/20 p-5 space-y-6"
     >
+      {/* Visually hidden live region for screen-reader real-time seat availability updates */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="seat-availability-announcer"
+        className="sr-only"
+      >
+        {announcement}
+      </div>
+
       {/* Header & Legend */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>

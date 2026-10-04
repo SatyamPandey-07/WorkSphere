@@ -360,6 +360,7 @@ export function BookingModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="booking-modal-title"
+        data-testid="booking-modal"
         className="bg-white dark:bg-zinc-900 w-full max-w-xl max-h-[92vh] flex flex-col overflow-hidden rounded-3xl shadow-2xl border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95 duration-200"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={(event) => event.stopPropagation()}

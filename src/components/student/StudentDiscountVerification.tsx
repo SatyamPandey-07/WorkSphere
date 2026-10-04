@@ -94,6 +94,11 @@ export function StudentDiscountVerification({
 
   const terminateWorker = useCallback(() => {
     if (workerRef.current) {
+      try {
+        workerRef.current.postMessage({ type: "terminate" });
+      } catch {
+        // Ignore if worker is already closed
+      }
       workerRef.current.terminate();
       workerRef.current = null;
     }

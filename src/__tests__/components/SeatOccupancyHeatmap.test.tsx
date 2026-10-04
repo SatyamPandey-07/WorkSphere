@@ -109,4 +109,122 @@ describe("SeatOccupancyHeatmap Component", () => {
       time: "09:00",
     });
   });
+
+  describe("Real-time Seat Availability aria-live Announcements", () => {
+    it("renders the visually-hidden aria-live announcer region with role status and polite live attribute", async () => {
+      render(<SeatOccupancyHeatmap venueId="test-venue-123" />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId("seat-availability-announcer")).toBeInTheDocument();
+      });
+
+      const announcer = screen.getByTestId("seat-availability-announcer");
+      expect(announcer).toHaveAttribute("role", "status");
+      expect(announcer).toHaveAttribute("aria-live", "polite");
+      expect(announcer).toHaveAttribute("aria-atomic", "true");
+      expect(announcer).toHaveClass("sr-only");
+    });
+
+    it("announces when a seat becomes available or reserved after status transitions", async () => {
+      const initialSeats = [
+        { seatNumber: "4B", available: false },
+        { seatNumber: "12A", available: true },
+      ];
+
+      const { rerender } = render(
+        <SeatOccupancyHeatmap
+          venueId="test-venue-123"
+          seats={initialSeats}
+          announcementThrottleMs={50}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("seat-availability-announcer")).toBeInTheDocument();
+      });
+
+      // Initially on mount, announcer is silent to avoid spamming existing state
+      expect(screen.getByTestId("seat-availability-announcer").textContent).toBe("");
+
+      // Seat 4B becomes available (false -> true)
+      const updatedSeats = [
+        { seatNumber: "4B", available: true },
+        { seatNumber: "12A", available: true },
+      ];
+
+      rerender(
+        <SeatOccupancyHeatmap
+          venueId="test-venue-123"
+          seats={updatedSeats}
+          announcementThrottleMs={50}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("seat-availability-announcer").textContent).toBe(
+          "Seat 4B is now available",
+        );
+      });
+
+      // Seat 12A is reserved (true -> false)
+      const secondUpdate = [
+        { seatNumber: "4B", available: true },
+        { seatNumber: "12A", available: false },
+      ];
+
+      rerender(
+        <SeatOccupancyHeatmap
+          venueId="test-venue-123"
+          seats={secondUpdate}
+          announcementThrottleMs={50}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("seat-availability-announcer").textContent).toBe(
+          "Seat 12A was just reserved",
+        );
+      });
+    });
+
+    it("throttles and joins batch seat transitions to prevent assistive device spamming", async () => {
+      const initialSeats = [
+        { seatNumber: "1A", available: false },
+        { seatNumber: "2B", available: true },
+      ];
+
+      const { rerender } = render(
+        <SeatOccupancyHeatmap
+          venueId="test-venue-123"
+          seats={initialSeats}
+          announcementThrottleMs={50}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("seat-availability-announcer")).toBeInTheDocument();
+      });
+
+      // Multiple simultaneous seat changes
+      const batchUpdate = [
+        { seatNumber: "1A", available: true },
+        { seatNumber: "2B", available: false },
+      ];
+
+      rerender(
+        <SeatOccupancyHeatmap
+          venueId="test-venue-123"
+          seats={batchUpdate}
+          announcementThrottleMs={50}
+        />,
+      );
+
+      await waitFor(() => {
+        const text = screen.getByTestId("seat-availability-announcer").textContent;
+        expect(text).toContain("Seat 1A is now available");
+        expect(text).toContain("Seat 2B was just reserved");
+      });
+    });
+  });
 });
+

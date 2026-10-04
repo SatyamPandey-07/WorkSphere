@@ -19,9 +19,11 @@ import {
 import Image from "next/image";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FolderColorPicker } from "@/components/collections/FolderColorPicker";
+import { useToast } from "@/components/ui/Toast";
 
 export default function CollectionsPage() {
   const router = useRouter();
+  const { toast } = useToast();
   const [folders, setFolders] = useState<any[]>([]);
   const [publicFolders, setPublicFolders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -183,6 +185,11 @@ export default function CollectionsPage() {
   const toggleUpvote = async (folderId: string, e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Snapshot previous folder state for rollback
+    const prevFolder = publicFolders.find((f) => f.id === folderId);
+    if (!prevFolder) return;
+
     try {
       setPublicFolders((prev) =>
         prev.map((f) => {
@@ -202,7 +209,8 @@ export default function CollectionsPage() {
       });
 
       if (!res.ok) {
-        fetchPublicFolders();
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to upvote collection");
       } else {
         const data = await res.json();
         setPublicFolders((prev) =>
@@ -218,9 +226,13 @@ export default function CollectionsPage() {
           }),
         );
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      fetchPublicFolders();
+      // Revert to snapshot state
+      setPublicFolders((prev) =>
+        prev.map((f) => (f.id === folderId ? prevFolder : f)),
+      );
+      toast(err?.message || "Failed to update upvote. Please try again.", "error");
     }
   };
 

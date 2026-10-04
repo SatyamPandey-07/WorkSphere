@@ -147,16 +147,19 @@ export async function POST(
     const noiseLevel =
       decibels < 45 ? "quiet" : decibels <= 65 ? "moderate" : "loud";
 
-    // Obtain user id or fallback guest user
-    let userId = "guest-noise-reporter";
+    // Noise reports are attributed per user, so anonymous submissions are
+    // rejected like the sibling rating routes instead of collapsing onto
+    // a shared guest row that anyone could overwrite.
+    let userId: string;
     try {
       const { auth } = await import("@clerk/nextjs/server");
       const session = await auth();
-      if (session?.userId) {
-        userId = session.userId;
+      if (!session?.userId) {
+        return apiError("Unauthorized", 401, "UNAUTHORIZED");
       }
+      userId = session.userId;
     } catch {
-      // Ignore if auth helper unavailable
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
     }
 
     // Ensure user record exists in database for FK constraint
@@ -165,7 +168,7 @@ export async function POST(
       update: {},
       create: {
         id: userId,
-        firstName: userId === "guest-noise-reporter" ? "Guest" : "User",
+        firstName: "User",
       },
     });
 

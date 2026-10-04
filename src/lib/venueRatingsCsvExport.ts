@@ -144,9 +144,10 @@ export function downloadRatingsCSV(
     const anchor = document.createElement("a");
     anchor.href = url;
 
-    const baseName = options.venueName
+    const slug = options.venueName
       ? options.venueName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
-      : "venue";
+      : "";
+    const baseName = slug || "venue";
     const dateStamp = new Date().toISOString().slice(0, 10);
     anchor.download =
       options.filename || `${baseName}-ratings-history-${dateStamp}.csv`;

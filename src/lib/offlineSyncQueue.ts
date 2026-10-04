@@ -96,6 +96,7 @@ export class OfflineSyncQueueManager {
   private listeners: Set<(event: SyncQueueEvent) => void> = new Set();
   private activeProcessing = false;
   private abortController: AbortController | null = null;
+  private wakeTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(config: Partial<QueueConfig> = {}) {
     this.config = { ...DEFAULT_QUEUE_CONFIG, ...config };
@@ -208,6 +209,10 @@ export class OfflineSyncQueueManager {
       this.abortController.abort();
       this.abortController = null;
     }
+    if (this.wakeTimer) {
+      clearTimeout(this.wakeTimer);
+      this.wakeTimer = null;
+    }
     this.activeProcessing = false;
     this.emitEvent("queue:idle");
   }
@@ -276,6 +281,21 @@ export class OfflineSyncQueueManager {
   }
 
   /**
+   * Milliseconds until the earliest retry item becomes ready, or null when
+   * no retry items are waiting.
+   */
+  public getNextRetryDelay(): number | null {
+    const now = Date.now();
+    let min: number | null = null;
+    for (const item of this.items.values()) {
+      if (item.status !== "retry") continue;
+      const delay = item.nextAttemptAt - now;
+      if (min === null || delay < min) min = Math.max(0, delay);
+    }
+    return min;
+  }
+
+  /**
    * Processes ready items using concurrency-limited workers.
    */
   public async process(
@@ -288,6 +308,10 @@ export class OfflineSyncQueueManager {
     this.activeProcessing = true;
     this.abortController = new AbortController();
     const { signal } = this.abortController;
+    if (this.wakeTimer) {
+      clearTimeout(this.wakeTimer);
+      this.wakeTimer = null;
+    }
 
     this.emitEvent("queue:start");
 
@@ -325,6 +349,15 @@ export class OfflineSyncQueueManager {
         this.emitEvent("queue:drained");
       } else {
         this.emitEvent("queue:idle");
+        const nextDelay = this.getNextRetryDelay();
+        if (nextDelay !== null && nextDelay > 0 && !signal.aborted) {
+          this.wakeTimer = setTimeout(() => {
+            this.wakeTimer = null;
+            this.process(handler).catch(() => undefined);
+          }, nextDelay);
+          const timer = this.wakeTimer as unknown as { unref?: () => void };
+          if (typeof timer.unref === "function") timer.unref();
+        }
       }
     }
 

@@ -80,6 +80,8 @@ export const generateICSContent = (
     ? `${confirmationId.replace(/[^A-Za-z0-9#-]/g, "")}@worksphere.app`
     : `booking-${start}@worksphere.app`;
 
+  const stamp = new Date().toISOString().replace(/-|:|\.\d\d\d/g, "");
+
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -88,7 +90,7 @@ export const generateICSContent = (
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",
     `UID:${uid}`,
-    `DTSTAMP:${start}`,
+    `DTSTAMP:${stamp}`,
     `DTSTART:${start}`,
     `DTEND:${end}`,
     `SUMMARY:${escapeIcsText(summary)}`,
@@ -149,6 +151,7 @@ interface BulkBooking {
  */
 export function generateBulkICSContent(bookings: BulkBooking[]): string | null {
   const events: string[] = [];
+  const stamp = new Date().toISOString().replace(/-|:|\.\d\d\d/g, "");
 
   for (const b of bookings) {
     const { start, end } = formatDateTimeForCalendar(
@@ -170,7 +173,7 @@ export function generateBulkICSContent(bookings: BulkBooking[]): string | null {
       [
         "BEGIN:VEVENT",
         `UID:${uid}`,
-        `DTSTAMP:${start}`,
+        `DTSTAMP:${stamp}`,
         `DTSTART:${start}`,
         `DTEND:${end}`,
         `SUMMARY:${escapeIcsText(summary)}`,

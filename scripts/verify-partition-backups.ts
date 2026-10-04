@@ -127,7 +127,6 @@ export function validateSqlDumpStructure(decompressedSql: string): boolean {
     "ALTER TABLE",
     "SET SCHEMA",
     "POSTGRESQL",
-    "--",
   ];
   return validKeywords.some((keyword) => normalized.includes(keyword));
 }

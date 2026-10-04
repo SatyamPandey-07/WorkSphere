@@ -93,6 +93,7 @@ export function GeolocationFallbackBanner({
                   value={query}
                   onChange={(e) => {
                     setQuery(e.target.value);
+                    setSuccessLocation(null);
                     if (error) setError(null);
                   }}
                   placeholder="e.g., 94103, Brooklyn, or London"

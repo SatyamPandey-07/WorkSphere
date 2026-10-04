@@ -112,10 +112,26 @@ export function getOpeningHoursStatus(hoursStr: string | null | undefined, timez
     const closeMin = closeH * 60 + closeM;
 
     let isOpen = false;
-    if (closeMin < openMin) {
-      isOpen = currentMinutes >= openMin || currentMinutes <= closeMin;
-    } else {
-      isOpen = currentMinutes >= openMin && currentMinutes < closeMin;
+    const dayIdx = DAYS_OF_WEEK.indexOf(dayName);
+    if (dayIdx !== -1) {
+      const prevName = DAYS_OF_WEEK[(dayIdx + 6) % 7];
+      const prev = structured.periods[prevName];
+      if (prev && !prev.closed) {
+        const [pOpenH, pOpenM] = prev.open.split(":").map(Number);
+        const [pCloseH, pCloseM] = prev.close.split(":").map(Number);
+        const pOpenMin = pOpenH * 60 + pOpenM;
+        const pCloseMin = pCloseH * 60 + pCloseM;
+        if (pCloseMin < pOpenMin && currentMinutes < pCloseMin) {
+          isOpen = true;
+        }
+      }
+    }
+    if (!isOpen) {
+      if (closeMin < openMin) {
+        isOpen = currentMinutes >= openMin || currentMinutes < closeMin;
+      } else {
+        isOpen = currentMinutes >= openMin && currentMinutes < closeMin;
+      }
     }
 
     const displayString = `Today: ${formatTime12h(period.open)} - ${formatTime12h(period.close)} (${timezone})`;

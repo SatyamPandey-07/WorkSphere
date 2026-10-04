@@ -62,6 +62,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         return; // Suppress duplicate toast dispatch within 3-second window (#1748)
       }
       recentMessagesRef.current.set(message, now);
+      for (const [key, seenAt] of recentMessagesRef.current) {
+        if (now - seenAt > 3000) recentMessagesRef.current.delete(key);
+      }
+      while (recentMessagesRef.current.size > 50) {
+        const oldest = recentMessagesRef.current.keys().next().value;
+        if (oldest === undefined) break;
+        recentMessagesRef.current.delete(oldest);
+      }
 
       const id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()

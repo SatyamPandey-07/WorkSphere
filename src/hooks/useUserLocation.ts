@@ -110,9 +110,10 @@ export function useUserLocation(options: UseUserLocationOptions = {}) {
         ) {
           if (!isMountedRef.current) return;
           setLocation({ latitude: data.lat, longitude: data.lng });
-          setLocationName(
-            data.city ? `${data.city}, ${data.region || data.country}` : null,
+          const nameParts = [data.city, data.region || data.country].filter(
+            Boolean,
           );
+          setLocationName(nameParts.length > 0 ? nameParts.join(", ") : null);
           setSource("ip");
           return;
         }

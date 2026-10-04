@@ -11,6 +11,7 @@ import { analyzeVenueImage } from "@/lib/agents/VisionAgent";
 import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 import { ensureUserExists } from "@/lib/auth";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
+import { sanitizeSearchQuery, splitSearchList } from "@/lib/searchSanitizer";
 
 // Search/autocomplete is expected to fire on every keystroke (debounced client-side
 // to ~250-300ms), which can mean several requests per second while someone types a
@@ -96,10 +97,7 @@ export async function GET(req: NextRequest) {
       const andConditions: any[] = [];
 
       if (citiesParam) {
-        const cityList = citiesParam
-          .split(",")
-          .map((c) => c.trim())
-          .filter(Boolean);
+        const cityList = splitSearchList(citiesParam);
         if (cityList.length > 0) {
           andConditions.push({
             OR: cityList.map((city) => ({
@@ -186,7 +184,7 @@ export async function GET(req: NextRequest) {
     for (const key of keys) {
       const val = searchParams.get(key);
       if (val !== null) {
-        rawData[key] = val;
+        rawData[key] = sanitizeSearchQuery(val);
       }
     }
     const validation = validateRequest<VenueSearch>(venueSearchSchema, rawData);
@@ -343,10 +341,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (rawData.cities) {
-      const cityList = String(rawData.cities)
-        .split(",")
-        .map((c: string) => c.trim())
-        .filter(Boolean);
+      const cityList = splitSearchList(String(rawData.cities));
       if (cityList.length > 0) {
         const cityConditions = cityList.map((city: string) => ({
           address: { contains: city, mode: "insensitive" },

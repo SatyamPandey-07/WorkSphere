@@ -68,7 +68,7 @@
     "svix": "^2.0.0",
     "tailwind-merge": "^3.6.0",
     "tesseract.js": "^7.0.0",
-    "three": "^0.185.1",
+    "three": "^0.186.1",
     "twilio": "^6.1.0",
     "web-push": "^3.6.7",
     "xml-crypto": "^6.1.2",

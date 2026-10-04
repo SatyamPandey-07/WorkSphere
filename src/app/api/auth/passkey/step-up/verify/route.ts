@@ -113,15 +113,32 @@ export async function POST(req: Request) {
       );
     }
 
-    const { newCounter, credentialDeviceType, credentialBackedUp, authenticatorData } =
+    const { newCounter, credentialDeviceType, credentialBackedUp, userVerified } =
       verification.authenticationInfo;
 
+    // authenticationInfo in SimpleWebAuthn v13 does not carry the raw
+    // authenticatorData buffer. It lives on the client assertion response as
+    // a base64url string, so decode it here before parsing the flags byte
+    // at offset 32. Fall back to the verified metadata when it is absent.
+    const rawAuthenticatorData =
+      authenticationResponse.response?.authenticatorData;
+    let authenticatorBytes: Uint8Array | undefined;
+    if (typeof rawAuthenticatorData === "string" && rawAuthenticatorData) {
+      try {
+        authenticatorBytes = new Uint8Array(
+          Buffer.from(rawAuthenticatorData, "base64url"),
+        );
+      } catch {
+        authenticatorBytes = undefined;
+      }
+    }
+
     // Parse authenticator data flags to determine user verification and backup state
-    const parsedFlags = authenticatorData
-      ? parseAuthenticatorFlags(authenticatorData)
+    const parsedFlags = authenticatorBytes
+      ? parseAuthenticatorFlags(authenticatorBytes)
       : {
           userPresent: true,
-          userVerified: true,
+          userVerified,
           backupEligible: credentialDeviceType === "multiDevice",
           backedUp: credentialBackedUp,
           attestedCredentialData: false,

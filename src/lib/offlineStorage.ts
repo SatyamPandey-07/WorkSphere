@@ -653,13 +653,16 @@ export async function processPendingActions(): Promise<
     const database = await initOfflineDB();
 
     return new Promise((resolve, reject) => {
-      const transaction = database.transaction(["pendingActions"], "readonly");
+      const transaction = database.transaction(["pendingActions"], "readwrite");
       const store = transaction.objectStore("pendingActions");
 
       const getRequest = store.getAll();
 
       getRequest.onsuccess = () => {
-        resolve(getRequest.result);
+        const result = getRequest.result;
+        const clearRequest = store.clear();
+        clearRequest.onsuccess = () => resolve(result);
+        clearRequest.onerror = () => reject(clearRequest.error);
       };
       getRequest.onerror = () => reject(getRequest.error);
     });

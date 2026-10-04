@@ -67,7 +67,11 @@ export function IdleSessionDialog({
               Session Timeout Warning
             </h3>
             <p id="idle-session-desc" className="text-sm text-zinc-400 leading-relaxed">
-              You have been inactive for 30 minutes. For your security, your session will automatically expire soon.
+              You have been inactive for{" "}
+              {idleTimeoutMs
+                ? `${Math.max(1, Math.round(idleTimeoutMs / 60000))} minutes`
+                : "30 minutes"}
+              . For your security, your session will automatically expire soon.
             </p>
           </div>
         </div>

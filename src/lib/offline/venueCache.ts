@@ -265,8 +265,9 @@ export async function getVenueOfflineWithLru(
           lastAccessedAt: now,
         };
 
-        store.put(updated);
-        resolve(updated);
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve(updated);
+        putReq.onerror = () => reject(putReq.error);
       };
 
       getReq.onerror = () => reject(getReq.error);

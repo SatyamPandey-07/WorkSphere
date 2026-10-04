@@ -98,6 +98,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://work-sphere-one.vercel.app",
+  ),
   title: "WorkSphere - AI-Powered Remote Workspace Finder",
   description:
     "Discover cafes, coworking spaces, and libraries with great WiFi, power outlets, and the perfect atmosphere for your work style.",

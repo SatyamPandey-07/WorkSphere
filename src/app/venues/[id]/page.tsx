@@ -23,49 +23,73 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+const NOT_FOUND_METADATA: Metadata = {
+  title: "Venue Not Found | WorkSphere",
+  description: "The requested venue could not be found.",
+  openGraph: {
+    title: "Venue Not Found | WorkSphere",
+    description: "The requested venue could not be found.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Venue Not Found | WorkSphere",
+    description: "The requested venue could not be found.",
+  },
+};
+
 export async function generateMetadata({
   params,
 }: PageProps): Promise<Metadata> {
-  const { id } = await params;
-  const venue = await prisma.venue.findUnique({
-    where: { id },
-  });
+  try {
+    const { id } = await params;
+    const venue = await prisma.venue.findUnique({
+      where: { id },
+    });
 
-  if (!venue) {
+    if (!venue) {
+      return NOT_FOUND_METADATA;
+    }
+
+    const categoryLabel = venue.category.replace(/_/g, " ");
+    const fallbackImage =
+      venue.category === "cafe"
+        ? "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=1200"
+        : venue.category === "library"
+          ? "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=1200"
+          : venue.category === "coworking_space"
+            ? "https://images.unsplash.com/photo-1527192491265-7e15c55b1ed2?auto=format&fit=crop&q=80&w=1200"
+            : "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1200";
+
+    const imageToUse = venue.imageUrl || fallbackImage;
+    const title = `${venue.name} | WorkSphere`;
+    const description = `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.${
+      venue.address ? ` ${venue.address}` : ""
+    }`;
+
     return {
-      title: "Venue Not Found | WorkSphere",
-      description: "The requested venue could not be found.",
+      title,
+      description,
+      openGraph: {
+        title,
+        description,
+        url: `/venues/${venue.id}`,
+        images: [
+          { url: imageToUse, width: 1200, height: 630, alt: venue.name },
+        ],
+        type: "website",
+      },
+      twitter: {
+        card: "summary_large_image",
+        title,
+        description,
+        images: [imageToUse],
+      },
     };
+  } catch (error) {
+    console.error("generateMetadata error (venue page):", error);
+    return NOT_FOUND_METADATA;
   }
-
-  const categoryLabel = venue.category.replace("_", " ");
-  const fallbackImage =
-    venue.category === "cafe"
-      ? "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=1200"
-      : venue.category === "library"
-        ? "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=1200"
-        : venue.category === "coworking_space"
-          ? "https://images.unsplash.com/photo-1527192491265-7e15c55b1ed2?auto=format&fit=crop&q=80&w=1200"
-          : "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1200";
-
-  const imageToUse = venue.imageUrl || fallbackImage;
-
-  return {
-    title: `${venue.name} | WorkSphere`,
-    description: `Check out ${venue.name}, a ${categoryLabel} perfect for remote work. ${venue.address || ""}`,
-    openGraph: {
-      title: `${venue.name} | WorkSphere`,
-      description: `Check out ${venue.name}, a ${categoryLabel} perfect for remote work. ${venue.address || ""}`,
-      images: [{ url: imageToUse, width: 1200, height: 630, alt: venue.name }],
-      type: "website",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: `${venue.name} | WorkSphere`,
-      description: `Check out ${venue.name}, a ${categoryLabel} perfect for remote work.`,
-      images: [imageToUse],
-    },
-  };
 }
 
 export default async function VenuePage({ params }: PageProps) {
@@ -140,10 +164,7 @@ export default async function VenuePage({ params }: PageProps) {
       <TopNav hideAuth />
       <div className="max-w-2xl mx-auto w-full px-4 pt-3">
         <Breadcrumb
-          items={[
-            { label: "Explore", href: "/ai" },
-            { label: venue.name },
-          ]}
+          items={[{ label: "Explore", href: "/ai" }, { label: venue.name }]}
         />
       </div>
       <main className="flex-grow flex items-center justify-center p-4">

@@ -134,4 +134,25 @@ describe("CompassFallback Component", () => {
       screen.getByText(/Device orientation sensors are not supported/),
     ).toBeInTheDocument();
   });
+
+  it("calls onClose when the close button is clicked", () => {
+    const handleClose = jest.fn();
+    render(<CompassFallback onClose={handleClose} />);
+
+    const closeBtn = screen.getByRole("button", {
+      name: /Close compass navigation/i,
+    });
+    fireEvent.click(closeBtn);
+
+    expect(handleClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("calls onClose when Escape key is pressed", () => {
+    const handleClose = jest.fn();
+    render(<CompassFallback onClose={handleClose} />);
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(handleClose).toHaveBeenCalledTimes(1);
+  });
 });

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useDeviceOrientation } from "@/hooks/useDeviceOrientation";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import {
   calculateBearing,
   calculateRelativeBearing,
@@ -17,6 +18,7 @@ import {
   AlertCircle,
   RotateCw,
   LocateFixed,
+  X,
 } from "lucide-react";
 
 interface CompassFallbackProps {
@@ -24,6 +26,8 @@ interface CompassFallbackProps {
   destinationLng?: number | null;
   destinationName?: string | null;
   onRetryAR?: () => void;
+  onClose?: () => void;
+  trapFocus?: boolean;
 }
 
 interface UserCoordinates {
@@ -37,7 +41,15 @@ export default function CompassFallback({
   destinationLng,
   destinationName,
   onRetryAR,
+  onClose,
+  trapFocus = true,
 }: CompassFallbackProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useFocusTrap(containerRef, {
+    isActive: trapFocus,
+    onEscape: onClose,
+  });
   const { heading, error: orientationError, isSupported, permissionState, requestPermission } =
     useDeviceOrientation();
 
@@ -125,7 +137,17 @@ export default function CompassFallback({
   const turnGuidance = getRelativeDirectionDescription(relativeBearing);
 
   return (
-    <div className="flex flex-col items-center justify-between w-full h-full min-h-[460px] bg-slate-900 rounded-xl p-6 text-white relative overflow-hidden select-none border border-slate-800 shadow-2xl">
+    <div
+      ref={containerRef}
+      role="region"
+      aria-label={
+        hasDestination
+          ? `Compass navigation for ${destinationName || "Venue"}`
+          : "Compass navigation"
+      }
+      tabIndex={-1}
+      className="flex flex-col items-center justify-between w-full h-full min-h-[460px] bg-slate-900 rounded-xl p-6 text-white relative overflow-hidden select-none border border-slate-800 shadow-2xl focus:outline-none"
+    >
       {/* Top Banner */}
       <div className="w-full flex items-center justify-between z-10">
         <div className="flex items-center gap-2">
@@ -137,15 +159,29 @@ export default function CompassFallback({
           </span>
         </div>
 
-        {onRetryAR && (
-          <button
-            onClick={onRetryAR}
-            className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
-          >
-            <RotateCw className="w-3.5 h-3.5" />
-            Retry AR
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onRetryAR && (
+            <button
+              type="button"
+              onClick={onRetryAR}
+              className="flex items-center gap-1.5 text-xs text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>Retry AR</span>
+            </button>
+          )}
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close compass navigation"
+              className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Content Area */}

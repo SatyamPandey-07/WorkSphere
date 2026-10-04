@@ -136,6 +136,18 @@ describe("haversineMiles", () => {
     expect(miles).toBeGreaterThan(3400);
     expect(miles).toBeLessThan(3550);
   });
+
+  it("returns 0 for identical points", () => {
+    expect(haversineMiles(40.7128, -74.006, 40.7128, -74.006)).toBe(0);
+  });
+
+  it("matches haversineKm scaled by the mile conversion factor", () => {
+    const km = haversineKm(28.6139, 77.209, 19.076, 72.8777);
+    expect(haversineMiles(28.6139, 77.209, 19.076, 72.8777)).toBeCloseTo(
+      km * 0.621371,
+      10,
+    );
+  });
 });
 
 describe("getWalkingMinutes", () => {
@@ -154,6 +166,10 @@ describe("getWalkingMinutes", () => {
     // 0.05 km = 0.625 mins -> 1 min
     expect(getWalkingMinutes(0.05)).toBe(1);
   });
+
+  it("returns 0 for a zero distance", () => {
+    expect(getWalkingMinutes(0)).toBe(0);
+  });
 });
 
 describe("formatWalkingTimeBadge", () => {
@@ -169,5 +185,14 @@ describe("formatWalkingTimeBadge", () => {
     expect(formatWalkingTimeBadge(0.65)).toBe("9 min walk · 650m");
     // 0.5 km -> 7 min walk
     expect(formatWalkingTimeBadge(0.5)).toBe("7 min walk · 500m");
+  });
+
+  it("switches from meters to kilometers at the 1 km boundary", () => {
+    expect(formatWalkingTimeBadge(0.999)).toBe("13 min walk · 999m");
+    expect(formatWalkingTimeBadge(1)).toBe("13 min walk · 1.0km");
+  });
+
+  it("handles a zero distance", () => {
+    expect(formatWalkingTimeBadge(0)).toBe("0 min walk · 0m");
   });
 });

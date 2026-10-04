@@ -69,12 +69,17 @@ function expandDates(
   const [y, m, d] = start.split("-").map(Number);
   const dates: string[] = [];
   for (let i = 0; i < count; i++) {
-    const next =
-      frequency === "daily"
-        ? new Date(y, m - 1, d + i)
-        : frequency === "weekly"
-          ? new Date(y, m - 1, d + 7 * i)
-          : new Date(y, m - 1 + i, d);
+    let next: Date;
+    if (frequency === "daily") {
+      next = new Date(y, m - 1, d + i);
+    } else if (frequency === "weekly") {
+      next = new Date(y, m - 1, d + 7 * i);
+    } else {
+      const first = new Date(y, m - 1 + i, 1);
+      const lastDay = new Date(y, m + i, 0).getDate();
+      first.setDate(Math.min(d, lastDay));
+      next = first;
+    }
     dates.push(localDateString(next));
   }
   return dates;

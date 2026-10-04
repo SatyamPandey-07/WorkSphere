@@ -3,9 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { generateGeminiText } from "@/lib/ai/gemini";
 import {
   checkTieredRateLimit,
-  createRateLimitResponse,
   applyRateLimitHeaders,
 } from "@/lib/rateLimit";
+import { apiError } from "@/lib/apiResponse";
 
 interface RouteContext {
   params: Promise<{ venueId: string }>;
@@ -15,16 +15,20 @@ export async function GET(request: Request, { params }: RouteContext) {
   try {
     const rateLimitResult = await checkTieredRateLimit(request);
     if (!rateLimitResult.allowed) {
-      return createRateLimitResponse(rateLimitResult);
+      return applyRateLimitHeaders(
+        apiError(
+          "Too many requests. Please try again later.",
+          429,
+          "RATE_LIMITED",
+        ),
+        rateLimitResult,
+      );
     }
 
     const { venueId } = await params;
 
     if (!venueId) {
-      return NextResponse.json(
-        { error: "Venue ID is required" },
-        { status: 400 },
-      );
+      return apiError("Venue ID is required", 400, "VALIDATION_FAILED");
     }
 
     const venue = await prisma.venue.findUnique({
@@ -32,7 +36,7 @@ export async function GET(request: Request, { params }: RouteContext) {
     });
 
     if (!venue) {
-      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
     const venueContext = {
@@ -66,9 +70,6 @@ Return only the summary text.
   } catch (error) {
     console.error("Failed to generate venue summary:", error);
 
-    return NextResponse.json(
-      { error: "Failed to generate venue summary" },
-      { status: 500 },
-    );
+    return apiError("Failed to generate venue summary", 500, "INTERNAL_ERROR");
   }
 }

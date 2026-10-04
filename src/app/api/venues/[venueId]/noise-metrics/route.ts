@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { apiError } from "@/lib/apiResponse";
 
 type BucketKey = "morning" | "lunch" | "afternoon" | "evening";
 
@@ -31,7 +32,7 @@ export async function GET(
   });
 
   if (!venue) {
-    return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+    return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
   }
 
   const ratings = await prisma.venueRating.findMany({
@@ -118,9 +119,10 @@ export async function POST(
       decibels < 30 ||
       decibels > 90
     ) {
-      return NextResponse.json(
-        { error: "Decibel reading must be a number between 30 and 90 dB" },
-        { status: 400 },
+      return apiError(
+        "Decibel reading must be a number between 30 and 90 dB",
+        400,
+        "VALIDATION_FAILED",
       );
     }
 
@@ -138,7 +140,7 @@ export async function POST(
     });
 
     if (!venue) {
-      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
     // Determine noise level category
@@ -266,9 +268,10 @@ export async function POST(
     );
   } catch (error) {
     console.error("Error submitting noise metric:", error);
-    return NextResponse.json(
-      { error: "Internal server error submitting noise metric" },
-      { status: 500 },
+    return apiError(
+      "Internal server error submitting noise metric",
+      500,
+      "INTERNAL_ERROR",
     );
   }
 }

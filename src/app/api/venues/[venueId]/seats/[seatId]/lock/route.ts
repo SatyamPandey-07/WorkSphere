@@ -6,6 +6,7 @@ import {
   getSeatWebLock,
   DEFAULT_LOCK_TTL_SECONDS,
 } from "@/lib/locks/seatHoldLock";
+import { apiError } from "@/lib/apiResponse";
 
 type RouteContext = {
   params: Promise<{ venueId: string; seatId: string }>;
@@ -18,7 +19,7 @@ type RouteContext = {
 export async function POST(req: Request, context: RouteContext) {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401, "UNAUTHORIZED");
   }
 
   const { venueId, seatId } = await context.params;
@@ -47,17 +48,12 @@ export async function POST(req: Request, context: RouteContext) {
   );
 
   if (!result.success) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "SEAT_ALREADY_HELD",
-        heldBy: result.heldBy,
-        heldByName: result.heldByName,
-        expiresAt: result.expiresAt,
-        remainingSeconds: result.remainingSeconds,
-      },
-      { status: 409 },
-    );
+    return apiError("SEAT_ALREADY_HELD", 409, "CONFLICT", {
+      heldBy: result.heldBy,
+      heldByName: result.heldByName,
+      expiresAt: result.expiresAt,
+      remainingSeconds: result.remainingSeconds,
+    });
   }
 
   return NextResponse.json({
@@ -73,7 +69,7 @@ export async function POST(req: Request, context: RouteContext) {
 export async function DELETE(_req: Request, context: RouteContext) {
   const { userId } = await auth();
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError("Unauthorized", 401, "UNAUTHORIZED");
   }
 
   const { venueId, seatId } = await context.params;

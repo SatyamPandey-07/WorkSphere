@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { apiError } from "@/lib/apiResponse";
 
 const MIN_VOTES_TO_HIDE = 5;
 const HIDE_THRESHOLD = 60;
@@ -35,10 +36,7 @@ export async function GET(
       where: { id: venueId },
     });
     if (!venue) {
-      return NextResponse.json(
-        { success: false, error: "Venue not found" },
-        { status: 404 }
-      );
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
     const validations = await prisma.amenityValidation.findMany({
@@ -85,9 +83,10 @@ export async function GET(
     return NextResponse.json({ success: true, metrics });
   } catch (error: any) {
     console.error("GET /api/venues/[venueId]/amenity-votes error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
+    return apiError(
+      error instanceof Error ? error.message : "Internal server error",
+      500,
+      "INTERNAL_ERROR",
     );
   }
 }
@@ -101,38 +100,26 @@ export async function POST(
     const { venueId } = await context.params;
     const { userId } = await auth();
     if (!userId) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
     }
 
     let body: any;
     try {
       body = await req.json();
     } catch {
-      return NextResponse.json(
-        { success: false, error: "Invalid JSON body" },
-        { status: 400 }
-      );
+      return apiError("Invalid JSON body", 400, "VALIDATION_FAILED");
     }
 
     const { amenity, isUpvote } = body;
     if (!amenity || typeof isUpvote !== "boolean") {
-      return NextResponse.json(
-        { success: false, error: "Missing required parameters" },
-        { status: 400 }
-      );
+      return apiError("Missing required parameters", 400, "VALIDATION_FAILED");
     }
 
     const venue = await prisma.venue.findUnique({
       where: { id: venueId },
     });
     if (!venue) {
-      return NextResponse.json(
-        { success: false, error: "Venue not found" },
-        { status: 404 }
-      );
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
     const validation = await prisma.amenityValidation.upsert({
@@ -185,9 +172,10 @@ export async function POST(
     );
   } catch (error: any) {
     console.error("POST /api/venues/[venueId]/amenity-votes error:", error);
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 500 }
+    return apiError(
+      error instanceof Error ? error.message : "Internal server error",
+      500,
+      "INTERNAL_ERROR",
     );
   }
 }

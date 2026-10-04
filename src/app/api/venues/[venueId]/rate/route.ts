@@ -3,6 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { processVenueReviewSubmission } from "@/lib/venueReviewService";
+import { apiError } from "@/lib/apiResponse";
 
 // POST /api/venues/[venueId]/rate - Add rating (delegates to shared venueReviewService)
 export async function POST(
@@ -13,7 +14,7 @@ export async function POST(
     const { userId: rawUserId } = await auth();
 
     if (!rawUserId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
     }
     const userId: string = rawUserId;
 
@@ -38,25 +39,23 @@ export async function POST(
     });
 
     if (result.status >= 400) {
-      return NextResponse.json(
+      return apiError(
+        result.error ?? "Request failed",
+        result.status,
+        result.status === 409 ? "CONFLICT" : "VALIDATION_FAILED",
         {
-          error: result.error,
           conflictType: result.conflictType,
           serverReview: result.serverReview,
           serverVenue: result.serverVenue,
           message: result.message,
         },
-        { status: result.status },
       );
     }
 
     return NextResponse.json(result.data, { status: result.status });
   } catch (error) {
     console.error("POST /api/venues/[venueId]/rate error:", error);
-    return NextResponse.json(
-      { error: "Failed to submit rating" },
-      { status: 500 },
-    );
+    return apiError("Failed to submit rating", 500, "INTERNAL_ERROR");
   }
 }
 
@@ -69,7 +68,7 @@ export async function GET(
     const { userId } = await auth();
 
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
     }
 
     const { venueId } = await context.params;
@@ -98,9 +97,6 @@ export async function GET(
     return NextResponse.json({ rating });
   } catch (error) {
     console.error("GET /api/venues/[venueId]/rate error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch rating" },
-      { status: 500 },
-    );
+    return apiError("Failed to fetch rating", 500, "INTERNAL_ERROR");
   }
 }

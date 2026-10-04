@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
 import { enqueueTelemetry } from "@/lib/telemetryQueue";
 import { applyPrivacyFilter } from "@/lib/privacy/differentialPrivacy";
+import { apiError } from "@/lib/apiResponse";
 
 export async function POST(
   req: NextRequest,
@@ -12,7 +13,7 @@ export async function POST(
     const { userId } = await auth();
 
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError("Unauthorized", 401, "UNAUTHORIZED");
     }
 
     const { venueId } = await params;
@@ -21,10 +22,7 @@ export async function POST(
     const { download, upload, latency, crowdLevel } = body;
 
     if (!download || !upload || !latency || !crowdLevel) {
-      return NextResponse.json(
-        { error: "Missing required telemetry fields" },
-        { status: 400 },
-      );
+      return apiError("Missing required telemetry fields", 400, "VALIDATION_FAILED");
     }
 
     const venue = await prisma.venue.findUnique({
@@ -33,7 +31,7 @@ export async function POST(
     });
 
     if (!venue) {
-      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
     await enqueueTelemetry({
@@ -48,10 +46,7 @@ export async function POST(
     return NextResponse.json({ queued: true }, { status: 202 });
   } catch (error) {
     console.error("POST /api/venues/[venueId]/telemetry error:", error);
-    return NextResponse.json(
-      { error: "Failed to submit wifi telemetry" },
-      { status: 500 },
-    );
+    return apiError("Failed to submit wifi telemetry", 500, "INTERNAL_ERROR");
   }
 }
 
@@ -73,7 +68,7 @@ export async function GET(
     });
 
     if (!venue && !venueId.startsWith("mock-")) {
-      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
+      return apiError("Venue not found", 404, "VENUE_NOT_FOUND");
     }
 
     const telemetryData = venue?.wifiTelemetry || [];
@@ -138,9 +133,6 @@ export async function GET(
     return NextResponse.json({ occupancy });
   } catch (error) {
     console.error("GET /api/venues/[venueId]/telemetry error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch telemetry data" },
-      { status: 500 },
-    );
+    return apiError("Failed to fetch telemetry data", 500, "INTERNAL_ERROR");
   }
 }

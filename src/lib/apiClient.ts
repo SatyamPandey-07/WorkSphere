@@ -1,4 +1,15 @@
 import { CSRF_HEADER_NAME, CSRF_PROTECTED_METHODS } from "./csrf";
+import type { ApiErrorBody } from "./apiResponse";
+
+/** Unified error shape returned by every venue sub-route (see apiResponse.ts). */
+export type ApiFailure = ApiErrorBody & { status: number };
+
+/** Narrows an unknown JSON payload to the shared error envelope. */
+export function isApiFailure(data: unknown): data is ApiErrorBody {
+  if (typeof data !== "object" || data === null) return false;
+  const v = data as Record<string, unknown>;
+  return v.success === false && typeof v.error === "string";
+}
 
 /**
  * Single-flight token refresh guard.

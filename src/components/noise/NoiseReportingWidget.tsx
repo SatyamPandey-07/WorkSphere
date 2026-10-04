@@ -27,6 +27,15 @@ import {
   rmsToCalibratedDb,
   MicCalibrationProfile,
 } from "@/lib/noise/calibration";
+import {
+  getDailyNoiseExposure,
+  recordNoiseExposure,
+  resetDailyNoiseExposure,
+  type DailyNoiseExposureSummary,
+  DOSE_WARNING_THRESHOLD,
+  DOSE_DANGER_THRESHOLD,
+} from "@/lib/noise/dosimeter";
+import { Activity, ShieldAlert, ShieldCheck } from "lucide-react";
 
 type Bucket = {
   key: string;
@@ -53,6 +62,29 @@ export function NoiseReportingWidget({
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [dailyDoseSummary, setDailyDoseSummary] = useState<DailyNoiseExposureSummary | null>(null);
+
+  const loadDailyDose = useCallback(async () => {
+    try {
+      const summary = await getDailyNoiseExposure();
+      setDailyDoseSummary(summary);
+    } catch (err) {
+      console.warn("Failed to load daily noise exposure:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDailyDose();
+  }, [loadDailyDose]);
+
+  const handleResetDose = async () => {
+    try {
+      await resetDailyNoiseExposure();
+      await loadDailyDose();
+    } catch (err) {
+      console.warn("Failed to reset daily noise exposure:", err);
+    }
+  };
 
   // Calibration and Live Mic Measurement State
   const [isWizardOpen, setIsWizardOpen] = useState(false);
@@ -211,6 +243,12 @@ export function NoiseReportingWidget({
       }
       if (isLiveMeasuring) {
         stopLiveMic();
+      }
+      try {
+        await recordNoiseExposure(decibels, 300);
+        await loadDailyDose();
+      } catch (err) {
+        console.warn("Failed to record exposure:", err);
       }
       setTimeout(() => setSubmitted(false), 4000);
     } catch (err: unknown) {
@@ -393,6 +431,142 @@ export function NoiseReportingWidget({
           </div>
         )}
       </form>
+
+      {/* NIOSH Daily Noise Exposure Dosimeter (24h Rolling Window) */}
+      <div className="mb-6 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-950/40 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-500" />
+            <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+              NIOSH Daily Noise Dose (24h Rolling)
+            </h4>
+          </div>
+          <button
+            type="button"
+            onClick={handleResetDose}
+            className="text-[10px] text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:underline"
+            title="Reset 24h accumulated dose"
+          >
+            Reset 24h
+          </button>
+        </div>
+
+        {(() => {
+          const dose = dailyDoseSummary?.dosePercentage ?? 0;
+          const isDanger = dose >= DOSE_DANGER_THRESHOLD;
+          const isWarning = dose >= DOSE_WARNING_THRESHOLD && !isDanger;
+
+          const size = 80;
+          const strokeWidth = 7;
+          const radius = (size - strokeWidth) / 2;
+          const circumference = 2 * Math.PI * radius;
+          const center = size / 2;
+          const progressFraction = Math.min(1, Math.max(0, dose / 100));
+          const offset = circumference * (1 - progressFraction);
+
+          const ringColor = isDanger ? "#f43f5e" : isWarning ? "#f59e0b" : "#10b981";
+
+          return (
+            <div className="space-y-3">
+              <div className="flex items-center gap-4">
+                {/* Circular Progress Ring */}
+                <div
+                  className="relative shrink-0 flex items-center justify-center"
+                  style={{ width: size, height: size }}
+                  role="progressbar"
+                  aria-valuenow={Math.min(100, Math.round(dose))}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label={`Daily Noise Dose: ${dose.toFixed(1)}%`}
+                >
+                  <svg width={size} height={size} className="rotate-[-90deg]">
+                    <circle
+                      cx={center}
+                      cy={center}
+                      r={radius}
+                      fill="none"
+                      stroke="currentColor"
+                      className="text-zinc-200 dark:text-zinc-800"
+                      strokeWidth={strokeWidth}
+                    />
+                    <circle
+                      cx={center}
+                      cy={center}
+                      r={radius}
+                      fill="none"
+                      stroke={ringColor}
+                      strokeWidth={strokeWidth}
+                      strokeLinecap="round"
+                      strokeDasharray={circumference}
+                      strokeDashoffset={offset}
+                      className="transition-all duration-500 ease-out"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                    <span className="text-xs font-bold font-mono leading-none" style={{ color: ringColor }}>
+                      {dose.toFixed(0)}%
+                    </span>
+                    <span className="text-[9px] text-zinc-400 font-medium mt-0.5">Dose</span>
+                  </div>
+                </div>
+
+                {/* Dosimetry Details & Threshold Warning */}
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    {isDanger ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/30">
+                        <ShieldAlert className="w-3 h-3 shrink-0" />
+                        Danger: Daily REL Exceeded!
+                      </span>
+                    ) : isWarning ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/30">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        Warning: Approaching Limit (≥80%)
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-500 border border-emerald-500/30">
+                        <ShieldCheck className="w-3 h-3 shrink-0" />
+                        Safe Exposure (&lt;80%)
+                      </span>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight">
+                    {isDanger
+                      ? "Cumulative noise has exceeded the NIOSH 85 dBA recommended daily limit. Rest your ears in a quiet space."
+                      : isWarning
+                      ? "Noise exposure is nearing maximum recommended occupational levels. Consider moving to a quieter area."
+                      : "Cumulative 24-hour acoustic exposure is well within recommended safe guidelines."}
+                  </p>
+
+                  <div className="grid grid-cols-3 gap-2 pt-1 text-[10px] text-zinc-500 dark:text-zinc-400 font-mono">
+                    <div>
+                      <span className="text-zinc-400 text-[9px] block">8-hr TWA</span>
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                        {dailyDoseSummary?.twa ? `${dailyDoseSummary.twa} dBA` : "—"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-400 text-[9px] block">Avg Leq</span>
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                        {dailyDoseSummary?.leq ? `${dailyDoseSummary.leq} dBA` : "—"}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-zinc-400 text-[9px] block">Exposure</span>
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                        {dailyDoseSummary?.totalExposureSeconds
+                          ? `${Math.round(dailyDoseSummary.totalExposureSeconds / 60)}m`
+                          : "0m"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
 
       {/* Historic Noise Level Averages by Time of Day (Recharts Bar Chart) */}
       <div>

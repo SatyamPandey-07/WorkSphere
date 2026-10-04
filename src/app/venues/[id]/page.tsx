@@ -16,6 +16,7 @@ import { CollaborativeNotes } from "@/components/bookings/CollaborativeNotes"; /
 import { Breadcrumb } from "@/components/ui/Breadcrumb";
 import { VenueSummary } from "@/components/venue/VenueSummary";
 import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
+import { VenueShareModal } from "@/components/venue/VenueShareModal";
 import { generateVenueJsonLd } from "@/lib/seo/venueJsonLd";
 
 interface PageProps {
@@ -141,6 +142,18 @@ export default async function VenuePage({ params }: PageProps) {
               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+            <div className="absolute top-4 right-4 z-10">
+              <VenueShareModal
+                venue={{
+                  id: venue.id,
+                  name: venue.name,
+                  address: venue.address,
+                  category: venue.category,
+                  imageUrl: displayPhoto,
+                }}
+                variant="hero"
+              />
+            </div>
             <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between">
               <div>
                 <span className="flex items-center gap-1.5 text-xs font-black uppercase tracking-widest text-white/90 mb-2 drop-shadow-md">

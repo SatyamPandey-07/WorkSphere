@@ -86,8 +86,8 @@ export async function cropImageToWebP(
   // Normalise crop to a perfect square to prevent aspect-ratio distortion when
   // react-easy-crop returns slightly non-square croppedAreaPixels due to
   // floating-point rounding or when the source image has an unusual DPR.
-  const scaleX = image.naturalWidth / image.width || 1;
-  const scaleY = image.naturalHeight / image.height || 1;
+  const scaleX = image.width ? image.naturalWidth / image.width : 1;
+  const scaleY = image.height ? image.naturalHeight / image.height : 1;
   const naturalCropW = crop.width * scaleX;
   const naturalCropH = crop.height * scaleY;
   const squareSide = Math.min(naturalCropW, naturalCropH);

@@ -19,6 +19,8 @@ export type ZkpAccessResult = {
   error?: string;
   /** Where the proof came from: IndexedDB cache or a fresh snarkjs run (#3358). */
   proofSource?: ProofSource;
+  /** Whether the Groth16 witness and proof were accelerated via WebAssembly SIMD. */
+  simdAccelerated?: boolean;
 };
 
 const PROOF_TIMEOUT_MS = 60_000;

@@ -56,17 +56,19 @@ function sanitizeError(error: unknown): string {
   return "Proof generation failed.";
 }
 
+import { getOptimizedZkpOptions } from "@/lib/zkp/wasmSimd";
+
 /**
- * Generate a proof using explicit witness/prover lifecycle control.
+ * Generate a proof using explicit witness/prover lifecycle control with WebAssembly SIMD acceleration.
  *
  * snarkjs.fullProve() creates the witness internally and uses the default
  * multithreaded prover. For repeated browser-worker executions this can
  * retain WASM/worker resources longer than desired.
  *
  * We therefore:
- * 1. create a memory-backed witness explicitly;
- * 2. request minimal initial WASM memory;
- * 3. use the single-threaded prover;
+ * 1. dynamically detect WebAssembly Fixed-width 128-bit SIMD vector support;
+ * 2. create a memory-backed witness with SIMD-aligned buffer pages;
+ * 3. pass SIMD acceleration flags to the Groth16 prover;
  * 4. release references after the proof completes;
  * 5. terminate the BN128 worker when snarkjs created one.
  */
@@ -76,23 +78,30 @@ async function generateProof(
 ): Promise<{
   proof: unknown;
   publicSignals: unknown;
+  simdAccelerated: boolean;
 }> {
   let wtns: { type: "mem" } | null = { type: "mem" };
+  const zkpOptions = await getOptimizedZkpOptions();
 
   try {
     await (snarkjs as any).wtns.calculate(
       { identityToken, expectedCommit },
       "/zkp/premium_membership.wasm",
       wtns,
-      { memorySize: 0 },
+      zkpOptions.witnessOptions,
     );
 
-    return await (snarkjs.groth16 as any).prove(
+    const proofResult = await (snarkjs.groth16 as any).prove(
       "/zkp/premium_membership.zkey",
       wtns,
       undefined,
-      { singleThread: true },
+      zkpOptions.proverOptions,
     );
+
+    return {
+      ...proofResult,
+      simdAccelerated: zkpOptions.simdEnabled,
+    };
   } finally {
     /*
      * Drop the witness reference as soon as the proof operation finishes.
@@ -150,7 +159,7 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
       stage: "generating",
     });
 
-    const { proof, publicSignals } = await generateProof(
+    const { proof, publicSignals, simdAccelerated } = await generateProof(
       identityToken,
       expectedCommit,
     );
@@ -163,6 +172,7 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
       type: "success",
       proof,
       publicSignals,
+      simdAccelerated,
     });
   } catch (error) {
     if (myGeneration !== generation) {

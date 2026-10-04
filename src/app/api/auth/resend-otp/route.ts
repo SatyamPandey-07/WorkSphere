@@ -54,14 +54,16 @@ export async function POST(req: NextRequest) {
   }
 
   const { email } = validation.data;
+  const normEmail = email.trim().toLowerCase();
 
   // 3. Identify the caller (prefer IP, fall back to forwarded header)
-  const ip =
+  const ip = (
     req.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
     req.headers.get("x-real-ip") ??
-    "anonymous";
+    "anonymous"
+  ).trim() || "anonymous";
 
-  const identifier = `resend-otp:${email}:${ip}`;
+  const identifier = `resend-otp:${normEmail}:${ip}`;
 
   // 4. Rate limit — 3 requests per 5-minute sliding window per email+IP
   const OTP_RESEND_MAX_REQUESTS = 3;
@@ -79,9 +81,12 @@ export async function POST(req: NextRequest) {
       OTP_RESEND_MAX_REQUESTS,
       OTP_RESEND_WINDOW_MS,
     );
-    const retryAfter = info?.resetTime
-      ? Math.ceil((info.resetTime - Date.now()) / 1000)
-      : Math.ceil(OTP_RESEND_WINDOW_MS / 1000);
+    const retryAfter = Math.max(
+      1,
+      info?.resetTime
+        ? Math.ceil((info.resetTime - Date.now()) / 1000)
+        : Math.ceil(OTP_RESEND_WINDOW_MS / 1000),
+    );
 
     return NextResponse.json(
       {

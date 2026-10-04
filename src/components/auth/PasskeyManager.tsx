@@ -86,6 +86,7 @@ export function PasskeyManager() {
   const [showStepUpModal, setShowStepUpModal] = useState(false);
   const [stepUpAction, setStepUpAction] = useState("passkey_management");
   const [stepUpVerifiedToken, setStepUpVerifiedToken] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const handleCopyId = async (credentialId: string) => {
     try {

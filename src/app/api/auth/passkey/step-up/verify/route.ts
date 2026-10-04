@@ -1,27 +1,35 @@
 import { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { verifyAuthenticationResponse } from "@simplewebauthn/server";
-import { createClerkClient } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
 import { getRpId, getExpectedOrigin } from "@/lib/passkey";
 import { parseClientDataJSON } from "@/lib/webauthn";
+import { parseAuthenticatorFlags, evaluateCredentialBackupStatus } from "@/lib/passkey/backupState";
+import { issueStepUpToken } from "@/lib/auth/stepUpAuth";
 import type { AuthenticationResponseJSON } from "@simplewebauthn/browser";
 import type { AuthenticatorTransportFuture } from "@simplewebauthn/server";
 import { rateLimit } from "@/lib/rateLimit";
 
 export async function POST(req: Request) {
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "anonymous";
-  if (!(await rateLimit(`passkey-verify:${ip}`, 10))) {
-    return NextResponse.json(
-      { error: "Too many attempts. Please wait a minute." },
-      { status: 429 },
-    );
-  }
-
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const ip =
+      req.headers.get("x-forwarded-for")?.split(",")[0].trim() || "anonymous";
+    if (!(await rateLimit(`passkey-stepup-verify:${userId || ip}`, 10))) {
+      return NextResponse.json(
+        { error: "Too many attempts. Please wait a minute." },
+        { status: 429 },
+      );
+    }
+
     const body = await req.json();
-    const { authenticationResponse } = body as {
+    const { authenticationResponse, action = "step_up" } = body as {
       authenticationResponse: AuthenticationResponseJSON;
+      action?: string;
     };
 
     if (!authenticationResponse) {
@@ -31,21 +39,21 @@ export async function POST(req: Request) {
       );
     }
 
-    // Lookup passkey by credential ID
-    const passkey = await prisma.passkeyCredential.findUnique({
-      where: { credentialId: authenticationResponse.id },
-      include: { user: true },
+    // Lookup passkey belonging to the active user
+    const passkey = await prisma.passkeyCredential.findFirst({
+      where: {
+        credentialId: authenticationResponse.id,
+        userId,
+      },
     });
 
     if (!passkey) {
       return NextResponse.json(
-        { error: "Passkey credential not recognized" },
+        { error: "Passkey credential not recognized for this account" },
         { status: 404 },
       );
     }
 
-    // Match the exact challenge this browser signed — never "the latest one",
-    // which would let concurrent sign-ins consume each other's challenges.
     const clientData = authenticationResponse.response?.clientDataJSON
       ? parseClientDataJSON(authenticationResponse.response.clientDataJSON)
       : null;
@@ -59,8 +67,7 @@ export async function POST(req: Request) {
     if (
       !challengeRecord ||
       challengeRecord.expiresAt <= new Date() ||
-      (challengeRecord.userId !== null &&
-        challengeRecord.userId !== passkey.userId)
+      (challengeRecord.userId !== null && challengeRecord.userId !== userId)
     ) {
       return NextResponse.json(
         { error: "Passkey challenge expired or missing. Please try again." },
@@ -81,11 +88,9 @@ export async function POST(req: Request) {
           counter: Number(passkey.counter),
           transports: passkey.transports as AuthenticatorTransportFuture[],
         },
+        requireUserVerification: true,
       });
     } catch (verifyErr) {
-      // SimpleWebAuthn throws Error objects with descriptive messages when the
-      // challenge is expired or mismatched — return 400 instead of letting the
-      // outer catch return 500.
       const msg =
         verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
       const isChallengeError = /challenge|expired|unexpected.*challenge/i.test(
@@ -95,7 +100,7 @@ export async function POST(req: Request) {
         {
           error: isChallengeError
             ? "Passkey authentication challenge expired. Please try again."
-            : "Passkey assertion verification failed",
+            : "Passkey step-up assertion verification failed",
         },
         { status: 400 },
       );
@@ -103,20 +108,42 @@ export async function POST(req: Request) {
 
     if (!verification.verified || !verification.authenticationInfo) {
       return NextResponse.json(
-        { error: "Passkey assertion verification failed" },
+        { error: "Passkey step-up verification failed" },
         { status: 400 },
       );
     }
 
-    const { newCounter, credentialDeviceType, credentialBackedUp } = verification.authenticationInfo;
+    const { newCounter, credentialDeviceType, credentialBackedUp, authenticatorData } =
+      verification.authenticationInfo;
 
-    // Update signature counter, backup state, and lastUsedAt timestamp
+    // Parse authenticator data flags to determine user verification and backup state
+    const parsedFlags = authenticatorData
+      ? parseAuthenticatorFlags(authenticatorData)
+      : {
+          userPresent: true,
+          userVerified: true,
+          backupEligible: credentialDeviceType === "multiDevice",
+          backedUp: credentialBackedUp,
+          attestedCredentialData: false,
+          extensionData: false,
+          deviceType: credentialDeviceType === "multiDevice" ? ("multi_device" as const) : ("single_device" as const),
+          riskLevel: "low" as const,
+        };
+
+    const backupStatus = evaluateCredentialBackupStatus({
+      backedUp: credentialBackedUp,
+      deviceType: credentialDeviceType,
+      counter: newCounter,
+      lastUsedAt: new Date(),
+    });
+
+    // Update signature counter, backedUp state, deviceType, and lastUsedAt timestamp
     await prisma.passkeyCredential.update({
       where: { id: passkey.id },
       data: {
         counter: BigInt(newCounter),
-        backedUp: credentialBackedUp ?? passkey.backedUp,
-        deviceType: credentialDeviceType ?? passkey.deviceType,
+        backedUp: credentialBackedUp,
+        deviceType: credentialDeviceType,
         lastUsedAt: new Date(),
       },
     });
@@ -128,38 +155,26 @@ export async function POST(req: Request) {
       })
       .catch(() => {});
 
-    // Generate Clerk sign-in ticket URL
-    let signInUrl: string | null = null;
-    if (process.env.CLERK_SECRET_KEY) {
-      try {
-        const clerk = createClerkClient({
-          secretKey: process.env.CLERK_SECRET_KEY,
-        });
-        const token = await clerk.signInTokens.createSignInToken({
-          userId: passkey.userId,
-          expiresInSeconds: 60,
-        });
-        signInUrl = token.url;
-      } catch (err) {
-        console.error("Failed to generate Clerk sign-in token:", err);
-      }
-    }
+    // Issue cryptographic Step-Up token
+    const stepUpToken = issueStepUpToken(
+      userId,
+      action,
+      passkey.credentialId,
+      parsedFlags.userVerified,
+    );
 
     return NextResponse.json({
       verified: true,
-      userId: passkey.userId,
-      signInUrl,
-      user: {
-        id: passkey.user.id,
-        email: passkey.user.email,
-        firstName: passkey.user.firstName,
-        lastName: passkey.user.lastName,
-      },
+      stepUpToken,
+      credentialId: passkey.credentialId,
+      action,
+      flags: parsedFlags,
+      backupStatus,
     });
   } catch (error) {
-    console.error("Error verifying passkey authentication:", error);
+    console.error("Error verifying passkey step-up authentication:", error);
     return NextResponse.json(
-      { error: "Failed to verify passkey authentication" },
+      { error: "Failed to verify step-up authentication" },
       { status: 500 },
     );
   }

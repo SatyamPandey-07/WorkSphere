@@ -20,12 +20,15 @@ import {
   RefreshCw,
   Clock,
   Copy,
+  Shield,
+  HardDrive,
 } from "lucide-react";
 import { useCsrfToken } from "@/hooks/useCsrfToken";
 import {
   PasskeyOtpDialog,
   type PasskeyOtpAction,
 } from "@/components/auth/PasskeyOtpDialog";
+import { StepUpReAuthModal } from "@/components/auth/StepUpReAuthModal";
 
 export interface PasskeyItem {
   id: string;
@@ -79,8 +82,10 @@ export function PasskeyManager() {
   const [customName, setCustomName] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
+  const [showStepUpModal, setShowStepUpModal] = useState(false);
+  const [stepUpAction, setStepUpAction] = useState("passkey_management");
+  const [stepUpVerifiedToken, setStepUpVerifiedToken] = useState<string | null>(null);
 
   const handleCopyId = async (credentialId: string) => {
     try {
@@ -314,20 +319,36 @@ export function PasskeyManager() {
           </p>
         </div>
 
-        {isWebAuthnSupported && (
-          <button
-            onClick={handleAddPasskey}
-            disabled={registering}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium text-sm shadow-md transition-all disabled:opacity-50 shrink-0"
-          >
-            {registering ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
-            Add New Passkey
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {isWebAuthnSupported && (
+            <>
+              <button
+                onClick={() => {
+                  setStepUpAction("passkey_management");
+                  setShowStepUpModal(true);
+                }}
+                className="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-750 text-zinc-800 dark:text-zinc-200 font-medium text-sm transition-all shrink-0"
+                title="Perform biometric step-up re-authentication"
+              >
+                <Shield className="h-4 w-4 text-blue-500" />
+                Step-Up Verify
+              </button>
+
+              <button
+                onClick={handleAddPasskey}
+                disabled={registering}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-medium text-sm shadow-md transition-all disabled:opacity-50 shrink-0"
+              >
+                {registering ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
+                )}
+                Add New Passkey
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {!isWebAuthnSupported && (
@@ -450,11 +471,15 @@ export function PasskeyManager() {
                         <p className="font-medium text-sm text-zinc-900 dark:text-zinc-100">
                           {pk.name}
                         </p>
-                        {pk.backedUp && (
+                        {pk.backedUp ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                             <ShieldCheck className="h-3 w-3" /> Synced Passkey
                           </span>
-                        )}
+                        ) : pk.deviceType === "singleDevice" || pk.deviceType === "single_device" ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                            <HardDrive className="h-3 w-3" /> Single Device Key
+                          </span>
+                        ) : null}
                         {(() => {
                           const rot = getRotationInfo(pk.id);
                           if (!rot) return null;
@@ -552,6 +577,24 @@ export function PasskeyManager() {
           passkeyName={pending.name}
           onCancel={() => setPending(null)}
           onSubmit={performVerifiedAction}
+        />
+      )}
+
+      {showStepUpModal && (
+        <StepUpReAuthModal
+          isOpen={showStepUpModal}
+          action={stepUpAction}
+          onSuccess={(token, backupHealth) => {
+            setStepUpVerifiedToken(token);
+            setShowStepUpModal(false);
+            setSuccess(
+              `Step-up re-authentication verified successfully!${
+                backupHealth ? ` Backup status: ${backupHealth}.` : ""
+              }`,
+            );
+            setTimeout(() => setSuccess(null), 5000);
+          }}
+          onCancel={() => setShowStepUpModal(false)}
         />
       )}
     </div>

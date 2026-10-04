@@ -42,10 +42,13 @@ export async function POST(request: Request) {
       png: [[0, [0x89, 0x50, 0x4e, 0x47]]],
       jpeg: [[0, [0xff, 0xd8]]],
       gif: [[0, [0x47, 0x49, 0x46]]],
-      webp: [[8, [0x57, 0x45, 0x42, 0x50]]],
+      webp: [
+        [0, [0x52, 0x49, 0x46, 0x46]],
+        [8, [0x57, 0x45, 0x42, 0x50]],
+      ],
     };
     let detected = Object.entries(magicBytes).find(([_, sigs]) =>
-      sigs.some(([offset, bytes]) =>
+      sigs.every(([offset, bytes]) =>
         bytes.every((b, i) => buffer[offset + i] === b),
       ),
     )?.[0];

@@ -109,7 +109,7 @@ async function sendOtpEmail(
   await mailer.sendMail({
     from: `"WorkSphere" <${process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER}>`,
     to,
-    subject: `Your WorkSphere code to ${verb} a passkey: ${code}`,
+    subject: `Your WorkSphere passkey verification code`,
     text:
       `Use ${code} to ${verb} the passkey "${passkeyName}" on your WorkSphere account.\n\n` +
       `The code expires in ${minutes} minutes. If you didn't request this, ` +

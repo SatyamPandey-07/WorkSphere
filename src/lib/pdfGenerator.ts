@@ -422,9 +422,75 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
     yPosition -= 15;
   }
 
+  // Cryptographic Signature Block
+  const { signReservationReceipt } = await import("./crypto/receiptSigner");
+  const receiptPayload = {
+    bookingId: String(booking.id),
+    confirmationId: String(booking.confirmationId || booking.id),
+    venueId: String(booking.venueId || booking.venue?.id || "venue"),
+    venueName: String(booking.venue?.name || "Workspace"),
+    userId: String(booking.userId || "user"),
+    userEmail: booking.customerEmail || booking.user?.email || undefined,
+    date: String(booking.date),
+    time: String(booking.time),
+    durationHours: booking.duration || 1,
+    totalAmount: Number(booking.totalPrice || (booking.duration || 1) * 15 * 1.08),
+    currency: booking.currency || "USD",
+    issuedAt: booking.createdAt ? new Date(booking.createdAt).toISOString() : new Date().toISOString(),
+    status: String(booking.status || "CONFIRMED"),
+  };
+
+  const sig = signReservationReceipt(receiptPayload, { algorithm: "RSA-SHA256" });
+
+  yPosition -= 15;
+  page.drawRectangle({
+    x: left,
+    y: yPosition - 48,
+    width: width - left * 2,
+    height: 52,
+    color: rgb(0.96, 0.98, 1.0),
+    borderColor: rgb(0.8, 0.88, 1.0),
+    borderWidth: 1,
+  });
+
+  drawText("CRYPTOGRAPHICALLY SIGNED RECEIPT", {
+    x: left + 12,
+    y: yPosition - 12,
+    size: 9,
+    font: boldFont,
+    color: rgb(0.15, 0.4, 0.85),
+  });
+
+  drawText(
+    `Algorithm: ${sig.algorithm}  |  Digest (SHA-256): ${sig.digest.slice(0, 24)}...`,
+    {
+      x: left + 12,
+      y: yPosition - 26,
+      size: 8,
+      font,
+      color: rgb(0.3, 0.35, 0.45),
+    },
+  );
+
+  drawText(
+    `Signature: ${sig.signature.slice(0, 48)}...  [WorkSphere Authority Verified]`,
+    {
+      x: left + 12,
+      y: yPosition - 38,
+      size: 7.5,
+      font,
+      color: rgb(0.3, 0.35, 0.45),
+    },
+  );
+
+  pdfDoc.setTitle(`WorkSphere Receipt - ${receiptPayload.confirmationId}`);
+  pdfDoc.setAuthor("WorkSphere Cryptographic Authority");
+  pdfDoc.setSubject(`SHA256:${sig.digest}`);
+  pdfDoc.setKeywords(["WorkSphere", "Signed-Receipt", sig.algorithm, sig.digest]);
+
   drawText("Thank you for using WorkSphere.", {
     x: left,
-    y: 50,
+    y: 40,
     size: 9,
     font,
     color: muted,

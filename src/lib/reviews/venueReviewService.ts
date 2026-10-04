@@ -272,7 +272,9 @@ export class VenueReviewService {
       // 5b. Base review timestamp check
       if (existingRating && baseReviewUpdatedAt) {
         const clientReviewTime = new Date(baseReviewUpdatedAt).getTime();
-        const serverReviewTime = new Date(existingRating.createdAt).getTime();
+        const serverReviewTime = new Date(
+          existingRating.updatedAt ?? existingRating.createdAt,
+        ).getTime();
         if (serverReviewTime > clientReviewTime) {
           return {
             status: 409,

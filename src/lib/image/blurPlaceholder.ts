@@ -29,18 +29,24 @@ function hashToColors(str: string): [string, string] {
 export function generateBlurSvgDataUri(seedOrBlurhash?: string | null): string {
   const seed = seedOrBlurhash && seedOrBlurhash.trim().length > 0 ? seedOrBlurhash.trim() : "worksphere-venue";
   const [c1, c2] = hashToColors(seed);
+  let suffix = 0;
+  for (let i = 0; i < seed.length; i++) {
+    suffix = (suffix * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  const gid = `g${suffix.toString(36)}`;
+  const fid = `b${suffix.toString(36)}`;
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 200" width="100%" height="100%">
     <defs>
-      <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <linearGradient id="${gid}" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="${c1}" />
         <stop offset="100%" stop-color="${c2}" />
       </linearGradient>
-      <filter id="b">
+      <filter id="${fid}">
         <feGaussianBlur stdDeviation="20" />
       </filter>
     </defs>
-    <rect width="100%" height="100%" fill="url(#g)" filter="url(#b)" />
+    <rect width="100%" height="100%" fill="url(#${gid})" filter="url(#${fid})" />
   </svg>`.replace(/\s+/g, " ").trim();
 
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;

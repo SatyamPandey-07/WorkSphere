@@ -148,10 +148,12 @@ export function arrayBufferToHex(buffer: ArrayBuffer | Uint8Array): string {
  * Converts a hex string to a Uint8Array.
  */
 export function hexToUint8Array(hex: string): Uint8Array {
-  const clean = hex.replace(/[^0-9a-fA-F]/g, "");
-  const bytes = new Uint8Array(clean.length / 2);
-  for (let i = 0; i < clean.length; i += 2) {
-    bytes[i / 2] = parseInt(clean.substring(i, i + 2), 16);
+  if (!/^[0-9a-fA-F]*$/.test(hex) || hex.length % 2 !== 0) {
+    throw new Error("Invalid hex string");
+  }
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
   }
   return bytes;
 }

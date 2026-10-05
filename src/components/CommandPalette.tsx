@@ -180,7 +180,7 @@ export function CommandPalette() {
             const Icon = item.icon;
             const active = index === activeIndex;
             return (
-              <li key={item.href}>
+              <li key={`${item.href}-${item.label}`}>
                 <button
                   type="button"
                   onClick={() => handleSelect(item.href)}

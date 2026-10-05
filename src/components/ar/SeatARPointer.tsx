@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import * as THREE from "three";
 import { useWebXR } from "@/hooks/useWebXR";
 import { useDeviceOrientation } from "@/hooks/useDeviceOrientation";
+import { normalizeAngle } from "@/lib/geometry/bearing";
 import CompassFallback from "./CompassFallback";
 import { Eye } from "lucide-react";
 
@@ -47,7 +48,7 @@ export function SeatARPointer({
   const [_xrSession, setXrSession] = useState<XRSession | null>(null);
   const [sessionActive, setSessionActive] = useState(false);
   const [distanceToSeat, setDistanceToSeat] = useState<number>(3.0);
-  const [_bearingAngle, _setBearingAngle] = useState<number>(0);
+  const [bearingAngle, setBearingAngle] = useState<number>(0);
 
   // Fallback to CompassFallback if WebXR is explicitly unsupported
   const isWebXRUnavailable = isSupported === false;
@@ -64,7 +65,10 @@ export function SeatARPointer({
         setSessionActive(true);
       }
     } catch (err) {
-      console.warn("[SeatARPointer] WebXR session request rejected or unsupported:", err);
+      console.warn(
+        "[SeatARPointer] WebXR session request rejected or unsupported:",
+        err,
+      );
       // Let user use camera or compass fallback
     }
   }, [requestSession]);
@@ -132,7 +136,11 @@ export function SeatARPointer({
     scene.add(arrowGroup);
 
     // Floating Target Seat Anchor Marker
-    const targetVector = new THREE.Vector3(targetAnchor.x, targetAnchor.y, targetAnchor.z);
+    const targetVector = new THREE.Vector3(
+      targetAnchor.x,
+      targetAnchor.y,
+      targetAnchor.z,
+    );
 
     let animationFrameId: number;
     const clock = new THREE.Clock();
@@ -145,9 +153,17 @@ export function SeatARPointer({
 
       // Compute heading transform matrix towards seat anchor
       const currentCameraPos = camera.position;
-      const dirToTarget = new THREE.Vector3().subVectors(targetVector, currentCameraPos);
+      const dirToTarget = new THREE.Vector3().subVectors(
+        targetVector,
+        currentCameraPos,
+      );
       const distance = dirToTarget.length();
       setDistanceToSeat(Math.round(distance * 10) / 10);
+
+      // Compute normalized bearing angle
+      const rad = Math.atan2(dirToTarget.x, -dirToTarget.z);
+      const deg = normalizeAngle((rad * 180) / Math.PI);
+      setBearingAngle(Math.round(deg));
 
       // Orient arrow towards target anchor
       arrowGroup.position.set(0, 0.8, -1.2); // projected 1.2m directly in front of camera view
@@ -218,7 +234,7 @@ export function SeatARPointer({
             </span>
           </div>
           <p className="text-[11px] text-blue-400 font-medium mt-0.5">
-            {distanceToSeat}m away • Follow 3D Arrow
+            {distanceToSeat}m away • Bearing {bearingAngle}° • Follow 3D Arrow
           </p>
         </div>
 

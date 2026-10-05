@@ -6,6 +6,7 @@
 
 import { LRUCache } from "./cache";
 import { createHash } from "crypto";
+import { formatOsmAddress } from "./formatOsmAddress";
 
 function deterministicId(lat: number, lng: number, name: string): string {
   return createHash("sha256")
@@ -146,10 +147,7 @@ export async function searchVenuesOSM(
             address: tags["addr:street"]
               ? `${tags["addr:housenumber"] || ""} ${tags["addr:street"]}`.trim()
               : undefined,
-            formatted_address:
-              [tags["addr:street"], tags["addr:city"], tags["addr:postcode"]]
-                .filter(Boolean)
-                .join(", ") || undefined,
+            formatted_address: formatOsmAddress(tags),
             locality: tags["addr:city"],
             country: tags["addr:country"],
             lat: elLat,

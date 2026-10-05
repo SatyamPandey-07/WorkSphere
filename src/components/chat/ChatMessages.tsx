@@ -1163,12 +1163,40 @@ export function MessageList({
     return () => resizeObserver.disconnect();
   }, [scrollToBottomIfNeeded]);
 
+  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
+
+  const handleScroll = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const isAwayFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight >=
+      200;
+    setShowScrollToLatest(isAwayFromBottom);
+  }, []);
+
+  const handleScrollToLatest = useCallback(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView?.({ behavior: "smooth" });
+    } else if (containerRef.current) {
+      containerRef.current.scrollTo?.({
+        top: containerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
+  }, [messagesEndRef]);
+
+  useEffect(() => {
+    handleScroll();
+  }, [messages, handleScroll]);
+
   return (
-    <div
-      ref={containerRef}
-      className="flex-1 overflow-y-auto p-4 space-y-4"
-      style={{ scrollbarGutter: "stable" }}
-    >
+    <div className="relative flex-1 min-h-0 flex flex-col">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-4 space-y-4"
+        style={{ scrollbarGutter: "stable" }}
+      >
       {messages.length === 0 && (
         <div className="text-center py-8">
           <Brain className="w-12 h-12 mx-auto mb-4 text-zinc-300 dark:text-zinc-700" />
@@ -1357,6 +1385,19 @@ export function MessageList({
       )}
 
       <div ref={messagesEndRef} />
+      </div>
+
+      {showScrollToLatest && messages.length > 0 && (
+        <button
+          type="button"
+          onClick={handleScrollToLatest}
+          aria-label="Scroll to latest message"
+          title="Scroll to latest"
+          className="absolute bottom-3 right-4 z-10 p-2 rounded-full bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-200 shadow-md border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-zinc-400"
+        >
+          <ChevronDown className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 }

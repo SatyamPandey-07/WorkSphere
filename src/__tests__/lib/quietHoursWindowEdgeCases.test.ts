@@ -13,7 +13,7 @@ function mergeQuietWindows(
 
   for (let i = 0; i < 24; i++) {
     const db = hourlyDbs[i];
-    const isQuiet = db === null || db < QUIET_THRESHOLD_DB;
+    const isQuiet = db !== null && db < QUIET_THRESHOLD_DB;
 
     if (isQuiet && start === null) {
       start = i;
@@ -44,10 +44,10 @@ describe("Quiet hours window edge cases", () => {
     expect(windows).toHaveLength(0);
   });
 
-  it("all null (no data) → treated as quiet", () => {
+  it("all null (no data) → empty windows", () => {
     const noData = new Array(24).fill(null);
     const windows = mergeQuietWindows(noData);
-    expect(windows).toHaveLength(1);
+    expect(windows).toHaveLength(0);
   });
 
   it("single quiet hour at hour 12", () => {

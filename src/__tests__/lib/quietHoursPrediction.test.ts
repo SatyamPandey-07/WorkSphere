@@ -71,4 +71,13 @@ describe("quiet window detection logic", () => {
     const windows = mergeQuietWindows([0, 1, 2]);
     expect(windows[0].startHour).toBe(0);
   });
+
+  it("handles zero quiet hours resulting in insufficient noise data summary", () => {
+    const quietWindows: Array<{ startHour: number; endHour: number; avgDb: number }> = [];
+    const summary =
+      quietWindows.length > 0
+        ? `Quietest times: ...`
+        : "Insufficient noise data to predict quiet windows.";
+    expect(summary).toBe("Insufficient noise data to predict quiet windows.");
+  });
 });

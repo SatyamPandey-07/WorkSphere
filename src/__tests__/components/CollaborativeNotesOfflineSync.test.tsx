@@ -2,12 +2,15 @@
  * Unit tests for Offline Optimistic Updates, Sync Status Indicator, and LWW Conflict Resolution (#3786).
  */
 import React from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import * as Y from "yjs";
 import { CollaborativeNotes } from "@/components/collections/CollaborativeNotes";
 import {
   resolveLwwEdits,
+  enqueuePendingNoteEdit,
+  clearPendingEditsForFolder,
+  getPendingEditsForFolder,
   type PendingNoteEdit,
 } from "@/lib/offlineNotesSync";
 
@@ -81,31 +84,41 @@ jest.mock("partysocket/react", () => {
 });
 
 const mockPendingQueue: PendingNoteEdit[] = [];
-let mockCachedNote: { folderId: string; text: string; updatedAt: number } | null = null;
+let mockCachedNote: {
+  folderId: string;
+  text: string;
+  updatedAt: number;
+} | null = null;
 
 jest.mock("@/lib/offlineNotesSync", () => {
   const actual = jest.requireActual("@/lib/offlineNotesSync");
   return {
     ...actual,
-    enqueuePendingNoteEdit: jest.fn(async (folderId: string, text: string, timestamp?: number) => {
-      mockPendingQueue.push({
-        id: mockPendingQueue.length + 1,
-        folderId,
-        text,
-        timestamp: timestamp || Date.now(),
-      });
-      mockCachedNote = { folderId, text, updatedAt: timestamp || Date.now() };
-      return mockPendingQueue.length;
-    }),
+    enqueuePendingNoteEdit: jest.fn(
+      async (folderId: string, text: string, timestamp?: number) => {
+        mockPendingQueue.push({
+          id: mockPendingQueue.length + 1,
+          folderId,
+          text,
+          timestamp: timestamp || Date.now(),
+        });
+        mockCachedNote = { folderId, text, updatedAt: timestamp || Date.now() };
+        return mockPendingQueue.length;
+      },
+    ),
     loadCachedNote: jest.fn(async () => mockCachedNote),
-    cacheNoteLocally: jest.fn(async (folderId: string, text: string, updatedAt?: number) => {
-      mockCachedNote = { folderId, text, updatedAt: updatedAt || Date.now() };
-    }),
+    cacheNoteLocally: jest.fn(
+      async (folderId: string, text: string, updatedAt?: number) => {
+        mockCachedNote = { folderId, text, updatedAt: updatedAt || Date.now() };
+      },
+    ),
     getPendingEditsForFolder: jest.fn(async (folderId: string) => {
       return mockPendingQueue.filter((item) => item.folderId === folderId);
     }),
     clearPendingEditsForFolder: jest.fn(async (folderId: string) => {
-      const remaining = mockPendingQueue.filter((item) => item.folderId !== folderId);
+      const remaining = mockPendingQueue.filter(
+        (item) => item.folderId !== folderId,
+      );
       mockPendingQueue.length = 0;
       mockPendingQueue.push(...remaining);
     }),
@@ -198,10 +211,14 @@ describe("CollaborativeNotes Offline Optimistic Updates & Sync Indicator (#3786)
         FakeYPartyKitProvider.last.emit("status", { status: "disconnected" });
       });
 
-      const textarea = screen.getByRole("textbox", { name: "Collection notes" });
+      const textarea = screen.getByRole("textbox", {
+        name: "Collection notes",
+      });
 
       // User types while offline
-      fireEvent.change(textarea, { target: { value: "Offline note addition" } });
+      fireEvent.change(textarea, {
+        target: { value: "Offline note addition" },
+      });
 
       expect(textarea).toHaveValue("Offline note addition");
 
@@ -210,7 +227,6 @@ describe("CollaborativeNotes Offline Optimistic Updates & Sync Indicator (#3786)
         jest.advanceTimersByTime(1600);
       });
 
-      const { enqueuePendingNoteEdit } = require("@/lib/offlineNotesSync");
       expect(enqueuePendingNoteEdit).toHaveBeenCalledWith(
         "folder-3786",
         "Offline note addition",
@@ -221,11 +237,6 @@ describe("CollaborativeNotes Offline Optimistic Updates & Sync Indicator (#3786)
     });
 
     it("replays queued edits to Postgres/PartyKit when connectivity is restored", async () => {
-      const {
-        clearPendingEditsForFolder,
-        getPendingEditsForFolder,
-      } = require("@/lib/offlineNotesSync");
-
       // Pre-populate queue with offline edit
       mockPendingQueue.push({
         id: 1,
@@ -249,7 +260,9 @@ describe("CollaborativeNotes Offline Optimistic Updates & Sync Indicator (#3786)
         "/api/folders/folder-3786",
         expect.objectContaining({
           method: "PUT",
-          body: JSON.stringify({ description: "Offline queued text that should sync" }),
+          body: JSON.stringify({
+            description: "Offline queued text that should sync",
+          }),
         }),
       );
     });

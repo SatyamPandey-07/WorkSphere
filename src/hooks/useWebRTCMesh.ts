@@ -121,7 +121,9 @@ import {
   configureSimulcastSender,
   createSimulcastEncodings,
   SimulcastAdaptiveController,
-} from "@/lib/webrtcSimulcast";
+  ConnectionLifecycleState,
+  mapIceToLifecycleState,
+} from "@/lib/realtime/webrtc";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 

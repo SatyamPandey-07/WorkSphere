@@ -173,6 +173,9 @@ export default function CollectionsPage() {
         } else {
           setActiveTab("my");
         }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        toast(errData.error || "Failed to create collection", "error");
       }
     } catch (e) {
       console.error(e);

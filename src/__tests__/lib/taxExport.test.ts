@@ -46,17 +46,29 @@ describe("filterBookingsByRange", () => {
 });
 
 describe("computeTaxTotals", () => {
-  it("computes subtotal/tax/total using the flat $15/hr, 8% assumption", () => {
-    const totals = computeTaxTotals([{ duration: 2 }, { duration: 1 }]);
-    // (2*15 + 1*15) = 45 subtotal, 8% = 3.6 tax
+  it("computes subtotal/tax/total using the flat $15/hr, 8% assumption with duration in minutes", () => {
+    const totals = computeTaxTotals([{ duration: 120 }, { duration: 60 }]);
+    // ((120/60)*15 + (60/60)*15) = 45 subtotal, 8% = 3.6 tax
     expect(totals.subtotal).toBe(45);
     expect(totals.tax).toBe(3.6);
     expect(totals.total).toBe(48.6);
     expect(totals.count).toBe(2);
   });
 
-  it("defaults missing duration to 1 hour", () => {
+  it("defaults missing duration to 60 minutes (1 hour)", () => {
     const totals = computeTaxTotals([{}]);
     expect(totals.subtotal).toBe(15);
+  });
+
+  it("clamps zero and negative durations to zero hours", () => {
+    const zeroTotals = computeTaxTotals([{ duration: 0 }]);
+    expect(zeroTotals.subtotal).toBe(0);
+    expect(zeroTotals.tax).toBe(0);
+    expect(zeroTotals.total).toBe(0);
+
+    const negativeTotals = computeTaxTotals([{ duration: -120 }]);
+    expect(negativeTotals.subtotal).toBe(0);
+    expect(negativeTotals.tax).toBe(0);
+    expect(negativeTotals.total).toBe(0);
   });
 });

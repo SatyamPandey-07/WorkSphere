@@ -264,7 +264,8 @@ async function maintainTable(
 /** Step 3: refresh planner stats / reclaim space on the partitions being written. */
 async function vacuumActive(client: SqlClient, spec: PartitionedTableSpec, now: Date, report: TableMaintenanceReport) {
   const attached = new Set(await listMonthlyPartitions(client, spec.table));
-  for (const offset of [-1, 0]) {
+  const ahead = spec.aheadMonths ?? 2;
+  for (let offset = 0; offset <= ahead; offset++) {
     const name = partitionName(spec.table, monthStart(now, offset));
     if (!attached.has(name)) continue;
     try {

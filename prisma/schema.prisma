@@ -63,6 +63,7 @@ model User {
   isVerifiedStudent  Boolean            @default(false)
   accurateVotes      Int                @default(0)
   badges             UserBadge[]
+  seatWaitlists      VenueSeatWaitlist[]
 }
 
 model UserBadge {
@@ -151,6 +152,7 @@ model Venue {
   hostMessage         String?
   photos              VenuePhoto[]
   openingHours        String?
+  seatWaitlists       VenueSeatWaitlist[]
 
   @@index([latitude, longitude])
   @@index([category])
@@ -478,6 +480,7 @@ model VenueSeat {
 
   bookings Booking[]
   xrAnchors XRAnchor[]
+  waitlistEntries VenueSeatWaitlist[]
 
   @@unique([venueId, seatNumber])
   @@index([venueId])
@@ -869,5 +872,51 @@ model UniversityMerkleRoot {
 
   @@index([merkleRoot, isActive])
   @@index([university, epoch])
+}
+
+model StudentPassNullifier {
+  id            String   @id @default(cuid())
+  nullifierHash String   @unique
+  epoch         Int      @default(2026)
+  claimedAt     DateTime @default(now())
+
+  @@index([nullifierHash])
+  @@index([epoch])
+}
+
+enum WaitlistStatus {
+  ACTIVE
+  NOTIFIED
+  CLAIMED
+  EXPIRED
+  CANCELLED
+}
+
+model VenueSeatWaitlist {
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  venueId         String
+  venue           Venue          @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  seatId          String?
+  seat            VenueSeat?     @relation(fields: [seatId], references: [id], onDelete: SetNull)
+  seatType        SeatType?
+  date            String         // YYYY-MM-DD
+  time            String         // HH:MM
+  duration        Int            @default(60) // in minutes
+  timeZone        String?        @default("UTC")
+  requiresQuiet   Boolean        @default(false)
+  requiresOutlets Boolean        @default(false)
+  status          WaitlistStatus @default(ACTIVE)
+  notifiedAt      DateTime?
+  claimExpiresAt  DateTime?
+  claimedAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([venueId, date, status])
+  @@index([userId, status])
+  @@index([seatId])
+  @@index([status, claimExpiresAt])
 }
 

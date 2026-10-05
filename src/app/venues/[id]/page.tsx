@@ -9,7 +9,9 @@ import PremiumZkpGate from "@/components/venues/PremiumZkpGate";
 import { isPremiumVenue } from "@/lib/zkp/membership";
 import { WeatherCloudRenderer } from "@/components/WeatherCloudRenderer";
 import { NoiseForecastChart } from "@/components/noise/NoiseForecastChart";
+import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
 import { SeatingForecastChart } from "@/components/venue/SeatingForecastChart";
+import { OccupancyTrendChart } from "@/components/analytics/OccupancyTrendChart";
 import { RecentlyViewedTracker } from "@/components/venues/RecentlyViewedTracker";
 
 import { CollaborativeNotes } from "@/components/bookings/CollaborativeNotes"; // <-- 1. Imported your new component here!
@@ -228,7 +230,7 @@ export default async function VenuePage({ params }: PageProps) {
                     </p>
                   </div>
                 </div>
-                <CopyToClipboardButton textToCopy={venue.address} />
+                <CopyToClipboardButton textToCopy={venue.address} ariaLabel="Copy venue address" />
               </div>
             )}
             <div className="grid grid-cols-2 gap-4">
@@ -266,7 +268,10 @@ export default async function VenuePage({ params }: PageProps) {
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">
                 <span>Expected Noise Levels</span>
               </h3>
-              <NoiseForecastChart venueId={venue.id} />
+              <AmbientNoiseTrendGraph venueId={venue.id} />
+              <div className="mt-4">
+                <NoiseForecastChart venueId={venue.id} />
+              </div>
             </div>
             {/* Seating Availability Forecast */}
             <div className="pt-2">
@@ -274,6 +279,12 @@ export default async function VenuePage({ params }: PageProps) {
                 <span>Seating Availability Forecast</span>
               </h3>
               <SeatingForecastChart venueId={venue.id} />
+              <div className="mt-4">
+                <OccupancyTrendChart
+                  venueId={venue.id}
+                  venueCapacity={venue.maxCapacity || 50}
+                />
+              </div>
             </div>
             {/* Live WebGL 3D Volumetric Cloud Weather Visualizer for Outdoor Workspaces */}
             <div className="pt-2">

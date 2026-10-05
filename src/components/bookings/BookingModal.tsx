@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 
+import { VenueSeatWaitlistModal } from '@/components/venues/VenueSeatWaitlistModal';
+
 interface BookingModalProps {
   venueId: string;
   venueName: string;
@@ -14,6 +16,20 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
   const [time, setTime] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showWaitlist, setShowWaitlist] = useState(false);
+
+  if (showWaitlist) {
+    return (
+      <VenueSeatWaitlistModal
+        venueId={venueId}
+        venueName={venueName}
+        initialDate={date}
+        initialTime={time}
+        onClose={onClose}
+        onBookingConfirmed={onSuccess}
+      />
+    );
+  }
 
   const handleReserve = async () => {
     if (!date || !time) return setError('Please select both a date and time');
@@ -28,7 +44,9 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
       });
 
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to book');
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to book');
+      }
       
       onSuccess(json.data.confirmationId);
     } catch (err: any) {
@@ -44,7 +62,18 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
         <h2 className="mb-2 text-xl font-bold">Reserve Workspace</h2>
         <p className="mb-6 text-sm text-zinc-400">Book a desk at {venueName}</p>
 
-        {error && <div className="mb-4 rounded bg-red-500/10 p-3 text-sm text-red-400">{error}</div>}
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+            <p>{error}</p>
+            <button
+              type="button"
+              onClick={() => setShowWaitlist(true)}
+              className="mt-2 text-xs font-semibold text-violet-400 hover:text-violet-300 underline underline-offset-2"
+            >
+              Join the seat waitlist instead →
+            </button>
+          </div>
+        )}
 
         <div className="mb-4 space-y-4">
           <div>
@@ -67,7 +96,18 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
           </div>
         </div>
 
-        <div className="mt-8 flex gap-3">
+        <div className="flex items-center justify-between border-t border-white/5 pt-4 pb-1">
+          <span className="text-xs text-zinc-400">Busy hours or full?</span>
+          <button
+            type="button"
+            onClick={() => setShowWaitlist(true)}
+            className="text-xs font-medium text-violet-400 hover:text-violet-300 transition"
+          >
+            Join Seat Waitlist
+          </button>
+        </div>
+
+        <div className="mt-6 flex gap-3">
           <button 
             onClick={onClose}
             className="flex-1 rounded-xl border border-white/10 p-3 text-zinc-300 hover:bg-white/5 transition"

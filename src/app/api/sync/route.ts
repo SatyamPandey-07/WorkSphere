@@ -79,7 +79,15 @@ export async function POST(req: NextRequest) {
             { status: 400 },
           );
         }
-        const binaryString = atob(updateBase64);
+        let binaryString: string;
+        try {
+          binaryString = atob(updateBase64);
+        } catch {
+          return NextResponse.json(
+            { error: "Invalid updates format" },
+            { status: 400 },
+          );
+        }
         const updateArray = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
           updateArray[i] = binaryString.charCodeAt(i);
@@ -88,7 +96,14 @@ export async function POST(req: NextRequest) {
       }
 
       for (const updateArray of decodedUpdates) {
-        Y.applyUpdate(ydoc, updateArray);
+        try {
+          Y.applyUpdate(ydoc, updateArray);
+        } catch {
+          return NextResponse.json(
+            { error: "Invalid updates format" },
+            { status: 400 },
+          );
+        }
       }
 
       const newState = Buffer.from(Y.encodeStateAsUpdate(ydoc));
@@ -106,7 +121,8 @@ export async function POST(req: NextRequest) {
       for (const checkIn of checkIns.slice(0, 50)) {
         if (typeof checkIn?.venueId !== "string" || !checkIn.timestamp)
           continue;
-        if (new Date(checkIn.timestamp).getTime() < cutoff) continue;
+        const stamp = new Date(checkIn.timestamp).getTime();
+        if (!Number.isFinite(stamp) || stamp < cutoff) continue;
 
         const venue = await prisma.venue.findFirst({
           where: {

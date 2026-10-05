@@ -30,20 +30,35 @@ interface TerminateMessage {
   type: "terminate";
 }
 
+interface AbortMessage {
+  type: "abort";
+}
+
 type WorkerMessage =
   | PremiumProofRequest
   | StudentProofRequest
   | VerifyRequest
   | CancelMessage
-  | TerminateMessage;
+  | TerminateMessage
+  | AbortMessage;
 
 let generation = 0;
 
-type WorkerErrorType = "oom" | "internal" | "generic";
+export const DEFAULT_VERIFICATION_TIMEOUT_MS = 15_000;
+
+type WorkerErrorType = "oom" | "internal" | "timeout" | "generic";
 
 function classifyError(error: unknown): WorkerErrorType {
   if (error instanceof Error) {
     const msg = error.message.toLowerCase();
+
+    if (
+      msg.includes("verification_timeout") ||
+      msg.includes("timed out") ||
+      msg.includes("timeout")
+    ) {
+      return "timeout";
+    }
 
     if (
       msg.includes("out of memory") ||
@@ -70,6 +85,10 @@ function classifyError(error: unknown): WorkerErrorType {
 function sanitizeError(error: unknown): string {
   const type = classifyError(error);
 
+  if (type === "timeout") {
+    return "VERIFICATION_TIMEOUT";
+  }
+
   if (type === "oom") {
     return "Your device does not have enough memory to generate the zero-knowledge proof. Please try again on a device with more RAM, or use the server-side verification option.";
   }
@@ -79,6 +98,28 @@ function sanitizeError(error: unknown): string {
   }
 
   return "Proof generation failed.";
+}
+
+export function withTimeout<T>(
+  promiseFn: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number = DEFAULT_VERIFICATION_TIMEOUT_MS,
+): Promise<T> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      reject(new Error("VERIFICATION_TIMEOUT"));
+    }, timeoutMs);
+  });
+
+  return Promise.race([
+    promiseFn(controller.signal),
+    timeoutPromise,
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
 }
 
 import { getOptimizedZkpOptions } from "@/lib/zkp/wasmSimd";
@@ -165,7 +206,7 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
     return;
   }
 
-  if (e.data.type === "terminate") {
+  if (e.data.type === "abort" || e.data.type === "terminate") {
     generation++;
     await terminateCurveBn128();
     if (typeof self !== "undefined" && typeof self.close === "function") {
@@ -177,6 +218,8 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
 // ── Browser Verification in Web Worker (#3480) ───────────────────────────
   if (e.data.type === "verify" || e.data.type === "verify-student") {
     const { proof, publicSignals, circuit } = e.data;
+    const timeoutMs = typeof (e.data as any).timeoutMs === "number" ? (e.data as any).timeoutMs : DEFAULT_VERIFICATION_TIMEOUT_MS;
+
     try {
       const isStudent = circuit === "student_membership" || e.data.type === "verify-student" || publicSignals.length >= 2;
       const vKeyUrl = isStudent
@@ -185,12 +228,18 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
 
       const resp = await fetch(vKeyUrl);
       const vKey = await resp.json();
-      const isValid = await snarkjs.groth16.verify(vKey, publicSignals, proof as any);
+      const isValid = await withTimeout(
+        () => snarkjs.groth16.verify(vKey, publicSignals, proof as any),
+        timeoutMs,
+      );
       self.postMessage({ type: "verify_result", isValid });
     } catch (error) {
+      const errorType = classifyError(error);
       self.postMessage({
         type: "error",
         error: sanitizeError(error),
+        code: errorType === "timeout" ? "VERIFICATION_TIMEOUT" : undefined,
+        isTimeout: errorType === "timeout",
       });
     } finally {
       await terminateCurveBn128();
@@ -202,8 +251,19 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
   if (e.data.type === "prove-student" || e.data.type === "prove_student") {
     const myGeneration = ++generation;
     const { secret, epoch, root, pathElements, pathIndices } = e.data;
+    const timeoutMs = typeof (e.data as any).timeoutMs === "number" ? (e.data as any).timeoutMs : DEFAULT_VERIFICATION_TIMEOUT_MS;
 
-    if (!secret || !epoch || !root || !Array.isArray(pathElements) || !Array.isArray(pathIndices)) {
+    const hasSecret = typeof secret === "string" ? secret !== "" : secret != null;
+    const hasEpoch =
+      typeof epoch === "number" ? true : epoch != null && epoch !== "";
+    const hasRoot = typeof root === "string" ? root !== "" : root != null;
+    if (
+      !hasSecret ||
+      !hasEpoch ||
+      !hasRoot ||
+      !Array.isArray(pathElements) ||
+      !Array.isArray(pathIndices)
+    ) {
       self.postMessage({ type: "error", error: "Invalid student membership proof parameters." });
       return;
     }
@@ -211,16 +271,20 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
     try {
       self.postMessage({ type: "progress", stage: "generating" });
 
-      const { proof, publicSignals } = await snarkjs.groth16.fullProve(
-        {
-          secret: String(secret),
-          epoch: String(epoch),
-          root: String(root),
-          pathElements: pathElements.map(String),
-          pathIndices: pathIndices.map(String),
-        },
-        "/zkp/student_membership.wasm",
-        "/zkp/student_membership.zkey",
+      const { proof, publicSignals } = await withTimeout(
+        () =>
+          snarkjs.groth16.fullProve(
+            {
+              secret: String(secret),
+              epoch: String(epoch),
+              root: String(root),
+              pathElements: pathElements.map(String),
+              pathIndices: pathIndices.map(String),
+            },
+            "/zkp/student_membership.wasm",
+            "/zkp/student_membership.zkey",
+          ),
+        timeoutMs,
       );
 
       if (myGeneration !== generation) return;
@@ -232,7 +296,9 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
       self.postMessage({
         type: "error",
         error: sanitizeError(error),
+        code: errorType === "timeout" ? "VERIFICATION_TIMEOUT" : undefined,
         isOom: errorType === "oom",
+        isTimeout: errorType === "timeout",
       });
     } finally {
       await terminateCurveBn128();
@@ -244,6 +310,7 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
   if (e.data.type === "prove") {
     const myGeneration = ++generation;
     const { identityToken, expectedCommit } = e.data;
+    const timeoutMs = typeof (e.data as any).timeoutMs === "number" ? (e.data as any).timeoutMs : DEFAULT_VERIFICATION_TIMEOUT_MS;
 
     if (typeof identityToken !== "string" || !/^-?\d+$/.test(identityToken)) {
       self.postMessage({
@@ -268,9 +335,9 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
       });
 
       // Using the memory-optimized generateProof instead of fullProve
-      const { proof, publicSignals } = await generateProof(
-        identityToken,
-        expectedCommit,
+      const { proof, publicSignals } = await withTimeout(
+        () => generateProof(identityToken, expectedCommit),
+        timeoutMs,
       );
 
       if (myGeneration !== generation) {
@@ -292,7 +359,9 @@ self.addEventListener("message", async (e: MessageEvent<WorkerMessage>) => {
       self.postMessage({
         type: "error",
         error: sanitizeError(error),
+        code: errorType === "timeout" ? "VERIFICATION_TIMEOUT" : undefined,
         isOom: errorType === "oom",
+        isTimeout: errorType === "timeout",
       });
     } finally {
       await terminateCurveBn128();

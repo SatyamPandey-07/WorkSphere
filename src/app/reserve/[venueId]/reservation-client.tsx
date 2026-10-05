@@ -371,6 +371,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   <Mail className="h-4 w-4" /> Add to Outlook
                 </a>
                 <button
+                  type="button"
                   onClick={() =>
                     downloadICS(
                       venue.name,
@@ -382,8 +383,9 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                     )
                   }
                   className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 hover:bg-white/10 transition-colors text-zinc-300"
+                  aria-label="Add to Calendar (.ics)"
                 >
-                  <Download className="h-4 w-4" /> Download .ics
+                  <Download className="h-4 w-4" /> Add to Calendar (.ics)
                 </button>
               </div>
             )}

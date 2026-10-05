@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { startAuthentication } from "@simplewebauthn/browser";
 import {
   ShieldAlert,
@@ -12,6 +12,11 @@ import {
   ShieldCheck,
   HardDrive,
 } from "lucide-react";
+import {
+  savePasskeyChallengeToSession,
+  clearPasskeyChallengeFromSession,
+  setupPasskeyUnloadCleanup,
+} from "@/lib/auth/passkeys/client";
 
 export interface StepUpReAuthModalProps {
   isOpen: boolean;
@@ -39,12 +44,21 @@ export function StepUpReAuthModal({
     isSynced: boolean;
   } | null>(null);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const cleanup = setupPasskeyUnloadCleanup();
+    return () => {
+      cleanup();
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleStartStepUp = async () => {
     try {
       setLoading(true);
       setError(null);
+      clearPasskeyChallengeFromSession();
 
       // 1. Fetch step-up authentication options from the server
       const optRes = await fetch(
@@ -63,6 +77,9 @@ export function StepUpReAuthModal({
       }
 
       const { options } = await optRes.json();
+      if (options?.challenge) {
+        savePasskeyChallengeToSession(options.challenge, "step_up");
+      }
 
       // 2. Prompt browser WebAuthn authenticator with user verification required
       const authenticationResponse = await startAuthentication({
@@ -87,6 +104,7 @@ export function StepUpReAuthModal({
       }
 
       const result = await verifyRes.json();
+      clearPasskeyChallengeFromSession();
       setStepUpComplete(true);
       if (result.backupStatus) {
         setBackupInfo(result.backupStatus);
@@ -97,6 +115,7 @@ export function StepUpReAuthModal({
         onSuccess(result.stepUpToken, result.backupStatus?.backupHealth);
       }, 750);
     } catch (err: unknown) {
+      clearPasskeyChallengeFromSession();
       console.error("Step-up authentication error:", err);
       const msg =
         err instanceof Error

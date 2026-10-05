@@ -117,18 +117,25 @@ export class WebGLContextRecoveryManager {
     this.lossTimestamps = this.lossTimestamps.filter((t) => now - t < this.lossWindowMs);
     this.lossTimestamps.push(now);
 
-    this.stopRenderLoop();
-    this.runSafely("onLost", () => this.onLost?.());
-
     if (this.lossTimestamps.length > this.maxLosses) {
       // The GPU keeps dropping this context. Skipping preventDefault() tells
       // the browser not to restore it, which stops the thrash.
       console.warn("[WebGLRecoveryManager] Repeated context loss; giving up recovery.");
+      this.stopRenderLoop();
+      this.runSafely("onLost", () => this.onLost?.());
       this.fail("loss-storm");
       return;
     }
 
-    e.preventDefault();
+    // Call preventDefault() synchronously at the top of recovery handling
+    // so the browser does not default to permanently destroying the context
+    if (typeof e.preventDefault === "function") {
+      e.preventDefault();
+    }
+
+    this.stopRenderLoop();
+    this.runSafely("onLost", () => this.onLost?.());
+
     console.warn("[WebGLRecoveryManager] WebGL context lost on canvas:", this.canvas);
     this.currentState = "lost";
 

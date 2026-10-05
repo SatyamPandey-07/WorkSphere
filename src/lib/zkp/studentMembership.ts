@@ -54,6 +54,21 @@ export function computeStudentLeaf(
   return poseidonHash([s, e]);
 }
 
+/**
+ * Computes an anonymized student pass nullifier hash: Poseidon(secret, nullifierKey, epoch) (#3959)
+ * Guarantees zero-knowledge uniqueness without revealing student identity or university credentials.
+ */
+export function computeStudentNullifierHash(
+  secret: bigint | string | number,
+  nullifierKey: bigint | string | number,
+  epoch: bigint | string | number = CURRENT_ACADEMIC_YEAR,
+): bigint {
+  const s = ((BigInt(secret) % BN254_SCALAR_FIELD) + BN254_SCALAR_FIELD) % BN254_SCALAR_FIELD;
+  const k = ((BigInt(nullifierKey) % BN254_SCALAR_FIELD) + BN254_SCALAR_FIELD) % BN254_SCALAR_FIELD;
+  const e = ((BigInt(epoch) % BN254_SCALAR_FIELD) + BN254_SCALAR_FIELD) % BN254_SCALAR_FIELD;
+  return poseidonHash([s, k, e]);
+}
+
 export interface MerkleProof {
   leaf: bigint;
   root: bigint;
@@ -216,6 +231,27 @@ export function verifyMerkleMembership(
   }
 
   return currentHash === expectedRoot;
+}
+
+/**
+ * Pure verification of anonymous student access pass credential (#3959).
+ * Verifies both nullifier hash and Merkle membership path.
+ */
+export function verifyStudentAccessPassCredential(
+  root: bigint | string,
+  epoch: bigint | string | number,
+  nullifierHash: bigint | string,
+  secret: bigint | string | number,
+  nullifierKey: bigint | string | number,
+  pathElements: (bigint | string)[],
+  pathIndices: (number | string)[],
+): boolean {
+  const computedNullifier = computeStudentNullifierHash(secret, nullifierKey, epoch);
+  if (computedNullifier !== BigInt(nullifierHash)) {
+    return false;
+  }
+
+  return verifyMerkleMembership(root, secret, epoch, pathElements, pathIndices);
 }
 
 /**

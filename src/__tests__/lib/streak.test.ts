@@ -1,4 +1,10 @@
-import { calculateStreak, getUnlockedMilestones, todayUTC, yesterdayUTC } from "@/lib/streak";
+import {
+  calculateStreak,
+  getUnlockedMilestones,
+  shiftDateString,
+  todayUTC,
+  yesterdayUTC,
+} from "@/lib/streak";
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
@@ -166,6 +172,14 @@ describe("calculateStreak", () => {
       expect(result.newMilestones).not.toContain(5);
     });
 
+    it("does not re-award previously unlocked milestone on streak recovery", () => {
+      // User previously reached a 10-day streak, broke it, and recovered back to 5 days
+      const result = calculateStreak(yesterdayUTC(), 4, 10);
+      expect(result.currentStreak).toBe(5);
+      expect(result.newMilestones).toHaveLength(0);
+      expect(result.newMilestones).not.toContain(5);
+    });
+
     it("does not unlock a milestone on same-day duplicate", () => {
       const result = calculateStreak(todayUTC(), 4, 4);
       expect(result.newMilestones).toHaveLength(0);
@@ -203,5 +217,76 @@ describe("getUnlockedMilestones", () => {
 
   it("returns [5, 10, 30] for streak above 30", () => {
     expect(getUnlockedMilestones(45)).toEqual([5, 10, 30]);
+  });
+});
+
+// ─── DST regression tests ─────────────────────────────────────────────────────
+// A local day is 23h (spring forward) or 25h (fall back) on DST transitions, so
+// "yesterday" must come from calendar arithmetic, not "now minus 24 hours".
+
+describe("shiftDateString", () => {
+  it("shifts across month, year and leap-day boundaries", () => {
+    expect(shiftDateString("2024-03-01", -1)).toBe("2024-02-29");
+    expect(shiftDateString("2024-01-01", -1)).toBe("2023-12-31");
+    expect(shiftDateString("2023-12-31", 1)).toBe("2024-01-01");
+  });
+});
+
+describe("yesterdayUTC across DST transitions", () => {
+  it("returns the previous local day the day after US spring-forward", () => {
+    // 2024-03-10 was 23h long in New York (clocks 02:00 -> 03:00).
+    const now = new Date("2024-03-11T00:30:00-04:00");
+    expect(todayUTC("America/New_York", now)).toBe("2024-03-11");
+    expect(yesterdayUTC("America/New_York", now)).toBe("2024-03-10");
+  });
+
+  it("returns the previous local day late on a US fall-back (25h) day", () => {
+    // 2024-11-03 was 25h long in New York (clocks 02:00 -> 01:00).
+    const now = new Date("2024-11-03T23:30:00-05:00");
+    expect(todayUTC("America/New_York", now)).toBe("2024-11-03");
+    expect(yesterdayUTC("America/New_York", now)).toBe("2024-11-02");
+  });
+
+  it("handles southern-hemisphere spring-forward (Sydney)", () => {
+    // 2024-10-06 was 23h long in Sydney.
+    const now = new Date("2024-10-07T00:30:00+11:00");
+    expect(todayUTC("Australia/Sydney", now)).toBe("2024-10-07");
+    expect(yesterdayUTC("Australia/Sydney", now)).toBe("2024-10-06");
+  });
+
+  it("is unaffected in zones without DST", () => {
+    const now = new Date("2024-03-11T00:30:00+05:30");
+    expect(yesterdayUTC("Asia/Kolkata", now)).toBe("2024-03-10");
+  });
+});
+
+describe("calculateStreak across DST transitions", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("keeps the streak when checking in just after midnight following spring-forward", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2024-03-11T00:30:00-04:00"));
+
+    const result = calculateStreak("2024-03-10", 6, 9, "America/New_York");
+    expect(result.incremented).toBe(true);
+    expect(result.currentStreak).toBe(7);
+    expect(result.longestStreak).toBe(9);
+  });
+
+  it("keeps the streak late in the evening of a fall-back day", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2024-11-03T23:30:00-05:00"));
+
+    const result = calculateStreak("2024-11-02", 4, 4, "America/New_York");
+    expect(result.incremented).toBe(true);
+    expect(result.currentStreak).toBe(5);
+    expect(result.newMilestones).toEqual([5]);
+  });
+
+  it("still resets the streak after a genuinely missed local day", () => {
+    jest.useFakeTimers().setSystemTime(new Date("2024-03-12T09:00:00-04:00"));
+
+    const result = calculateStreak("2024-03-10", 6, 9, "America/New_York");
+    expect(result.currentStreak).toBe(1);
   });
 });

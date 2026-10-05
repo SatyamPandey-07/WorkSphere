@@ -108,22 +108,23 @@ export function useIdleSession(options: UseIdleSessionOptions = {}): UseIdleSess
     }
   }, [onExpired, redirectUrl, router]);
 
-  // Extend session: reset activity timer and perform silent token rotation
+  // Extend session: perform silent token rotation and reset activity timer
   const extendSession = useCallback(async () => {
-    const now = Date.now();
-    lastActiveRef.current = now;
-    warningStartRef.current = null;
-    setShowWarning(false);
-    setRemainingSeconds(Math.ceil(warningDurationMs / 1000));
+    const success = await silentTokenRefresh();
+    if (success) {
+      const now = Date.now();
+      lastActiveRef.current = now;
+      warningStartRef.current = null;
+      setShowWarning(false);
+      setRemainingSeconds(Math.ceil(warningDurationMs / 1000));
 
-    try {
-      localStorage.setItem(STORAGE_LAST_ACTIVE_KEY, String(now));
-      channelRef.current?.postMessage({ type: "ACTIVITY_RESET", timestamp: now });
-    } catch {
-      // Ignore storage errors
+      try {
+        localStorage.setItem(STORAGE_LAST_ACTIVE_KEY, String(now));
+        channelRef.current?.postMessage({ type: "ACTIVITY_RESET", timestamp: now });
+      } catch {
+        // Ignore storage errors
+      }
     }
-
-    await silentTokenRefresh();
   }, [silentTokenRefresh, warningDurationMs]);
 
   // Reset idle timer upon user interaction
@@ -148,6 +149,18 @@ export function useIdleSession(options: UseIdleSessionOptions = {}): UseIdleSess
   useEffect(() => {
     if (typeof window === "undefined" || !enabled) return;
 
+    const handleSync = async (timestamp: number) => {
+      lastActiveRef.current = timestamp;
+      if (warningStartRef.current !== null) {
+        const refreshed = await silentTokenRefresh();
+        if (refreshed) {
+          warningStartRef.current = null;
+          setShowWarning(false);
+          setRemainingSeconds(Math.ceil(warningDurationMs / 1000));
+        }
+      }
+    };
+
     try {
       if ("BroadcastChannel" in window) {
         const channel = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
@@ -155,11 +168,7 @@ export function useIdleSession(options: UseIdleSessionOptions = {}): UseIdleSess
 
         channel.onmessage = (event) => {
           if (event.data?.type === "ACTIVITY_RESET" && typeof event.data.timestamp === "number") {
-            lastActiveRef.current = event.data.timestamp;
-            if (warningStartRef.current !== null) {
-              warningStartRef.current = null;
-              setShowWarning(false);
-            }
+            handleSync(event.data.timestamp);
           }
         };
       }
@@ -171,11 +180,7 @@ export function useIdleSession(options: UseIdleSessionOptions = {}): UseIdleSess
       if (e.key === STORAGE_LAST_ACTIVE_KEY && e.newValue) {
         const ts = parseInt(e.newValue, 10);
         if (!isNaN(ts)) {
-          lastActiveRef.current = ts;
-          if (warningStartRef.current !== null) {
-            warningStartRef.current = null;
-            setShowWarning(false);
-          }
+          handleSync(ts);
         }
       }
     };
@@ -186,7 +191,7 @@ export function useIdleSession(options: UseIdleSessionOptions = {}): UseIdleSess
       channelRef.current?.close();
       channelRef.current = null;
     };
-  }, [enabled]);
+  }, [enabled, silentTokenRefresh, warningDurationMs]);
 
   // Listen to user interaction events
   useEffect(() => {

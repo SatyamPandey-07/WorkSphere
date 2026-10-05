@@ -1,6 +1,6 @@
 # Environment Variables Reference
 
-This document provides a complete reference for every environment variable used by WorkSphere. It explains the purpose of each variable, whether it is required, where its value comes from, and how it affects the application during development and deployment.
+This document provides a complete reference for every environment variable used by WorkSphere. It explains the purpose of each variable, whether it is required, where its value comes from, how built-in development fallbacks operate, and how to obtain free developer keys.
 
 Properly configuring these variables is essential for enabling authentication, database connectivity, AI-powered features, media management, analytics, email notifications, and other platform services.
 
@@ -8,477 +8,143 @@ Properly configuring these variables is essential for enabling authentication, d
 
 # Why Environment Variables?
 
-WorkSphere relies on several third-party services to provide its core functionality. Instead of hardcoding sensitive information inside the source code, configuration values are supplied through environment variables.
+WorkSphere relies on third-party services to provide core functionality. Instead of hardcoding sensitive credentials in source code, configuration values are supplied through environment variables.
 
 This approach helps to:
 
 - Keep API keys and secrets out of the codebase.
 - Use different configurations for development, staging, and production.
 - Rotate credentials without modifying application code.
-- Improve application security and deployment flexibility.
+- Enable graceful feature degradation and local in-memory mocks during development.
 
 > **Important**
 >
-> Environment variables containing sensitive credentials should never be committed to Git. Always configure them through your hosting provider's secure environment variable management system.
+> Environment variables containing sensitive credentials should never be committed to Git. Always configure them through `.env.local` locally and through your hosting provider's secure environment variable management system in production.
 
 ---
 
-# Environment Variables Reference
+# Categorized Environment Variables Reference
 
-The table below lists every environment variable currently used by WorkSphere.
+WorkSphere categorizes environment variables into three distinct tiers: **Core Required**, **Optional with Local Fallback**, and **Third-Party Integrations**.
 
-| Variable | Required | Description |
-|-----------|----------|-------------|
-| `DATABASE_URL` | ✅ Yes | PostgreSQL connection string used by Prisma ORM. |
-| `CRON_SECRET` | ✅ Production | Bearer token required by scheduled cron endpoints, including partition maintenance. |
-| `PARTITION_MAINTENANCE_ADMIN_ID` | ✅ Production | ID of an existing admin user used as the actor for partition maintenance audit records. |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | ✅ Yes | Public Clerk authentication key used by the frontend. |
-| `CLERK_SECRET_KEY` | ✅ Yes | Private Clerk secret used by server-side authentication. |
-| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | ✅ Yes | Route used for the sign-in page. |
-| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | ✅ Yes | Route used for the registration page. |
-| `WEBHOOK_SECRET` | ✅ Yes | Secret used to verify incoming Clerk webhook requests. |
-| `CSRF_SECRET` | Optional | HMAC secret used to sign CSRF tokens. Falls back to `CLERK_SECRET_KEY` if unset (dev-only fallback outside production). |
-| `GROQ_API_KEY` | ✅ Yes | Enables AI chat, recommendations, and agent-based features. |
-| `COHERE_API_KEY` | Optional | Enables semantic search and AI memory capabilities. |
-| `PEXELS_API_KEY` | Optional | Retrieves venue and gallery images from the Pexels API. |
-| `UNSPLASH_ACCESS_KEY` | Optional | Access key for Unsplash image integration. |
-| `NEXT_PUBLIC_UNSPLASH_ACCESS_KEY` | Optional | Client-side Unsplash access key where required. |
-| `CLOUDINARY_CLOUD_NAME` | Optional | Cloudinary cloud identifier used for media uploads. |
-| `CLOUDINARY_API_KEY` | Optional | Cloudinary API key. |
-| `CLOUDINARY_API_SECRET` | Optional | Cloudinary API secret. |
-| `SMTP_HOST` | Optional | SMTP server hostname used for email delivery. |
-| `SMTP_PORT` | Optional | SMTP server port. |
-| `SMTP_USER` | Optional | SMTP account username. |
-| `SMTP_PASS` | Optional | SMTP account password. |
-| `PASSKEY_OTP_SECRET` | Optional | HMAC key for passkey email OTPs. Falls back to `CSRF_SECRET` / `CLERK_SECRET_KEY`; one of them is required in production. |
-| `UPSTASH_REDIS_REST_URL` | Optional | REST endpoint for the Upstash Redis instance. |
-| `UPSTASH_REDIS_REST_TOKEN` | Optional | Authentication token for Upstash Redis. |
-| `PARTYKIT_AUTH_SECRET` | Required for collaboration | Shared secret the PartyKit server sends (as `Authorization: Bearer …`) to `/api/partykit/auth` to look up folder roles. Must be set on both the Next.js app and the PartyKit deployment. Without it every user is treated as a read-only viewer and members-only rooms (collection notes) reject everyone. `PARTYKIT_SHARED_SECRET` is accepted as an alias. |
-| `NEXT_PUBLIC_APP_URL` | Optional | Public application URL used for metadata and sharing links. |
+## 1. Core Required Variables
+
+These variables are mandatory for starting the application and running core authentication, database, and AI workflows.
+
+| Variable | Required Scope | Description |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | ✅ All Environments | PostgreSQL connection string (Neon, Supabase, Docker Postgres, etc.) used by Prisma ORM. |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | ✅ All Environments | Public Clerk authentication key used by client-side components. |
+| `CLERK_SECRET_KEY` | ✅ All Environments | Private Clerk secret used for server-side session and user verification. |
+| `WEBHOOK_SECRET` | ✅ All Environments | Signing secret used to verify incoming Clerk webhook events. |
+| `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | ✅ All Environments | Route for the sign-in page (`/sign-in`). |
+| `NEXT_PUBLIC_CLERK_SIGN_UP_URL` | ✅ All Environments | Route for the sign-up page (`/sign-up`). |
+| `GROQ_API_KEY` | ✅ All Environments | Enables AI chat, space recommendations, and autonomous multi-agent workflows. |
+| `CRON_SECRET` | ✅ Production Only | Bearer token securing scheduled cron endpoints and automated partition maintenance. |
+| `PARTITION_MAINTENANCE_ADMIN_ID` | ✅ Production Only | ID of an admin user recorded as actor in partition maintenance audit logs. |
 
 ---
 
-# Service Configuration
+## 2. Optional Variables with Built-In Local Fallbacks
 
-The following services provide the credentials required by WorkSphere. Follow the steps below to obtain the necessary environment variables.
+These variables power auxiliary features. If left unset during local development, WorkSphere uses built-in in-memory mocks, fallback secrets, or placeholder assets so the app runs smoothly without error.
+
+| Variable | Fallback Mechanism in Local Development | Description |
+| :--- | :--- | :--- |
+| `UPSTASH_REDIS_REST_URL` | In-Memory LRU / Map Store | Upstash Redis REST URL. Unset locally falls back to an in-memory rate-limiter and cache mock. |
+| `UPSTASH_REDIS_REST_TOKEN` | In-Memory LRU / Map Store | Upstash Redis REST token for request rate-limiting and analytics. |
+| `CSRF_SECRET` | `CLERK_SECRET_KEY` / Dev Default | Secret for signing CSRF tokens. Unset falls back to `CLERK_SECRET_KEY` or dev fallback. |
+| `PASSKEY_OTP_SECRET` | `CSRF_SECRET` / `CLERK_SECRET_KEY` | HMAC secret for passkey OTP verification. Falls back to CSRF/Clerk secret chain. |
+| `PEXELS_API_KEY` | Built-in Unsplash & Static Placeholders | Venue and gallery photo retrieval. Unset falls back to static curated workspace images. |
+| `UNSPLASH_ACCESS_KEY` | Static Placeholder Images | Client/Server Unsplash photo integration fallback. |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Application base URL used for metadata, social cards, and share links. |
 
 ---
 
-## PostgreSQL Database (`DATABASE_URL`)
+## 3. Third-Party Integrations
 
-WorkSphere uses **Prisma ORM** with a PostgreSQL database. The database connection string is stored in the `DATABASE_URL` environment variable.
+These integrations enable specific extended capabilities when credentials are provided, degrading gracefully when omitted.
 
-### Recommended Providers
+| Variable | Integration Purpose | Behavior When Omitted |
+| :--- | :--- | :--- |
+| `COHERE_API_KEY` | Semantic Search & RAG Embeddings | Semantic search & memory features are disabled. |
+| `CLOUDINARY_CLOUD_NAME` | Cloud Media Storage & Image Optimization | Media upload functionality is disabled. |
+| `CLOUDINARY_API_KEY` | Cloudinary API Key | Media upload functionality is disabled. |
+| `CLOUDINARY_API_SECRET` | Cloudinary API Secret | Media upload functionality is disabled. |
+| `SMTP_HOST` | Email Notifications & Passkey OTPs | Confirmation emails and OTP passkey resets return `503`. |
+| `SMTP_PORT` | SMTP Port (587 / 465) | Email delivery disabled. |
+| `SMTP_USER` | SMTP Username | Email delivery disabled. |
+| `SMTP_PASS` | SMTP Password | Email delivery disabled. |
+| `PARTYKIT_AUTH_SECRET` | Real-time WebSocket Collaboration | Shared secret securing PartyKit room auth endpoints. |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Web Push Notifications | Browser push notification subscription disabled. |
+| `VAPID_PRIVATE_KEY` | Web Push Payload Signing | Server push delivery disabled. |
+| `VAPID_SUBJECT` | VAPID Contact Mailto / URL | Server push delivery disabled. |
 
-- Neon
-- Supabase
-- Railway
-- Amazon RDS
-- Self-hosted PostgreSQL
+---
 
-### Example
+# How to Obtain Free Developer Keys
+
+WorkSphere can be developed locally entirely on **free tier** developer resources. Follow these quick guides to set up core required services:
+
+### 1. PostgreSQL Database (Neon Free Tier)
+1. Visit [neon.tech](https://neon.tech) and sign up for a free account.
+2. Click **Create Project**, name your project `worksphere-dev`, and select your preferred region.
+3. On the dashboard, copy the PostgreSQL connection string.
+4. Add to `.env.local`:
+   ```env
+   DATABASE_URL="postgresql://user:password@ep-cool-db-123456.us-east-2.aws.neon.tech/neondb?sslmode=require"
+   ```
+
+### 2. Clerk Authentication (Free Developer Plan)
+1. Visit [clerk.com](https://clerk.com) and sign up for a free account.
+2. Click **Add Application**, name it `WorkSphere Local`, and enable Email + Social logins.
+3. Under **API Keys** in the Clerk Dashboard, copy your Publishable Key and Secret Key.
+4. Add to `.env.local`:
+   ```env
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+   CLERK_SECRET_KEY=sk_test_...
+   WEBHOOK_SECRET=whsec_...
+   NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+   NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+   ```
+
+### 3. Groq AI Engine (Free API Key)
+1. Visit [console.groq.com](https://console.groq.com) and sign up.
+2. Navigate to **API Keys** and click **Create API Key**.
+3. Copy the generated key.
+4. Add to `.env.local`:
+   ```env
+   GROQ_API_KEY=gsk_...
+   ```
+
+---
+
+# Minimal Local Development Configuration
+
+Create a `.env.local` file in the repository root. A minimal working setup requires only Core Required variables:
 
 ```env
-DATABASE_URL="postgresql://username:password@host:5432/database?sslmode=require"
+# Core Required: Database
+DATABASE_URL="postgresql://user:password@localhost:5432/worksphere"
+
+# Core Required: Clerk Authentication
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
+CLERK_SECRET_KEY="sk_test_..."
+WEBHOOK_SECRET="whsec_..."
+NEXT_PUBLIC_CLERK_SIGN_IN_URL="/sign-in"
+NEXT_PUBLIC_CLERK_SIGN_UP_URL="/sign-up"
+
+# Core Required: Groq AI Engine
+GROQ_API_KEY="gsk_..."
+
+# Optional Development Fallbacks (Pre-configured defaults)
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
 ```
 
-### Notes
-
-- Ensure the database is reachable before starting the application.
-- Run Prisma migrations after configuring the database.
-- Never expose production database credentials publicly.
-
 ---
 
-## Clerk Authentication
-
-Clerk handles user authentication, session management, and webhooks.
-
-### Required Variables
-
-```env
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
-CLERK_SECRET_KEY=
-WEBHOOK_SECRET=
-NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
-NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
-```
-
-### How to Obtain
-
-1. Create a Clerk account.
-2. Create a new application.
-3. Open the application's API Keys page.
-4. Copy the Publishable Key and Secret Key.
-5. Generate a webhook endpoint if webhook support is enabled.
-
-### Notes
-
-- Variables beginning with `NEXT_PUBLIC_` are exposed to the browser.
-- Keep `CLERK_SECRET_KEY` and `WEBHOOK_SECRET` private.
-
----
-
-## CSRF Protection
-
-WorkSphere signs CSRF tokens using an HMAC secret.
-
-### Variable
-
-\`\`\`env
-CSRF_SECRET=
-\`\`\`
-
-### Notes
-
-- Optional. If unset, falls back to `CLERK_SECRET_KEY`.
-- A dev-only fallback secret is used outside production — set `CSRF_SECRET` explicitly in production deployments.
-
----
-
-## Groq AI
-
-Groq powers WorkSphere's AI chat, recommendations, and multi-agent workflows.
-
-### Required Variable
-
-```env
-GROQ_API_KEY=
-```
-
-### How to Obtain
-
-1. Create a Groq account.
-2. Open the API Keys dashboard.
-3. Generate a new API key.
-4. Copy the generated key into your environment file.
-
-### Notes
-
-- AI features will not work without this key.
-- Rotate API keys if they are accidentally exposed.
-
----
-
-## Cohere
-
-Cohere provides semantic search and embedding capabilities.
-
-### Variable
-
-```env
-COHERE_API_KEY=
-```
-
-### Notes
-
-- This integration is optional.
-- If omitted, semantic search and memory-related features are disabled while the rest of the application continues to function normally.
-
----
-
-## Pexels
-
-Pexels supplies high-quality venue and gallery images.
-
-### Variable
-
-```env
-PEXELS_API_KEY=
-```
-
-### How to Obtain
-
-1. Create a Pexels account.
-2. Open the API dashboard.
-3. Generate an API key.
-4. Add the key to your environment configuration.
-
-### Notes
-
-If this variable is not configured, WorkSphere falls back to default or placeholder images where supported.
-
----
-
-## Unsplash
-
-Unsplash can also be used as an image provider.
-
-### Variables
-
-```env
-UNSPLASH_ACCESS_KEY=
-NEXT_PUBLIC_UNSPLASH_ACCESS_KEY=
-```
-
-### Notes
-
-This integration is optional and serves as an additional image source.
-
----
-
-## Cloudinary
-
-Cloudinary manages media uploads and storage.
-
-### Required Variables
-
-```env
-CLOUDINARY_CLOUD_NAME=
-CLOUDINARY_API_KEY=
-CLOUDINARY_API_SECRET=
-```
-
-### How to Obtain
-
-1. Create a Cloudinary account.
-2. Open the Dashboard.
-3. Copy your Cloud Name, API Key, and API Secret.
-
-### Notes
-
-All three variables must be configured for image uploads to work correctly.
-
----
-
-## SMTP Configuration
-
-SMTP credentials are used to send booking confirmations and notification emails, and the one-time codes that authorise rotating, renaming or removing a passkey. Without SMTP in production, those passkey actions return `503`.
-
-### Variables
-
-```env
-SMTP_HOST=
-SMTP_PORT=
-SMTP_USER=
-SMTP_PASS=
-```
-
-### Common Providers
-
-- Gmail SMTP
-- Outlook SMTP
-- SendGrid
-- Mailgun
-- Amazon SES
-
-### Notes
-
-Ensure your SMTP provider allows authenticated connections before deploying.
-
----
-
-## Upstash Redis
-
-Upstash Redis is used for analytics and request rate limiting.
-
-### Variables
-
-```env
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
-```
-
-### How to Obtain
-
-1. Create an Upstash account.
-2. Create a Redis database.
-3. Copy the REST URL and REST Token from the dashboard.
-
-### Notes
-
-If Redis is not configured, analytics and rate-limiting features may be unavailable.
-
----
-
-# Local Development
-
-Create a `.env.local` file in the project root before starting the application.
-
-A minimal local configuration looks like this:
-
-```env
-# Database
-DATABASE_URL=
-
-# Clerk Authentication
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
-CLERK_SECRET_KEY=
-WEBHOOK_SECRET=
-NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
-NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
-
-# AI
-GROQ_API_KEY=
-
-# Optional Integrations
-COHERE_API_KEY=
-PEXELS_API_KEY=
-UNSPLASH_ACCESS_KEY=
-NEXT_PUBLIC_UNSPLASH_ACCESS_KEY=
-CLOUDINARY_CLOUD_NAME=
-CLOUDINARY_API_KEY=
-CLOUDINARY_API_SECRET=
-SMTP_HOST=
-SMTP_PORT=
-SMTP_USER=
-SMTP_PASS=
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
-
-Only configure the services you plan to use during local development. Optional integrations can be added later without affecting the core application.
-
----
-
-# Local Development Fallbacks
-
-Several WorkSphere features are designed to degrade gracefully when optional services are unavailable.
-
-| Service | Behaviour When Not Configured |
-|----------|-------------------------------|
-| Cohere | Semantic search and AI memory features are disabled. |
-| Pexels | Placeholder or fallback images are displayed where supported. |
-| Unsplash | Optional image lookup is unavailable. |
-| Cloudinary | Media upload functionality is disabled. |
-| SMTP | Confirmation emails are not sent. |
-| Upstash Redis | Analytics and rate limiting are disabled. |
-
-The following services are required for the application to function correctly:
-
-- PostgreSQL (`DATABASE_URL`)
-- Clerk Authentication
-- Groq AI
-
----
-
-# Security Best Practices
-
-Follow these recommendations when working with environment variables:
-
-- Never commit `.env.local` or other secret files to version control.
-- Store production secrets using your hosting provider's environment variable manager.
-- Rotate API keys immediately if they are accidentally exposed.
-- Keep server-side secrets private and never expose them to client-side code.
-- Only variables prefixed with `NEXT_PUBLIC_` should be accessible in the browser.
-- Review and remove unused credentials periodically.
-
----
-
-# Troubleshooting
-
-## Database Connection Errors
-
-If the application cannot connect to the database:
-
-- Verify that `DATABASE_URL` is correctly configured.
-- Ensure the PostgreSQL server is running and accessible.
-- Run Prisma migrations if the database has not been initialized.
-- Regenerate the Prisma Client after schema changes.
-
----
-
-## Authentication Issues
-
-If users cannot sign in or sign up:
-
-- Verify the Clerk publishable and secret keys.
-- Confirm that `WEBHOOK_SECRET` matches the value configured in the Clerk dashboard.
-- Ensure the authentication routes are correctly configured.
-
----
-
-## AI Features Not Working
-
-If AI-powered features fail:
-
-- Verify that `GROQ_API_KEY` is valid.
-- If semantic search is enabled, confirm that `COHERE_API_KEY` is also configured.
-- Check API usage limits or quota restrictions.
-
----
-
-## Image Loading Problems
-
-If venue or gallery images are missing:
-
-- Verify the Pexels or Unsplash API keys.
-- Confirm that external API requests are not being blocked.
-- Check whether fallback images are being displayed.
-
----
-
-## Media Upload Failures
-
-If image uploads do not complete successfully:
-
-- Verify all Cloudinary credentials.
-- Ensure the Cloudinary account is active.
-- Confirm that upload presets and permissions are correctly configured.
-
----
-
-## Email Delivery Problems
-
-If booking confirmation emails are not being delivered:
-
-- Verify the SMTP host, port, username, and password.
-- Ensure the SMTP provider allows authenticated connections.
-- Check spam or junk folders when testing.
-
----
-
-## Analytics or Rate Limiting
-
-If analytics or request rate limiting is unavailable:
-
-- Verify the Upstash Redis REST URL and REST Token.
-- Confirm that the Redis instance is active.
-- Check network connectivity between the application and the Redis service.
-
----
-
-# Frequently Asked Questions
-
-### Why should `.env.local` never be committed?
-
-It contains sensitive credentials that could expose production services or third-party accounts if published.
-
----
-
-### Which environment variables are safe to expose publicly?
-
-Only variables prefixed with `NEXT_PUBLIC_` are intended for use in client-side code.
-
----
-
-### Can I run WorkSphere without configuring every service?
-
-Yes. Several integrations are optional. Features such as semantic search, image providers, analytics, email delivery, and media uploads will be unavailable until their corresponding environment variables are configured.
-
----
-
-## Web Push Notifications (VAPID)
-
-WorkSphere supports browser push notifications via the [Web Push Protocol](https://www.rfc-editor.org/rfc/rfc8030). These variables are **optional** — push notifications are simply disabled when they are not set.
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | No | VAPID public key. Exposed to the browser for push subscription registration via `PushManager.subscribe()`. |
-| `VAPID_PRIVATE_KEY` | No | VAPID private key. Used server-side to sign push messages. **Never expose to the browser or commit to source control.** |
-| `VAPID_SUBJECT` | No | Contact identifier included in push requests — typically `mailto:admin@yourdomain.com` or your app URL. |
-
-### Generating VAPID keys
-
-```bash
-npx web-push generate-vapid-keys
-```
-
-Copy the output into `.env.local`. Keep `VAPID_PRIVATE_KEY` secret.
-
----
-
-# Summary
-
-Environment variables provide the configuration layer that allows WorkSphere to integrate securely with external services. Keeping these values organized, protected, and correctly configured helps ensure reliable development, testing, and production deployments.
+# Security & Deployment Best Practices
+
+- Never commit `.env.local` or environment secrets to version control.
+- Ensure all client-accessible variables are explicitly prefixed with `NEXT_PUBLIC_`. Server-side variables without this prefix are hidden from the browser bundle.
+- In production (Vercel, AWS, Railway), configure secrets using the platform's Environment Variables panel.

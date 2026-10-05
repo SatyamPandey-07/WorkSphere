@@ -231,8 +231,10 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
     );
 
     // Bring newly connected clients up to speed
+    // The snapshot goes to this connection only: stamp it with the latest
+    // sequence number without consuming one, so every other client's stream
+    // stays gapless.
     if (this.seatCheckins.size > 0) {
-      this.sequenceId++;
       conn.send(
         JSON.stringify({
           type: "seat_snapshot",
@@ -654,6 +656,21 @@ export default class MultiRegionWorkspaceServer implements Party.Server {
 
     if (sender) {
       this.room.broadcast(wireMessage, [sender.id]);
+      // The sender never receives its own event, but the event consumed a
+      // sequence number. Report it so the sender's in-order tracking advances.
+      try {
+        sender.send(
+          JSON.stringify({
+            type: "msg_ack",
+            messageId: resolvedMessageId,
+            status: "processed",
+            sequenceId: this.sequenceId,
+            epoch: this.serverEpoch,
+          }),
+        );
+      } catch {
+        // Sender already disconnected; nothing to acknowledge.
+      }
     } else {
       this.room.broadcast(wireMessage);
     }

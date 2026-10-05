@@ -51,9 +51,13 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Memory ID is required' }, { status: 400 });
     }
 
-    await prisma.userMemory.delete({
+    const result = await prisma.userMemory.deleteMany({
       where: { id, userId },
     });
+
+    if (result.count === 0) {
+      return NextResponse.json({ error: "Memory not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true, message: 'Memory deleted' });
   } catch (error: any) {

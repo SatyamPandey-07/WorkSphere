@@ -172,21 +172,41 @@ export async function storeProof(
     expiresAt: now + maxAge,
   };
 
-  try {
-    const db = await getDb();
-    const tx = db.transaction(STORE, "readwrite");
+  const attemptWrite = async (database: any) => {
+    const tx = database.transaction(STORE, "readwrite");
     const others = await tx.store.index("scope").getAllKeys(scope);
-    await Promise.all(others.filter((k) => k !== entry.key).map((k) => tx.store.delete(k)));
+    await Promise.all(others.filter((k: string) => k !== entry.key).map((k: string) => tx.store.delete(k)));
     await tx.store.put(entry);
     await tx.done;
-  } catch {
-    // Caching is best-effort
+  };
+
+  try {
+    const db = await getDb();
+    await attemptWrite(db);
+  } catch (err) {
+    const { isQuotaExceededError, dispatchStorageQuotaWarning } = await import(
+      "@/lib/cache/storageQuota"
+    );
+
+    if (isQuotaExceededError(err)) {
+      console.warn("[ProofCache] Storage quota exceeded; clearing proof cache and retrying.");
+      dispatchStorageQuotaWarning("proofCache", err);
+
+      try {
+        const db = await getDb();
+        await db.clear(STORE);
+        await attemptWrite(db);
+      } catch (retryErr) {
+        console.warn("[ProofCache] Retrying storeProof after cache clear failed:", retryErr);
+      }
+    }
+    // Caching is best-effort - never bubble unhandled rejection
   }
 }
 
 /** Drop one credential's proof, e.g. after the server rejects it. */
 export async function invalidateProof(scope: string, commit: string): Promise<void> {
-  if (!isProofCacheAvailable()) return;
+  if (!isProofCacheAvailable() || !scope || !commit) return;
   try {
     await (await getDb()).delete(STORE, entryKey(scope, commit));
   } catch {

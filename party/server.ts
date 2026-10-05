@@ -263,8 +263,11 @@ export default class WorkspaceServer implements Party.Server {
 
     // Bring newly connected clients up to speed on current seat availability
     // (#703) so rings render correctly before any new check-in event fires.
+    // A snapshot goes to this connection only, so it is stamped with the latest
+    // sequence number WITHOUT consuming one. Consuming a number here would punch
+    // a hole in the stream every other client receives, and strict in-order
+    // clients would then buffer every later event waiting for it.
     if (this.seatCheckins.size > 0) {
-      this.sequenceId++;
       conn.send(
         JSON.stringify({
           type: "seat_snapshot",
@@ -472,17 +475,17 @@ export default class WorkspaceServer implements Party.Server {
       }
 
       if (parsed.type === "pong") {
-        const state = this.connectionStates.get(sender.id);
-        if (state) {
-          state.lastPong = Date.now();
+        const connState = this.connectionStates.get(sender.id);
+        if (connState) {
+          connState.lastPong = Date.now();
         }
         return;
       }
 
       if (parsed.type === "cursor" && parsed.name) {
-        const state = this.connectionStates.get(sender.id);
-        if (state) {
-          state.name = parsed.name;
+        const connState = this.connectionStates.get(sender.id);
+        if (connState) {
+          connState.name = parsed.name;
         }
       }
 
@@ -761,16 +764,11 @@ export default class WorkspaceServer implements Party.Server {
     });
 
     // Broadcast the update to all connections so venue cards refresh instantly
-    this.sequenceId++;
-    this.room.broadcast(
-      JSON.stringify({
-        type: "music_genre_broadcast",
-        venueId,
-        genre: normalised,
-        updatedAt,
-        sequenceId: this.sequenceId,
-      }),
-    );
+    this.recordAndBroadcast(null, "music_genre_broadcast", {
+      venueId,
+      genre: normalised,
+      updatedAt,
+    });
   }
 
   private countForVenue(venueId: string): number {
@@ -844,6 +842,21 @@ export default class WorkspaceServer implements Party.Server {
 
     if (sender) {
       this.room.broadcast(wireMessage, [sender.id]);
+      // The sender never receives its own event, but the event consumed a
+      // sequence number. Report it so the sender's in-order tracking advances.
+      try {
+        sender.send(
+          JSON.stringify({
+            type: "msg_ack",
+            messageId: resolvedMessageId,
+            status: "processed",
+            sequenceId: this.sequenceId,
+            epoch: this.serverEpoch,
+          }),
+        );
+      } catch {
+        // Sender already disconnected; nothing to acknowledge.
+      }
     } else {
       this.room.broadcast(wireMessage);
     }
@@ -942,17 +955,12 @@ export default class WorkspaceServer implements Party.Server {
             this.connHolds.delete(hold.connId);
           }
         }
-        this.sequenceId++;
-        this.room.broadcast(
-          JSON.stringify({
-            type: "seat_unlocked",
-            seatId: hold.seatId,
-            venueId: hold.venueId,
-            reason: "EXPIRED",
-            timestamp: now,
-            sequenceId: this.sequenceId,
-          }),
-        );
+        this.recordAndBroadcast(null, "seat_unlocked", {
+          seatId: hold.seatId,
+          venueId: hold.venueId,
+          reason: "EXPIRED",
+          timestamp: now,
+        });
         expiredCount++;
       }
     }
@@ -1006,6 +1014,13 @@ export default class WorkspaceServer implements Party.Server {
       version,
     };
 
+    // Ownership may move to a different connection (the same user reconnecting
+    // or using a second tab, or a new user taking over an expired hold). The
+    // previous owner's connection must stop tracking this hold, otherwise its
+    // later disconnect would release a hold it no longer owns.
+    if (existing && existing.connId !== conn.id) {
+      this.untrackConnHold(existing.connId, holdKey);
+    }
     this.seatHolds.set(holdKey, newHold);
 
     let connSet = this.connHolds.get(conn.id);
@@ -1015,7 +1030,8 @@ export default class WorkspaceServer implements Party.Server {
     }
     connSet.add(holdKey);
 
-    this.sequenceId++;
+    // Direct reply to the requester only: it carries no sequence number, so it
+    // is applied immediately and never consumes a slot in the shared stream.
     conn.send(
       JSON.stringify({
         type: "seat_hold_acquired",
@@ -1024,22 +1040,17 @@ export default class WorkspaceServer implements Party.Server {
         expiresAt,
         ttlMs: clampedTtl,
         version,
-        sequenceId: this.sequenceId,
       }),
     );
 
-    this.room.broadcast(
-      JSON.stringify({
-        type: "seat_locked",
-        seatId,
-        venueId,
-        heldBy: userId,
-        heldByName: userName,
-        expiresAt,
-        version,
-        sequenceId: this.sequenceId,
-      }),
-    );
+    this.recordAndBroadcast(null, "seat_locked", {
+      seatId,
+      venueId,
+      heldBy: userId,
+      heldByName: userName,
+      expiresAt,
+      version,
+    });
   }
 
   private handleSeatReleaseRequest(
@@ -1053,26 +1064,14 @@ export default class WorkspaceServer implements Party.Server {
     if (!existing) return;
 
     if (existing.userId === userId || existing.connId === conn.id) {
-      this.seatHolds.delete(holdKey);
-      const connSet = this.connHolds.get(conn.id);
-      if (connSet) {
-        connSet.delete(holdKey);
-        if (connSet.size === 0) {
-          this.connHolds.delete(conn.id);
-        }
-      }
+      this.dropSeatHold(holdKey);
 
-      this.sequenceId++;
-      this.room.broadcast(
-        JSON.stringify({
-          type: "seat_unlocked",
-          seatId,
-          venueId,
-          reason: "RELEASED",
-          timestamp: Date.now(),
-          sequenceId: this.sequenceId,
-        }),
-      );
+      this.recordAndBroadcast(null, "seat_unlocked", {
+        seatId,
+        venueId,
+        reason: "RELEASED",
+        timestamp: Date.now(),
+      });
     }
   }
 
@@ -1094,17 +1093,12 @@ export default class WorkspaceServer implements Party.Server {
       }
     }
 
-    this.sequenceId++;
-    this.room.broadcast(
-      JSON.stringify({
-        type: "seat_unlocked",
-        seatId,
-        venueId,
-        reason: "CHECKOUT_COMPLETE",
-        timestamp: Date.now(),
-        sequenceId: this.sequenceId,
-      }),
-    );
+    this.recordAndBroadcast(null, "seat_unlocked", {
+      seatId,
+      venueId,
+      reason: "CHECKOUT_COMPLETE",
+      timestamp: Date.now(),
+    });
   }
 
   private sendSeatHoldsSnapshot(conn: Party.Connection, venueId?: string) {
@@ -1141,26 +1135,42 @@ export default class WorkspaceServer implements Party.Server {
     );
   }
 
+  /** Stop a connection tracking a hold; drops its entry once it tracks none. */
+  private untrackConnHold(connId: string, holdKey: string): void {
+    const keys = this.connHolds.get(connId);
+    if (!keys) return;
+    keys.delete(holdKey);
+    if (keys.size === 0) {
+      this.connHolds.delete(connId);
+    }
+  }
+
+  /** Remove a hold from both indexes, via the connection that owns it. */
+  private dropSeatHold(holdKey: string): SeatHold | undefined {
+    const hold = this.seatHolds.get(holdKey);
+    if (!hold) return undefined;
+    this.seatHolds.delete(holdKey);
+    this.untrackConnHold(hold.connId, holdKey);
+    return hold;
+  }
+
   private handleConnectionSeatHoldsCleanup(connId: string) {
     const heldKeys = this.connHolds.get(connId);
     if (!heldKeys || heldKeys.size === 0) return;
 
     const now = Date.now();
-    for (const holdKey of heldKeys) {
+    for (const holdKey of [...heldKeys]) {
       const hold = this.seatHolds.get(holdKey);
-      if (hold) {
-        this.seatHolds.delete(holdKey);
-        this.sequenceId++;
-        this.room.broadcast(
-          JSON.stringify({
-            type: "seat_unlocked",
-            seatId: hold.seatId,
-            venueId: hold.venueId,
-            reason: "DISCONNECTED",
-            timestamp: now,
-            sequenceId: this.sequenceId,
-          }),
-        );
+      // Only release holds this connection still owns; ownership may have
+      // moved to another connection since the hold was first acquired.
+      if (hold && hold.connId === connId) {
+        this.dropSeatHold(holdKey);
+        this.recordAndBroadcast(null, "seat_unlocked", {
+          seatId: hold.seatId,
+          venueId: hold.venueId,
+          reason: "DISCONNECTED",
+          timestamp: now,
+        });
       }
     }
     this.connHolds.delete(connId);

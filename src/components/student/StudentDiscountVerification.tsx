@@ -87,19 +87,28 @@ export function StudentDiscountVerification({
   const [error, setError] = useState<string | null>(null);
 
   const workerRef = useRef<Worker | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const onVerifiedRef = useRef(onVerified);
   useEffect(() => {
     onVerifiedRef.current = onVerified;
   });
 
   const terminateWorker = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     if (workerRef.current) {
       try {
-        workerRef.current.postMessage({ type: "terminate" });
+        workerRef.current.postMessage({ type: "abort" });
       } catch {
         // Ignore if worker is already closed
       }
-      workerRef.current.terminate();
+      try {
+        workerRef.current.terminate();
+      } catch {
+        // Ignore if worker is already terminated
+      }
       workerRef.current = null;
     }
   }, []);
@@ -113,7 +122,13 @@ export function StudentDiscountVerification({
 
       if (type === "error") {
         setIsProving(false);
-        const { isOom } = e.data;
+        const { isOom, isTimeout } = e.data;
+        if (isTimeout || workerError === "VERIFICATION_TIMEOUT") {
+          setError("Verification timed out. Worker was reset.");
+          terminateWorker();
+          spawnWorker();
+          return;
+        }
         if (isOom) {
           // OOM during WASM instantiation — fall back to server-side verification
           // which does not require client-side snarkjs proof generation.
@@ -252,6 +267,9 @@ export function StudentDiscountVerification({
       if (!workerRef.current) {
         spawnWorker();
       }
+
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
       // zkpWorker ignores messages without type "prove": without it the
       // request was silently dropped and verification never finished.

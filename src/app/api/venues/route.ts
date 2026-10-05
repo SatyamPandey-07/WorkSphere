@@ -370,8 +370,8 @@ const querySearch = rawData.query || rawData.q;
       }
     }
 
-    const total = await prisma.venue.count({ where });
-    const venues = await prisma.venue.findMany({
+    let total = await prisma.venue.count({ where });
+    let venues = await prisma.venue.findMany({
       where,
       include: {
         _count: {
@@ -382,6 +382,41 @@ const querySearch = rawData.query || rawData.q;
       skip,
       take: limit,
     });
+
+    // ── Fuzzy typo-tolerant search fallback (#3958) ─────────────────────────
+    // If strict substring search returned 0 results and a text query was provided,
+    // fetch candidate venues and apply Levenshtein / Damerau-Levenshtein distance.
+    if (venues.length === 0 && querySearch && typeof querySearch === "string" && querySearch.trim().length >= 3) {
+      const { fuzzyFilterVenues } = await import("@/lib/search/fuzzySearch");
+
+      // Build fallback query without the strict text query condition
+      const fallbackWhere = { ...where };
+      if (fallbackWhere.AND) {
+        fallbackWhere.AND = fallbackWhere.AND.filter(
+          (cond: any) => !cond.OR || cond.OR !== where.OR,
+        );
+        if (fallbackWhere.AND.length === 0) delete fallbackWhere.AND;
+      } else {
+        delete fallbackWhere.OR;
+      }
+
+      const allCandidates = await prisma.venue.findMany({
+        where: fallbackWhere,
+        include: {
+          _count: {
+            select: { favorites: true, ratings: true },
+          },
+          foodValidations: true,
+        },
+        take: 500,
+      });
+
+      const matchedFuzzy = fuzzyFilterVenues(allCandidates, querySearch);
+      if (matchedFuzzy.length > 0) {
+        venues = matchedFuzzy.slice(skip, skip + limit);
+        total = matchedFuzzy.length;
+      }
+    }
 
     return NextResponse.json({
       venues,

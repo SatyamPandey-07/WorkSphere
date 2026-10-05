@@ -317,21 +317,33 @@ function MapEvents({
   return null;
 }
 
+const escapeCursorHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const isSafeAvatarUrl = (url: string): boolean =>
+  /^https:\/\/[^"'\s)]+$/.test(url);
+
 const createCursorIcon = (avatarUrl: string, name: string) => {
   if (typeof window === "undefined") return null;
+  const safeName = escapeCursorHtml(name);
   let html: string;
-  if (avatarUrl && avatarUrl !== "default" && avatarUrl.startsWith("http")) {
+  if (avatarUrl && avatarUrl !== "default" && isSafeAvatarUrl(avatarUrl)) {
     html = `
       <div class="map-cursor-container">
         <div class="map-cursor-avatar" style="background-image: url(${avatarUrl})" width="32" height="32"></div>
-        <div class="map-cursor-label">${name}</div>
+        <div class="map-cursor-label">${safeName}</div>
       </div>
     `;
   } else {
     html = `
       <div class="map-cursor-container">
         <div class="map-cursor-avatar-default" width="16" height="16"></div>
-        <div class="map-cursor-label">${name}</div>
+        <div class="map-cursor-label">${safeName}</div>
       </div>
     `;
   }
@@ -844,7 +856,7 @@ const Map = ({
     Object.keys(groups).forEach((key) => {
       const groupItems = groups[key];
       const n = groupItems.length;
-      if (n === 1 || isZooming) {
+      if (n === 1) {
         result.push({
           ...groupItems[0],
           renderedLat: Number(groupItems[0].position.lat),
@@ -878,7 +890,7 @@ const Map = ({
       }
     });
     return result;
-  }, [markers, settledZoom, isZooming]);
+  }, [markers, settledZoom]);
 
   // Derive iconUrl directly from clerkUser state
   const iconUrl = useMemo(() => {
@@ -1247,15 +1259,27 @@ const Map = ({
         .map-forecast-controls input[type="range"] {
           width: 120px;
         }
-  .leaflet-control-scale {
-  background: transparent;
-}
+        .leaflet-control-scale {
+          background: transparent;
+        }
 
-.leaflet-control-scale-line {
-  border: 1px solid #3f3f46;
-  background: rgba(24, 24, 27, 0.9);
-  color: #f4f4f5;
-}
+        .leaflet-control-scale-line {
+          border: 1px solid #3f3f46;
+          background: rgba(24, 24, 27, 0.9);
+          color: #f4f4f5;
+        }
+
+        .leaflet-zoom-anim .leaflet-zoom-animated {
+          will-change: transform;
+        }
+
+        .venue-marker {
+          transition: transform 0.15s ease-out, opacity 0.15s ease-out;
+        }
+
+        .interactive-map-pin {
+          will-change: transform;
+        }
       `,
         }}
       />

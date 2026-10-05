@@ -45,21 +45,39 @@ export function parseFiltersFromSearchParams(
   const category = params.get("category") ?? params.get("type") ?? "all";
   const wifi =
     params.get("wifi") === "true" || params.get("hasWifi") === "true";
-  const wifiSpeedBand = (params.get("wifiSpeedBand") ??
-    params.get("wifiSpeed") ??
-    "all") as VenueFilterState["wifiSpeedBand"];
-  const noiseLevel = (params.get("noise") ??
+  const rawBand =
+    params.get("wifiSpeedBand") ?? params.get("wifiSpeed") ?? "all";
+  const wifiSpeedBand = (["basic", "fast", "ultra", "all"] as const).includes(
+    rawBand as "basic",
+  )
+    ? (rawBand as VenueFilterState["wifiSpeedBand"])
+    : "all";
+  const rawNoise =
+    params.get("noise") ??
     params.get("noiseLevel") ??
-    (params.get("quiet") === "true" ? "quiet" : "all")) as VenueFilterState["noiseLevel"];
+    (params.get("quiet") === "true" ? "quiet" : "all");
+  const noiseLevel = (["quiet", "moderate", "loud", "all"] as const).includes(
+    rawNoise as "quiet",
+  )
+    ? (rawNoise as VenueFilterState["noiseLevel"])
+    : "all";
   const quietHours = params.get("quietHours") === "true";
   const outlets =
     params.get("outlets") === "true" ||
     params.get("hasOutlets") === "true" ||
     params.get("power") === "true";
-  const priceRange = (params.get("price") ??
-    params.get("priceRange") ??
-    "all") as VenueFilterState["priceRange"];
-  const maxDistance = Number(params.get("distance") ?? params.get("maxDistance") ?? 0) || 0;
+  const rawPrice =
+    params.get("price") ?? params.get("priceRange") ?? "all";
+  const priceRange = (["$", "$$", "$$$", "all"] as const).includes(
+    rawPrice as "$",
+  )
+    ? (rawPrice as VenueFilterState["priceRange"])
+    : "all";
+  const rawDistance = Number(
+    params.get("distance") ?? params.get("maxDistance") ?? 0,
+  );
+  const maxDistance =
+    Number.isFinite(rawDistance) && rawDistance > 0 ? rawDistance : 0;
 
   let amenities: string[] = [];
   const rawAmenities = params.get("amenities") ?? params.get("filters");

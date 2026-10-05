@@ -33,15 +33,31 @@ export function dateInTimeZone(date: Date, timeZone: string = "UTC"): string {
 }
 
 /** Returns today's date as a "YYYY-MM-DD" string in the supplied timezone */
-export function todayUTC(timeZone: string = "UTC"): string {
-  return dateInTimeZone(new Date(), timeZone);
+export function todayUTC(timeZone: string = "UTC", now: Date = new Date()): string {
+  return dateInTimeZone(now, timeZone);
 }
 
-/** Returns yesterday's date as a "YYYY-MM-DD" string in the supplied timezone */
-export function yesterdayUTC(timeZone: string = "UTC"): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - 1);
-  return dateInTimeZone(d, timeZone);
+/**
+ * Shifts a "YYYY-MM-DD" calendar date by a whole number of days.
+ *
+ * This is pure calendar arithmetic (done at UTC midnight, which has no DST), so
+ * it is independent of any timezone's UTC offset.
+ */
+export function shiftDateString(dateStr: string, days: number): string {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+/**
+ * Returns yesterday's date as a "YYYY-MM-DD" string in the supplied timezone.
+ *
+ * Yesterday must be derived from the user's *local calendar date*, not by
+ * subtracting 24 hours from the current instant: on a DST transition a local
+ * day is 23 or 25 hours long, so "now - 24h" can land two calendar days back
+ * (spring forward) or on today's date (fall back), wrongly breaking streaks.
+ */
+export function yesterdayUTC(timeZone: string = "UTC", now: Date = new Date()): string {
+  return shiftDateString(dateInTimeZone(now, timeZone), -1);
 }
 
 export interface StreakResult {
@@ -80,8 +96,10 @@ export function calculateStreak(
   longestStreak: number,
   timeZone: string = "UTC",
 ): StreakResult {
-  const today = todayUTC(timeZone);
-  const yesterday = yesterdayUTC(timeZone);
+  // Sample the clock once so "today" and "yesterday" can never straddle midnight.
+  const now = new Date();
+  const today = todayUTC(timeZone, now);
+  const yesterday = yesterdayUTC(timeZone, now);
 
   // ── Same-day duplicate ──────────────────────────────────────────────────
   if (lastCheckInDate === today) {
@@ -103,10 +121,10 @@ export function calculateStreak(
   const newLongest = Math.max(longestStreak, newStreak);
 
   // ── Milestone detection ─────────────────────────────────────────────────
-  // A milestone is "newly unlocked" if the streak just crossed the threshold
-  // from below (previous streak < milestone, new streak >= milestone).
+  // A milestone is "newly unlocked" if the streak has never reached this threshold
+  // before (longestStreak < milestone, newStreak >= milestone).
   const newMilestones = STREAK_MILESTONES.filter(
-    (m) => newStreak >= m && currentStreak < m,
+    (m) => newStreak >= m && longestStreak < m,
   );
 
   return {

@@ -5,7 +5,7 @@ import { ShieldAlert, X } from "lucide-react";
 import {
   getFrameWebAuthnStatus,
   installWebAuthnFrameGuard,
-} from "@/lib/webauthn-frame";
+} from "@/lib/auth/passkeys/client";
 
 /**
  * Shows a small dismissible notice when WorkSphere is embedded in a

@@ -319,18 +319,36 @@ export async function processTagMutationsQueue(): Promise<void> {
         }
 
         try {
-          const res = await fetch("/api/favorites/tags/sync", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              updates: [
-                {
-                  id: action.tagId,
-                  ...action.data,
-                },
-              ],
-            }),
-          });
+          let res: Response;
+          if (action.operation === "DELETE") {
+            const favoriteId = action.data?.favoriteId ?? action.tagId;
+            res = await fetch(
+              `/api/favorites/${favoriteId}/tags/${action.tagId}`,
+              {
+                method: "DELETE",
+              },
+            );
+          } else if (action.operation === "CREATE") {
+            const favoriteId = action.data?.favoriteId ?? action.tagId;
+            res = await fetch(`/api/favorites/${favoriteId}/tags`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(action.data ?? {}),
+            });
+          } else {
+            res = await fetch("/api/favorites/tags/sync", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                updates: [
+                  {
+                    id: action.tagId,
+                    ...action.data,
+                  },
+                ],
+              }),
+            });
+          }
 
           if (res.ok) {
             await dequeueTagMutation(action.id);

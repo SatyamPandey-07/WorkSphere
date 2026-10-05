@@ -15,8 +15,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
-    const { query, limit = 5, threshold = 0.4 } = body;
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON body." },
+        { status: 400 }
+      );
+    }
+    const { query, limit = 5, threshold = 0.4 } = (body as Record<string, unknown>) ?? {};
 
     // Bound the query before it reaches paid embedding generation, and
     // clamp the numeric options before they reach the SQL LIMIT and the
@@ -68,10 +76,7 @@ export async function POST(req: NextRequest) {
   } catch (error: unknown) {
     console.error("[Memory Search Error]:", error);
     return NextResponse.json(
-      {
-        error: "Internal Server Error",
-        details: error instanceof Error ? error.message : "Failed to search memories",
-      },
+      { error: "Internal Server Error" },
       { status: 500 }
     );
   }

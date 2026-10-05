@@ -20,6 +20,7 @@ const PREFETCH_CACHE_NAME = "worksphere-prefetch-v1";
 const OFFLINE_URL = "/offline";
 const AVAILABILITY_SYNC_TAG = "availability-sync";
 const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
+const PERIODIC_FAVORITES_TAG = "refresh-favorite-venues";
 
 // Cap image cache at 20MB so iOS Safari PWA (~50MB quota) doesn't get killed.
 const MAX_IMAGE_CACHE_BYTES = 20 * 1024 * 1024;
@@ -348,10 +349,13 @@ self.addEventListener("sync", (event) => {
   }
 });
 
-// Periodic Background Sync for workspace availability (Issue #1126)
+// Periodic Background Sync for workspace availability (Issue #1126) and favorite venues occupancy (Issue #3957)
 self.addEventListener("periodicsync", (event) => {
   if (event.tag === PERIODIC_AVAILABILITY_TAG) {
     event.waitUntil(syncAvailability());
+  }
+  if (event.tag === PERIODIC_FAVORITES_TAG) {
+    event.waitUntil(syncFavoriteVenuesOccupancy());
   }
 });
 
@@ -1090,6 +1094,120 @@ async function syncAvailability() {
     console.error("[SW] Availability sync failed:", error);
   } finally {
     isSyncingAvailability = false;
+  }
+}
+
+// Periodic Background Sync: refresh favorite venue occupancy cache every 12h (Issue #3957)
+let isSyncingFavoriteOccupancy = false;
+async function syncFavoriteVenuesOccupancy() {
+  if (isSyncingFavoriteOccupancy) return;
+  isSyncingFavoriteOccupancy = true;
+
+  try {
+    await withIdbLock(async () => {
+      // 1. Fetch fresh availability/occupancy delta for saved/favorite venues
+      const response = await fetch("/api/availability/delta", {
+        credentials: "include",
+      });
+
+      if (!response.ok) return;
+
+      const { venues } = await response.json();
+      if (!Array.isArray(venues) || venues.length === 0) return;
+
+      // 2. Open CacheStorage to update cached responses
+      const cache = await caches.open(CACHE_NAME);
+
+      // Cache the fresh delta response directly
+      await cache.put(
+        "/api/availability/delta",
+        new Response(JSON.stringify({ venues }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+
+      // Cache individual venue occupancy / details endpoints
+      for (const venue of venues) {
+        if (!venue.venueId) continue;
+        const venueUrl = `/api/venues/${venue.venueId}`;
+        const venuePayload = {
+          id: venue.venueId,
+          name: venue.venueName,
+          currentOccupancy: venue.count,
+          maxCapacity: venue.capacity,
+          occupancyStatus: venue.status,
+          updatedAt: new Date().toISOString(),
+        };
+
+        await cache.put(
+          venueUrl,
+          new Response(JSON.stringify(venuePayload), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+
+      // 3. Update IndexedDB offline storage if stores exist
+      const db = await openIndexedDB();
+      const storeNames = db.objectStoreNames;
+
+      // Update availabilityDeltas store
+      if (storeNames.contains("availabilityDeltas")) {
+        const tx = db.transaction("availabilityDeltas", "readwrite");
+        const store = tx.objectStore("availabilityDeltas");
+        for (const venue of venues) {
+          store.put({
+            venueId: venue.venueId,
+            venueName: venue.venueName,
+            currentCount: venue.count,
+            currentCapacity: venue.capacity,
+            currentStatus: venue.status,
+            timestamp: Date.now(),
+          });
+        }
+        await new Promise((resolve) => {
+          tx.oncomplete = resolve;
+          tx.onerror = resolve;
+        });
+      }
+
+      // Update favorites / venues store occupancy stats
+      const targetStore = storeNames.contains("favorites")
+        ? "favorites"
+        : storeNames.contains("venues")
+        ? "venues"
+        : null;
+
+      if (targetStore) {
+        const tx = db.transaction(targetStore, "readwrite");
+        const store = tx.objectStore(targetStore);
+        for (const venue of venues) {
+          const req = store.get(venue.venueId);
+          req.onsuccess = () => {
+            const item = req.result;
+            if (item) {
+              item.currentOccupancy = venue.count;
+              item.maxCapacity = venue.capacity;
+              item.occupancyStatus = venue.status;
+              item.lastOccupancySync = Date.now();
+              store.put(item);
+            }
+          };
+        }
+        await new Promise((resolve) => {
+          tx.oncomplete = resolve;
+          tx.onerror = resolve;
+        });
+      }
+
+      console.log(`[SW] Successfully synced occupancy cache for ${venues.length} favorite venues`);
+    });
+  } catch (error) {
+    console.error("[SW] Favorite venues occupancy sync failed:", error);
+  } finally {
+    isSyncingFavoriteOccupancy = false;
   }
 }
 

@@ -20,6 +20,7 @@ import {
   DEFAULT_TIMEZONES,
   DAYS_OF_WEEK,
 } from "@/lib/openingHours";
+import { OccupancyTrendChart } from "@/components/analytics/OccupancyTrendChart";
 
 function VenueAdminContent() {
   const { isLoaded, isSignedIn } = useUser();
@@ -608,6 +609,14 @@ function VenueAdminContent() {
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  {/* Monthly Average Seat Occupancy Analytics */}
+                  <div className="pt-2">
+                    <OccupancyTrendChart
+                      venueId={selectedVenue.id}
+                      venueCapacity={selectedVenue.maxCapacity || 50}
+                    />
                   </div>
                 </div>
 

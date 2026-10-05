@@ -103,6 +103,7 @@ export function useSyncWorker() {
 export function SyncManager() {
   useSyncWorker();
   usePeriodicAvailabilitySync();
+  usePeriodicFavoriteVenuesSync();
 
   useEffect(() => {
     // Non-blocking purge of stale federated learning model weights on startup
@@ -146,6 +147,7 @@ export function useServiceWorker() {
   const [isOnline, setIsOnline] = useState(true);
   const [registration, setRegistration] =
     useState<ServiceWorkerRegistration | null>(null);
+  const controllerChangeHandlerRef = useRef<(() => void) | null>(null);
 
   // Initialize the dedicated sync worker
   useSyncWorker();
@@ -201,12 +203,17 @@ export function useServiceWorker() {
 
       // Handle controller change (e.g. after skipWaiting)
       let refreshing = false;
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
+      const handleControllerChange = () => {
         if (!refreshing) {
           refreshing = true;
           window.location.reload();
         }
-      });
+      };
+      navigator.serviceWorker.addEventListener(
+        "controllerchange",
+        handleControllerChange,
+      );
+      controllerChangeHandlerRef.current = handleControllerChange;
     } else if (
       "serviceWorker" in navigator &&
       process.env.NODE_ENV === "development"
@@ -231,6 +238,13 @@ export function useServiceWorker() {
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      if (controllerChangeHandlerRef.current && "serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener(
+          "controllerchange",
+          controllerChangeHandlerRef.current,
+        );
+        controllerChangeHandlerRef.current = null;
+      }
     };
   }, []);
 
@@ -718,7 +732,9 @@ export function PWABanner() {
 
 const AVAILABILITY_SYNC_TAG = "availability-sync";
 const PERIODIC_AVAILABILITY_TAG = "workspace-availability";
+const PERIODIC_FAVORITES_TAG = "refresh-favorite-venues";
 const SYNC_INTERVAL_MS = 30 * 60 * 1000;
+const FAVORITES_SYNC_INTERVAL_MS = 12 * 60 * 60 * 1000;
 
 /**
  * Registers Periodic Background Sync for workspace seat availability
@@ -751,7 +767,7 @@ export function usePeriodicAvailabilitySync() {
               minInterval: SYNC_INTERVAL_MS,
             });
             console.log("[PWA] Periodic availability sync registered");
-            return;
+            return true;
           }
         }
       } catch (error) {
@@ -761,7 +777,7 @@ export function usePeriodicAvailabilitySync() {
         );
       }
 
-      registerOneShotFallback();
+      return false;
     }
 
     function registerOneShotFallback() {
@@ -799,12 +815,55 @@ export function usePeriodicAvailabilitySync() {
     }
 
     let cleanup: (() => void) | undefined;
-    registerPeriodicSync().then(() => {
-      cleanup = registerOneShotFallback();
+    registerPeriodicSync().then((periodicOk) => {
+      if (!periodicOk) {
+        cleanup = registerOneShotFallback();
+      }
     });
 
     return () => {
       cleanup?.();
     };
+  }, [registration]);
+}
+
+/**
+ * Registers Periodic Background Sync for favorite venue occupancy cache updates
+ * every 12 hours (Issue #3957).
+ */
+export function usePeriodicFavoriteVenuesSync() {
+  const { registration } = useServiceWorker();
+
+  useEffect(() => {
+    if (!registration) return;
+
+    async function registerPeriodicSync() {
+      try {
+        const reg = registration as ServiceWorkerRegistration & {
+          periodicSync?: {
+            register: (
+              tag: string,
+              options?: { minInterval?: number },
+            ) => Promise<void>;
+          };
+        };
+
+        if (reg.periodicSync) {
+          const status = await navigator.permissions.query({
+            name: "periodic-background-sync" as PermissionName,
+          });
+          if (status.state === "granted") {
+            await reg.periodicSync.register(PERIODIC_FAVORITES_TAG, {
+              minInterval: FAVORITES_SYNC_INTERVAL_MS,
+            });
+            console.log("[PWA] Periodic favorite venues sync registered (12h)");
+          }
+        }
+      } catch (error) {
+        console.warn("[PWA] Periodic favorite venues sync registration failed:", error);
+      }
+    }
+
+    registerPeriodicSync();
   }, [registration]);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { ShieldCheck, Loader2, Copy, Check } from "lucide-react";
 import { provePremiumAccess, type ZkpProgressStage } from "@/lib/zkp/client";
 
@@ -18,6 +18,13 @@ export default function PremiumZkpGate({ venueId, venueName }: Props) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+    };
+  }, []);
 
   const onProgress = useCallback((s: ZkpProgressStage) => {
     setStage(s === "generating" ? "proving" : "verifying");

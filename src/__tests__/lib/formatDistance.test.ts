@@ -81,7 +81,7 @@ describe("formatDistance & distance unit conversion (#3775)", () => {
     });
 
     it("handles zero distance gracefully", () => {
-      expect(formatWalkingBadgeWithUnit(0, "METRIC")).toBe("1 min walk · 0 m");
+      expect(formatWalkingBadgeWithUnit(0, "METRIC")).toBe("0 min walk · 0 m");
     });
 
     it("returns -- for invalid distance", () => {

@@ -115,6 +115,9 @@ export function NoiseMeter({ onMeasured }: Props) {
       }
 
       const audioContext = new AudioContextClass();
+      if (audioContext.state === "suspended") {
+        await audioContext.resume();
+      }
       let source = audioContext.createMediaStreamSource(stream);
       const analyser = audioContext.createAnalyser();
 
@@ -196,9 +199,8 @@ export function NoiseMeter({ onMeasured }: Props) {
           cleanup();
           cleanupRef.current = null;
           setStatus("error");
+          resetNoiseProcessor();
         }
-        audioContext.close().catch(() => {});
-        resetNoiseProcessor();
       };
 
       document.addEventListener("visibilitychange", handleVisibilityChange);

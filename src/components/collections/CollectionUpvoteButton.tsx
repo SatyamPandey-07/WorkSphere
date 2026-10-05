@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ThumbsUp } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
 
@@ -21,6 +21,11 @@ export function CollectionUpvoteButton({
   const [hasUpvoted, setHasUpvoted] = useState(initialHasUpvoted);
   const [isPending, setIsPending] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    setUpvotes(initialUpvotes);
+    setHasUpvoted(initialHasUpvoted);
+  }, [folderId, initialUpvotes, initialHasUpvoted]);
 
   const handleToggleUpvote = async (e: React.MouseEvent) => {
     e.preventDefault();

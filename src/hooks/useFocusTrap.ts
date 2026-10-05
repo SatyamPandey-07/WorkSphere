@@ -48,7 +48,7 @@ export function useFocusTrap<T extends HTMLElement = HTMLElement>(
       (el) =>
         !el.hasAttribute("disabled") &&
         el.getAttribute("aria-hidden") !== "true" &&
-        el.offsetParent !== null,
+        el.getClientRects().length > 0,
     );
   }, [containerRef]);
 

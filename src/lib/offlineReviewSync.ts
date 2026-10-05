@@ -106,6 +106,16 @@ export function openReviewDB(): Promise<IDBDatabase> {
   }
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        dbInstance = null;
+        console.warn("[offlineReviewSync] IndexedDB open timed out (likely Safari Private Browsing)");
+        reject(new DOMException("IndexedDB open timed out", "SecurityError"));
+      }
+    }, 3000);
+
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -114,10 +124,17 @@ export function openReviewDB(): Promise<IDBDatabase> {
       };
 
       request.onerror = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        dbInstance = null;
         reject(request.error || new Error("Failed to open IndexedDB"));
       };
 
       request.onsuccess = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
         dbInstance = request.result;
         dbInstance.onversionchange = () => {
           dbInstance?.close();
@@ -177,6 +194,10 @@ export function openReviewDB(): Promise<IDBDatabase> {
         }
       };
     } catch (err) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      dbInstance = null;
       reject(err);
     }
   });
@@ -498,7 +519,15 @@ export async function flushPendingReviewsClientFallback(
           const db = await openReviewDB();
           const tx = db.transaction([REVIEW_STORE_NAME], "readwrite");
           const store = tx.objectStore(REVIEW_STORE_NAME);
-          store.put({ ...item, retryCount: nextRetry, status: newStatus });
+          await new Promise<void>((resolve, reject) => {
+            const req = store.put({
+              ...item,
+              retryCount: nextRetry,
+              status: newStatus,
+            });
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+          });
         });
         continue;
       }

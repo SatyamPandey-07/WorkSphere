@@ -1,5 +1,8 @@
-import { calculatePartitionDates } from "../../../../app/api/admin/system/partitions/dateHelper";
-import { escapeCsv, GET } from "../../../../app/api/admin/system/partitions/export/route";
+import {
+  calculatePartitionDates,
+  escapeCsv,
+} from "../../../../app/api/admin/system/partitions/dateHelper";
+import { GET } from "../../../../app/api/admin/system/partitions/export/route";
 import { getAdminUser } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { NextRequest } from "next/server";
@@ -49,7 +52,9 @@ describe("Partition Date Calculations & Export (#3777)", () => {
     it("should reject non-admin access with 403", async () => {
       (getAdminUser as jest.Mock).mockResolvedValue(null);
 
-      const req = new NextRequest("http://localhost:3000/api/admin/system/partitions/export");
+      const req = new NextRequest(
+        "http://localhost:3000/api/admin/system/partitions/export",
+      );
       const res = await GET(req);
 
       expect(res.status).toBe(403);
@@ -58,34 +63,47 @@ describe("Partition Date Calculations & Export (#3777)", () => {
     });
 
     it("should stream telemetry partition logs with chunked transfer-encoding", async () => {
-      (getAdminUser as jest.Mock).mockResolvedValue({ id: "admin-1", email: "admin@worksphere.com" });
-      (prisma.$queryRawUnsafe as jest.Mock).mockResolvedValueOnce([
-        {
-          id: "tel-1",
-          venueId: "ven-1",
-          timestamp: new Date("2026-03-15T10:00:00Z"),
-          download: 150.5,
-          upload: 50.2,
-          latency: 12.0,
-          noiseLevel: 45.0,
-          occupancy: 20,
-          presence: true,
-          crowdLevel: "moderate",
-        },
-      ]).mockResolvedValueOnce([]); // second batch empty
+      (getAdminUser as jest.Mock).mockResolvedValue({
+        id: "admin-1",
+        email: "admin@worksphere.com",
+      });
+      (prisma.$queryRawUnsafe as jest.Mock)
+        .mockResolvedValueOnce([
+          {
+            id: "tel-1",
+            venueId: "ven-1",
+            timestamp: new Date("2026-03-15T10:00:00Z"),
+            download: 150.5,
+            upload: 50.2,
+            latency: 12.0,
+            noiseLevel: 45.0,
+            occupancy: 20,
+            presence: true,
+            crowdLevel: "moderate",
+          },
+        ])
+        .mockResolvedValueOnce([]); // second batch empty
 
-      const req = new NextRequest("http://localhost:3000/api/admin/system/partitions/export?year=2026&month=2&type=telemetry");
+      const req = new NextRequest(
+        "http://localhost:3000/api/admin/system/partitions/export?year=2026&month=2&type=telemetry",
+      );
       const res = await GET(req);
 
       expect(res.status).toBe(200);
       expect(res.headers.get("Content-Type")).toBe("text/csv; charset=utf-8");
       expect(res.headers.get("Transfer-Encoding")).toBe("chunked");
-      expect(res.headers.get("Content-Disposition")).toContain("telemetry-records-2026-03.csv");
+      expect(res.headers.get("Content-Disposition")).toContain(
+        "telemetry-records-2026-03.csv",
+      );
 
       // Read stream
       const text = await res.text();
-      expect(text).toContain("id,venueId,timestamp,download,upload,latency,noiseLevel,occupancy,presence,crowdLevel");
-      expect(text).toContain("tel-1,ven-1,2026-03-15T10:00:00.000Z,150.5,50.2,12,45,20,true,moderate");
+      expect(text).toContain(
+        "id,venueId,timestamp,download,upload,latency,noiseLevel,occupancy,presence,crowdLevel",
+      );
+      expect(text).toContain(
+        "tel-1,ven-1,2026-03-15T10:00:00.000Z,150.5,50.2,12,45,20,true,moderate",
+      );
     });
   });
 });

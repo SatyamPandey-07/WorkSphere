@@ -81,9 +81,9 @@ export async function predictQuietHours(
 ): Promise<QuietWindowPrediction> {
   const hourlyProfile = await getHourlyNoiseProfile(venueId);
 
-  // Identify quiet hours (averageDb < QUIET_THRESHOLD or no data)
+  // Identify quiet hours (averageDb !== null and averageDb < QUIET_THRESHOLD)
   const quietHours = hourlyProfile
-    .filter((h) => h.averageDb === null || h.averageDb < QUIET_THRESHOLD_DB)
+    .filter((h) => h.averageDb !== null && h.averageDb < QUIET_THRESHOLD_DB)
     .map((h) => h.hour);
 
   // Merge contiguous quiet hours into windows
@@ -118,7 +118,7 @@ export async function predictQuietHours(
     .map((h) => h.hour);
 
   // Build human-readable summary
-  const format = (h: number) => `${h.toString().padStart(2, "0")}:00`;
+  const format = (h: number) => `${(h % 24).toString().padStart(2, "0")}:00`;
   const windowDescs = quietWindows.slice(0, 3).map(
     (w) => `${format(w.startHour)}–${format(w.endHour + 1)} (~${w.avgDb} dB)`,
   );

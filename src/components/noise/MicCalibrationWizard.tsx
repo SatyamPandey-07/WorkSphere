@@ -24,7 +24,15 @@ import {
   DEVICE_PRESETS,
   rmsToCalibratedDb,
 } from "@/lib/noise/calibration";
+import {
+  type FrequencyBandSpectrum,
+  analyzeFrequencyBands,
+} from "@/lib/noise/spectrumAnalyzer";
 import { useWebAudioAutoPause } from "@/hooks/useWebAudioAutoPause";
+import {
+  analyzeFrequencyBands,
+  type FrequencyBandSpectrum,
+} from "@/lib/noise/spectrumAnalyzer";
 
 interface MicCalibrationWizardProps {
   isOpen: boolean;
@@ -55,12 +63,19 @@ export function MicCalibrationWizard({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const sampledValuesRef = useRef<number[]>([]);
+  const isSamplingRef = useRef(false);
+  const samplingIntervalRef = useRef<number | null>(null);
 
   const stopAudioStream = useCallback(() => {
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
+    if (samplingIntervalRef.current !== null) {
+      clearInterval(samplingIntervalRef.current);
+      samplingIntervalRef.current = null;
+    }
+    isSamplingRef.current = false;
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -121,6 +136,9 @@ export function MicCalibrationWizard({
         (window as typeof window & { webkitAudioContext?: typeof AudioContext })
           .webkitAudioContext;
       const ctx = new AudioCtx();
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
       audioContextRef.current = ctx;
 
       const source = ctx.createMediaStreamSource(stream);
@@ -170,7 +188,7 @@ export function MicCalibrationWizard({
         setLiveCalibratedDb(calibrated);
         setPeakDb((prev) => Math.max(prev, calibrated));
 
-        if (isSamplingNoiseFloor) {
+        if (isSamplingRef.current) {
           sampledValuesRef.current.push(calibrated);
         }
 
@@ -195,13 +213,21 @@ export function MicCalibrationWizard({
       startAudioStream();
     }
     sampledValuesRef.current = [];
+    isSamplingRef.current = true;
     setIsSamplingNoiseFloor(true);
     setSamplingCountdown(3);
 
-    const interval = setInterval(() => {
+    if (samplingIntervalRef.current !== null) {
+      clearInterval(samplingIntervalRef.current);
+    }
+    samplingIntervalRef.current = window.setInterval(() => {
       setSamplingCountdown((prev) => {
         if (prev <= 1) {
-          clearInterval(interval);
+          if (samplingIntervalRef.current !== null) {
+            clearInterval(samplingIntervalRef.current);
+            samplingIntervalRef.current = null;
+          }
+          isSamplingRef.current = false;
           setIsSamplingNoiseFloor(false);
 
           if (sampledValuesRef.current.length > 0) {

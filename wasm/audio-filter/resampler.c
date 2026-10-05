@@ -62,7 +62,7 @@ static float bessel_i0(float x) {
     float sum = 1.0f;
     float term = 1.0f;
     float half_x = x * 0.5f;
-    for (int m = 1; m <= 25; m++) {
+    for (int m = 1; m <= 100; m++) {
         term *= (half_x / (float)m) * (half_x / (float)m);
         sum += term;
         if (term < 1e-9f) break;

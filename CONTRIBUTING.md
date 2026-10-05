@@ -33,48 +33,72 @@ To keep the repository clean and manageable, please follow this flow:
 4. **Commit** your changes with clear, structured commit messages (e.g., `feat: add map route coordinates validation`). See below for detailed commit formatting rules.
 5. **Push** to your fork and open a **Pull Request (PR)** against the `main` branch. Ensure the PR title adheres to the strict formatting rules outlined in Section 1.2.
 
-### 1.1 Issue Assignment & Claiming Policy
+### 1.1 OSCI'26 Issue Assignment & Claiming Policy (/claim)
 
-- **Claiming an Issue**: Contributor issue tracking is claim-based. Find any unassigned, open issue and post a comment containing exactly:
+WorkSphere is an official selected project for **OSCI'26** (Open Source Contribution India) and **ECSoC 2026**. Contributor issue tracking and assignment are automated via GitHub Actions to ensure a transparent, fair, and high-velocity workflow.
+
+- **Claiming an Issue**: Find any unassigned, open issue and post a comment containing exactly:
   ```text
   /claim
   ```
-  The `@github-actions` bot will automatically verify your eligibility, assign the issue to you, and label it as `in-progress`.
-- **Issue Assignment SLA**: Once assigned, you have exactly **6 days** to implement the changes and open a pull request. If the 6-day threshold is breached without a linked PR or a requested extension (noted via a progress comment on the issue), the bot will automatically unassign you to keep the project active.
-- **Maximum Assigned Issue Cap**: To ensure fair work distribution across the community, contributors are restricted to a maximum of **10 active assigned issues** at any single time. The bot will reject claims if your active assigned count is 10 or more.
+  The automated `@github-actions` bot will immediately evaluate your request:
+  1. Verifies that the issue is not already assigned to another contributor.
+  2. Confirms you have fewer than 10 active assigned issues.
+  3. Assigns you to the issue, attaches the `OSCI'26` and `in-progress` labels, and posts a confirmation greeting.
+- **Unclaiming an Issue**: If you can no longer work on an assigned issue, release it promptly so other contributors can proceed:
+  ```text
+  /unclaim
+  ```
+- **6-Day Resolution Window (SLA)**: Once assigned, you have exactly **6 days** to implement your solution and open a corresponding Pull Request.
+  - **Automated Expiration**: If the 6-day threshold expires without a linked pull request or a recorded progress update, the automated triage workflow unassigns the issue and returns it to the open pool for other OSCI'26 participants.
+  - **Requesting an Extension**: If you need additional time due to technical complexity, post a progress comment on the issue describing your current status, blockers, and expected timeline before the 6th day.
+- **Maximum Assigned Issue Cap (10 Issues)**: To prevent issue hoarding and ensure fair opportunity across all OSCI'26 participants, each contributor may hold at most **10 active assigned issues** simultaneously. Additional `/claim` attempts will be automatically rejected until existing assignments are resolved or unclaimed.
 
-### 1.2 Pull Request Naming Conventions
+### 1.2 Pull Request Title Conventions & Format
 
-All pull request titles must match the following structured, machine-parseable format:
+All Pull Request titles must follow the strict machine-parseable convention:
 
 ```text
 <type>: <short description> (closes #<issue_number>)
 ```
 
-Use the table below to select the appropriate `<type>` prefix:
+For example:
+```text
+fix: handle geolocation access permission denied error gracefully (closes #100)
+feat: add ambient noise decibel trend graph (closes #3955)
+docs: document NIOSH daily sound exposure calculation and formula reference (closes #3946)
+```
 
-| PR Prefix Type | When to Use                                                        | Example                                             |
-| :------------- | :----------------------------------------------------------------- | :-------------------------------------------------- |
-| **`feat`**     | Adding a new capability or feature to the workspace                | `feat: integrate Pexels API cache lookup`           |
-| **`fix`**      | Resolving a bug, runtime crash, or styling defect                  | `fix: prevent leaflet null coordinates map crash`   |
-| **`docs`**     | Updating instructions, manuals, or API guides                      | `docs: add noise telemetry ingestion guide`         |
-| **`style`**    | Code formatting changes (Prettier updates, spaces, semi-colons)    | `style: run Prettier formatting across components`  |
-| **`refactor`** | Restructuring code without changing its functional behavior        | `refactor: modularize telemetry calculation checks` |
-| **`perf`**     | Code changes targeting loading speed, latency, or memory usage     | `perf: compress spatial indices for faster maps`    |
-| **`test`**     | Writing unit tests, RTL mocks, or Playwright E2E files             | `test: add unit coverage for favorites handler`     |
-| **`build`**    | Changing build scripts, Next.js configurations, or webpack configs | `build: upgrade Next.js to version 15.5.x`          |
-| **`ci`**       | Modifying GitHub Actions workflows or Vercel build configs         | `ci: adjust check runner permissions`               |
-| **`chore`**    | Updating dependencies, post-installs, or workspace tasks           | `chore: clean up lockfiles and unused deps`         |
-| **`revert`**   | Reverting a previous commit that caused regressions                | `revert: rollback rating distribution safari patch` |
+> **Mandatory Rule**: The `(closes #<issue_number>)` suffix is strictly required. It enables automated GitHub issue linking and closes the associated issue upon merge. Never invent dummy issue numbers or reference unrelated issues.
 
-_Note: The `(closes #<issue_number>)` suffix is mandatory and must match the issue being resolved. For example:_
-`fix: handle geolocation access permission denied error gracefully (closes #100)`
+### 1.3 Conventional Commit Standards
 
-### 1.3 Clean & Modular Commit Guidelines
+WorkSphere enforces the [Conventional Commits](https://www.conventionalcommits.org/) specification for all git commit messages. Commit messages must be structured as:
 
-- **Atomic Scope**: Commits must be atomic. Keep changes focused on a single file or a single structural component. Avoid mixing backend optimizations with unrelated styling patches.
-- **Commit Naming conventions**: Follow standard Conventional Commits rules. Write messages in the imperative, present tense (e.g., `add map layers` rather than `added map layers` or `adds map layers`).
-- **Continuous Build Integrity**: Do not push intermediate commits that fail compilation or break the development server. The repository requires a stable main branch at all times.
+```text
+<type>: <short description in present tense>
+```
+
+#### Supported Commit Types:
+
+| Commit Type | Purpose & Scope | Example Commit Message |
+| :--- | :--- | :--- |
+| **`feat`** | Introducing a new feature, user-facing capability, or algorithm | `feat: add hourly ambient noise decibel trend graph` |
+| **`fix`** | Patching a bug, crash, calculation error, or broken behavior | `fix: clamp user distance calculation when latitude exceeds bounds` |
+| **`docs`** | Creating or updating documentation, specs, runbooks, or guides | `docs: document commit message format and PR guidelines for OSCI'26` |
+| **`perf`** | Optimizations enhancing execution speed, latency, or memory consumption | `perf: vectorize audio FFT filter coefficients using WASM SIMD` |
+| **`test`** | Adding, updating, or fixing unit tests, RTL mocks, or E2E suites | `test: add unit coverage for coordinate boundary clamping` |
+| **`chore`** | Maintenance, script updates, dependency tweaks, or workspace configs | `chore: configure dynamic co-authorship attribution in merge workflows` |
+| **`refactor`**| Restructuring code without altering functional behavior or features | `refactor: extract geographic distance calculations into modular helpers` |
+| **`style`** | Code formatting, whitespace, or lint-only fixes with no code logic change | `style: format acoustics module with prettier` |
+| **`build`** | Build system, bundler, Prisma generation, or Next.js config updates | `build: upgrade prisma adapter and engine configurations` |
+| **`ci`** | GitHub Actions workflow, automation scripts, or deployment pipelines | `ci: add automated triage and label assignment for OSCI'26 PRs` |
+| **`revert`** | Reverting a previous commit that introduced an unintended defect | `revert: rollback rating distribution safari patch` |
+
+#### Commit Best Practices:
+- **Imperative Mood**: Use imperative, present tense: `fix: clamp latitude` (not `fixed` or `fixes`).
+- **Atomic Commits**: Keep each commit focused on one cohesive logical change. Avoid monolithic commits that mix unrelated bug fixes and UI updates.
+- **No Unrelated Changes**: Do not bundle stylistic reformatting of unrelated files or unnecessary dependency updates in a bug-fix PR.
 
 ### 1.4 AI Coding Assistant & Subagent Guidelines
 
@@ -307,16 +331,62 @@ This will:
 
 End-to-end tests simulate actual user interactions inside the browser. These tests are configured in `playwright.config.ts` and reside in the `e2e/` folder.
 
+### Installing Playwright Browsers
+
+Before running E2E tests for the first time, install the required browser binaries (Chromium, Firefox, WebKit):
+
+```bash
+npx playwright install
+```
+
+To install browser system dependencies on Linux/CI environments:
+
+```bash
+npx playwright install-deps
+```
+
 ### Running Playwright Tests
 
 - **Run all E2E tests in headless mode** (runs behind the scenes):
-    `bash
-  npm run test:e2e
-  `
-- **Run E2E tests with Playwright UI** (highly recommended for debugging):
-    `bash
-  npm run test:e2e:ui
-  `
+  ```bash
+  npm run test:e2e
+  ```
+- **Run E2E tests with Playwright Interactive UI Mode** (recommended for debugging and stepping through tests):
+  ```bash
+  npm run test:e2e:ui
+  ```
+- **Run E2E tests in Debug Mode** (launches Playwright Inspector step-by-step):
+  ```bash
+  npx playwright test --debug
+  ```
+
+### Playwright Command Cheat Sheet
+
+| Command | Description |
+| :--- | :--- |
+| `npx playwright install` | Download required browser binaries (Chromium, Firefox, WebKit) |
+| `npm run test:e2e` | Run all E2E test suites in headless mode |
+| `npm run test:e2e:ui` | Open interactive Playwright UI mode with time-travel inspection |
+| `npx playwright test e2e/search.spec.ts` | Run a specific E2E test file |
+| `npx playwright test -g "filter query"` | Run tests matching a specific title or pattern |
+| `npx playwright test --project=chromium` | Run E2E tests using only the Chromium browser |
+| `npx playwright test --headed` | Run tests in visible browser window mode |
+| `npx playwright test --debug` | Step through test execution using Playwright Inspector |
+| `npx playwright show-trace <path-to-trace.zip>` | Open Playwright Trace Viewer for failed test runs |
+
+### Viewing Failure Traces with Playwright Trace Viewer
+
+Playwright automatically records execution traces, DOM snapshots, network logs, and screenshots when a test fails.
+
+1. **Locate the trace archive**: Failed test artifacts are saved in the `test-results/` directory (e.g., `test-results/e2e-search-chromium/trace.zip`).
+2. **Open the Trace Viewer**:
+   ```bash
+   npx playwright show-trace test-results/e2e-search-chromium/trace.zip
+   ```
+3. **Inspect Execution**: The Trace Viewer interface displays:
+   - **Actions Timeline**: Hover over each user action (click, fill, navigate) to view DOM state before and after.
+   - **Console & Network**: Inspect browser console logs and HTTP request/response payloads.
+   - **Source Code**: Step directly into the line of code that triggered the failure.
 
 ### Dev Server Integration
 
@@ -327,10 +397,10 @@ Our E2E suite is configured to automatically launch the Next.js dev server (`npm
 By default, Playwright runs tests in headless mode (no browser window opens).
 
 - To run tests in **headed mode** via command line, pass the `--headed` flag:
-    `bash
-  npx playwright test --headed
-  `
-- To customize browser options or add multiple browsers (e.g., Firefox, WebKit), edit the `projects` section inside [playwright.config.ts](file:///C:/Users/Rajasekar/.gemini/antigravity/scratch/WorkSphere/playwright.config.ts).
+  ```bash
+  npx playwright test --headed
+  ```
+- To customize browser options or add multiple browsers (e.g., Firefox, WebKit), edit the `projects` section inside `playwright.config.ts`.
 
 ---
 

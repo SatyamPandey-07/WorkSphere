@@ -19,6 +19,7 @@ export interface CompassKalmanFilterOptions {
  * Returns a value in the range [-180, 180].
  */
 export function shortestAngularDifference(fromAngle: number, toAngle: number): number {
+  if (!Number.isFinite(fromAngle) || !Number.isFinite(toAngle)) return 0;
   const diff = ((toAngle - fromAngle + 180) % 360 + 360) % 360 - 180;
   return diff;
 }
@@ -27,6 +28,7 @@ export function shortestAngularDifference(fromAngle: number, toAngle: number): n
  * Normalizes any degree value into the canonical [0, 360) range.
  */
 export function normalizeDegrees(deg: number): number {
+  if (!Number.isFinite(deg)) return 0;
   return ((deg % 360) + 360) % 360;
 }
 
@@ -38,11 +40,13 @@ export class CompassKalmanFilter {
   private p: number;
   private q: number;
   private r: number;
+  private initialP: number;
 
   constructor(options: CompassKalmanFilterOptions = {}) {
     this.q = options.q ?? 0.05;
     this.r = options.r ?? 0.5;
     this.p = options.p ?? 1.0;
+    this.initialP = this.p;
   }
 
   /**
@@ -96,7 +100,7 @@ export class CompassKalmanFilter {
    */
   public reset(initialState: number | null = null): void {
     this.state = initialState !== null ? normalizeDegrees(initialState) : null;
-    this.p = 1.0;
+    this.p = this.initialP;
   }
 
   /**

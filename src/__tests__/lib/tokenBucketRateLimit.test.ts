@@ -170,5 +170,31 @@ describe("Multi-Tier Token Bucket Rate Limiting (#3529)", () => {
       expect(result.limit).toBe(120);
       expect(result.remaining).toBe(119);
     });
+
+    it("maintains independent rate limit buckets across tiers for the same client IP", () => {
+      const clientIp = "192.168.1.100";
+
+      // Exhaust all 5 tokens for auth tier
+      for (let i = 0; i < 5; i++) {
+        const authRes = checkInMemoryTokenBucket(RATE_TIERS.auth, clientIp);
+        expect(authRes.success).toBe(true);
+      }
+
+      // 6th auth request is blocked
+      const authBlocked = checkInMemoryTokenBucket(RATE_TIERS.auth, clientIp);
+      expect(authBlocked.success).toBe(false);
+
+      // Telemetry tier for the same client IP remains untouched with full quota
+      const telemetryRes = checkInMemoryTokenBucket(RATE_TIERS.telemetry, clientIp);
+      expect(telemetryRes.success).toBe(true);
+      expect(telemetryRes.limit).toBe(120);
+      expect(telemetryRes.remaining).toBe(119);
+
+      // Search tier for the same client IP also remains independent
+      const searchRes = checkInMemoryTokenBucket(RATE_TIERS.search, clientIp);
+      expect(searchRes.success).toBe(true);
+      expect(searchRes.limit).toBe(60);
+      expect(searchRes.remaining).toBe(59);
+    });
   });
 });

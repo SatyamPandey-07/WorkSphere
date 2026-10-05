@@ -65,3 +65,62 @@ describe("Venue amenity filtering", () => {
     expect(filterByAmenities([], { hasOutlets: true })).toHaveLength(0);
   });
 });
+
+describe("applyFilters with pet and lighting filters", () => {
+  const venues = [
+    {
+      id: "v1",
+      name: "Sunny Canine Cafe",
+      dogFriendly: true,
+      catsAllowed: false,
+      petsAllowedIndoors: true,
+      lighting: "natural_daylight",
+    },
+    {
+      id: "v2",
+      name: "Cozy Cat Haven",
+      dogFriendly: false,
+      catsAllowed: true,
+      petsAllowedIndoors: true,
+      lighting: "warm_ambient",
+    },
+    {
+      id: "v3",
+      name: "Bright Focus Studio",
+      dogFriendly: false,
+      catsAllowed: false,
+      petsAllowedIndoors: false,
+      lighting: "bright_white",
+    },
+  ];
+
+  it("filters venues by dog friendliness", async () => {
+    const { applyFilters } = await import("@/lib/filters");
+    const result = applyFilters(venues, { dogFriendly: true });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("v1");
+  });
+
+  it("filters venues by lighting enum", async () => {
+    const { applyFilters } = await import("@/lib/filters");
+    const result = applyFilters(venues, { lighting: "warm_ambient" });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("v2");
+  });
+
+  it("combines pet and lighting filters accurately", async () => {
+    const { applyFilters } = await import("@/lib/filters");
+    const result = applyFilters(venues, {
+      dogFriendly: true,
+      lighting: "natural_daylight",
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("v1");
+
+    const emptyResult = applyFilters(venues, {
+      dogFriendly: true,
+      lighting: "bright_white",
+    });
+    expect(emptyResult).toHaveLength(0);
+  });
+});

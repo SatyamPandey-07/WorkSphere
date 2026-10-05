@@ -116,6 +116,7 @@ export class FloorplanRenderer {
   }
 
   setSeats(seats: SeatProps[]) {
+    this.seatMesh?.dispose();
     this.seatGroup.children.forEach(disposeObject);
     this.seatGroup.clear();
     this.seatMesh = null;

@@ -66,6 +66,12 @@ interface VenueLike {
   specialtyEspresso?: boolean;
   oatAlmondMilk?: boolean;
   pourOverAvailable?: boolean;
+  lighting?: string;
+  petsAllowedIndoors?: boolean;
+  patioOnly?: boolean;
+  waterBowlsProvided?: boolean;
+  dogFriendly?: boolean;
+  catsAllowed?: boolean;
   musicStyle?: string;
   [key: string]: unknown;
 }
@@ -140,6 +146,18 @@ export function applyFilters<T extends object>(
           return venue.hasNoMusic === true;
         case "hasQuietZone":
           return venue.hasQuietZone === true;
+        case "lighting":
+          return venue.lighting === value;
+        case "petsAllowedIndoors":
+          return venue.petsAllowedIndoors === true;
+        case "patioOnly":
+          return venue.patioOnly === true;
+        case "waterBowlsProvided":
+          return venue.waterBowlsProvided === true;
+        case "dogFriendly":
+          return venue.dogFriendly === true;
+        case "catsAllowed":
+          return venue.catsAllowed === true;
         case "musicStyle":
           return matchesMusicStyle(venue, value as string);
         default:

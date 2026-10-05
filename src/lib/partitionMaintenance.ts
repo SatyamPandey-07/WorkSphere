@@ -448,7 +448,7 @@ export async function checkPartitionHealth(): Promise<PartitionHealthReport> {
     const tableSizePretty = formatPartitionBytes(tableSizeBytes);
     const isNearColdStorage = tableSizeBytes >= COLD_STORAGE_THRESHOLD_BYTES;
 
-    if (offset === 1 && !exists) {
+    if (!exists) {
       isCritical = true;
     }
 

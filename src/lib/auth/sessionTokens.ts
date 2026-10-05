@@ -84,13 +84,10 @@ function base64UrlDecode(str: string): Uint8Array {
 
 function generateRandomHex(byteCount = 16): string {
   const bytes = new Uint8Array(byteCount);
-  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
-    crypto.getRandomValues(bytes);
-  } else {
-    for (let i = 0; i < byteCount; i++) {
-      bytes[i] = Math.floor(Math.random() * 256);
-    }
+  if (typeof crypto === "undefined" || typeof crypto.getRandomValues !== "function") {
+    throw new Error("Secure random number generator is unavailable");
   }
+  crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -222,6 +219,9 @@ export async function generateRefreshToken(
   userId: string,
   expiresInSeconds = REFRESH_TOKEN_EXPIRY_SECONDS,
 ): Promise<string> {
+  if (!userId || typeof userId !== "string") {
+    throw new Error("userId is required to generate a refresh token");
+  }
   const now = Math.floor(Date.now() / 1000);
   const familyId = generateRandomHex(16);
   const jti = generateRandomHex(16);

@@ -86,6 +86,7 @@ export function useVenueSearch<T = VenueSearchResult>(
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    setIsLoading(false);
   }, []);
 
   const clear = useCallback(() => {
@@ -168,6 +169,10 @@ export function useVenueSearch<T = VenueSearchResult>(
             (err as { name: string }).name === "AbortError");
 
         if (isAbort) {
+          if (abortControllerRef.current === controller) {
+            abortControllerRef.current = null;
+            setIsLoading(false);
+          }
           return;
         }
 

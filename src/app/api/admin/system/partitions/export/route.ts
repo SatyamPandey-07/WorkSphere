@@ -1,20 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminUser } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
-import { calculatePartitionDates } from "../dateHelper";
+import { calculatePartitionDates, escapeCsv } from "../dateHelper";
 
 export const dynamic = "force-dynamic";
-
-export function escapeCsv(value: string | number | boolean | null | undefined): string {
-  if (value === null || value === undefined) {
-    return "";
-  }
-  const str = String(value);
-  if (str.includes(",") || str.includes('"') || str.includes("\n") || str.includes("\r")) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
 
 export type PartitionExportType = "telemetry" | "push";
 
@@ -37,7 +26,9 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const yearParam = searchParams.get("year");
     const monthParam = searchParams.get("month");
-    const typeParam = (searchParams.get("type") || "telemetry").toLowerCase() as PartitionExportType;
+    const typeParam = (
+      searchParams.get("type") || "telemetry"
+    ).toLowerCase() as PartitionExportType;
 
     const now = new Date();
     const year = yearParam ? parseInt(yearParam, 10) : now.getUTCFullYear();

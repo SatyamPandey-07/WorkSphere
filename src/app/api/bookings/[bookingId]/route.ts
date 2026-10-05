@@ -4,9 +4,10 @@ import { NextResponse } from "next/server";
 import {
   cancellationWindowHoursRemaining,
   getBookingCancellationEligibility,
-} from "@/lib/bookingCancellation";
+} from "@/lib/booking";
 import { prisma } from "@/lib/prisma";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
+import { notifyNextInWaitlist } from "@/lib/waitlist";
 
 type RouteContext = {
   params: Promise<{
@@ -59,6 +60,8 @@ export async function DELETE(_request: Request, context: RouteContext) {
         status: true,
         confirmationId: true,
         venueId: true,
+        seatId: true,
+        duration: true,
         user: { select: { timezone: true } },
       },
     });
@@ -164,6 +167,17 @@ export async function DELETE(_request: Request, context: RouteContext) {
       date: booking.date,
       time: booking.time,
       cancelledAt: cancelledAt.toISOString(),
+    });
+
+    // Notify next eligible user on waitlist
+    notifyNextInWaitlist(
+      booking.venueId,
+      booking.date,
+      booking.time,
+      booking.duration || 60,
+      booking.seatId,
+    ).catch((err) => {
+      console.error("[Booking Cancellation] Waitlist notification failed:", err);
     });
 
     return NextResponse.json({

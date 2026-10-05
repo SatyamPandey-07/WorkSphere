@@ -29,7 +29,8 @@ export function FloorPlan3D({ venueId, data }: FloorPlan3DProps) {
 
   // Memoize the layout data by venueId so that camera-rotation state changes
   // on parent components don't trigger a full worker restart + geometry rebuild.
-  const stableData = useMemo(() => data, [venueId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // data is included so live seat and dimension updates still flow through.
+  const stableData = useMemo(() => data, [venueId, data]);
 
   useEffect(() => {
     if (!canvasRef.current) return;

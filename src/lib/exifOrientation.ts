@@ -24,33 +24,44 @@ export function getExifOrientation(arrayBuffer: ArrayBuffer): number {
 
     if (marker === 0xffe1) {
       // APP1 marker
-      if (dataView.getUint32(offset + 2, false) !== 0x45786966) {
-        return 1; // Not "Exif"
-      }
+      if (offset + 2 > length) break;
+      const blockLength = dataView.getUint16(offset, false);
+      if (blockLength < 2 || offset + blockLength > length) break;
 
-      const littleEndian = dataView.getUint16(offset + 8, false) === 0x4949;
-      const tiffOffset = offset + 8;
-      const firstIfdOffset = dataView.getUint32(tiffOffset + 4, littleEndian);
+      if (offset + 6 <= length && dataView.getUint32(offset + 2, false) === 0x45786966) {
+        // Exif identifier found
+        const tiffOffset = offset + 8;
+        if (tiffOffset + 8 <= length) {
+          const littleEndian = dataView.getUint16(tiffOffset, false) === 0x4949;
+          const firstIfdOffset = dataView.getUint32(tiffOffset + 4, littleEndian);
 
-      if (firstIfdOffset < 8) return 1;
+          if (firstIfdOffset >= 8) {
+            const tagsOffset = tiffOffset + firstIfdOffset;
+            if (tagsOffset + 2 <= length) {
+              const tagsCount = dataView.getUint16(tagsOffset, littleEndian);
 
-      const tagsOffset = tiffOffset + firstIfdOffset;
-      const tagsCount = dataView.getUint16(tagsOffset, littleEndian);
+              for (let i = 0; i < tagsCount; i++) {
+                const tagEntryOffset = tagsOffset + 2 + i * 12;
+                if (tagEntryOffset + 12 > length) break;
 
-      for (let i = 0; i < tagsCount; i++) {
-        const tagEntryOffset = tagsOffset + 2 + i * 12;
-        if (tagEntryOffset + 12 > length) break;
-
-        const tag = dataView.getUint16(tagEntryOffset, littleEndian);
-        if (tag === 0x0112) {
-          // EXIF Orientation Tag
-          return dataView.getUint16(tagEntryOffset + 8, littleEndian);
+                const tag = dataView.getUint16(tagEntryOffset, littleEndian);
+                if (tag === 0x0112) {
+                  // EXIF Orientation Tag
+                  return dataView.getUint16(tagEntryOffset + 8, littleEndian);
+                }
+              }
+            }
+          }
         }
       }
+
+      offset += blockLength;
     } else if ((marker & 0xff00) !== 0xff00) {
       break;
     } else {
+      if (offset + 2 > length) break;
       const blockLength = dataView.getUint16(offset, false);
+      if (blockLength < 2 || offset + blockLength > length) break;
       offset += blockLength;
     }
   }

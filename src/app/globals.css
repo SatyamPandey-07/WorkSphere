@@ -24,7 +24,7 @@
   --foreground: #171717;
   --primary-accent: #3b82f6;
   --primary-accent-rgb: 59, 130, 246;
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 .cyberpunk {
@@ -43,6 +43,11 @@
 .dark {
   --background: #0a0a0a;
   --foreground: #ededed;
+}
+
+.dark,
+.cyberpunk {
+  color-scheme: dark;
 }
 
 /* ─── Base Styles ─────────────────────────────────────────────────── */
@@ -551,33 +556,248 @@ textarea:focus::placeholder {
   }
 }
 
-/* ─── High-Contrast Mode Styles ───────────────────────────────────── */
+/* ─── High-Contrast Mode Styles (WCAG 2.1 AAA Compliant - 7:1 Ratio) ── */
 html.high-contrast {
+  --background: #ffffff;
+  --foreground: #000000;
   --contrast-border: #000000;
+  --primary-accent: #0047bb;
+  --primary-accent-rgb: 0, 71, 187;
+  color-scheme: light;
 }
 
-html.high-contrast.dark {
+html.high-contrast.dark,
+html.high-contrast.cyberpunk,
+html.high-contrast .dark,
+html.dark.high-contrast,
+html[data-high-contrast="true"].dark {
+  --background: #000000;
+  --foreground: #ffffff;
   --contrast-border: #ffffff;
+  --primary-accent: #38bdf8;
+  --primary-accent-rgb: 56, 189, 248;
+  color-scheme: dark;
 }
 
-html.high-contrast button,
-html.high-contrast a,
-html.high-contrast input,
-html.high-contrast select,
-html.high-contrast textarea {
-  outline-width: 2px;
+html.high-contrast,
+html.high-contrast body {
+  background-color: #ffffff !important;
+  color: #000000 !important;
 }
 
-html.high-contrast .border-zinc-200,
-html.high-contrast .border-zinc-300 {
-  border-color: #71717a;
+html.high-contrast.dark,
+html.high-contrast.dark body,
+html.dark.high-contrast,
+html.dark.high-contrast body {
+  background-color: #000000 !important;
+  color: #ffffff !important;
 }
 
-html.high-contrast .dark .border-zinc-800,
-html.high-contrast .dark .border-zinc-700,
-html.high-contrast.dark .border-zinc-800,
-html.high-contrast.dark .border-zinc-700 {
-  border-color: #a1a1aa;
+/* Enforce 7:1 AAA contrast for muted and secondary text */
+html.high-contrast .text-zinc-500,
+html.high-contrast .text-zinc-600,
+html.high-contrast .text-zinc-700,
+html.high-contrast .text-zinc-800,
+html.high-contrast .text-gray-500,
+html.high-contrast .text-gray-600,
+html.high-contrast .text-gray-700,
+html.high-contrast .text-slate-500,
+html.high-contrast .text-slate-600,
+html.high-contrast .text-slate-700,
+html.high-contrast .text-muted-foreground {
+  color: #000000 !important;
+}
+
+html.high-contrast.dark .text-zinc-300,
+html.high-contrast.dark .text-zinc-400,
+html.high-contrast.dark .text-zinc-500,
+html.high-contrast.dark .text-gray-300,
+html.high-contrast.dark .text-gray-400,
+html.high-contrast.dark .text-gray-500,
+html.high-contrast.dark .text-slate-300,
+html.high-contrast.dark .text-slate-400,
+html.high-contrast.dark .text-slate-500,
+html.high-contrast.dark .text-muted-foreground {
+  color: #ffffff !important;
+}
+
+/* High-Contrast Borders */
+html.high-contrast .border,
+html.high-contrast .border-t,
+html.high-contrast .border-b,
+html.high-contrast .border-l,
+html.high-contrast .border-r,
+html.high-contrast [class*="border-zinc-"],
+html.high-contrast [class*="border-gray-"],
+html.high-contrast [class*="border-slate-"] {
+  border-color: #000000 !important;
+}
+
+html.high-contrast.dark .border,
+html.high-contrast.dark .border-t,
+html.high-contrast.dark .border-b,
+html.high-contrast.dark .border-l,
+html.high-contrast.dark .border-r,
+html.high-contrast.dark [class*="border-zinc-"],
+html.high-contrast.dark [class*="border-gray-"],
+html.high-contrast.dark [class*="border-slate-"] {
+  border-color: #ffffff !important;
+}
+
+/* Reinforced Outline Focus Rings for all interactive components (WCAG 2.1 AAA) */
+html.high-contrast :focus-visible,
+html.high-contrast button:focus-visible,
+html.high-contrast a:focus-visible,
+html.high-contrast input:focus-visible,
+html.high-contrast select:focus-visible,
+html.high-contrast textarea:focus-visible,
+html.high-contrast [role="button"]:focus-visible,
+html.high-contrast [role="switch"]:focus-visible,
+html.high-contrast [role="checkbox"]:focus-visible,
+html.high-contrast [role="tab"]:focus-visible,
+html.high-contrast [role="menuitem"]:focus-visible,
+html.high-contrast [role="option"]:focus-visible,
+html.high-contrast [tabindex]:focus-visible {
+  outline: 3px solid #000000 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px #ffd600, 0 0 0 6px #000000 !important;
+}
+
+html.high-contrast.dark :focus-visible,
+html.high-contrast.dark button:focus-visible,
+html.high-contrast.dark a:focus-visible,
+html.high-contrast.dark input:focus-visible,
+html.high-contrast.dark select:focus-visible,
+html.high-contrast.dark textarea:focus-visible,
+html.high-contrast.dark [role="button"]:focus-visible,
+html.high-contrast.dark [role="switch"]:focus-visible,
+html.high-contrast.dark [role="checkbox"]:focus-visible,
+html.high-contrast.dark [role="tab"]:focus-visible,
+html.high-contrast.dark [role="menuitem"]:focus-visible,
+html.high-contrast.dark [role="option"]:focus-visible,
+html.high-contrast.dark [tabindex]:focus-visible {
+  outline: 3px solid #ffea00 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px #000000, 0 0 0 6px #ffffff !important;
+}
+
+/* ─── Modal & Dialog High-Contrast Support ────────────────────────── */
+html.high-contrast [role="dialog"],
+html.high-contrast [role="alertdialog"],
+html.high-contrast [aria-modal="true"],
+html.high-contrast .modal-container,
+html.high-contrast .dialog-content {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 3px solid #000000 !important;
+  box-shadow: 0 0 0 3px #ffffff, 0 25px 50px -12px rgba(0, 0, 0, 0.75) !important;
+}
+
+html.high-contrast.dark [role="dialog"],
+html.high-contrast.dark [role="alertdialog"],
+html.high-contrast.dark [aria-modal="true"],
+html.high-contrast.dark .modal-container,
+html.high-contrast.dark .dialog-content {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border: 3px solid #ffffff !important;
+  box-shadow: 0 0 0 3px #000000, 0 25px 50px -12px rgba(255, 255, 255, 0.35) !important;
+}
+
+/* Modal Backdrops in High Contrast mode */
+html.high-contrast [role="dialog"] ~ div[class*="backdrop"],
+html.high-contrast div[class*="bg-zinc-950/60"],
+html.high-contrast div[class*="bg-zinc-950/70"],
+html.high-contrast div[class*="bg-black/50"],
+html.high-contrast div[class*="bg-black/60"],
+html.high-contrast div[class*="bg-black/70"] {
+  background-color: rgba(0, 0, 0, 0.88) !important;
+  backdrop-filter: none !important;
+}
+
+/* Reinforced Modal Interactive Component Focus Rings */
+html.high-contrast [role="dialog"] button:focus-visible,
+html.high-contrast [role="dialog"] input:focus-visible,
+html.high-contrast [role="dialog"] select:focus-visible,
+html.high-contrast [role="dialog"] textarea:focus-visible,
+html.high-contrast [role="dialog"] a:focus-visible,
+html.high-contrast [role="dialog"] [role="button"]:focus-visible,
+html.high-contrast [role="dialog"] [role="switch"]:focus-visible,
+html.high-contrast [role="dialog"] [role="checkbox"]:focus-visible,
+html.high-contrast [role="dialog"] [role="tab"]:focus-visible,
+html.high-contrast [role="dialog"] [tabindex]:focus-visible {
+  outline: 3px solid #000000 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 5px #ffd600, 0 0 0 7px #000000 !important;
+  z-index: 10003 !important;
+}
+
+html.high-contrast.dark [role="dialog"] button:focus-visible,
+html.high-contrast.dark [role="dialog"] input:focus-visible,
+html.high-contrast.dark [role="dialog"] select:focus-visible,
+html.high-contrast.dark [role="dialog"] textarea:focus-visible,
+html.high-contrast.dark [role="dialog"] a:focus-visible,
+html.high-contrast.dark [role="dialog"] [role="button"]:focus-visible,
+html.high-contrast.dark [role="dialog"] [role="switch"]:focus-visible,
+html.high-contrast.dark [role="dialog"] [role="checkbox"]:focus-visible,
+html.high-contrast.dark [role="dialog"] [role="tab"]:focus-visible,
+html.high-contrast.dark [role="dialog"] [tabindex]:focus-visible {
+  outline: 3px solid #ffea00 !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 5px #000000, 0 0 0 7px #ffffff !important;
+  z-index: 10003 !important;
+}
+
+/* Modal form controls */
+html.high-contrast [role="dialog"] input,
+html.high-contrast [role="dialog"] textarea,
+html.high-contrast [role="dialog"] select {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 2px solid #000000 !important;
+}
+
+html.high-contrast.dark [role="dialog"] input,
+html.high-contrast.dark [role="dialog"] textarea,
+html.high-contrast.dark [role="dialog"] select {
+  background-color: #09090b !important;
+  color: #ffffff !important;
+  border: 2px solid #ffffff !important;
+}
+
+/* Modal close and icon buttons */
+html.high-contrast [role="dialog"] button,
+html.high-contrast [role="dialog"] [role="button"] {
+  border: 1.5px solid currentColor !important;
+}
+
+html.high-contrast [role="dialog"] hr,
+html.high-contrast [role="dialog"] .border-b,
+html.high-contrast [role="dialog"] .border-t {
+  border-color: #000000 !important;
+}
+
+html.high-contrast.dark [role="dialog"] hr,
+html.high-contrast.dark [role="dialog"] .border-b,
+html.high-contrast.dark [role="dialog"] .border-t {
+  border-color: #ffffff !important;
+}
+
+/* Keyboard keys inside modals */
+html.high-contrast [role="dialog"] kbd,
+html.high-contrast kbd {
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  border: 2px solid #000000 !important;
+  font-weight: 700 !important;
+}
+
+html.high-contrast.dark [role="dialog"] kbd,
+html.high-contrast.dark kbd {
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 2px solid #ffffff !important;
+  font-weight: 700 !important;
 }
 
 

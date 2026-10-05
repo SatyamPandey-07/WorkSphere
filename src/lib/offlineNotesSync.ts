@@ -172,6 +172,6 @@ export async function clearPendingEditsForFolder(folderId: string): Promise<void
 export function resolveLwwEdits(edits: PendingNoteEdit[]): PendingNoteEdit | null {
   if (!edits.length) return null;
   return edits.reduce((latest, current) => {
-    return current.timestamp > latest.timestamp ? current : latest;
+    return current.timestamp >= latest.timestamp ? current : latest;
   }, edits[0]);
 }

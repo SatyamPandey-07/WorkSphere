@@ -31,7 +31,7 @@
 
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](CONTRIBUTING.md)
-[![Contributors](https://img.shields.io/badge/Contributors-99%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
+[![Contributors](https://img.shields.io/badge/Contributors-100%20Community%20Rockstars-orange?style=flat-square&logo=github)](https://github.com/SatyamPandey-07/WorkSphere/graphs/contributors)
 [![ECSoC 2026](https://img.shields.io/badge/ECSoC-2026-FFA500?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![OSCI 2026](https://img.shields.io/badge/OSCI-2026-blue?style=flat-square)](https://github.com/SatyamPandey-07/WorkSphere)
 [![CI Status](https://img.shields.io/badge/CI-Passing-brightgreen?style=flat-square&logo=githubactions)](https://github.com/SatyamPandey-07/WorkSphere/actions)
@@ -47,7 +47,7 @@
   <a href="#-features"><b>✨ Features</b></a> •
   <a href="#-architecture"><b>🏗️ Architecture</b></a> •
   <a href="#-quickstart"><b>⚡ Quickstart</b></a> •
-  <a href="#-contributors-99-active-rockstars"><b>👥 Contributors (99)</b></a> •
+  <a href="#-contributors-100-active-rockstars"><b>👥 Contributors (100)</b></a> •
   <a href="https://github.com/SatyamPandey-07/WorkSphere/issues"><b>🐛 Report Issue</b></a>
 </p>
 
@@ -70,9 +70,9 @@
 
 ---
 
-### 🚀 Contributors (99 Active Rockstars)
+### 🚀 Contributors (100 Active Rockstars)
 
-A massive thank you to all **99 brilliant contributors and bots** building WorkSphere! 🌟
+A massive thank you to all **100 brilliant contributors and bots** building WorkSphere! 🌟
 
 <table>
   <tr>
@@ -698,7 +698,12 @@ A massive thank you to all **99 brilliant contributors and bots** building WorkS
         <sub><b>github-actions[bot]</b></sub><br /><sub><code>🤖 Bot</code></sub>
       </a>
     </td>
-    <td align="center" width="14.28%"></td>
+    <td align="center" width="14.28%">
+      <a href="https://github.com/MrunalMungelwar">
+        <img src="https://avatars.githubusercontent.com/u/229180735?v=4" width="55px;" height="55px;" alt="MrunalMungelwar" style="border-radius: 50%; object-fit: cover;"/><br />
+        <sub><b>MrunalMungelwar</b></sub>
+      </a>
+    </td>
     <td align="center" width="14.28%"></td>
     <td align="center" width="14.28%"></td>
     <td align="center" width="14.28%"></td>
@@ -721,6 +726,7 @@ A massive thank you to all **99 brilliant contributors and bots** building WorkS
 - [API Routes](#-api-routes)
 - [Multi-Agent System](#-multi-agent-system)
 - [Project Structure](#-project-structure)
+- [Troubleshooting](#-troubleshooting)
 - [Future Improvements](#-future-improvements)
 - [Contributing](#-contributing)
 - [License](#-license)
@@ -963,7 +969,7 @@ WorkSphere brings together geospatial data, ambient intelligence, and real-time 
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 20+ (Node.js 20 LTS or Node.js 22 LTS recommended)
 - npm or yarn
 - Git
 - Docker and Docker Compose (Optional, but highly recommended for local Postgres & Redis)
@@ -1022,9 +1028,133 @@ WorkSphere brings together geospatial data, ambient intelligence, and real-time 
    ```
 
 6. **Open in browser**
-   ```
+   ```bash
    http://localhost:3000
    ```
+
+---
+
+## 🔧 Troubleshooting
+
+New contributors commonly run into a few setup hurdles when configuring their local environment. Here are the most frequent issues and their quick fixes:
+
+### 1. `PrismaClientInitializationError` / Database Connection Failures
+
+**Symptom:**
+```text
+PrismaClientInitializationError: Can't reach database server at `localhost:5432`
+Please make sure your database server is running at `localhost:5432`.
+```
+or
+```text
+The table `public.Venue` does not exist in the current database.
+```
+
+**Root Causes & Solutions:**
+- **Container not started:** If using Docker Compose, ensure the PostgreSQL and Redis containers are actively running:
+  ```bash
+  docker compose ps
+  docker compose up -d
+  ```
+- **Prisma Schema not pushed:** If the database exists but tables or columns are missing, synchronize the schema:
+  ```bash
+  npx prisma generate
+  npx prisma db push
+  ```
+- **Seeding sample data:** To populate local venues and amenities:
+  ```bash
+  npm run postinstall
+  node prisma/seed.js
+  ```
+
+---
+
+### 2. Node.js Engine & Dependency Incompatibilities
+
+**Symptom:**
+```text
+error: Unsupported engine. The engine "node" is incompatible with this module.
+Expected version ">=20.0.0". Got "v18.19.0".
+```
+or syntax errors involving modern TypeScript experimental strip types, ECMAScript modules, or WebAssembly SIMD loaders.
+
+**Root Causes & Solutions:**
+- WorkSphere leverages Node.js 20+ runtime features (experimental type stripping, native fetch optimizations, and ES2024 features).
+- Check your current Node.js version:
+  ```bash
+  node -v
+  ```
+- If your version is lower than `v20.0.0`, update via [nvm](https://github.com/nvm-sh/nvm) (macOS/Linux) or [nvm-windows](https://github.com/coreybutler/nvm-windows):
+  ```bash
+  # Install and switch to Node.js 20 or 22 LTS
+  nvm install 20
+  nvm use 20
+  ```
+
+---
+
+### 3. Stale Next.js Build Cache (`.next`)
+
+**Symptom:**
+```text
+Error: Cannot find module 'next/dist/server/...'
+```
+or hydration mismatch errors, stale chunk load errors, or webpack compilation failures after pulling major upstream changes.
+
+**Root Causes & Solutions:**
+- Next.js caches compiled pages and webpack artifacts in `.next/`. When branch switching or updating dependencies, the cache can become invalid.
+- Clear the Next.js build cache and reinstall dependencies cleanly:
+
+  **On macOS / Linux / Git Bash:**
+  ```bash
+  rm -rf .next
+  npm run dev
+  ```
+
+  **On Windows PowerShell:**
+  ```powershell
+  Remove-Item -Recurse -Force .next
+  npm run dev
+  ```
+
+- If you encounter native module mismatches:
+  ```bash
+  # Deep clean
+  rm -rf .next node_modules package-lock.json
+  npm install
+  npx prisma generate
+  npm run dev
+  ```
+
+---
+
+### 4. Missing or Unconfigured Environment Variables (`.env.local`)
+
+**Symptom:**
+```text
+Error: Missing environment variable: DATABASE_URL
+```
+or authentication redirection loops with Clerk, or map tile loading failures.
+
+**Root Causes & Solutions:**
+- Next.js requires `.env.local` for local secrets. Ensure you copied `.env.example`:
+  ```bash
+  cp .env.example .env.local
+  ```
+- Verify the following essential keys in `.env.local`:
+  ```env
+  # Local Docker Postgres (default)
+  DATABASE_URL="postgresql://postgres:postgres@localhost:5432/worksphere?schema=public"
+  DIRECT_URL="postgresql://postgres:postgres@localhost:5432/worksphere?schema=public"
+
+  # Upstash Redis (Optional for rate limiting; mock fallback exists)
+  UPSTASH_REDIS_REST_URL="http://localhost:8079"
+  UPSTASH_REDIS_REST_TOKEN="example_token"
+
+  # App Base URL
+  NEXT_PUBLIC_APP_URL="http://localhost:3000"
+  ```
+- Restart `npm run dev` after updating `.env.local` to allow Next.js to reload environment variables.
 
 ---
 

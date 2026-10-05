@@ -49,6 +49,7 @@ export async function recordCheckIn(
       user.currentStreak,
       user.longestStreak,
       user.timezone || "UTC",
+      now,
     );
     if (streak.incremented) {
       await tx.user.update({

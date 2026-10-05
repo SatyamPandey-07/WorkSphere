@@ -57,6 +57,44 @@ describe("EXIF Orientation Parser (src/lib/exifOrientation.ts)", () => {
     expect(getExifOrientation(jpegBuffer)).toBe(8);
   });
 
+  it("skips non-Exif APP1 marker (e.g. XMP metadata) and extracts orientation from subsequent Exif APP1 segment", () => {
+    const buffer = new ArrayBuffer(150);
+    const view = new DataView(buffer);
+
+    // JPEG SOI marker
+    view.setUint16(0, 0xffd8, false);
+
+    // 1st APP1 marker 0xFFE1 (e.g. XMP packet or non-Exif APP1)
+    view.setUint16(2, 0xffe1, false);
+    view.setUint16(4, 20, false); // Length = 20 bytes (offset 4 to 24)
+    // Non-Exif header, e.g. "http"
+    view.setUint32(6, 0x68747470, false);
+
+    // 2nd APP1 marker 0xFFE1 (Exif) starting at byte 24
+    view.setUint16(24, 0xffe1, false);
+    view.setUint16(26, 50, false); // Length = 50 bytes
+
+    // Exif\0\0 header at byte 28
+    view.setUint32(28, 0x45786966, false);
+    view.setUint16(32, 0x0000, false);
+
+    // TIFF Header (Little Endian 'II') at byte 34
+    view.setUint16(34, 0x4949, false); // II
+    view.setUint16(36, 0x002a, true); // 42
+    view.setUint32(38, 8, true); // IFD0 offset => byte 34 + 8 = byte 42
+
+    // IFD0: 1 tag at byte 42
+    view.setUint16(42, 1, true);
+
+    // Tag 0x0112 (Orientation), Type SHORT (3), Count 1, Value = 6
+    view.setUint16(44, 0x0112, true);
+    view.setUint16(46, 3, true);
+    view.setUint32(48, 1, true);
+    view.setUint16(52, 6, true);
+
+    expect(getExifOrientation(buffer)).toBe(6);
+  });
+
   it("returns original file when orientation is already 1", async () => {
     const dummyFile = new File(["dummy data"], "photo.jpg", {
       type: "image/jpeg",

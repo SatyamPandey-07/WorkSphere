@@ -48,9 +48,7 @@ describe("QR Code SVG Generator", () => {
     });
 
     expect(svg).not.toContain('"><img');
-    expect(svg).toContain(
-      "&quot;&gt;&lt;img src=x onerror=alert(1)&gt; QR Code",
-    );
+    expect(svg).toContain("&quot;&gt;&lt;img src=x QR Code");
   });
 
   it("triggers download in browser environment without throwing", () => {

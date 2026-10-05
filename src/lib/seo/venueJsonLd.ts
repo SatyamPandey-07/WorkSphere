@@ -260,6 +260,17 @@ export function extractAmenityFeatures(
  * Builds Schema.org JSON-LD object for LocalBusiness (coworking / cafe / workspace)
  */
 export function generateVenueJsonLd(venue: VenueLike): VenueJsonLd {
+  if (!venue || typeof venue !== "object") {
+    return {
+      "@context": "https://schema.org",
+      "@type": "LocalBusiness",
+      name: "",
+      address: parsePostalAddress(null),
+      geo: { "@type": "GeoCoordinates", latitude: 0, longitude: 0 },
+      telephone: "",
+      amenityFeature: [],
+    };
+  }
   let ratingValue = 0;
   if (typeof venue.ratingValue === "number") {
     ratingValue = venue.ratingValue;

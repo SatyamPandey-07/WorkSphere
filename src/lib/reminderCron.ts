@@ -9,8 +9,11 @@ import { bookingStartsAt } from "./bookingTime";
 // Fallback idempotency store for deployments without Redis (single instance only).
 const sentInMemory = new Map<string, number>();
 
-async function wasSent(key: string): Promise<boolean> {
-  const redis = getRedis();
+async function wasSent(
+  key: string,
+  redisClient?: ReturnType<typeof getRedis>,
+): Promise<boolean> {
+  const redis = redisClient !== undefined ? redisClient : getRedis();
   if (redis) {
     try {
       return Boolean(await redis.get(key));
@@ -22,8 +25,12 @@ async function wasSent(key: string): Promise<boolean> {
   return expiresAt !== undefined && expiresAt > Date.now();
 }
 
-async function markSent(key: string, ttlSeconds: number): Promise<void> {
-  const redis = getRedis();
+async function markSent(
+  key: string,
+  ttlSeconds: number,
+  redisClient?: ReturnType<typeof getRedis>,
+): Promise<void> {
+  const redis = redisClient !== undefined ? redisClient : getRedis();
   if (redis) {
     try {
       await redis.set(key, "sent", { ex: ttlSeconds });
@@ -111,6 +118,17 @@ function isoDate(d: Date): string {
 export async function processUpcomingReservationAlerts(
   now: Date = new Date(),
 ): Promise<{ checked: number; sent: number }> {
+  // Lazy-initialize Redis instance with a null check
+  let redis: ReturnType<typeof getRedis> = null;
+  try {
+    redis = getRedis();
+  } catch (err) {
+    console.warn(
+      "[reminderCron] Redis lazy initialization failed, falling back to in-memory store:",
+      err,
+    );
+  }
+
   const day = 24 * 60 * 60 * 1000;
   // A booking's local date can be a day either side of the UTC date.
   const candidateDates = [
@@ -156,10 +174,10 @@ export async function processUpcomingReservationAlerts(
       }
 
       const key = `booking-reminder:${booking.id}`;
-      if (await wasSent(key)) continue;
+      if (await wasSent(key, redis)) continue;
 
       if (await sendEmailAlert(booking)) {
-        await markSent(key, 2 * 60 * 60);
+        await markSent(key, 2 * 60 * 60, redis);
         sent++;
       }
     } catch (err) {

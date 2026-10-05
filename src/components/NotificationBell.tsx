@@ -31,9 +31,12 @@ export function NotificationBell() {
   const [isClearing, setIsClearing] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(() => {
     if (typeof window === "undefined") return true;
-
-    const saved = localStorage.getItem("notification-sound-enabled");
-    return saved === null ? true : saved === "true";
+    try {
+      const saved = localStorage.getItem("notification-sound-enabled");
+      return saved === null ? true : saved === "true";
+    } catch {
+      return true;
+    }
   });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const previousUnreadCount = useRef(0);
@@ -176,8 +179,11 @@ export function NotificationBell() {
   };
 
   const formatTimeAgo = (dateStr: string) => {
+    const time = new Date(dateStr).getTime();
+    if (!Number.isFinite(time)) return "";
     const now = new Date();
-    const diffMs = now.getTime() - new Date(dateStr).getTime();
+    const diffMs = now.getTime() - time;
+    if (diffMs < 0) return "Just now";
     const diffMins = Math.floor(diffMs / 60000);
     if (diffMins < 1) return "Just now";
     if (diffMins < 60) return `${diffMins}m ago`;

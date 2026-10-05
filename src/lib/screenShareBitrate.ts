@@ -55,7 +55,7 @@ export function readNetworkHints(report: RTCStatsReport): {
   let jitterMs: number | undefined;
 
   report.forEach((stat: any) => {
-    if (stat.type === "candidate-pair" && stat.state === "succeeded") {
+    if (stat.type === "candidate-pair" && (stat.state === "succeeded" || stat.nominated)) {
       if (typeof stat.currentRoundTripTime === "number") {
         rttMs = stat.currentRoundTripTime * 1000;
       }
@@ -69,7 +69,7 @@ export function readNetworkHints(report: RTCStatsReport): {
         jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
       }
       if (typeof stat.packetsLost === "number") {
-        packetsLost = stat.packetsLost;
+        packetsLost = (packetsLost ?? 0) + stat.packetsLost;
       }
     }
     if (stat.type === "inbound-rtp") {
@@ -78,22 +78,22 @@ export function readNetworkHints(report: RTCStatsReport): {
         jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
       }
       if (typeof stat.packetsLost === "number" && packetsLost === undefined) {
-        packetsLost = stat.packetsLost;
+        packetsLost = (packetsLost ?? 0) + stat.packetsLost;
       }
       if (
         typeof stat.packetsReceived === "number" &&
         packetsSent === undefined
       ) {
-        packetsSent = (stat.packetsReceived || 0) + (stat.packetsLost || 0);
+        packetsSent = (packetsSent ?? 0) + (stat.packetsReceived || 0) + (stat.packetsLost || 0);
       }
     }
-    if (
-      stat.type === "outbound-rtp" &&
-      (stat.kind === "video" || stat.mediaType === "video")
-    ) {
-      if (typeof stat.packetsLost === "number" && packetsLost === undefined)
-        packetsLost = stat.packetsLost;
-      if (typeof stat.packetsSent === "number") packetsSent = stat.packetsSent;
+    if (stat.type === "outbound-rtp") {
+      if (typeof stat.packetsLost === "number" && packetsLost === undefined) {
+        packetsLost = (packetsLost ?? 0) + stat.packetsLost;
+      }
+      if (typeof stat.packetsSent === "number") {
+        packetsSent = (packetsSent ?? 0) + stat.packetsSent;
+      }
     }
   });
 

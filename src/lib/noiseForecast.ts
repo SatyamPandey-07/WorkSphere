@@ -1,4 +1,4 @@
-import { mean, standardDeviation } from "./statistics";
+import { mean, standardDeviation, median } from "./statistics";
 
 export interface RawNoiseData {
   avgDecibels: number;
@@ -8,6 +8,7 @@ export interface RawNoiseData {
 export interface HourlyForecast {
   hour: number;
   predictedDb: number | null;
+  medianDb?: number | null;
   confidence: number;
   samples: number;
 }
@@ -20,6 +21,9 @@ export interface NoiseForecastResult {
 export function generateNoiseForecast(
   data: RawNoiseData[],
 ): NoiseForecastResult {
+  if (!data || !Array.isArray(data)) {
+    return { forecast: [], recommendedHours: [] };
+  }
   // 1. Group historical readings by hour of day (0-23)
   const groupedByHour: Record<number, number[]> = {};
   for (let i = 0; i < 24; i++) {
@@ -27,6 +31,7 @@ export function generateNoiseForecast(
   }
 
   for (const entry of data) {
+    if (!entry || !entry.timestamp || !(entry.timestamp instanceof Date) || isNaN(entry.timestamp.getTime())) continue;
     const hour = entry.timestamp.getHours();
     groupedByHour[hour].push(entry.avgDecibels);
   }
@@ -49,6 +54,7 @@ export function generateNoiseForecast(
     }
 
     const avg = mean(samples);
+    const med = median(samples);
     const stdDev = standardDeviation(samples);
 
     // 3. Confidence Algorithm
@@ -67,6 +73,7 @@ export function generateNoiseForecast(
     forecast.push({
       hour: i,
       predictedDb: Math.round(avg * 10) / 10,
+      medianDb: Math.round(med * 10) / 10,
       confidence: Math.round(confidence * 100) / 100, // 2 decimal places
       samples: n,
     });

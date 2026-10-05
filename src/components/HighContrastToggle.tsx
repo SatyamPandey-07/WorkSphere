@@ -74,6 +74,8 @@ export function HighContrastToggle() {
         id="high-contrast-toggle"
         aria-checked={highContrast}
         aria-label="Toggle high-contrast mode"
+        aria-keyshortcuts="Control+Shift+H Meta+Shift+H"
+        title="Toggle high-contrast mode (Ctrl/Cmd + Shift + H)"
         onClick={toggleHighContrast}
         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent,#3b82f6)] focus:ring-offset-2 dark:focus:ring-offset-zinc-950 ${
           highContrast

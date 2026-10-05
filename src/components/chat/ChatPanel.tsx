@@ -1,5 +1,5 @@
 "use client";
-import React, { useMemo, useEffect, useRef } from "react";
+import React, { useMemo, useEffect, useRef, useState, useCallback } from "react";
 import { estimateTokens } from "@/lib/context-compression/tokens";
 export { estimateTokens };
 import type { Message } from "./ChatMessages";
@@ -14,9 +14,12 @@ export const DEFAULT_CONTEXT_CAPACITY = 8000;
 
 export interface ChatMessageLike {
   id?: string;
+  clientMessageId?: string;
   role: "user" | "assistant" | "system" | string;
   content?: string;
   name?: string;
+  status?: "pending" | "sending" | "sent" | "delivered" | "failed";
+  timestamp?: number | string;
   isCompressed?: boolean;
   contextCompressed?: boolean;
   agentSteps?: Array<{
@@ -46,6 +49,10 @@ export interface ChatPanelProps {
   onSubmit?: (e: React.FormEvent) => void;
   children?: React.ReactNode;
   className?: string;
+  onMessageDeduplicated?: (reconciledCount: number) => void;
+  isReconnecting?: boolean;
+  pendingMessages?: Array<ChatMessageLike | Message>;
+  onReconnectSync?: () => void;
 }
 
 /**
@@ -272,6 +279,278 @@ export function ChatTokenCounter({
 }
 
 /**
+ * Generates a deterministic clientMessageId deduplication key for optimistic chat messages.
+ * Uses role, content snippet, and timestamp to ensure uniqueness across connections.
+ */
+export function generateClientMessageId(
+  content: string = "",
+  role: string = "user",
+  timestamp: number = Date.now()
+): string {
+  const cleanContent = content.trim().replace(/\s+/g, "_").slice(0, 32);
+  const hash = Math.abs(
+    cleanContent.split("").reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)
+  ).toString(36);
+  return `cmid_${role}_${timestamp.toString(36)}_${hash}`;
+}
+
+/**
+ * Creates a structured optimistic ChatMessageLike object with a deterministic clientMessageId key.
+ */
+export function createOptimisticMessage(
+  content: string,
+  role: "user" | "assistant" | "system" = "user",
+  clientMessageId?: string
+): ChatMessageLike {
+  const ts = Date.now();
+  return {
+    clientMessageId: clientMessageId || generateClientMessageId(content, role, ts),
+    role,
+    content,
+    status: "pending",
+    timestamp: ts,
+  };
+}
+
+/**
+ * Deduplicates and reconciles an incoming list of chat messages against an existing message list.
+ * Key features:
+ * 1. Matches incoming messages with local pending/optimistic messages via `clientMessageId`.
+ * 2. Reconciles server confirmation (`id`, `status="sent"`) into existing optimistic entries without duplication.
+ * 3. Fallback signature matching (role + content) for socket reconnect replay of un-keyed local messages.
+ * 4. Preserves order and prevents duplicated rendering on fast WebSocket / PartySocket reconnects.
+ */
+export function deduplicateMessages<T extends ChatMessageLike>(
+  existingMessages: T[] = [],
+  incomingMessages: T[] = []
+): { deduplicated: T[]; reconciledCount: number } {
+  if (!Array.isArray(incomingMessages) || incomingMessages.length === 0) {
+    return { deduplicated: [...existingMessages], reconciledCount: 0 };
+  }
+  if (!Array.isArray(existingMessages) || existingMessages.length === 0) {
+    const seen = new Set<string>();
+    const deduplicatedIncoming: T[] = [];
+    for (const msg of incomingMessages) {
+      if (!msg) continue;
+      const key = msg.clientMessageId || msg.id || `${msg.role}:${msg.content}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicatedIncoming.push(msg);
+      }
+    }
+    return { deduplicated: deduplicatedIncoming, reconciledCount: 0 };
+  }
+
+  const result: T[] = [...existingMessages];
+  let reconciledCount = 0;
+
+  const clientMessageIdMap = new Map<string, number>();
+  const idMap = new Map<string, number>();
+  const signatureMap = new Map<string, number>();
+
+  result.forEach((msg, idx) => {
+    if (!msg) return;
+    if (msg.clientMessageId) {
+      clientMessageIdMap.set(msg.clientMessageId, idx);
+    }
+    if (msg.id) {
+      idMap.set(msg.id, idx);
+    }
+    if (msg.role && typeof msg.content === "string") {
+      const sig = `${msg.role}:${msg.content.trim()}`;
+      if (!signatureMap.has(sig) || msg.status === "pending") {
+        signatureMap.set(sig, idx);
+      }
+    }
+  });
+
+  for (const incoming of incomingMessages) {
+    if (!incoming) continue;
+
+    // 1. Match by explicit clientMessageId
+    if (incoming.clientMessageId && clientMessageIdMap.has(incoming.clientMessageId)) {
+      const idx = clientMessageIdMap.get(incoming.clientMessageId)!;
+      result[idx] = {
+        ...result[idx],
+        ...incoming,
+        status: incoming.status || "sent",
+        clientMessageId: incoming.clientMessageId || result[idx].clientMessageId,
+      };
+      reconciledCount++;
+      continue;
+    }
+
+    // 2. Match by server ID
+    if (incoming.id && idMap.has(incoming.id)) {
+      const idx = idMap.get(incoming.id)!;
+      result[idx] = {
+        ...result[idx],
+        ...incoming,
+        status: incoming.status || "sent",
+      };
+      reconciledCount++;
+      continue;
+    }
+
+    // 3. Fallback: match optimistic pending message with matching content and role
+    if (incoming.role && typeof incoming.content === "string") {
+      const sig = `${incoming.role}:${incoming.content.trim()}`;
+      if (signatureMap.has(sig)) {
+        const idx = signatureMap.get(sig)!;
+        const existingMsg = result[idx];
+        if (existingMsg.status === "pending" || !existingMsg.id) {
+          result[idx] = {
+            ...existingMsg,
+            ...incoming,
+            status: incoming.status || "sent",
+            clientMessageId: existingMsg.clientMessageId || incoming.clientMessageId,
+          };
+          reconciledCount++;
+          signatureMap.delete(sig);
+          continue;
+        }
+      }
+    }
+
+    // 4. Not matched: new unique incoming message, append to list
+    const newIdx = result.length;
+    result.push(incoming);
+
+    if (incoming.clientMessageId) {
+      clientMessageIdMap.set(incoming.clientMessageId, newIdx);
+    }
+    if (incoming.id) {
+      idMap.set(incoming.id, newIdx);
+    }
+    if (incoming.role && typeof incoming.content === "string") {
+      signatureMap.set(`${incoming.role}:${incoming.content.trim()}`, newIdx);
+    }
+  }
+
+  return { deduplicated: result, reconciledCount };
+}
+
+/**
+ * Reconciles incoming message(s) against existing message state.
+ * Useful for single socket broadcasts or batch reconnect sync events.
+ */
+export function reconcileMessageState<T extends ChatMessageLike>(
+  currentMessages: T[] = [],
+  incoming: T | T[],
+  options: { isReconnect?: boolean } = {}
+): T[] {
+  const incomingArray = Array.isArray(incoming) ? incoming : [incoming];
+  const { deduplicated } = deduplicateMessages(currentMessages, incomingArray);
+  return deduplicated;
+}
+
+/**
+ * Hook to manage chat message state with built-in clientMessageId deduplication,
+ * optimistic message queueing, and PartySocket fast reconnect reconciliation.
+ */
+export function useDeduplicatedMessages<T extends ChatMessageLike = ChatMessageLike>(
+  initialMessages: T[] = []
+) {
+  const [messages, setMessages] = useState<T[]>(() => {
+    return deduplicateMessages([], initialMessages).deduplicated;
+  });
+
+  const addOptimisticMessage = useCallback(
+    (msg: Omit<T, "clientMessageId"> & { clientMessageId?: string }): T => {
+      const clientMessageId =
+        msg.clientMessageId || generateClientMessageId(msg.content || "", msg.role || "user");
+      const optimistic = {
+        ...msg,
+        clientMessageId,
+        status: msg.status || "pending",
+        timestamp: msg.timestamp || Date.now(),
+      } as T;
+
+      setMessages((prev) => {
+        const { deduplicated } = deduplicateMessages(prev, [optimistic]);
+        return deduplicated;
+      });
+
+      return optimistic;
+    },
+    []
+  );
+
+  const reconcileIncoming = useCallback(
+    (incoming: T | T[], isReconnect: boolean = false) => {
+      setMessages((prev) => reconcileMessageState(prev, incoming, { isReconnect }));
+    },
+    []
+  );
+
+  const confirmMessage = useCallback((clientMessageId: string, serverId?: string) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.clientMessageId === clientMessageId
+          ? { ...m, id: serverId || m.id, status: "sent" }
+          : m
+      )
+    );
+  }, []);
+
+  const pendingCount = useMemo(
+    () => messages.filter((m) => m.status === "pending" || m.status === "sending").length,
+    [messages]
+  );
+
+  return {
+    messages,
+    setMessages,
+    addOptimisticMessage,
+    reconcileIncoming,
+    confirmMessage,
+    pendingCount,
+  };
+}
+
+/**
+ * Custom hook for PartySocket / WebSocket reconnect deduplication management.
+ * Tracks reconnect events and prevents already rendered optimistic messages
+ * from being duplicated when receiving server sync broadcasts.
+ */
+export function useChatReconnectDeduplication<T extends ChatMessageLike = ChatMessageLike>(
+  messages: T[],
+  onSyncComplete?: (count: number) => void
+) {
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const pendingBufferRef = useRef<Map<string, T>>(new Map());
+
+  const handleBeforeReconnect = useCallback(() => {
+    setIsReconnecting(true);
+    messages.forEach((m) => {
+      if ((m.status === "pending" || m.status === "sending") && m.clientMessageId) {
+        pendingBufferRef.current.set(m.clientMessageId, m);
+      }
+    });
+  }, [messages]);
+
+  const handleReconnectSync = useCallback(
+    (incomingServerMessages: T[]) => {
+      const { deduplicated, reconciledCount } = deduplicateMessages(
+        messages,
+        incomingServerMessages
+      );
+      setIsReconnecting(false);
+      pendingBufferRef.current.clear();
+      onSyncComplete?.(reconciledCount);
+      return deduplicated;
+    },
+    [messages, onSyncComplete]
+  );
+
+  return {
+    isReconnecting,
+    handleBeforeReconnect,
+    handleReconnectSync,
+  };
+}
+
+/**
  * Main ChatPanel component representing the chat interface with message display,
  * compression notices, and token capacity footer.
  */
@@ -284,24 +563,36 @@ export function ChatPanel({
   onSubmit,
   children,
   className,
+  onMessageDeduplicated,
+  isReconnecting,
+  pendingMessages,
+  onReconnectSync,
 }: ChatPanelProps) {
+  const combinedMessages = useMemo(() => {
+    const all = [...messages, ...(pendingMessages || [])];
+    const { deduplicated, reconciledCount } = deduplicateMessages([], all);
+    if (reconciledCount > 0 && onMessageDeduplicated) {
+      onMessageDeduplicated(reconciledCount);
+    }
+    return deduplicated;
+  }, [messages, pendingMessages, onMessageDeduplicated]);
+
   const isCompressedState = useMemo(
-    () => checkIsContextCompressed(messages, isCompressed),
-    [messages, isCompressed],
+    () => checkIsContextCompressed(combinedMessages, isCompressed),
+    [combinedMessages, isCompressed]
   );
 
-  const prevMessageCountRef = useRef(messages.length);
+  const prevMessageCountRef = useRef(combinedMessages.length);
 
   useEffect(() => {
-    // When a new message arrives, check if it's an incoming assistant/system message
-    if (messages.length > prevMessageCountRef.current) {
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg && lastMsg.role !== "user") {
+    if (combinedMessages.length > prevMessageCountRef.current) {
+      const lastMsg = combinedMessages[combinedMessages.length - 1];
+      if (lastMsg?.role === "assistant") {
         playChatMessageSound();
       }
     }
-    prevMessageCountRef.current = messages.length;
-  }, [messages]);
+    prevMessageCountRef.current = combinedMessages.length;
+  }, [combinedMessages]);
 
   return (
     <div
@@ -310,33 +601,65 @@ export function ChatPanel({
         className || ""
       }`}
     >
+      {isReconnecting && (
+        <div
+          data-testid="reconnecting-banner"
+          aria-live="polite"
+          className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 px-4 py-1.5 text-xs text-amber-800 dark:text-amber-300 flex items-center justify-between"
+        >
+          <span>Reconnecting to chat room... Synchronizing messages.</span>
+          {onReconnectSync && (
+            <button
+              onClick={onReconnectSync}
+              className="underline font-medium hover:text-amber-900 dark:hover:text-amber-100"
+            >
+              Sync now
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {isCompressedState && <CompressionNotice />}
         {children}
-        {!children && messages.length === 0 && (
+        {!children && combinedMessages.length === 0 && (
           <div className="text-center py-8 text-zinc-400 text-sm">
             No messages yet.
           </div>
         )}
         {!children &&
-          messages.map((m, idx) => (
-            <div
-              key={m.id || `msg-${idx}`}
-              className={`flex ${
-                m.role === "user" ? "justify-end" : "justify-start"
-              }`}
-            >
+          combinedMessages.map((m, idx) => {
+            const messageKey = m.clientMessageId || m.id || `msg-${idx}`;
+            const isPending = m.status === "pending" || m.status === "sending";
+            return (
               <div
-                className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
-                  m.role === "user"
-                    ? "bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-900"
-                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                key={messageKey}
+                data-testid={`chat-message-${m.id || m.clientMessageId || idx}`}
+                data-client-message-id={m.clientMessageId}
+                className={`flex ${
+                  m.role === "user" ? "justify-end" : "justify-start"
                 }`}
               >
-                {m.content}
+                <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm relative transition-opacity ${
+                    m.role === "user"
+                      ? "bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-900"
+                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                  } ${isPending ? "opacity-75" : "opacity-100"}`}
+                >
+                  {m.content}
+                  {isPending && (
+                    <span
+                      data-testid="pending-indicator"
+                      className="ml-2 text-[10px] opacity-60 inline-block font-mono"
+                    >
+                      (sending...)
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
       </div>
 
       {onSubmit && (
@@ -361,7 +684,7 @@ export function ChatPanel({
       )}
 
       <ChatTokenCounter
-        messages={messages}
+        messages={combinedMessages}
         input={input}
         contextCapacity={contextCapacity}
         isCompressed={isCompressed}

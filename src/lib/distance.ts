@@ -1,7 +1,15 @@
-import { calculateHaversineDistance } from "@/lib/utils";
+import {
+  calculateHaversineDistance,
+  clampLatitude,
+  clampLongitude,
+  isValidCoordinate,
+} from "@/lib/utils";
 
 /**
  * Great-circle distance between two points on the Earth's surface, in kilometers.
+ *
+ * Coordinates outside valid ranges ([-90, 90] for latitude, [-180, 180] for longitude)
+ * are clamped to prevent NaN and ensure numeric stability.
  *
  * Delegates to `calculateHaversineDistance`, which applies the haversine formula:
  *
@@ -11,9 +19,7 @@ import { calculateHaversineDistance } from "@/lib/utils";
  *   c    = 2 * atan2(sqrt(a), sqrt(1 - a))
  *   d    = R * c
  *
- * with R = 6371 km (mean Earth radius). The formula stays numerically stable for
- * the short distances venue proximity checks deal with, unlike a planar
- * approximation.
+ * with R = 6371 km (mean Earth radius).
  *
  * @param lat1 Latitude of the first point, in degrees (-90 to 90).
  * @param lon1 Longitude of the first point, in degrees (-180 to 180).
@@ -49,8 +55,17 @@ export function haversineMiles(
   lat2: number,
   lon2: number,
 ): number {
-  return haversineKm(lat1, lon1, lat2, lon2) * 0.621371;
+  const km = haversineKm(lat1, lon1, lat2, lon2);
+  if (isNaN(km)) return NaN;
+  return km * 0.621371;
 }
+
+export {
+  calculateHaversineDistance,
+  clampLatitude,
+  clampLongitude,
+  isValidCoordinate,
+};
 
 /**
  * Estimated walking time for a distance, rounded up to the next whole minute.

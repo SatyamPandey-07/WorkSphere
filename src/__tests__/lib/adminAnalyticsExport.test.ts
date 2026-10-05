@@ -95,6 +95,17 @@ describe("Client-side Admin Analytics CSV & PDF Export (#1530)", () => {
       expect(blob.type).toContain("text/csv");
       expect(global.URL.createObjectURL).toHaveBeenCalled();
     });
+
+    it("gracefully falls back to today's date for filename when generatedAt is an invalid or non-ISO date", () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const invalidDateData = {
+        ...mockAnalyticsData,
+        generatedAt: "invalid-date-string",
+      };
+
+      const blob = downloadAnalyticsCSV(invalidDateData);
+      expect(blob).toBeInstanceOf(Blob);
+    });
   });
 
   describe("PDF Export Generator (pdf-lib)", () => {

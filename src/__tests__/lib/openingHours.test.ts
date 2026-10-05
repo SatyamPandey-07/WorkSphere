@@ -58,4 +58,39 @@ describe("Timezone-aware opening hours helper logic", () => {
     expect(status.isStructured).toBe(true);
     expect(status.isOpen).toBe(true);
   });
+
+  it("returns isOpen: true during Sunday early morning when Saturday overnight shift is active until 04:00 and Sunday is closed", () => {
+    const overnightSchedule: StructuredHours = {
+      timezone: "UTC",
+      periods: {
+        monday: { open: "09:00", close: "17:00", closed: false },
+        tuesday: { open: "09:00", close: "17:00", closed: false },
+        wednesday: { open: "09:00", close: "17:00", closed: false },
+        thursday: { open: "09:00", close: "17:00", closed: false },
+        friday: { open: "09:00", close: "17:00", closed: false },
+        saturday: { open: "20:00", close: "04:00", closed: false },
+        sunday: { open: "00:00", close: "00:00", closed: true },
+      },
+    };
+
+    // Sunday, Oct 4, 2026 at 02:30 UTC (during the Saturday overnight shift until 04:00)
+    const sundayEarlyMorning = new Date(Date.UTC(2026, 9, 4, 2, 30, 0));
+    const statusOpen = getOpeningHoursStatus(
+      JSON.stringify(overnightSchedule),
+      "UTC",
+      sundayEarlyMorning,
+    );
+    expect(statusOpen.isOpen).toBe(true);
+    expect(statusOpen.displayString).toContain("Open until 4:00 AM");
+
+    // Sunday, Oct 4, 2026 at 05:00 UTC (after the Saturday overnight shift ends)
+    const sundayAfternoon = new Date(Date.UTC(2026, 9, 4, 5, 0, 0));
+    const statusClosed = getOpeningHoursStatus(
+      JSON.stringify(overnightSchedule),
+      "UTC",
+      sundayAfternoon,
+    );
+    expect(statusClosed.isOpen).toBe(false);
+    expect(statusClosed.displayString).toContain("Closed Today");
+  });
 });

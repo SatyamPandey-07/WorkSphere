@@ -97,6 +97,29 @@ describe("Cryptographic Receipt Signing and Verification", () => {
     expect(verification.digestMatches).toBe(true);
   });
 
+  it("signs and verifies receipt using ECDSA-P384 digital signature with 384-bit curve", () => {
+    const { publicKeyPem, privateKeyPem } = generateReceiptKeyPair("ECDSA-P384");
+
+    const signature = signReservationReceipt(samplePayload, {
+      algorithm: "ECDSA-P384",
+      privateKeyPem,
+      publicKeyPem,
+    });
+
+    expect(signature.signature).toBeDefined();
+    expect(signature.algorithm).toBe("ECDSA-P384");
+
+    const verification = verifyReservationReceipt(
+      samplePayload,
+      signature.signature,
+      publicKeyPem,
+      "ECDSA-P384"
+    );
+
+    expect(verification.valid).toBe(true);
+    expect(verification.digestMatches).toBe(true);
+  });
+
   it("rejects verification when receipt payload is tampered with", () => {
     const { publicKeyPem, privateKeyPem } = generateReceiptKeyPair("RSA");
 

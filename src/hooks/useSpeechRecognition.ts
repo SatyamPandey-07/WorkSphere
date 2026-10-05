@@ -272,8 +272,10 @@ export function useSpeechRecognition(
     onPause: () => {
       if (recognitionRef.current) {
         recognitionRef.current.abort();
+        recognitionRef.current = null;
       }
       releaseMediaTracks();
+      setStatus("idle");
     },
   });
 
@@ -282,6 +284,9 @@ export function useSpeechRecognition(
     const handleVisibilityChange = () => {
       if (document.hidden && recognitionRef.current) {
         recognitionRef.current.abort();
+        recognitionRef.current = null;
+        releaseMediaTracks();
+        setStatus("idle");
       }
     };
 

@@ -76,9 +76,7 @@ export function CollaborativeNotes({
   const clerkUser = useUser?.() || { user: null };
 
   const currentUserId =
-    propCurrentUser?.userId ||
-    clerkUser.user?.id ||
-    "local-user";
+    propCurrentUser?.userId || clerkUser.user?.id || "local-user";
   const currentUserName =
     propCurrentUser?.userName ||
     clerkUser.user?.fullName ||
@@ -90,15 +88,18 @@ export function CollaborativeNotes({
 
   const [text, setText] = useState(initialText ?? "");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
-  const [collaborators, setCollaborators] = useState<Map<string, CollaboratorPresence>>(
-    new Map(),
-  );
+  const [collaborators, setCollaborators] = useState<
+    Map<string, CollaboratorPresence>
+  >(new Map());
 
   const isLocalTypingRef = useRef(false);
   const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const ytextRef = useRef<Y.Text | null>(null);
-  const selectionRef = useRef<{ start: Y.RelativePosition; end: Y.RelativePosition } | null>(null);
+  const selectionRef = useRef<{
+    start: Y.RelativePosition;
+    end: Y.RelativePosition;
+  } | null>(null);
   const initialTextRef = useRef(initialText);
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const getTokenRef = useRef(getToken);
@@ -271,11 +272,12 @@ export function CollaborativeNotes({
     const saveSnapshot = () => {
       if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
       snapshotTimerRef.current = setTimeout(() => {
-        const currentContent = ytext.toString().slice(0, MAX_COLLECTION_NOTES_LENGTH);
-        const wsOpen =
-          provider.ws?.readyState === 1 ||
-          (typeof WebSocket !== "undefined" &&
-            provider.ws?.readyState === WebSocket.OPEN);
+        const currentContent = ytext
+          .toString()
+          .slice(0, MAX_COLLECTION_NOTES_LENGTH);
+        const wsOpen = Boolean(
+          provider.ws && (provider.ws.readyState as number) === 1,
+        );
 
         if (!isOnline() || !wsOpen) {
           // Offline: queue in IndexedDB
@@ -309,14 +311,29 @@ export function CollaborativeNotes({
 
       const el = textareaRef.current;
       const sel = selectionRef.current;
-      if (!event.transaction.local && el && sel && document.activeElement === el) {
+      if (
+        !event.transaction.local &&
+        el &&
+        sel &&
+        document.activeElement === el
+      ) {
         requestAnimationFrame(() => {
-          const start = Y.createAbsolutePositionFromRelativePosition(sel.start, doc);
-          const end = Y.createAbsolutePositionFromRelativePosition(sel.end, doc);
+          const start = Y.createAbsolutePositionFromRelativePosition(
+            sel.start,
+            doc,
+          );
+          const end = Y.createAbsolutePositionFromRelativePosition(
+            sel.end,
+            doc,
+          );
           if (start && end) el.setSelectionRange(start.index, end.index);
         });
       }
-      if (canEdit && event.transaction.local && event.transaction.origin !== "seed") {
+      if (
+        canEdit &&
+        event.transaction.local &&
+        event.transaction.origin !== "seed"
+      ) {
         saveSnapshot();
       }
     };
@@ -480,6 +497,7 @@ export function CollaborativeNotes({
                 {/* User Avatar with Green Indicator Dot */}
                 <div className="relative flex items-center justify-center shrink-0">
                   {collab.avatarUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       src={collab.avatarUrl}
                       alt={collab.userName}
@@ -531,7 +549,10 @@ export function CollaborativeNotes({
           >
             {(syncStatus === "connecting" || syncStatus === "saving") && (
               <>
-                <Loader2 className="w-3 h-3 animate-spin text-blue-500" aria-hidden="true" />
+                <Loader2
+                  className="w-3 h-3 animate-spin text-blue-500"
+                  aria-hidden="true"
+                />
                 <span className="hidden sm:inline">
                   {syncStatus === "saving" ? "Saving…" : "Connecting…"}
                 </span>
@@ -539,13 +560,21 @@ export function CollaborativeNotes({
             )}
             {syncStatus === "synced" && (
               <>
-                <Cloud className="w-3 h-3 text-emerald-500" aria-hidden="true" />
-                <span className="hidden sm:inline">Live — edits merge automatically</span>
+                <Cloud
+                  className="w-3 h-3 text-emerald-500"
+                  aria-hidden="true"
+                />
+                <span className="hidden sm:inline">
+                  Live — edits merge automatically
+                </span>
               </>
             )}
             {(syncStatus === "offline" || syncStatus === "offline_pending") && (
               <>
-                <CloudOff className="w-3 h-3 text-amber-500" aria-hidden="true" />
+                <CloudOff
+                  className="w-3 h-3 text-amber-500"
+                  aria-hidden="true"
+                />
                 <span className="hidden sm:inline">
                   {syncStatus === "offline_pending"
                     ? "Offline — pending sync"

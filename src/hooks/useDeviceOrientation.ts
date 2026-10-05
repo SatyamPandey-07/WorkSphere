@@ -55,7 +55,9 @@ export function useDeviceOrientation(): DeviceOrientationState {
     if (typeof window === "undefined") return;
 
     const hasOrientationSupport =
-      "DeviceOrientationEvent" in window || "DeviceMotionEvent" in window;
+      typeof window !== "undefined" &&
+      ("DeviceOrientationEvent" in window || "DeviceMotionEvent" in window) &&
+      Boolean((window as any).DeviceOrientationEvent);
 
     if (!hasOrientationSupport) {
       setIsSupported(false);
@@ -65,9 +67,12 @@ export function useDeviceOrientation(): DeviceOrientationState {
 
     setIsSupported(true);
 
-    const DeviceOrientation = window.DeviceOrientationEvent as unknown as {
-      requestPermission?: () => Promise<"granted" | "denied">;
-    };
+    const DeviceOrientation =
+      typeof window !== "undefined" && "DeviceOrientationEvent" in window
+        ? ((window as any).DeviceOrientationEvent as {
+            requestPermission?: () => Promise<"granted" | "denied">;
+          })
+        : undefined;
 
     // iOS 13+ requires user interaction to call requestPermission
     if (typeof DeviceOrientation?.requestPermission === "function") {
@@ -98,9 +103,12 @@ export function useDeviceOrientation(): DeviceOrientationState {
   const requestPermission = useCallback(async (): Promise<boolean> => {
     if (typeof window === "undefined") return false;
 
-    const DeviceOrientation = window.DeviceOrientationEvent as unknown as {
-      requestPermission?: () => Promise<"granted" | "denied">;
-    };
+    const DeviceOrientation =
+      typeof window !== "undefined" && "DeviceOrientationEvent" in window
+        ? ((window as any).DeviceOrientationEvent as {
+            requestPermission?: () => Promise<"granted" | "denied">;
+          })
+        : undefined;
 
     if (typeof DeviceOrientation?.requestPermission === "function") {
       try {

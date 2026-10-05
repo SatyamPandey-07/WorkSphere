@@ -39,7 +39,10 @@ export function detectDefaultDistanceUnit(locale?: string): DistanceUnit {
   }
 
   const parts = lang.split(/[-_]/);
-  const region = parts.length > 1 ? parts[1].toUpperCase() : parts[0].toUpperCase();
+  const regionCandidate = parts
+    .slice(1)
+    .find((p) => /^[A-Za-z]{2}$/.test(p) || /^\d{3}$/.test(p));
+  const region = (regionCandidate ?? parts[parts.length - 1]).toUpperCase();
 
   if (IMPERIAL_REGIONS.has(region) || lang.toUpperCase() === "EN-US" || lang.toUpperCase() === "EN-GB") {
     return "IMPERIAL";
@@ -143,7 +146,7 @@ export function formatWalkingBadgeWithUnit(
   if (!Number.isFinite(distanceKm) || distanceKm < 0) return "--";
 
   // 4.8 km/h = 0.08 km/min
-  const mins = Math.max(1, Math.ceil(distanceKm / 0.08));
+  const mins = distanceKm <= 0 ? 0 : Math.ceil(distanceKm / 0.08);
   const formattedDist = formatDistance(distanceKm, unit);
   return `${mins} min walk · ${formattedDist}`;
 }

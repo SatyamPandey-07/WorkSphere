@@ -1,9 +1,25 @@
 "use client";
 
-import React, { useState } from "react";
-import { X, Search, SlidersHorizontal, RotateCcw, Check } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import {
+  X,
+  Search,
+  SlidersHorizontal,
+  RotateCcw,
+  Check,
+  Bookmark,
+  BookmarkPlus,
+  Trash2,
+  Sparkles,
+} from "lucide-react";
 import { usePlatformModifier } from "@/hooks/usePlatformModifier";
 import { KeyboardShortcutBadge } from "@/components/ui/KeyboardShortcutBadge";
+import {
+  loadFilterPresets,
+  saveFilterPreset,
+  deleteFilterPreset,
+  FilterPreset,
+} from "@/lib/venueFilterPresets";
 
 export interface VenueSearchDrawerProps {
   isOpen: boolean;
@@ -104,6 +120,17 @@ export function VenueSearchDrawer({
   const [internalPrice, setInternalPrice] = useState("all");
   const [internalCategory, setInternalCategory] = useState("all");
   const [internalDistance, setInternalDistance] = useState(0);
+
+  // Preset management state
+  const [presets, setPresets] = useState<FilterPreset[]>([]);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
+  const [isSavingPreset, setIsSavingPreset] = useState(false);
+  const [newPresetName, setNewPresetName] = useState("");
+
+  useEffect(() => {
+    setPresets(loadFilterPresets());
+  }, []);
+
   const { formatShortcut, getAriaKeyshortcuts } = usePlatformModifier();
 
   const search = externalSearchText ?? internalSearch;
@@ -130,11 +157,13 @@ export function VenueSearchDrawer({
     (distance > 0 ? 1 : 0);
 
   const handleSearchInput = (val: string) => {
+    setActivePresetId(null);
     if (onSearchChange) onSearchChange(val);
     else setInternalSearch(val);
   };
 
   const handleToggleAmenity = (amenityId: string) => {
+    setActivePresetId(null);
     const next = amenities.includes(amenityId)
       ? amenities.filter((a) => a !== amenityId)
       : [...amenities, amenityId];
@@ -143,27 +172,91 @@ export function VenueSearchDrawer({
   };
 
   const handleNoiseChange = (val: string) => {
+    setActivePresetId(null);
     if (onNoiseLevelChange) onNoiseLevelChange(val);
     else setInternalNoise(val);
   };
 
   const handlePriceChange = (val: string) => {
+    setActivePresetId(null);
     if (onPriceRangeChange) onPriceRangeChange(val);
     else setInternalPrice(val);
   };
 
   const handleCategoryChange = (val: string) => {
+    setActivePresetId(null);
     if (onCategoryChange) onCategoryChange(val);
     else setInternalCategory(val);
   };
 
   const handleDistanceChange = (val: number) => {
+    setActivePresetId(null);
     if (onMaxDistanceChange) onMaxDistanceChange(val);
     else setInternalDistance(val);
   };
 
+  const handleApplyPreset = (preset: FilterPreset) => {
+    setActivePresetId(preset.id);
+    const {
+      searchText = "",
+      amenities: pAmenities,
+      noiseLevel: pNoise,
+      priceRange: pPrice,
+      category: pCat,
+      maxDistance: pDist,
+    } = preset.filters;
+
+    if (onSearchChange) onSearchChange(searchText);
+    else setInternalSearch(searchText);
+
+    if (onAmenitiesChange) onAmenitiesChange([...pAmenities]);
+    else setInternalAmenities([...pAmenities]);
+
+    if (onNoiseLevelChange) onNoiseLevelChange(pNoise);
+    else setInternalNoise(pNoise);
+
+    if (onPriceRangeChange) onPriceRangeChange(pPrice);
+    else setInternalPrice(pPrice);
+
+    if (onCategoryChange) onCategoryChange(pCat);
+    else setInternalCategory(pCat);
+
+    if (onMaxDistanceChange) onMaxDistanceChange(pDist);
+    else setInternalDistance(pDist);
+  };
+
+  const handleSavePreset = () => {
+    if (!newPresetName.trim()) return;
+    const updated = saveFilterPreset(newPresetName, {
+      searchText: search,
+      amenities,
+      noiseLevel: noise,
+      priceRange: price,
+      category: cat,
+      maxDistance: distance,
+    });
+    setPresets(updated);
+    const created = updated[updated.length - 1];
+    if (created) {
+      setActivePresetId(created.id);
+    }
+    setNewPresetName("");
+    setIsSavingPreset(false);
+  };
+
+  const handleDeletePreset = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = deleteFilterPreset(id);
+    setPresets(updated);
+    if (activePresetId === id) {
+      setActivePresetId(null);
+    }
+  };
+
   const handleClear = () => {
-    // Reset all filter state parameters simultaneously
+    setActivePresetId(null);
+    setIsSavingPreset(false);
+
     if (onSearchChange) onSearchChange("");
     setInternalSearch("");
 
@@ -236,6 +329,115 @@ export function VenueSearchDrawer({
             >
               <X className="w-5 h-5" />
             </button>
+          </div>
+        </div>
+
+        {/* Quick & Saved Filter Presets */}
+        <div className="space-y-2 p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-300">
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>Quick Presets</span>
+            </div>
+            {!isSavingPreset ? (
+              <button
+                type="button"
+                data-testid="open-save-preset-btn"
+                onClick={() => setIsSavingPreset(true)}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+              >
+                <BookmarkPlus className="w-3.5 h-3.5" />
+                <span>Save Current as Preset</span>
+              </button>
+            ) : null}
+          </div>
+
+          {/* Inline Save Preset Form */}
+          {isSavingPreset && (
+            <div
+              data-testid="save-preset-form"
+              className="flex items-center gap-2 pt-1 pb-1 animate-in fade-in zoom-in-95 duration-150"
+            >
+              <input
+                type="text"
+                data-testid="preset-name-input"
+                value={newPresetName}
+                onChange={(e) => setNewPresetName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleSavePreset();
+                  } else if (e.key === "Escape") {
+                    setIsSavingPreset(false);
+                  }
+                }}
+                placeholder="Preset name (e.g., Morning Coffee)..."
+                autoFocus
+                className="flex-1 px-3 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                type="button"
+                data-testid="confirm-save-preset-btn"
+                onClick={handleSavePreset}
+                disabled={!newPresetName.trim()}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all"
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                data-testid="cancel-save-preset-btn"
+                onClick={() => {
+                  setIsSavingPreset(false);
+                  setNewPresetName("");
+                }}
+                className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                aria-label="Cancel saving preset"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Preset Buttons List */}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {presets.map((preset) => {
+              const isSelected = activePresetId === preset.id;
+              return (
+                <div
+                  key={preset.id}
+                  data-testid={`preset-item-${preset.id}`}
+                  onClick={() => handleApplyPreset(preset)}
+                  className={`group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer select-none ${
+                    isSelected
+                      ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
+                      : "bg-white dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-800 hover:border-blue-400/60"
+                  }`}
+                >
+                  <Bookmark
+                    className={`w-3 h-3 ${
+                      isSelected ? "text-white fill-current" : "text-zinc-400"
+                    }`}
+                  />
+                  <span>{preset.name}</span>
+                  {!preset.isDefault && (
+                    <button
+                      type="button"
+                      data-testid={`delete-preset-${preset.id}`}
+                      onClick={(e) => handleDeletePreset(preset.id, e)}
+                      className={`ml-1 p-0.5 rounded hover:bg-red-500 hover:text-white transition-colors ${
+                        isSelected
+                          ? "text-blue-200"
+                          : "text-zinc-400 opacity-60 group-hover:opacity-100"
+                      }`}
+                      aria-label={`Delete preset ${preset.name}`}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -458,21 +660,37 @@ export function VenueSearchDrawer({
             Noise Level Preference
           </label>
           <div className="flex flex-wrap gap-2">
-            {NOISE_LEVELS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                data-testid={`noise-${item.id}`}
-                onClick={() => handleNoiseChange(item.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                  noise === item.id
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+            {NOISE_LEVELS.map((item) => {
+              const isSelected = noise === item.id;
+              const ariaLabel =
+                item.id === "all"
+                  ? "Filter by Any Noise level"
+                  : `Filter by ${item.label} spaces`;
+
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-testid={`noise-${item.id}`}
+                  aria-pressed={isSelected}
+                  aria-label={ariaLabel}
+                  onClick={() => handleNoiseChange(item.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleNoiseChange(item.id);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    isSelected
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
+                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 

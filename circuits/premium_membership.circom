@@ -11,4 +11,16 @@ template PremiumMembership() {
     expectedCommit === hash.out;
 }
 
+template MultiVenueClusterMembership(nVenues) {
+    signal input venueIds[nVenues];
+    signal input clusterMerkleRoot;
+    signal output validClusterHash;
+
+    component poseidon = Poseidon(nVenues);
+    for (var i = 0; i < nVenues; i++) {
+        poseidon.inputs[i] <== venueIds[i];
+    }
+    validClusterHash <== poseidon.out;
+}
+
 component main {public [expectedCommit]} = PremiumMembership();

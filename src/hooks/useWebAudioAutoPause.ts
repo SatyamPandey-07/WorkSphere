@@ -36,7 +36,10 @@ export function useWebAudioAutoPause({
 
   useEffect(() => {
     if (!isActive) {
-      wasAutoPausedRef.current = false;
+      if (wasAutoPausedRef.current) {
+        wasAutoPausedRef.current = false;
+        onResumeRef.current?.();
+      }
       return;
     }
 

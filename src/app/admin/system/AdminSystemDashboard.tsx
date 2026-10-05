@@ -14,6 +14,7 @@ import {
   Search,
   Star,
 } from "lucide-react";
+import { WebVitalsWidget } from "@/components/admin/WebVitalsWidget";
 import {
   Area,
   AreaChart,
@@ -111,7 +112,9 @@ function MetricCard({
           <Icon className="h-5 w-5" />
         </span>
       </div>
-      <p className="text-3xl font-semibold tracking-tight text-white">{value}</p>
+      <p className="text-3xl font-semibold tracking-tight text-white">
+        {value}
+      </p>
       <p className="mt-2 text-xs text-zinc-500">{detail}</p>
     </article>
   );
@@ -141,14 +144,17 @@ type PartitionHealthData = {
 export default function AdminSystemDashboard() {
   const [range, setRange] = useState<RangeKey>("30d");
   const [data, setData] = useState<SystemMetrics | null>(null);
-  const [partitionsData, setPartitionsData] = useState<PartitionHealthData | null>(null);
+  const [partitionsData, setPartitionsData] =
+    useState<PartitionHealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const requestId = useRef(0);
 
   async function loadPartitions() {
     try {
-      const res = await fetch("/api/admin/system/partitions", { cache: "no-store" });
+      const res = await fetch("/api/admin/system/partitions", {
+        cache: "no-store",
+      });
       if (res.ok) {
         const json = await res.json();
         setPartitionsData(json);
@@ -159,46 +165,47 @@ export default function AdminSystemDashboard() {
   }
 
   async function loadMetrics(selectedRange: RangeKey) {
-  const currentRequest = ++requestId.current;
+    const currentRequest = ++requestId.current;
 
-  setLoading(true);
-  setError("");
+    setLoading(true);
+    setError("");
 
-  try {
-    const [metricsRes] = await Promise.all([
-      fetch(`/api/admin/system?range=${selectedRange}`, { cache: "no-store" }),
-      loadPartitions(),
-    ]);
+    try {
+      const [metricsRes] = await Promise.all([
+        fetch(`/api/admin/system?range=${selectedRange}`, {
+          cache: "no-store",
+        }),
+        loadPartitions(),
+      ]);
 
-    if (!metricsRes.ok) {
-      const payload = await metricsRes.json().catch(() => null);
-      throw new Error(
-        payload?.error ?? "Unable to load system metrics",
+      if (!metricsRes.ok) {
+        const payload = await metricsRes.json().catch(() => null);
+        throw new Error(payload?.error ?? "Unable to load system metrics");
+      }
+
+      const result = await metricsRes.json();
+
+      if (currentRequest !== requestId.current) return;
+
+      setData(result);
+    } catch (requestError) {
+      if (currentRequest !== requestId.current) return;
+
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Unable to load system metrics",
       );
-    }
-
-    const result = await metricsRes.json();
-
-    if (currentRequest !== requestId.current) return;
-
-    setData(result);
-  } catch (requestError) {
-    if (currentRequest !== requestId.current) return;
-
-    setError(
-      requestError instanceof Error
-        ? requestError.message
-        : "Unable to load system metrics",
-    );
-  } finally {
-    if (currentRequest === requestId.current) {
-      setLoading(false);
+    } finally {
+      if (currentRequest === requestId.current) {
+        setLoading(false);
+      }
     }
   }
-}
 
   useEffect(() => {
     loadMetrics(range);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
 
   const slowQueryShare = useMemo(() => {
@@ -270,7 +277,9 @@ export default function AdminSystemDashboard() {
               className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-zinc-300 transition hover:bg-white/[0.08] disabled:opacity-50"
               aria-label="Refresh system metrics"
             >
-              <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-5 w-5 ${loading ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
         </header>
@@ -315,6 +324,8 @@ export default function AdminSystemDashboard() {
             icon={Database}
           />
         </section>
+
+        <WebVitalsWidget className="mt-6" initialRange={range} />
 
         <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
           <div className="mb-6">
@@ -452,7 +463,12 @@ export default function AdminSystemDashboard() {
                     width={90}
                   />
                   <Tooltip contentStyle={tooltipStyle} />
-                  <Bar dataKey="avgMs" name="avg ms" fill="#22d3ee" radius={6} />
+                  <Bar
+                    dataKey="avgMs"
+                    name="avg ms"
+                    fill="#22d3ee"
+                    radius={6}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -495,16 +511,21 @@ export default function AdminSystemDashboard() {
               </table>
             </div>
           </section>
+        )}
+
         {partitionsData && partitionsData.partitions.length > 0 && (
           <section className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-5">
             <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="flex items-center gap-2">
                   <HardDrive className="h-5 w-5 text-violet-400" />
-                  <h2 className="text-lg font-semibold">PostgreSQL Partition Disk Storage</h2>
+                  <h2 className="text-lg font-semibold">
+                    PostgreSQL Partition Disk Storage
+                  </h2>
                 </div>
                 <p className="mt-1 text-sm text-zinc-500">
-                  Physical disk allocation per monthly declarative partition table (Threshold: 100 MB cold storage detachment)
+                  Physical disk allocation per monthly declarative partition
+                  table (Threshold: 100 MB cold storage detachment)
                 </p>
               </div>
               <span
@@ -516,7 +537,9 @@ export default function AdminSystemDashboard() {
               >
                 <span
                   className={`h-2 w-2 rounded-full ${
-                    partitionsData.status === "HEALTHY" ? "bg-emerald-400" : "bg-red-400"
+                    partitionsData.status === "HEALTHY"
+                      ? "bg-emerald-400"
+                      : "bg-red-400"
                   }`}
                 />
                 {partitionsData.status}
@@ -529,7 +552,7 @@ export default function AdminSystemDashboard() {
                 (sum, p) => sum + (p.tableSizeBytes ?? 0),
                 0,
               );
-              const maxScale = Math.max(totalBytes, 100 * 1024 * 1024); // at least 100MB scale
+              const _maxScale = Math.max(totalBytes, 100 * 1024 * 1024); // at least 100MB scale
               const colors = [
                 "bg-violet-500",
                 "bg-cyan-500",
@@ -558,9 +581,11 @@ export default function AdminSystemDashboard() {
                   <div className="flex h-4 w-full overflow-hidden rounded-full bg-white/[0.08] p-0.5">
                     {partitionsData.partitions.map((part, idx) => {
                       const bytes = part.tableSizeBytes ?? 0;
-                      const percent = totalBytes > 0 ? (bytes / totalBytes) * 100 : 0;
+                      const percent =
+                        totalBytes > 0 ? (bytes / totalBytes) * 100 : 0;
                       if (percent <= 0) return null;
-                      const isCold = part.isNearColdStorage || bytes >= 100 * 1024 * 1024;
+                      const isCold =
+                        part.isNearColdStorage || bytes >= 100 * 1024 * 1024;
                       return (
                         <div
                           key={part.name}
@@ -575,7 +600,10 @@ export default function AdminSystemDashboard() {
                       );
                     })}
                     {totalBytes === 0 && (
-                      <div className="h-full w-full bg-zinc-700/50" title="No partition data" />
+                      <div
+                        className="h-full w-full bg-zinc-700/50"
+                        title="No partition data"
+                      />
                     )}
                   </div>
                 </div>
@@ -619,10 +647,14 @@ export default function AdminSystemDashboard() {
                     </div>
 
                     <div className="mt-4 flex items-baseline justify-between">
-                      <span className="text-xs text-zinc-400">Size on disk:</span>
+                      <span className="text-xs text-zinc-400">
+                        Size on disk:
+                      </span>
                       <span
                         className={`font-mono text-base font-semibold ${
-                          isNearingThreshold ? "text-red-400" : "text-violet-300"
+                          isNearingThreshold
+                            ? "text-red-400"
+                            : "text-violet-300"
                         }`}
                       >
                         {partition.tableSizePretty ?? "0 B"}
@@ -655,9 +687,9 @@ export default function AdminSystemDashboard() {
         )}
 
         <p className="mt-6 text-xs text-zinc-600">
-          DB latency stats are collected in-memory per server instance and
-          reset on restart — they reflect current health, not a durable audit
-          log. Last refreshed{" "}
+          DB latency stats are collected in-memory per server instance and reset
+          on restart — they reflect current health, not a durable audit log.
+          Last refreshed{" "}
           {data ? new Date(data.generatedAt).toLocaleTimeString() : "—"}.
         </p>
       </div>

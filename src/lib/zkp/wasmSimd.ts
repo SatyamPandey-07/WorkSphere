@@ -53,6 +53,25 @@ export const MONTGOMERY_R2 = BigInt(
 export const MONTGOMERY_INV = BigInt("140427751288534427205365359670042775128853442720");
 
 /**
+ * Computes modular inverse using the Extended Euclidean Algorithm.
+ */
+export function modInverse(a: bigint, m: bigint): bigint {
+  let [old_r, r] = [((a % m) + m) % m, m];
+  let [old_s, s] = [1n, 0n];
+
+  while (r !== 0n) {
+    const quotient = old_r / r;
+    [old_r, r] = [r, old_r - quotient * r];
+    [old_s, s] = [s, old_s - quotient * s];
+  }
+
+  return ((old_s % m) + m) % m;
+}
+
+// R^-1 mod r (Montgomery radix inverse)
+export const MONTGOMERY_R_INV = modInverse(MONTGOMERY_R, BN254_R);
+
+/**
  * Represents a 256-bit BigInt as 4 x 64-bit limbs formatted for SIMD vector registers.
  */
 export interface SimdLimb256 {
@@ -89,6 +108,7 @@ export function simdBatchFieldAdd(
   aArray: bigint[],
   bArray: bigint[]
 ): bigint[] {
+  if (!aArray || !Array.isArray(aArray) || !bArray || !Array.isArray(bArray)) return [];
   const count = Math.min(aArray.length, bArray.length);
   const result = new Array<bigint>(count);
   const r = BN254_R;
@@ -103,7 +123,7 @@ export function simdBatchFieldAdd(
 
 /**
  * SIMD-Vectorized parallel batch Montgomery multiplication:
- * Computes C[i] = (A[i] * B[i] * R^-1) mod r using 64-bit limb cross-multiplications.
+ * Computes C[i] = (A[i] * B[i] * R^-1) mod r using Montgomery reduction.
  */
 export function simdBatchMontgomeryMul(
   aArray: bigint[],
@@ -112,11 +132,12 @@ export function simdBatchMontgomeryMul(
   const count = Math.min(aArray.length, bArray.length);
   const result = new Array<bigint>(count);
   const r = BN254_R;
+  const rInv = MONTGOMERY_R_INV;
 
   for (let i = 0; i < count; i++) {
-    // Montgomery multiplication reduction
-    const prod = aArray[i] * bArray[i];
-    result[i] = prod % r;
+    // Montgomery multiplication reduction: A * B * R^-1 mod r
+    const prod = (aArray[i] * bArray[i]) % r;
+    result[i] = (prod * rInv) % r;
   }
 
   return result;

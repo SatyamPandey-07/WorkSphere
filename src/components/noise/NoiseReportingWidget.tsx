@@ -104,8 +104,25 @@ export function NoiseReportingWidget({
       if (detail) setCalibration(detail);
     };
     window.addEventListener("worksphere:mic-calibration-changed", handleCalibrationChanged);
+
+    const handleVisibilityChange = async () => {
+      if (
+        !document.hidden &&
+        audioContextRef.current &&
+        audioContextRef.current.state === "suspended"
+      ) {
+        try {
+          await audioContextRef.current.resume();
+        } catch (err) {
+          console.warn("Failed to resume audioContext on tab visibility change:", err);
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
     return () => {
       window.removeEventListener("worksphere:mic-calibration-changed", handleCalibrationChanged);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, []);
 
@@ -153,6 +170,9 @@ export function NoiseReportingWidget({
         window.AudioContext ||
         (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       const ctx = new AudioCtx();
+      if (ctx.state === "suspended") {
+        await ctx.resume();
+      }
       audioContextRef.current = ctx;
 
       const source = ctx.createMediaStreamSource(stream);

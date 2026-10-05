@@ -29,6 +29,11 @@ import {
   type PasskeyOtpAction,
 } from "@/components/auth/PasskeyOtpDialog";
 import { StepUpReAuthModal } from "@/components/auth/StepUpReAuthModal";
+import {
+  savePasskeyChallengeToSession,
+  clearPasskeyChallengeFromSession,
+  setupPasskeyUnloadCleanup,
+} from "@/lib/auth/passkeys/client";
 
 export interface PasskeyItem {
   id: string;
@@ -85,7 +90,7 @@ export function PasskeyManager() {
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [showStepUpModal, setShowStepUpModal] = useState(false);
   const [stepUpAction, setStepUpAction] = useState("passkey_management");
-  const [stepUpVerifiedToken, setStepUpVerifiedToken] = useState<string | null>(null);
+  const [_stepUpVerifiedToken, setStepUpVerifiedToken] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const handleCopyId = async (credentialId: string) => {
@@ -105,6 +110,8 @@ export function PasskeyManager() {
 
   useEffect(() => {
     setIsWebAuthnSupported(browserSupportsWebAuthn());
+    const cleanup = setupPasskeyUnloadCleanup();
+    return cleanup;
   }, []);
 
   const fetchPasskeys = useCallback(async () => {
@@ -148,6 +155,7 @@ export function PasskeyManager() {
       setRegistering(true);
       setError(null);
       setSuccess(null);
+      clearPasskeyChallengeFromSession();
 
       // 1. Fetch registration options from server
       const optRes = await fetch("/api/auth/passkey/register/options");
@@ -158,6 +166,10 @@ export function PasskeyManager() {
         );
       }
       const optionsJSON = await optRes.json();
+
+      if (optionsJSON?.challenge) {
+        savePasskeyChallengeToSession(optionsJSON.challenge, "registration");
+      }
 
       // 2. Trigger browser WebAuthn prompt
       const registrationResponse = await startRegistration({ optionsJSON });
@@ -177,10 +189,12 @@ export function PasskeyManager() {
         throw new Error(errData.error || "Passkey verification failed.");
       }
 
+      clearPasskeyChallengeFromSession();
       setSuccess("Passkey successfully registered and synced!");
       setCustomName("");
       await fetchPasskeys();
     } catch (err: unknown) {
+      clearPasskeyChallengeFromSession();
       console.error("Registration error:", err);
       const message =
         err instanceof Error ? err.message : "Passkey registration failed.";
@@ -204,9 +218,14 @@ export function PasskeyManager() {
   };
 
   const handleDelete = (pk: PasskeyItem) => {
+    const credId = pk?.credentialId || pk?.id;
+    if (!pk || !credId || typeof credId !== "string" || !credId.trim()) {
+      setError("Invalid passkey credential ID. Cannot revoke passkey.");
+      return;
+    }
     if (!confirm("Are you sure you want to remove this passkey credential?"))
       return;
-    setPending({ action: "revoke", id: pk.id, name: pk.name });
+    setPending({ action: "revoke", id: credId, name: pk.name || "Passkey" });
   };
 
   const handleRotate = (pk: PasskeyItem) => {
@@ -233,6 +252,11 @@ export function PasskeyManager() {
       setEditName("");
       setSuccess("Passkey renamed.");
     } else if (action === "revoke") {
+      if (!id || typeof id !== "string" || !id.trim()) {
+        setError("Invalid passkey credential ID. Cannot revoke passkey.");
+        setPending(null);
+        return;
+      }
       const res = await fetch(`/api/auth/passkey/credentials/${id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
@@ -241,16 +265,22 @@ export function PasskeyManager() {
       if (!res.ok) throw await errorFrom(res, "Failed to remove passkey.");
       setSuccess("Passkey removed.");
     } else {
+      clearPasskeyChallengeFromSession();
       const optRes = await fetch(
         `/api/auth/passkey/register/options?rotate=${encodeURIComponent(id)}`,
       );
       if (!optRes.ok) throw await errorFrom(optRes, "Failed to start rotation.");
       const optionsJSON = await optRes.json();
 
+      if (optionsJSON?.challenge) {
+        savePasskeyChallengeToSession(optionsJSON.challenge, "registration");
+      }
+
       let registrationResponse;
       try {
         registrationResponse = await startRegistration({ optionsJSON });
       } catch {
+        clearPasskeyChallengeFromSession();
         // The code is still valid — the user can retry without a new email.
         throw new Error(
           "Passkey creation was cancelled. Submit again to retry with the same code.",
@@ -267,6 +297,7 @@ export function PasskeyManager() {
           registrationResponse,
         }),
       });
+      clearPasskeyChallengeFromSession();
       if (!res.ok) throw await errorFrom(res, "Failed to rotate passkey.");
       setSuccess("Passkey rotated. The old credential has been revoked.");
     }

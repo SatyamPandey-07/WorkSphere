@@ -13,13 +13,17 @@ import { storeProof, _resetProofCacheForTesting } from "@/lib/zkp/proofCache";
 
 const posted: Array<Record<string, unknown>> = [];
 
+let terminatedCount = 0;
+
 class FakeWorker {
   onmessage: ((e: { data: unknown }) => void) | null = null;
   onerror: (() => void) | null = null;
   postMessage(msg: Record<string, unknown>) {
     posted.push(msg);
   }
-  terminate() {}
+  terminate() {
+    terminatedCount++;
+  }
 }
 
 const fetchMock = jest.fn(async (url: string) =>
@@ -30,6 +34,7 @@ const fetchMock = jest.fn(async (url: string) =>
 
 beforeEach(async () => {
   posted.length = 0;
+  terminatedCount = 0;
   fetchMock.mockClear();
   localStorage.clear();
   await _resetProofCacheForTesting();
@@ -67,4 +72,18 @@ it("re-submits a cached proof instead of proving again", async () => {
   );
   expect(posted).toHaveLength(0);
   await screen.findByText(/student status verified/i);
+});
+
+it("aborts and terminates worker upon component unmount (#3938)", async () => {
+  const { unmount } = render(<StudentDiscountVerification />);
+  fireEvent.change(screen.getByLabelText(/numeric student id/i), { target: { value: "87654321" } });
+  fireEvent.click(screen.getByRole("button", { name: /verify/i }));
+
+  await waitFor(() => expect(posted.some((p) => p.type === "prove")).toBe(true));
+
+  unmount();
+
+  // Worker should receive abort/terminate message and terminate() should be called
+  expect(posted.some((p) => p.type === "abort" || p.type === "terminate")).toBe(true);
+  expect(terminatedCount).toBeGreaterThanOrEqual(1);
 });

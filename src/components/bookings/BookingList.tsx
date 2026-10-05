@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import { BookingHistoryList } from "@/app/dashboard/BookingHistoryList";
+import { ExportBookingsCSVButton } from "@/components/bookings/ExportBookingsCSVButton";
 
 export interface BookingSummary {
   id: string;
@@ -249,6 +250,7 @@ export function BookingList({
                 Google Calendar
               </a>
               <button
+                type="button"
                 onClick={() =>
                   downloadICS(
                     venueName,
@@ -260,9 +262,10 @@ export function BookingList({
                   )
                 }
                 className={chipClass}
+                aria-label={`Download iCalendar file for booking ${booking.confirmationId}`}
               >
                 <Calendar className="w-3.5 h-3.5" />
-                .ics
+                Add to Calendar (.ics)
               </button>
               <button
                 onClick={() => cancelBooking(booking)}
@@ -341,6 +344,16 @@ export function BookingList({
         />
       ) : (
         <>
+          <div className="flex items-center justify-between pb-1">
+            <span className="text-xs text-zinc-500 font-medium">
+              {bookings.length} {bookings.length === 1 ? "booking" : "bookings"} recorded
+            </span>
+            <ExportBookingsCSVButton
+              bookings={bookings}
+              label="Export CSV"
+              variant="outline"
+            />
+          </div>
           {upcoming.length > 0 && (
             <section>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500 mb-2">

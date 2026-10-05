@@ -69,12 +69,17 @@ function expandDates(
   const [y, m, d] = start.split("-").map(Number);
   const dates: string[] = [];
   for (let i = 0; i < count; i++) {
-    const next =
-      frequency === "daily"
-        ? new Date(y, m - 1, d + i)
-        : frequency === "weekly"
-          ? new Date(y, m - 1, d + 7 * i)
-          : new Date(y, m - 1 + i, d);
+    let next: Date;
+    if (frequency === "daily") {
+      next = new Date(y, m - 1, d + i);
+    } else if (frequency === "weekly") {
+      next = new Date(y, m - 1, d + 7 * i);
+    } else {
+      const first = new Date(y, m - 1 + i, 1);
+      const lastDay = new Date(y, m + i, 0).getDate();
+      first.setDate(Math.min(d, lastDay));
+      next = first;
+    }
     dates.push(localDateString(next));
   }
   return dates;
@@ -684,6 +689,7 @@ export function BookingModal({
                     <CalendarPlus className="w-4 h-4" /> Add to Google Calendar
                   </a>
                   <button
+                    type="button"
                     onClick={() =>
                       downloadICS(
                         venue.name,
@@ -695,8 +701,9 @@ export function BookingModal({
                       )
                     }
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                    aria-label="Add to Calendar (.ics)"
                   >
-                    <Calendar className="w-4 h-4" /> Download .ics
+                    <Calendar className="w-4 h-4" /> Add to Calendar (.ics)
                   </button>
                   {confirmation.bookingId && (
                     <a

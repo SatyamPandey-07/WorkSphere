@@ -3,7 +3,11 @@ import crypto from "crypto";
 const STEP_UP_SECRET =
   process.env.STEP_UP_SECRET ||
   process.env.ENCRYPTION_KEY ||
-  "worksphere_step_up_reauth_secret_key_default_32b";
+  (process.env.NODE_ENV === "production"
+    ? (() => {
+        throw new Error("STEP_UP_SECRET must be set in production");
+      })()
+    : "worksphere_step_up_reauth_secret_key_default_32b");
 
 const STEP_UP_TTL_SECONDS = 300; // 5 minutes validity
 

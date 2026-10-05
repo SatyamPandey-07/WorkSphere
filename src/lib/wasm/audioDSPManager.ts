@@ -233,7 +233,7 @@ export function getNoiseProfile(
  * Check if the DSP engine is ready.
  */
 export function isDSPReady(): boolean {
-  return state.isProcessing;
+  return state.audioContext !== null && state.workletNode !== null;
 }
 
 /**
@@ -284,6 +284,9 @@ export function processNoiseSuppressionSIMD(
   rms: number;
   decibels: number;
 } {
+  if (!input || !output) {
+    return { latencyMs: 0, noiseSuppressed: false, rms: 0, decibels: 0 };
+  }
   const startTime =
     typeof performance !== "undefined" ? performance.now() : Date.now();
   const thresholdDb = options.thresholdDb ?? DEFAULT_NOISE_THRESHOLD_DB;

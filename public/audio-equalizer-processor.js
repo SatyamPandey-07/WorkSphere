@@ -15,7 +15,7 @@ function besselI0(x) {
   let sum = 1.0;
   let term = 1.0;
   const halfX = x * 0.5;
-  for (let m = 1; m <= 25; m++) {
+  for (let m = 1; m <= 100; m++) {
     term *= (halfX / m) * (halfX / m);
     sum += term;
     if (term < 1e-9) break;

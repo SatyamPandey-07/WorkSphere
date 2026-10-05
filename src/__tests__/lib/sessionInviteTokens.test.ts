@@ -75,4 +75,42 @@ describe("Session Invite Tokens & WebCrypto Generator (src/lib/sessionInviteToke
     expect(result.valid).toBe(false);
     expect(result.error).toBe("Invite token does not match this session.");
   });
+
+  it("rejects tokens with forged or invalid signatures", async () => {
+    const token = await generateSessionInviteToken("session-alpha", 24, 10);
+    const [payloadB64] = token.split(".");
+    const forgedToken = `${payloadB64}.forged_signature_xyz`;
+
+    const result = validateSessionInviteToken(forgedToken, 1, "session-alpha");
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Invalid or forged invite token signature.");
+  });
+
+  it("rejects tokens when payload has been tampered with", async () => {
+    const token = await generateSessionInviteToken("session-alpha", 24, 2);
+    const [payloadB64, signature] = token.split(".");
+
+    // Attacker tampers with payload to inflate maxParticipants from 2 to 999
+    const decoded = JSON.parse(decodeBase64Url(payloadB64));
+    decoded.maxParticipants = 999;
+    const tamperedPayloadB64 = encodeBase64Url(JSON.stringify(decoded));
+    const tamperedToken = `${tamperedPayloadB64}.${signature}`;
+
+    const result = validateSessionInviteToken(
+      tamperedToken,
+      1,
+      "session-alpha",
+    );
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Invalid or forged invite token signature.");
+  });
+
+  it("rejects malformed tokens lacking signature part", () => {
+    const rawPayloadB64 = encodeBase64Url(
+      JSON.stringify({ sessionId: "session-alpha", expiresAt: Date.now() + 10000 }),
+    );
+    const result = validateSessionInviteToken(rawPayloadB64, 1, "session-alpha");
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("Invalid invite token format.");
+  });
 });

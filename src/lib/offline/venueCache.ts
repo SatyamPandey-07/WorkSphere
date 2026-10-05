@@ -163,8 +163,50 @@ export class OfflineVenueCache {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Persistent IndexedDB Venue LRU Cache
+// Persistent IndexedDB Venue & Floor Plan LRU Cache with Quota Recovery
 // ─────────────────────────────────────────────────────────────────────────────
+
+import { MAX_RECENTLY_VIEWED_IDB, type RecentlyViewedVenuePayload } from "./types";
+
+/**
+ * Checks if an error is a browser IndexedDB storage quota exceeded error.
+ */
+export function isQuotaExceededError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { name?: string; code?: number; message?: string };
+  return (
+    e.name === "QuotaExceededError" ||
+    e.name === "NS_ERROR_DOM_QUOTA_REACHED" ||
+    e.code === 22 ||
+    (typeof e.message === "string" && /quota/i.test(e.message))
+  );
+}
+
+/**
+ * Dispatches a user-visible and application-level storage quota exceeded event.
+ */
+export function notifyQuotaExceeded(details?: {
+  venueId?: string;
+  venueName?: string;
+  freedCount?: number;
+}): void {
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("worksphere:storage_quota_exceeded", {
+          detail: {
+            timestamp: Date.now(),
+            message:
+              "IndexedDB storage quota reached. Stale offline floor plan caches were safely pruned.",
+            ...details,
+          },
+        }),
+      );
+    } catch {
+      // Ignore broadcast errors in non-standard environments
+    }
+  }
+}
 
 /**
  * Checks if a venue is favorited in the offline favorites store.
@@ -191,7 +233,7 @@ async function isVenueFavoritedOffline(
 }
 
 /**
- * Saves a venue into persistent IndexedDB storage with LRU access tracking.
+ * Saves a venue into persistent IndexedDB storage with LRU access tracking and quota recovery.
  */
 export async function saveVenueOfflineWithLru(
   venue: Partial<CachedVenue> & { id: string; name: string },
@@ -231,6 +273,28 @@ export async function saveVenueOfflineWithLru(
       await attemptPut();
       await purgeOfflineVenuesLru(options.maxVenues ?? DEFAULT_MAX_CACHED_VENUES);
     } catch (err) {
+      if (isQuotaExceededError(err)) {
+        console.warn(
+          "[VenueCache] QuotaExceededError during venue save. Triggering emergency LRU eviction...",
+        );
+        const freed = await purgeOfflineVenuesLru(
+          Math.max(1, Math.floor((options.maxVenues ?? DEFAULT_MAX_CACHED_VENUES) / 2)),
+        );
+        await pruneRecentlyViewedVenuesLru(Math.max(1, Math.floor(MAX_RECENTLY_VIEWED_IDB / 2)));
+        notifyQuotaExceeded({ venueId: venue.id, venueName: venue.name, freedCount: freed });
+
+        try {
+          await attemptPut();
+          return;
+        } catch (retryErr) {
+          console.error(
+            "[VenueCache] Quota exceeded after emergency eviction:",
+            retryErr,
+          );
+          throw retryErr;
+        }
+      }
+
       console.error("[VenueCache] Failed to save venue with LRU tracking:", err);
       throw err;
     }
@@ -265,8 +329,9 @@ export async function getVenueOfflineWithLru(
           lastAccessedAt: now,
         };
 
-        store.put(updated);
-        resolve(updated);
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve(updated);
+        putReq.onerror = () => reject(putReq.error);
       };
 
       getReq.onerror = () => reject(getReq.error);
@@ -328,6 +393,202 @@ export async function purgeOfflineVenuesLru(
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Recently Viewed Venues & Floor Plan Offline Cache (Issue #3512, #3580)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Prunes stale floor plan and recently viewed caches using LRU eviction.
+ */
+export async function pruneRecentlyViewedVenuesLru(
+  maxItems = MAX_RECENTLY_VIEWED_IDB,
+): Promise<number> {
+  return withWebLock("worksphere:recently-viewed-lru-lock", async () => {
+    const database = await initOfflineDB();
+    if (!database.objectStoreNames.contains("recentlyViewedVenues")) {
+      return 0;
+    }
+
+    const allItems: RecentlyViewedVenuePayload[] = await new Promise((resolve, reject) => {
+      const tx = database.transaction(["recentlyViewedVenues"], "readonly");
+      const store = tx.objectStore("recentlyViewedVenues");
+      const req = store.getAll();
+      req.onsuccess = () => resolve((req.result as RecentlyViewedVenuePayload[]) || []);
+      req.onerror = () => reject(req.error);
+    });
+
+    const overflow = allItems.length - maxItems;
+    if (overflow <= 0) return 0;
+
+    // Sort by viewedAt / lastAccessedAt ascending (oldest first)
+    const evictable = allItems
+      .filter((item) => !item.isPinned && !item.isFavorite)
+      .sort(
+        (a, b) =>
+          (a.viewedAt || a.lastAccessedAt || 0) -
+          (b.viewedAt || b.lastAccessedAt || 0),
+      );
+
+    if (evictable.length === 0) return 0;
+
+    let deletedCount = 0;
+
+    await new Promise<void>((resolve, reject) => {
+      const tx = database.transaction(["recentlyViewedVenues"], "readwrite");
+      const store = tx.objectStore("recentlyViewedVenues");
+
+      for (let i = 0; i < overflow && i < evictable.length; i++) {
+        store.delete(evictable[i].id);
+        deletedCount++;
+      }
+
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+
+    return deletedCount;
+  });
+}
+
+/**
+ * Persists a recently viewed venue with its floor plan to IndexedDB, enforcing LRU capacity
+ * and recovering cleanly from QuotaExceededError by pruning stale floor plan entries.
+ */
+export async function saveRecentlyViewedVenueOffline(
+  venue: RecentlyViewedVenuePayload,
+  options: { maxItems?: number } = {},
+): Promise<void> {
+  return withWebLock("worksphere:recently-viewed-save-lock", async () => {
+    const database = await initOfflineDB();
+    if (!database.objectStoreNames.contains("recentlyViewedVenues")) {
+      return;
+    }
+
+    const maxItems = options.maxItems ?? MAX_RECENTLY_VIEWED_IDB;
+    const now = Date.now();
+    const payload: RecentlyViewedVenuePayload = {
+      ...venue,
+      viewedAt: venue.viewedAt || now,
+      lastAccessedAt: now,
+    };
+
+    const attemptPut = (): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        const tx = database.transaction(["recentlyViewedVenues"], "readwrite");
+        const store = tx.objectStore("recentlyViewedVenues");
+        const req = store.put(payload);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+
+    try {
+      await attemptPut();
+      await pruneRecentlyViewedVenuesLru(maxItems);
+    } catch (err) {
+      if (isQuotaExceededError(err)) {
+        console.warn(
+          "[RecentlyViewedCache] QuotaExceededError while caching floor plan. Pruning stale floor plans...",
+        );
+        const freed = await pruneRecentlyViewedVenuesLru(Math.max(1, Math.floor(maxItems / 2)));
+        await purgeOfflineVenuesLru(Math.max(1, Math.floor(DEFAULT_MAX_CACHED_VENUES / 2)));
+        notifyQuotaExceeded({ venueId: venue.id, venueName: venue.name, freedCount: freed });
+
+        try {
+          await attemptPut();
+          return;
+        } catch (retryErr) {
+          if (isQuotaExceededError(retryErr)) {
+            // Fall back to caching venue metadata without the heavy floor plan payload
+            console.warn(
+              "[RecentlyViewedCache] Eviction insufficient for floor plan payload. Saving venue metadata fallback.",
+            );
+            const fallbackPayload: RecentlyViewedVenuePayload = {
+              ...payload,
+              floorplan: null,
+            };
+            const fallbackTx = database.transaction(["recentlyViewedVenues"], "readwrite");
+            fallbackTx.objectStore("recentlyViewedVenues").put(fallbackPayload);
+            return;
+          }
+          throw retryErr;
+        }
+      }
+
+      console.warn("[RecentlyViewedCache] Failed to persist recently viewed venue:", err);
+      throw err;
+    }
+  });
+}
+
+/**
+ * Retrieves a recently viewed venue by ID from IndexedDB and updates its access time.
+ */
+export async function getRecentlyViewedVenueOffline(
+  id: string,
+): Promise<RecentlyViewedVenuePayload | null> {
+  const database = await initOfflineDB();
+  if (!database.objectStoreNames.contains("recentlyViewedVenues")) {
+    return null;
+  }
+
+  return new Promise<RecentlyViewedVenuePayload | null>((resolve, reject) => {
+    const tx = database.transaction(["recentlyViewedVenues"], "readonly");
+    const store = tx.objectStore("recentlyViewedVenues");
+    const req = store.get(id);
+
+    req.onsuccess = () => {
+      const result = req.result as RecentlyViewedVenuePayload | undefined;
+      resolve(result || null);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Retrieves all recently viewed venues from IndexedDB, sorted by viewedAt descending.
+ */
+export async function getRecentlyViewedVenuesOffline(): Promise<RecentlyViewedVenuePayload[]> {
+  const database = await initOfflineDB();
+  if (!database.objectStoreNames.contains("recentlyViewedVenues")) {
+    return [];
+  }
+
+  return new Promise<RecentlyViewedVenuePayload[]>((resolve, reject) => {
+    const tx = database.transaction(["recentlyViewedVenues"], "readonly");
+    const store = tx.objectStore("recentlyViewedVenues");
+    const req = store.getAll();
+
+    req.onsuccess = () => {
+      const all = (req.result as RecentlyViewedVenuePayload[]) || [];
+      all.sort(
+        (a, b) =>
+          (b.viewedAt || b.lastAccessedAt || 0) -
+          (a.viewedAt || a.lastAccessedAt || 0),
+      );
+      resolve(all);
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Clears all recently viewed venues and floor plan caches from IndexedDB.
+ */
+export async function clearRecentlyViewedVenuesOffline(): Promise<void> {
+  const database = await initOfflineDB();
+  if (!database.objectStoreNames.contains("recentlyViewedVenues")) {
+    return;
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const tx = database.transaction(["recentlyViewedVenues"], "readwrite");
+    const store = tx.objectStore("recentlyViewedVenues");
+    const req = store.clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
 /**
  * Schedules an LRU eviction pass during browser idle time or background sync.
  */
@@ -340,6 +601,9 @@ export function scheduleIdleVenueEviction(
     purgeOfflineVenuesLru(maxVenues).catch((err) =>
       console.warn("[VenueCache] Idle LRU eviction failed:", err),
     );
+    pruneRecentlyViewedVenuesLru(MAX_RECENTLY_VIEWED_IDB).catch((err) =>
+      console.warn("[RecentlyViewedCache] Idle LRU eviction failed:", err),
+    );
   };
 
   if ("requestIdleCallback" in window) {
@@ -348,3 +612,4 @@ export function scheduleIdleVenueEviction(
     setTimeout(runPurge, 1000);
   }
 }
+

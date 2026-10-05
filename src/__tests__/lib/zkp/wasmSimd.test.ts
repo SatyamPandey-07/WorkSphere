@@ -6,6 +6,9 @@ import {
   simdBatchMontgomeryMul,
   getOptimizedZkpOptions,
   BN254_R,
+  MONTGOMERY_R,
+  MONTGOMERY_R_INV,
+  modInverse,
 } from "@/lib/zkp/wasmSimd";
 
 describe("WebAssembly SIMD Groth16 Vectorization & Optimization", () => {
@@ -39,16 +42,34 @@ describe("WebAssembly SIMD Groth16 Vectorization & Optimization", () => {
     expect(result[2]).toBe(50n);
   });
 
-  it("correctly computes vectorized batch field multiplication modulo BN254_R", () => {
-    const a = [5n, 12n, BN254_R - 1n];
+  it("correctly calculates Montgomery radix inversion and satisfies R * R^-1 = 1 mod r", () => {
+    expect((MONTGOMERY_R * MONTGOMERY_R_INV) % BN254_R).toBe(1n);
+    expect(modInverse(MONTGOMERY_R, BN254_R)).toBe(MONTGOMERY_R_INV);
+  });
+
+  it("correctly computes vectorized batch Montgomery multiplication (A * B * R^-1 mod r)", () => {
+    const r = BN254_R;
+    const R = MONTGOMERY_R;
+    const R_INV = MONTGOMERY_R_INV;
+
+    // Direct values: (a * b * R^-1) mod r
+    const a = [5n, 12n, r - 1n];
     const b = [7n, 10n, 2n];
 
     const result = simdBatchMontgomeryMul(a, b);
 
     expect(result).toHaveLength(3);
-    expect(result[0]).toBe(35n);
-    expect(result[1]).toBe(120n);
-    expect(result[2]).toBe(BN254_R - 2n);
+    expect(result[0]).toBe((5n * 7n * R_INV) % r);
+    expect(result[1]).toBe((12n * 10n * R_INV) % r);
+    expect(result[2]).toBe(((r - 1n) * 2n * R_INV) % r);
+
+    // Montgomery-form multiplication: (a*R) * (b*R) * R^-1 mod r = (a*b*R) mod r
+    const aMont = [(5n * R) % r, (12n * R) % r];
+    const bMont = [(7n * R) % r, (10n * R) % r];
+    const montResult = simdBatchMontgomeryMul(aMont, bMont);
+
+    expect(montResult[0]).toBe((35n * R) % r);
+    expect(montResult[1]).toBe((120n * R) % r);
   });
 
   it("returns optimized witness calculation and prover execution options", async () => {

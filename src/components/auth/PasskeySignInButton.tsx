@@ -8,6 +8,11 @@ import {
 } from "@simplewebauthn/browser";
 import { Fingerprint, Loader2, AlertCircle } from "lucide-react";
 import { useCsrfToken } from "@/hooks/useCsrfToken";
+import {
+  savePasskeyChallengeToSession,
+  clearPasskeyChallengeFromSession,
+  setupPasskeyUnloadCleanup,
+} from "@/lib/auth/passkeys/client";
 
 export interface PasskeySignInButtonProps {
   /**
@@ -83,6 +88,10 @@ export function PasskeySignInButton({
 
   useEffect(() => {
     setIsSupported(browserSupportsWebAuthn());
+    const cleanupUnload = setupPasskeyUnloadCleanup();
+    return () => {
+      cleanupUnload();
+    };
   }, []);
 
   // Conditional UI: automatically start WebAuthn autofill flow when mounted and supported
@@ -168,7 +177,11 @@ export function PasskeySignInButton({
       WebAuthnAbortService.cancelCeremony();
 
       // 1. Fetch auth options from server
+      clearPasskeyChallengeFromSession(); // Clear any prior stale challenge before ceremony starts
       const optionsJSON = await fetchAuthOptions();
+      if (optionsJSON?.challenge) {
+        savePasskeyChallengeToSession(optionsJSON.challenge, "authentication");
+      }
 
       // 2. Prompt browser WebAuthn assertion (modal/explicit)
       const authenticationResponse = await startAuthentication({
@@ -178,7 +191,9 @@ export function PasskeySignInButton({
 
       // 3. Verify assertion on server
       await verifyAuthResponse(authenticationResponse);
+      clearPasskeyChallengeFromSession(); // Clear challenge upon successful verification
     } catch (err: unknown) {
+      clearPasskeyChallengeFromSession(); // Invalidate challenge if ceremony fails or is aborted
       console.error("Passkey sign-in error:", err);
       isAuthenticatingRef.current = false;
       const name = err instanceof Error ? err.name : "";

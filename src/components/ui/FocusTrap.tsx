@@ -6,7 +6,7 @@ import { useFocusTrap, UseFocusTrapOptions } from "@/hooks/useFocusTrap";
 export interface FocusTrapProps extends UseFocusTrapOptions {
   children: React.ReactNode;
   className?: string;
-  as?: React.ElementType;
+  as?: keyof JSX.IntrinsicElements;
   role?: string;
   "aria-modal"?: boolean | "true" | "false";
   "aria-label"?: string;
@@ -30,7 +30,7 @@ export function FocusTrap({
   "aria-describedby": ariaDescribedBy,
   ...rest
 }: FocusTrapProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
 
   useFocusTrap(containerRef, {
     isActive,

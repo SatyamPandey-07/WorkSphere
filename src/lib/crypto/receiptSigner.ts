@@ -60,22 +60,33 @@ export function computeReceiptDigest(canonicalJson: string): string {
 
 // In-memory or default signing keypairs for WorkSphere receipt authority
 let defaultRsaKeyPair: { publicKey: string; privateKey: string } | null = null;
-let defaultEcdsaKeyPair: { publicKey: string; privateKey: string } | null = null;
+let defaultEcdsaP256KeyPair: { publicKey: string; privateKey: string } | null = null;
+let defaultEcdsaP384KeyPair: { publicKey: string; privateKey: string } | null = null;
 
-export function generateReceiptKeyPair(type: "RSA" | "ECDSA" = "RSA"): {
+export function generateReceiptKeyPair(
+  type: "RSA" | "ECDSA" | "ECDSA-P256" | "ECDSA-P384" | SignatureAlgorithm = "RSA"
+): {
   publicKeyPem: string;
   privateKeyPem: string;
 } {
-  if (type === "RSA") {
+  if (type === "RSA" || type === "RSA-SHA256") {
     const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
       modulusLength: 2048,
       publicKeyEncoding: { type: "spki", format: "pem" },
       privateKeyEncoding: { type: "pkcs8", format: "pem" },
     });
     return { publicKeyPem: publicKey, privateKeyPem: privateKey };
-  } else {
+  } else if (type === "ECDSA-P384") {
     const { publicKey, privateKey } = crypto.generateKeyPairSync("ec", {
-      namedCurve: "prime256v1", // P-256
+      namedCurve: "secp384r1", // P-384 / prime384v1 (384-bit curve)
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    return { publicKeyPem: publicKey, privateKeyPem: privateKey };
+  } else {
+    // ECDSA / ECDSA-P256 default
+    const { publicKey, privateKey } = crypto.generateKeyPairSync("ec", {
+      namedCurve: "prime256v1", // P-256 (256-bit curve)
       publicKeyEncoding: { type: "spki", format: "pem" },
       privateKeyEncoding: { type: "pkcs8", format: "pem" },
     });
@@ -99,17 +110,29 @@ function getDefaultKeyPair(algorithm: SignatureAlgorithm): {
       publicKeyPem: defaultRsaKeyPair.publicKey,
       privateKeyPem: defaultRsaKeyPair.privateKey,
     };
-  } else {
-    if (!defaultEcdsaKeyPair) {
-      const generated = generateReceiptKeyPair("ECDSA");
-      defaultEcdsaKeyPair = {
+  } else if (algorithm === "ECDSA-P384") {
+    if (!defaultEcdsaP384KeyPair) {
+      const generated = generateReceiptKeyPair("ECDSA-P384");
+      defaultEcdsaP384KeyPair = {
         publicKey: generated.publicKeyPem,
         privateKey: generated.privateKeyPem,
       };
     }
     return {
-      publicKeyPem: defaultEcdsaKeyPair.publicKey,
-      privateKeyPem: defaultEcdsaKeyPair.privateKey,
+      publicKeyPem: defaultEcdsaP384KeyPair.publicKey,
+      privateKeyPem: defaultEcdsaP384KeyPair.privateKey,
+    };
+  } else {
+    if (!defaultEcdsaP256KeyPair) {
+      const generated = generateReceiptKeyPair("ECDSA-P256");
+      defaultEcdsaP256KeyPair = {
+        publicKey: generated.publicKeyPem,
+        privateKey: generated.privateKeyPem,
+      };
+    }
+    return {
+      publicKeyPem: defaultEcdsaP256KeyPair.publicKey,
+      privateKeyPem: defaultEcdsaP256KeyPair.privateKey,
     };
   }
 }

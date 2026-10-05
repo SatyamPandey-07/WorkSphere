@@ -24,23 +24,91 @@ This document provides a high-level reference for the REST API endpoints availab
 
 # Venues
 
-| Endpoint                                           | Description                       |
-| -------------------------------------------------- | --------------------------------- |
-| `GET /api/venues`                                  | Retrieve available venues.        |
-| `POST /api/venues`                                 | Create or submit a venue.         |
-| `POST /api/venues/amenity-vote`                    | Submit an amenity vote.           |
-| `GET /api/venues/updates`                          | Subscribe to venue updates.       |
-| `POST /api/venues/updates`                         | Broadcast a venue update.         |
-| `POST /api/venues/{venueId}/rate`                  | Submit a venue rating.            |
-| `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews.           |
-| `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.  |
-| `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.            |
-| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.     |
-| `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.  |
-| `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.   |
-| `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.       |
-| `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.         |
-| `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream. |
+| Endpoint                                           | Description                                                               |
+| -------------------------------------------------- | ------------------------------------------------------------------------- |
+| `GET /api/venues`                                  | Retrieve available venues.                                                |
+| `GET /api/venues/search`                           | Search venues with filters (noise level, amenities, speed, distance, bbox).|
+| `POST /api/venues`                                 | Create or submit a venue.                                                 |
+| `POST /api/venues/amenity-vote`                    | Submit an amenity vote.                                                   |
+| `GET /api/venues/updates`                          | Subscribe to venue updates.                                               |
+| `POST /api/venues/updates`                         | Broadcast a venue update.                                                 |
+| `POST /api/venues/{venueId}/rate`                  | Submit a venue rating.                                                    |
+| `GET /api/venues/{venueId}/reviews`                | Retrieve venue reviews.                                                   |
+| `GET /api/venues/{venueId}/menu`                   | Retrieve venue menu information.                                          |
+| `GET /api/venues/{venueId}/photo`                  | Retrieve venue photos.                                                    |
+| `GET /api/venues/{venueId}/noise-metrics`          | Retrieve venue noise metrics.                                             |
+| `GET /api/venues/{venueId}/noise-metrics/forecast` | Retrieve predicted noise levels.                                          |
+| `GET /api/venues/{venueId}/wifi-prediction`        | Retrieve Wi-Fi prediction data.                                           |
+| `GET /api/venues/{venueId}/seating-forecast`       | Retrieve seating forecasts.                                               |
+| `GET /api/venues/{venueId}/telemetry`              | Retrieve venue telemetry.                                                 |
+| `GET /api/venues/{venueId}/live-stream`            | Connect to the venue live stream.                                         |
+
+### Endpoint Specification: `GET /api/venues/search`
+
+Search and filter workspace venues based on location, acoustic noise metrics, Wi-Fi performance, amenities, and spatial bounding box (`bbox`) boundaries.
+
+#### Query Parameters
+
+| Parameter | Type | Required | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `query` / `q` | `string` | No | `""` | Text query string to search by venue name, address, or description. |
+| `lat` | `number` | No | `undefined` | Latitude coordinate for distance-based sorting and proximity searches. |
+| `lng` | `number` | No | `undefined` | Longitude coordinate for distance-based sorting and proximity searches. |
+| `distance` / `radius` | `number` | No | `5000` | Search radius in meters surrounding the `(lat, lng)` origin point. |
+| `bbox` | `string` | No | `undefined` | Bounding box coordinates formatted as `minLng,minLat,maxLng,maxLat`. |
+| `noiseLevel` | `string` | No | `undefined` | Filter by noise profile (`"quiet"`, `"moderate"`, `"lively"`). |
+| `wifiMinSpeed` | `number` | No | `0` | Minimum Wi-Fi download speed in Mbps requirement. |
+| `amenities` | `string` | No | `undefined` | Comma-separated list of required amenities (e.g. `wifi,outlets,ergonomic,phoneBooths`). |
+| `category` | `string` | No | `undefined` | Category filter (e.g. `COWORKING`, `CAFE`, `LIBRARY`). |
+| `page` | `number` | No | `1` | Pagination page index (minimum 1). |
+| `limit` | `number` | No | `50` | Maximum items per page (1 to 100). |
+
+#### Example Request
+
+```http
+GET /api/venues/search?lat=37.7749&lng=-122.4194&distance=5000&noiseLevel=quiet&wifiMinSpeed=50&amenities=wifi,outlets&limit=2 HTTP/1.1
+Host: worksphere.app
+Accept: application/json
+```
+
+#### Example Response Payload (`200 OK`)
+
+```json
+{
+  "venues": [
+    {
+      "id": "v_sf_central_01",
+      "name": "CoWorkspace Central",
+      "category": "COWORKING",
+      "address": "456 Market St, San Francisco, CA 94105",
+      "lat": 37.7897,
+      "lng": -122.4012,
+      "distanceMeters": 1420,
+      "wifiSpeed": 120,
+      "hasOutlets": true,
+      "noiseLevel": "quiet",
+      "rating": 4.8,
+      "amenities": ["wifi", "outlets", "phoneBooths", "ergonomicSeating"],
+      "updatedAt": "2026-10-05T12:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 2,
+    "totalCount": 1,
+    "totalPages": 1
+  }
+}
+```
+
+#### Standard HTTP Status Codes
+
+| Status Code | Reason | Description & Payload |
+| :--- | :--- | :--- |
+| `200 OK` | Success | Returns the list of matching venue records along with pagination details. |
+| `400 Bad Request` | Invalid Parameters | Returned when query parameters fail validation (e.g., malformed `bbox` or invalid coordinate range).<br/>`{ "error": "Invalid bounding box format. Expected minLng,minLat,maxLng,maxLat" }` |
+| `429 Too Many Requests` | Rate Limit Exceeded | Returned when client exceeds the 60 search requests/minute quota.<br/>`{ "error": "Too many search requests. Please slow down and try again.", "retryAfter": 60 }` |
+| `500 Internal Server Error` | Server Error | Internal server or database error processing the query.<br/>`{ "error": "An internal server error occurred while searching venues." }` |
 
 ---
 

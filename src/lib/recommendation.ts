@@ -16,7 +16,7 @@ export function generateVenueFeatureVector(
     coffee:
       venue.category?.toLowerCase().includes("coffee") ||
       venue.category?.toLowerCase().includes("cafe") ||
-      venue.name.toLowerCase().includes("coffee")
+      (venue.name?.toLowerCase().includes("coffee") ?? false)
         ? 1
         : 0,
     parking: 0, // Placeholder if venue data doesn't have parking

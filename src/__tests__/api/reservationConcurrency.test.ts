@@ -271,4 +271,21 @@ describe("POST /api/reservations/book", () => {
     expect(res.status).toBe(201);
     expect(attempts).toBe(2);
   });
+
+  it("retries automatically on PostgreSQL transaction deadlock (40P01)", async () => {
+    let attempts = 0;
+    const deadlockErr = Object.assign(new Error("deadlock detected"), {
+      code: "40P01",
+    });
+    const tx = makeTx();
+    (prisma.$transaction as jest.Mock).mockImplementation(async (cb: any) => {
+      attempts++;
+      if (attempts === 1) throw deadlockErr;
+      return cb(tx);
+    });
+
+    const res = await POST(request({ seatId: "seat_1", time: "14:00" }));
+    expect(res.status).toBe(201);
+    expect(attempts).toBe(2);
+  });
 });

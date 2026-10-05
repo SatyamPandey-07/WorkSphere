@@ -26,6 +26,7 @@ export function getExifOrientation(arrayBuffer: ArrayBuffer): number {
       // APP1 marker
       if (offset + 2 > length) break;
       const blockLength = dataView.getUint16(offset, false);
+      if (blockLength < 2 || offset + blockLength > length) break;
 
       if (offset + 6 <= length && dataView.getUint32(offset + 2, false) === 0x45786966) {
         // Exif identifier found
@@ -54,14 +55,13 @@ export function getExifOrientation(arrayBuffer: ArrayBuffer): number {
         }
       }
 
-      if (blockLength < 2) break;
       offset += blockLength;
     } else if ((marker & 0xff00) !== 0xff00) {
       break;
     } else {
       if (offset + 2 > length) break;
       const blockLength = dataView.getUint16(offset, false);
-      if (blockLength < 2) break;
+      if (blockLength < 2 || offset + blockLength > length) break;
       offset += blockLength;
     }
   }

@@ -40,7 +40,7 @@ import {
   type BookingSummary,
 } from "@/components/bookings/BookingList";
 
-type Step = "details" | "payment" | "processing" | "success" | "history";
+type _Step = "details" | "payment" | "processing" | "success" | "history";
 
 interface BookingModalProps {
   venue: Venue | null;
@@ -98,6 +98,14 @@ const inputClass =
 const labelClass =
   "block text-xs font-semibold text-zinc-600 dark:text-zinc-400 mb-1.5";
 
+function addOneHour(timeStr: string): string {
+  if (!timeStr) return "";
+  const [h, m] = timeStr.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return "";
+  const nextHour = (h + 1) % 24;
+  return `${String(nextHour).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
 export function BookingModal({
   venue,
   isOpen,
@@ -112,9 +120,10 @@ export function BookingModal({
     "details" | "payment" | "processing" | "success" | "history"
   >(initialStep ?? (mode === "history" ? "history" : "details"));
   const today = localDateString(new Date());
-  const getTodayString = () => today;
+  const _getTodayString = () => today;
   const [bookingDate, setBookingDate] = useState("");
   const [bookingTime, setBookingTime] = useState("");
+  const [bookingEndTime, setBookingEndTime] = useState("");
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurringFrequency, setRecurringFrequency] = useState<
     "daily" | "weekly" | "monthly"
@@ -347,9 +356,34 @@ export function BookingModal({
     }
   };
 
+  const handleStartTimeChange = (newStartTime: string) => {
+    setBookingTime(newStartTime);
+    if (!bookingEndTime || bookingEndTime <= newStartTime) {
+      setBookingEndTime(addOneHour(newStartTime));
+    }
+    if (bookingEndTime && newStartTime && bookingEndTime <= newStartTime) {
+      setBookingError("End time must be after start time.");
+    } else if (bookingError === "End time must be after start time.") {
+      setBookingError(null);
+    }
+  };
+
+  const handleEndTimeChange = (newEndTime: string) => {
+    setBookingEndTime(newEndTime);
+    if (bookingTime && newEndTime && newEndTime <= bookingTime) {
+      setBookingError("End time must be after start time.");
+    } else if (bookingError === "End time must be after start time.") {
+      setBookingError(null);
+    }
+  };
+
+  const isTimeInvalid =
+    !!bookingTime && !!bookingEndTime && bookingEndTime <= bookingTime;
+
   const canSubmit =
     !!bookingDate &&
     !!bookingTime &&
+    !isTimeInvalid &&
     /\S+@\S+\.\S+/.test(email) &&
     !isSubmitting &&
     retryAfter <= 0;
@@ -430,7 +464,7 @@ export function BookingModal({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label htmlFor="booking-date" className={labelClass}>
                     Date
@@ -452,17 +486,35 @@ export function BookingModal({
                 </div>
                 <div>
                   <label htmlFor="arrival-time" className={labelClass}>
-                    Arrival time
+                    Start time
                   </label>
                   <div className="relative">
                     <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input
                       type="time"
                       id="arrival-time"
+                      data-testid="booking-start-time"
                       required
                       className={inputClass}
                       value={bookingTime}
-                      onChange={(e) => setBookingTime(e.target.value)}
+                      onChange={(e) => handleStartTimeChange(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="end-time" className={labelClass}>
+                    End time
+                  </label>
+                  <div className="relative">
+                    <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <input
+                      type="time"
+                      id="end-time"
+                      data-testid="booking-end-time"
+                      min={bookingTime}
+                      className={inputClass}
+                      value={bookingEndTime}
+                      onChange={(e) => handleEndTimeChange(e.target.value)}
                     />
                   </div>
                 </div>

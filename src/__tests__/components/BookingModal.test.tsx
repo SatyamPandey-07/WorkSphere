@@ -173,4 +173,69 @@ describe("BookingModal", () => {
 
     window.matchMedia = originalMatchMedia;
   });
+
+  describe("Time picker validation (#4375)", () => {
+    it("auto-advances end time by 1 hour when start time is selected", () => {
+      render(
+        <BookingModal
+          isOpen={true}
+          onClose={mockOnClose}
+          venue={mockVenue}
+          mode="booking"
+        />,
+      );
+
+      const startTimeInput = screen.getByTestId("booking-start-time");
+      const endTimeInput = screen.getByTestId("booking-end-time");
+
+      fireEvent.change(startTimeInput, { target: { value: "10:00" } });
+      expect(endTimeInput).toHaveValue("11:00");
+    });
+
+    it("displays validation warning if end time is earlier than start time", () => {
+      render(
+        <BookingModal
+          isOpen={true}
+          onClose={mockOnClose}
+          venue={mockVenue}
+          mode="booking"
+        />,
+      );
+
+      const startTimeInput = screen.getByTestId("booking-start-time");
+      const endTimeInput = screen.getByTestId("booking-end-time");
+
+      fireEvent.change(startTimeInput, { target: { value: "14:00" } });
+      fireEvent.change(endTimeInput, { target: { value: "12:00" } });
+
+      expect(
+        screen.getByText("End time must be after start time."),
+      ).toBeInTheDocument();
+    });
+
+    it("clears validation warning once valid end time is selected", () => {
+      render(
+        <BookingModal
+          isOpen={true}
+          onClose={mockOnClose}
+          venue={mockVenue}
+          mode="booking"
+        />,
+      );
+
+      const startTimeInput = screen.getByTestId("booking-start-time");
+      const endTimeInput = screen.getByTestId("booking-end-time");
+
+      fireEvent.change(startTimeInput, { target: { value: "14:00" } });
+      fireEvent.change(endTimeInput, { target: { value: "12:00" } });
+      expect(
+        screen.getByText("End time must be after start time."),
+      ).toBeInTheDocument();
+
+      fireEvent.change(endTimeInput, { target: { value: "16:00" } });
+      expect(
+        screen.queryByText("End time must be after start time."),
+      ).not.toBeInTheDocument();
+    });
+  });
 });

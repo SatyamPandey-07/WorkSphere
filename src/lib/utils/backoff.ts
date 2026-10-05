@@ -121,7 +121,7 @@ export function calculateBackoff(
   const base = options.baseDelayMs ?? 1000;
   const max = options.maxDelayMs ?? 30000;
   const factor = options.factor ?? 2;
-  const rawBackoff = Math.min(max, base * Math.pow(factor, attempt));
+  const rawBackoff = Math.min(max, base * Math.pow(factor, attempt - 1));
 
   if (options.jitter) {
     const jitter = rawBackoff * 0.5 * random();
@@ -194,6 +194,10 @@ export class BackoffManager {
       }, delay);
 
       this.abortController?.signal.addEventListener("abort", () => {
+        if (this.timer) {
+          clearTimeout(this.timer);
+          this.timer = null;
+        }
         resolve(false);
       });
     });

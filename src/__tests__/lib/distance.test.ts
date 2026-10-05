@@ -1,4 +1,9 @@
-import { haversineKm, haversineMiles, getWalkingMinutes, formatWalkingTimeBadge } from "@/lib/distance";
+import {
+  haversineKm,
+  haversineMiles,
+  getWalkingMinutes,
+  formatWalkingTimeBadge,
+} from "@/lib/distance";
 import { calculateHaversineDistance } from "@/lib/utils";
 
 describe("distance utility (haversineKm)", () => {
@@ -105,7 +110,7 @@ describe("distance utility (haversineKm)", () => {
     });
   });
 
-  describe("invalid coordinate handling", () => {
+  describe("invalid coordinate handling (#4376)", () => {
     it("returns NaN when latitude or longitude is NaN", () => {
       expect(haversineKm(NaN, 0, 10, 10)).toBeNaN();
       expect(haversineKm(0, NaN, 10, 10)).toBeNaN();
@@ -120,10 +125,18 @@ describe("distance utility (haversineKm)", () => {
       expect(haversineKm(0, 0, 10, undefined as any)).toBeNaN();
     });
 
-    it("handles null coordinates gracefully according to numeric coercion", () => {
-      const dist = haversineKm(null as any, null as any, null as any, null as any);
-      expect(typeof dist).toBe("number");
-      expect(dist).toBe(0);
+    it("returns NaN when coordinates are null", () => {
+      expect(haversineKm(null as any, 0, 10, 10)).toBeNaN();
+      expect(haversineKm(0, null as any, 10, 10)).toBeNaN();
+      expect(haversineKm(0, 0, null as any, 10)).toBeNaN();
+      expect(haversineKm(0, 0, 10, null as any)).toBeNaN();
+    });
+
+    it("returns NaN when coordinates are non-finite or infinite", () => {
+      expect(haversineKm(Infinity, 0, 10, 10)).toBeNaN();
+      expect(haversineKm(0, -Infinity, 10, 10)).toBeNaN();
+      expect(haversineKm(0, 0, Infinity, 10)).toBeNaN();
+      expect(haversineKm(0, 0, 10, -Infinity)).toBeNaN();
     });
   });
 });

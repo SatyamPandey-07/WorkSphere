@@ -82,27 +82,28 @@ export function getWalkingMinutes(km: number): number {
   return Math.ceil(km / 0.08);
 }
 
-import {
-  formatDistance as formatGeoDistance,
-  type DistanceUnit,
-} from "./geo/formatDistance";
+import { type DistanceUnit } from "./geo/formatDistance";
 
 /**
  * Formats a walking-time badge for a distance, combining the minutes from
  * {@link getWalkingMinutes} with a human-readable distance label.
  *
- * Supports optional distanceUnit parameter ("METRIC" | "IMPERIAL") or auto-detects user preference.
+ * Supports optional distanceUnit parameter ("METRIC" | "IMPERIAL") or defaults to metric.
  *
  * @param km Distance in kilometers.
  * @param unit Optional "METRIC" | "IMPERIAL" unit preference
- * @returns A badge string such as "15 min walk · 1.2 km" or "15 min walk · 0.8 mi".
+ * @returns A badge string such as "15 min walk · 1.2km" or "15 min walk · 0.8mi".
  */
 export function formatWalkingTimeBadge(
   km: number,
   unit?: DistanceUnit,
 ): string {
-  if (!Number.isFinite(km) || km < 0) return "--";
+  if (km == null || !Number.isFinite(km) || isNaN(km) || km < 0) return "--";
   const mins = getWalkingMinutes(km);
-  const formattedDistance = formatGeoDistance(km, unit);
-  return `${mins} min walk · ${formattedDistance}`;
+  if (unit === "IMPERIAL") {
+    const miles = km * 0.621371;
+    return `${mins} min walk · ${miles.toFixed(1)}mi`;
+  }
+  const distance = km >= 1 ? `${km.toFixed(1)}km` : `${Math.round(km * 1000)}m`;
+  return `${mins} min walk · ${distance}`;
 }

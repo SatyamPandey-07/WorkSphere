@@ -9,7 +9,14 @@ export function cn(...inputs: ClassValue[]) {
  * Clamps latitude to valid geographic bounds [-90, 90].
  */
 export function clampLatitude(lat: number): number {
-  if (isNaN(lat)) return NaN;
+  if (
+    lat === null ||
+    lat === undefined ||
+    typeof lat !== "number" ||
+    isNaN(lat)
+  ) {
+    return NaN;
+  }
   return Math.max(-90, Math.min(90, lat));
 }
 
@@ -17,7 +24,14 @@ export function clampLatitude(lat: number): number {
  * Clamps longitude to valid geographic bounds [-180, 180].
  */
 export function clampLongitude(lon: number): number {
-  if (isNaN(lon)) return NaN;
+  if (
+    lon === null ||
+    lon === undefined ||
+    typeof lon !== "number" ||
+    isNaN(lon)
+  ) {
+    return NaN;
+  }
   return Math.max(-180, Math.min(180, lon));
 }
 
@@ -30,8 +44,8 @@ export function isValidCoordinate(lat: number, lon: number): boolean {
     typeof lon === "number" &&
     !isNaN(lat) &&
     !isNaN(lon) &&
-    isFinite(lat) &&
-    isFinite(lon) &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
     lat >= -90 &&
     lat <= 90 &&
     lon >= -180 &&
@@ -58,21 +72,38 @@ export function calculateHaversineDistance(
 ): number {
   if (
     lat1 === undefined ||
+    lat1 === null ||
     lon1 === undefined ||
+    lon1 === null ||
     lat2 === undefined ||
+    lat2 === null ||
     lon2 === undefined ||
-    isNaN(Number(lat1)) ||
-    isNaN(Number(lon1)) ||
-    isNaN(Number(lat2)) ||
-    isNaN(Number(lon2))
+    lon2 === null ||
+    typeof lat1 !== "number" ||
+    typeof lon1 !== "number" ||
+    typeof lat2 !== "number" ||
+    typeof lon2 !== "number" ||
+    !Number.isFinite(lat1) ||
+    !Number.isFinite(lon1) ||
+    !Number.isFinite(lat2) ||
+    !Number.isFinite(lon2)
   ) {
     return NaN;
   }
 
-  const safeLat1 = clampLatitude(Number(lat1));
-  const safeLon1 = clampLongitude(Number(lon1));
-  const safeLat2 = clampLatitude(Number(lat2));
-  const safeLon2 = clampLongitude(Number(lon2));
+  const safeLat1 = clampLatitude(lat1);
+  const safeLon1 = clampLongitude(lon1);
+  const safeLat2 = clampLatitude(lat2);
+  const safeLon2 = clampLongitude(lon2);
+
+  if (
+    !Number.isFinite(safeLat1) ||
+    !Number.isFinite(safeLon1) ||
+    !Number.isFinite(safeLat2) ||
+    !Number.isFinite(safeLon2)
+  ) {
+    return NaN;
+  }
 
   const R = 6371; // Earth's radius in kilometers
   const dLat = ((safeLat2 - safeLat1) * Math.PI) / 180;

@@ -211,6 +211,22 @@ export function SearchBar({
           ))}
         </ul>
       )}
+      {/* Screen reader aria-live announcement for search results count (#4404) */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="search-results-announcement"
+        className="sr-only"
+      >
+        {!isLoading && query.trim().length > 0
+          ? venues.length === 1
+            ? "1 venue found"
+            : venues.length > 1
+              ? `${venues.length} venues found`
+              : "No venues found"
+          : ""}
+      </div>
     </div>
   );
 }

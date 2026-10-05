@@ -2,7 +2,7 @@ import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { SearchBar } from "@/components/venues/SearchBar";
 
-describe("SearchBar component (#4401)", () => {
+describe("SearchBar component (#4401, #4404)", () => {
   const originalFetch = global.fetch;
   let mockFetch: jest.Mock;
 
@@ -143,5 +143,73 @@ describe("SearchBar component (#4401)", () => {
     });
     expect(onSelect).toHaveBeenCalledWith(mockVenues[0]);
     expect(input).toHaveValue("Artisan Coffee");
+  });
+
+  describe("Accessibility aria-live announcements (#4404)", () => {
+    it("renders polite aria-live container with role status", () => {
+      render(<SearchBar />);
+
+      const liveRegion = screen.getByTestId("search-results-announcement");
+      expect(liveRegion).toBeInTheDocument();
+      expect(liveRegion).toHaveAttribute("aria-live", "polite");
+      expect(liveRegion).toHaveAttribute("role", "status");
+      expect(liveRegion).toHaveTextContent("");
+    });
+
+    it("announces matching results count once debounce settles", async () => {
+      const mockVenues = [
+        {
+          id: "1",
+          name: "Artisan Cafe",
+          address: "123 Main St",
+          category: "cafe",
+        },
+        {
+          id: "2",
+          name: "Downtown Desk",
+          address: "456 Market St",
+          category: "coworking",
+        },
+      ];
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ venues: mockVenues }),
+      });
+
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "Cafe" } });
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(300);
+      });
+
+      const liveRegion = screen.getByTestId("search-results-announcement");
+      expect(liveRegion).toHaveTextContent("2 venues found");
+    });
+
+    it("announces 'No venues found' when search returns 0 results", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ venues: [] }),
+      });
+
+      render(<SearchBar />);
+      const input = screen.getByTestId("search-bar-input");
+
+      act(() => {
+        fireEvent.change(input, { target: { value: "UnknownPlaceXYZ" } });
+      });
+
+      await act(async () => {
+        jest.advanceTimersByTime(300);
+      });
+
+      const liveRegion = screen.getByTestId("search-results-announcement");
+      expect(liveRegion).toHaveTextContent("No venues found");
+    });
   });
 });

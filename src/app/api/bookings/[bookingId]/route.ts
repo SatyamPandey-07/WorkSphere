@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import {
   cancellationWindowHoursRemaining,
   getBookingCancellationEligibility,
-} from "@/lib/bookingCancellation";
+} from "@/lib/booking";
 import { prisma } from "@/lib/prisma";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 

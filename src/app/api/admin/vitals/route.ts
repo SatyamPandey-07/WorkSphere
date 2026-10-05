@@ -47,10 +47,22 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const admin = await getAdminUser();
+    if (!admin) {
+      return NextResponse.json(
+        { error: "Admin access required" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
+    const isValidEntry = (e: unknown): e is WebVitalEntry =>
+      !!e &&
+      typeof (e as WebVitalEntry).name === "string" &&
+      typeof (e as WebVitalEntry).value === "number";
     if (Array.isArray(body)) {
-      serverVitalsBuffer.push(...body.slice(0, 100));
-    } else if (body && body.name && typeof body.value === "number") {
+      serverVitalsBuffer.push(...body.filter(isValidEntry).slice(0, 100));
+    } else if (isValidEntry(body)) {
       serverVitalsBuffer.push(body);
     }
 

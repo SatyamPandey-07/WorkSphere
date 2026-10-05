@@ -3,7 +3,12 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { VenueShareModal } from "@/components/venue/VenueShareModal";
 import * as svgQrModule from "@/lib/qr/svgQr";
 
-describe("VenueShareModal Component", () => {
+const mockToast = jest.fn();
+jest.mock("@/components/ui/Toast", () => ({
+  useToast: () => ({ toast: mockToast }),
+}));
+
+describe("VenueShareModal Component (#4402)", () => {
   const mockVenue = {
     id: "venue-123",
     name: "Cafe Artisan",
@@ -14,6 +19,7 @@ describe("VenueShareModal Component", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockToast.mockClear();
     Object.assign(navigator, {
       clipboard: {
         writeText: jest.fn().mockResolvedValue(undefined),
@@ -27,7 +33,9 @@ describe("VenueShareModal Component", () => {
 
     render(<VenueShareModal venue={mockVenue} />);
 
-    const shareBtn = screen.getByRole("button", { name: /share cafe artisan/i });
+    const shareBtn = screen.getByRole("button", {
+      name: /share cafe artisan/i,
+    });
     fireEvent.click(shareBtn);
 
     await waitFor(() => {
@@ -50,7 +58,9 @@ describe("VenueShareModal Component", () => {
 
     render(<VenueShareModal venue={mockVenue} />);
 
-    const shareBtn = screen.getByRole("button", { name: /share cafe artisan/i });
+    const shareBtn = screen.getByRole("button", {
+      name: /share cafe artisan/i,
+    });
     fireEvent.click(shareBtn);
 
     await waitFor(() => {
@@ -67,12 +77,16 @@ describe("VenueShareModal Component", () => {
 
     render(<VenueShareModal venue={mockVenue} />);
 
-    const shareBtn = screen.getByRole("button", { name: /share cafe artisan/i });
+    const shareBtn = screen.getByRole("button", {
+      name: /share cafe artisan/i,
+    });
     fireEvent.click(shareBtn);
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Share Venue" })).toBeInTheDocument();
-    expect(screen.getByDisplayValue(expect.stringContaining("/venues/venue-123"))).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Share Venue" }),
+    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/\/venues\/venue-123/)).toBeInTheDocument();
   });
 
   it("allows copying shortlink to clipboard", async () => {
@@ -81,34 +95,44 @@ describe("VenueShareModal Component", () => {
 
     render(<VenueShareModal venue={mockVenue} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /share cafe artisan/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /share cafe artisan/i }),
+    );
 
     const copyBtn = screen.getByRole("button", { name: /copy/i });
     fireEvent.click(copyBtn);
 
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-        expect.stringContaining("/venues/venue-123")
+        expect.stringContaining("/venues/venue-123"),
       );
       expect(screen.getByText("Copied")).toBeInTheDocument();
+      expect(mockToast).toHaveBeenCalledWith(
+        "Link copied to clipboard!",
+        "success",
+      );
     });
   });
 
   it("allows downloading the SVG QR code", async () => {
     // @ts-expect-error - intentional test simulation
     delete (navigator as any).share;
-    const downloadSpy = jest.spyOn(svgQrModule, "downloadSVG").mockImplementation(() => {});
+    const downloadSpy = jest
+      .spyOn(svgQrModule, "downloadSVG")
+      .mockImplementation(() => {});
 
     render(<VenueShareModal venue={mockVenue} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /share cafe artisan/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /share cafe artisan/i }),
+    );
 
     const downloadBtn = screen.getByRole("button", { name: /download svg/i });
     fireEvent.click(downloadBtn);
 
     expect(downloadSpy).toHaveBeenCalledWith(
       expect.stringContaining("<svg"),
-      "cafe-artisan-qr.svg"
+      "cafe-artisan-qr.svg",
     );
 
     downloadSpy.mockRestore();
@@ -120,7 +144,9 @@ describe("VenueShareModal Component", () => {
 
     render(<VenueShareModal venue={mockVenue} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /share cafe artisan/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /share cafe artisan/i }),
+    );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     const closeBtn = screen.getByRole("button", { name: /close dialog/i });
@@ -128,7 +154,9 @@ describe("VenueShareModal Component", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 
     // Reopen and test escape key
-    fireEvent.click(screen.getByRole("button", { name: /share cafe artisan/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /share cafe artisan/i }),
+    );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     fireEvent.keyDown(window, { key: "Escape" });

@@ -1,8 +1,15 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { Share2, Copy, Check, Download, X, QrCode, MapPin } from "lucide-react";
 import { generateQRCodeSVG, downloadSVG } from "@/lib/qr/svgQr";
+import { useToast } from "@/components/ui/Toast";
 
 export interface VenueShareProps {
   venue: {
@@ -21,6 +28,7 @@ export function VenueShareModal({
   className = "",
   variant = "button",
 }: VenueShareProps) {
+  const { toast } = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [origin, setOrigin] = useState("");
@@ -72,7 +80,10 @@ export function VenueShareModal({
   }, [isOpen, handleClose]);
 
   const handleShareClick = async () => {
-    if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
+    if (
+      typeof navigator !== "undefined" &&
+      typeof navigator.share === "function"
+    ) {
       try {
         const shareData: ShareData = {
           title: `${venue.name} | WorkSphere`,
@@ -101,11 +112,13 @@ export function VenueShareModal({
       if (typeof navigator !== "undefined" && navigator.clipboard) {
         await navigator.clipboard.writeText(shortUrl);
         setCopied(true);
+        toast("Link copied to clipboard!", "success");
         if (timerRef.current !== null) window.clearTimeout(timerRef.current);
         timerRef.current = window.setTimeout(() => setCopied(false), 2000);
       }
     } catch (err) {
       console.error("Failed to copy shortlink:", err);
+      toast("Unable to copy to clipboard", "error");
     }
   };
 

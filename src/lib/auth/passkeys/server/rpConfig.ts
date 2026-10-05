@@ -49,9 +49,15 @@ export function normalizeRpId(
   let normalized = host.startsWith("www.") ? host.slice(4) : host;
   const labels = normalized.split(".").filter(Boolean);
 
-  // Simple eTLD+1: foo.bar.com -> bar.com, staging.app.io -> app.io
+  // Simple eTLD+1: foo.bar.com -> bar.com, staging.app.io -> app.io.
+  // Two-label public suffixes (co.uk, co.jp, com.au, co.nz, github.io)
+  // need three labels, otherwise shop.example.co.uk would collapse to co.uk.
   if (labels.length > 2) {
-    normalized = labels.slice(-2).join(".");
+    const twoLabelSuffix =
+      /(co\.uk|co\.jp|com\.au|co\.nz|github\.io)$/.test(normalized);
+    normalized = twoLabelSuffix
+      ? labels.slice(-3).join(".")
+      : labels.slice(-2).join(".");
   }
 
   return normalized;

@@ -475,17 +475,17 @@ export default class WorkspaceServer implements Party.Server {
       }
 
       if (parsed.type === "pong") {
-        const state = this.connectionStates.get(sender.id);
-        if (state) {
-          state.lastPong = Date.now();
+        const connState = this.connectionStates.get(sender.id);
+        if (connState) {
+          connState.lastPong = Date.now();
         }
         return;
       }
 
       if (parsed.type === "cursor" && parsed.name) {
-        const state = this.connectionStates.get(sender.id);
-        if (state) {
-          state.name = parsed.name;
+        const connState = this.connectionStates.get(sender.id);
+        if (connState) {
+          connState.name = parsed.name;
         }
       }
 

@@ -1,0 +1,31 @@
+name: "📄 Blank Issue"
+description: "Create a general or custom issue that does not fit other templates."
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please provide details for your issue below.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what this issue is about.
+      placeholder: Describe your issue here...
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context, links, or screenshots here.
+      placeholder: Any extra information...
+    validations:
+      required: false
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      description: Please check all that apply.
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate.
+          required: true

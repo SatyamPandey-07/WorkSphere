@@ -26,14 +26,17 @@ export class TokenBucketLimiter implements IRateLimiter {
   }
 
   async consume(key: string, points = 1): Promise<RateLimitResult> {
-    const distributedResult = await this.checkDistributed(key);
+    const distributedResult = await this.checkDistributed(key, points);
     if (distributedResult !== null) {
       return distributedResult;
     }
     return this.consumeMemory(key, points);
   }
 
-  private async checkDistributed(identifier: string): Promise<RateLimitResult | null> {
+  private async checkDistributed(
+    identifier: string,
+    points = 1,
+  ): Promise<RateLimitResult | null> {
     const url = process.env.UPSTASH_REDIS_REST_URL;
     const token = process.env.UPSTASH_REDIS_REST_TOKEN;
     if (!url || !token) return null;
@@ -65,7 +68,7 @@ export class TokenBucketLimiter implements IRateLimiter {
         setCachedLimiter(this.name, limiter);
       }
 
-      const result = await limiter.limit(identifier);
+      const result = await limiter.limit(identifier, { rate: points });
       const now = Date.now();
       const resetTimeSec = Math.ceil(result.reset / 1000);
       const retryAfter = Math.max(1, Math.ceil((result.reset - now) / 1000));
@@ -83,7 +86,7 @@ export class TokenBucketLimiter implements IRateLimiter {
     }
   }
 
-  private consumeMemory(identifier: string, _points = 1): RateLimitResult {
+  private consumeMemory(identifier: string, points = 1): RateLimitResult {
     const now = Date.now();
     const bucketKey = `${this.name}:${identifier}`;
     let bucket = this.memoryStore.getTokenBucketEntry(bucketKey);
@@ -101,8 +104,8 @@ export class TokenBucketLimiter implements IRateLimiter {
       bucket.lastRefill = now;
     }
 
-    if (bucket.tokens >= 1) {
-      bucket.tokens -= 1;
+    if (bucket.tokens >= points) {
+      bucket.tokens -= points;
       const remaining = Math.floor(bucket.tokens);
       const resetSec = Math.ceil((now + this.windowMs) / 1000);
       return {

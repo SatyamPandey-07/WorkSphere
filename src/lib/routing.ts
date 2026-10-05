@@ -9,11 +9,17 @@ export interface RouteResult {
   duration: number; // in seconds
 }
 
+export const PROFILE_MAP: Record<"driving" | "walking" | "cycling", string> = {
+  walking: "foot",
+  driving: "car",
+  cycling: "bicycle",
+};
+
 /**
  * Fetch route from OSRM public API
  * @param from Starting coordinates
  * @param to Destination coordinates
- * @param profile 'driving-car' | 'foot-walking' | 'cycling-regular'
+ * @param profile 'driving' | 'walking' | 'cycling'
  */
 export async function getRoute(
   from: { lat: number; lng: number },
@@ -34,10 +40,12 @@ export async function getRoute(
     // OSRM uses lng,lat format (opposite of most APIs)
     const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
 
+    const osrmProfile = PROFILE_MAP[profile] || profile;
+
     // Use local OSRM server if configured via NEXT_PUBLIC_OSRM_URL, otherwise fall back to public server
     // For production, consider self-hosting or use paid service
     const osrmBase = process.env.NEXT_PUBLIC_OSRM_URL || 'https://router.project-osrm.org';
-    const url = `${osrmBase}/route/v1/${profile}/${coords}?overview=full&geometries=geojson`;
+    const url = `${osrmBase}/route/v1/${osrmProfile}/${coords}?overview=full&geometries=geojson`;
 
     // GET request — no body, so no Content-Type header needed.
     // Sending Content-Type on a bodyless GET is semantically incorrect and

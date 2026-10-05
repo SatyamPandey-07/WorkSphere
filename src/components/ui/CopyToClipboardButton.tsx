@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Copy, Check } from "lucide-react";
 
 interface CopyToClipboardButtonProps {
@@ -20,6 +20,16 @@ export function CopyToClipboardButton({
 }: CopyToClipboardButtonProps) {
   const [isCopied, setIsCopied] = useState(false);
   const [showToast, setShowToast] = useState(false);
+  const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (feedbackTimerRef.current !== null) {
+        clearTimeout(feedbackTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // Requirement 4: Fallback for legacy browsers without navigator.clipboard
   const fallbackCopyTextToClipboard = (text: string) => {
@@ -68,11 +78,15 @@ export function CopyToClipboardButton({
 
   // Requirement 3: Display temporary checkmark and trigger toast feedback
   const triggerFeedback = () => {
+    if (feedbackTimerRef.current !== null) {
+      clearTimeout(feedbackTimerRef.current);
+    }
     setIsCopied(true);
     setShowToast(true);
     
     // Reset back to normal after 2 seconds per issue criteria
-    setTimeout(() => {
+    feedbackTimerRef.current = setTimeout(() => {
+      feedbackTimerRef.current = null;
       setIsCopied(false);
       setShowToast(false);
     }, 2000);

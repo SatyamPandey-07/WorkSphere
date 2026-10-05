@@ -72,7 +72,8 @@ export function computeTaxTotals(
   let tax = 0;
 
   for (const b of bookings) {
-    const hours = b.duration || 1;
+    const raw = b.duration ?? 1;
+    const hours = !Number.isFinite(raw) ? 1 : Math.max(0, raw);
     const price = hours * 15;
     subtotal += price;
     tax += Number((price * 0.08).toFixed(2));

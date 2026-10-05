@@ -146,6 +146,19 @@ export function AmenityFilterPills({
         params.set(item.paramKey, "true");
       } else {
         params.delete(item.paramKey);
+        const list = new Set(
+          (params.get("amenities") || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+        );
+        list.delete(item.id);
+        list.delete(item.paramKey);
+        if (list.size > 0) {
+          params.set("amenities", [...list].join(","));
+        } else {
+          params.delete("amenities");
+        }
       }
 
       const queryString = params.toString();

@@ -81,10 +81,10 @@ export async function clearStaleCaches(): Promise<{ cleared: string[]; errors: s
     errors.push(`hnswCache: ${err}`);
   }
 
-  // 3. Purge federated model weights
+  // 3. Purge federated model weights (default window keeps fresh weights)
   try {
     const { purgeStaleWeights } = await import("@/lib/federated/weightDb");
-    await purgeStaleWeights(0); // purge all weights older than 0ms
+    await purgeStaleWeights();
     cleared.push("federatedWeights");
   } catch (err) {
     errors.push(`federatedWeights: ${err}`);

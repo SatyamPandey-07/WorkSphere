@@ -147,6 +147,7 @@ export function useServiceWorker() {
   const [isOnline, setIsOnline] = useState(true);
   const [registration, setRegistration] =
     useState<ServiceWorkerRegistration | null>(null);
+  const controllerChangeHandlerRef = useRef<(() => void) | null>(null);
 
   // Initialize the dedicated sync worker
   useSyncWorker();
@@ -202,12 +203,17 @@ export function useServiceWorker() {
 
       // Handle controller change (e.g. after skipWaiting)
       let refreshing = false;
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
+      const handleControllerChange = () => {
         if (!refreshing) {
           refreshing = true;
           window.location.reload();
         }
-      });
+      };
+      navigator.serviceWorker.addEventListener(
+        "controllerchange",
+        handleControllerChange,
+      );
+      controllerChangeHandlerRef.current = handleControllerChange;
     } else if (
       "serviceWorker" in navigator &&
       process.env.NODE_ENV === "development"
@@ -232,6 +238,13 @@ export function useServiceWorker() {
     return () => {
       window.removeEventListener("online", handleOnline);
       window.removeEventListener("offline", handleOffline);
+      if (controllerChangeHandlerRef.current && "serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener(
+          "controllerchange",
+          controllerChangeHandlerRef.current,
+        );
+        controllerChangeHandlerRef.current = null;
+      }
     };
   }, []);
 
@@ -754,7 +767,7 @@ export function usePeriodicAvailabilitySync() {
               minInterval: SYNC_INTERVAL_MS,
             });
             console.log("[PWA] Periodic availability sync registered");
-            return;
+            return true;
           }
         }
       } catch (error) {
@@ -764,7 +777,7 @@ export function usePeriodicAvailabilitySync() {
         );
       }
 
-      registerOneShotFallback();
+      return false;
     }
 
     function registerOneShotFallback() {
@@ -802,8 +815,10 @@ export function usePeriodicAvailabilitySync() {
     }
 
     let cleanup: (() => void) | undefined;
-    registerPeriodicSync().then(() => {
-      cleanup = registerOneShotFallback();
+    registerPeriodicSync().then((periodicOk) => {
+      if (!periodicOk) {
+        cleanup = registerOneShotFallback();
+      }
     });
 
     return () => {

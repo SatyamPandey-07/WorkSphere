@@ -16,6 +16,8 @@ import { DistanceUnitToggle } from "@/components/settings/DistanceUnitToggle";
 import { ChatSoundToggle } from "@/components/settings/ChatSoundToggle";
 import { TimezoneBadge } from "@/components/TimezoneBadge";
 
+import { VisitedVenuesCard } from "@/components/profile/VisitedVenuesCard";
+
 const PERSONALIZATION_KEY = "ai_personalization_enabled";
 
 function Section({
@@ -105,6 +107,7 @@ export default function SettingsPage() {
             title="Account"
             description="Your name, email addresses, password and connected sign-in methods."
           >
+            <VisitedVenuesCard />
             <Link
               href="/user-profile"
               className="flex items-center justify-between gap-3 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors"

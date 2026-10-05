@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { CustomAvatarUpload } from "@/components/CustomAvatarUpload";
 import { PasskeyManager } from "@/components/auth/PasskeyManager";
 import { AccentPicker } from "@/components/AccentPicker";
+import { VisitedVenuesCard } from "@/components/profile/VisitedVenuesCard";
 
 export default function UserProfilePage() {
   return (
@@ -20,6 +21,7 @@ export default function UserProfilePage() {
         </div>
 
         <div className="mb-8 max-w-[880px] mx-auto w-full space-y-8">
+          <VisitedVenuesCard />
           <CustomAvatarUpload />
           <PasskeyManager />
 

@@ -69,7 +69,7 @@ export function isPrivateIPv6(ip: string): boolean {
   }
 
   // IPv4-mapped IPv6 addresses (e.g. ::ffff:192.168.1.1 or ::ffff:7f00:1)
-  const mappedMatch = normalized.match(/^(?:(?:::)|(?:0+:){5})ffff:(.+)$/);
+  const mappedMatch = normalized.match(/^(?:0*:)+ffff:(.+)$/);
   if (mappedMatch) {
     const ipv4Part = mappedMatch[1];
     if (ipv4Part.includes(".")) {

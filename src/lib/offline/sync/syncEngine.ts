@@ -122,7 +122,7 @@ export class SyncEngine<T = unknown> {
       return {};
     }
 
-    return withWebLock(DEFAULT_SYNC_LOCK_NAME, async () => {
+    return withWebLock(async () => {
       if (this.isRunning) return {};
       this.isRunning = true;
       const results: Record<string, SyncResult> = {};
@@ -209,7 +209,7 @@ export class SyncEngine<T = unknown> {
       }
 
       return results;
-    });
+    }, DEFAULT_SYNC_LOCK_NAME);
   }
 
   private notifyPeers(): void {

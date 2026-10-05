@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -10,6 +10,7 @@ import {
   Heart,
   Search,
   X,
+  WifiOff,
 } from "lucide-react";
 import { useSavedVenues, type SavedVenue } from "@/hooks/useSavedVenues";
 import { SavedVenueCard, TagFilter } from "@/components/saved-venues";
@@ -191,6 +192,20 @@ export default function SavedVenuesPage() {
 
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [isOffline, setIsOffline] = useState(false);
+
+  useEffect(() => {
+    const updateOnlineStatus = () => setIsOffline(!navigator.onLine);
+
+    updateOnlineStatus();
+    window.addEventListener("online", updateOnlineStatus);
+    window.addEventListener("offline", updateOnlineStatus);
+
+    return () => {
+      window.removeEventListener("online", updateOnlineStatus);
+      window.removeEventListener("offline", updateOnlineStatus);
+    };
+  }, []);
 
   const filteredFavorites = useMemo(() => {
     let result = favorites;
@@ -288,6 +303,21 @@ export default function SavedVenuesPage() {
           )}
         </div>
 
+        {isOffline && (
+          <div
+            role="status"
+            className="mb-6 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200"
+          >
+            <WifiOff className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <p>
+              You&apos;re offline.{" "}
+              {favorites.length > 0
+                ? "Previously loaded saved venues are still available, but changes will require a connection."
+                : "Saved venues are not available on this device yet. Reconnect and try again to load them."}
+            </p>
+          </div>
+        )}
+
         {/* Filters */}
         {!loading && favorites.length > 0 && (
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 mb-6">
@@ -376,7 +406,11 @@ export default function SavedVenuesPage() {
           </div>
         ) : error ? (
           <div className="text-center p-16">
-            <p className="text-red-500 dark:text-red-400 mb-4">{error}</p>
+            <p className="text-red-500 dark:text-red-400 mb-4">
+              {isOffline
+                ? "Saved venues are unavailable while offline. Reconnect and try again."
+                : error}
+            </p>
             <button
               type="button"
               onClick={() => window.location.reload()}

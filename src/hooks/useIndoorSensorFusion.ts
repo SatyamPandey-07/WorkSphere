@@ -46,6 +46,8 @@ export function useIndoorSensorFusion(
   const [detectedBeacons, setDetectedBeacons] = useState<BeaconReading[]>(knownBeacons);
 
   const compassHeadingRef = useRef<number | undefined>(undefined);
+  const orientationHandlerRef = useRef<((e: DeviceOrientationEvent) => void) | null>(null);
+  const motionHandlerRef = useRef<((e: DeviceMotionEvent) => void) | null>(null);
 
   // Update state helper
   const syncState = useCallback(() => {
@@ -130,6 +132,20 @@ export function useIndoorSensorFusion(
     [syncState]
   );
 
+  const stopSensors = useCallback(() => {
+    if (typeof window !== "undefined") {
+      if (orientationHandlerRef.current) {
+        window.removeEventListener("deviceorientation", orientationHandlerRef.current);
+        orientationHandlerRef.current = null;
+      }
+      if (motionHandlerRef.current) {
+        window.removeEventListener("devicemotion", motionHandlerRef.current);
+        motionHandlerRef.current = null;
+      }
+    }
+    setIsSensorActive(false);
+  }, []);
+
   // Start mobile browser device motion / orientation listeners
   const startSensors = useCallback(async () => {
     if (typeof window === "undefined") return false;
@@ -149,6 +165,9 @@ export function useIndoorSensorFusion(
       }
 
       setPermissionState("granted");
+
+      // Stop any existing listeners before attaching new ones
+      stopSensors();
 
       // Device orientation handler for magnetometer heading
       const handleOrientation = (e: DeviceOrientationEvent) => {
@@ -179,6 +198,9 @@ export function useIndoorSensorFusion(
         });
       };
 
+      orientationHandlerRef.current = handleOrientation;
+      motionHandlerRef.current = handleMotion;
+
       window.addEventListener("deviceorientation", handleOrientation);
       window.addEventListener("devicemotion", handleMotion);
 
@@ -190,11 +212,7 @@ export function useIndoorSensorFusion(
       setPermissionState("denied");
       return false;
     }
-  }, [feedImuSample]);
-
-  const stopSensors = useCallback(() => {
-    setIsSensorActive(false);
-  }, []);
+  }, [feedImuSample, stopSensors]);
 
   useEffect(() => {
     if (autoStartSensors) {

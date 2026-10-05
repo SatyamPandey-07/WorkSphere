@@ -77,13 +77,15 @@ export function matchRateTier(pathname: string): RateTier | null {
     return null;
   }
 
-  // Telemetry ingestion: 120 req/min
+  // Telemetry ingestion: 120 req/min (matched on exact path segments so
+  // /api/venues/telemetry-guide or ?q=noise-metrics don't slip into this tier)
+  const segments = pathname.split("/");
   if (
     pathname.startsWith("/api/telemetry") ||
-    pathname.includes("/telemetry") ||
-    pathname.includes("/noise-metrics") ||
-    pathname.includes("/wifi-prediction") ||
-    pathname.includes("/wifiTelemetry")
+    segments.includes("telemetry") ||
+    segments.includes("noise-metrics") ||
+    segments.includes("wifi-prediction") ||
+    segments.includes("wifiTelemetry")
   ) {
     return RATE_TIERS.telemetry;
   }

@@ -53,11 +53,6 @@ async function flushBuffer(): Promise<void> {
   const samplesSnapshot = new Map(pendingSamplesByModel);
   const newModelsSnapshot = new Set(pendingNewModels);
 
-  pendingGlobalTotal = 0;
-  pendingGlobalSlow = 0;
-  pendingSamplesByModel.clear();
-  pendingNewModels.clear();
-
   try {
     const pipeline = redis.pipeline();
     const globalKey = "worksphere:telemetry:global";
@@ -83,6 +78,22 @@ async function flushBuffer(): Promise<void> {
     }
 
     await withTimeout(pipeline.exec(), 3000);
+
+    pendingGlobalTotal -= globalTotal;
+    pendingGlobalSlow -= globalSlow;
+    for (const model of newModelsSnapshot) {
+      pendingNewModels.delete(model);
+    }
+    for (const [model, samples] of samplesSnapshot) {
+      const current = pendingSamplesByModel.get(model);
+      if (current) {
+        if (current.length <= samples.length) {
+          pendingSamplesByModel.delete(model);
+        } else {
+          pendingSamplesByModel.set(model, current.slice(samples.length));
+        }
+      }
+    }
   } catch (error) {
     console.error("[dbTelemetry] Redis batch flush failed:", error);
   }

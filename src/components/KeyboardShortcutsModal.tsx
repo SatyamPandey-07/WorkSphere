@@ -17,6 +17,7 @@ export function KeyboardShortcutsModal() {
   const shortcuts = [
     { key: formatShortcut("K"), description: "Global Search" },
     { key: formatShortcut("/"), description: "Toggle AI Chatbot" },
+    { key: formatShortcut("Shift+H"), description: "Toggle High-Contrast Mode" },
     { key: "?", description: "Show Keyboard Shortcuts" },
     { key: "Esc", description: "Close Modals" },
     { key: "M", description: "Toggle Map View" },

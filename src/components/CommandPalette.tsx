@@ -10,6 +10,7 @@ import {
   CalendarCheck,
   Users,
   Settings,
+  Contrast,
 } from "lucide-react";
 import { OPEN_COMMAND_PALETTE_EVENT } from "@/hooks/usePlatformModifier";
 
@@ -50,6 +51,12 @@ const COMMANDS: CommandItem[] = [
     href: "/sessions",
     icon: Users,
     keywords: "coworking buddy",
+  },
+  {
+    label: "Accessibility & High Contrast",
+    href: "/settings",
+    icon: Contrast,
+    keywords: "high contrast accessibility wcag theme visual",
   },
   {
     label: "Settings",

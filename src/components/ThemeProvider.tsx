@@ -223,6 +223,22 @@ export function ThemeProvider({
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isHighContrastShortcut =
+        ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "H" || e.key === "h")) ||
+        (e.altKey && e.shiftKey && (e.key === "H" || e.key === "h"));
+
+      if (isHighContrastShortcut) {
+        e.preventDefault();
+        toggleHighContrast();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [toggleHighContrast]);
+
   const value = useMemo<ThemeContextValue>(
     () => ({
       theme,

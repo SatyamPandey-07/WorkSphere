@@ -47,6 +47,28 @@ describe("calculateSunPosition", () => {
     expect(pos.azimuth).toBeGreaterThanOrEqual(0);
     expect(pos.azimuth).toBeLessThan(360);
   });
+
+  it("handles western longitudes with early UTC hours without negative modulo distortion", () => {
+    // San Francisco (-122.4194) at 01:30 UTC (which is 17:30 / 18:30 local time previous day)
+    // Raw utcMinutes + eot + 4 * lon is negative (90 + eot - 489.68 < 0)
+    const date = new Date(Date.UTC(2026, 5, 21, 1, 30, 0));
+    const pos = calculateSunPosition(37.7749, -122.4194, date);
+
+    // In SF late afternoon on summer solstice, sun should be above horizon and western azimuth
+    expect(pos.isAboveHorizon).toBe(true);
+    expect(pos.altitude).toBeGreaterThan(15);
+    expect(pos.azimuth).toBeGreaterThan(260);
+    expect(pos.azimuth).toBeLessThan(310);
+  });
+
+  it("calculates accurate solar noon in far western longitudes", () => {
+    // Honolulu (-157.8583) around solar noon (~22:30 UTC) on June 21
+    const date = new Date(Date.UTC(2026, 5, 21, 22, 30, 0));
+    const pos = calculateSunPosition(21.3069, -157.8583, date);
+
+    expect(pos.isAboveHorizon).toBe(true);
+    expect(pos.altitude).toBeGreaterThan(80); // Sun is almost directly overhead in Hawaii in June
+  });
 });
 
 describe("getPatioShadePercentage", () => {

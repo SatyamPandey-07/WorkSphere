@@ -33,13 +33,7 @@ export function SearchBar({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const {
-    query,
-    setQuery,
-    venues,
-    isLoading,
-    clear,
-  } = useVenueSearch({
+  const { query, setQuery, venues, isLoading, clear } = useVenueSearch({
     initialQuery,
     debounceMs,
   });
@@ -95,6 +89,14 @@ export function SearchBar({
   const handleClear = () => {
     clear();
     setIsOpen(false);
+    inputRef.current?.focus();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      handleClear();
+    }
   };
 
   return (
@@ -119,13 +121,14 @@ export function SearchBar({
               setIsOpen(true);
             }
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") setIsOpen(false);
-          }}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           autoFocus={autoFocus}
+          role="combobox"
+          aria-autocomplete="list"
           aria-label={placeholder}
           aria-expanded={isOpen && venues.length > 0}
+          aria-controls="search-bar-results-list"
           className="w-full pl-10 pr-16 py-2.5 bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-sm"
         />
 
@@ -168,6 +171,7 @@ export function SearchBar({
 
       {isOpen && venues.length > 0 && (
         <ul
+          id="search-bar-results-list"
           data-testid="search-bar-results"
           role="listbox"
           className="absolute z-50 left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl py-1 divide-y divide-zinc-100 dark:divide-zinc-800/60"

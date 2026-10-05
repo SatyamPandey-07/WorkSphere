@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ArrowLeft,
   Database,
+  Download,
   Gauge,
   HardDrive,
   MousePointerClick,
@@ -215,6 +216,31 @@ export default function AdminSystemDashboard() {
     );
   }, [data]);
 
+  const [isExporting, setIsExporting] = useState(false);
+
+  async function handleExportDiagnostics() {
+    try {
+      setIsExporting(true);
+      const res = await fetch("/api/admin/system/diagnostics", {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Failed to download diagnostics");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `worksphere-diagnostics-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setError("Failed to export diagnostics report");
+    } finally {
+      setIsExporting(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#07070a] text-white">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -255,6 +281,18 @@ export default function AdminSystemDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleExportDiagnostics}
+              disabled={isExporting}
+              data-testid="export-diagnostics-button"
+              className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-50"
+            >
+              <Download
+                className={`h-4 w-4 ${isExporting ? "animate-bounce" : ""}`}
+              />
+              {isExporting ? "Exporting..." : "Download Diagnostics"}
+            </button>
+
             <div className="flex rounded-2xl border border-white/10 bg-white/[0.04] p-1">
               {ranges.map((item) => (
                 <button

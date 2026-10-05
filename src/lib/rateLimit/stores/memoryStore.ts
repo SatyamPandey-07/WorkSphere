@@ -32,11 +32,19 @@ export class MemoryRateLimitStore {
     }
   }
 
+  /** Buckets idle longer than this are full again, so they can be dropped. */
+  private static readonly TOKEN_BUCKET_MAX_IDLE_MS = 60 * 60 * 1000;
+
   cleanupExpiredEntries() {
     const now = Date.now();
     for (const [key, value] of this.slidingWindowStore) {
       if (now > value.resetTime) {
         this.slidingWindowStore.delete(key);
+      }
+    }
+    for (const [key, value] of this.tokenBucketStore) {
+      if (now - value.lastRefill > MemoryRateLimitStore.TOKEN_BUCKET_MAX_IDLE_MS) {
+        this.tokenBucketStore.delete(key);
       }
     }
   }
@@ -69,6 +77,13 @@ export class MemoryRateLimitStore {
   }
 
   setTokenBucketEntry(key: string, entry: MemoryBucketEntry) {
+    if (!this.tokenBucketStore.has(key) && this.tokenBucketStore.size >= this.maxEntries) {
+      this.cleanupExpiredEntries();
+      if (this.tokenBucketStore.size >= this.maxEntries) {
+        const oldestKey = this.tokenBucketStore.keys().next().value;
+        if (oldestKey) this.tokenBucketStore.delete(oldestKey);
+      }
+    }
     this.tokenBucketStore.set(key, entry);
   }
 

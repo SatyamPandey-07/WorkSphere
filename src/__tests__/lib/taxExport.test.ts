@@ -59,4 +59,16 @@ describe("computeTaxTotals", () => {
     const totals = computeTaxTotals([{}]);
     expect(totals.subtotal).toBe(15);
   });
+
+  it("clamps zero and negative durations to zero hours", () => {
+    const zeroTotals = computeTaxTotals([{ duration: 0 }]);
+    expect(zeroTotals.subtotal).toBe(0);
+    expect(zeroTotals.tax).toBe(0);
+    expect(zeroTotals.total).toBe(0);
+
+    const negativeTotals = computeTaxTotals([{ duration: -120 }]);
+    expect(negativeTotals.subtotal).toBe(0);
+    expect(negativeTotals.tax).toBe(0);
+    expect(negativeTotals.total).toBe(0);
+  });
 });

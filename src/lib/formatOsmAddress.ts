@@ -5,8 +5,9 @@
  * Returns undefined when no part is available.
  */
 export function formatOsmAddress(
-  tags: Record<string, string | undefined | null>,
+  tags?: Record<string, string | undefined | null> | null,
 ): string | undefined {
+  if (!tags) return undefined;
   return (
     [tags["addr:street"], tags["addr:city"], tags["addr:postcode"]]
       .map((part) => part?.trim())

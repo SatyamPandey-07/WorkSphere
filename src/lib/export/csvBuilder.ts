@@ -26,8 +26,9 @@ export function escapeCSVField(
     str = String(val);
   }
 
-  // Formula injection sanitization
-  if (sanitizeFormulas && /^[=+\-@\t\r]/.test(str)) {
+  // Formula injection sanitization (leading whitespace is trimmed by
+  // spreadsheet apps before evaluation, so test the trimmed value)
+  if (sanitizeFormulas && /^[=+\-@\t\r]/.test(str.trimStart())) {
     str = "'" + str;
   }
 

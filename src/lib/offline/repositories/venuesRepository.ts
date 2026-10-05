@@ -68,17 +68,21 @@ export class VenuesRepository implements IRepository<OfflineVenue> {
         const tx = db.transaction(["venues"], "readwrite");
         const store = tx.objectStore("venues");
         const now = Date.now();
+        let firstError: unknown = null;
 
         for (const venue of venues) {
-          store.put({
+          const req = store.put({
             ...venue,
             savedAt: venue.savedAt || now,
             lastAccessedAt: venue.lastAccessedAt || now,
           });
+          req.onerror = () => {
+            firstError ??= req.error;
+          };
         }
 
         tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
+        tx.onerror = () => reject(firstError ?? tx.error);
       });
 
     try {

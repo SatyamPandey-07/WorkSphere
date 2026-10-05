@@ -37,18 +37,34 @@ export class NotificationDispatcher {
         error: `Channel '${channelName}' is not registered`,
       };
     }
-    return channel.send(message);
+    try {
+      return await channel.send(message);
+    } catch (err) {
+      return {
+        channel: channel.name,
+        status: "FAILED",
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   public async broadcast(
     message: NotificationMessage,
     channelNames?: string[],
   ): Promise<DeliveryResult[]> {
-    const targets = channelNames
-      ? channelNames.map((c) => this.getChannel(c)).filter((c): c is NotificationChannel => !!c)
-      : Array.from(this.channels.values());
-
-    return Promise.all(targets.map((channel) => channel.send(message)));
+    const names = channelNames ?? Array.from(this.channels.keys());
+    const settled = await Promise.allSettled(
+      names.map((name) => this.dispatch(name, message)),
+    );
+    return settled.map((entry, index) =>
+      entry.status === "fulfilled"
+        ? entry.value
+        : {
+            channel: names[index],
+            status: "FAILED" as const,
+            error: String((entry as PromiseRejectedResult).reason),
+          },
+    );
   }
 }
 

@@ -121,14 +121,14 @@ export class SearchesRepository implements IRepository<OfflineSearch, string> {
 
         const cursorReq = index.openCursor();
         cursorReq.onerror = () => reject(cursorReq.error);
+        tx.oncomplete = () => resolve(deleted);
+        tx.onerror = () => reject(tx.error);
         cursorReq.onsuccess = () => {
           const cursor = cursorReq.result;
           if (cursor && deleted < toDeleteCount) {
             cursor.delete();
             deleted++;
             cursor.continue();
-          } else {
-            resolve(deleted);
           }
         };
       };

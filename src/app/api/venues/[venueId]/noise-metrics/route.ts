@@ -196,12 +196,8 @@ export async function POST(
       },
     });
 
-    // Update venue aggregate noiseLevel if applicable
-    await prisma.venue.update({
-      where: { id: venue.id },
-      data: { noiseLevel },
-    });
-
+    // Update venue aggregate noiseLevel from all readings, not just this one,
+    // so a single report can't flip a well-established quiet venue to loud.
     // Re-fetch updated metrics to return live buckets
     const ratings = await prisma.venueRating.findMany({
       where: {
@@ -257,6 +253,20 @@ export async function POST(
         samples: averageValues.length,
       };
     });
+
+    const allAverages = ratings
+      .map((r) => r.avgDecibels)
+      .filter((v): v is number => typeof v === "number");
+    if (allAverages.length > 0) {
+      const overallMean =
+        allAverages.reduce((sum, val) => sum + val, 0) / allAverages.length;
+      const aggregateLevel =
+        overallMean < 45 ? "quiet" : overallMean <= 65 ? "moderate" : "loud";
+      await prisma.venue.update({
+        where: { id: venue.id },
+        data: { noiseLevel: aggregateLevel },
+      });
+    }
 
     return NextResponse.json(
       {

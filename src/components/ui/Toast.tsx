@@ -139,6 +139,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Critical errors are announced assertively. Countdown toasts (e.g. rate
+ * limits) stay polite so the per-second text updates don't keep interrupting
+ * the screen reader.
+ */
+function isAssertive(toast: Toast): boolean {
+  return toast.type === "error" && toast.countdown === undefined;
+}
+
 function ToastContainer({
   toasts,
   onRemove,
@@ -146,15 +155,35 @@ function ToastContainer({
   toasts: Toast[];
   onRemove: (id: string) => void;
 }) {
+  // Both live regions stay mounted even when empty so assistive tech is
+  // already observing them when a toast is inserted (WCAG 2.1 SC 4.1.3).
   return (
     <div
       className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2 pointer-events-none"
-      aria-live="polite"
       aria-label="Notifications"
     >
-      {toasts.map((t) => (
-        <ToastItem key={t.id} toast={t} onRemove={onRemove} />
-      ))}
+      <div
+        className="flex flex-col gap-2"
+        aria-live="assertive"
+        aria-relevant="additions text"
+        data-testid="toast-region-assertive"
+      >
+        {toasts.filter(isAssertive).map((t) => (
+          <ToastItem key={t.id} toast={t} onRemove={onRemove} />
+        ))}
+      </div>
+      <div
+        className="flex flex-col gap-2"
+        aria-live="polite"
+        aria-relevant="additions text"
+        data-testid="toast-region-polite"
+      >
+        {toasts
+          .filter((t) => !isAssertive(t))
+          .map((t) => (
+            <ToastItem key={t.id} toast={t} onRemove={onRemove} />
+          ))}
+      </div>
     </div>
   );
 }
@@ -239,9 +268,13 @@ function ToastItem({
           .replace(/(^|\D)1 seconds\b/, (_, before) => `${before}1 second`)
       : toast.message;
 
+  const assertive = isAssertive(toast);
+
   return (
     <div
-      role="status"
+      role={assertive ? "alert" : "status"}
+      aria-live={assertive ? "assertive" : "polite"}
+      aria-atomic="true"
       className={cn(
         "pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg backdrop-blur-md min-w-[280px] max-w-[380px]",
         "bg-white/90 dark:bg-zinc-900/90 border-zinc-200 dark:border-zinc-800",

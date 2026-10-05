@@ -185,7 +185,7 @@ describe("Toast functionality", () => {
     fireEvent.click(screen.getByText("Show Error"));
     const icon = screen
       .getByText("Error occurred")
-      .closest("[role='status']")!
+      .closest("[role='alert']")!
       .querySelector(".text-red-500");
     expect(icon).toBeInTheDocument();
   });

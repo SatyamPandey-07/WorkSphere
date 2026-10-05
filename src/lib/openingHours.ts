@@ -67,7 +67,11 @@ export function formatTime12h(time24: string): string {
 /**
  * Returns whether the venue is currently open, along with a human-readable display string
  */
-export function getOpeningHoursStatus(hoursStr: string | null | undefined, timezoneOverride?: string): {
+export function getOpeningHoursStatus(
+  hoursStr: string | null | undefined,
+  timezoneOverride?: string,
+  nowInput?: Date,
+): {
   isOpen: boolean;
   displayString: string;
   isStructured: boolean;
@@ -82,7 +86,7 @@ export function getOpeningHoursStatus(hoursStr: string | null | undefined, timez
   }
 
   const timezone = timezoneOverride || structured.timezone;
-  const now = new Date();
+  const now = nowInput || new Date();
 
   try {
     const formatter = new Intl.DateTimeFormat("en-US", {
@@ -99,21 +103,11 @@ export function getOpeningHoursStatus(hoursStr: string | null | undefined, timez
     const currentMinutes = Number(partMap.hour === "24" ? 0 : partMap.hour) * 60 + Number(partMap.minute);
 
     const period = structured.periods[dayName];
-    if (!period || period.closed) {
-      return {
-        isOpen: false,
-        displayString: `Closed Today (${timezone})`,
-        isStructured: true,
-      };
-    }
-
-    const [openH, openM] = period.open.split(":").map(Number);
-    const [closeH, closeM] = period.close.split(":").map(Number);
-    const openMin = openH * 60 + openM;
-    const closeMin = closeH * 60 + closeM;
+    const dayIdx = DAYS_OF_WEEK.indexOf(dayName);
 
     let isOpen = false;
-    const dayIdx = DAYS_OF_WEEK.indexOf(dayName);
+    let overnightFromPrev = false;
+
     if (dayIdx !== -1) {
       const prevName = DAYS_OF_WEEK[(dayIdx + 6) % 7];
       const prev = structured.periods[prevName];
@@ -124,10 +118,17 @@ export function getOpeningHoursStatus(hoursStr: string | null | undefined, timez
         const pCloseMin = pCloseH * 60 + pCloseM;
         if (pCloseMin < pOpenMin && currentMinutes < pCloseMin) {
           isOpen = true;
+          overnightFromPrev = true;
         }
       }
     }
-    if (!isOpen) {
+
+    if (!isOpen && period && !period.closed) {
+      const [openH, openM] = period.open.split(":").map(Number);
+      const [closeH, closeM] = period.close.split(":").map(Number);
+      const openMin = openH * 60 + openM;
+      const closeMin = closeH * 60 + closeM;
+
       if (closeMin < openMin) {
         isOpen = currentMinutes >= openMin || currentMinutes < closeMin;
       } else {
@@ -135,7 +136,16 @@ export function getOpeningHoursStatus(hoursStr: string | null | undefined, timez
       }
     }
 
-    const displayString = `Today: ${formatTime12h(period.open)} - ${formatTime12h(period.close)} (${timezone})`;
+    let displayString: string;
+    if (period && !period.closed) {
+      displayString = `Today: ${formatTime12h(period.open)} - ${formatTime12h(period.close)} (${timezone})`;
+    } else if (overnightFromPrev) {
+      const prevName = DAYS_OF_WEEK[(dayIdx + 6) % 7];
+      const prev = structured.periods[prevName];
+      displayString = `Open until ${formatTime12h(prev.close)} (${timezone})`;
+    } else {
+      displayString = `Closed Today (${timezone})`;
+    }
 
     return { isOpen, displayString, isStructured: true };
   } catch (error) {

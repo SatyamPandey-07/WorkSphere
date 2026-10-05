@@ -317,21 +317,33 @@ function MapEvents({
   return null;
 }
 
+const escapeCursorHtml = (value: string): string =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const isSafeAvatarUrl = (url: string): boolean =>
+  /^https:\/\/[^"'\s)]+$/.test(url);
+
 const createCursorIcon = (avatarUrl: string, name: string) => {
   if (typeof window === "undefined") return null;
+  const safeName = escapeCursorHtml(name);
   let html: string;
-  if (avatarUrl && avatarUrl !== "default" && avatarUrl.startsWith("http")) {
+  if (avatarUrl && avatarUrl !== "default" && isSafeAvatarUrl(avatarUrl)) {
     html = `
       <div class="map-cursor-container">
         <div class="map-cursor-avatar" style="background-image: url(${avatarUrl})" width="32" height="32"></div>
-        <div class="map-cursor-label">${name}</div>
+        <div class="map-cursor-label">${safeName}</div>
       </div>
     `;
   } else {
     html = `
       <div class="map-cursor-container">
         <div class="map-cursor-avatar-default" width="16" height="16"></div>
-        <div class="map-cursor-label">${name}</div>
+        <div class="map-cursor-label">${safeName}</div>
       </div>
     `;
   }

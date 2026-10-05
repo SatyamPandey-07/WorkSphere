@@ -136,6 +136,9 @@ function buildHourlyTrend(
 }
 
 function buildSummaryFromSamples(samples: PerfSample[]): PerformanceSummary {
+  // Callers hand samples oldest-first (memory) or newest-first (Redis LRANGE
+  // after LPUSH). Normalize to newest-first so recentSamples is correct either way.
+  const byTimeDesc = [...samples].sort((a, b) => b.timestamp - a.timestamp);
   const allDurations = samples.map((s) => s.durationMs).sort((a, b) => a - b);
   const slowCount = allDurations.filter((d) => d >= SLOW_THRESHOLD_MS).length;
 
@@ -184,7 +187,7 @@ function buildSummaryFromSamples(samples: PerfSample[]): PerformanceSummary {
       slowThresholdMs: SLOW_THRESHOLD_MS,
     },
     latencyTrend: buildHourlyTrend(samples),
-    recentSamples: samples.slice(-50).reverse(),
+    recentSamples: byTimeDesc.slice(0, 50),
     regionBreakdown,
     routeBreakdown,
   };

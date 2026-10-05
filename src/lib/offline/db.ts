@@ -8,14 +8,10 @@ export const DB_VERSION = 8;
 let dbInstance: IDBDatabase | null = null;
 
 if (typeof window !== "undefined") {
-  window.addEventListener(
-    "beforeunload",
-    () => {
-      dbInstance?.close();
-      dbInstance = null;
-    },
-    { once: true },
-  );
+  window.addEventListener("beforeunload", () => {
+    dbInstance?.close();
+    dbInstance = null;
+  });
 }
 
 function showPrivateBrowsingAlert() {

@@ -94,9 +94,13 @@ export class NotificationHttpClient {
 
     for (let attempt = 1; attempt <= retries + 1; attempt++) {
       try {
+        const timeoutSignal = AbortSignal.timeout(timeoutMs);
+        const signal = init.signal
+          ? AbortSignal.any([init.signal, timeoutSignal])
+          : timeoutSignal;
         const response = await fetch(url, {
           ...init,
-          signal: AbortSignal.timeout(timeoutMs),
+          signal,
         });
 
         if (response.ok || (response.status >= 200 && response.status < 500)) {

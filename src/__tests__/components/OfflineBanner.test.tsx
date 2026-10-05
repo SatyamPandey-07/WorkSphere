@@ -1,4 +1,11 @@
-import { render, screen, fireEvent, act, renderHook, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  act,
+  renderHook,
+  waitFor,
+} from "@testing-library/react";
 import "@testing-library/jest-dom";
 import React from "react";
 import { OfflineBanner, useOfflineStatus } from "@/components/ui/OfflineBanner";
@@ -9,10 +16,10 @@ global.fetch = jest.fn(() =>
   Promise.resolve({
     ok: true,
     status: 200,
-  })
+  }),
 ) as jest.Mock;
 
-describe("OfflineBanner Component & useOfflineStatus Hook (#4144)", () => {
+describe("OfflineBanner Component & useOfflineStatus Hook (#4144, #4410)", () => {
   let originalOnLine: boolean;
 
   beforeAll(() => {
@@ -83,19 +90,19 @@ describe("OfflineBanner Component & useOfflineStatus Hook (#4144)", () => {
   });
 
   describe("OfflineBanner Component", () => {
-    it("does not render when browser is online", () => {
+    it("does not render when browser is online and no failed mutations", () => {
       Object.defineProperty(navigator, "onLine", {
         value: true,
         writable: true,
         configurable: true,
       });
 
-      const { container } = render(
+      render(
         <ToastProvider>
           <OfflineBanner />
-        </ToastProvider>
+        </ToastProvider>,
       );
-      expect(container.firstChild).toBeNull();
+      expect(screen.queryByTestId("offline-banner")).toBeNull();
     });
 
     it("renders persistent top offline banner when offline event fires", () => {
@@ -108,7 +115,7 @@ describe("OfflineBanner Component & useOfflineStatus Hook (#4144)", () => {
       render(
         <ToastProvider>
           <OfflineBanner />
-        </ToastProvider>
+        </ToastProvider>,
       );
 
       act(() => {
@@ -116,7 +123,9 @@ describe("OfflineBanner Component & useOfflineStatus Hook (#4144)", () => {
       });
 
       expect(screen.getByTestId("offline-banner")).toBeInTheDocument();
-      expect(screen.getByText("You are currently offline.")).toBeInTheDocument();
+      expect(
+        screen.getByText("You are currently offline."),
+      ).toBeInTheDocument();
       expect(screen.getByTestId("retry-connection-button")).toBeInTheDocument();
     });
 
@@ -130,7 +139,7 @@ describe("OfflineBanner Component & useOfflineStatus Hook (#4144)", () => {
       render(
         <ToastProvider>
           <OfflineBanner />
-        </ToastProvider>
+        </ToastProvider>,
       );
 
       act(() => {
@@ -156,6 +165,70 @@ describe("OfflineBanner Component & useOfflineStatus Hook (#4144)", () => {
       });
     });
 
+    it("displays count of failed mutations and triggers retry synchronization", async () => {
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+
+      const onRetry = jest.fn().mockResolvedValue(undefined);
+      const failedMutations = [
+        { id: "mut_1", name: "Create Booking", error: "500 Server Error" },
+        { id: "mut_2", name: "Update Profile", error: "Network timeout" },
+      ];
+
+      render(
+        <ToastProvider>
+          <OfflineBanner
+            failedMutations={failedMutations}
+            onRetryFailedMutations={onRetry}
+          />
+        </ToastProvider>,
+      );
+
+      expect(screen.getByTestId("offline-banner")).toBeInTheDocument();
+      expect(screen.getByTestId("failed-mutations-count")).toHaveTextContent(
+        "2 failed actions",
+      );
+
+      const retryMutationsBtn = screen.getByTestId(
+        "retry-failed-mutations-button",
+      );
+      expect(retryMutationsBtn).toHaveTextContent("Retry Now");
+
+      await act(async () => {
+        fireEvent.click(retryMutationsBtn);
+      });
+
+      expect(onRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it("opens inspect modal to view failed mutation details", () => {
+      Object.defineProperty(navigator, "onLine", {
+        value: true,
+        writable: true,
+        configurable: true,
+      });
+
+      const failedMutations = [
+        { id: "mut_1", name: "Create Booking", error: "500 Server Error" },
+      ];
+
+      render(
+        <ToastProvider>
+          <OfflineBanner failedMutations={failedMutations} />
+        </ToastProvider>,
+      );
+
+      const inspectBtn = screen.getByTestId("inspect-failed-mutations-button");
+      fireEvent.click(inspectBtn);
+
+      expect(screen.getByTestId("failed-mutations-modal")).toBeInTheDocument();
+      expect(screen.getByText("Create Booking")).toBeInTheDocument();
+      expect(screen.getByText("500 Server Error")).toBeInTheDocument();
+    });
+
     it("dismisses offline banner when dismiss button is clicked", () => {
       Object.defineProperty(navigator, "onLine", {
         value: false,
@@ -166,7 +239,7 @@ describe("OfflineBanner Component & useOfflineStatus Hook (#4144)", () => {
       render(
         <ToastProvider>
           <OfflineBanner showDismiss={true} />
-        </ToastProvider>
+        </ToastProvider>,
       );
 
       act(() => {

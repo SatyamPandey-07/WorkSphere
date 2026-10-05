@@ -173,6 +173,7 @@ export function aggregateWebVitals(
   entries: WebVitalEntry[],
   timeRange: string = "7d"
 ): AggregatedWebVitals {
+  const list = entries ?? [];
   const metricNames: WebVitalMetricName[] = ["LCP", "INP", "CLS", "FCP", "TTFB", "FID"];
   const groupedByName: Record<WebVitalMetricName, number[]> = {
     LCP: [],
@@ -185,8 +186,10 @@ export function aggregateWebVitals(
 
   const groupedByRoute: Record<string, Record<WebVitalMetricName, number[]>> = {};
 
-  (entries || []).forEach((entry) => {
+  let validCount = 0;
+  (list || []).forEach((entry) => {
     if (!entry || !entry.name || typeof entry.value !== "number") return;
+    validCount += 1;
 
     if (groupedByName[entry.name]) {
       groupedByName[entry.name].push(entry.value);
@@ -293,7 +296,7 @@ export function aggregateWebVitals(
 
   return {
     overallScore,
-    totalSamples: entries.length,
+    totalSamples: validCount,
     timeRange,
     generatedAt: new Date().toISOString(),
     metrics: metricsSummary,

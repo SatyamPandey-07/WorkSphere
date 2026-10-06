@@ -101,7 +101,7 @@ export function DisplayNameForm({
               value={displayName}
               onChange={handleChange}
               placeholder="e.g. Satyam Pandey"
-              maxLength={60}
+              maxLength={50}
               className={`w-full px-3.5 py-2 rounded-xl text-sm border bg-zinc-50 dark:bg-zinc-800/60 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 transition-all ${
                 error
                   ? "border-red-500 focus:ring-red-500/20"

@@ -27,7 +27,7 @@ export async function getPasskeyRotationStatus(
       expiresAt,
       isExpired,
       daysUntilExpiry,
-      needsRotation: !isExpired && daysUntilExpiry <= 14,
+      needsRotation: daysUntilExpiry > 0 && daysUntilExpiry <= 14,
       lastUsedAt: cred.lastUsedAt,
       createdAt: cred.createdAt,
     };

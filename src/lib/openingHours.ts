@@ -99,19 +99,19 @@ export function getOpeningHoursStatus(
     const parts = formatter.formatToParts(now);
     const partMap = Object.fromEntries(parts.map((p) => [p.type, p.value]));
 
-    const dayName = partMap.weekday.toLowerCase();
-    const currentMinutes = Number(partMap.hour === "24" ? 0 : partMap.hour) * 60 + Number(partMap.minute);
+    const dayName = partMap.weekday ? partMap.weekday.toLowerCase() : "";
+    const currentMinutes = Number(partMap.hour === "24" ? 0 : partMap.hour || 0) * 60 + Number(partMap.minute || 0);
 
-    const period = structured.periods[dayName];
+    const period = structured.periods ? structured.periods[dayName] : undefined;
     const dayIdx = DAYS_OF_WEEK.indexOf(dayName);
 
     let isOpen = false;
     let overnightFromPrev = false;
 
-    if (dayIdx !== -1) {
+    if (dayIdx !== -1 && structured.periods) {
       const prevName = DAYS_OF_WEEK[(dayIdx + 6) % 7];
       const prev = structured.periods[prevName];
-      if (prev && !prev.closed) {
+      if (prev && !prev.closed && typeof prev.open === "string" && typeof prev.close === "string") {
         const [pOpenH, pOpenM] = prev.open.split(":").map(Number);
         const [pCloseH, pCloseM] = prev.close.split(":").map(Number);
         const pOpenMin = pOpenH * 60 + pOpenM;
@@ -123,7 +123,7 @@ export function getOpeningHoursStatus(
       }
     }
 
-    if (!isOpen && period && !period.closed) {
+    if (!isOpen && period && !period.closed && typeof period.open === "string" && typeof period.close === "string") {
       const [openH, openM] = period.open.split(":").map(Number);
       const [closeH, closeM] = period.close.split(":").map(Number);
       const openMin = openH * 60 + openM;
@@ -137,12 +137,12 @@ export function getOpeningHoursStatus(
     }
 
     let displayString: string;
-    if (period && !period.closed) {
+    if (period && !period.closed && typeof period.open === "string" && typeof period.close === "string") {
       displayString = `Today: ${formatTime12h(period.open)} - ${formatTime12h(period.close)} (${timezone})`;
-    } else if (overnightFromPrev) {
+    } else if (overnightFromPrev && dayIdx !== -1 && structured.periods) {
       const prevName = DAYS_OF_WEEK[(dayIdx + 6) % 7];
       const prev = structured.periods[prevName];
-      displayString = `Open until ${formatTime12h(prev.close)} (${timezone})`;
+      displayString = prev?.close ? `Open until ${formatTime12h(prev.close)} (${timezone})` : `Closed Today (${timezone})`;
     } else {
       displayString = `Closed Today (${timezone})`;
     }

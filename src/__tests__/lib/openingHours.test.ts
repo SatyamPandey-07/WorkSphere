@@ -93,4 +93,40 @@ describe("Timezone-aware opening hours helper logic", () => {
     expect(statusClosed.isOpen).toBe(false);
     expect(statusClosed.displayString).toContain("Closed Today");
   });
+
+  it("handles missing weekday from formatToParts gracefully without TypeError", () => {
+    const originalFormatToParts = Intl.DateTimeFormat.prototype.formatToParts;
+    Intl.DateTimeFormat.prototype.formatToParts = jest.fn().mockReturnValue([
+      { type: "hour", value: "10" },
+      { type: "minute", value: "30" },
+    ]);
+
+    try {
+      const status = getOpeningHoursStatus(serialized, "America/New_York");
+      expect(status.isStructured).toBe(true);
+      expect(status.isOpen).toBe(false);
+      expect(status.displayString).toBe("Closed Today (America/New_York)");
+    } finally {
+      Intl.DateTimeFormat.prototype.formatToParts = originalFormatToParts;
+    }
+  });
+
+  it("handles structured hours with missing days or partial periods gracefully", () => {
+    const partialStructured = {
+      timezone: "UTC",
+      periods: {
+        monday: { open: "09:00", close: "17:00", closed: false },
+      },
+    };
+    // Tuesday date
+    const tuesday = new Date(Date.UTC(2026, 9, 6, 12, 0, 0));
+    const status = getOpeningHoursStatus(
+      JSON.stringify(partialStructured),
+      "UTC",
+      tuesday,
+    );
+    expect(status.isStructured).toBe(true);
+    expect(status.isOpen).toBe(false);
+    expect(status.displayString).toBe("Closed Today (UTC)");
+  });
 });

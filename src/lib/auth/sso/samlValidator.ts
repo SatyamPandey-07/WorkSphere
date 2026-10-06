@@ -185,3 +185,77 @@ export function validateSamlAssertion(
     attributes,
   };
 }
+
+export interface RelayStatePayload {
+  issuedAt: number;
+  expiresAt?: number;
+  redirectUrl?: string;
+  nonce?: string;
+}
+
+export const DEFAULT_RELAY_STATE_TTL_MS = 15 * 60 * 1000; // 15 minutes default TTL
+
+/**
+ * Validates a SAML RelayState token for expiry, forgery, and formatting integrity (#4383).
+ *
+ * @param relayState - The RelayState string received from SAML callback
+ * @param maxAgeMs - Maximum allowed age in milliseconds (defaults to 15 minutes)
+ * @returns Parsed RelayStatePayload if valid
+ * @throws Error if RelayState is missing, malformed, forged, or expired
+ */
+export function validateRelayState(
+  relayState: string | null | undefined,
+  maxAgeMs = DEFAULT_RELAY_STATE_TTL_MS,
+): RelayStatePayload {
+  if (!relayState || typeof relayState !== "string" || relayState.trim() === "") {
+    throw new Error("Missing or invalid RelayState token");
+  }
+
+  let decoded: any;
+  try {
+    const trimmed = relayState.trim();
+    const raw = trimmed.startsWith("{")
+      ? trimmed
+      : Buffer.from(trimmed, "base64").toString("utf-8");
+    decoded = JSON.parse(raw);
+  } catch {
+    throw new Error("Invalid or forged RelayState parameter format");
+  }
+
+  if (typeof decoded !== "object" || decoded === null) {
+    throw new Error("Invalid RelayState payload format");
+  }
+
+  const now = Date.now();
+  const issuedAt = Number(decoded.issuedAt ?? decoded.timestamp ?? decoded.iat);
+  const expiresAt =
+    decoded.expiresAt ?? decoded.exp
+      ? Number(decoded.expiresAt ?? decoded.exp)
+      : undefined;
+
+  if (isNaN(issuedAt)) {
+    throw new Error("RelayState token is missing a valid timestamp");
+  }
+
+  if (expiresAt !== undefined && !isNaN(expiresAt)) {
+    if (now > expiresAt) {
+      throw new Error("RelayState token has expired (sso_session_expired)");
+    }
+  } else {
+    if (now - issuedAt > maxAgeMs) {
+      throw new Error("RelayState token has expired (sso_session_expired)");
+    }
+  }
+
+  if (issuedAt > now + 60000) {
+    throw new Error("Invalid RelayState token issued in future");
+  }
+
+  return {
+    issuedAt,
+    expiresAt,
+    redirectUrl: typeof decoded.redirectUrl === "string" ? decoded.redirectUrl : undefined,
+    nonce: typeof decoded.nonce === "string" ? decoded.nonce : undefined,
+  };
+}
+

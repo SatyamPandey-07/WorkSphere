@@ -1,11 +1,25 @@
 import { NextResponse } from "next/server";
-import { validateSamlAssertion } from "@/lib/auth/sso/samlValidator";
+import { validateSamlAssertion, validateRelayState } from "@/lib/auth/sso/samlValidator";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const samlResponseBase64 = formData.get("SAMLResponse");
+    const relayState = formData.get("RelayState");
+
+    if (relayState && typeof relayState === "string") {
+      try {
+        validateRelayState(relayState);
+      } catch (relayError: unknown) {
+        const message = relayError instanceof Error ? relayError.message : String(relayError);
+        console.error("SAML RelayState validation failed:", message);
+
+        const redirectUrl = new URL("/sign-in", request.url);
+        redirectUrl.searchParams.set("error", "sso_session_expired");
+        return NextResponse.redirect(redirectUrl.toString(), 302);
+      }
+    }
 
     if (!samlResponseBase64 || typeof samlResponseBase64 !== "string") {
       return NextResponse.json(

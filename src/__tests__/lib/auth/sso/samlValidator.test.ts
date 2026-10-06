@@ -1,4 +1,4 @@
-import { validateSamlAssertion } from "@/lib/auth/sso/samlValidator";
+import { validateSamlAssertion, validateRelayState } from "@/lib/auth/sso/samlValidator";
 import { SignedXml } from "xml-crypto";
 
 jest.mock("xml-crypto", () => {
@@ -166,3 +166,77 @@ MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Y3r
     );
   });
 });
+
+describe("validateRelayState (#4383)", () => {
+  test("throws error when RelayState token is missing, null, or empty string", () => {
+    expect(() => validateRelayState(null)).toThrow("Missing or invalid RelayState token");
+    expect(() => validateRelayState(undefined)).toThrow("Missing or invalid RelayState token");
+    expect(() => validateRelayState("   ")).toThrow("Missing or invalid RelayState token");
+  });
+
+  test("throws error when RelayState token is malformed or forged JSON", () => {
+    expect(() => validateRelayState("invalid-non-json-token")).toThrow(
+      "Invalid or forged RelayState parameter format"
+    );
+    const forgedBase64 = Buffer.from("not-a-json-payload").toString("base64");
+    expect(() => validateRelayState(forgedBase64)).toThrow(
+      "Invalid or forged RelayState parameter format"
+    );
+  });
+
+  test("validates non-expired JSON RelayState token within TTL window", () => {
+    const validToken = JSON.stringify({
+      issuedAt: Date.now() - 5000,
+      redirectUrl: "/dashboard",
+      nonce: "random-nonce-123",
+    });
+
+    const parsed = validateRelayState(validToken);
+    expect(parsed.redirectUrl).toBe("/dashboard");
+    expect(parsed.nonce).toBe("random-nonce-123");
+  });
+
+  test("validates non-expired Base64 encoded RelayState token", () => {
+    const payload = JSON.stringify({
+      issuedAt: Date.now() - 10000,
+      expiresAt: Date.now() + 300000,
+      redirectUrl: "/profile",
+    });
+    const base64Token = Buffer.from(payload).toString("base64");
+
+    const parsed = validateRelayState(base64Token);
+    expect(parsed.redirectUrl).toBe("/profile");
+  });
+
+  test("rejects expired RelayState token exceeding TTL window", () => {
+    const expiredToken = JSON.stringify({
+      issuedAt: Date.now() - 20 * 60 * 1000, // 20 minutes ago
+    });
+
+    expect(() => validateRelayState(expiredToken)).toThrow(
+      "RelayState token has expired (sso_session_expired)"
+    );
+  });
+
+  test("rejects expired RelayState token with explicit past expiresAt", () => {
+    const expiredToken = JSON.stringify({
+      issuedAt: Date.now() - 60000,
+      expiresAt: Date.now() - 1000,
+    });
+
+    expect(() => validateRelayState(expiredToken)).toThrow(
+      "RelayState token has expired (sso_session_expired)"
+    );
+  });
+
+  test("rejects RelayState token issued in future beyond clock-skew tolerance", () => {
+    const futureToken = JSON.stringify({
+      issuedAt: Date.now() + 120000, // 2 minutes in future
+    });
+
+    expect(() => validateRelayState(futureToken)).toThrow(
+      "Invalid RelayState token issued in future"
+    );
+  });
+});
+

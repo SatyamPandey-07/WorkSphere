@@ -57,7 +57,9 @@ export async function POST(request: NextRequest, context: RouteContext) {
     }
 
     const { userId } = await auth();
-    const identifier = userId ? `vibe:${userId}` : `vibe:${request.headers.get("x-forwarded-for") || "anon"}`;
+    const identifier = userId
+      ? `vibe:${venueId}:${userId}`
+      : `vibe:${venueId}:${request.headers.get("x-forwarded-for") || "anon"}`;
 
     if (!(await rateLimit(identifier, 10))) {
       return NextResponse.json(

@@ -218,8 +218,13 @@ export class AmenityIncidentService {
     if (!incident.confirmedUserIds.includes(userId)) {
       incident.confirmedUserIds.push(userId);
       incident.confirmationsCount += 1;
-      // Extend TTL by 2 hours upon confirmation
-      incident.expiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+      // Extend TTL by 2 hours upon confirmation, from the later of now
+      // and the current expiry so confirmations never shorten an incident.
+      const currentExpiry = new Date(incident.expiresAt).getTime();
+      const base = Number.isFinite(currentExpiry)
+        ? Math.max(Date.now(), currentExpiry)
+        : Date.now();
+      incident.expiresAt = new Date(base + 2 * 60 * 60 * 1000).toISOString();
     }
 
     return incident;

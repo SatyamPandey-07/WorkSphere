@@ -139,7 +139,10 @@ export function estimateCommuteForMode(
   workDaysPerWeek: number = 5,
 ): CommuteEstimate {
   const config = COMMUTE_MODES[mode];
-  const safeDistance = Math.max(0.1, distanceKm);
+  if (!Number.isFinite(distanceKm) || distanceKm < 0) {
+    throw new Error("Invalid distance");
+  }
+  const safeDistance = Math.max(0, distanceKm);
 
   // Time calculation
   const travelHours = safeDistance / config.speedKmh;

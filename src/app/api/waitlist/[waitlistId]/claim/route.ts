@@ -18,6 +18,9 @@ export async function POST(_req: Request, context: RouteContext) {
   }
 
   const { waitlistId } = await context.params;
+  if (!waitlistId) {
+    return apiError("Waitlist ID is required", 400, "BAD_REQUEST");
+  }
 
   try {
     const result = await claimWaitlistSeat(waitlistId, userId);

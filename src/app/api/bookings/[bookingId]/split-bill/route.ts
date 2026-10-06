@@ -96,8 +96,16 @@ export async function POST(req: NextRequest, context: RouteContext) {
     }
 
     const body = await req.json().catch(() => ({}));
-    const totalAmount = typeof body.totalAmount === "number" ? body.totalAmount : 30;
+    const rawAmount = body.totalAmount === undefined ? 30 : Number(body.totalAmount);
+    if (!Number.isFinite(rawAmount) || rawAmount <= 0 || rawAmount > 100000) {
+      return NextResponse.json({ error: "Invalid totalAmount" }, { status: 400 });
+    }
+    const totalAmount = Math.round(rawAmount * 100) / 100;
     const customGuestAmounts: Record<string, number> = body.customGuestAmounts || {};
+    const currency =
+      typeof body.currency === "string" && /^[A-Z]{3}$/.test(body.currency)
+        ? body.currency
+        : "USD";
 
     const url = new URL(req.url);
     const origin = url.origin;
@@ -108,7 +116,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
       date: booking.date,
       time: booking.time,
       totalAmount,
-      currency: body.currency || "USD",
+      currency,
       guests: booking.guests.map((g) => ({
         id: g.id,
         email: g.email,

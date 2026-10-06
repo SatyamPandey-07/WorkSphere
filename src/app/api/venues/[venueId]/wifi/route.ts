@@ -22,6 +22,14 @@ type RouteContext = {
  */
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await auth();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized." },
+        { status: 401 },
+      );
+    }
+
     const { venueId } = await context.params;
 
     if (!venueId) {

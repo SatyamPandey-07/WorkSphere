@@ -40,11 +40,11 @@ export function GeoCheckInReminderBanner({
     requestNotificationPermission,
   } = useGeoProximityCheckIn(bookings);
 
-  const [notificationPermissionGranted, setNotificationPermissionGranted] =
-    useState<boolean>(
+  const [notificationPermission, setNotificationPermission] =
+    useState<string>(() =>
       typeof window !== "undefined" && "Notification" in window
-        ? Notification.permission === "granted"
-        : false,
+        ? Notification.permission
+        : "denied",
     );
 
   if (!shouldShowReminder && !checkInSuccess) {
@@ -60,8 +60,8 @@ export function GeoCheckInReminderBanner({
 
   const handleEnableNotifications = async () => {
     const perm = await requestNotificationPermission();
-    if (perm === "granted") {
-      setNotificationPermissionGranted(true);
+    if (typeof perm === "string") {
+      setNotificationPermission(perm);
     }
   };
 
@@ -185,8 +185,10 @@ export function GeoCheckInReminderBanner({
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-end md:self-center">
-            {/* Native browser notifications prompt if not granted */}
-            {!notificationPermissionGranted && typeof window !== "undefined" && "Notification" in window && (
+            {/* Native browser notifications prompt if not yet decided */}
+            {notificationPermission === "default" &&
+              typeof window !== "undefined" &&
+              "Notification" in window && (
               <button
                 type="button"
                 onClick={handleEnableNotifications}

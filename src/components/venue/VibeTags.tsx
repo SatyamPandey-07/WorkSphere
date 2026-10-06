@@ -37,6 +37,18 @@ export function VibeTags({
 
   const visibleTags = validTags.slice(0, maxDisplay);
   const hiddenCount = validTags.length - visibleTags.length;
+  const seenSlugs = new Map<string, number>();
+  const slugFor = (tag: string, index: number): string => {
+    const base = tag
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-_]/g, "");
+    if (!base) return `tag-${index}`;
+    const seen = seenSlugs.get(base) ?? 0;
+    seenSlugs.set(base, seen + 1);
+    return seen === 0 ? base : `${base}-${seen}`;
+  };
 
   const sizeClasses = {
     sm: "px-2 py-0.5 text-[10px] gap-1",
@@ -52,7 +64,7 @@ export function VibeTags({
       {visibleTags.map((tag, index) => (
         <span
           key={`${tag}-${index}`}
-          data-testid={`vibe-tag-${tag.toLowerCase().replace(/\s+/g, "-")}`}
+          data-testid={`vibe-tag-${slugFor(tag, index)}`}
           className={`inline-flex items-center font-medium rounded-full bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border border-violet-200/60 dark:border-violet-800/60 transition-colors ${
             sizeClasses[size] || sizeClasses.md
           }`}

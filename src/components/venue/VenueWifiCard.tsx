@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Wifi, QrCode, Copy, Check, Zap, ShieldCheck } from "lucide-react";
+import { Wifi, QrCode, Zap, ShieldCheck } from "lucide-react";
 import { VenueWifiConnectModal } from "./VenueWifiConnectModal";
 
 interface VenueWifiCardProps {
@@ -15,22 +15,6 @@ interface VenueWifiCardProps {
 
 export function VenueWifiCard({ venue }: VenueWifiCardProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  // Fallback default guest password for fast 1-click clipboard copy
-  const sanitizedName = venue.name.replace(/[^a-zA-Z0-9]/g, "").slice(0, 18);
-  const guestPass = `${sanitizedName.toLowerCase()}work2026`;
-
-  const handleQuickCopy = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(guestPass);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Fallback
-    }
-  };
 
   return (
     <>
@@ -45,7 +29,7 @@ export function VenueWifiCard({ venue }: VenueWifiCardProps) {
                 High-Speed Wi-Fi
               </h4>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                ⚡ {venue.wifiSpeed || 250} Mbps
+                ⚡ {venue.wifiSpeed ?? 250} Mbps
               </span>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
@@ -55,24 +39,6 @@ export function VenueWifiCard({ venue }: VenueWifiCardProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={handleQuickCopy}
-            className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-zinc-200 dark:bg-zinc-700/80 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-bold transition-colors"
-            title="Copy Wi-Fi password"
-          >
-            {copied ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Copied</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                <span>Password</span>
-              </>
-            )}
-          </button>
-
           <button
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-900/20 active:scale-[0.98] transition-all"

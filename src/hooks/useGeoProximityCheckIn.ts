@@ -137,6 +137,10 @@ export function useGeoProximityCheckIn(
       const res = await fetch(`/api/venues/${encodeURIComponent(venueId)}/check-in`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId: targetBooking.id,
+          seatNumber: targetBooking.seatNumber ?? undefined,
+        }),
       });
 
       if (!res.ok) {

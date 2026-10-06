@@ -12,6 +12,9 @@ WorkSphere adheres to the **WCAG 2.1 Level AA** standards. All components must e
 - **Understandable**: Clear labels, intuitive error states, and predictable interactive controls.
 - **Robust**: Compatible with assistive technologies (screen readers) via valid semantic HTML and ARIA attributes.
 
+> [!NOTE]
+> For the comprehensive checklist and verified token contrast ratio matrix, refer to [`KEYBOARD_NAVIGATION_AND_COLOR_CONTRAST_GUIDELINES.md`](./KEYBOARD_NAVIGATION_AND_COLOR_CONTRAST_GUIDELINES.md).
+
 ---
 
 ## 2. Automated Auditing with Axe (axe-core & Browser Extension)

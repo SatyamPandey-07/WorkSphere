@@ -1,11 +1,9 @@
 # Accessibility (a11y) Guidelines for Custom Modal Interfaces & Audio Controls
 
 
-This document outlines the accessibility standards and best practices required when building custom modal interfaces (dialog boxes), custom selectors, and interactive audio controls within the WorkSphere platform.
 This document outlines the accessibility standards and best practices required when building custom modal interfaces (dialog boxes), custom selectors, reservation clients, and interactive audio controls within the WorkSphere platform.
 
-
-Adhering to these guidelines ensures our application is fully usable for individuals relying on screen readers and keyboard navigation.
+Adhering to these guidelines ensures our application is fully usable for individuals relying on screen readers and keyboard navigation. See [`KEYBOARD_NAVIGATION_AND_COLOR_CONTRAST_GUIDELINES.md`](./KEYBOARD_NAVIGATION_AND_COLOR_CONTRAST_GUIDELINES.md) for the global keyboard checklist and WCAG AA contrast matrix.
 
 ---
 

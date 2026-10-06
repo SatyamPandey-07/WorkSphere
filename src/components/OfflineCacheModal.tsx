@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Database, HardDrive, Trash2, WifiOff, Wifi, Loader2, CheckCircle2 } from "lucide-react";
 import { getAllVenuesOffline } from "@/lib/offlineStorage";
+import { OfflineStorageUsageMeter } from "@/components/offline/OfflineStorageUsageMeter";
 
 interface OfflineCacheModalProps {
   isOpen: boolean;
@@ -143,6 +144,9 @@ export function OfflineCacheModal({ isOpen, onClose }: OfflineCacheModalProps) {
                   </p>
                 </div>
               </div>
+
+              {/* Dynamic Offline Storage Usage Meter showing bytes used by cached floor plans & quota percentage bar */}
+              <OfflineStorageUsageMeter compact={true} refreshTrigger={cleared} />
 
               {cleared && (
                 <div className="flex items-center gap-2 text-green-600 dark:text-green-400 text-sm font-medium bg-green-50 dark:bg-green-900/20 rounded-xl px-4 py-3">

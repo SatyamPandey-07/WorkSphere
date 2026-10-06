@@ -24,6 +24,7 @@ import { useRateLimit } from "@/hooks/useRateLimit";
 import { SeatOccupancyHeatmap } from "@/components/venue/SeatOccupancyHeatmap";
 import { useSeatHoldLock } from "@/hooks/useSeatHoldLock";
 import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
+import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
 import { RescheduleModal } from "@/components/bookings/RescheduleModal";
 
 type Seat = {
@@ -333,11 +334,10 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   <span className="font-mono text-sm text-violet-100">
                     {confirmationId}
                   </span>
-                  <CopyToClipboardButton
-                    textToCopy={confirmationId}
-                    label="Copy"
-                    toastMessage="Booking reference copied!"
-                    className="!px-2 !py-1 text-xs font-semibold"
+                  <CopyBookingReferenceButton
+                    referenceId={confirmationId}
+                    tooltipPosition="top"
+                    className="!px-2 !py-1 text-xs font-semibold !bg-violet-500/20 !text-violet-200 !border-violet-500/30 hover:!bg-violet-500/30"
                   />
                 </div>
                 <a

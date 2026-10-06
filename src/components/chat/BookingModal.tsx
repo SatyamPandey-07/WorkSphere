@@ -39,6 +39,7 @@ import {
   BookingList,
   type BookingSummary,
 } from "@/components/bookings/BookingList";
+import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
 
 type _Step = "details" | "payment" | "processing" | "success" | "history";
 
@@ -762,13 +763,32 @@ export function BookingModal({
 
               {confirmation && (
                 <div className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 p-4">
-                  <p className="text-xs text-zinc-500">
-                    Confirmation{" "}
-                    {confirmation.ids.length > 1 ? "numbers" : "number"}
-                  </p>
-                  <p className="font-mono font-semibold mt-1 break-all">
-                    {confirmation.ids.join(", ")}
-                  </p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-zinc-500">
+                      Confirmation{" "}
+                      {confirmation.ids.length > 1 ? "numbers" : "reference"}
+                    </p>
+                    {confirmation.ids.length === 1 && (
+                      <CopyBookingReferenceButton
+                        referenceId={confirmation.ids[0]}
+                        tooltipPosition="top"
+                      />
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 mt-1">
+                    <p className="font-mono font-semibold text-base break-all text-zinc-900 dark:text-zinc-100">
+                      {confirmation.ids.join(", ")}
+                    </p>
+                    {confirmation.ids.length > 1 && (
+                      <CopyBookingReferenceButton
+                        referenceId={confirmation.ids.join(", ")}
+                        label="Copy all"
+                        tooltipText="Copy all references"
+                        copiedTooltipText="All references copied!"
+                        tooltipPosition="top"
+                      />
+                    )}
+                  </div>
                   <p className="text-xs text-zinc-500 mt-2">
                     A confirmation with your receipt is on its way to {email}.
                   </p>

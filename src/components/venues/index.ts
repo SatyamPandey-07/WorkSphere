@@ -1,7 +1,5 @@
 export { BookmarkVenueButton } from "./BookmarkVenueButton";
 export type { BookmarkVenueButtonProps } from "./BookmarkVenueButton";
-export { VenueCardGridSkeleton, VenueCardItemSkeleton } from "./VenueCardGridSkeleton";
-export type { VenueCardGridSkeletonProps } from "./VenueCardGridSkeleton";
 export { RecentlyViewedVenues } from "./RecentlyViewedVenues";
 export { RecentlyViewedTracker } from "./RecentlyViewedTracker";
 export { SearchBar } from "./SearchBar";

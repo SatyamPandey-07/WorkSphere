@@ -8,3 +8,4 @@ export * from "./repositories";
 export * from "./sync";
 export * from "./crdt";
 export * from "./venueCache";
+export * from "./storageStats";

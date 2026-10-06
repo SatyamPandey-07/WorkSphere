@@ -19,6 +19,7 @@ import { RescheduleModal } from "@/components/bookings/RescheduleModal";
 import { SplitBillModal } from "@/components/bookings/SplitBillModal";
 import { GeoCheckInReminderBanner } from "@/components/bookings/GeoCheckInReminderBanner";
 import { MobileWalletPassModal } from "@/components/bookings/MobileWalletPassModal";
+import { CopyBookingReferenceButton } from "@/components/bookings/CopyBookingReferenceButton";
 
 export interface BookingSummary {
   id: string;
@@ -219,13 +220,22 @@ export function BookingList({
                 {cancelled ? "Cancelled" : future ? "Upcoming" : "Completed"}
               </span>
             </div>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-0.5">
-              {booking.date} · {booking.time}
-              {booking.seatNumber ? ` · Seat ${booking.seatNumber}` : ""}
-              <span className="ml-2 font-mono text-xs text-zinc-400">
-                {booking.confirmationId}
+            <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400 mt-0.5">
+              <span>
+                {booking.date} · {booking.time}
+                {booking.seatNumber ? ` · Seat ${booking.seatNumber}` : ""}
               </span>
-            </p>
+              <div className="inline-flex items-center gap-1">
+                <span className="font-mono text-xs text-zinc-400">
+                  {booking.confirmationId}
+                </span>
+                <CopyBookingReferenceButton
+                  referenceId={booking.confirmationId}
+                  tooltipPosition="top"
+                  className="!p-1 !rounded-md"
+                />
+              </div>
+            </div>
             {address && (
               <p className="text-xs text-zinc-500 flex items-center gap-1 mt-1 truncate">
                 <MapPin className="w-3 h-3 shrink-0" />

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { OfflineStorageUsageMeter } from "@/components/offline/OfflineStorageUsageMeter";
 
 export default function OfflinePage() {
   const router = useRouter();
@@ -133,6 +134,11 @@ export default function OfflinePage() {
               </div>
               <ArrowRight className="w-4 h-4 text-zinc-400 ml-auto" />
             </Link>
+
+            {/* Offline Storage Usage Meter showing bytes used by cached floor plans */}
+            <div className="pt-2 text-left">
+              <OfflineStorageUsageMeter />
+            </div>
           </div>
         </div>
 

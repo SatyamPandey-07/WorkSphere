@@ -12,6 +12,7 @@ import Image from "next/image";
 import { normalizeImageOrientation } from "@/lib/exifOrientation";
 import { AvatarCropModal } from "@/components/AvatarCropModal";
 import { dispatchAvatarUpdated } from "@/lib/avatar-events";
+import { MemberSinceBadge } from "@/components/MemberSinceBadge";
 
 const MAX_SOURCE_FILE_SIZE = 5 * 1024 * 1024;
 const HEIC_EXTENSIONS = [".heic", ".heif"];
@@ -48,7 +49,8 @@ function getImageDimensions(
 ): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const img = new window.Image();
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onload = () =>
+      resolve({ width: img.naturalWidth, height: img.naturalHeight });
     img.onerror = () => reject(new Error("Failed to read image dimensions."));
     img.src = src;
   });
@@ -280,6 +282,7 @@ export function CustomAvatarUpload() {
             <h3 className="text-lg font-semibold text-zinc-900 dark:text-white mb-1">
               Profile Picture
             </h3>
+            <MemberSinceBadge createdAt={user?.createdAt} className="mb-2" />
             <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
               Upload a custom avatar to personalize your profile. (Max 5MB)
             </p>

@@ -217,6 +217,7 @@ export async function notifyNextInWaitlist(
     where: {
       venueId,
       date: { in: conflictDateWindow(date) },
+      time,
       status: "ACTIVE",
     },
     include: {

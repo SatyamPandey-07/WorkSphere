@@ -123,6 +123,7 @@ export function VenueLiveVibeWidget({
     setVotedMessage(null);
 
     // Optimistic breakdown update
+    const previousVibe = vibe;
     if (vibe) {
       setVibe((prev) => {
         if (!prev) return null;
@@ -156,6 +157,9 @@ export function VenueLiveVibeWidget({
       setTimeout(() => setVotedMessage(null), 4000);
     } catch (err: any) {
       setError(err?.message || "Failed to record vote.");
+      if (previousVibe) {
+        setVibe(previousVibe);
+      }
     } finally {
       setSubmitting(false);
     }

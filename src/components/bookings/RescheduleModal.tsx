@@ -76,6 +76,16 @@ export function RescheduleModal({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const modalRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (closeTimerRef.current !== null) {
+        clearTimeout(closeTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (booking && isOpen) {
@@ -155,7 +165,10 @@ export function RescheduleModal({
         onSuccess(data.booking);
       }
 
-      setTimeout(() => {
+      if (closeTimerRef.current !== null) {
+        clearTimeout(closeTimerRef.current);
+      }
+      closeTimerRef.current = window.setTimeout(() => {
         onClose();
       }, 1200);
     } catch (err: any) {

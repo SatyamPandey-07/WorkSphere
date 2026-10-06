@@ -33,13 +33,13 @@ export function useOfflineStatus(options?: UseOfflineStatusOptions) {
   const [lastCheckTime, setLastCheckTime] = useState<number | null>(null);
   const { toast } = useToast();
 
-  const updateStatus = useCallback(
-    (offline: boolean) => {
-      setIsOffline(offline);
-      options?.onStatusChange?.(offline);
-    },
-    [options],
-  );
+  const onStatusChangeRef = React.useRef(options?.onStatusChange);
+  onStatusChangeRef.current = options?.onStatusChange;
+
+  const updateStatus = useCallback((offline: boolean) => {
+    setIsOffline(offline);
+    onStatusChangeRef.current?.(offline);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

@@ -86,13 +86,6 @@ export function useCommuteEstimator({
       (err) => {
         setLocationError(`Location access error: ${err.message}`);
         setIsLoadingLocation(false);
-        // Fallback offset for testing if user denies location
-        setUserCoords((prev) =>
-          prev ?? {
-            latitude: venueLatitude + 0.025,
-            longitude: venueLongitude + 0.025,
-          },
-        );
       },
       { enableHighAccuracy: true, timeout: 8000 },
     );

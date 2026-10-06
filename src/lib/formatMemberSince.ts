@@ -8,8 +8,14 @@ export function formatMemberSince(
   locale: string = "en-US",
 ): string | null {
   if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number" && (!Number.isFinite(value) || value <= 0)) {
+    return null;
+  }
 
-  const date = value instanceof Date ? value : new Date(value);
+  // Doc promises ms, but 10-digit seconds timestamps occur in the wild.
+  const normalized =
+    typeof value === "number" && value < 1e12 ? value * 1000 : value;
+  const date = normalized instanceof Date ? normalized : new Date(normalized);
   if (Number.isNaN(date.getTime())) return null;
 
   const formatted = new Intl.DateTimeFormat(locale, {

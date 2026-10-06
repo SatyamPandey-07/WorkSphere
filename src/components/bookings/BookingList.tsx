@@ -69,6 +69,7 @@ export function BookingList({
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [reschedulingBooking, setReschedulingBooking] = useState<BookingSummary | null>(null);
+  const [splitBillBooking, setSplitBillBooking] = useState<BookingSummary | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -285,6 +286,15 @@ export function BookingList({
                 Reschedule / Extend
               </button>
               <button
+                type="button"
+                onClick={() => setSplitBillBooking(booking)}
+                className={chipClass}
+                aria-label={`Split bill & generate guest payment links for booking ${booking.confirmationId}`}
+              >
+                <span className="text-xs">💳</span>
+                Split Bill &amp; Passes
+              </button>
+              <button
                 onClick={() => cancelBooking(booking)}
                 disabled={cancellingId === booking.id}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
@@ -441,6 +451,14 @@ export function BookingList({
           });
         }}
       />
+
+      {splitBillBooking && (
+        <SplitBillModal
+          booking={splitBillBooking}
+          isOpen={Boolean(splitBillBooking)}
+          onClose={() => setSplitBillBooking(null)}
+        />
+      )}
     </div>
   );
 }

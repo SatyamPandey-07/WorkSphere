@@ -24,7 +24,7 @@ import { generateVenueJsonLd } from "@/lib/seo/venueJsonLd";
 import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import { VenueLiveVibeWidget } from "@/components/venue/VenueLiveVibeWidget";
 import { CommuteCarbonEstimator } from "@/components/venue/CommuteCarbonEstimator";
-import { AmenityStatusIncidentTracker } from "@/components/venue/AmenityStatusIncidentTracker";
+import { ColleaguePresenceIndicator } from "@/components/social/ColleaguePresenceIndicator";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -223,6 +223,8 @@ export default async function VenuePage({ params }: PageProps) {
           </div>
 
           <div className="p-6 sm:p-8 space-y-8">
+            <ColleaguePresenceIndicator venueId={venue.id} venueName={venue.name} />
+
             <VenueLiveVibeWidget venueId={venue.id} />
 
             {venue.address && (

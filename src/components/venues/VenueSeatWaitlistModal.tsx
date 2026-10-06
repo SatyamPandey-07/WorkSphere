@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { WaitlistEntry, SeatTypePreference } from '@/lib/waitlist/types';
 
 interface VenueSeatWaitlistModalProps {
@@ -34,6 +34,7 @@ export function VenueSeatWaitlistModal({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [timeRemainingSeconds, setTimeRemainingSeconds] = useState<number | null>(null);
+  const expiredRefetchRef = useRef(false);
 
   // Fetch active waitlist entries for this venue
   const fetchStatus = useCallback(async () => {
@@ -61,6 +62,7 @@ export function VenueSeatWaitlistModal({
 
   // Countdown timer when notified
   useEffect(() => {
+    expiredRefetchRef.current = false;
     if (!activeEntry || activeEntry.status !== 'NOTIFIED' || !activeEntry.claimExpiresAt) {
       setTimeRemainingSeconds(null);
       return;
@@ -71,7 +73,8 @@ export function VenueSeatWaitlistModal({
       const now = Date.now();
       const diff = Math.max(0, Math.floor((expiresAt - now) / 1000));
       setTimeRemainingSeconds(diff);
-      if (diff === 0) {
+      if (diff === 0 && !expiredRefetchRef.current) {
+        expiredRefetchRef.current = true;
         fetchStatus();
       }
     };

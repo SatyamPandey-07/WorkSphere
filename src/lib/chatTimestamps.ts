@@ -16,7 +16,15 @@ export function formatChatTimestamp(
   if (Number.isNaN(date.getTime())) return "";
 
   if (format === "exact") {
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    return date.toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 
   const differenceInSeconds = Math.round((date.getTime() - now.getTime()) / 1000);

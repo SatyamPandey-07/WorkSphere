@@ -33,6 +33,7 @@ export function SplitBillModal({
 }: SplitBillModalProps) {
   const [splitData, setSplitData] = useState<SplitBillSummary | null>(null);
   const [totalAmount, setTotalAmount] = useState<number>(30);
+  const [amountDraft, setAmountDraft] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,7 +65,13 @@ export function SplitBillModal({
   }, [booking.id, isOpen]);
 
   const handleUpdateTotal = async (newTotal: number) => {
-    setTotalAmount(newTotal);
+    if (!Number.isFinite(newTotal)) {
+      setAmountDraft(null);
+      return;
+    }
+    const clamped = Math.min(1000, Math.max(5, Math.round(newTotal * 100) / 100));
+    setTotalAmount(clamped);
+    setAmountDraft(null);
     try {
       const res = await fetch(`/api/bookings/${booking.id}/split-bill`, {
         method: "POST",
@@ -146,8 +153,16 @@ export function SplitBillModal({
                       type="number"
                       min="5"
                       max="1000"
-                      value={totalAmount}
-                      onChange={(e) => handleUpdateTotal(Number(e.target.value))}
+                      value={amountDraft ?? String(totalAmount)}
+                      onChange={(e) => setAmountDraft(e.target.value)}
+                      onBlur={(e) => handleUpdateTotal(Number(e.target.value))}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          handleUpdateTotal(
+                            Number((e.target as HTMLInputElement).value),
+                          );
+                        }
+                      }}
                       className="w-24 rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-1 text-right text-sm font-bold text-white focus:outline-none focus:ring-1 focus:ring-violet-500 font-mono"
                     />
                     <span className="text-xs text-zinc-500 font-medium">USD</span>

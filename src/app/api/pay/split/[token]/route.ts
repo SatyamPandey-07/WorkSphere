@@ -88,6 +88,15 @@ export async function POST(req: NextRequest, context: RouteContext) {
     }
 
     // Mark guest invitation status as ACCEPTED (Paid)
+    const guest = await prisma.bookingGuest.findUnique({
+      where: { id: payload.guestId },
+    });
+    if (!guest || guest.bookingId !== payload.bookingId) {
+      return NextResponse.json({ error: "Invalid payment link" }, { status: 400 });
+    }
+    if (guest.status === "ACCEPTED") {
+      return NextResponse.json({ success: true, message: "Already paid" });
+    }
     const updatedGuest = await prisma.bookingGuest.update({
       where: { id: payload.guestId },
       data: { status: "ACCEPTED" },

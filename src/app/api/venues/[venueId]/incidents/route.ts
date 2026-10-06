@@ -182,6 +182,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         );
       }
     } else if (action === "resolve") {
+      if (!userId) {
+        return NextResponse.json(
+          { success: false, error: "Login required to resolve incidents." },
+          { status: 401 },
+        );
+      }
       const resolved = amenityIncidentService.resolveIncident(venueId, incidentId);
       if (!resolved) {
         return NextResponse.json(

@@ -112,7 +112,6 @@ export async function GET(req: NextRequest) {
           OR: [
             { name: { contains: queryParam, mode: "insensitive" } },
             { address: { contains: queryParam, mode: "insensitive" } },
-            { description: { contains: queryParam, mode: "insensitive" } },
           ],
         });
       }
@@ -355,12 +354,11 @@ export async function GET(req: NextRequest) {
       }
     }
 
-const querySearch = rawData.query || rawData.q;
+    const querySearch = rawData.query || rawData.q;
     if (querySearch) {
       const queryConditions = [
         { name: { contains: querySearch, mode: "insensitive" } },
         { address: { contains: querySearch, mode: "insensitive" } },
-        { description: { contains: querySearch, mode: "insensitive" } },
       ];
       if (where.OR) {
         where.AND = [{ OR: where.OR }, { OR: queryConditions }];
@@ -386,7 +384,12 @@ const querySearch = rawData.query || rawData.q;
     // ── Fuzzy typo-tolerant search fallback (#3958) ─────────────────────────
     // If strict substring search returned 0 results and a text query was provided,
     // fetch candidate venues and apply Levenshtein / Damerau-Levenshtein distance.
-    if (venues.length === 0 && querySearch && typeof querySearch === "string" && querySearch.trim().length >= 3) {
+    if (
+      venues.length === 0 &&
+      querySearch &&
+      typeof querySearch === "string" &&
+      querySearch.trim().length >= 3
+    ) {
       const { fuzzyFilterVenues } = await import("@/lib/search/fuzzySearch");
 
       // Build fallback query without the strict text query condition

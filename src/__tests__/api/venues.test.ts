@@ -12,6 +12,10 @@ jest.mock("@/lib/prisma", () => ({
   },
 }));
 
+jest.mock("svix", () => ({
+  Webhook: jest.fn(),
+}));
+
 describe("GET /api/venues - Search and Pagination", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -105,6 +109,60 @@ describe("GET /api/venues - Search and Pagination", () => {
         foodValidations: true,
       },
     });
+  });
+
+  it("should filter by text query in fallback mode across valid venue fields (name, address)", async () => {
+    const mockVenues = [
+      { id: "1", name: "Blue Bottle Coffee", address: "123 Main St" },
+    ];
+    (prisma.venue.count as jest.Mock).mockResolvedValue(1);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue(mockVenues);
+
+    const req = new NextRequest("http://localhost/api/venues?q=coffee");
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.venues).toEqual(mockVenues);
+
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [
+            { name: { contains: "coffee", mode: "insensitive" } },
+            { address: { contains: "coffee", mode: "insensitive" } },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("should filter by text query in coordinate mode across valid venue fields (name, address)", async () => {
+    const mockVenues = [
+      { id: "2", name: "Philz Coffee", address: "456 Market St" },
+    ];
+    (prisma.venue.count as jest.Mock).mockResolvedValue(1);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue(mockVenues);
+
+    const req = new NextRequest(
+      "http://localhost/api/venues?lat=37.7749&lng=-122.4194&radius=1000&query=coffee",
+    );
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.venues).toEqual(mockVenues);
+
+    expect(prisma.venue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { name: { contains: "coffee", mode: "insensitive" } },
+            { address: { contains: "coffee", mode: "insensitive" } },
+          ],
+        }),
+      }),
+    );
   });
 
   it("should paginate coordinate-based search results", async () => {

@@ -39,7 +39,14 @@ export interface BookingSummary {
 
 function isUpcoming(booking: BookingSummary): boolean {
   const start = new Date(`${booking.date}T${booking.time}`);
-  return !isNaN(start.getTime()) && start.getTime() > Date.now();
+  if (isNaN(start.getTime())) return false;
+  const minutes =
+    typeof booking.duration === "number" &&
+    Number.isFinite(booking.duration) &&
+    booking.duration > 0
+      ? booking.duration
+      : 60;
+  return start.getTime() + minutes * 60 * 1000 > Date.now();
 }
 
 const chipClass =

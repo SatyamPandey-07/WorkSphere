@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Download, Check, FileSpreadsheet } from "lucide-react";
 import {
   BookingHistoryExportItem,
@@ -30,6 +30,16 @@ export function ExportBookingsCSVButton({
   onExport,
 }: ExportBookingsCSVButtonProps) {
   const [downloaded, setDownloaded] = useState(false);
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (resetTimerRef.current !== null) {
+        clearTimeout(resetTimerRef.current);
+      }
+    },
+    [],
+  );
 
   const handleDownload = () => {
     if (disabled || bookings.length === 0) return;
@@ -39,7 +49,11 @@ export function ExportBookingsCSVButton({
     if (onExport) {
       onExport();
     }
-    setTimeout(() => {
+    if (resetTimerRef.current !== null) {
+      clearTimeout(resetTimerRef.current);
+    }
+    resetTimerRef.current = window.setTimeout(() => {
+      resetTimerRef.current = null;
       setDownloaded(false);
     }, 2500);
   };

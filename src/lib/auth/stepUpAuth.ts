@@ -96,7 +96,13 @@ export function verifyStepUpToken(
     .update(payloadEncoded)
     .digest("base64url");
 
-  if (signature !== expectedSig) {
+  const sigBuf = Buffer.from(signature, "utf8");
+  const expectedSigBuf = Buffer.from(expectedSig, "utf8");
+
+  if (
+    sigBuf.length !== expectedSigBuf.length ||
+    !crypto.timingSafeEqual(sigBuf, expectedSigBuf)
+  ) {
     return { valid: false, error: "Step-up signature verification failed" };
   }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
+import { todayInTimeZone } from "@/lib/bookingTime";
 
 type RouteContext = { params: Promise<{ venueId: string }> };
 
@@ -21,6 +22,9 @@ export interface ColleaguePresenceItem {
 export async function GET(_req: NextRequest, context: RouteContext) {
   try {
     const { userId: currentUserId } = await auth();
+    if (!currentUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const { venueId } = await context.params;
 
     const venue = await prisma.venue.findFirst({
@@ -29,11 +33,19 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     });
 
     if (!venue) {
-      return NextResponse.json({ activeCount: 0, colleagues: [] });
+      return NextResponse.json({ error: "Venue not found" }, { status: 404 });
     }
 
     const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);
+    // Bookings store wall-clock dates in their own zone, so pull the UTC
+    // window covering every possible local today and filter per booking below.
+    const utc = (d: Date) => d.toISOString().slice(0, 10);
+    const todayUtc = utc(now);
+    const nearbyUtc = [
+      utc(new Date(now.getTime() - 24 * 60 * 60 * 1000)),
+      todayUtc,
+      utc(new Date(now.getTime() + 24 * 60 * 60 * 1000)),
+    ];
 
     // 1. Fetch active WorkBuddyStatus records
     const buddyStatuses = await prisma.workBuddyStatus.findMany({
@@ -75,12 +87,13 @@ export async function GET(_req: NextRequest, context: RouteContext) {
     });
 
     // 3. Fetch active today's confirmed bookings
-    const activeBookings = await prisma.booking.findMany({
-      where: {
-        venueId: venue.id,
-        date: todayStr,
-        status: "CONFIRMED",
-      },
+    const activeBookings = (
+      await prisma.booking.findMany({
+        where: {
+          venueId: venue.id,
+          date: { in: nearbyUtc },
+          status: "CONFIRMED",
+        },
       include: {
         user: {
           select: {
@@ -127,6 +140,9 @@ export async function GET(_req: NextRequest, context: RouteContext) {
 
     for (const bk of activeBookings) {
       if (!bk.user) continue;
+      if (bk.date !== todayInTimeZone((bk as { timeZone?: string | null }).timeZone ?? "UTC", now)) {
+        continue;
+      }
       if (colleagueMap.has(bk.user.id)) {
         // Enhance existing entry with seatNumber if present
         const existing = colleagueMap.get(bk.user.id)!;

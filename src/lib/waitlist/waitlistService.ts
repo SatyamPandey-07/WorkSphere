@@ -184,12 +184,14 @@ export async function getUserWaitlistEntries(
 export async function cancelWaitlistEntry(
   waitlistId: string,
   userId: string,
+  venueId?: string,
 ): Promise<boolean> {
   const entry = await prisma.venueSeatWaitlist.findFirst({
     where: { id: waitlistId, userId },
   });
 
   if (!entry) return false;
+  if (venueId && entry.venueId !== venueId) return false;
 
   await prisma.venueSeatWaitlist.update({
     where: { id: waitlistId },

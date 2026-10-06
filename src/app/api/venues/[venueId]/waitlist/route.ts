@@ -67,19 +67,20 @@ export async function POST(req: NextRequest, context: RouteContext) {
  * DELETE /api/venues/[venueId]/waitlist
  * Cancels a user's waitlist entry.
  */
-export async function DELETE(req: NextRequest, _context: RouteContext) {
+export async function DELETE(req: NextRequest, context: RouteContext) {
   const { userId } = await auth();
   if (!userId) {
     return apiError("Unauthorized", 401, "UNAUTHORIZED");
   }
 
+  const { venueId } = await context.params;
   const waitlistId = req.nextUrl.searchParams.get("waitlistId");
   if (!waitlistId) {
     return apiError("Missing waitlistId parameter", 400, "BAD_REQUEST");
   }
 
   try {
-    const success = await cancelWaitlistEntry(waitlistId, userId);
+    const success = await cancelWaitlistEntry(waitlistId, userId, venueId);
     return NextResponse.json({
       success,
       message: success ? "Waitlist entry cancelled." : "Entry not found.",

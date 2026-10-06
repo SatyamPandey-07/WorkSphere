@@ -53,8 +53,8 @@ export async function POST(req: Request) {
     }
 
     // 1. Check double-spend / replay: verify nullifier hasn't been claimed for this academic epoch
-    const existingClaim = await prisma.studentPassNullifier.findUnique({
-      where: { nullifierHash },
+    const existingClaim = await prisma.studentPassNullifier.findFirst({
+      where: { nullifierHash, epoch },
     });
 
     if (existingClaim) {
@@ -113,15 +113,17 @@ export async function POST(req: Request) {
     const vKey = JSON.parse(fs.readFileSync(vKeyPath, "utf-8"));
 
     // 4. Verify zero-knowledge proof validity
-    // Signals to check with Groth16 verifier match nPublic
-    const signalsForVerification =
-      vKey.nPublic === 2 && publicSignals.length > 2
-        ? publicSignals.slice(0, 2)
-        : publicSignals;
+    // Signals must match nPublic exactly: truncating would unbind the nullifier.
+    if (publicSignals.length !== vKey.nPublic) {
+      return NextResponse.json(
+        { error: "publicSignals length mismatch" },
+        { status: 400 },
+      );
+    }
 
     const isValid = await snarkjs.groth16.verify(
       vKey,
-      signalsForVerification,
+      publicSignals,
       proof,
     );
 

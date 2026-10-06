@@ -25,7 +25,7 @@ import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import { VenueLiveVibeWidget } from "@/components/venue/VenueLiveVibeWidget";
 import { CommuteCarbonEstimator } from "@/components/venue/CommuteCarbonEstimator";
 import { ColleaguePresenceIndicator } from "@/components/social/ColleaguePresenceIndicator";
-import { FavoriteDesksDrawer } from "@/components/venue/FavoriteDesksDrawer";
+import { VenueWifiCard } from "@/components/venue/VenueWifiCard";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -246,6 +246,7 @@ export default async function VenuePage({ params }: PageProps) {
                 <CopyToClipboardButton textToCopy={venue.address} ariaLabel="Copy venue address" />
               </div>
             )}
+            <VenueWifiCard venue={venue} />
             <div className="grid grid-cols-2 gap-4">
               {venue.wifiQuality ? (
                 <div className="flex items-center gap-3 p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">

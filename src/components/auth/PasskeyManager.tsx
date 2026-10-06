@@ -29,6 +29,11 @@ import {
   type PasskeyOtpAction,
 } from "@/components/auth/PasskeyOtpDialog";
 import { StepUpReAuthModal } from "@/components/auth/StepUpReAuthModal";
+import { PasskeySecurityAuditLog } from "@/components/auth/PasskeySecurityAuditLog";
+import {
+  detectDeviceDetails,
+  DEVICE_NICKNAME_PRESETS,
+} from "@/lib/auth/passkeys/deviceDetection";
 import {
   savePasskeyChallengeToSession,
   clearPasskeyChallengeFromSession,
@@ -92,6 +97,8 @@ export function PasskeyManager() {
   const [stepUpAction, setStepUpAction] = useState("passkey_management");
   const [_stepUpVerifiedToken, setStepUpVerifiedToken] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"devices" | "audit">("devices");
+  const [detectedInfo, setDetectedInfo] = useState<ReturnType<typeof detectDeviceDetails> | null>(null);
 
   const handleCopyId = async (credentialId: string) => {
     try {
@@ -110,6 +117,7 @@ export function PasskeyManager() {
 
   useEffect(() => {
     setIsWebAuthnSupported(browserSupportsWebAuthn());
+    setDetectedInfo(detectDeviceDetails());
     const cleanup = setupPasskeyUnloadCleanup();
     return cleanup;
   }, []);
@@ -407,19 +415,94 @@ export function PasskeyManager() {
         </div>
       )}
 
-      {/* Optional custom label input */}
-      <div className="mt-4 flex items-center gap-2">
-        <input
-          type="text"
-          placeholder="Optional device label (e.g. Work MacBook Touch ID)"
-          value={customName}
-          onChange={(e) => setCustomName(e.target.value)}
-          className="w-full max-w-md px-3.5 py-2 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-        />
+      {/* Navigation Tabs */}
+      <div className="flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-800 pb-3 mt-6">
+        <button
+          onClick={() => setActiveTab("devices")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === "devices"
+              ? "bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md"
+              : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800/60"
+          }`}
+        >
+          <KeyRound className="w-4 h-4" />
+          Registered Devices ({passkeys.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("audit")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+            activeTab === "audit"
+              ? "bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 shadow-md"
+              : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800/60"
+          }`}
+        >
+          <Shield className="w-4 h-4 text-blue-500" />
+          Security Audit Log
+        </button>
       </div>
 
+      {activeTab === "audit" ? (
+        <div className="mt-6">
+          <PasskeySecurityAuditLog />
+        </div>
+      ) : (
+        <>
+          {/* Optional custom label & smart nicknaming helper */}
+          <div className="mt-6 p-4 rounded-2xl bg-zinc-50/80 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800/80 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
+                Device Nickname & Identity
+              </label>
+              {detectedInfo && (
+                <button
+                  type="button"
+                  onClick={() => setCustomName(detectedInfo.suggestedNickname)}
+                  className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 self-start sm:self-auto"
+                >
+                  <span>✨ Auto-detected:</span>
+                  <span className="font-bold">{detectedInfo.suggestedNickname}</span>
+                  <span className="text-zinc-400 text-[10px]">(Use)</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <input
+                type="text"
+                placeholder="Device label (e.g. Work MacBook Touch ID, Personal iPhone)"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                className="w-full max-w-md px-3.5 py-2 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+              <span className="text-[11px] text-zinc-500">
+                Applied automatically when clicking "Add New Passkey"
+              </span>
+            </div>
+
+            {/* Quick Preset Chips */}
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1.5">
+                Quick Nickname Presets
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {DEVICE_NICKNAME_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => setCustomName(preset.label)}
+                    className="text-[11px] px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700/60 transition-colors shadow-xs"
+                  >
+                    + {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Rotation status banner */}
-      {rotationStatuses.some((r) => r.needsRotation) && (
+      {activeTab === "devices" && rotationStatuses.some((r) => r.needsRotation) && (
         <div className="mt-4 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-between gap-3 text-sm">
           <div className="flex items-center gap-3">
             <Clock className="h-5 w-5 shrink-0" />
@@ -444,6 +527,7 @@ export function PasskeyManager() {
       )}
 
       {/* List of Passkeys */}
+      {activeTab === "devices" && (
       <div className="mt-6">
         {loading ? (
           <div className="flex items-center justify-center py-8 text-zinc-400 gap-2">
@@ -600,6 +684,8 @@ export function PasskeyManager() {
           </div>
         )}
       </div>
+      )}
+
 
       {pending && (
         <PasskeyOtpDialog

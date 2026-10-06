@@ -11,10 +11,11 @@ export interface VenueAccordionProps {
 }
 
 export function VenueAccordion({
-  amenities = [],
+  amenities,
   openingHours,
   className,
 }: VenueAccordionProps) {
+  const list = amenities ?? [];
   const [isAmenitiesOpen, setIsAmenitiesOpen] = useState(true);
   const [isOpeningHoursOpen, setIsOpeningHoursOpen] = useState(false);
 
@@ -45,7 +46,7 @@ export function VenueAccordion({
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-blue-500" />
             <span className="text-xs font-black uppercase tracking-widest text-zinc-700 dark:text-zinc-300">
-              Venue Amenities ({amenities.length})
+              Venue Amenities ({list.length})
             </span>
           </div>
           {isAmenitiesOpen ? (
@@ -62,9 +63,9 @@ export function VenueAccordion({
             aria-labelledby="venue-amenities-trigger"
             className="px-5 pb-5 pt-1 border-t border-zinc-100 dark:border-zinc-800/60"
           >
-            {amenities.length > 0 ? (
+            {list.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {amenities.map((item, index) => (
+                {list.map((item, index) => (
                   <div
                     key={index}
                     className="flex items-center gap-2.5 p-2.5 rounded-xl bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-100 dark:border-zinc-800/80 text-sm font-medium text-zinc-800 dark:text-zinc-200"

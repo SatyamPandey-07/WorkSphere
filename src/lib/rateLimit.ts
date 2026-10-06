@@ -123,12 +123,20 @@ function memRateLimit(
   if (!entry) {
     if (memStore.size >= MAX_MEM_ENTRIES) {
       cleanupExpiredEntries();
-      if (memStore.size >= MAX_MEM_ENTRIES) {
+      while (memStore.size >= MAX_MEM_ENTRIES) {
         const oldestKey = memStore.keys().next().value;
-        if (oldestKey) memStore.delete(oldestKey);
+        if (oldestKey !== undefined) {
+          memStore.delete(oldestKey);
+        } else {
+          break;
+        }
       }
     }
     entry = { timestamps: [], resetTime: now + windowMs };
+    memStore.set(identifier, entry);
+  } else {
+    // Refresh LRU order
+    memStore.delete(identifier);
     memStore.set(identifier, entry);
   }
 

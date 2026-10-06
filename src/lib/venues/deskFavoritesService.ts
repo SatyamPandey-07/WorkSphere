@@ -144,7 +144,8 @@ export class DeskFavoritesService {
     if (cached) return cached;
 
     // Default simulation based on desk ID
-    const isReserved = deskId.includes("3") || deskId.includes("7") || deskId.includes("b2");
+    const RESERVED_DESK_IDS = new Set(["desk-3", "desk-7", "desk-b2"]);
+    const isReserved = RESERVED_DESK_IDS.has(deskId);
     const status: DeskAvailabilityStatus = {
       deskId,
       isFree: !isReserved,

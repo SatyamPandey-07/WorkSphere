@@ -55,7 +55,7 @@ export interface ClaimWaitlistSeatResult {
   waitlistId: string;
   bookingId?: string;
   confirmationId?: string;
-  seatId?: string;
-  seatNumber?: string;
+  seatId?: string | null;
+  seatNumber?: string | null;
   error?: string;
 }

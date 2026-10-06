@@ -6,6 +6,8 @@ import {
   otpErrorMessage,
   verifyPasskeyOtp,
 } from "@/lib/passkey/emailOtp";
+import { passkeyAuditLogService } from "@/lib/auth/passkeys/server/auditLog";
+
 
 const MAX_PASSKEY_NAME_LENGTH = 64;
 
@@ -86,6 +88,19 @@ export async function PATCH(
       });
     });
 
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
+    const userAgent = req.headers.get("user-agent") || "";
+    passkeyAuditLogService.log({
+      userId,
+      credentialId: updated.credentialId,
+      credentialName: updated.name,
+      action: "RENAME",
+      status: "SUCCESS",
+      ipAddress: ip,
+      userAgent,
+      details: `Renamed from "${passkey.name}" to "${updated.name}"`,
+    });
+
     return NextResponse.json({ credential: updated });
   } catch (error) {
     if (error instanceof OtpAlreadyUsedError) return otpReplayResponse();
@@ -138,6 +153,20 @@ export async function DELETE(
         throw new OtpAlreadyUsedError();
       }
       await tx.passkeyCredential.delete({ where: { id } });
+    });
+
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
+    const userAgent = req.headers.get("user-agent") || "";
+    passkeyAuditLogService.log({
+      userId,
+      credentialId: passkey.credentialId,
+      credentialName: passkey.name,
+      action: "REVOKE",
+      status: "SUCCESS",
+      ipAddress: ip,
+      userAgent,
+      details: `Revoked credential "${passkey.name}" (${passkey.deviceType})`,
+      riskLevel: "medium",
     });
 
     return NextResponse.json({ success: true });

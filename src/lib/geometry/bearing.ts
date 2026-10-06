@@ -56,7 +56,8 @@ export function interpolateAngleShortestArc(
   t: number,
 ): number {
   const delta = shortestArcDelta(fromAngle, toAngle);
-  const clampedT = Number.isFinite(t) && !isNaN(t) ? Math.max(0, Math.min(1, t)) : 0;
+  if (Number.isNaN(t)) return normalizeAngle(fromAngle);
+  const clampedT = Math.max(0, Math.min(1, t));
   return normalizeAngle(fromAngle + delta * clampedT);
 }
 

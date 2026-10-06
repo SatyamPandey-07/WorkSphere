@@ -93,7 +93,12 @@ export function verifySplitPaymentToken(token: string): SplitTokenPayload | null
       .update(base64Data)
       .digest("base64url");
 
-    if (signature !== expectedSig) {
+    const provided = Buffer.from(signature, "base64url");
+    const expected = Buffer.from(expectedSig, "base64url");
+    if (
+      provided.length !== expected.length ||
+      !crypto.timingSafeEqual(provided, expected)
+    ) {
       return null;
     }
 

@@ -22,7 +22,10 @@ export function useColleaguePresence(venueId: string): UseColleaguePresenceRetur
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!venueId) return;
+    if (!venueId) {
+      setIsLoading(false);
+      return;
+    }
     try {
       const res = await fetch(`/api/venues/${encodeURIComponent(venueId)}/presence`);
       if (!res.ok) throw new Error("Failed to load presence");

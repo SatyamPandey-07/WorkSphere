@@ -25,6 +25,7 @@ import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import { VenueLiveVibeWidget } from "@/components/venue/VenueLiveVibeWidget";
 import { CommuteCarbonEstimator } from "@/components/venue/CommuteCarbonEstimator";
 import { ColleaguePresenceIndicator } from "@/components/social/ColleaguePresenceIndicator";
+import { FavoriteDesksDrawer } from "@/components/venue/FavoriteDesksDrawer";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -290,6 +291,8 @@ export default async function VenuePage({ params }: PageProps) {
             />
 
             <AmenityStatusIncidentTracker venueId={venue.id} venueName={venue.name} />
+
+            <FavoriteDesksDrawer venueId={venue.id} venueName={venue.name} />
 
             <div className="pt-2">
               <h3 className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-3 flex items-center gap-2">

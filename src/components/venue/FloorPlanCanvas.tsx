@@ -7,7 +7,8 @@ import React, {
   useMemo,
   KeyboardEvent,
 } from "react";
-import { Check, Lock, Armchair, Zap } from "lucide-react";
+import { Check, Lock, Armchair, Zap, Star } from "lucide-react";
+import { DeskFavoriteAlertButton } from "./DeskFavoriteAlertButton";
 
 export type SeatStatus = "available" | "reserved" | "held" | "selected";
 
@@ -30,6 +31,7 @@ export interface FloorPlanCanvasProps {
   onReserveSeat?: (seat: Seat2D) => void;
   className?: string;
   venueName?: string;
+  venueId?: string;
 }
 
 /**
@@ -313,13 +315,26 @@ export function FloorPlanCanvas({
 
       {/* Focused Seat Inspector Footer */}
       {activeFocusedSeat && (
-        <div className="mt-4 flex items-center justify-between px-4 py-3 rounded-xl bg-zinc-100 dark:bg-zinc-800/80 text-xs font-medium text-zinc-700 dark:text-zinc-300">
-          <div>
-            Active Focus: <span className="font-bold text-zinc-900 dark:text-white">{activeFocusedSeat.label}</span>
-            {" • "}
-            Status: <span className="capitalize font-semibold">{activeFocusedSeat.status}</span>
-            {" • "}
-            Price: <span className="font-mono">${activeFocusedSeat.price || 15}/hr</span>
+        <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 rounded-xl bg-zinc-100 dark:bg-zinc-800/80 text-xs font-medium text-zinc-700 dark:text-zinc-300">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div>
+              Active Focus: <span className="font-bold text-zinc-900 dark:text-white">{activeFocusedSeat.label}</span>
+              {" • "}
+              Status: <span className="capitalize font-semibold">{activeFocusedSeat.status}</span>
+              {" • "}
+              Price: <span className="font-mono">${activeFocusedSeat.price || 15}/hr</span>
+            </div>
+
+            <DeskFavoriteAlertButton
+              venueId={venueId || "current-venue"}
+              venueName={venueName || "Venue"}
+              deskId={activeFocusedSeat.id}
+              deskLabel={activeFocusedSeat.label}
+              deskType={activeFocusedSeat.type}
+              price={activeFocusedSeat.price}
+              isOccupied={activeFocusedSeat.status === "reserved" || activeFocusedSeat.status === "held"}
+              variant="compact"
+            />
           </div>
 
           {activeFocusedSeat.status !== "reserved" && (
@@ -328,7 +343,7 @@ export function FloorPlanCanvas({
                 onSelectSeat?.(activeFocusedSeat);
                 onReserveSeat?.(activeFocusedSeat);
               }}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition self-end sm:self-auto"
             >
               Reserve {activeFocusedSeat.label}
             </button>

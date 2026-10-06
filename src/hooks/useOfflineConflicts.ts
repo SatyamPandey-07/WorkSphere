@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   offlineConflictService,
   type ConflictedQueueItem,
@@ -24,16 +24,23 @@ export function useOfflineConflicts(): UseOfflineConflictsReturn {
   const [conflicts, setConflicts] = useState<ConflictedQueueItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
+  const refreshGenRef = useRef(0);
+
   const refresh = useCallback(async () => {
     if (typeof window === "undefined") return;
+    const generation = refreshGenRef.current + 1;
+    refreshGenRef.current = generation;
     setIsLoading(true);
     try {
       const items = await offlineConflictService.getConflictedItems();
+      if (refreshGenRef.current !== generation) return;
       setConflicts(items);
     } catch (e) {
       console.error("[useOfflineConflicts] refresh error:", e);
     } finally {
-      setIsLoading(false);
+      if (refreshGenRef.current === generation) {
+        setIsLoading(false);
+      }
     }
   }, []);
 

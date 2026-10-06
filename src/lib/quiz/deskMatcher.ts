@@ -256,6 +256,9 @@ export function matchDeskArchetype(answers: QuizAnswers): DeskArchetype {
   } else if (answers.sessionDuration === "quick_sprint") {
     scores.nomad += 15;
     scores.presenter += 10;
+  } else if (answers.sessionDuration === "half_day") {
+    scores.collaborator += 12;
+    scores.nomad += 10;
   }
 
   // Pick highest scoring archetype

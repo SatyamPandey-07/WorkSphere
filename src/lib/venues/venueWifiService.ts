@@ -44,7 +44,10 @@ export function buildWifiQrString(config: {
   authType?: WifiAuthType;
   hidden?: boolean;
 }): string {
-  const type = config.authType || (config.password ? "WPA" : "nopass");
+  let type = config.authType || (config.password ? "WPA" : "nopass");
+  if (type !== "nopass" && !config.password) {
+    type = "nopass";
+  }
   const escapedSsid = escapeWifiQrString(config.ssid);
   const escapedPass = config.password ? escapeWifiQrString(config.password) : "";
   const hiddenFlag = config.hidden ? "true" : "false";

@@ -14,7 +14,9 @@ const FORMATS: Array<{ value: ChatTimestampFormat; label: string }> = [
 ];
 
 export function ChatTimestampFormatToggle() {
-  const [format, setFormat] = useState<ChatTimestampFormat>("relative");
+  const [format, setFormat] = useState<ChatTimestampFormat>(
+    () => getChatTimestampFormat(),
+  );
 
   useEffect(() => {
     setFormat(getChatTimestampFormat());

@@ -20,6 +20,7 @@ import { VenueSummary } from "@/components/venue/VenueSummary";
 import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
 import { VenueShareModal } from "@/components/venue/VenueShareModal";
 import { generateVenueJsonLd } from "@/lib/seo/venueJsonLd";
+import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -177,6 +178,9 @@ export default async function VenuePage({ params }: PageProps) {
               src={displayPhoto}
               alt={venue.name}
               className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+              style={{
+                viewTransitionName: getVenueCoverTransitionName(venue.id),
+              }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
             <div className="absolute top-4 right-4 z-10">

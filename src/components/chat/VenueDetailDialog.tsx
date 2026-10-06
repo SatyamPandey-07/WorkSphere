@@ -3,6 +3,7 @@
 import Tesseract from "tesseract.js";
 import { Languages, Sparkles } from "lucide-react";
 import { useTransition } from "react";
+import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 
 import {
   X,
@@ -1215,6 +1216,9 @@ export function VenueDetailDialog({
               src={displayPhoto}
               alt={"Photo of " + venue.name}
               className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-all duration-500"
+              style={{
+                viewTransitionName: getVenueCoverTransitionName(venue.id),
+              }}
               onClick={() => setLightboxIndex(0)}
               onError={() => setImageError(true)}
             />

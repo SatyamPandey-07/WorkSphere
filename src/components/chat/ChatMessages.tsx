@@ -55,6 +55,7 @@ import { ComparisonDrawer } from "@/components/ComparisonDrawer";
 import { ChatMessageSkeleton } from "@/components/ui/skeleton";
 import { ReadAloudButton } from "./ReadAloudButton";
 import { RecentlyViewedVenues } from "@/components/venues/RecentlyViewedVenues";
+import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import {
   VenueGrid,
   LayoutBoundary,
@@ -260,6 +261,9 @@ export function VenueChatCard({
                 src={displayPhoto}
                 alt={venue.name}
                 className="w-full h-full object-cover"
+                style={{
+                  viewTransitionName: getVenueCoverTransitionName(venue.id),
+                }}
                 onError={(e) => {
                   (e.target as HTMLImageElement).src = venueFallbacks.default;
                 }}
@@ -457,6 +461,9 @@ export function VenueChatCard({
               src={displayPhoto}
               alt={venue.name}
               className="w-full h-full object-cover transition-transform duration-500 group-hover/photo:scale-110"
+              style={{
+                viewTransitionName: getVenueCoverTransitionName(venue.id),
+              }}
               onError={(e) => {
                 (e.target as HTMLImageElement).src = venueFallbacks.default;
               }}

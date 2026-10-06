@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   MapPin,
   Star,
@@ -14,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { TagChip } from "./TagChip";
 import { TagInput } from "./TagInput";
 import { NoteEditor } from "./NoteEditor";
+import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import type { SavedVenue, FavoriteTag } from "@/hooks/useSavedVenues";
 
 interface SavedVenueCardProps {
@@ -105,9 +107,29 @@ export const SavedVenueCard = memo(function SavedVenueCard({
       {/* Card Header */}
       <div className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
+          {venue.imageUrl && (
+            <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0 bg-zinc-100 dark:bg-zinc-800">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={venue.imageUrl}
+                alt={venue.name}
+                className="w-full h-full object-cover"
+                style={{
+                  viewTransitionName: getVenueCoverTransitionName(
+                    venue.placeId || venue.id,
+                  ),
+                }}
+              />
+            </div>
+          )}
           <div className="min-w-0 flex-1">
             <h3 className="text-base font-bold text-zinc-900 dark:text-white truncate">
-              {venue.name}
+              <Link
+                href={`/venues/${venue.placeId || venue.id}`}
+                className="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)] rounded"
+              >
+                {venue.name}
+              </Link>
             </h3>
             {venue.address && (
               <p className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 mt-1 truncate">

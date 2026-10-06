@@ -14,6 +14,8 @@ import {
   clearRecentlyViewedVenuesOffline,
 } from "@/lib/offlineStorage";
 
+import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
+
 export function RecentlyViewedVenues() {
   const [venues, setVenues] = useState<RecentlyViewedVenue[]>([]);
   const [isOffline, setIsOffline] = useState(false);
@@ -123,18 +125,33 @@ export function RecentlyViewedVenues() {
           >
             <Link
               href={`/venues/${venue.id}`}
-              className="min-w-0 flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded"
+              className="min-w-0 flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 rounded flex items-center gap-3"
             >
-              <p className="truncate text-sm font-bold text-zinc-800 dark:text-zinc-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                {venue.name}
-              </p>
-
-              {venue.address && (
-                <p className="mt-1 flex items-start gap-1 text-xs text-zinc-500 dark:text-zinc-400">
-                  <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span className="line-clamp-2">{venue.address}</span>
-                </p>
+              {venue.imageUrl && (
+                <div className="relative w-11 h-11 rounded-lg overflow-hidden shrink-0 bg-zinc-100 dark:bg-zinc-800">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={venue.imageUrl}
+                    alt={venue.name}
+                    className="w-full h-full object-cover"
+                    style={{
+                      viewTransitionName: getVenueCoverTransitionName(venue.id),
+                    }}
+                  />
+                </div>
               )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-bold text-zinc-800 dark:text-zinc-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                  {venue.name}
+                </p>
+
+                {venue.address && (
+                  <p className="mt-1 flex items-start gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    <MapPin className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span className="line-clamp-2">{venue.address}</span>
+                  </p>
+                )}
+              </div>
             </Link>
 
             <button

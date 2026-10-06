@@ -33,7 +33,9 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
 import { AmbientSoundPlayer } from "@/components/noise/AmbientSoundPlayer";
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
@@ -526,6 +528,9 @@ export function VenueCard({
             blurDataURL={generateBlurSvgDataUri(photos[photoIndex] || venue.name)}
             unoptimized // External URLs from Foursquare
             onError={() => setPhotoError(true)}
+            style={{
+              viewTransitionName: getVenueCoverTransitionName(venue.id),
+            }}
           />
           {photos.length > 1 && (
             <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 rounded-full text-xs text-white">
@@ -594,7 +599,16 @@ export function VenueCard({
         <div className="flex items-start justify-between mb-2 mt-4">
           <div className="flex-1">
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-              <HighlightedText text={venue.name} query={searchQuery} />
+              {venue.id ? (
+                <Link
+                  href={`/venues/${venue.id}`}
+                  className="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+                >
+                  <HighlightedText text={venue.name} query={searchQuery} />
+                </Link>
+              ) : (
+                <HighlightedText text={venue.name} query={searchQuery} />
+              )}
               {venue.isClaimed && (
                 <span title="Verified Host" className="inline-flex shrink-0">
                   <BadgeCheck className="w-4 h-4 text-green-500 shrink-0" />

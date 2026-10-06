@@ -121,15 +121,35 @@ export async function getVenueLiveVibe(venueId: string): Promise<VibeSummary> {
     };
   }
 
-  // Determine dominant vibe
+  // Determine dominant vibe. Ties stay contested instead of silently
+  // crowning whichever entry the object order puts first.
   let dominantVibe: VibeType = "silent_focus";
   let maxCount = -1;
+  let leaders = 0;
 
   for (const [key, count] of Object.entries(breakdown)) {
     if (count > maxCount) {
       maxCount = count;
       dominantVibe = key as VibeType;
+      leaders = 1;
+    } else if (count === maxCount) {
+      leaders += 1;
     }
+  }
+
+  if (leaders !== 1) {
+    return {
+      venueId,
+      currentVibe: null,
+      label: "Mixed vibes",
+      emoji: "⚡",
+      totalVotes,
+      verifiedCheckIns,
+      pulseColor: "zinc",
+      badgeText: "Live Vibe · Mixed votes",
+      breakdown,
+      lastUpdated: new Date().toISOString(),
+    };
   }
 
   const config = VIBE_CONFIG[dominantVibe];

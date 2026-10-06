@@ -6,7 +6,11 @@
 
 export function sanitizeDisplayName(name: string | null | undefined): string {
   if (!name) return "";
-  return name.trim().replace(/\s+/g, " ");
+  return name
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[<>]/g, "")
+    .replace(/[\u0000-\u001F\u007F]/g, "");
 }
 
 export interface DisplayNameValidationResult {

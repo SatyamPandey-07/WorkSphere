@@ -161,7 +161,7 @@ export function VenueFilter({
         }
         const queryString = params.toString();
         const targetUrl = `${pathname}${queryString ? `?${queryString}` : ""}`;
-        router.push(targetUrl, { scroll: false });
+        router.replace(targetUrl, { scroll: false });
       }
     },
     [activeSelected, onChange, searchParams, router, pathname],
@@ -185,7 +185,7 @@ export function VenueFilter({
                 params.delete("noiseLevel");
                 const queryString = params.toString();
                 const targetUrl = `${pathname}${queryString ? `?${queryString}` : ""}`;
-                router.push(targetUrl, { scroll: false });
+                router.replace(targetUrl, { scroll: false });
               }
             }}
             className="text-[11px] font-bold text-rose-500 hover:underline"

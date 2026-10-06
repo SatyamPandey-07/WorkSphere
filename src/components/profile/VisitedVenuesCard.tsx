@@ -49,6 +49,7 @@ export function VisitedVenuesCard() {
         // Aggregate unique venues
         const venueMap = new Map<string, BookingVenue>();
         for (const booking of bookings) {
+          if (booking.status === "CANCELLED") continue;
           const vId = booking.venueId || booking.venue?.id;
           if (vId && !venueMap.has(vId)) {
             venueMap.set(vId, {

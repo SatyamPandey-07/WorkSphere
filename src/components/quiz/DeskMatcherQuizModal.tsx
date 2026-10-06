@@ -109,7 +109,9 @@ export function DeskMatcherQuizModal({
   const handleExploreDesks = () => {
     if (!matchedResult) return;
     onClose();
-    router.push(`/ai?q=${encodeURIComponent(matchedResult.name)}`);
+    router.push(
+      `/ai?${matchedResult.searchFilterQuery}&q=${encodeURIComponent(matchedResult.name)}`,
+    );
   };
 
   return (

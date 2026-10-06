@@ -23,7 +23,7 @@ export function daysUntilExpiry(expiresAt: Date): number {
 
 export function shouldPromptRotation(expiresAt: Date): boolean {
   const days = daysUntilExpiry(expiresAt);
-  return days <= 14;
+  return !isKeyExpired(expiresAt) && days <= 14;
 }
 
 export async function verifyPackedAttestation(

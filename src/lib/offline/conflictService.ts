@@ -87,10 +87,11 @@ export class OfflineConflictService {
           const serverState = item.conflictDetails?.serverState || null;
           const diffs = computeFieldDiffs(clientPayload, serverState || {});
 
+          const domain = item.domain || "generic";
           results.push({
             id: item.id,
-            domain: item.domain || "generic",
-            title: `${item.domain.toUpperCase()} Sync Item (${item.id.slice(0, 8)})`,
+            domain,
+            title: `${domain.toUpperCase()} Sync Item (${item.id.slice(0, 8)})`,
             timestamp: item.timestamp,
             retryCount: item.retryCount,
             status: item.status as "CONFLICT" | "FAILED",

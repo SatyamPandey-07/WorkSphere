@@ -297,7 +297,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
     const booking = await prisma.booking.findFirst({
       where: {
-        id: bookingId,
+        OR: [{ id: bookingId }, { confirmationId: bookingId }],
         userId,
       },
       select: {

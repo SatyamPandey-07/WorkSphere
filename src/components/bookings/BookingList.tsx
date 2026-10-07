@@ -29,6 +29,7 @@ export interface BookingSummary {
   status?: "CONFIRMED" | "PENDING" | "CANCELLED";
   seatNumber?: string | null;
   duration?: number | null;
+  timeZone?: string | null;
   createdAt: string;
   venueId?: string;
   venue: {
@@ -72,9 +73,13 @@ export function BookingList({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [reschedulingBooking, setReschedulingBooking] = useState<BookingSummary | null>(null);
-  const [splitBillBooking, setSplitBillBooking] = useState<BookingSummary | null>(null);
-  const [walletBooking, setWalletBooking] = useState<BookingSummary | null>(null);
+  const [reschedulingBooking, setReschedulingBooking] =
+    useState<BookingSummary | null>(null);
+  const [splitBillBooking, setSplitBillBooking] =
+    useState<BookingSummary | null>(null);
+  const [walletBooking, setWalletBooking] = useState<BookingSummary | null>(
+    null,
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -263,6 +268,8 @@ export function BookingList({
                     address,
                     booking.date,
                     booking.time,
+                    booking.duration || 60,
+                    booking.timeZone ?? undefined,
                   ).googleUrl
                 }
                 target="_blank"
@@ -275,14 +282,11 @@ export function BookingList({
               <button
                 type="button"
                 onClick={() =>
-                  downloadICS(
-                    venueName,
-                    address,
-                    booking.date,
-                    booking.time,
-                    booking.duration || 60,
-                    booking.confirmationId,
-                  )
+                  downloadICS(venueName, address, booking.date, booking.time, {
+                    durationMinutes: booking.duration || 60,
+                    confirmationId: booking.confirmationId,
+                    timezone: booking.timeZone ?? undefined,
+                  })
                 }
                 className={chipClass}
                 aria-label={`Download iCalendar file for booking ${booking.confirmationId}`}
@@ -398,7 +402,8 @@ export function BookingList({
         <>
           <div className="flex items-center justify-between pb-1">
             <span className="text-xs text-zinc-500 font-medium">
-              {bookings.length} {bookings.length === 1 ? "booking" : "bookings"} recorded
+              {bookings.length} {bookings.length === 1 ? "booking" : "bookings"}{" "}
+              recorded
             </span>
             <ExportBookingsCSVButton
               bookings={bookings}

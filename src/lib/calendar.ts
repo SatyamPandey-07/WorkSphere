@@ -7,11 +7,13 @@ export const getCalendarUrls = (
   dateStr: string,
   timeStr: string,
   durationMinutes = 60,
+  timeZone?: string,
 ) => {
   const { start, end } = formatDateTimeForCalendar(
     dateStr,
     timeStr,
     durationMinutes,
+    timeZone,
   );
   const title = encodeURIComponent(`Booking at ${venueName}`);
   const details = encodeURIComponent(`Hot desk booking at ${venueName}`);

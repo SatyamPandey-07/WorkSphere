@@ -1,7 +1,15 @@
 "use client";
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { Search, Filter, Calendar, MapPin, Download, CalendarPlus, Ban, RefreshCw, Smartphone } from "lucide-react";
+import {
+  Search,
+  Calendar,
+  MapPin,
+  Download,
+  CalendarPlus,
+  Ban,
+  Smartphone,
+} from "lucide-react";
 import { BookingSummary } from "@/components/bookings/BookingList";
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import { ExportBookingsCSVButton } from "@/components/bookings/ExportBookingsCSVButton";
@@ -36,9 +44,14 @@ export function BookingHistoryList({
   itemHeight = 130,
 }: BookingHistoryListProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | "UPCOMING" | "COMPLETED" | "CANCELLED">("ALL");
-  const [reschedulingBooking, setReschedulingBooking] = useState<BookingSummary | null>(null);
-  const [walletBooking, setWalletBooking] = useState<BookingSummary | null>(null);
+  const [statusFilter, setStatusFilter] = useState<
+    "ALL" | "UPCOMING" | "COMPLETED" | "CANCELLED"
+  >("ALL");
+  const [reschedulingBooking, setReschedulingBooking] =
+    useState<BookingSummary | null>(null);
+  const [walletBooking, setWalletBooking] = useState<BookingSummary | null>(
+    null,
+  );
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
@@ -53,7 +66,11 @@ export function BookingHistoryList({
     return bookings.filter((b) => {
       const cancelled = b.status === "CANCELLED";
       const future = !cancelled && isUpcoming(b);
-      const currentStatus = cancelled ? "CANCELLED" : future ? "UPCOMING" : "COMPLETED";
+      const currentStatus = cancelled
+        ? "CANCELLED"
+        : future
+          ? "UPCOMING"
+          : "COMPLETED";
 
       if (statusFilter !== "ALL" && currentStatus !== statusFilter) {
         return false;
@@ -107,7 +124,12 @@ export function BookingHistoryList({
   // Compute positions
   const { totalHeight, itemsToRender, offsetY } = useMemo(() => {
     let runningHeight = 0;
-    const positions: { id: string; top: number; height: number; index: number }[] = [];
+    const positions: {
+      id: string;
+      top: number;
+      height: number;
+      index: number;
+    }[] = [];
 
     for (let i = 0; i < totalCount; i++) {
       const booking = filteredBookings[i];
@@ -184,20 +206,22 @@ export function BookingHistoryList({
 
         <div className="flex items-center justify-between sm:justify-start gap-2 overflow-x-auto pb-1 sm:pb-0">
           <div className="flex items-center gap-1.5">
-            {(["ALL", "UPCOMING", "COMPLETED", "CANCELLED"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setStatusFilter(tab)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
-                  statusFilter === tab
-                    ? "bg-blue-600 text-white"
-                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                }`}
-              >
-                {tab.charAt(0) + tab.slice(1).toLowerCase()}
-              </button>
-            ))}
+            {(["ALL", "UPCOMING", "COMPLETED", "CANCELLED"] as const).map(
+              (tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setStatusFilter(tab)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors ${
+                    statusFilter === tab
+                      ? "bg-blue-600 text-white"
+                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  }`}
+                >
+                  {tab.charAt(0) + tab.slice(1).toLowerCase()}
+                </button>
+              ),
+            )}
           </div>
 
           <ExportBookingsCSVButton
@@ -269,7 +293,9 @@ export function BookingHistoryList({
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h4 className="font-semibold truncate">{venueName}</h4>
+                          <h4 className="font-semibold truncate">
+                            {venueName}
+                          </h4>
                           <span
                             className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                               cancelled
@@ -279,13 +305,19 @@ export function BookingHistoryList({
                                   : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
                             }`}
                           >
-                            {cancelled ? "Cancelled" : future ? "Upcoming" : "Completed"}
+                            {cancelled
+                              ? "Cancelled"
+                              : future
+                                ? "Upcoming"
+                                : "Completed"}
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400 mt-0.5">
                           <span>
                             {booking.date} · {booking.time}
-                            {booking.seatNumber ? ` · Seat ${booking.seatNumber}` : ""}
+                            {booking.seatNumber
+                              ? ` · Seat ${booking.seatNumber}`
+                              : ""}
                           </span>
                           <div className="inline-flex items-center gap-1">
                             <span className="font-mono text-xs text-zinc-400">
@@ -325,6 +357,8 @@ export function BookingHistoryList({
                                 address,
                                 booking.date,
                                 booking.time,
+                                booking.duration || 60,
+                                booking.timeZone ?? undefined,
                               ).googleUrl
                             }
                             target="_blank"
@@ -342,8 +376,11 @@ export function BookingHistoryList({
                                 address,
                                 booking.date,
                                 booking.time,
-                                booking.duration || 60,
-                                booking.confirmationId,
+                                {
+                                  durationMinutes: booking.duration || 60,
+                                  confirmationId: booking.confirmationId,
+                                  timezone: booking.timeZone ?? undefined,
+                                },
                               )
                             }
                             className={chipClass}
@@ -369,7 +406,9 @@ export function BookingHistoryList({
                               className={`${chipClass} text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40`}
                             >
                               <Ban className="w-3.5 h-3.5" />
-                              {cancellingId === booking.id ? "Cancelling…" : "Cancel"}
+                              {cancellingId === booking.id
+                                ? "Cancelling…"
+                                : "Cancel"}
                             </button>
                           )}
                         </>
@@ -389,7 +428,9 @@ export function BookingHistoryList({
         onClose={() => setReschedulingBooking(null)}
         onSuccess={(updated) => {
           const target = bookings.find(
-            (b) => b.id === updated.id || b.confirmationId === updated.confirmationId,
+            (b) =>
+              b.id === updated.id ||
+              b.confirmationId === updated.confirmationId,
           );
           if (target) {
             target.date = updated.date;

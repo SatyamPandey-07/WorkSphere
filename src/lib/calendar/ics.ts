@@ -1,6 +1,6 @@
 /**
  * RFC 5545 Compliant iCalendar (.ics) Generator & Downloader
- * 
+ *
  * Supports generating individual and bulk calendar events for confirmed bookings.
  */
 
@@ -27,13 +27,73 @@ export function foldIcsLine(line: string): string {
   return parts.join("\r\n");
 }
 
+/**
+ * Offset (ms) between UTC and the wall-clock time shown in `timeZone` at the
+ * given instant. Positive for zones ahead of UTC.
+ */
+const timeZoneOffsetMs = (instant: Date, timeZone: string): number => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(instant);
+  const get = (type: string) =>
+    Number(parts.find((p) => p.type === type)?.value);
+  const wallAsUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour"),
+    get("minute"),
+    get("second"),
+  );
+  return wallAsUtc - Math.floor(instant.getTime() / 1000) * 1000;
+};
+
+/**
+ * Converts a wall-clock date ("2026-07-20") and time ("14:30") chosen in an
+ * IANA timezone into the matching UTC instant. Without a (valid) timezone the
+ * time is read in the runtime's local zone, as before.
+ */
+const wallClockToDate = (
+  dateStr: string,
+  timeStr: string,
+  timeZone?: string,
+): Date => {
+  const local = new Date(`${dateStr}T${timeStr}`);
+  if (isNaN(local.getTime()) || !timeZone) return local;
+
+  try {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    const [hour, minute = 0, second = 0] = timeStr.split(":").map(Number);
+    const wallAsUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+
+    // Two passes settle the offset across daylight-saving boundaries.
+    let utc = wallAsUtc;
+    for (let i = 0; i < 2; i++) {
+      utc = wallAsUtc - timeZoneOffsetMs(new Date(utc), timeZone);
+    }
+    const result = new Date(utc);
+    return isNaN(result.getTime()) ? local : result;
+  } catch {
+    // Unknown timezone name: fall back to the runtime's local zone.
+    return local;
+  }
+};
+
 export const formatDateTimeForCalendar = (
   dateStr: string,
   timeStr: string,
   durationMinutes = 60,
+  timeZone?: string,
 ): { start: string; end: string } => {
   if (!dateStr || !timeStr) return { start: "", end: "" };
-  const start = new Date(`${dateStr}T${timeStr}`);
+  const start = wallClockToDate(dateStr, timeStr, timeZone);
   if (isNaN(start.getTime())) return { start: "", end: "" };
   const end = new Date(start.getTime() + durationMinutes * 60 * 1000);
 
@@ -85,7 +145,8 @@ export function generateICSContent(
 
   if (typeof venueNameOrOptions === "object" && venueNameOrOptions !== null) {
     venueName = venueNameOrOptions.venueName ?? "";
-    address = venueNameOrOptions.venueAddress ?? venueNameOrOptions.location ?? "";
+    address =
+      venueNameOrOptions.venueAddress ?? venueNameOrOptions.location ?? "";
     date = venueNameOrOptions.date ?? "";
     time = venueNameOrOptions.time ?? "";
     durationMinutes = venueNameOrOptions.durationMinutes ?? 60;
@@ -104,7 +165,10 @@ export function generateICSContent(
       durationMinutes = durationOrOptions;
       confirmationId = legacyConfirmationId;
       bookingId = legacyConfirmationId;
-    } else if (typeof durationOrOptions === "object" && durationOrOptions !== null) {
+    } else if (
+      typeof durationOrOptions === "object" &&
+      durationOrOptions !== null
+    ) {
       durationMinutes = durationOrOptions.durationMinutes ?? 60;
       confirmationId = durationOrOptions.confirmationId ?? legacyConfirmationId;
       bookingId = durationOrOptions.bookingId ?? confirmationId;
@@ -122,7 +186,12 @@ export function generateICSContent(
     }
   }
 
-  const { start, end } = formatDateTimeForCalendar(date, time, durationMinutes);
+  const { start, end } = formatDateTimeForCalendar(
+    date,
+    time,
+    durationMinutes,
+    timezone,
+  );
   if (!start) return "";
 
   const durationLabel = `${durationMinutes} min`;
@@ -136,12 +205,16 @@ export function generateICSContent(
     `Hot desk booking at ${venueName}`,
     `Venue Address: ${address}`,
     referenceId ? `Booking ID: ${referenceId}` : "",
-    confirmationId && confirmationId !== referenceId ? `Confirmation: ${confirmationId}` : "",
+    confirmationId && confirmationId !== referenceId
+      ? `Confirmation: ${confirmationId}`
+      : "",
     `Duration: ${durationLabel}`,
     timezone ? `Timezone: ${timezone}` : "",
   ].filter(Boolean);
 
-  const description = escapeIcsText(customDescription || descriptionLines.join("\n"));
+  const description = escapeIcsText(
+    customDescription || descriptionLines.join("\n"),
+  );
 
   const uid = referenceId
     ? `${referenceId.replace(/[^A-Za-z0-9#-]/g, "")}@worksphere.app`
@@ -223,6 +296,7 @@ export interface BulkBooking {
   duration?: number;
   confirmationId?: string;
   bookingId?: string;
+  timeZone?: string;
 }
 
 /**
@@ -238,6 +312,7 @@ export function generateBulkICSContent(bookings: BulkBooking[]): string | null {
       b.date,
       b.time,
       b.duration ?? 60,
+      b.timeZone,
     );
     if (!start) continue;
 

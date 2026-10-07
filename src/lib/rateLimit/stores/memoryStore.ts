@@ -6,6 +6,8 @@ export interface MemEntry {
 export interface MemoryBucketEntry {
   tokens: number;
   lastRefill: number;
+  windowMs?: number;
+  maxTokens?: number;
 }
 
 export class MemoryRateLimitStore {
@@ -32,6 +34,8 @@ export class MemoryRateLimitStore {
     }
   }
 
+  /** Default refill/idle window after which buckets are full and can be pruned. */
+  public static readonly TOKEN_BUCKET_DEFAULT_WINDOW_MS = 60_000;
   /** Buckets idle longer than this are full again, so they can be dropped. */
   public static readonly TOKEN_BUCKET_MAX_IDLE_MS = 60 * 60 * 1000;
 
@@ -43,7 +47,8 @@ export class MemoryRateLimitStore {
       }
     }
     for (const [key, value] of this.tokenBucketStore) {
-      if (now - value.lastRefill > MemoryRateLimitStore.TOKEN_BUCKET_MAX_IDLE_MS) {
+      const windowMs = value.windowMs ?? MemoryRateLimitStore.TOKEN_BUCKET_DEFAULT_WINDOW_MS;
+      if (now - value.lastRefill >= windowMs) {
         this.tokenBucketStore.delete(key);
       }
     }
@@ -99,6 +104,12 @@ export class MemoryRateLimitStore {
   getTokenBucketEntry(key: string): MemoryBucketEntry | undefined {
     const entry = this.tokenBucketStore.get(key);
     if (entry) {
+      const now = Date.now();
+      const windowMs = entry.windowMs ?? MemoryRateLimitStore.TOKEN_BUCKET_DEFAULT_WINDOW_MS;
+      if (now - entry.lastRefill >= windowMs) {
+        this.tokenBucketStore.delete(key);
+        return undefined;
+      }
       // Re-insert to refresh LRU order
       this.tokenBucketStore.delete(key);
       this.tokenBucketStore.set(key, entry);

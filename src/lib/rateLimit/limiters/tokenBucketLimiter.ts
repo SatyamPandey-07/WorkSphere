@@ -112,8 +112,16 @@ export class TokenBucketLimiter implements IRateLimiter {
     let bucket = this.memoryStore.getTokenBucketEntry(bucketKey);
 
     if (!bucket) {
-      bucket = { tokens: this.limit, lastRefill: now };
+      bucket = {
+        tokens: this.limit,
+        lastRefill: now,
+        windowMs: this.windowMs,
+        maxTokens: this.limit,
+      };
       this.memoryStore.setTokenBucketEntry(bucketKey, bucket);
+    } else {
+      bucket.windowMs = this.windowMs;
+      bucket.maxTokens = this.limit;
     }
 
     // Refill tokens proportionally to elapsed time

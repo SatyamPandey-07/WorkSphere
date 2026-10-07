@@ -111,8 +111,16 @@ export function checkInMemoryTokenBucket(
   let bucket = defaultMemoryStore.getTokenBucketEntry(bucketKey);
 
   if (!bucket) {
-    bucket = { tokens: tier.limit, lastRefill: now };
+    bucket = {
+      tokens: tier.limit,
+      lastRefill: now,
+      windowMs: tier.windowMs,
+      maxTokens: tier.limit,
+    };
     defaultMemoryStore.setTokenBucketEntry(bucketKey, bucket);
+  } else {
+    bucket.windowMs = tier.windowMs;
+    bucket.maxTokens = tier.limit;
   }
 
   // Refill tokens proportionally to elapsed time

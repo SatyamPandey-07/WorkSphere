@@ -220,12 +220,14 @@ export function verifyReservationReceipt(
   payload: ReservationReceiptPayload,
   signatureBase64: string,
   publicKeyPem: string,
-  algorithm: SignatureAlgorithm = "RSA-SHA256"
+  algorithm: SignatureAlgorithm = "RSA-SHA256",
+  expectedDigest?: string
 ): ReceiptVerificationResult {
   try {
     const config = ALGORITHM_CONFIGS[algorithm] || ALGORITHM_CONFIGS["RSA-SHA256"];
     const canonicalPayload = canonicalizeReceiptPayload(payload);
-    const expectedDigest = computeReceiptDigest(canonicalPayload);
+    const computedDigest = computeReceiptDigest(canonicalPayload);
+    const digestMatches = !expectedDigest || expectedDigest === computedDigest;
 
     const verifier = crypto.createVerify(config.hash);
     verifier.update(canonicalPayload, "utf8");
@@ -237,15 +239,16 @@ export function verifyReservationReceipt(
       ...(config.dsaEncoding ? { dsaEncoding: config.dsaEncoding } : {}),
     };
 
-    const isValid = verifier.verify(
+    const isSignatureValid = verifier.verify(
       verifyOptions,
       Buffer.from(signatureBase64, "base64")
     );
+    const isValid = isSignatureValid && digestMatches;
 
     return {
       valid: isValid,
       algorithm,
-      digestMatches: isValid,
+      digestMatches,
       signerIdentity: isValid ? "WorkSphere Cryptographic Authority" : undefined,
       timestamp: new Date().toISOString(),
       ...(isValid ? {} : { error: "Signature verification failed" }),

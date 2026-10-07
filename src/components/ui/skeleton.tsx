@@ -67,12 +67,6 @@ export function VenueListSkeleton({ count = 3 }: { count?: number }) {
   );
 }
 
-export {
-  VenueCardGridSkeleton,
-  VenueCardItemSkeleton,
-  type VenueCardGridSkeletonProps,
-} from "@/components/venues/VenueCardGridSkeleton";
-
 export function ChatMessageSkeleton() {
   return (
     <div className="flex justify-start">

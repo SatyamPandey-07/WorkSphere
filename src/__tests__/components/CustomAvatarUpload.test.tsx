@@ -87,9 +87,7 @@ describe("CustomAvatarUpload Component Image Dimension Validation (#1866)", () =
 
     await waitFor(() => {
       expect(
-        screen.getByText(
-          "Image resolution too low. Minimum 100×100 required.",
-        ),
+        screen.getByText("Image resolution too low. Minimum 100×100 required."),
       ).toBeInTheDocument();
     });
 
@@ -107,9 +105,7 @@ describe("CustomAvatarUpload Component Image Dimension Validation (#1866)", () =
 
     await waitFor(() => {
       expect(
-        screen.getByText(
-          "Image resolution too low. Minimum 100×100 required.",
-        ),
+        screen.getByText("Image resolution too low. Minimum 100×100 required."),
       ).toBeInTheDocument();
     });
 
@@ -293,6 +289,131 @@ describe("CustomAvatarUpload Component Memory Leaks (#1432)", () => {
 
     expect(global.URL.revokeObjectURL).toHaveBeenCalledWith(
       "blob:http://localhost/mock-url-2",
+    );
+  });
+});
+
+describe("CustomAvatarUpload Component Avatar Preview Thumbnail & Actions (#4592)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockImageDimensions(200, 200);
+    let urlCounter = 0;
+    global.URL.createObjectURL = jest
+      .fn()
+      .mockImplementation(
+        () => `blob:http://localhost/mock-preview-${++urlCounter}`,
+      );
+    global.URL.revokeObjectURL = jest.fn();
+    mockSetProfileImage.mockResolvedValue({
+      imageUrl: "https://example.com/new-avatar.jpg",
+    });
+    mockReload.mockResolvedValue(undefined);
+  });
+
+  it("generates a preview object URL on file input change and shows Change and Remove buttons", async () => {
+    render(<CustomAvatarUpload />);
+    const fileInput = screen.getByTestId("file-input");
+
+    expect(
+      screen.getByRole("button", { name: /upload image/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^change$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^remove$/i }),
+    ).not.toBeInTheDocument();
+
+    const sampleFile = new File(["sample"], "avatar.png", {
+      type: "image/png",
+    });
+    fireEvent.change(fileInput, { target: { files: [sampleFile] } });
+
+    await waitFor(() => {
+      expect(global.URL.createObjectURL).toHaveBeenCalledWith(sampleFile);
+      expect(
+        screen.getByRole("button", { name: /^change$/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /^remove$/i }),
+      ).toBeInTheDocument();
+    });
+
+    const previewImg = screen.getByRole("img", { name: "Jane Nomad" });
+    expect(previewImg).toHaveAttribute(
+      "src",
+      "blob:http://localhost/mock-preview-1",
+    );
+  });
+
+  it("revokes object URL and resets preview when Remove button is clicked", async () => {
+    render(<CustomAvatarUpload />);
+    const fileInput = screen.getByTestId("file-input");
+
+    const sampleFile = new File(["sample"], "avatar.png", {
+      type: "image/png",
+    });
+    fireEvent.change(fileInput, { target: { files: [sampleFile] } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /^remove$/i }),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^remove$/i }));
+
+    expect(global.URL.revokeObjectURL).toHaveBeenCalledWith(
+      "blob:http://localhost/mock-preview-1",
+    );
+    expect(
+      screen.queryByRole("button", { name: /^remove$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /upload image/i }),
+    ).toBeInTheDocument();
+
+    const avatarImg = screen.getByRole("img", { name: "Jane Nomad" });
+    expect(avatarImg).toHaveAttribute("src", "https://example.com/avatar.jpg");
+  });
+
+  it("triggers file input click when Change button is clicked", async () => {
+    render(<CustomAvatarUpload />);
+    const fileInput = screen.getByTestId("file-input");
+    const clickSpy = jest.spyOn(fileInput, "click");
+
+    const sampleFile = new File(["sample"], "avatar.png", {
+      type: "image/png",
+    });
+    fireEvent.change(fileInput, { target: { files: [sampleFile] } });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /^change$/i }),
+      ).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^change$/i }));
+    expect(clickSpy).toHaveBeenCalled();
+  });
+
+  it("revokes preview object URL on component unmount", async () => {
+    const { unmount } = render(<CustomAvatarUpload />);
+    const fileInput = screen.getByTestId("file-input");
+
+    const sampleFile = new File(["sample"], "avatar.png", {
+      type: "image/png",
+    });
+    fireEvent.change(fileInput, { target: { files: [sampleFile] } });
+
+    await waitFor(() => {
+      expect(global.URL.createObjectURL).toHaveBeenCalledTimes(1);
+    });
+
+    unmount();
+
+    expect(global.URL.revokeObjectURL).toHaveBeenCalledWith(
+      "blob:http://localhost/mock-preview-1",
     );
   });
 });

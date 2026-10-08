@@ -131,8 +131,13 @@ export const AccessibleMarker = memo(
     );
 
     const handlePopupClose = useCallback(() => {
-      markerRef.current?.getElement()?.focus();
-    }, []);
+  const marker = markerRef.current;
+  const element = marker?.getElement();
+
+  if (element?.isConnected) {
+    element.focus();
+  }
+}, []);
 
     // Direct Leaflet element updates to prevent map pin flicker
     useEffect(() => {

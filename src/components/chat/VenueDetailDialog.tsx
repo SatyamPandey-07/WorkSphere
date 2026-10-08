@@ -39,7 +39,7 @@ import {
   Trophy,
   BadgeCheck,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   BarChart,
   Bar,
@@ -64,6 +64,8 @@ import {
 } from "@/components/noise/NoiseTimelineChart";
 import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGraph";
 import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
+import { ReviewSentimentBadge } from "@/components/venue/ReviewSentimentBadge";
+import { summarizeReviewSentiment } from "@/lib/reviewSentiment";
 import { ExportRatingsCSVButton } from "@/components/analytics/ExportRatingsCSVButton";
 import {
   subscribeReviewSyncEvents,
@@ -247,6 +249,7 @@ export function VenueDetailDialog({
   );
   const [reviews, setReviews] = useState<any[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
+  const sentiment = useMemo(() => summarizeReviewSentiment(reviews), [reviews]);
   const [conflictReview, setConflictReview] =
     useState<QueuedVenueReview | null>(null);
   const [resolvingConflict, setResolvingConflict] = useState(false);
@@ -1272,6 +1275,7 @@ export function VenueDetailDialog({
                 </span>
               )}
             </h2>
+            <ReviewSentimentBadge summary={sentiment} className="mb-2" />
             <div className="flex items-center gap-1.5 text-zinc-300 text-sm font-medium flex-wrap">
               <MapPin className="w-4 h-4 text-blue-400 shrink-0" />
               <span className="truncate max-w-[280px] sm:max-w-md">

@@ -108,6 +108,7 @@ export class TokenBucketLimiter implements IRateLimiter {
 
   private consumeMemory(identifier: string, points = 1): RateLimitResult {
     const now = Date.now();
+    const safePoints = Math.max(1, Number.isFinite(points) ? points : 1);
     const bucketKey = `${this.name}:${identifier}`;
     let bucket = this.memoryStore.getTokenBucketEntry(bucketKey);
 
@@ -124,16 +125,22 @@ export class TokenBucketLimiter implements IRateLimiter {
       bucket.maxTokens = this.limit;
     }
 
-    // Refill tokens proportionally to elapsed time
-    const elapsed = now - bucket.lastRefill;
-    if (elapsed > 0) {
-      const refillTokens = (elapsed / this.windowMs) * this.limit;
-      bucket.tokens = Math.min(this.limit, bucket.tokens + refillTokens);
+    // Guard against backward clock jumps / clock skew
+    if (now < bucket.lastRefill) {
       bucket.lastRefill = now;
     }
 
-    if (bucket.tokens >= points) {
-      bucket.tokens -= points;
+    // Refill tokens proportionally to elapsed time
+    const elapsed = Math.max(0, now - bucket.lastRefill);
+    if (elapsed > 0) {
+      const refillTokens = (elapsed / this.windowMs) * this.limit;
+      bucket.tokens = Math.min(this.limit, Math.max(0, bucket.tokens) + refillTokens);
+      bucket.lastRefill = now;
+    }
+
+    if (bucket.tokens >= safePoints) {
+      bucket.tokens = Math.max(0, bucket.tokens - safePoints);
+      this.memoryStore.setTokenBucketEntry(bucketKey, bucket);
       const remaining = Math.floor(bucket.tokens);
       const resetSec = Math.ceil((now + this.windowMs) / 1000);
       return {
@@ -146,15 +153,17 @@ export class TokenBucketLimiter implements IRateLimiter {
       };
     }
 
-    // Bucket depleted
-    const timeToNextTokenMs = Math.ceil(((1 - bucket.tokens) / this.limit) * this.windowMs);
+    // Bucket depleted: persist latest token/refill state to avoid stale resets
+    this.memoryStore.setTokenBucketEntry(bucketKey, bucket);
+    const needed = Math.max(1, safePoints - bucket.tokens);
+    const timeToNextTokenMs = Math.ceil((needed / this.limit) * this.windowMs);
     const retryAfter = Math.max(1, Math.ceil(timeToNextTokenMs / 1000));
     const resetSec = Math.ceil((now + timeToNextTokenMs) / 1000);
 
     return {
       success: false,
       limit: this.limit,
-      remaining: 0,
+      remaining: Math.max(0, Math.floor(bucket.tokens)),
       reset: resetSec,
       retryAfter,
       identity: identifier,
@@ -163,6 +172,22 @@ export class TokenBucketLimiter implements IRateLimiter {
 
   async check(key: string): Promise<RateLimitResult> {
     const now = Date.now();
+    const redis = getRedisClient();
+    if (redis) {
+      const redisKey = `worksphere:ratelimit:${this.name}:${key}`;
+      const atomicResult = await executeAtomicTokenBucket(
+        redis,
+        redisKey,
+        this.limit,
+        this.windowMs,
+        0,
+        now,
+      );
+      if (atomicResult !== null) {
+        return atomicResult;
+      }
+    }
+
     const bucketKey = `${this.name}:${key}`;
     const bucket = this.memoryStore.getTokenBucketEntry(bucketKey);
 
@@ -177,19 +202,20 @@ export class TokenBucketLimiter implements IRateLimiter {
       };
     }
 
-    const elapsed = now - bucket.lastRefill;
+    const elapsed = Math.max(0, now - bucket.lastRefill);
     const currentTokens = Math.min(
       this.limit,
-      bucket.tokens + (elapsed > 0 ? (elapsed / this.windowMs) * this.limit : 0),
+      Math.max(0, bucket.tokens) + (elapsed > 0 ? (elapsed / this.windowMs) * this.limit : 0),
     );
 
-    const remaining = Math.floor(currentTokens);
+    const remaining = Math.max(0, Math.floor(currentTokens));
+    const timeToNextTokenMs = Math.ceil(((Math.max(1, 1 - currentTokens)) / this.limit) * this.windowMs);
     return {
       success: currentTokens >= 1,
       limit: this.limit,
       remaining,
-      reset: Math.ceil((now + this.windowMs) / 1000),
-      retryAfter: currentTokens < 1 ? Math.max(1, Math.ceil(((1 - currentTokens) / this.limit) * this.windowMs / 1000)) : 0,
+      reset: Math.ceil((now + (currentTokens >= 1 ? this.windowMs : timeToNextTokenMs)) / 1000),
+      retryAfter: currentTokens < 1 ? Math.max(1, Math.ceil(timeToNextTokenMs / 1000)) : 0,
       identity: key,
     };
   }

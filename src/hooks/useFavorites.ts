@@ -1,9 +1,15 @@
-import { useState, useEffect } from "react";
-import { queuePendingFavorite } from "@/lib/offlineStorage";
-
+import { useState, useEffect, useRef } from "react";
+import { queueOfflineFavorite } from "@/lib/offlineStore";
 export function useFavorites(venueId: string, initialIsFavorited: boolean) {
   const [isFavorited, setIsFavorited] = useState(initialIsFavorited);
   const [isOnline, setIsOnline] = useState(true);
+
+  const latestStateRef = useRef(initialIsFavorited);
+  const latestToggleRef = useRef(0);
+
+  useEffect(() => {
+    latestStateRef.current = isFavorited;
+  }, [isFavorited]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -23,30 +29,50 @@ export function useFavorites(venueId: string, initialIsFavorited: boolean) {
   }, []);
 
   const toggleFavorite = async () => {
-    const nextState = !isFavorited;
+    const previousState = latestStateRef.current;
+    const nextState = !previousState;
+    const actionType = nextState ? "ADD" : "REMOVE";
+    const toggleId = ++latestToggleRef.current;
 
-    // 1. Optimistic Update: Change the layout heart state instantly
+    // Optimistic update
+    latestStateRef.current = nextState;
     setIsFavorited(nextState);
 
-    const actionType = nextState ? "add" : "remove";
+    // Offline fallback
+    if (!isOnline) {
+      await queueOfflineFavorite(venueId, actionType);
+      window.dispatchEvent(new CustomEvent("trigger-sync"));
+      return;
+    }
 
-    if (isOnline) {
-      try {
-        const response = await fetch("/api/favorites", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ venueId, action: actionType }),
-        });
+    try {
+      const response = nextState
+        ? await fetch("/api/favorites", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ venueId }),
+          })
+        : await fetch(
+            `/api/favorites?venueId=${encodeURIComponent(venueId)}`,
+            {
+              method: "DELETE",
+            },
+          );
 
-        if (!response.ok) throw new Error("Network response failed");
-      } catch {
-        console.warn("Live fallback failed. Reverting to offline queue logic.");
-        await queuePendingFavorite(venueId, actionType);
-        window.dispatchEvent(new CustomEvent("trigger-sync"));
+      if (!response.ok) {
+        throw new Error("Network response failed");
       }
-    } else {
-      // 2. Offline Fallback: Queue up operation for Background Sync processing
-      await queuePendingFavorite(venueId, actionType);
+    } catch {
+      // Ignore stale failures from older toggle requests.
+      if (toggleId !== latestToggleRef.current) {
+        return;
+      }
+
+      latestStateRef.current = previousState;
+      setIsFavorited(previousState);
+
+      console.warn("Live favorite update failed. Queuing operation.");
+      await queueOfflineFavorite(venueId, actionType);
       window.dispatchEvent(new CustomEvent("trigger-sync"));
     }
   };

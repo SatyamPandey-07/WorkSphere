@@ -7,8 +7,12 @@ import React, {
   useMemo,
   KeyboardEvent,
 } from "react";
-import { Check, Lock, Armchair, Zap, Star } from "lucide-react";
+import { Check, Lock, Armchair, Zap, Star, Sun } from "lucide-react";
 import { DeskFavoriteAlertButton } from "./DeskFavoriteAlertButton";
+import {
+  recommendNaturalLightDesks,
+  BEST_NATURAL_LIGHT_BADGE,
+} from "@/lib/sunPosition";
 
 export type SeatStatus = "available" | "reserved" | "held" | "selected";
 
@@ -22,6 +26,8 @@ export interface Seat2D {
   status: SeatStatus;
   price?: number;
   type?: "standard" | "standing" | "booth" | "quiet";
+  isBestNaturalLight?: boolean;
+  hasNaturalLightBadge?: boolean;
 }
 
 export interface FloorPlanCanvasProps {
@@ -32,6 +38,8 @@ export interface FloorPlanCanvasProps {
   className?: string;
   venueName?: string;
   venueId?: string;
+  venueLocation?: { lat: number; lng: number } | null;
+  venueCompassOrientation?: number;
 }
 
 /**
@@ -131,12 +139,48 @@ export function FloorPlanCanvas({
   onReserveSeat,
   className,
   venueName = "Interactive Seat Map",
+  venueLocation,
+  venueCompassOrientation = 180,
 }: FloorPlanCanvasProps) {
   const [focusedSeatId, setFocusedSeatId] = useState<string>(
     selectedSeatId || (seats.length > 0 ? seats[0].id : "")
   );
 
   const seatRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+
+  // Compute desks offering optimal natural light (#5064)
+  const naturalLightMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    seats.forEach((s) => {
+      if (s.isBestNaturalLight || s.hasNaturalLightBadge) {
+        map.set(s.id, true);
+      }
+    });
+
+    if (venueLocation?.lat !== undefined && venueLocation?.lng !== undefined) {
+      const recs = recommendNaturalLightDesks(
+        seats.map((s) => ({
+          id: s.id,
+          label: s.label,
+          x: s.x,
+          y: s.y,
+          row: s.row,
+          col: s.col,
+        })),
+        {
+          latitude: venueLocation.lat,
+          longitude: venueLocation.lng,
+          venueCompassOrientation,
+        }
+      );
+      recs.forEach((r) => {
+        if (r.isOptimalNaturalLight) {
+          map.set(r.deskId, true);
+        }
+      });
+    }
+    return map;
+  }, [seats, venueLocation, venueCompassOrientation]);
 
   const activeFocusedSeat = useMemo(() => {
     return seats.find((s) => s.id === focusedSeatId) || seats[0] || null;
@@ -236,6 +280,15 @@ export function FloorPlanCanvas({
             <span className="w-3 h-3 rounded-full bg-zinc-400 dark:bg-zinc-700" />
             Reserved
           </div>
+          <div
+            data-testid="legend-natural-light"
+            className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-semibold"
+          >
+            <span className="w-3.5 h-3.5 rounded-full bg-amber-400 flex items-center justify-center text-amber-950 shadow-sm">
+              <Sun className="w-2.5 h-2.5 fill-amber-500" />
+            </span>
+            Best Natural Light
+          </div>
         </div>
       </div>
 
@@ -252,6 +305,10 @@ export function FloorPlanCanvas({
             const isFocused = focusedSeatId === seat.id;
             const isReserved = seat.status === "reserved";
             const isHeld = seat.status === "held";
+            const isNaturalLight =
+              naturalLightMap.get(seat.id) ||
+              seat.isBestNaturalLight ||
+              seat.hasNaturalLightBadge;
 
             let bgClass = "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20";
             if (isSelected) {
@@ -272,7 +329,7 @@ export function FloorPlanCanvas({
                 type="button"
                 role="gridcell"
                 tabIndex={isFocused ? 0 : -1}
-                aria-label={`Seat ${seat.label}, Row ${seat.row + 1}, Column ${seat.col + 1}, ${seat.status}, $${seat.price || 15}/hr`}
+                aria-label={`Seat ${seat.label}, Row ${seat.row + 1}, Column ${seat.col + 1}, ${seat.status}, $${seat.price || 15}/hr${isNaturalLight ? ", Best Natural Light" : ""}`}
                 aria-selected={isSelected}
                 aria-disabled={isReserved}
                 data-seat-id={seat.id}
@@ -292,6 +349,16 @@ export function FloorPlanCanvas({
                 onKeyDown={(e) => handleKeyDown(e, seat)}
                 className={`w-14 h-14 rounded-xl flex flex-col items-center justify-center font-semibold text-xs transition-all shadow-md focus:outline-none focus-visible:ring-4 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-zinc-950 ${bgClass}`}
               >
+                {isNaturalLight && (
+                  <span
+                    data-testid={`natural-light-badge-${seat.id}`}
+                    title={BEST_NATURAL_LIGHT_BADGE}
+                    aria-label={BEST_NATURAL_LIGHT_BADGE}
+                    className="absolute -top-1.5 -right-1.5 bg-amber-400 text-amber-950 p-0.5 rounded-full shadow-sm ring-2 ring-white dark:ring-zinc-900"
+                  >
+                    <Sun className="w-2.5 h-2.5 fill-amber-500" />
+                  </span>
+                )}
                 <div className="flex items-center justify-center gap-1">
                   {isReserved ? (
                     <Lock className="w-3.5 h-3.5 opacity-60" />
@@ -324,6 +391,18 @@ export function FloorPlanCanvas({
               {" • "}
               Price: <span className="font-mono">${activeFocusedSeat.price || 15}/hr</span>
             </div>
+
+            {(naturalLightMap.get(activeFocusedSeat.id) ||
+              activeFocusedSeat.isBestNaturalLight ||
+              activeFocusedSeat.hasNaturalLightBadge) && (
+              <span
+                data-testid="focused-seat-natural-light-badge"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+              >
+                <Sun className="w-3 h-3 text-amber-500 fill-amber-400" />
+                {BEST_NATURAL_LIGHT_BADGE}
+              </span>
+            )}
 
             <DeskFavoriteAlertButton
               venueId={venueId || "current-venue"}

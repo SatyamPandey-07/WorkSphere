@@ -22,14 +22,20 @@ const mockRedo = jest.fn();
 const mockLength = 0;
 
 class MockYArray {
+  private items: any[] = [];
   observe = mockObserve;
   unobserve = mockUnobserve;
-  push = mockPush;
+  observeDeep = mockObserve;
+  unobserveDeep = mockUnobserve;
+  push = jest.fn((items: any[]) => {
+    this.items.push(...items);
+    mockPush(items);
+  });
   delete = mockDelete;
-  get = mockGet;
-  toArray = mockToArray;
+  get = jest.fn((index: number) => this.items[index]);
+  toArray = jest.fn(() => this.items);
   get length() {
-    return mockLength;
+    return this.items.length;
   }
   map = jest.fn();
 }
@@ -55,30 +61,27 @@ const mockUndoManager = {
 let mockYArrayInstance = new MockYArray();
 
 jest.mock("yjs", () => {
-  class YArray {
-    observe = mockObserve;
-    unobserve = mockUnobserve;
-    push = mockPush;
-    delete = mockDelete;
-    get = mockGet;
-    toArray = mockToArray;
-    get length() {
-      return mockLength;
-    }
-    map = jest.fn();
-  }
-
   return {
     Doc: jest.fn().mockImplementation(() => ({
       getArray: jest.fn().mockReturnValue(mockYArrayInstance),
       destroy: mockDestroy,
       on: jest.fn(),
+      transact: jest.fn((cb) => cb()),
     })),
-    Array: YArray,
-    Map: jest.fn().mockImplementation(() => ({
-      get: mockGet,
-      set: mockSet,
-    })),
+    Array: MockYArray,
+    Map: jest.fn().mockImplementation(() => {
+      const data = new Map<string, any>();
+      return {
+        get: jest.fn((key: string) => {
+          mockGet(key);
+          return data.get(key);
+        }),
+        set: jest.fn((key: string, val: any) => {
+          mockSet(key, val);
+          data.set(key, val);
+        }),
+      };
+    }),
     UndoManager: jest.fn().mockImplementation(() => mockUndoManager),
   };
 });
@@ -162,4 +165,107 @@ describe("useCanvasWhiteboard", () => {
       expect.objectContaining({ x: 150, y: 200 }),
     );
   });
+
+  describe("stroke broadcast debouncing and point throttling (#4918)", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("buffers raw coordinate points during active strokes and dispatches point batches via 16ms throttle interval", () => {
+      const { result } = renderHook(() => useCanvasWhiteboard("test-canvas"));
+
+      act(() => {
+        result.current.addShape({
+          id: "stroke-4918",
+          type: "pen",
+          points: [0, 0],
+          color: "#ffffff",
+          width: 3,
+          opacity: 1,
+          userId: "user-1",
+        });
+      });
+
+      // Simulate high-frequency mousemove events dispatching coordinate points
+      act(() => {
+        result.current.broadcastStroke("stroke-4918", [0, 0, 10, 10]);
+        result.current.broadcastStroke("stroke-4918", [0, 0, 10, 10, 20, 20]);
+        result.current.broadcastStroke("stroke-4918", [0, 0, 10, 10, 20, 20, 30, 30]);
+      });
+
+      // Before 16ms interval, updates are buffered and not yet committed
+      expect(mockSet).not.toHaveBeenCalledWith("points", [0, 0, 10, 10, 20, 20, 30, 30]);
+
+      // Advance by throttle interval (16ms)
+      act(() => {
+        jest.advanceTimersByTime(16);
+      });
+
+      // Dispatched batched points in a single transaction
+      expect(mockSet).toHaveBeenCalledWith("points", [0, 0, 10, 10, 20, 20, 30, 30]);
+    });
+
+    it("throttles high-frequency updateShape point broadcasts during mouse move", () => {
+      const { result } = renderHook(() => useCanvasWhiteboard("test-canvas"));
+
+      act(() => {
+        result.current.addShape({
+          id: "stroke-move",
+          type: "pen",
+          points: [0, 0],
+          color: "#ffffff",
+          width: 3,
+          opacity: 1,
+          userId: "user-1",
+        });
+      });
+
+      // Simulate mousemove stream with rapid points updates
+      act(() => {
+        for (let i = 1; i <= 10; i++) {
+          result.current.updateShape("stroke-move", {
+            points: [0, 0, i * 5, i * 5],
+          });
+        }
+      });
+
+      // Before 16ms, final points should not be committed yet
+      expect(mockSet).not.toHaveBeenCalledWith("points", [0, 0, 50, 50]);
+
+      // Fast-forward 16ms throttle window
+      act(() => {
+        jest.advanceTimersByTime(16);
+      });
+
+      expect(mockSet).toHaveBeenCalledWith("points", [0, 0, 50, 50]);
+    });
+
+    it("immediately flushes buffered points when flushStrokeBuffer is called", () => {
+      const { result } = renderHook(() => useCanvasWhiteboard("test-canvas"));
+
+      act(() => {
+        result.current.addShape({
+          id: "stroke-flush",
+          type: "pen",
+          points: [5, 5],
+          color: "#ffffff",
+          width: 3,
+          opacity: 1,
+          userId: "user-1",
+        });
+      });
+
+      act(() => {
+        result.current.broadcastStroke("stroke-flush", [5, 5, 15, 15, 25, 25]);
+        result.current.flushStrokeBuffer?.("stroke-flush");
+      });
+
+      expect(mockSet).toHaveBeenCalledWith("points", [5, 5, 15, 15, 25, 25]);
+    });
+  });
 });
+

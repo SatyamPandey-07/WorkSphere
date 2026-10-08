@@ -7,6 +7,7 @@
 
 import { CsvBuilder, escapeCSVField } from "../csvBuilder";
 import type { AggregatedWebVitals, WebVitalMetricName } from "@/lib/webVitalsCollector";
+import { prisma } from "@/lib/prisma";
 
 export interface SystemVitalsOverview {
   totalSearches: number;
@@ -239,3 +240,120 @@ export function downloadWebVitalsCSV(
   const builder = new CsvBuilder();
   return builder.download.call({ toBlob: () => blob }, downloadFileName);
 }
+
+// ─── Chunked Streaming System Vitals & Telemetry Exporter (#5038) ─────────────
+
+export interface StreamTelemetryOptions {
+  range?: string;
+  batchSize?: number;
+  venueId?: string;
+  startDate?: Date;
+  endDate?: Date;
+}
+
+export function parseRangeToStartDate(range?: string): Date {
+  const now = new Date();
+  switch (range) {
+    case "24h":
+    case "1d":
+      return new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    case "7d":
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    case "30d":
+      return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    case "90d":
+      return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    case "all":
+      return new Date(0);
+    default:
+      return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  }
+}
+
+/**
+ * Creates a ReadableStream that queries TelemetryRecord using Prisma cursor pagination
+ * (default batch size 1000) and streams RFC-4180 CSV rows directly without buffering
+ * the complete table into memory.
+ */
+export function createTelemetryCsvStream(
+  options: StreamTelemetryOptions = {},
+): ReadableStream<Uint8Array> {
+  const batchSize = Math.max(1, Math.min(5000, options.batchSize || 1000));
+  const encoder = new TextEncoder();
+  const startDate = options.startDate || parseRangeToStartDate(options.range);
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        // Enqueue CSV Header row
+        const header =
+          "id,venueId,download_mbps,upload_mbps,latency_ms,noise_level,occupancy,presence,crowd_level,timestamp\r\n";
+        controller.enqueue(encoder.encode(header));
+
+        let cursor:
+          | { id_timestamp: { id: string; timestamp: Date } }
+          | undefined = undefined;
+        let hasMore = true;
+
+        while (hasMore) {
+          let records: any[] = [];
+          try {
+            records = await (prisma as any).telemetryRecord.findMany({
+              take: batchSize,
+              skip: cursor ? 1 : 0,
+              cursor: cursor
+                ? { id_timestamp: cursor.id_timestamp }
+                : undefined,
+              where: {
+                timestamp: { gte: startDate },
+                ...(options.venueId ? { venueId: options.venueId } : {}),
+              },
+              orderBy: [{ timestamp: "asc" }, { id: "asc" }],
+            });
+          } catch {
+            hasMore = false;
+            break;
+          }
+
+          if (!records || records.length === 0) {
+            hasMore = false;
+            break;
+          }
+
+          // Format batch into CSV chunk
+          let chunk = "";
+          for (const r of records) {
+            const timeStr =
+              r.timestamp instanceof Date
+                ? r.timestamp.toISOString()
+                : String(r.timestamp);
+            chunk += `${escapeCSVField(r.id)},${escapeCSVField(r.venueId)},${r.download ?? ""},${r.upload ?? ""},${r.latency ?? ""},${r.noiseLevel ?? ""},${r.occupancy ?? ""},${r.presence ?? ""},${escapeCSVField(r.crowdLevel ?? "")},${escapeCSVField(timeStr)}\r\n`;
+          }
+
+          controller.enqueue(encoder.encode(chunk));
+
+          if (records.length < batchSize) {
+            hasMore = false;
+            break;
+          }
+
+          const lastRecord = records[records.length - 1];
+          cursor = {
+            id_timestamp: {
+              id: lastRecord.id,
+              timestamp:
+                lastRecord.timestamp instanceof Date
+                  ? lastRecord.timestamp
+                  : new Date(lastRecord.timestamp),
+            },
+          };
+        }
+
+        controller.close();
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+  });
+}
+

@@ -67,4 +67,12 @@ describe("OfflineCacheModal", () => {
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("calls onClose when the Escape key is pressed", async () => {
+    const onClose = jest.fn();
+    render(<OfflineCacheModal isOpen onClose={onClose} />);
+    await screen.findByText("Offline Cache");
+    fireEvent.keyDown(window, { key: "Escape", code: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

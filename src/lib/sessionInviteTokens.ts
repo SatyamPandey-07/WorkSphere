@@ -15,7 +15,119 @@ export interface InviteTokenPayload {
 export interface ValidationResult {
   valid: boolean;
   error?: string;
+  statusCode?: number;
+  expired?: boolean;
   payload?: InviteTokenPayload;
+}
+
+/**
+ * Validates a session invite token against HMAC signature, expiration timestamp, and participant capacity limit.
+ * Checks token expiration against server timestamp and assigns structured HTTP status codes (410 for expired, 404 for not found/mismatched session, 400 for malformed, 409 for capacity limit).
+ */
+export function validateSessionInviteToken(
+  token: string,
+  currentParticipantsCount = 0,
+  expectedSessionId?: string,
+  secret: string = getInviteSecret(),
+  serverTimestamp: number = Date.now(),
+): ValidationResult {
+  if (!token || typeof token !== "string") {
+    return { valid: false, error: "Missing invite token.", statusCode: 400 };
+  }
+
+  const parts = token.split(".");
+  if (parts.length !== 2) {
+    return { valid: false, error: "Invalid invite token format.", statusCode: 400 };
+  }
+
+  const [payloadB64, signature] = parts;
+  const expectedSignature = computeHmacSha256(payloadB64, secret);
+
+  if (!timingSafeEqual(signature, expectedSignature)) {
+    return {
+      valid: false,
+      error: "Invalid or forged invite token signature.",
+      statusCode: 400,
+    };
+  }
+
+  try {
+    const jsonStr = decodeBase64Url(payloadB64);
+    const payload = JSON.parse(jsonStr) as InviteTokenPayload;
+
+    if (!payload || !payload.sessionId || !payload.expiresAt) {
+      return {
+        valid: false,
+        error: "Invalid invite token structure.",
+        statusCode: 400,
+      };
+    }
+
+    if (expectedSessionId && payload.sessionId !== expectedSessionId) {
+      return {
+        valid: false,
+        error: "Invite token does not match this session.",
+        statusCode: 404,
+      };
+    }
+
+    if (serverTimestamp > payload.expiresAt) {
+      return {
+        valid: false,
+        error: "Invite token has expired",
+        expired: true,
+        statusCode: 410,
+      };
+    }
+
+    if (
+      payload.maxParticipants !== undefined &&
+      payload.maxParticipants > 0 &&
+      currentParticipantsCount >= payload.maxParticipants
+    ) {
+      return {
+        valid: false,
+        error: "Session participant limit reached.",
+        statusCode: 409,
+      };
+    }
+
+    return { valid: true, statusCode: 200, payload };
+  } catch {
+    return {
+      valid: false,
+      error: "Failed to decode invite token.",
+      statusCode: 400,
+    };
+  }
+}
+
+/**
+ * Verifies invite token and returns a structured status code and JSON payload response.
+ */
+export function verifyInviteTokenResponse(
+  token: string,
+  currentParticipantsCount = 0,
+  expectedSessionId?: string,
+  secret: string = getInviteSecret(),
+  serverTimestamp: number = Date.now(),
+): { status: number; body: { error?: string; valid: boolean; payload?: InviteTokenPayload } } {
+  const result = validateSessionInviteToken(
+    token,
+    currentParticipantsCount,
+    expectedSessionId,
+    secret,
+    serverTimestamp,
+  );
+
+  return {
+    status: result.statusCode ?? (result.valid ? 200 : 400),
+    body: {
+      valid: result.valid,
+      ...(result.error ? { error: result.error } : {}),
+      ...(result.payload ? { payload: result.payload } : {}),
+    },
+  };
 }
 
 const CHUNK_SIZE = 8192;
@@ -121,7 +233,7 @@ function sha256(data: Uint8Array): Uint8Array {
 
   const len = data.length;
   const bitLen = len * 8;
-  const padLen = ((len + 8) >> 6 << 6) + 64;
+  const padLen = (((len + 8) >> 6) << 6) + 64;
   const padded = new Uint8Array(padLen);
   padded.set(data);
   padded[len] = 0x80;
@@ -262,60 +374,3 @@ export async function generateSessionInviteToken(
   return `${payloadB64}.${signature}`;
 }
 
-/**
- * Validates a session invite token against HMAC signature, expiration timestamp, and participant capacity limit.
- */
-export function validateSessionInviteToken(
-  token: string,
-  currentParticipantsCount: number,
-  expectedSessionId?: string,
-  secret: string = getInviteSecret(),
-): ValidationResult {
-  if (!token || typeof token !== "string") {
-    return { valid: false, error: "Missing invite token." };
-  }
-
-  const parts = token.split(".");
-  if (parts.length !== 2) {
-    return { valid: false, error: "Invalid invite token format." };
-  }
-
-  const [payloadB64, signature] = parts;
-  const expectedSignature = computeHmacSha256(payloadB64, secret);
-
-  if (!timingSafeEqual(signature, expectedSignature)) {
-    return { valid: false, error: "Invalid or forged invite token signature." };
-  }
-
-  try {
-    const jsonStr = decodeBase64Url(payloadB64);
-    const payload = JSON.parse(jsonStr) as InviteTokenPayload;
-
-    if (!payload || !payload.sessionId || !payload.expiresAt) {
-      return { valid: false, error: "Invalid invite token structure." };
-    }
-
-    if (expectedSessionId && payload.sessionId !== expectedSessionId) {
-      return {
-        valid: false,
-        error: "Invite token does not match this session.",
-      };
-    }
-
-    if (Date.now() > payload.expiresAt) {
-      return { valid: false, error: "Invite link has expired." };
-    }
-
-    if (
-      payload.maxParticipants !== undefined &&
-      payload.maxParticipants > 0 &&
-      currentParticipantsCount >= payload.maxParticipants
-    ) {
-      return { valid: false, error: "Session participant limit reached." };
-    }
-
-    return { valid: true, payload };
-  } catch {
-    return { valid: false, error: "Failed to decode invite token." };
-  }
-}

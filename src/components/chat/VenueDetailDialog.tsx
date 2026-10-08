@@ -66,6 +66,7 @@ import { AmbientNoiseTrendGraph } from "@/components/noise/AmbientNoiseTrendGrap
 import { CopyToClipboardButton } from "@/components/ui/CopyToClipboardButton";
 import { ReviewSentimentBadge } from "@/components/venue/ReviewSentimentBadge";
 import { summarizeReviewSentiment } from "@/lib/reviewSentiment";
+import { sanitizeReviewComment } from "@/lib/reviewCommentSanitizer";
 import { ExportRatingsCSVButton } from "@/components/analytics/ExportRatingsCSVButton";
 import {
   subscribeReviewSyncEvents,
@@ -2370,8 +2371,10 @@ export function VenueDetailDialog({
                     </div>
                     {review.comment && (
                       <div className="space-y-2">
-                        <p className="text-xs font-medium text-zinc-200 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5">
-                          {translatedReviews[review.id] || review.comment}
+                        <p className="text-xs font-medium text-zinc-200 leading-relaxed bg-black/40 p-3 rounded-xl border border-white/5 break-words">
+                          {sanitizeReviewComment(
+                            translatedReviews[review.id] || review.comment,
+                          )}
                         </p>
                         {!translatedReviews[review.id] && (
                           <button

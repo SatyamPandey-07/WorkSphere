@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { eventBus } from "@/core/events";
 import { autoPromoteSessionWaitlist } from "@/lib/social/waitlistPromotion";
+import { generateSessionIcs } from "@/lib/social/sessionIcs";
 import "@/core/subscribers/discord";
 
 const allowed = new Set(["GOING", "MAYBE", "DECLINED", "CANCELLED"]);
@@ -113,9 +114,29 @@ export async function POST(
       promotionResult = await autoPromoteSessionWaitlist(result.session.id);
     }
 
+    const calendar =
+      status === "GOING"
+        ? {
+            icsString: generateSessionIcs({
+              title: session.title,
+              description: session.description,
+              startsAt: session.startsAt,
+              endsAt: session.endsAt,
+              venueName: session.venue?.name,
+              venueAddress: session.venue?.address,
+              slug: session.slug,
+              organizerName: session.host
+                ? `${session.host.firstName || ""} ${session.host.lastName || ""}`.trim()
+                : undefined,
+            }),
+            downloadUrl: `/api/social/sessions/${session.slug}/rsvp?download=ics`,
+          }
+        : null;
+
     return NextResponse.json({
       ...result.rsvp,
       promotedWaitlist: promotionResult?.promotedRsvps ?? [],
+      calendar,
     });
   } catch (error: any) {
     if (error.message === "SESSION_NOT_FOUND") {

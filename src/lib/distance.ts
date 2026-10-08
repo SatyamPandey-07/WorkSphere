@@ -4,6 +4,16 @@ import {
   clampLongitude,
   isValidCoordinate,
 } from "@/lib/utils";
+import { type DistanceUnit } from "./geo/formatDistance";
+
+export type DistanceCalculationUnit =
+  | "km"
+  | "kilometers"
+  | "miles"
+  | "mi"
+  | "meters"
+  | "m"
+  | "walking_minutes";
 
 /**
  * Great-circle distance between two points on the Earth's surface, in kilometers.
@@ -25,8 +35,7 @@ import {
  * @param lon1 Longitude of the first point, in degrees (-180 to 180).
  * @param lat2 Latitude of the second point, in degrees (-90 to 90).
  * @param lon2 Longitude of the second point, in degrees (-180 to 180).
- * @returns Distance in kilometers. Identical points return 0; antipodal points
- *   return roughly 20015 km. A non-numeric argument propagates as NaN.
+ * @returns Distance in kilometers.
  */
 export function haversineKm(
   lat1: number,
@@ -42,12 +51,6 @@ export function haversineKm(
  *
  * Uses the international mile (1 mile = 1.609344 km), so the conversion factor is
  * 1 / 1.609344 = 0.621371.
- *
- * @param lat1 Latitude of the first point, in degrees (-90 to 90).
- * @param lon1 Longitude of the first point, in degrees (-180 to 180).
- * @param lat2 Latitude of the second point, in degrees (-90 to 90).
- * @param lon2 Longitude of the second point, in degrees (-180 to 180).
- * @returns Distance in statute miles (not nautical miles).
  */
 export function haversineMiles(
   lat1: number,
@@ -60,12 +63,38 @@ export function haversineMiles(
   return km * 0.621371;
 }
 
-export {
-  calculateHaversineDistance,
-  clampLatitude,
-  clampLongitude,
-  isValidCoordinate,
-};
+/**
+ * Calculates great-circle distance with multi-unit conversion support:
+ * - kilometers ("km" or "kilometers")
+ * - miles ("miles" or "mi")
+ * - meters ("meters" or "m")
+ * - walking minutes at 4.8 km/h ("walking_minutes")
+ */
+export function calculateDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+  unit: DistanceCalculationUnit = "km",
+): number {
+  const km = haversineKm(lat1, lon1, lat2, lon2);
+  if (isNaN(km)) return NaN;
+
+  switch (unit) {
+    case "miles":
+    case "mi":
+      return haversineMiles(lat1, lon1, lat2, lon2);
+    case "meters":
+    case "m":
+      return km * 1000;
+    case "walking_minutes":
+      return getWalkingMinutes(km);
+    case "km":
+    case "kilometers":
+    default:
+      return km;
+  }
+}
 
 /**
  * Estimated walking time for a distance, rounded up to the next whole minute.
@@ -81,8 +110,6 @@ export function getWalkingMinutes(km: number): number {
   if (!Number.isFinite(km) || km <= 0) return 0;
   return Math.ceil(km / 0.08);
 }
-
-import { type DistanceUnit } from "./geo/formatDistance";
 
 /**
  * Formats a walking-time badge for a distance, combining the minutes from
@@ -109,3 +136,69 @@ export function formatWalkingTimeBadge(
     meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${meters}m`;
   return `${mins} min walk · ${distance}`;
 }
+
+export interface LocationCoordinates {
+  latitude?: number | null;
+  longitude?: number | null;
+  lat?: number | null;
+  lng?: number | null;
+}
+
+/**
+ * Sorts venues by proximity to the user's GPS coordinates using the Haversine formula.
+ */
+export function sortVenuesByProximity<T extends LocationCoordinates>(
+  venues: T[],
+  userLocation: { lat: number; lng: number } | null | undefined,
+): T[] {
+  if (!userLocation || !isValidCoordinate(userLocation.lat, userLocation.lng)) {
+    return venues;
+  }
+
+  return [...venues].sort((a, b) => {
+    const aLat = a.latitude ?? a.lat;
+    const aLon = a.longitude ?? a.lng;
+    const bLat = b.latitude ?? b.lat;
+    const bLon = b.longitude ?? b.lng;
+
+    const distA =
+      aLat != null && aLon != null
+        ? haversineKm(userLocation.lat, userLocation.lng, aLat, aLon)
+        : Infinity;
+    const distB =
+      bLat != null && bLon != null
+        ? haversineKm(userLocation.lat, userLocation.lng, bLat, bLon)
+        : Infinity;
+
+    return distA - distB;
+  });
+}
+
+/**
+ * Filters venues within a maximum radius (in kilometers) from the user's location.
+ */
+export function filterVenuesByRadius<T extends LocationCoordinates>(
+  venues: T[],
+  userLocation: { lat: number; lng: number } | null | undefined,
+  maxDistanceKm: number,
+): T[] {
+  if (!maxDistanceKm || maxDistanceKm <= 0 || !userLocation) {
+    return venues;
+  }
+
+  return venues.filter((venue) => {
+    const vLat = venue.latitude ?? venue.lat;
+    const vLon = venue.longitude ?? venue.lng;
+    if (vLat == null || vLon == null) return false;
+
+    const dist = haversineKm(userLocation.lat, userLocation.lng, vLat, vLon);
+    return dist <= maxDistanceKm;
+  });
+}
+
+export {
+  calculateHaversineDistance,
+  clampLatitude,
+  clampLongitude,
+  isValidCoordinate,
+};

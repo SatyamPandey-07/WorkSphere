@@ -106,6 +106,6 @@ export const CSRF_PROTECTED_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]
  * Checks whether an HTTP method requires CSRF protection (case-insensitive).
  */
 export function isCsrfProtectedMethod(method: string | undefined | null): boolean {
-  if (!method) return false;
-  return CSRF_PROTECTED_METHODS.has(method.toUpperCase());
+  if (typeof method !== "string") return false;
+  return CSRF_PROTECTED_METHODS.has(method.trim().toUpperCase());
 }

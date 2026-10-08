@@ -28,29 +28,40 @@ describe("offlineStore – queueOfflineFavorite", () => {
     expect(entry).toBeDefined();
     expect(entry!.action).toBe("ADD");
     expect(typeof entry!.timestamp).toBe("number");
+
     // id must be present and be a number (assigned by autoIncrement)
     expect(typeof entry!.id).toBe("number");
   });
 
-  it("does NOT throw a ConstraintError when called twice in rapid succession (double-click)", async () => {
-    // Fire both calls concurrently without awaiting the first — this mirrors
-    // what happens when a user double-clicks the Check In / Favourite button.
-    await expect(
-      Promise.all([
-        queueOfflineFavorite("venue-double", "ADD"),
-        queueOfflineFavorite("venue-double", "ADD"),
-      ]),
-    ).resolves.not.toThrow();
+  it("deduplicates repeated offline favorite actions for the same venue", async () => {
+    await queueOfflineFavorite("venue-double", "ADD");
+    await queueOfflineFavorite("venue-double", "REMOVE");
+    await queueOfflineFavorite("venue-double", "ADD");
+    await queueOfflineFavorite("venue-double", "REMOVE");
 
     const queued = await getQueuedFavorites();
     const entries = queued.filter((a) => a.venueId === "venue-double");
 
-    // Both inserts must have succeeded — two distinct records in the store.
-    expect(entries).toHaveLength(2);
+    // Only the latest intended state should remain.
+    expect(entries).toHaveLength(1);
+    expect(entries[0].action).toBe("REMOVE");
+  });
 
-    // Each record must have a unique autoIncrement id.
-    const ids = entries.map((e) => e.id);
-    expect(new Set(ids).size).toBe(2);
+  it("keeps queued actions for different venues independent", async () => {
+    await queueOfflineFavorite("venue-a", "ADD");
+    await queueOfflineFavorite("venue-b", "REMOVE");
+    await queueOfflineFavorite("venue-a", "REMOVE");
+
+    const queued = await getQueuedFavorites();
+
+    const venueA = queued.filter((a) => a.venueId === "venue-a");
+    const venueB = queued.filter((a) => a.venueId === "venue-b");
+
+    expect(venueA).toHaveLength(1);
+    expect(venueA[0].action).toBe("REMOVE");
+
+    expect(venueB).toHaveLength(1);
+    expect(venueB[0].action).toBe("REMOVE");
   });
 
   it("queues a REMOVE action correctly", async () => {
@@ -82,6 +93,7 @@ describe("offlineStore – queueOfflineFavorite", () => {
 
     beforeEach(() => {
       jest.resetModules();
+
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const localStore = require("../../lib/offlineStore");
       localQueueOfflineFavorite = localStore.queueOfflineFavorite;
@@ -93,12 +105,14 @@ describe("offlineStore – queueOfflineFavorite", () => {
 
     afterEach(() => {
       indexedDB.open = originalOpen;
+
       if (
         typeof window !== "undefined" &&
         (window as any).__worksphere_offline_alert_shown
       ) {
         delete (window as any).__worksphere_offline_alert_shown;
       }
+
       delete (global as any).window;
       delete (global as any).alert;
     });
@@ -113,12 +127,14 @@ describe("offlineStore – queueOfflineFavorite", () => {
       await expect(
         localQueueOfflineFavorite("venue-fail-sync", "ADD"),
       ).resolves.toBeUndefined();
+
       expect(global.alert).toHaveBeenCalledTimes(1);
 
       // Verify alert is only shown once (subsequent errors do not spam alerts)
       await expect(
         localQueueOfflineFavorite("venue-fail-sync-2", "ADD"),
       ).resolves.toBeUndefined();
+
       expect(global.alert).toHaveBeenCalledTimes(1);
     });
   });
@@ -143,6 +159,7 @@ describe("offlineStore – incrementRetryCount", () => {
 
   it("increments retryCount on each call and persists it", async () => {
     await queueOfflineFavorite("venue-retry-inc", "ADD");
+
     const [entry] = (await getQueuedFavorites()).filter(
       (a) => a.venueId === "venue-retry-inc",
     );
@@ -156,11 +173,13 @@ describe("offlineStore – incrementRetryCount", () => {
     const [reloaded] = (await getQueuedFavorites()).filter(
       (a) => a.venueId === "venue-retry-inc",
     );
+
     expect(reloaded.retryCount).toBe(2);
   });
 
   it("returns null when incrementing an action that no longer exists", async () => {
     await queueOfflineFavorite("venue-retry-missing", "ADD");
+
     const [entry] = (await getQueuedFavorites()).filter(
       (a) => a.venueId === "venue-retry-missing",
     );
@@ -173,11 +192,13 @@ describe("offlineStore – incrementRetryCount", () => {
 
   it("reaches MAX_SYNC_RETRIES after repeated failures, signalling the caller to stop", async () => {
     await queueOfflineFavorite("venue-retry-cap", "ADD");
+
     const [entry] = (await getQueuedFavorites()).filter(
       (a) => a.venueId === "venue-retry-cap",
     );
 
     let attempts = 0;
+
     for (let i = 0; i < MAX_SYNC_RETRIES; i++) {
       attempts = (await incrementRetryCount(entry.id!)) ?? 0;
     }

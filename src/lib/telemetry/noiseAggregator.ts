@@ -105,6 +105,31 @@ export class NoiseAggregator {
   processSample(sample: NoiseSample, venueId = "default-venue"): NoiseFilterResult {
     const raw = sample.decibel;
 
+    // Filter out negative, NaN, or non-finite decibel readings from faulty hardware sensors (#5032)
+    if (typeof raw !== "number" || isNaN(raw) || !isFinite(raw) || raw < 0) {
+      this.outlierLog.push({
+        venueId,
+        rawDecibel: raw,
+        median: this.slidingWindow.length > 0 ? calculateMedian(this.slidingWindow) : 0,
+        deviation: 0,
+        timestamp: sample.timestamp,
+        reason: "Discarded invalid acoustic reading (negative or non-finite decibel value)",
+      });
+
+      const currentEmaVal = this.currentEma ?? 0;
+      const currentMedianVal = this.slidingWindow.length > 0 ? calculateMedian(this.slidingWindow) : 0;
+
+      return {
+        rawDecibel: raw,
+        filteredDecibel: currentEmaVal,
+        isOutlier: true,
+        emaDecibel: Math.round(currentEmaVal * 100) / 100,
+        median: Math.round(currentMedianVal * 100) / 100,
+        mad: 0,
+        noiseCategory: getNoiseCategory(currentEmaVal),
+      };
+    }
+
     // If window is empty or small, initialize
     if (this.slidingWindow.length < 3) {
       this.slidingWindow.push(raw);

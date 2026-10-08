@@ -8,7 +8,13 @@ export interface CheckInModalProps {
   onClose: () => void;
   venueName?: string;
   venueId?: string;
-  onCheckIn?: (data: { code: string; couponCode?: string }) => Promise<void> | void;
+  /** Whether browser GPS geolocation location acquisition is currently pending */
+  isLocating?: boolean;
+  onCheckIn?: (data: {
+    code: string;
+    couponCode?: string;
+    location?: { lat: number; lng: number; accuracy?: number } | null;
+  }) => Promise<void> | void;
 }
 
 /**
@@ -27,13 +33,14 @@ export function sanitizeCouponCode(coupon: string): string {
 
 /**
  * CheckInModal with automatic whitespace trimming, uppercase conversion,
- * and pure-whitespace validation feedback.
+ * pure-whitespace validation feedback, and pending geolocation accuracy locks.
  */
 export function CheckInModal({
   isOpen,
   onClose,
   venueName = "Workspace",
   venueId,
+  isLocating: isLocatingProp,
   onCheckIn,
 }: CheckInModalProps) {
   const [checkInCode, setCheckInCode] = useState("");
@@ -41,6 +48,10 @@ export function CheckInModal({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [internalLocating, setInternalLocating] = useState(false);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
+
+  const isGpsPending = isLocatingProp !== undefined ? isLocatingProp : internalLocating;
 
   if (!isOpen) return null;
 
@@ -222,7 +233,7 @@ export function CheckInModal({
                 </button>
                 <button
                   type="submit"
-                  disabled={isLoading}
+                  disabled={isLoading || isGpsPending}
                   data-testid="checkin-submit-btn"
                   className="w-1/2 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-500/20 flex items-center justify-center gap-1.5 transition-all disabled:opacity-50"
                 >
@@ -230,6 +241,11 @@ export function CheckInModal({
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
                       <span>Verifying...</span>
+                    </>
+                  ) : isGpsPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Acquiring location...</span>
                     </>
                   ) : (
                     <span>Confirm Check-In</span>

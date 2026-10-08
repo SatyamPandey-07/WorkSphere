@@ -48,6 +48,7 @@ export function GroupNotesEditor({
   const [conflicts, setConflicts] = useState<NotesOutboxConflict[] | null>(
     null,
   );
+  const [editorText, setEditorText] = useState("");
 
   const { toast } = useToast();
 
@@ -67,6 +68,7 @@ export function GroupNotesEditor({
       editor.innerText = next;
       applyingRemoteRef.current = false;
     }
+    setEditorText(next);
   }, []);
 
   useEffect(() => {
@@ -174,6 +176,7 @@ export function GroupNotesEditor({
     const editor = editorRef.current;
     const ytext = yTextRef.current;
     if (!editor || !ytext) return;
+    setEditorText(editor.innerText);
     applyYTextDiff(ytext, editor.innerText);
   };
 
@@ -217,6 +220,7 @@ export function GroupNotesEditor({
     lastDeletedTextRef.current = previousText;
     applyYTextDiff(ytext, "");
     editor.innerText = "";
+    setEditorText("");
 
     toast("Group notes deleted", "info", {
       label: "Undo",
@@ -225,6 +229,7 @@ export function GroupNotesEditor({
           const restored = lastDeletedTextRef.current;
           applyYTextDiff(ytext, restored);
           editor.innerText = restored;
+          setEditorText(restored);
           lastDeletedTextRef.current = null;
           toast("Notes restored", "success");
         }
@@ -280,6 +285,10 @@ export function GroupNotesEditor({
 
     toast("Exported venue notes as Markdown (.md) file", "success");
   }, [roomId, toast, venueName]);
+
+  const trimmedEditorText = editorText.trim();
+  const wordCount = trimmedEditorText ? trimmedEditorText.split(/\s+/).length : 0;
+  const charCount = editorText.length;
 
   return (
     <div className="flex w-full flex-col gap-2 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
@@ -338,12 +347,28 @@ export function GroupNotesEditor({
         className="min-h-[160px] rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-900 outline-none empty:before:text-zinc-400 empty:before:content-[attr(data-placeholder)] focus:ring-2 focus:ring-blue-500/40 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50"
       />
 
-      {status === "offline" && (
-        <p className="text-[10px] font-bold text-orange-500">
-          Offline — edits are saved to IndexedDB and will sync over PartyKit
-          when you reconnect.
-        </p>
-      )}
+      <div className="flex items-center justify-between text-xs text-zinc-400 dark:text-zinc-500">
+        <div>
+          {status === "offline" && (
+            <p className="text-[10px] font-bold text-orange-500">
+              Offline — edits are saved to IndexedDB and will sync over PartyKit
+              when you reconnect.
+            </p>
+          )}
+        </div>
+        <div
+          data-testid="notes-count-indicator"
+          className="shrink-0 flex items-center gap-1.5 font-medium ml-auto"
+        >
+          <span>
+            {wordCount} {wordCount === 1 ? "word" : "words"}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            {charCount} {charCount === 1 ? "char" : "chars"}
+          </span>
+        </div>
+      </div>
 
       {conflicts && conflicts.length > 0 && (
         <div

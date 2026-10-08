@@ -19,9 +19,12 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
     ? `#${(user.id.charCodeAt(0) * 16777215).toString(16).slice(0, 6)}`
     : "#ffffff";
 
+  const userAvatar = user?.imageUrl;
+
   const {
     shapeSnapshots,
     remoteCursors,
+    participants,
     tool,
     color,
     strokeWidth,
@@ -37,7 +40,12 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
     addShape,
     updateShape,
     updateCursor,
-  } = useMeshCanvasWhiteboard(canvasId, { userName, userColor, userId });
+  } = useMeshCanvasWhiteboard(canvasId, {
+    userName,
+    userColor,
+    userId,
+    userAvatar,
+  });
 
   const handleAddShape = useCallback(
     (shape: Parameters<typeof addShape>[0]) => addShape(shape),
@@ -60,6 +68,7 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
           canUndo={canUndo}
           canRedo={canRedo}
           isConnected={isConnected}
+          participants={participants}
           onToolChange={setTool}
           onColorChange={setColor}
           onStrokeWidthChange={setStrokeWidth}

@@ -6,6 +6,7 @@ import { Navigation, MapPin, Locate, RotateCcw, Check } from "lucide-react";
 export interface DistanceFilterSliderProps {
   value: number; // 0 for any distance, or 1-50 in km
   onChange: (distance: number) => void;
+  defaultValue?: number; // default 10 km
   min?: number; // default 1 km
   max?: number; // default 50 km
   step?: number; // default 1 km
@@ -19,6 +20,7 @@ export interface DistanceFilterSliderProps {
 export function DistanceFilterSlider({
   value,
   onChange,
+  defaultValue = 10,
   min = 1,
   max = 50,
   step = 1,
@@ -79,6 +81,11 @@ export function DistanceFilterSlider({
   const isAnyDistance = value === 0 || value < min;
   const sliderDisplayValue = isAnyDistance ? min : value;
 
+  // Reset to default radius (default 10km) on double-click (#5026)
+  const handleResetToDefault = useCallback(() => {
+    onChange(defaultValue);
+  }, [onChange, defaultValue]);
+
   return (
     <div
       data-testid="distance-filter-slider-container"
@@ -131,8 +138,16 @@ export function DistanceFilterSlider({
       </div>
 
       {/* Interactive Range Slider (1km to 50km) */}
-      <div className="space-y-1.5 pt-1">
-        <div className="relative flex items-center">
+      <div
+        className="space-y-1.5 pt-1"
+        data-testid="distance-slider-container"
+        onDoubleClick={handleResetToDefault}
+      >
+        <div
+          className="relative flex items-center"
+          data-testid="distance-slider-track"
+          onDoubleClick={handleResetToDefault}
+        >
           <input
             id="distance-slider"
             data-testid="distance-slider"
@@ -142,6 +157,7 @@ export function DistanceFilterSlider({
             step={step}
             value={sliderDisplayValue}
             onChange={(e) => onChange(Number(e.target.value))}
+            onDoubleClick={handleResetToDefault}
             aria-valuemin={min}
             aria-valuemax={max}
             aria-valuenow={isAnyDistance ? min : value}

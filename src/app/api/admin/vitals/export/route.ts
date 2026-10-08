@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminUser } from "@/lib/admin";
-import {
-  generateDefaultWebVitalsData,
-} from "@/lib/webVitalsCollector";
-import { generateWebVitalsCSV } from "@/lib/export/domain/systemVitalsExporter";
+import { createTelemetryCsvStream } from "@/lib/export/domain/systemVitalsExporter";
 
 export const dynamic = "force-dynamic";
 
@@ -19,17 +16,25 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const range = searchParams.get("range") || "7d";
+    const venueId = searchParams.get("venueId") || undefined;
+    const batchSizeParam = searchParams.get("batchSize");
+    const batchSize = batchSizeParam ? parseInt(batchSizeParam, 10) : 1000;
 
-    const webVitals = generateDefaultWebVitalsData(range);
-    const csvContent = generateWebVitalsCSV(webVitals);
+    const stream = createTelemetryCsvStream({
+      range,
+      venueId,
+      batchSize: isNaN(batchSize) ? 1000 : batchSize,
+    });
+
     const today = new Date().toISOString().slice(0, 10);
-    const filename = `worksphere-web-vitals-${range}-${today}.csv`;
+    const filename = `worksphere-system-vitals-${range}-${today}.csv`;
 
-    return new NextResponse(csvContent, {
+    return new Response(stream, {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${filename}"`,
+        "Transfer-Encoding": "chunked",
         "Cache-Control": "private, no-store, max-age=0",
       },
     });

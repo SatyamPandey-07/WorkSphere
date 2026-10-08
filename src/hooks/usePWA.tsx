@@ -7,6 +7,7 @@ import { purgeStaleWeights } from "@/lib/federated/weightDb";
 import { useWorkerTokenRefresh } from "@/hooks/useWorkerTokenRefresh";
 import { flushPendingReviewsClientFallback } from "@/lib/offlineReviewSync";
 import { useReviewConflictWorker } from "@/hooks/useReviewConflictWorker";
+import { ReviewConflictResolutionDialog } from "@/components/offline/ReviewConflictResolutionDialog";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -105,7 +106,7 @@ export function SyncManager() {
   useSyncWorker();
   usePeriodicAvailabilitySync();
   usePeriodicFavoriteVenuesSync();
-  useReviewConflictWorker();
+  const { activeConflict, setActiveConflict, resolveConflict } = useReviewConflictWorker();
 
   useEffect(() => {
     // Non-blocking purge of stale federated learning model weights on startup
@@ -138,7 +139,14 @@ export function SyncManager() {
     };
   }, []);
 
-  return null;
+  return (
+    <ReviewConflictResolutionDialog
+      isOpen={Boolean(activeConflict)}
+      conflictItem={activeConflict}
+      onClose={() => setActiveConflict(null)}
+      onResolve={resolveConflict}
+    />
+  );
 }
 
 /**

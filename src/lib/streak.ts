@@ -77,13 +77,40 @@ export interface StreakResult {
 }
 
 /**
+ * Normalizes a Date object or "YYYY-MM-DD" string to UTC midnight (00:00:00.000Z).
+ *
+ * Prevents timezone offset shifts and daylight saving time duration variances (23h / 25h days)
+ * from corrupting calendar day calculations.
+ */
+export function normalizeToUTCMidnight(date: Date | string): Date {
+  if (typeof date === "string") {
+    const [year, month, day] = date.slice(0, 10).split("-").map(Number);
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+/**
+ * Computes the exact calendar day difference between two dates by normalizing both to UTC midnight.
+ *
+ * Guarantees accurate 1-day step calculations across leap years (Feb 28 -> Feb 29 / Mar 1)
+ * and DST transitions (23-hour spring forward and 25-hour fall back days).
+ */
+export function getCalendarDayDifference(d1: Date | string, d2: Date | string): number {
+  const utc1 = normalizeToUTCMidnight(d1);
+  const utc2 = normalizeToUTCMidnight(d2);
+  const diffMs = utc2.getTime() - utc1.getTime();
+  return Math.round(diffMs / 86400000);
+}
+
+/**
  * calculateStreak
  *
  * Determines the new streak values when a user performs a daily check-in.
  *
  * Rules:
  * - Same day as lastCheckInDate → no-op (returns incremented: false)
- * - Consecutive day (yesterday === lastCheckInDate) → streak + 1
+ * - Consecutive day (1 calendar day delta normalized to UTC midnight) → streak + 1
  * - Any gap > 1 day → streak resets to 1
  *
  * @param lastCheckInDate  Stored "YYYY-MM-DD" UTC string, or null for first-ever
@@ -102,7 +129,7 @@ export function calculateStreak(
   const yesterday = yesterdayUTC(timeZone, now);
 
   // ── Same-day duplicate ──────────────────────────────────────────────────
-  if (lastCheckInDate === today) {
+  if (lastCheckInDate === today || (lastCheckInDate && getCalendarDayDifference(lastCheckInDate, today) === 0)) {
     return {
       currentStreak,
       longestStreak,
@@ -113,10 +140,13 @@ export function calculateStreak(
   }
 
   // ── Determine new streak ────────────────────────────────────────────────
-  const newStreak =
-    lastCheckInDate === yesterday
-      ? currentStreak + 1 // consecutive day
-      : 1; // first check-in ever, or gap reset
+  const isConsecutive =
+    lastCheckInDate === yesterday ||
+    (lastCheckInDate !== null && getCalendarDayDifference(lastCheckInDate, today) === 1);
+
+  const newStreak = isConsecutive
+    ? currentStreak + 1 // consecutive day
+    : 1; // first check-in ever, or gap reset
 
   const newLongest = Math.max(longestStreak, newStreak);
 

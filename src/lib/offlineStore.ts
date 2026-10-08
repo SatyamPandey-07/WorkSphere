@@ -244,49 +244,64 @@ export async function queueOfflineFavorite(
     try {
       const db = await getDB();
 
-      // Check for existing identical action before inserting
-      const existing = await new Promise<OfflineAction | undefined>(
-        (resolve, reject) => {
-          const tx = db.transaction(STORE_NAME, "readonly");
-          const store = tx.objectStore(STORE_NAME);
-          const request = store.getAll();
-          request.onsuccess = () =>
-            resolve(
-              (request.result || []).find(
-                (a) => a.venueId === venueId && a.action === action,
-              ),
-            );
-          request.onerror = () => reject(request.error);
-        },
-      );
-      if (existing) return;
-
       return new Promise<void>((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, "readwrite");
         const store = tx.objectStore(STORE_NAME);
-        store.add({
-          venueId,
-          action,
-          timestamp: Date.now(),
-          retryCount: 0,
-        });
+        const request = store.getAll();
+
+        request.onsuccess = () => {
+          const queued = (request.result || []) as OfflineAction[];
+
+          const sameVenue = queued.filter(
+            (item) => item.venueId === venueId,
+          );
+
+          const existing = sameVenue[0];
+
+          if (existing) {
+            // Keep only the latest intended state for this venue.
+            store.put({
+              ...existing,
+              action,
+              timestamp: Date.now(),
+              retryCount: 0,
+            });
+
+            // Remove any older duplicate entries for this venue.
+            for (const item of sameVenue.slice(1)) {
+              if (item.id !== undefined) {
+                store.delete(item.id);
+              }
+            }
+          } else {
+            store.add({
+              venueId,
+              action,
+              timestamp: Date.now(),
+              retryCount: 0,
+            });
+          }
+        };
+
+        request.onerror = () => reject(request.error);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
     } catch (err: any) {
       console.error("Failed to queue offline action:", err);
+
       if (
         err.name === "SecurityError" ||
         String(err.message).includes("SecurityError")
       ) {
         return;
       }
-      throw err; // let the caller (UI / service worker) know the write did not happen
+
+      throw err;
     }
   });
 }
-
-/**
+ /**
  * Retrieves all currently queued actions awaiting synchronization
  */
 export async function getQueuedFavorites(): Promise<OfflineAction[]> {

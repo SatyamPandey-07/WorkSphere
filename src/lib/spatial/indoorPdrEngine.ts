@@ -42,6 +42,8 @@ export interface StepDetectionResult {
   displacementX: number; // Delta X in meters
   displacementY: number; // Delta Y in meters
   timestamp: number;
+  stepFrequency?: number; // Step frequency in Hz
+  cadence?: number; // Step cadence in Hz
 }
 
 export interface PositionEstimate {
@@ -69,6 +71,8 @@ export interface PdrState {
   stepCount: number;
   totalDistance: number;
   uncertaintyRadius: number; // 1-sigma positional uncertainty in meters
+  stepFrequency?: number; // Step frequency in Hz
+  cadence?: number; // Step cadence in Hz
 }
 
 export interface PdrConfig {
@@ -147,6 +151,32 @@ export function calculateWeinbergStepLength(
 }
 
 /**
+ * Calculates pedestrian step cadence / frequency in Hz (steps per second)
+ * using the timestamp delta between two successive accelerometer peaks (#4791).
+ *
+ * Enforces a minimum time delta threshold (e.g. Math.max(100, deltaMs)) and
+ * guards against deltaMs <= 0 to avoid division by zero yielding Infinity.
+ *
+ * @param deltaMs Time delta in milliseconds between two successive step peaks
+ * @returns Step frequency in Hz, or 0 if deltaMs <= 0 or invalid
+ */
+export function calculateStepFrequency(deltaMs: number): number {
+  if (!Number.isFinite(deltaMs) || deltaMs <= 0) {
+    return 0;
+  }
+  const safeDeltaMs = Math.max(100, deltaMs);
+  return 1000 / safeDeltaMs;
+}
+
+/**
+ * Calculates pedestrian step cadence. Alias for calculateStepFrequency.
+ */
+export function calculateCadence(deltaMs: number, inSpm = false): number {
+  const freqHz = calculateStepFrequency(deltaMs);
+  return inSpm ? freqHz * 60 : freqHz;
+}
+
+/**
  * Converts RSSI signal strength to distance using the Log-Distance Path Loss model:
  * d = d0 * 10^((txPower - rssi) / (10 * n))
  *
@@ -160,11 +190,25 @@ export function calculateRssiDistance(
   txPower = -59,
   pathLossExp = 2.5,
 ): number {
-  if (rssi >= 0 || !Number.isFinite(rssi)) {
+  if (
+    !Number.isFinite(rssi) ||
+    rssi >= 0 ||
+    !Number.isFinite(txPower) ||
+    !Number.isFinite(pathLossExp) ||
+    pathLossExp <= 0
+  ) {
     return 0.1;
   }
-  const exponent = (txPower - rssi) / (10 * pathLossExp);
+  const safeTxPower = Number.isFinite(txPower) ? txPower : -59;
+  const safePathLoss = Number.isFinite(pathLossExp) && pathLossExp > 0 ? pathLossExp : 2.5;
+  const exponent = (safeTxPower - rssi) / (10 * safePathLoss);
+  if (!Number.isFinite(exponent)) {
+    return 0.1;
+  }
   const rawDist = Math.pow(10, exponent);
+  if (!Number.isFinite(rawDist)) {
+    return 0.1;
+  }
   return Math.max(0.1, Math.min(100, Math.round(rawDist * 100) / 100));
 }
 
@@ -177,7 +221,7 @@ export function calculateRssiDistance(
 export function solveTrilateration(
   beacons: BeaconReading[],
 ): PositionEstimate | null {
-  if (!beacons || beacons.length < 3) {
+  if (!beacons || !Array.isArray(beacons) || beacons.length < 3) {
     return null;
   }
 
@@ -185,6 +229,7 @@ export function solveTrilateration(
   const valid = beacons
     .filter(
       (b) =>
+        b &&
         Number.isFinite(b.x) &&
         Number.isFinite(b.y) &&
         Number.isFinite(b.rssi) &&
@@ -198,7 +243,8 @@ export function solveTrilateration(
         b.txPower ?? -59,
         b.pathLossExponent ?? 2.5,
       ),
-    }));
+    }))
+    .filter((b) => Number.isFinite(b.d) && b.d > 0);
 
   if (valid.length < 3) return null;
 
@@ -227,19 +273,23 @@ export function solveTrilateration(
 
   const det = row1_x * row2_y - row1_y * row2_x;
 
-  if (Math.abs(det) < 1e-6) {
+  if (!Number.isFinite(det) || Math.abs(det) < 1e-6) {
     // Collinear or degenerate: fall back to weighted centroid
     let sumWeight = 0;
     let wx = 0;
     let wy = 0;
     for (const b of valid) {
       const w = 1.0 / Math.max(0.1, b.d * b.d);
-      sumWeight += w;
-      wx += b.x * w;
-      wy += b.y * w;
+      if (Number.isFinite(w) && w > 0) {
+        sumWeight += w;
+        wx += b.x * w;
+        wy += b.y * w;
+      }
     }
+    if (sumWeight <= 0 || !Number.isFinite(sumWeight)) return null;
     const x = wx / sumWeight;
     const y = wy / sumWeight;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     return {
       x: Math.round(x * 100) / 100,
       y: Math.round(y * 100) / 100,
@@ -251,6 +301,10 @@ export function solveTrilateration(
   const estX = (row2_y * rhs1 - row1_y * rhs2) / det;
   const estY = (-row2_x * rhs1 + row1_x * rhs2) / det;
 
+  if (!Number.isFinite(estX) || !Number.isFinite(estY)) {
+    return null;
+  }
+
   // Calculate geometric residual error
   let residualSum = 0;
   for (const b of valid) {
@@ -258,12 +312,13 @@ export function solveTrilateration(
     residualSum += Math.abs(calcDist - b.d);
   }
   const residuals = residualSum / valid.length;
+  const safeResiduals = Number.isFinite(residuals) ? residuals : 1.0;
 
   return {
     x: Math.round(estX * 100) / 100,
     y: Math.round(estY * 100) / 100,
-    estimatedAccuracy: Math.max(1.0, Math.round(residuals * 100) / 100),
-    residuals: Math.round(residuals * 100) / 100,
+    estimatedAccuracy: Math.max(1.0, Math.round(safeResiduals * 100) / 100),
+    residuals: Math.round(safeResiduals * 100) / 100,
   };
 }
 
@@ -612,7 +667,9 @@ export class ExtendedKalmanFilter6D {
  */
 export class StepDetector {
   private config: Required<PdrConfig>;
+  private lastSampleTimestamp = 0;
   private lastStepTimestamp = 0;
+  private cadence = 0;
   private accelWindow: number[] = [];
   private rawNormWindow: number[] = [];
   private varianceWindowSize = 10;
@@ -649,7 +706,13 @@ export class StepDetector {
   processSample(
     norm: number,
     timestamp: number,
-  ): { stepDetected: boolean; aMax: number; aMin: number } {
+  ): { stepDetected: boolean; aMax: number; aMin: number; cadence?: number; stepFrequency?: number } {
+    // Ignore invalid zero-delta or non-increasing timestamp sensor samples (#4791)
+    if (this.lastSampleTimestamp > 0 && timestamp <= this.lastSampleTimestamp) {
+      return { stepDetected: false, aMax: 0, aMin: 0 };
+    }
+    this.lastSampleTimestamp = timestamp;
+
     // Maintain 10-sample sliding window for dynamic variance calculation
     this.rawNormWindow.push(norm);
     if (this.rawNormWindow.length > this.varianceWindowSize) {
@@ -700,6 +763,9 @@ export class StepDetector {
       const aMax = this.currentPeak;
       const aMin = this.currentValley;
 
+      const deltaMs = this.lastStepTimestamp > 0 ? timestamp - this.lastStepTimestamp : 0;
+      this.cadence = calculateStepFrequency(deltaMs);
+
       // Reset extrema and arm state
       this.isArmed = false;
       this.currentPeak = smoothed;
@@ -707,7 +773,7 @@ export class StepDetector {
       this.lastStepTimestamp = timestamp;
       this.stepCount++;
 
-      return { stepDetected: true, aMax, aMin };
+      return { stepDetected: true, aMax, aMin, cadence: this.cadence, stepFrequency: this.cadence };
     }
 
     return { stepDetected: false, aMax: 0, aMin: 0 };
@@ -717,8 +783,18 @@ export class StepDetector {
     return this.stepCount;
   }
 
+  getCadence(): number {
+    return this.cadence;
+  }
+
+  getStepFrequency(): number {
+    return this.cadence;
+  }
+
   reset(): void {
+    this.lastSampleTimestamp = 0;
     this.lastStepTimestamp = 0;
+    this.cadence = 0;
     this.accelWindow = [];
     this.rawNormWindow = [];
     this.isArmed = false;
@@ -739,6 +815,8 @@ export class IndoorPdrEngine {
   private ekf: ExtendedKalmanFilter6D;
   private stepDetector: StepDetector;
   private lastSampleTimestamp = 0;
+  private lastStepTimestamp = 0;
+  private currentCadence = 0;
   private currentHeadingRad = 0;
   private totalDistance = 0;
   private hasReceivedFirstFix = false;
@@ -766,6 +844,11 @@ export class IndoorPdrEngine {
    * @returns StepDetectionResult if a step was completed, otherwise null
    */
   processImuSample(sample: ImuSample): StepDetectionResult | null {
+    // Ignore invalid zero-delta or non-increasing timestamp sensor samples (#4791)
+    if (this.lastSampleTimestamp > 0 && sample.timestamp <= this.lastSampleTimestamp) {
+      return null;
+    }
+
     const dtSeconds =
       this.lastSampleTimestamp > 0
         ? Math.max(0.001, (sample.timestamp - this.lastSampleTimestamp) / 1000)
@@ -817,6 +900,10 @@ export class IndoorPdrEngine {
     );
 
     if (stepDetected) {
+      const deltaMs = this.lastStepTimestamp > 0 ? sample.timestamp - this.lastStepTimestamp : 0;
+      this.currentCadence = calculateStepFrequency(deltaMs);
+      this.lastStepTimestamp = sample.timestamp;
+
       // Calculate dynamic step length via Weinberg formula
       const stepLength = calculateWeinbergStepLength(
         aMax,
@@ -847,6 +934,8 @@ export class IndoorPdrEngine {
         displacementX: dx,
         displacementY: dy,
         timestamp: sample.timestamp,
+        stepFrequency: Math.round(this.currentCadence * 100) / 100,
+        cadence: Math.round(this.currentCadence * 100) / 100,
       };
     }
 
@@ -898,7 +987,13 @@ export class IndoorPdrEngine {
    * @returns boolean true if range update was accepted by EKF
    */
   processSingleBeaconRssi(beacon: BeaconReading): boolean {
-    if (!beacon || !Number.isFinite(beacon.rssi) || beacon.rssi >= 0) {
+    if (
+      !beacon ||
+      !Number.isFinite(beacon.x) ||
+      !Number.isFinite(beacon.y) ||
+      !Number.isFinite(beacon.rssi) ||
+      beacon.rssi >= 0
+    ) {
       return false;
     }
 
@@ -908,8 +1003,16 @@ export class IndoorPdrEngine {
       beacon.pathLossExponent ?? 2.5,
     );
 
+    if (!Number.isFinite(distance) || distance <= 0) {
+      return false;
+    }
+
     // Variance grows with distance due to log-distance shadow fading
     const rVariance = Math.max(1.0, Math.pow(0.25 * distance, 2) + 1.5);
+    if (!Number.isFinite(rVariance) || rVariance <= 0) {
+      return false;
+    }
+
     const accepted = this.ekf.updateRange(beacon.x, beacon.y, distance, rVariance);
 
     if (accepted) {
@@ -941,6 +1044,8 @@ export class IndoorPdrEngine {
       totalDistance: Math.round(this.totalDistance * 100) / 100,
       uncertaintyRadius:
         Math.round(this.ekf.getUncertaintyRadius() * 100) / 100,
+      stepFrequency: Math.round(this.currentCadence * 100) / 100,
+      cadence: Math.round(this.currentCadence * 100) / 100,
     };
   }
 
@@ -970,6 +1075,8 @@ export class IndoorPdrEngine {
     );
     this.stepDetector.reset();
     this.lastSampleTimestamp = 0;
+    this.lastStepTimestamp = 0;
+    this.currentCadence = 0;
     this.currentHeadingRad = normalizeAngle(initialPosition.heading);
     this.totalDistance = 0;
     this.trajectory = [

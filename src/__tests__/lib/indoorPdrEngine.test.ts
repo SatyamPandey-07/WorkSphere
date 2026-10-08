@@ -3,6 +3,8 @@ import {
   radToDeg,
   degToRad,
   calculateWeinbergStepLength,
+  calculateStepFrequency,
+  calculateCadence,
   calculateRssiDistance,
   solveTrilateration,
   ExtendedKalmanFilter6D,
@@ -424,6 +426,72 @@ describe("Indoor PDR Engine & Extended Kalman Filter", () => {
       expect(after.x).toBeCloseTo(before.x, 2);
       expect(after.y).toBeCloseTo(before.y, 2);
       expect(after.stepCount).toBe(before.stepCount);
+    });
+  });
+
+  describe("Step Cadence & Zero-Delta Guard (#4791)", () => {
+    test("guards against deltaMs <= 0 in calculateStepFrequency and calculateCadence", () => {
+      expect(calculateStepFrequency(0)).toBe(0);
+      expect(calculateStepFrequency(-50)).toBe(0);
+      expect(calculateStepFrequency(NaN)).toBe(0);
+      expect(calculateStepFrequency(-Infinity)).toBe(0);
+      expect(calculateCadence(0)).toBe(0);
+      expect(calculateCadence(-100)).toBe(0);
+    });
+
+    test("enforces minimum time delta threshold when computing step frequency", () => {
+      // deltaMs < 100 is clamped to Math.max(100, deltaMs) = 100ms -> 1000 / 100 = 10 Hz
+      expect(calculateStepFrequency(50)).toBe(10);
+      expect(calculateStepFrequency(10)).toBe(10);
+      // Valid deltaMs (500ms -> 2 Hz)
+      expect(calculateStepFrequency(500)).toBe(2);
+      expect(calculateStepFrequency(1000)).toBe(1);
+    });
+
+    test("ignores invalid zero-delta sensor samples with simultaneous timestamps in IndoorPdrEngine", () => {
+      const engine = new IndoorPdrEngine({ x: 0, y: 0, heading: 0 });
+
+      // First sample at t = 1000
+      const sample1 = engine.processImuSample({
+        timestamp: 1000,
+        ax: 0,
+        ay: 0,
+        az: 9.8,
+        headingDeg: 0,
+      });
+      expect(sample1).toBeNull();
+
+      // Simultaneous sample at t = 1000 (delta = 0)
+      const sampleSimultaneous = engine.processImuSample({
+        timestamp: 1000,
+        ax: 0,
+        ay: 0,
+        az: 14.0,
+        headingDeg: 0,
+      });
+      // Must be ignored and return null
+      expect(sampleSimultaneous).toBeNull();
+
+      // Past sample at t = 999 (delta < 0)
+      const samplePast = engine.processImuSample({
+        timestamp: 999,
+        ax: 0,
+        ay: 0,
+        az: 14.0,
+        headingDeg: 0,
+      });
+      expect(samplePast).toBeNull();
+    });
+
+    test("ignores zero-delta sensor samples in StepDetector", () => {
+      const detector = new StepDetector();
+      const res1 = detector.processSample(9.8, 1000);
+      expect(res1.stepDetected).toBe(false);
+
+      // Simultaneous sample at t = 1000
+      const resSimultaneous = detector.processSample(14.0, 1000);
+      expect(resSimultaneous.stepDetected).toBe(false);
+      expect(detector.getStepCount()).toBe(0);
     });
   });
 });

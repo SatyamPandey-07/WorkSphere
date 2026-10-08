@@ -2,6 +2,7 @@ import {
   formatTimeBadge,
   getVenueHoursStatus,
   is24HoursString,
+  resolveTimezone,
 } from "@/lib/venueHours";
 
 describe("venueHours utility", () => {
@@ -214,6 +215,62 @@ describe("venueHours utility", () => {
       expect(status.isAvailable).toBe(true);
       expect(status.badgeText).toBe("By appointment only");
       expect(status.status).toBe("unknown");
+    });
+
+    it("handles null, undefined, empty, or invalid timezone without throwing RangeError", () => {
+      const testDate = new Date(2026, 9, 8, 14, 30);
+      const hours = "08:00 - 20:00";
+
+      // Null, undefined, empty string timezone
+      expect(() => getVenueHoursStatus(hours, testDate, null)).not.toThrow();
+      expect(() => getVenueHoursStatus(hours, testDate, undefined)).not.toThrow();
+      expect(() => getVenueHoursStatus(hours, testDate, "")).not.toThrow();
+      expect(() => getVenueHoursStatus(hours, testDate, "   ")).not.toThrow();
+
+      // Invalid timezone string
+      expect(() => getVenueHoursStatus(hours, testDate, "Invalid/Timezone_Name")).not.toThrow();
+      expect(() => getVenueHoursStatus(hours, testDate, "XYZ/123")).not.toThrow();
+
+      const statusWithInvalidTz = getVenueHoursStatus(hours, testDate, "Invalid/Timezone_Name");
+      expect(statusWithInvalidTz).toBeDefined();
+      expect(typeof statusWithInvalidTz.isOpen).toBe("boolean");
+    });
+
+    it("handles structured JSON with invalid or missing timezone", () => {
+      const testDate = new Date(2026, 9, 8, 14, 30);
+      const invalidTzJson = JSON.stringify({
+        timezone: "Invalid/Zone",
+        periods: {
+          thursday: { open: "08:00", close: "20:00", closed: false },
+        },
+      });
+
+      expect(() => getVenueHoursStatus(invalidTzJson, testDate)).not.toThrow();
+      const status = getVenueHoursStatus(invalidTzJson, testDate);
+      expect(status.isAvailable).toBe(true);
+    });
+  });
+
+  describe("resolveTimezone helper", () => {
+    it("returns valid IANA timezones intact", () => {
+      expect(resolveTimezone("America/New_York")).toBe("America/New_York");
+      expect(resolveTimezone("Europe/London")).toBe("Europe/London");
+      expect(resolveTimezone("Asia/Tokyo")).toBe("Asia/Tokyo");
+      expect(resolveTimezone("UTC")).toBe("UTC");
+    });
+
+    it("falls back to UTC for null, undefined, empty, or invalid timezones", () => {
+      expect(resolveTimezone(null)).toBe("UTC");
+      expect(resolveTimezone(undefined)).toBe("UTC");
+      expect(resolveTimezone("")).toBe("UTC");
+      expect(resolveTimezone("   ")).toBe("UTC");
+      expect(resolveTimezone("Mars/Curiosity")).toBe("UTC");
+      expect(resolveTimezone("Fake/Timezone")).toBe("UTC");
+    });
+
+    it("supports custom fallback timezone", () => {
+      expect(resolveTimezone(null, "America/New_York")).toBe("America/New_York");
+      expect(resolveTimezone("Invalid/Tz", "Europe/Paris")).toBe("Europe/Paris");
     });
   });
 });

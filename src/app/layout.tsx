@@ -20,6 +20,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { IdleSessionDialog } from "../components/auth/IdleSessionDialog";
 import { StorageQuotaWarningBanner } from "../components/ui/StorageQuotaWarningBanner";
 import { OfflineBanner } from "../components/ui/OfflineBanner";
+import { RateLimitBanner } from "../components/ui/RateLimitBanner";
 import { THEME_INIT_SCRIPT } from "../lib/theme-init-script";
 
 const geistSans = Geist({
@@ -100,6 +101,7 @@ export default async function RootLayout({
         <ToastProvider>
           <CurrencyProvider>
             <OfflineBanner />
+            <RateLimitBanner />
             <PWAUpdateListener />
             <KeyboardShortcutsModal />
             <CommandPalette />

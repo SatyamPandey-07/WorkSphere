@@ -250,19 +250,30 @@ export async function queueOfflineFavorite(
         const request = store.getAll();
 
         request.onsuccess = () => {
-          const existing = (request.result as OfflineAction[]).filter(
+          const queued = (request.result || []) as OfflineAction[];
+
+          const sameVenue = queued.filter(
             (item) => item.venueId === venueId,
           );
-          const matching = existing.filter((item) => item.action === action);
-          const retained = matching.sort(
-            (a, b) => (b.timestamp || 0) - (a.timestamp || 0),
-          )[0];
 
-          for (const item of existing) {
-            if (item !== retained) store.delete(item.id!);
-          }
+          const existing = sameVenue[0];
 
-          if (!retained) {
+          if (existing) {
+            // Keep only the latest intended state for this venue.
+            store.put({
+              ...existing,
+              action,
+              timestamp: Date.now(),
+              retryCount: 0,
+            });
+
+            // Remove any older duplicate entries for this venue.
+            for (const item of sameVenue.slice(1)) {
+              if (item.id !== undefined) {
+                store.delete(item.id);
+              }
+            }
+          } else {
             store.add({
               venueId,
               action,
@@ -271,6 +282,7 @@ export async function queueOfflineFavorite(
             });
           }
         };
+
         request.onerror = () => reject(request.error);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
@@ -278,18 +290,19 @@ export async function queueOfflineFavorite(
       });
     } catch (err: any) {
       console.error("Failed to queue offline action:", err);
+
       if (
         err.name === "SecurityError" ||
         String(err.message).includes("SecurityError")
       ) {
         return;
       }
-      throw err; // let the caller (UI / service worker) know the write did not happen
+
+      throw err;
     }
   });
 }
-
-/**
+ /**
  * Retrieves all currently queued actions awaiting synchronization
  */
 export async function getQueuedFavorites(): Promise<OfflineAction[]> {

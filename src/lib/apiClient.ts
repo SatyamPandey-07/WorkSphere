@@ -352,7 +352,7 @@ function headerNumber(headers: Headers, ...names: string[]): number | null {
 }
 
 /** Seconds to wait before retrying a 429, from headers or JSON body. */
-async function retryAfterSeconds(response: Response): Promise<number> {
+export async function retryAfterSeconds(response: Response): Promise<number> {
   const now = Date.now();
   const retryAfterHeader = response.headers.get("Retry-After");
   if (retryAfterHeader) {

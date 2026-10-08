@@ -110,12 +110,24 @@ export function parsePartitionBoundaries(
 }
 
 export function escapeCsv(
-  value: string | number | boolean | null | undefined,
+  value: string | number | boolean | Date | null | undefined,
+  sanitizeFormulas = true,
 ): string {
   if (value === null || value === undefined) {
     return "";
   }
-  const str = String(value);
+  let str: string;
+  if (value instanceof Date) {
+    str = isNaN(value.getTime()) ? "" : value.toISOString();
+  } else {
+    str = String(value);
+  }
+
+  // Formula injection sanitization
+  if (sanitizeFormulas && /^[=+\-@\t\r]/.test(str.trimStart())) {
+    str = "'" + str;
+  }
+
   if (
     str.includes(",") ||
     str.includes('"') ||

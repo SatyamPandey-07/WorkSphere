@@ -179,6 +179,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
           (seat: Seat) => seat.id === selectedSeat && seat.available,
         )
       ) {
+        releaseHold(selectedSeat).catch(() => {});
         setSelectedSeat(null);
       }
     } catch (error) {
@@ -188,7 +189,7 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
     } finally {
       setLoading(false);
     }
-  }, [venue.id, date, time, duration, selectedSeat]);
+  }, [venue.id, date, time, duration, selectedSeat, releaseHold]);
 
   useEffect(() => {
     loadAvailability();
@@ -569,9 +570,25 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                       Seat <strong>{seats.find((s) => s.id === selectedSeat)?.seatNumber}</strong> locked for checkout
                     </span>
                   </span>
-                  <span className="font-mono font-semibold text-amber-300">
-                    {Math.floor(remainingSeconds / 60)}:{(remainingSeconds % 60).toString().padStart(2, "0")} remaining
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-semibold text-amber-300">
+                      {Math.floor(remainingSeconds / 60)}:{(remainingSeconds % 60).toString().padStart(2, "0")} remaining
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (selectedSeat) {
+                          await releaseHold(selectedSeat);
+                          setSelectedSeat(null);
+                          setMessage("Seat hold released.");
+                        }
+                      }}
+                      className="rounded-md border border-amber-500/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-200 hover:bg-amber-500/30 transition-colors"
+                      title="Release seat hold lock"
+                    >
+                      Release
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -581,7 +598,13 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                     type="date"
                     min={todayString()}
                     value={date}
-                    onChange={(event) => setDate(event.target.value)}
+                    onChange={(event) => {
+                      if (selectedSeat) {
+                        releaseHold(selectedSeat).catch(() => {});
+                        setSelectedSeat(null);
+                      }
+                      setDate(event.target.value);
+                    }}
                     className="reserve-input"
                   />
                 </Field>
@@ -590,7 +613,13 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   <input
                     type="time"
                     value={time}
-                    onChange={(event) => setTime(event.target.value)}
+                    onChange={(event) => {
+                      if (selectedSeat) {
+                        releaseHold(selectedSeat).catch(() => {});
+                        setSelectedSeat(null);
+                      }
+                      setTime(event.target.value);
+                    }}
                     className="reserve-input"
                   />
                 </Field>
@@ -617,7 +646,13 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                         <button
                           key={pill.label}
                           type="button"
-                          onClick={() => setDuration(pill.minutes)}
+                          onClick={() => {
+                            if (selectedSeat && duration !== pill.minutes) {
+                              releaseHold(selectedSeat).catch(() => {});
+                              setSelectedSeat(null);
+                            }
+                            setDuration(pill.minutes);
+                          }}
                           className={`rounded-full px-3 py-1 text-xs font-medium transition-all ${
                             isActive
                               ? "bg-violet-600 text-white shadow-sm shadow-violet-500/25 ring-1 ring-violet-400"
@@ -635,7 +670,14 @@ export default function ReservationClient({ venue }: { venue: Venue }) {
                   <Field label="End time" icon={<Clock3 className="h-4 w-4" />}>
                     <select
                       value={duration}
-                      onChange={(event) => setDuration(Number(event.target.value))}
+                      onChange={(event) => {
+                        const newDur = Number(event.target.value);
+                        if (selectedSeat && duration !== newDur) {
+                          releaseHold(selectedSeat).catch(() => {});
+                          setSelectedSeat(null);
+                        }
+                        setDuration(newDur);
+                      }}
                       className="reserve-input"
                       aria-label="End time"
                       data-testid="end-time-select"

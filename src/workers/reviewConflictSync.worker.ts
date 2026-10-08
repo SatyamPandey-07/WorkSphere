@@ -13,7 +13,12 @@ export const DB_NAME = "worksphere-offline";
 export const REVIEW_STORE_NAME = "pendingReviews";
 export const DEFAULT_CHECK_INTERVAL_MS = 30000;
 
-export type ConflictResolutionStrategy = "KEEP_LOCAL" | "USE_REMOTE" | "AUTO_MERGE";
+export type ConflictResolutionStrategy =
+  | "KEEP_LOCAL"
+  | "USE_REMOTE"
+  | "AUTO_MERGE"
+  | "THREE_WAY_MERGE"
+  | "CUSTOM_MERGE";
 
 export interface QueuedReviewItem {
   id: string;
@@ -56,14 +61,28 @@ export type ReviewConflictWorkerInboundMessage =
   | { type: "START_PERIODIC_CHECK"; intervalMs?: number; token?: string; csrfToken?: string }
   | { type: "STOP_PERIODIC_CHECK" }
   | { type: "TRIGGER_SYNC"; token?: string; csrfToken?: string }
-  | { type: "RESOLVE_CONFLICT"; id: string; resolution: ConflictResolutionStrategy; token?: string; csrfToken?: string }
+  | {
+      type: "RESOLVE_CONFLICT";
+      id: string;
+      resolution: ConflictResolutionStrategy;
+      customData?: QueuedReviewItem["data"];
+      token?: string;
+      csrfToken?: string;
+    }
   | { type: "SET_AUTH_TOKEN"; token: string | null }
   | { type: "SET_CSRF_TOKEN"; csrfToken: string | null };
 
 export type ReviewConflictWorkerOutboundMessage =
   | { type: "SYNC_STARTED" }
   | { type: "SYNC_SUCCESS"; id: string; venueId: string; venueName?: string }
-  | { type: "CONFLICT_DETECTED"; id: string; venueId: string; venueName?: string; conflictDetails: QueuedReviewItem["conflictDetails"] }
+  | {
+      type: "CONFLICT_DETECTED";
+      id: string;
+      venueId: string;
+      venueName?: string;
+      conflictDetails: QueuedReviewItem["conflictDetails"];
+      localReview?: QueuedReviewItem;
+    }
   | { type: "CONFLICT_RESOLVED"; id: string; resolution: ConflictResolutionStrategy; success: boolean }
   | { type: "PERIODIC_CHECK_COMPLETE"; flushed: number; conflicts: number; failures: number; timestamp: number }
   | { type: "AUTH_REQUIRED"; id?: string }
@@ -256,6 +275,7 @@ async function runReviewSyncAndConflictResolution(): Promise<{
             venueId: item.venueId,
             venueName: item.venueName,
             conflictDetails: conflictJson,
+            localReview: item,
           } satisfies ReviewConflictWorkerOutboundMessage);
           continue;
         }
@@ -309,13 +329,55 @@ async function runReviewSyncAndConflictResolution(): Promise<{
   return { flushed, conflicts, failures };
 }
 
+// ── Pending Resolution Dispatch Map & 15s TTL Eviction (#5035) ────────────────
+export interface PendingResolutionCallback {
+  id: string;
+  timestamp: number;
+  timerId: ReturnType<typeof setTimeout>;
+}
+
+export const pendingResolutions = new Map<string, PendingResolutionCallback>();
+export const RESOLUTION_TIMEOUT_MS = 15000; // 15s TTL per pending callback
+
+export function getPendingResolutionsCount(): number {
+  return pendingResolutions.size;
+}
+
+export function registerPendingResolution(id: string): void {
+  clearPendingResolution(id);
+
+  const timerId = setTimeout(() => {
+    if (pendingResolutions.has(id)) {
+      pendingResolutions.delete(id);
+      workerScope.postMessage({
+        type: "CONFLICT_RESOLVED",
+        id,
+        resolution: "AUTO_MERGE",
+        success: false,
+      } satisfies ReviewConflictWorkerOutboundMessage);
+    }
+  }, RESOLUTION_TIMEOUT_MS);
+
+  pendingResolutions.set(id, { id, timestamp: Date.now(), timerId });
+}
+
+export function clearPendingResolution(id: string): void {
+  const pending = pendingResolutions.get(id);
+  if (pending) {
+    clearTimeout(pending.timerId);
+    pendingResolutions.delete(id);
+  }
+}
+
 /**
  * Handle explicit conflict resolution request from main thread.
  */
 async function handleResolveConflict(
   id: string,
   resolution: ConflictResolutionStrategy,
+  customData?: QueuedReviewItem["data"],
 ): Promise<void> {
+  registerPendingResolution(id);
   try {
     const reviews = await getWorkerQueuedReviews();
     const item = reviews.find((r) => r.id === id);
@@ -341,7 +403,20 @@ async function handleResolveConflict(
       return;
     }
 
-    // "KEEP_LOCAL" or "AUTO_MERGE": Force overwrite with local payload
+    // Determine payload data based on resolution strategy
+    let payloadData: QueuedReviewItem["data"] = customData || item.data;
+    if (resolution === "THREE_WAY_MERGE" && !customData) {
+      const serverReview = (item.conflictDetails?.serverReview || {}) as Record<string, unknown>;
+      payloadData = {
+        ...item.data,
+        ...serverReview,
+        ...(item.data.comment && serverReview.comment && item.data.comment !== serverReview.comment
+          ? { comment: `${item.data.comment}\n\n[Server update: ${serverReview.comment}]` }
+          : {}),
+      } as QueuedReviewItem["data"];
+    }
+
+    // Force overwrite with merged / chosen payload
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "X-Idempotency-Key": item.id,
@@ -361,7 +436,7 @@ async function handleResolveConflict(
         headers,
         credentials: "same-origin",
         body: JSON.stringify({
-          ...item.data,
+          ...payloadData,
           idempotencyKey: item.id,
           forceOverwrite: true,
         }),
@@ -395,6 +470,8 @@ async function handleResolveConflict(
       type: "SYNC_ERROR",
       error: err?.message || "Conflict resolution failed",
     } satisfies ReviewConflictWorkerOutboundMessage);
+  } finally {
+    clearPendingResolution(id);
   }
 }
 
@@ -441,7 +518,7 @@ workerScope.onmessage = async (event: MessageEvent<ReviewConflictWorkerInboundMe
     case "RESOLVE_CONFLICT": {
       if (msg.token) currentToken = msg.token;
       if (msg.csrfToken) currentCsrfToken = msg.csrfToken;
-      void handleResolveConflict(msg.id, msg.resolution);
+      void handleResolveConflict(msg.id, msg.resolution, msg.customData);
       break;
     }
 

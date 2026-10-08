@@ -4,6 +4,8 @@ import {
   shiftDateString,
   todayUTC,
   yesterdayUTC,
+  normalizeToUTCMidnight,
+  getCalendarDayDifference,
 } from "@/lib/streak";
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -312,5 +314,61 @@ describe("calculateStreak across DST transitions", () => {
     );
     expect(resultSameDay.incremented).toBe(false);
     expect(resultSameDay.currentStreak).toBe(4);
+  });
+
+  it("preserves streaks across leap day transitions (Feb 28 -> Feb 29 -> Mar 1 in 2024)", () => {
+    // Check-in on Feb 28, 2024
+    const feb28Now = new Date("2024-02-28T14:00:00Z");
+    const streakFeb28 = calculateStreak(null, 0, 0, "UTC", feb28Now);
+    expect(streakFeb28.currentStreak).toBe(1);
+    expect(streakFeb28.lastCheckInDate).toBe("2024-02-28");
+
+    // Check-in on Feb 29, 2024 (Leap Day)
+    const feb29Now = new Date("2024-02-29T16:30:00Z");
+    const streakFeb29 = calculateStreak("2024-02-28", 1, 1, "UTC", feb29Now);
+    expect(streakFeb29.incremented).toBe(true);
+    expect(streakFeb29.currentStreak).toBe(2);
+    expect(streakFeb29.lastCheckInDate).toBe("2024-02-29");
+
+    // Check-in on Mar 1, 2024
+    const mar01Now = new Date("2024-03-01T09:15:00Z");
+    const streakMar01 = calculateStreak("2024-02-29", 2, 2, "UTC", mar01Now);
+    expect(streakMar01.incremented).toBe(true);
+    expect(streakMar01.currentStreak).toBe(3);
+    expect(streakMar01.lastCheckInDate).toBe("2024-03-01");
+  });
+});
+
+// ─── normalizeToUTCMidnight & getCalendarDayDifference ───────────────────────
+
+describe("normalizeToUTCMidnight", () => {
+  it("normalizes Date objects with arbitrary hours to UTC midnight", () => {
+    const d = new Date("2024-02-29T23:59:59.999Z");
+    const normalized = normalizeToUTCMidnight(d);
+    expect(normalized.toISOString()).toBe("2024-02-29T00:00:00.000Z");
+  });
+
+  it("normalizes YYYY-MM-DD date strings to UTC midnight", () => {
+    const normalized = normalizeToUTCMidnight("2024-02-29");
+    expect(normalized.toISOString()).toBe("2024-02-29T00:00:00.000Z");
+  });
+});
+
+describe("getCalendarDayDifference", () => {
+  it("returns 1 for consecutive days across leap day (Feb 28 to Feb 29 in 2024)", () => {
+    expect(getCalendarDayDifference("2024-02-28", "2024-02-29")).toBe(1);
+    expect(getCalendarDayDifference("2024-02-29", "2024-03-01")).toBe(1);
+  });
+
+  it("returns 1 for consecutive days across Feb 28 to Mar 1 in non-leap year (2023)", () => {
+    expect(getCalendarDayDifference("2023-02-28", "2023-03-01")).toBe(1);
+  });
+
+  it("returns 0 for same calendar day", () => {
+    expect(getCalendarDayDifference("2024-02-29", "2024-02-29")).toBe(0);
+  });
+
+  it("returns > 1 for skipped calendar days", () => {
+    expect(getCalendarDayDifference("2024-02-28", "2024-03-01")).toBe(2);
   });
 });

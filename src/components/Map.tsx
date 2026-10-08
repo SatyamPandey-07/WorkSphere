@@ -423,6 +423,251 @@ const MemoizedCursorMarker = memo(function MemoizedCursorMarker({
   );
 });
 
+export interface MapViewportBounds {
+  minLat: number;
+  maxLat: number;
+  minLng: number;
+  maxLng: number;
+  zoom: number;
+}
+
+export function ViewportWatcher({
+  onViewportChange,
+  debounceMs = 300,
+}: {
+  onViewportChange?: (bounds: MapViewportBounds) => void;
+  debounceMs?: number;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!onViewportChange) return;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const notifyViewport = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        try {
+          const bounds = map.getBounds();
+          const zoom = map.getZoom();
+          onViewportChange({
+            minLat: bounds.getSouth(),
+            maxLat: bounds.getNorth(),
+            minLng: bounds.getWest(),
+            maxLng: bounds.getEast(),
+            zoom,
+          });
+        } catch {
+          // Ignore if map unmounted
+        }
+      }, debounceMs);
+    };
+
+    map.on("moveend", notifyViewport);
+    map.on("zoomend", notifyViewport);
+
+    // Initial trigger
+    notifyViewport();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      map.off("moveend", notifyViewport);
+      map.off("zoomend", notifyViewport);
+    };
+  }, [map, onViewportChange, debounceMs]);
+
+  return null;
+}
+
+export interface MarkerCluster {
+  id: string;
+  isCluster: true;
+  lat: number;
+  lng: number;
+  count: number;
+  markers: MapMarker[];
+  bounds: { minLat: number; maxLat: number; minLng: number; maxLng: number };
+}
+
+export function latLngToPixel(
+  lat: number,
+  lng: number,
+  zoom: number,
+): { x: number; y: number } {
+  const siny = Math.min(Math.max(Math.sin((lat * Math.PI) / 180), -0.9999), 0.9999);
+  const scale = 256 * Math.pow(2, zoom);
+  return {
+    x: (0.5 + lng / 360) * scale,
+    y: (0.5 - Math.log((1 + siny) / (1 - siny)) / (4 * Math.PI)) * scale,
+  };
+}
+
+export function clusterMarkers(
+  markers: MapMarker[],
+  zoom: number,
+  clusterRadiusPx: number = 60,
+): { clusters: MarkerCluster[]; unclustered: MapMarker[] } {
+  if (zoom >= 17) {
+    return { clusters: [], unclustered: markers };
+  }
+
+  const validMarkers = markers.filter(
+    (m) =>
+      m &&
+      m.position &&
+      m.position.lat != null &&
+      m.position.lng != null &&
+      !isNaN(Number(m.position.lat)) &&
+      !isNaN(Number(m.position.lng)),
+  );
+
+  const clusterList: {
+    markers: MapMarker[];
+    pixelX: number;
+    pixelY: number;
+    minLat: number;
+    maxLat: number;
+    minLng: number;
+    maxLng: number;
+  }[] = [];
+
+  for (const marker of validMarkers) {
+    const lat = Number(marker.position.lat);
+    const lng = Number(marker.position.lng);
+    const { x, y } = latLngToPixel(lat, lng, zoom);
+
+    let nearestIdx = -1;
+    let minDist = clusterRadiusPx;
+
+    for (let i = 0; i < clusterList.length; i++) {
+      const c = clusterList[i];
+      const dist = Math.hypot(c.pixelX - x, c.pixelY - y);
+      if (dist < minDist) {
+        minDist = dist;
+        nearestIdx = i;
+      }
+    }
+
+    if (nearestIdx !== -1) {
+      const c = clusterList[nearestIdx];
+      c.markers.push(marker);
+      c.pixelX = (c.pixelX * (c.markers.length - 1) + x) / c.markers.length;
+      c.pixelY = (c.pixelY * (c.markers.length - 1) + y) / c.markers.length;
+      c.minLat = Math.min(c.minLat, lat);
+      c.maxLat = Math.max(c.maxLat, lat);
+      c.minLng = Math.min(c.minLng, lng);
+      c.maxLng = Math.max(c.maxLng, lng);
+    } else {
+      clusterList.push({
+        markers: [marker],
+        pixelX: x,
+        pixelY: y,
+        minLat: lat,
+        maxLat: lat,
+        minLng: lng,
+        maxLng: lng,
+      });
+    }
+  }
+
+  const clusters: MarkerCluster[] = [];
+  const unclustered: MapMarker[] = [];
+
+  clusterList.forEach((group, idx) => {
+    if (group.markers.length > 1) {
+      const avgLat =
+        group.markers.reduce((sum, m) => sum + Number(m.position.lat), 0) /
+        group.markers.length;
+      const avgLng =
+        group.markers.reduce((sum, m) => sum + Number(m.position.lng), 0) /
+        group.markers.length;
+
+      clusters.push({
+        id: `cluster-${idx}-${group.markers.length}`,
+        isCluster: true,
+        lat: avgLat,
+        lng: avgLng,
+        count: group.markers.length,
+        markers: group.markers,
+        bounds: {
+          minLat: group.minLat,
+          maxLat: group.maxLat,
+          minLng: group.minLng,
+          maxLng: group.maxLng,
+        },
+      });
+    } else {
+      unclustered.push(group.markers[0]);
+    }
+  });
+
+  return { clusters, unclustered };
+}
+
+export function createClusterIcon(count: number) {
+  if (typeof window === "undefined" || !L.divIcon) return null;
+  const size = count < 10 ? 36 : count < 50 ? 44 : 52;
+  return L.divIcon({
+    className: "custom-marker-cluster",
+    html: `
+      <div class="marker-cluster-badge"
+           style="width: ${size}px; height: ${size}px; font-size: ${size >= 44 ? 14 : 12}px;"
+           data-testid="marker-cluster-${count}"
+           role="button"
+           aria-label="Cluster of ${count} venues">
+        <span>${count}</span>
+      </div>
+    `,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+export const ClusterMarkerComponent = memo(function ClusterMarkerComponent({
+  cluster,
+}: {
+  cluster: MarkerCluster;
+}) {
+  const map = useMap();
+  const icon = useMemo(() => createClusterIcon(cluster.count), [cluster.count]);
+  if (!icon) return null;
+
+  return (
+    <Marker
+      position={[cluster.lat, cluster.lng]}
+      icon={icon}
+      eventHandlers={{
+        click: () => {
+          if (
+            cluster.bounds.minLat !== cluster.bounds.maxLat &&
+            cluster.bounds.minLng !== cluster.bounds.maxLng
+          ) {
+            const southWest = L.latLng(
+              cluster.bounds.minLat,
+              cluster.bounds.minLng,
+            );
+            const northEast = L.latLng(
+              cluster.bounds.maxLat,
+              cluster.bounds.maxLng,
+            );
+            map.fitBounds(L.latLngBounds(southWest, northEast), {
+              padding: [50, 50],
+              maxZoom: 17,
+            });
+          } else {
+            map.setView(
+              [cluster.lat, cluster.lng],
+              Math.min(map.getZoom() + 2, 18),
+              { animate: true },
+            );
+          }
+        },
+      }}
+    />
+  );
+});
+
 export interface MapProps {
   location: { latitude: number; longitude: number };
   markers: MapMarker[];
@@ -432,6 +677,8 @@ export interface MapProps {
   initialHighContrast?: boolean;
   highContrast?: boolean;
   onHighContrastChange?: (enabled: boolean) => void;
+  onViewportChange?: (bounds: MapViewportBounds) => void;
+  enableClustering?: boolean;
 }
 
 const Map = ({
@@ -443,6 +690,8 @@ const Map = ({
   initialHighContrast = false,
   highContrast: controlledHighContrast,
   onHighContrastChange,
+  onViewportChange,
+  enableClustering = true,
 }: MapProps) => {
   const clerkUser = useUser();
   const { theme } = useTheme();
@@ -684,6 +933,14 @@ const Map = ({
     "walking" | "cycling" | "driving"
   >("walking");
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+  useEffect(() => {
+  if (
+    selectedMarkerId !== null &&
+    !markers.some((marker) => marker.id === selectedMarkerId)
+  ) {
+    setSelectedMarkerId(null);
+  }
+}, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
   const calculateOptimizedRoute = async (venuesList = routingQueue) => {
@@ -832,10 +1089,10 @@ const Map = ({
       }));
   }, [heatmapPoints, markers]);
 
-  // Group and spiderfy overlapping markers
-  const spiderfiedMarkers = useMemo(() => {
+  // Helper to spiderfy overlapping markers
+  const computeSpiderfiedMarkers = useCallback((markerList: MapMarker[], zoom: number) => {
     const groups: { [key: string]: any[] } = {};
-    markers.forEach((m) => {
+    markerList.forEach((m) => {
       if (
         m &&
         m.position &&
@@ -866,16 +1123,11 @@ const Map = ({
         const centerLat = Number(groupItems[0].position.lat);
         const centerLng = Number(groupItems[0].position.lng);
 
-        // Keep a consistent ~24px on-screen separation between spiderfied
-        // markers at any zoom level, instead of a fixed degree offset that
-        // only looked right at the default zoom and collapsed to
-        // sub-pixel distances once the user zoomed out (Web Mercator
-        // meters-per-pixel formula).
         const metersPerPixel =
           (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
-          Math.pow(2, settledZoom);
-        const targetPixelSeparation = 24 + 2 * n; // spread out a bit more if many markers share the location
-        const radius = (metersPerPixel * targetPixelSeparation) / 111320; // meters -> degrees latitude
+          Math.pow(2, zoom);
+        const targetPixelSeparation = 24 + 2 * n;
+        const radius = (metersPerPixel * targetPixelSeparation) / 111320;
 
         groupItems.forEach((item, index) => {
           const angle = (2 * Math.PI * index) / n;
@@ -890,7 +1142,22 @@ const Map = ({
       }
     });
     return result;
-  }, [markers, settledZoom]);
+  }, []);
+
+  // Group and cluster or spiderfy overlapping markers
+  const { clusteredMarkers, spiderfiedMarkers } = useMemo(() => {
+    if (!enableClustering) {
+      return {
+        clusteredMarkers: [] as MarkerCluster[],
+        spiderfiedMarkers: computeSpiderfiedMarkers(markers, settledZoom),
+      };
+    }
+    const { clusters, unclustered } = clusterMarkers(markers, settledZoom);
+    return {
+      clusteredMarkers: clusters,
+      spiderfiedMarkers: computeSpiderfiedMarkers(unclustered, settledZoom),
+    };
+  }, [markers, settledZoom, enableClustering, computeSpiderfiedMarkers]);
 
   // Derive iconUrl directly from clerkUser state
   const iconUrl = useMemo(() => {
@@ -1103,6 +1370,32 @@ const Map = ({
           white-space: nowrap;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
           pointer-events: none;
+        }
+
+        /* Marker cluster badge styles (#3473) */
+        .custom-marker-cluster {
+          background: transparent !important;
+          border: none !important;
+        }
+        .marker-cluster-badge {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 9999px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          color: #ffffff;
+          font-weight: 700;
+          border: 2px solid #ffffff;
+          box-shadow: 0 4px 14px rgba(99, 102, 241, 0.5);
+          cursor: pointer;
+          user-select: none;
+          transition: transform 0.15s ease-in-out;
+        }
+        .marker-cluster-badge:hover {
+          transform: scale(1.1);
+        }
+        .marker-cluster-badge:active {
+          transform: scale(0.95);
         }
 
         /* Disable animation on reduced motion/low performance mode */
@@ -1405,6 +1698,7 @@ const Map = ({
           delay={250}
         />
         <ResizeWatcher />
+        <ViewportWatcher onViewportChange={onViewportChange} />
         <WebGLContextWatcher />
 
         {customIcon && (
@@ -1419,6 +1713,9 @@ const Map = ({
         <MapEvents onMouseMove={throttledBroadcast} />
         {Object.entries(mapCursors).map(([userId, cursor]) => (
           <MemoizedCursorMarker key={userId} userId={userId} cursor={cursor} />
+        ))}
+        {clusteredMarkers.map((cluster) => (
+          <ClusterMarkerComponent key={cluster.id} cluster={cluster} />
         ))}
         {spiderfiedMarkers.map((marker) => {
           const isDest = marker.id.includes("dest");

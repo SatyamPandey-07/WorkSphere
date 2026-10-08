@@ -16,6 +16,7 @@ import {
 } from "@/lib/bookingTime";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { conflictDateWindow, hasBookingConflict } from "@/lib/bookingOverlap";
+import { releaseSeatWebLock } from "@/lib/locks/seatHoldLock";
 
 const MAX_OCCURRENCES = 52;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -260,6 +261,9 @@ export async function POST(request: NextRequest) {
       durationMinutes: duration,
     });
   }
+
+  // Explicitly release distributed seat hold lock for the booked seat
+  releaseSeatWebLock(venueId, seatId, userId).catch(() => {});
 
   if (guestEmails.length > 0 && created.length > 0) {
     await prisma.bookingGuest

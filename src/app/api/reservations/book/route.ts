@@ -17,6 +17,7 @@ import {
 } from "@/lib/bookingTime";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { conflictDateWindow, hasBookingConflict } from "@/lib/bookingOverlap";
+import { releaseSeatWebLock } from "@/lib/locks/seatHoldLock";
 
 const PAST_GRACE_MS = 15 * 60 * 1000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -241,6 +242,11 @@ export async function POST(request: NextRequest) {
           timeZone,
           durationMinutes: duration,
         });
+      }
+
+      // Explicitly release any distributed seat hold locks for confirmed seats
+      for (const sId of uniqueSeatIds) {
+        releaseSeatWebLock(venueId, sId, userId).catch(() => {});
       }
 
       const notify = async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Bookmark, Heart, Star, Check } from "lucide-react";
 import {
   isVenueFavoritedLocally,
@@ -45,6 +45,9 @@ export function BookmarkVenueButton({
   const [isAnimating, setIsAnimating] = useState(false);
   const [justToggled, setJustToggled] = useState(false);
 
+  const isTogglingRef = useRef(false);
+  const lastToggleTimeRef = useRef(0);
+
   // Sync with local storage on mount & listen to external/cross-tab updates
   useEffect(() => {
     // Read current local state
@@ -68,22 +71,34 @@ export function BookmarkVenueButton({
       e.preventDefault();
       e.stopPropagation();
 
-      if (disabled) return;
+      const now = Date.now();
+      if (
+        disabled ||
+        isTogglingRef.current ||
+        now - lastToggleTimeRef.current < 400
+      ) {
+        return;
+      }
 
+      isTogglingRef.current = true;
+      lastToggleTimeRef.current = now;
       setIsAnimating(true);
       setJustToggled(true);
 
-      const nextState = await toggleVenueFavorite(venueId, {
-        id: venueId,
-        name: venueName,
-        ...venueData,
-      });
+      try {
+        const nextState = await toggleVenueFavorite(venueId, {
+          id: venueId,
+          name: venueName,
+          ...venueData,
+        });
 
-      setIsFavorited(nextState);
-      onToggle?.(nextState);
-
-      setTimeout(() => setIsAnimating(false), 400);
-      setTimeout(() => setJustToggled(false), 2000);
+        setIsFavorited(nextState);
+        onToggle?.(nextState);
+      } finally {
+        isTogglingRef.current = false;
+        setTimeout(() => setIsAnimating(false), 400);
+        setTimeout(() => setJustToggled(false), 2000);
+      }
     },
     [venueId, venueName, venueData, disabled, onToggle],
   );

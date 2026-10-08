@@ -112,12 +112,33 @@ function parseStructuredJson(hoursStr: string): StructuredHours | null {
 }
 
 /**
+ * Resolves and validates an IANA timezone identifier.
+ * Falls back safely to 'UTC' when timezone is null, undefined, empty, or invalid,
+ * preventing unhandled RangeError: Invalid time zone specified.
+ */
+export function resolveTimezone(
+  timezone?: string | null,
+  fallback = "UTC",
+): string {
+  if (!timezone || typeof timezone !== "string" || !timezone.trim()) {
+    return fallback;
+  }
+  const trimmed = timezone.trim();
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: trimmed });
+    return trimmed;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Evaluates the current venue operating status against the local time and day.
  */
 export function getVenueHoursStatus(
   hoursStr: string | null | undefined,
   nowInput?: Date,
-  timezone?: string,
+  timezone?: string | null,
 ): VenueHoursStatus {
   if (!hoursStr || typeof hoursStr !== "string" || !hoursStr.trim()) {
     return {
@@ -143,14 +164,28 @@ export function getVenueHoursStatus(
 
   const now = nowInput || new Date();
 
+  // Parse structured JSON early to extract possible structured.timezone
+  const structured = parseStructuredJson(trimmed);
+
   // Get current local day and minutes
   let currentDayIdx = now.getDay(); // 0 = Sunday, 1 = Monday, ...
   let currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-  if (timezone) {
+  const rawTimezone =
+    timezone !== undefined && timezone !== null
+      ? timezone
+      : structured?.timezone;
+
+  if (
+    rawTimezone !== undefined &&
+    rawTimezone !== null &&
+    typeof rawTimezone === "string" &&
+    rawTimezone.trim() !== ""
+  ) {
+    const safeTz = resolveTimezone(rawTimezone, "UTC");
     try {
       const formatter = new Intl.DateTimeFormat("en-US", {
-        timeZone: timezone,
+        timeZone: safeTz,
         weekday: "long",
         hour: "numeric",
         minute: "numeric",

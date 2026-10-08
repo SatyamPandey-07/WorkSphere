@@ -60,6 +60,11 @@ export function useWiFiLatency({
     workerRef.current = worker;
 
     return () => {
+      try {
+        worker.postMessage({ type: "TERMINATE" });
+      } catch {
+        // Worker may already be terminated or closed
+      }
       worker.terminate();
       workerRef.current = null;
     };

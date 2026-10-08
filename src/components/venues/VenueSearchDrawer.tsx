@@ -732,6 +732,29 @@ export function VenueSearchDrawer({
           </div>
         </div>
 
+        {/* Within Distance dropdown selector (#3448) */}
+        <div className="space-y-2">
+          <label
+            htmlFor="within-distance-select"
+            className="block text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
+          >
+            Within Distance
+          </label>
+          <select
+            id="within-distance-select"
+            data-testid="within-distance-select"
+            value={distance}
+            onChange={(e) => handleDistanceChange(Number(e.target.value))}
+            className="w-full px-3 py-2 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value={0}>Any</option>
+            <option value={0.5}>500m</option>
+            <option value={1}>1km</option>
+            <option value={3}>3km</option>
+            <option value={5}>5km</option>
+          </select>
+        </div>
+
         {/* Distance Filter Slider (1km to 50km) based on User Geolocation */}
         <DistanceFilterSlider
           value={distance}

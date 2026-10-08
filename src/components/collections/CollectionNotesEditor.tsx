@@ -134,6 +134,10 @@ export function CollectionNotesEditor({ folderId, initialText, canEdit }: Collec
     rememberSelection();
   };
 
+  const trimmedText = text.trim();
+  const wordCount = trimmedText ? trimmedText.split(/\s+/).length : 0;
+  const charCount = text.length;
+
   return (
     <section aria-labelledby={`collection-notes-${folderId}`} className="mt-4">
       <div className="flex items-center justify-between mb-1.5">
@@ -176,9 +180,18 @@ export function CollectionNotesEditor({ folderId, initialText, canEdit }: Collec
         placeholder={canEdit ? "Add notes for everyone on this collection…" : "No notes yet."}
         className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 read-only:bg-zinc-50 dark:read-only:bg-zinc-900/50"
       />
-      <p className="mt-1 text-xs text-zinc-400 text-right">
-        {text.length}/{MAX_COLLECTION_NOTES_LENGTH}
-      </p>
+      <div
+        data-testid="notes-count-indicator"
+        className="mt-1 flex items-center justify-end gap-1.5 text-xs text-zinc-400 dark:text-zinc-500 font-medium text-right"
+      >
+        <span>
+          {wordCount} {wordCount === 1 ? "word" : "words"}
+        </span>
+        <span aria-hidden="true">·</span>
+        <span>
+          {charCount}/{MAX_COLLECTION_NOTES_LENGTH}
+        </span>
+      </div>
     </section>
   );
 }

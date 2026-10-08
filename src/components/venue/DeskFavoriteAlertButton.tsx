@@ -41,6 +41,7 @@ export function DeskFavoriteAlertButton({
 
   const handleToggleFavorite = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (loading) return;
     try {
       setLoading(true);
       const res = await fetch(`/api/venues/${venueId}/desks/favorites`, {
@@ -72,6 +73,7 @@ export function DeskFavoriteAlertButton({
 
   const handleToggleAlert = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (loading) return;
     try {
       setLoading(true);
       const nextActive = !isAlertActive;

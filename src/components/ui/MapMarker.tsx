@@ -131,8 +131,13 @@ export const AccessibleMarker = memo(
     );
 
     const handlePopupClose = useCallback(() => {
-      markerRef.current?.getElement()?.focus();
-    }, []);
+  const marker = markerRef.current;
+  const element = marker?.getElement();
+
+  if (element?.isConnected) {
+    element.focus();
+  }
+}, []);
 
     // Direct Leaflet element updates to prevent map pin flicker
     useEffect(() => {
@@ -145,11 +150,16 @@ export const AccessibleMarker = memo(
     }, [position]);
 
     useEffect(() => {
-      const marker = markerRef.current;
-      if (marker && icon) {
-        marker.setIcon(icon);
-      }
-    }, [icon]);
+  const marker = markerRef.current;
+  if (!marker || !icon) return;
+
+  marker.setIcon(icon);
+
+  const el = marker.getElement();
+  if (el) {
+    applyAccessibilityAttributes(el);
+  }
+}, [icon, applyAccessibilityAttributes]);
 
     return (
       <Marker

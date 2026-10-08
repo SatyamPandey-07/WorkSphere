@@ -539,6 +539,9 @@ export function CollaborativeNotes({
 
   const activeCollaboratorsList = Array.from(collaborators.values());
   const typingCollaborators = activeCollaboratorsList.filter((c) => c.isTyping);
+  const trimmedText = text.trim();
+  const wordCount = trimmedText ? trimmedText.split(/\s+/).length : 0;
+  const charCount = text.length;
 
   return (
     <section
@@ -757,9 +760,18 @@ export function CollaborativeNotes({
             </button>
           )}
         </div>
-        <p className="shrink-0">
-          {text.length}/{MAX_COLLECTION_NOTES_LENGTH}
-        </p>
+        <div
+          data-testid="notes-count-indicator"
+          className="shrink-0 flex items-center gap-1.5 text-zinc-400 dark:text-zinc-500 font-medium"
+        >
+          <span>
+            {wordCount} {wordCount === 1 ? "word" : "words"}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            {charCount}/{MAX_COLLECTION_NOTES_LENGTH}
+          </span>
+        </div>
       </div>
     </section>
   );

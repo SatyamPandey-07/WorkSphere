@@ -684,6 +684,14 @@ const Map = ({
     "walking" | "cycling" | "driving"
   >("walking");
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+  useEffect(() => {
+  if (
+    selectedMarkerId !== null &&
+    !markers.some((marker) => marker.id === selectedMarkerId)
+  ) {
+    setSelectedMarkerId(null);
+  }
+}, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
   const calculateOptimizedRoute = async (venuesList = routingQueue) => {

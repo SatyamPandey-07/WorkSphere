@@ -145,11 +145,16 @@ export const AccessibleMarker = memo(
     }, [position]);
 
     useEffect(() => {
-      const marker = markerRef.current;
-      if (marker && icon) {
-        marker.setIcon(icon);
-      }
-    }, [icon]);
+  const marker = markerRef.current;
+  if (!marker || !icon) return;
+
+  marker.setIcon(icon);
+
+  const el = marker.getElement();
+  if (el) {
+    applyAccessibilityAttributes(el);
+  }
+}, [icon, applyAccessibilityAttributes]);
 
     return (
       <Marker

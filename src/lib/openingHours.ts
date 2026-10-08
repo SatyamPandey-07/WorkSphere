@@ -41,8 +41,11 @@ export function parseStructuredHours(hoursStr: string | null | undefined): Struc
   if (!hoursStr) return null;
   try {
     const parsed = JSON.parse(hoursStr);
-    if (parsed && typeof parsed.timezone === "string" && parsed.periods) {
-      return parsed as StructuredHours;
+    if (parsed && typeof parsed === "object" && parsed.periods) {
+      return {
+        timezone: typeof parsed.timezone === "string" && parsed.timezone.trim() ? parsed.timezone.trim() : "UTC",
+        periods: parsed.periods,
+      };
     }
   } catch {}
   return null;
@@ -85,16 +88,17 @@ export function getOpeningHoursStatus(
     };
   }
 
-  const timezone = timezoneOverride || structured.timezone;
+  const timezone = timezoneOverride || structured.timezone || "UTC";
   const now = nowInput || new Date();
 
   try {
+    // ponytail: stdlib Intl.DateTimeFormat extracts wall-clock hours/minutes in venue IANA timezone across DST shifts
     const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
+      hourCycle: "h23",
       weekday: "long",
       hour: "numeric",
       minute: "numeric",
-      hour12: false,
     });
     const parts = formatter.formatToParts(now);
     const partMap = Object.fromEntries(parts.map((p) => [p.type, p.value]));

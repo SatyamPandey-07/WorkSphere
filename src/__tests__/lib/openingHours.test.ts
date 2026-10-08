@@ -154,4 +154,162 @@ describe("Timezone-aware opening hours helper logic", () => {
     expect(status.isOpen).toBe(false);
     expect(status.displayString).toBe("Closed Today (UTC)");
   });
+
+  describe("Daylight Saving Time (DST) transition handling (#5039)", () => {
+    it("correctly evaluates open/closed status for America/New_York during spring forward (23h day)", () => {
+      const nySchedule = JSON.stringify({
+        timezone: "America/New_York",
+        periods: {
+          sunday: { open: "09:00", close: "17:00", closed: false },
+        },
+      });
+
+      // Sunday, March 8, 2026: clocks jump from 02:00 EST to 03:00 EDT (UTC-4)
+      // 12:30 UTC = 08:30 EDT (before open)
+      const beforeOpen = new Date("2026-03-08T12:30:00Z");
+      expect(getOpeningHoursStatus(nySchedule, undefined, beforeOpen).isOpen).toBe(false);
+
+      // 13:30 UTC = 09:30 EDT (after open)
+      const afterOpen = new Date("2026-03-08T13:30:00Z");
+      expect(getOpeningHoursStatus(nySchedule, undefined, afterOpen).isOpen).toBe(true);
+
+      // 20:30 UTC = 16:30 EDT (before close)
+      const beforeClose = new Date("2026-03-08T20:30:00Z");
+      expect(getOpeningHoursStatus(nySchedule, undefined, beforeClose).isOpen).toBe(true);
+
+      // 21:30 UTC = 17:30 EDT (after close)
+      const afterClose = new Date("2026-03-08T21:30:00Z");
+      expect(getOpeningHoursStatus(nySchedule, undefined, afterClose).isOpen).toBe(false);
+    });
+
+    it("correctly evaluates open/closed status for America/New_York during fall back (25h day)", () => {
+      const nySchedule = JSON.stringify({
+        timezone: "America/New_York",
+        periods: {
+          sunday: { open: "09:00", close: "17:00", closed: false },
+        },
+      });
+
+      // Sunday, November 1, 2026: clocks repeat 01:00 EST (UTC-5)
+      // 13:30 UTC = 08:30 EST (before open)
+      const beforeOpen = new Date("2026-11-01T13:30:00Z");
+      expect(getOpeningHoursStatus(nySchedule, undefined, beforeOpen).isOpen).toBe(false);
+
+      // 14:30 UTC = 09:30 EST (after open)
+      const afterOpen = new Date("2026-11-01T14:30:00Z");
+      expect(getOpeningHoursStatus(nySchedule, undefined, afterOpen).isOpen).toBe(true);
+
+      // 21:30 UTC = 16:30 EST (before close)
+      const beforeClose = new Date("2026-11-01T21:30:00Z");
+      expect(getOpeningHoursStatus(nySchedule, undefined, beforeClose).isOpen).toBe(true);
+
+      // 22:30 UTC = 17:30 EST (after close)
+      const afterClose = new Date("2026-11-01T22:30:00Z");
+      expect(getOpeningHoursStatus(nySchedule, undefined, afterClose).isOpen).toBe(false);
+    });
+
+    it("correctly evaluates open/closed status for Europe/London during spring forward (23h day)", () => {
+      const londonSchedule = JSON.stringify({
+        timezone: "Europe/London",
+        periods: {
+          sunday: { open: "08:00", close: "18:00", closed: false },
+        },
+      });
+
+      // Sunday, March 29, 2026: clocks jump from 01:00 GMT to 02:00 BST (UTC+1)
+      // 06:30 UTC = 07:30 BST (before open)
+      const beforeOpen = new Date("2026-03-29T06:30:00Z");
+      expect(getOpeningHoursStatus(londonSchedule, undefined, beforeOpen).isOpen).toBe(false);
+
+      // 07:30 UTC = 08:30 BST (after open)
+      const afterOpen = new Date("2026-03-29T07:30:00Z");
+      expect(getOpeningHoursStatus(londonSchedule, undefined, afterOpen).isOpen).toBe(true);
+
+      // 16:30 UTC = 17:30 BST (before close)
+      const beforeClose = new Date("2026-03-29T16:30:00Z");
+      expect(getOpeningHoursStatus(londonSchedule, undefined, beforeClose).isOpen).toBe(true);
+
+      // 17:30 UTC = 18:30 BST (after close)
+      const afterClose = new Date("2026-03-29T17:30:00Z");
+      expect(getOpeningHoursStatus(londonSchedule, undefined, afterClose).isOpen).toBe(false);
+    });
+
+    it("correctly evaluates open/closed status for Europe/London during fall back (25h day)", () => {
+      const londonSchedule = JSON.stringify({
+        timezone: "Europe/London",
+        periods: {
+          sunday: { open: "08:00", close: "18:00", closed: false },
+        },
+      });
+
+      // Sunday, October 25, 2026: clocks fall back from 02:00 BST to 01:00 GMT (UTC+0)
+      // 07:30 UTC = 07:30 GMT (before open)
+      const beforeOpen = new Date("2026-10-25T07:30:00Z");
+      expect(getOpeningHoursStatus(londonSchedule, undefined, beforeOpen).isOpen).toBe(false);
+
+      // 08:30 UTC = 08:30 GMT (after open)
+      const afterOpen = new Date("2026-10-25T08:30:00Z");
+      expect(getOpeningHoursStatus(londonSchedule, undefined, afterOpen).isOpen).toBe(true);
+
+      // 17:30 UTC = 17:30 GMT (before close)
+      const beforeClose = new Date("2026-10-25T17:30:00Z");
+      expect(getOpeningHoursStatus(londonSchedule, undefined, beforeClose).isOpen).toBe(true);
+
+      // 18:30 UTC = 18:30 GMT (after close)
+      const afterClose = new Date("2026-10-25T18:30:00Z");
+      expect(getOpeningHoursStatus(londonSchedule, undefined, afterClose).isOpen).toBe(false);
+    });
+
+    it("handles overnight shifts spanning spring-forward DST shifts in America/New_York and Europe/London", () => {
+      const nyOvernight = JSON.stringify({
+        timezone: "America/New_York",
+        periods: {
+          saturday: { open: "22:00", close: "04:00", closed: false },
+          sunday: { open: "00:00", close: "00:00", closed: true },
+        },
+      });
+
+      // Sunday, March 8, 2026 at 06:30 UTC = 01:30 EST (open)
+      expect(getOpeningHoursStatus(nyOvernight, undefined, new Date("2026-03-08T06:30:00Z")).isOpen).toBe(true);
+      // Sunday, March 8, 2026 at 07:30 UTC = 03:30 EDT (open after 2->3 jump)
+      expect(getOpeningHoursStatus(nyOvernight, undefined, new Date("2026-03-08T07:30:00Z")).isOpen).toBe(true);
+      // Sunday, March 8, 2026 at 08:30 UTC = 04:30 EDT (closed after 04:00 close)
+      expect(getOpeningHoursStatus(nyOvernight, undefined, new Date("2026-03-08T08:30:00Z")).isOpen).toBe(false);
+
+      const londonOvernight = JSON.stringify({
+        timezone: "Europe/London",
+        periods: {
+          saturday: { open: "21:00", close: "03:00", closed: false },
+          sunday: { open: "00:00", close: "00:00", closed: true },
+        },
+      });
+
+      // Sunday, March 29, 2026 at 00:30 UTC = 00:30 GMT (open)
+      expect(getOpeningHoursStatus(londonOvernight, undefined, new Date("2026-03-29T00:30:00Z")).isOpen).toBe(true);
+      // Sunday, March 29, 2026 at 01:30 UTC = 02:30 BST (open after 1->2 jump)
+      expect(getOpeningHoursStatus(londonOvernight, undefined, new Date("2026-03-29T01:30:00Z")).isOpen).toBe(true);
+      // Sunday, March 29, 2026 at 02:30 UTC = 03:30 BST (closed after 03:00 close)
+      expect(getOpeningHoursStatus(londonOvernight, undefined, new Date("2026-03-29T02:30:00Z")).isOpen).toBe(false);
+    });
+
+    it("defaults to UTC when timezone is unspecified, avoiding server timezone leakage", () => {
+      const scheduleWithoutTz = JSON.stringify({
+        periods: {
+          sunday: { open: "10:00", close: "18:00", closed: false },
+        },
+      });
+
+      // Sunday, Oct 11, 2026 at 12:00 UTC (open)
+      const openUtc = new Date("2026-10-11T12:00:00Z");
+      const statusOpen = getOpeningHoursStatus(scheduleWithoutTz, undefined, openUtc);
+      expect(statusOpen.isOpen).toBe(true);
+      expect(statusOpen.displayString).toContain("(UTC)");
+
+      // Sunday, Oct 11, 2026 at 08:00 UTC (closed)
+      const closedUtc = new Date("2026-10-11T08:00:00Z");
+      const statusClosed = getOpeningHoursStatus(scheduleWithoutTz, undefined, closedUtc);
+      expect(statusClosed.isOpen).toBe(false);
+      expect(statusClosed.displayString).toContain("(UTC)");
+    });
+  });
 });

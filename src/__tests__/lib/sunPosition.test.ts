@@ -1,6 +1,8 @@
 import {
   calculateSunPosition,
   getPatioShadePercentage,
+  clampZenith,
+  normalizeAzimuth,
 } from "@/lib/sunPosition";
 
 describe("calculateSunPosition", () => {
@@ -11,6 +13,8 @@ describe("calculateSunPosition", () => {
 
     expect(pos.isAboveHorizon).toBe(true);
     expect(pos.altitude).toBeGreaterThan(60);
+    expect(pos.zenith).toBeLessThan(30);
+    expect(pos.zenith).toBeGreaterThanOrEqual(0);
     expect(pos.normalizedAltitude).toBeGreaterThan(0.5);
   });
 
@@ -20,6 +24,8 @@ describe("calculateSunPosition", () => {
 
     expect(pos.isAboveHorizon).toBe(false);
     expect(pos.altitude).toBeLessThan(0);
+    expect(pos.zenith).toBeGreaterThan(90);
+    expect(pos.zenith).toBeLessThanOrEqual(180);
   });
 
   it("produces a lower solar altitude in winter than in summer at the same location and hour", () => {
@@ -37,7 +43,7 @@ describe("calculateSunPosition", () => {
     expect(winter.altitude).toBeLessThan(summer.altitude);
   });
 
-  it("keeps azimuth within [0, 360)", () => {
+  it("keeps azimuth within [0, 360) and zenith within [0, 180]", () => {
     const pos = calculateSunPosition(
       40.7128,
       -74.006,
@@ -46,6 +52,41 @@ describe("calculateSunPosition", () => {
 
     expect(pos.azimuth).toBeGreaterThanOrEqual(0);
     expect(pos.azimuth).toBeLessThan(360);
+    expect(pos.zenith).toBeGreaterThanOrEqual(0);
+    expect(pos.zenith).toBeLessThanOrEqual(180);
+  });
+
+  it("handles edge-case sunrise/sunset coordinates without emitting NaN or out-of-bounds zenith", () => {
+    // Exact sunrise/sunset moments across equinoxes and extreme latitudes
+    const dates = [
+      new Date(Date.UTC(2026, 2, 20, 6, 0, 0)), // Equinox dawn
+      new Date(Date.UTC(2026, 2, 20, 18, 0, 0)), // Equinox dusk
+      new Date(Date.UTC(2026, 5, 21, 0, 0, 0)), // Solstice midnight
+      new Date(Date.UTC(2026, 11, 21, 0, 0, 0)), // Polar night edge
+    ];
+
+    const coordinates = [
+      { lat: 0, lng: 0 },
+      { lat: 66.56, lng: 25.0 }, // Arctic circle
+      { lat: -66.56, lng: 140.0 }, // Antarctic circle
+      { lat: 89.9, lng: 0 }, // North pole
+      { lat: -89.9, lng: 0 }, // South pole
+    ];
+
+    for (const coord of coordinates) {
+      for (const date of dates) {
+        const pos = calculateSunPosition(coord.lat, coord.lng, date);
+        expect(pos.zenith).toBeGreaterThanOrEqual(0);
+        expect(pos.zenith).toBeLessThanOrEqual(180);
+        expect(Number.isNaN(pos.zenith)).toBe(false);
+        expect(Number.isFinite(pos.zenith)).toBe(true);
+
+        expect(pos.azimuth).toBeGreaterThanOrEqual(0);
+        expect(pos.azimuth).toBeLessThan(360);
+        expect(Number.isNaN(pos.azimuth)).toBe(false);
+        expect(Number.isFinite(pos.azimuth)).toBe(true);
+      }
+    }
   });
 
   it("handles western longitudes with early UTC hours without negative modulo distortion", () => {
@@ -68,6 +109,40 @@ describe("calculateSunPosition", () => {
 
     expect(pos.isAboveHorizon).toBe(true);
     expect(pos.altitude).toBeGreaterThan(80); // Sun is almost directly overhead in Hawaii in June
+  });
+
+  it("calculates accurate solar noon pointing North (0°/360°) for Southern Hemisphere coordinates", () => {
+    // Sydney (-33.8688, 151.2093) on March equinox (~02:00 UTC solar noon)
+    const date = new Date(Date.UTC(2026, 2, 20, 1, 55, 0));
+    const pos = calculateSunPosition(-33.8688, 151.2093, date);
+
+    expect(pos.isAboveHorizon).toBe(true);
+    expect(pos.altitude).toBeGreaterThan(50);
+    // At solar noon in the Southern Hemisphere, the sun is due North (close to 0° or 360°)
+    const isDueNorth = pos.azimuth <= 5 || pos.azimuth >= 355;
+    expect(isDueNorth).toBe(true);
+  });
+});
+
+describe("clampZenith and normalizeAzimuth helpers", () => {
+  it("clamps zenith angles strictly to [0, 180]", () => {
+    expect(clampZenith(-5)).toBe(0);
+    expect(clampZenith(0)).toBe(0);
+    expect(clampZenith(90)).toBe(90);
+    expect(clampZenith(180)).toBe(180);
+    expect(clampZenith(180.00001)).toBe(180);
+    expect(clampZenith(250)).toBe(180);
+    expect(clampZenith(NaN)).toBe(90);
+  });
+
+  it("normalizes azimuth angles within [0, 360)", () => {
+    expect(normalizeAzimuth(0)).toBe(0);
+    expect(normalizeAzimuth(180)).toBe(180);
+    expect(normalizeAzimuth(360)).toBe(0);
+    expect(normalizeAzimuth(370)).toBe(10);
+    expect(normalizeAzimuth(-10)).toBe(350);
+    expect(normalizeAzimuth(-370)).toBe(350);
+    expect(normalizeAzimuth(NaN)).toBe(0);
   });
 });
 

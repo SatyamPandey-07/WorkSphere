@@ -93,5 +93,19 @@ describe("CheckInModal Component & Input Sanitation", () => {
       fireEvent.click(cancelBtn);
       expect(handleClose).toHaveBeenCalledTimes(2);
     });
+
+    it("disables confirm button and shows 'Acquiring location...' while geolocation check is pending", () => {
+      render(
+        <CheckInModal
+          isOpen={true}
+          onClose={jest.fn()}
+          isLocating={true}
+        />
+      );
+
+      const submitBtn = screen.getByTestId("checkin-submit-btn");
+      expect(submitBtn).toBeDisabled();
+      expect(submitBtn).toHaveTextContent("Acquiring location...");
+    });
   });
 });

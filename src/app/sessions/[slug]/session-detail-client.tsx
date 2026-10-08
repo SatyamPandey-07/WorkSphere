@@ -5,6 +5,7 @@ import { useUser } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import {
   CalendarDays,
+  CalendarPlus,
   Check,
   Clock3,
   MapPin,
@@ -23,6 +24,7 @@ import {
   validateSessionInviteToken,
   ValidationResult,
 } from "@/lib/sessionInviteTokens";
+import { SocialShareButton } from "@/components/social/SocialShareButton";
 
 type Props = {
   session: {
@@ -64,6 +66,8 @@ export default function SessionDetailClient({ session }: Props) {
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [inviteValidation, setInviteValidation] =
     useState<ValidationResult | null>(null);
+  const [showCalendarPrompt, setShowCalendarPrompt] = useState(false);
+  const [calendarDownloadUrl, setCalendarDownloadUrl] = useState<string | null>(null);
 
   const going = useMemo(
     () => rsvps.filter((item) => item.status === "GOING"),
@@ -117,8 +121,17 @@ export default function SessionDetailClient({ session }: Props) {
 
     if (status === "DECLINED") {
       setMessage("RSVP cancelled.");
+      setShowCalendarPrompt(false);
     } else {
       setMessage(`RSVP updated: ${status.toLowerCase()}.`);
+      if (status === "GOING") {
+        setShowCalendarPrompt(true);
+        if (payload.calendar?.downloadUrl) {
+          setCalendarDownloadUrl(payload.calendar.downloadUrl);
+        }
+      } else {
+        setShowCalendarPrompt(false);
+      }
     }
 
     const refreshed = await fetch(`/api/social/sessions/${session.slug}`, {
@@ -291,6 +304,7 @@ export default function SessionDetailClient({ session }: Props) {
                   Cancel RSVP
                 </button>
               )}
+              <SocialShareButton className="px-5 py-3" />
               <button
                 onClick={share}
                 className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3 font-medium hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900"
@@ -316,6 +330,40 @@ export default function SessionDetailClient({ session }: Props) {
 
             {message && (
               <p className="mt-4 text-sm text-violet-200">{message}</p>
+            )}
+
+            {/* RSVP Confirmation & Calendar Export Dialog (#4953) */}
+            {(showCalendarPrompt || currentRsvp?.status === "GOING") && (
+              <div
+                data-testid="rsvp-confirmation-dialog"
+                className="mt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-5 backdrop-blur-sm"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
+                    <CalendarPlus className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-emerald-200">
+                      RSVP Confirmed — You're attending!
+                    </h4>
+                    <p className="text-xs text-zinc-400">
+                      Sync this session with Apple Calendar, Outlook, or Google Calendar.
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={
+                    calendarDownloadUrl ||
+                    `/api/social/sessions/${session.slug}/rsvp?download=ics`
+                  }
+                  download={`${session.slug}.ics`}
+                  data-testid="add-to-calendar-btn"
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-500 active:scale-95"
+                >
+                  <CalendarPlus className="h-4 w-4" />
+                  <span>Add to Calendar (.ics)</span>
+                </a>
+              </div>
             )}
 
             <ScreenSharePanel

@@ -184,13 +184,9 @@ export async function GET(request: NextRequest) {
           // Format batch into CSV lines and write to stream chunk
           let chunkText = "";
           for (const row of rows) {
-            const formatted = headers.map((h) => {
-              const val = row[h];
-              if (val instanceof Date) {
-                return escapeCsv(val.toISOString());
-              }
-              return escapeCsv(val as string | number | boolean);
-            });
+            const formatted = headers.map((h) =>
+              escapeCsv(row[h] as string | number | boolean | Date),
+            );
             chunkText += formatted.join(",") + "\r\n";
           }
 

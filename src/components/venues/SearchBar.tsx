@@ -16,6 +16,9 @@ export interface SearchBarProps {
   autoFocus?: boolean;
   showAmenityPills?: boolean;
   syncWithUrl?: boolean;
+  showDistanceFilter?: boolean;
+  distance?: number;
+  onDistanceChange?: (distance: number) => void;
 }
 
 /**
@@ -39,9 +42,24 @@ export function SearchBar({
   autoFocus = false,
   showAmenityPills = false,
   syncWithUrl = true,
+  showDistanceFilter = false,
+  distance,
+  onDistanceChange,
 }: SearchBarProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [shortcutKey, setShortcutKey] = useState("Ctrl+K");
+  const [internalDistance, setInternalDistance] = useState(distance ?? 0);
+
+  useEffect(() => {
+    if (distance !== undefined) {
+      setInternalDistance(distance);
+    }
+  }, [distance]);
+
+  const handleDistanceSelect = (val: number) => {
+    setInternalDistance(val);
+    onDistanceChange?.(val);
+  };
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const cursorRef = useRef<{ start: number | null; end: number | null }>({
@@ -282,6 +300,31 @@ export function SearchBar({
       {showAmenityPills && (
         <div className="mt-2.5">
           <AmenityFilterPills />
+        </div>
+      )}
+
+      {/* Within Distance dropdown selector (#3448) */}
+      {showDistanceFilter && (
+        <div className="mt-2.5 flex items-center gap-2">
+          <label
+            htmlFor="search-bar-within-distance"
+            className="text-xs font-semibold text-zinc-500 dark:text-zinc-400"
+          >
+            Within Distance:
+          </label>
+          <select
+            id="search-bar-within-distance"
+            data-testid="within-distance-select"
+            value={internalDistance}
+            onChange={(e) => handleDistanceSelect(Number(e.target.value))}
+            className="px-2.5 py-1 text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value={0}>Any</option>
+            <option value={0.5}>500m</option>
+            <option value={1}>1km</option>
+            <option value={3}>3km</option>
+            <option value={5}>5km</option>
+          </select>
         </div>
       )}
 

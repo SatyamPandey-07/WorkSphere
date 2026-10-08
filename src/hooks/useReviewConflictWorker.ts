@@ -5,6 +5,7 @@ import { useAuth } from "@clerk/nextjs";
 import { useToast } from "@/components/ui/Toast";
 import type {
   ConflictResolutionStrategy,
+  QueuedReviewItem,
   ReviewConflictWorkerInboundMessage,
   ReviewConflictWorkerOutboundMessage,
 } from "@/workers/reviewConflictSync.worker";
@@ -14,6 +15,7 @@ export interface ReviewConflictItem {
   venueId: string;
   venueName?: string;
   conflictDetails?: Record<string, unknown>;
+  localReview?: QueuedReviewItem;
 }
 
 export function useReviewConflictWorker() {
@@ -23,6 +25,7 @@ export function useReviewConflictWorker() {
   const workerRef = useRef<Worker | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [conflicts, setConflicts] = useState<ReviewConflictItem[]>([]);
+  const [activeConflict, setActiveConflict] = useState<ReviewConflictItem | null>(null);
   const [lastChecked, setLastChecked] = useState<number | null>(null);
 
   const getTokenRef = useRef(getToken);
@@ -54,7 +57,11 @@ export function useReviewConflictWorker() {
   }, [fetchCsrfToken]);
 
   const resolveConflict = useCallback(
-    async (id: string, resolution: ConflictResolutionStrategy) => {
+    async (
+      id: string,
+      resolution: ConflictResolutionStrategy,
+      customData?: QueuedReviewItem["data"],
+    ) => {
       if (!workerRef.current) return;
       const token = await getTokenRef.current().catch(() => null);
       const csrfToken = await fetchCsrfToken();
@@ -63,6 +70,7 @@ export function useReviewConflictWorker() {
         type: "RESOLVE_CONFLICT",
         id,
         resolution,
+        customData,
         token: token ?? undefined,
         csrfToken: csrfToken ?? undefined,
       } satisfies ReviewConflictWorkerInboundMessage);
@@ -104,6 +112,7 @@ export function useReviewConflictWorker() {
             venueId: msg.venueId,
             venueName: msg.venueName,
             conflictDetails: msg.conflictDetails as Record<string, unknown>,
+            localReview: msg.localReview,
           };
 
           setConflicts((prev) => {
@@ -111,12 +120,14 @@ export function useReviewConflictWorker() {
             return [...prev, conflictItem];
           });
 
+          setActiveConflict(conflictItem);
+
           toast(
-            `Review conflict on ${msg.venueName || "venue"}. Your edit was updated concurrently.`,
+            `Review conflict on ${msg.venueName || "venue"}. Multi-device edit collision detected.`,
             "warning",
             {
-              label: "Keep Local",
-              onClick: () => resolveConflict(msg.id, "KEEP_LOCAL"),
+              label: "Resolve Merge",
+              onClick: () => setActiveConflict(conflictItem),
             },
           );
           break;
@@ -125,6 +136,7 @@ export function useReviewConflictWorker() {
         case "CONFLICT_RESOLVED": {
           if (msg.success) {
             setConflicts((prev) => prev.filter((c) => c.id !== msg.id));
+            setActiveConflict((prev) => (prev?.id === msg.id ? null : prev));
             toast("Review conflict resolved.", "success");
           } else {
             toast("Failed to resolve review conflict.", "warning");
@@ -187,6 +199,8 @@ export function useReviewConflictWorker() {
   return {
     isSyncing,
     conflicts,
+    activeConflict,
+    setActiveConflict,
     lastChecked,
     triggerSync,
     resolveConflict,

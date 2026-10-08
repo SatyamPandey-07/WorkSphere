@@ -1,4 +1,5 @@
 import {
+  analyzeSentiment,
   scoreComment,
   summarizeReviewSentiment,
   type SentimentReview,
@@ -18,6 +19,62 @@ const negativeReview: SentimentReview = {
   hasOutlets: false,
 };
 
+describe("analyzeSentiment", () => {
+  it("returns clean neutral result for empty or whitespace inputs", () => {
+    expect(analyzeSentiment("")).toEqual({
+      score: 0.0,
+      category: "neutral",
+      tokenCount: 0,
+    });
+    expect(analyzeSentiment("   ")).toEqual({
+      score: 0.0,
+      category: "neutral",
+      tokenCount: 0,
+    });
+    expect(analyzeSentiment(null)).toEqual({
+      score: 0.0,
+      category: "neutral",
+      tokenCount: 0,
+    });
+    expect(analyzeSentiment(undefined)).toEqual({
+      score: 0.0,
+      category: "neutral",
+      tokenCount: 0,
+    });
+  });
+
+  it("handles emojis and punctuation-only strings without emitting NaN", () => {
+    expect(analyzeSentiment("😊🔥🎉✨☕")).toEqual({
+      score: 0.0,
+      category: "neutral",
+      tokenCount: 0,
+    });
+    expect(analyzeSentiment("...???!!! :::;;;")).toEqual({
+      score: 0.0,
+      category: "neutral",
+      tokenCount: 0,
+    });
+    expect(analyzeSentiment("🎉👍 12345 @#$%^&*()")).toEqual({
+      score: 0.0,
+      category: "neutral",
+      tokenCount: 0,
+    });
+  });
+
+  it("correctly scores positive and negative comments", () => {
+    expect(analyzeSentiment("Amazing, great place and super fast wifi")).toEqual({
+      score: 1.0,
+      category: "positive",
+      tokenCount: 7,
+    });
+    expect(analyzeSentiment("Terrible and noisy")).toEqual({
+      score: -1.0,
+      category: "negative",
+      tokenCount: 3,
+    });
+  });
+});
+
 describe("scoreComment", () => {
   it("scores positive and negative words", () => {
     expect(scoreComment("Great place")).toBe(1);
@@ -31,9 +88,12 @@ describe("scoreComment", () => {
     expect(scoreComment("not very good")).toBe(-1);
   });
 
-  it("returns null when there are no sentiment words", () => {
+  it("returns null when there are no sentiment words or for emoji/punctuation-only comments", () => {
     expect(scoreComment("The table is round")).toBeNull();
     expect(scoreComment("")).toBeNull();
+    expect(scoreComment("   ")).toBeNull();
+    expect(scoreComment("😊🎉☕")).toBeNull();
+    expect(scoreComment("!?!?....")).toBeNull();
     expect(scoreComment(null)).toBeNull();
     expect(scoreComment(undefined)).toBeNull();
   });

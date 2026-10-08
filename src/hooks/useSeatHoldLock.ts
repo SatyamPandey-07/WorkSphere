@@ -64,6 +64,9 @@ export function useSeatHoldLock({
   const [isConnected, setIsConnected] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
+  const myHeldSeatIdRef = useRef<string | null>(null);
+  myHeldSeatIdRef.current = myHeldSeatId;
+
   // References for pending promises to resolve acquireHold requests
   const pendingRequests = useRef<
     Map<
@@ -81,6 +84,47 @@ export function useSeatHoldLock({
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // Prevent stale lock leakage on page unmount, tab close, or navigation
+  useEffect(() => {
+    const handleReleaseOnUnload = () => {
+      const heldSeat = myHeldSeatIdRef.current;
+      if (!heldSeat) return;
+
+      if (socket && isConnected) {
+        try {
+          socket.send(
+            JSON.stringify({
+              type: "seat_release_request",
+              seatId: heldSeat,
+              venueId,
+              userId: effectiveUserId,
+            }),
+          );
+        } catch {
+          // ignore
+        }
+      }
+
+      try {
+        fetch(`/api/venues/${venueId}/seats/${heldSeat}/lock`, {
+          method: "DELETE",
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener("pagehide", handleReleaseOnUnload);
+    window.addEventListener("beforeunload", handleReleaseOnUnload);
+
+    return () => {
+      window.removeEventListener("pagehide", handleReleaseOnUnload);
+      window.removeEventListener("beforeunload", handleReleaseOnUnload);
+      handleReleaseOnUnload();
+    };
+  }, [venueId, effectiveUserId, socket, isConnected]);
 
   const socket = usePartySocket({
     host: process.env.NEXT_PUBLIC_PARTYKIT_HOST || "127.0.0.1:1999",
@@ -431,10 +475,11 @@ export function useSeatHoldLock({
         setMyHeldSeatId(null);
       }
 
-      // Trigger HTTP release in background
+      // Trigger HTTP release in background with keepalive
       try {
         await fetch(`/api/venues/${venueId}/seats/${seatId}/lock`, {
           method: "DELETE",
+          keepalive: true,
         });
       } catch {
         // Best effort
@@ -449,14 +494,18 @@ export function useSeatHoldLock({
   const confirmCheckout = useCallback(
     async (seatId: string) => {
       if (socket && isConnected) {
-        socket.send(
-          JSON.stringify({
-            type: "seat_checkout_complete",
-            seatId,
-            venueId,
-            userId: effectiveUserId,
-          }),
-        );
+        try {
+          socket.send(
+            JSON.stringify({
+              type: "seat_checkout_complete",
+              seatId,
+              venueId,
+              userId: effectiveUserId,
+            }),
+          );
+        } catch {
+          // ignore
+        }
       }
 
       setActiveHolds((prev) => {
@@ -468,6 +517,16 @@ export function useSeatHoldLock({
 
       if (myHeldSeatId === seatId) {
         setMyHeldSeatId(null);
+      }
+
+      // Explicitly trigger HTTP release with keepalive
+      try {
+        await fetch(`/api/venues/${venueId}/seats/${seatId}/lock`, {
+          method: "DELETE",
+          keepalive: true,
+        });
+      } catch {
+        // Best effort
       }
     },
     [venueId, isConnected, socket, effectiveUserId, myHeldSeatId],

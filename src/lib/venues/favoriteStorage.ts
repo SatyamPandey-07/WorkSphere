@@ -115,49 +115,79 @@ export function setVenueFavoritedLocally(
   }
 }
 
+const inFlightToggles = new Map<string, Promise<boolean>>();
+const lastToggleTimestamps = new Map<string, number>();
+
 /**
  * Toggles the favorite/bookmarked state for a venue with local persistence and server sync.
+ * Protected against rapid double-clicks and concurrent in-flight toggling.
  */
 export async function toggleVenueFavorite(
   venueId: string,
   venueData?: Partial<OfflineVenue>,
 ): Promise<boolean> {
-  const currentlyFavorited = isVenueFavoritedLocally(venueId);
-  const nextState = !currentlyFavorited;
+  if (!venueId) return false;
 
-  // 1. Instant local persistence
-  setVenueFavoritedLocally(venueId, nextState, venueData);
+  const now = Date.now();
+  const lastTime = lastToggleTimestamps.get(venueId) || 0;
 
-  const actionType = nextState ? "add" : "remove";
-
-  // 2. Server / Offline Sync
-  if (typeof navigator !== "undefined" && navigator.onLine) {
-    try {
-      const response = await fetch("/api/favorites", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ venueId, action: actionType }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-    } catch {
-      // Offline fallback: queue operation for background sync
-      await queuePendingFavorite(venueId, actionType);
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("trigger-sync"));
-      }
-    }
-  } else {
-    // Queue offline sync
-    await queuePendingFavorite(venueId, actionType);
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("trigger-sync"));
-    }
+  // If an in-flight toggle is already running for this venue, return its existing promise
+  if (inFlightToggles.has(venueId)) {
+    return inFlightToggles.get(venueId)!;
   }
 
-  return nextState;
+  // Guard against rapid duplicate invocation (< 300ms)
+  if (now - lastTime < 300) {
+    return isVenueFavoritedLocally(venueId);
+  }
+
+  lastToggleTimestamps.set(venueId, now);
+
+  const togglePromise = (async () => {
+    try {
+      const currentlyFavorited = isVenueFavoritedLocally(venueId);
+      const nextState = !currentlyFavorited;
+
+      // 1. Instant local persistence
+      setVenueFavoritedLocally(venueId, nextState, venueData);
+
+      const actionType = nextState ? "add" : "remove";
+
+      // 2. Server / Offline Sync
+      if (typeof navigator !== "undefined" && navigator.onLine) {
+        try {
+          const response = await fetch("/api/favorites", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ venueId, action: actionType }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+        } catch {
+          // Offline fallback: queue operation for background sync
+          await queuePendingFavorite(venueId, actionType);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("trigger-sync"));
+          }
+        }
+      } else {
+        // Queue offline sync
+        await queuePendingFavorite(venueId, actionType);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("trigger-sync"));
+        }
+      }
+
+      return nextState;
+    } finally {
+      inFlightToggles.delete(venueId);
+    }
+  })();
+
+  inFlightToggles.set(venueId, togglePromise);
+  return togglePromise;
 }
 
 /**

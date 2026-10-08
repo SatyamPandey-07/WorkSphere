@@ -77,35 +77,40 @@ if current_tokens == nil or last_refill == nil then
     current_tokens = max_tokens
     last_refill = now
 else
+    if now < last_refill then
+        last_refill = now
+    end
     local elapsed = math.max(0, now - last_refill)
     if elapsed > 0 then
         local refill = (elapsed / window_ms) * max_tokens
-        current_tokens = math.min(max_tokens, current_tokens + refill)
+        current_tokens = math.min(max_tokens, math.max(0, current_tokens) + refill)
         last_refill = now
     end
 end
 
 local allowed = 0
-local remaining = current_tokens
+local remaining = 0
 local retry_after = 0
 local reset_sec = math.ceil((now + window_ms) / 1000)
 
 if current_tokens >= cost then
     allowed = 1
-    current_tokens = current_tokens - cost
+    current_tokens = math.max(0, current_tokens - cost)
     remaining = math.floor(current_tokens)
     retry_after = 0
+    reset_sec = math.ceil((now + window_ms) / 1000)
     redis.call("HMSET", key, "tokens", tostring(current_tokens), "lastRefill", tostring(last_refill))
     redis.call("EXPIRE", key, math.max(1, math.ceil(window_ms / 1000) * 2))
 else
     allowed = 0
-    remaining = math.floor(current_tokens)
-    local needed = cost - current_tokens
+    remaining = math.max(0, math.floor(current_tokens))
+    local needed = math.max(1, cost - current_tokens)
     local time_to_next_ms = math.ceil((needed / max_tokens) * window_ms)
     retry_after = math.max(1, math.ceil(time_to_next_ms / 1000))
     reset_sec = math.ceil((now + time_to_next_ms) / 1000)
+    local expire_ttl = math.max(1, math.ceil(window_ms / 1000) * 2, math.ceil(time_to_next_ms / 1000) * 2)
     redis.call("HMSET", key, "tokens", tostring(current_tokens), "lastRefill", tostring(last_refill))
-    redis.call("EXPIRE", key, math.max(1, math.ceil(window_ms / 1000) * 2))
+    redis.call("EXPIRE", key, expire_ttl)
 end
 
 return { allowed, remaining, reset_sec, retry_after, tostring(current_tokens) }
@@ -183,7 +188,7 @@ export async function executeAtomicTokenBucket(
 
     const [allowedNum, remainingNum, resetSecNum, retryAfterNum] = Array.isArray(rawResult)
       ? rawResult
-      : [1, limit - 1, Math.ceil((now + windowMs) / 1000), 0];
+      : [0, 0, Math.ceil((now + windowMs) / 1000), Math.max(1, Math.ceil(windowMs / 1000))];
 
     return {
       success: Number(allowedNum) === 1,

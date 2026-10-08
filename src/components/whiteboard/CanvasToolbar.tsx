@@ -1,14 +1,19 @@
 "use client";
 
-import { PRESET_COLORS, type ToolType } from "@/hooks/useCanvasWhiteboard";
+import {
+  PRESET_COLORS,
+  type ToolType,
+  type WhiteboardParticipant,
+} from "@/hooks/useCanvasWhiteboard";
 
-interface CanvasToolbarProps {
+export interface CanvasToolbarProps {
   tool: ToolType;
   color: string;
   strokeWidth: number;
   canUndo: boolean;
   canRedo: boolean;
   isConnected: boolean;
+  participants?: WhiteboardParticipant[];
   onToolChange: (tool: ToolType) => void;
   onColorChange: (color: string) => void;
   onStrokeWidthChange: (width: number) => void;
@@ -49,6 +54,7 @@ export function CanvasToolbar({
   canUndo,
   canRedo,
   isConnected,
+  participants,
   onToolChange,
   onColorChange,
   onStrokeWidthChange,
@@ -168,6 +174,60 @@ export function CanvasToolbar({
           <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
         </svg>
       </button>
+
+      {participants && participants.length > 0 && (
+        <>
+          <div className="mx-1 h-6 w-px bg-zinc-700" />
+          <div
+            className="flex items-center -space-x-1.5"
+            data-testid="whiteboard-participants"
+            aria-label="Room participants"
+          >
+            {participants.map((p) => {
+              const isIdle = p.status === "idle";
+              return (
+                <div
+                  key={p.clientId}
+                  className="group relative"
+                  data-testid={`participant-${p.clientId}`}
+                >
+                  <div
+                    className={`relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border-2 bg-zinc-800 text-xs font-semibold text-white shadow-sm transition-opacity ${
+                      isIdle ? "opacity-50" : "opacity-100"
+                    }`}
+                    style={{ borderColor: p.color }}
+                    title={`${p.name}${isIdle ? " (Idle)" : ""}`}
+                    data-testid={`avatar-ring-${p.clientId}`}
+                  >
+                    {p.avatar ? (
+                      <img
+                        src={p.avatar}
+                        alt={p.name}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <span>{p.name.charAt(0).toUpperCase()}</span>
+                    )}
+                    {isIdle && (
+                      <span
+                        className="absolute bottom-0 right-0 h-2 w-2 rounded-full bg-amber-500 ring-1 ring-zinc-900"
+                        title="Idle"
+                        data-testid={`idle-badge-${p.clientId}`}
+                      />
+                    )}
+                  </div>
+                  <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden -translate-x-1/2 whitespace-nowrap rounded bg-zinc-800 px-2 py-0.5 text-xs text-white shadow-md group-hover:block">
+                    <span>{p.name}</span>
+                    {isIdle && (
+                      <span className="ml-1 text-zinc-400">(Idle)</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <div className="mx-1 h-6 w-px bg-zinc-700" />
 

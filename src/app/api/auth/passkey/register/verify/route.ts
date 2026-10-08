@@ -5,7 +5,7 @@ import { verifyPasskeyRegistration } from "@/lib/passkey/registration";
 import type { RegistrationResponseJSON } from "@simplewebauthn/browser";
 
 import { passkeyAuditLogService } from "@/lib/auth/passkeys/server/auditLog";
-import { detectDeviceDetails } from "@/lib/auth/passkeys/deviceDetection";
+import { detectDeviceDetails, inferDeviceNickname } from "@/lib/auth/passkeys/deviceDetection";
 
 export async function POST(req: Request) {
   try {
@@ -15,9 +15,10 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { registrationResponse, name, cancelled } = body as {
+    const { registrationResponse, name, nickname, cancelled } = body as {
       registrationResponse?: RegistrationResponseJSON;
       name?: string;
+      nickname?: string;
       cancelled?: boolean;
     };
 
@@ -71,14 +72,21 @@ export async function POST(req: Request) {
       "127.0.0.1";
     const userAgent = req.headers.get("user-agent") || "";
     const detected = detectDeviceDetails(userAgent, credential.transports, credential.aaguid);
-    const assignedName = name?.trim().slice(0, 64) || detected.suggestedNickname;
+    const customNickname = (nickname?.trim() || name?.trim())?.slice(0, 64);
+    const assignedName =
+      customNickname ||
+      inferDeviceNickname(userAgent, credential.transports, credential.aaguid) ||
+      detected.suggestedNickname;
 
-    // Save newly verified credential
+    const now = new Date();
+
+    // Save newly verified credential with nickname and lastUsedAt timestamp
     const newPasskey = await prisma.passkeyCredential.create({
       data: {
         userId,
         ...credential,
         name: assignedName,
+        lastUsedAt: now,
       },
     });
 
@@ -91,7 +99,7 @@ export async function POST(req: Request) {
       status: "SUCCESS",
       ipAddress: ip,
       userAgent,
-      details: `Registered via ${detected.authenticatorName} (${newPasskey.deviceType})`,
+      details: `Registered via ${detected.authenticatorName} (${newPasskey.deviceType}) with nickname "${assignedName}"`,
     });
 
     return NextResponse.json({
@@ -100,9 +108,11 @@ export async function POST(req: Request) {
         id: newPasskey.id,
         credentialId: newPasskey.credentialId,
         name: newPasskey.name,
+        nickname: newPasskey.name,
         deviceType: newPasskey.deviceType,
         backedUp: newPasskey.backedUp,
         createdAt: newPasskey.createdAt,
+        lastUsedAt: newPasskey.lastUsedAt,
       },
     });
   } catch (error) {

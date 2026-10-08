@@ -6,7 +6,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 export { generateTaxExportPdf } from "./export/domain/taxExporter";
 export { generateBookingItineraryPdf, type BookingItineraryData } from "./export/domain/itineraryExporter";
-export { generateBookingPdf, type BookingPdfData, type BookingPdfOptions } from "./pdf/generateBookingPdf";
+export { generateBookingPdf, wrapText, type BookingPdfData, type BookingPdfOptions } from "./pdf/generateBookingPdf";
 export { PdfDocumentBuilder } from "./export/pdfBuilder";
 
 /**
@@ -264,13 +264,37 @@ export async function generateReceiptPdf(booking: any): Promise<Uint8Array> {
       : formatAddress(booking.venue.address)
     : "Verified Workspace";
 
-  drawText(`ADDRESS: ${venueAddress}`, {
-    x: 50,
-    y: yPosition,
-    size: 10,
-    font,
-  });
-  yPosition -= 18;
+  const addressLabel = "ADDRESS: ";
+  const addressLines = wrapText(venueAddress, font, 10, 480);
+  if (addressLines.length === 0) {
+    drawText(`${addressLabel}Verified Workspace`, {
+      x: 50,
+      y: yPosition,
+      size: 10,
+      font,
+    });
+    yPosition -= 18;
+  } else {
+    for (let i = 0; i < addressLines.length; i++) {
+      if (i === 0) {
+        drawText(`${addressLabel}${addressLines[0]}`, {
+          x: 50,
+          y: yPosition,
+          size: 10,
+          font,
+        });
+      } else {
+        drawText(`         ${addressLines[i]}`, {
+          x: 50,
+          y: yPosition,
+          size: 10,
+          font,
+        });
+      }
+      yPosition -= 14;
+    }
+    yPosition -= 4;
+  }
   drawText(`SCHEDULE: ${booking.date} @ ${booking.time}`, {
     x: 50,
     y: yPosition,

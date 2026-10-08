@@ -2,6 +2,18 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { apiError } from "@/lib/apiResponse";
 
+/**
+ * Clamps forecast occupancy percentage values strictly to the [0, 100] range.
+ * Applies Math.min(100, Math.max(0, val)) to handle raw predictive polynomial model
+ * outputs and extreme booking variance.
+ */
+export function clampForecastOccupancy(val: number): number {
+  if (typeof val !== "number" || isNaN(val)) {
+    return 0;
+  }
+  return Math.min(100, Math.max(0, val));
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ venueId: string }> },
@@ -56,9 +68,16 @@ export async function GET(
         Math.max(0, predictedOccupancy + seed - 2),
       );
 
+      const rawPercentage = (predictedOccupancy / maxCapacity) * 100;
+      const occupancyPercentage = clampForecastOccupancy(rawPercentage);
+
       forecast.push({
         hour: i,
-        predictedOccupancy,
+        predictedOccupancy: Math.min(
+          maxCapacity,
+          Math.max(0, Math.round((occupancyPercentage / 100) * maxCapacity)),
+        ),
+        occupancyPercentage,
         confidence,
         capacity: maxCapacity,
       });

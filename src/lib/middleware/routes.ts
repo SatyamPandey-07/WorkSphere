@@ -1,5 +1,5 @@
 import { createRouteMatcher } from "@clerk/nextjs/server";
-import { CSRF_PROTECTED_METHODS } from "@/lib/csrf";
+import { CSRF_PROTECTED_METHODS, isCsrfProtectedMethod } from "@/lib/csrf";
 
 export interface RoutePermissionRule {
   pattern: string;
@@ -79,8 +79,7 @@ export const isAdminRoute = createRouteMatcher(
  */
 export function isCsrfExemptRoute(req: Request): boolean {
   const path = new URL(req.url).pathname;
-  const method = req.method?.toUpperCase();
-  if (path.startsWith("/api") && CSRF_PROTECTED_METHODS.has(method)) {
+  if (path.startsWith("/api") && isCsrfProtectedMethod(req.method)) {
     return isCsrfExemptMatcher(req as any);
   }
   const staticAssetRegex = /\.(png|jpg|jpeg|gif|svg|mp3|wav|ico|css|js)$/i;

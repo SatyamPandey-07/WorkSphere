@@ -141,3 +141,44 @@ export function detectDeviceDetails(
     suggestedNickname,
   };
 }
+
+/**
+ * Infers a friendly, concise device nickname based on User-Agent, transports, and AAGUID.
+ * Examples: "MacBook Pro Touch ID", "iPhone Passkey", "Windows Hello Passkey".
+ */
+export function inferDeviceNickname(
+  userAgent?: string,
+  transports: string[] = [],
+  aaguid?: string | null,
+): string {
+  const ua = userAgent || (typeof navigator !== "undefined" ? navigator.userAgent : "");
+
+  if (aaguid && COMMON_AAGUIDS[aaguid.toLowerCase()]) {
+    return COMMON_AAGUIDS[aaguid.toLowerCase()].name;
+  }
+
+  if (transports.includes("usb") || transports.includes("nfc")) {
+    return "YubiKey / Security Key";
+  }
+
+  if (/iPhone/i.test(ua)) {
+    return "iPhone Passkey";
+  }
+  if (/iPad/i.test(ua)) {
+    return "iPad Passkey";
+  }
+  if (/Macintosh|Mac OS X/i.test(ua)) {
+    return /Pro/i.test(ua) ? "MacBook Pro Touch ID" : "MacBook Touch ID";
+  }
+  if (/Windows/i.test(ua)) {
+    return "Windows Hello Passkey";
+  }
+  if (/Android/i.test(ua)) {
+    return "Android Biometric Passkey";
+  }
+  if (/Linux/i.test(ua)) {
+    return "Linux Security Key";
+  }
+
+  return "Biometric Passkey";
+}

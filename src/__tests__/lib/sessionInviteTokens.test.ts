@@ -1,6 +1,7 @@
 import {
   generateSessionInviteToken,
   validateSessionInviteToken,
+  verifyInviteTokenResponse,
   generateSecureNonce,
   encodeBase64Url,
   decodeBase64Url,
@@ -35,18 +36,47 @@ describe("Session Invite Tokens & WebCrypto Generator (src/lib/sessionInviteToke
 
     const result = validateSessionInviteToken(token, 3, sessionId);
     expect(result.valid).toBe(true);
+    expect(result.statusCode).toBe(200);
     expect(result.payload?.sessionId).toBe(sessionId);
     expect(result.payload?.maxParticipants).toBe(10);
   });
 
-  it("rejects expired invite tokens", async () => {
+  it("rejects expired invite tokens with 410 Gone status code", async () => {
     const sessionId = "session-expired";
     // Generate token with negative duration (-1 hour) to simulate expiration
     const token = await generateSessionInviteToken(sessionId, -1, 10);
 
     const result = validateSessionInviteToken(token, 2, sessionId);
     expect(result.valid).toBe(false);
-    expect(result.error).toBe("Invite link has expired.");
+    expect(result.expired).toBe(true);
+    expect(result.statusCode).toBe(410);
+    expect(result.error).toBe("Invite token has expired");
+
+    const response = verifyInviteTokenResponse(token, 2, sessionId);
+    expect(response.status).toBe(410);
+    expect(response.body).toEqual({
+      valid: false,
+      error: "Invite token has expired",
+    });
+  });
+
+  it("validates token expiration against explicit server timestamp", async () => {
+    const sessionId = "session-timestamp-test";
+    const token = await generateSessionInviteToken(sessionId, 2, 10); // expires in +2 hours
+
+    const now = Date.now();
+    // Valid when checked at current server time
+    const resultNow = validateSessionInviteToken(token, 2, sessionId, undefined, now);
+    expect(resultNow.valid).toBe(true);
+    expect(resultNow.statusCode).toBe(200);
+
+    // Expired when evaluated against server timestamp 3 hours in the future
+    const futureServerTimestamp = now + 3 * 60 * 60 * 1000;
+    const resultFuture = validateSessionInviteToken(token, 2, sessionId, undefined, futureServerTimestamp);
+    expect(resultFuture.valid).toBe(false);
+    expect(resultFuture.statusCode).toBe(410);
+    expect(resultFuture.expired).toBe(true);
+    expect(resultFuture.error).toBe("Invite token has expired");
   });
 
   it("rejects invite tokens when participant limits are exceeded", async () => {

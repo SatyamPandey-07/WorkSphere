@@ -173,4 +173,44 @@ describe("NoiseAggregator: Hampel Outlier Rejection & Exponential Decay Smoothin
       expect(fresh.emaDecibel).toBe(42);
     });
   });
+
+  describe("Faulty Microphone Sensor Input Validation (#5032)", () => {
+    it("discards negative decibel readings (dB < 0) from uncalibrated mic hardware", () => {
+      const now = Date.now();
+
+      // Seed with valid baseline samples
+      aggregator.processSample({ decibel: 45, timestamp: now });
+      aggregator.processSample({ decibel: 46, timestamp: now + 1000 });
+
+      // Process faulty negative reading (-25 dB)
+      const res = aggregator.processSample(
+        { decibel: -25, timestamp: now + 2000 },
+        "sensor-mic-01",
+      );
+
+      expect(res.isOutlier).toBe(true);
+      expect(res.rawDecibel).toBe(-25);
+      expect(res.emaDecibel).toBeGreaterThanOrEqual(0);
+
+      const logs = aggregator.getOutlierLogs();
+      expect(logs.some((l) => l.rawDecibel === -25 && l.reason.includes("negative"))).toBe(true);
+    });
+
+    it("discards non-finite values (NaN, Infinity) without corrupting rolling average", () => {
+      const now = Date.now();
+
+      aggregator.processSample({ decibel: 50, timestamp: now });
+      aggregator.processSample({ decibel: 52, timestamp: now + 1000 });
+
+      const nanRes = aggregator.processSample({ decibel: NaN, timestamp: now + 2000 });
+      expect(nanRes.isOutlier).toBe(true);
+
+      const infRes = aggregator.processSample({ decibel: Infinity, timestamp: now + 3000 });
+      expect(infRes.isOutlier).toBe(true);
+
+      const nextValid = aggregator.processSample({ decibel: 51, timestamp: now + 4000 });
+      expect(nextValid.isOutlier).toBe(false);
+      expect(nextValid.emaDecibel).toBeCloseTo(51, 0);
+    });
+  });
 });

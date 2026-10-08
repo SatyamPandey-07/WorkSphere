@@ -2,7 +2,11 @@ import path from "path";
 import fs from "fs";
 import { verifyMembershipProof, ZkProofPayload } from "./verify";
 import { poseidonHash } from "./poseidon";
-import { isUniversityMerkleRootActive } from "./studentMembership";
+import {
+  isUniversityMerkleRootActive,
+  proveStudentMembership,
+  type StudentMembershipProofInput,
+} from "./studentMembership";
 import { prisma } from "@/lib/prisma";
 
 export interface MultiVenueBatchProofItem {
@@ -23,6 +27,7 @@ export interface MultiVenueBatchVerifyResponse {
   verifiedCount: number;
   totalCount: number;
   results: {
+    index: number;
     venueId: string;
     valid: boolean;
     error?: string;
@@ -50,6 +55,7 @@ export interface BatchStudentDiscountRequest {
 }
 
 export interface BatchStudentDiscountResultItem {
+  index: number;
   id?: string;
   userId?: string;
   studentId?: string;
@@ -70,6 +76,27 @@ export interface BatchStudentDiscountResponse {
   batchHash: string;
 }
 
+export interface GenericBatchProofItem {
+  id?: string;
+  proof: any;
+  publicSignals: string[];
+}
+
+export interface GenericBatchProofResultItem {
+  index: number;
+  id?: string;
+  valid: boolean;
+  error?: string;
+}
+
+export interface GenericBatchVerifyResponse {
+  valid: boolean;
+  verifiedCount: number;
+  failedCount: number;
+  totalCount: number;
+  results: GenericBatchProofResultItem[];
+}
+
 export function computeClusterMerkleHash(venueIds: string[]): string {
   if (!venueIds || venueIds.length === 0) return "0";
   const sorted = [...venueIds].sort();
@@ -83,20 +110,32 @@ export function computeClusterMerkleHash(venueIds: string[]): string {
 export async function verifyMultiVenueBatchProofs(
   request: MultiVenueBatchVerifyRequest,
 ): Promise<MultiVenueBatchVerifyResponse> {
-  const results = [];
+  const results: { index: number; venueId: string; valid: boolean; error?: string }[] = [];
   let verifiedCount = 0;
 
-  for (const item of request.venueProofs) {
+  for (let index = 0; index < request.venueProofs.length; index++) {
+    const item = request.venueProofs[index];
     try {
+      if (!item || !item.proof || !item.publicSignals || !Array.isArray(item.publicSignals)) {
+        results.push({
+          index,
+          venueId: item?.venueId || `venue-${index}`,
+          valid: false,
+          error: "Missing or malformed proof payload",
+        });
+        continue;
+      }
+
       const isValid = await verifyMembershipProof(
         item.proof,
         item.publicSignals,
       );
       if (isValid) {
         verifiedCount++;
-        results.push({ venueId: item.venueId, valid: true });
+        results.push({ index, venueId: item.venueId, valid: true });
       } else {
         results.push({
+          index,
           venueId: item.venueId,
           valid: false,
           error: "Invalid ZK proof",
@@ -104,7 +143,8 @@ export async function verifyMultiVenueBatchProofs(
       }
     } catch (err: any) {
       results.push({
-        venueId: item.venueId,
+        index,
+        venueId: item?.venueId || `venue-${index}`,
         valid: false,
         error: err?.message || "Verification failed",
       });
@@ -123,6 +163,68 @@ export async function verifyMultiVenueBatchProofs(
     totalCount: request.venueProofs.length,
     results,
     clusterHash,
+  };
+}
+
+/**
+ * Verifies an arbitrary batch of zero-knowledge proofs independently.
+ * Isolates failed proofs without halting verification of remaining items.
+ */
+export async function verifyBatchProofs(
+  proofs: GenericBatchProofItem[],
+): Promise<GenericBatchVerifyResponse> {
+  const items = proofs || [];
+  const results: GenericBatchProofResultItem[] = [];
+  let verifiedCount = 0;
+
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index];
+    const itemId = item?.id || `proof-${index}`;
+
+    try {
+      if (!item || !item.proof || !item.publicSignals || !Array.isArray(item.publicSignals)) {
+        results.push({
+          index,
+          id: itemId,
+          valid: false,
+          error: "Missing or malformed proof payload",
+        });
+        continue;
+      }
+
+      const isValid = await verifyMembershipProof(item.proof, item.publicSignals);
+      if (isValid) {
+        verifiedCount++;
+        results.push({
+          index,
+          id: itemId,
+          valid: true,
+        });
+      } else {
+        results.push({
+          index,
+          id: itemId,
+          valid: false,
+          error: "Groth16 verification failed for proof",
+        });
+      }
+    } catch (err: any) {
+      results.push({
+        index,
+        id: itemId,
+        valid: false,
+        error: err?.message || "Verification processing error",
+      });
+    }
+  }
+
+  const totalCount = items.length;
+  return {
+    valid: verifiedCount === totalCount && totalCount > 0,
+    verifiedCount,
+    failedCount: totalCount - verifiedCount,
+    totalCount,
+    results,
   };
 }
 
@@ -167,6 +269,7 @@ export async function verifyBatchStudentDiscountProofs(
     try {
       if (!item.proof || !item.publicSignals || !Array.isArray(item.publicSignals)) {
         results.push({
+          index,
           id: itemId,
           userId: item.userId,
           studentId: item.studentId,
@@ -209,6 +312,7 @@ export async function verifyBatchStudentDiscountProofs(
         const isRootActive = await isUniversityMerkleRootActive(root, epoch);
         if (!isRootActive) {
           results.push({
+            index,
             id: itemId,
             userId: item.userId,
             studentId: item.studentId,
@@ -224,6 +328,7 @@ export async function verifyBatchStudentDiscountProofs(
       if (nullifierHash) {
         if (seenBatchNullifiers.has(nullifierHash)) {
           results.push({
+            index,
             id: itemId,
             userId: item.userId,
             studentId: item.studentId,
@@ -244,6 +349,7 @@ export async function verifyBatchStudentDiscountProofs(
 
           if (existingClaim) {
             results.push({
+              index,
               id: itemId,
               userId: item.userId,
               studentId: item.studentId,
@@ -273,6 +379,7 @@ export async function verifyBatchStudentDiscountProofs(
 
       if (!fs.existsSync(keyPath)) {
         results.push({
+          index,
           id: itemId,
           userId: item.userId,
           studentId: item.studentId,
@@ -290,6 +397,7 @@ export async function verifyBatchStudentDiscountProofs(
         isValid = await snarkjs.groth16.verify(vKey, item.publicSignals, item.proof);
       } catch (err: any) {
         results.push({
+          index,
           id: itemId,
           userId: item.userId,
           studentId: item.studentId,
@@ -342,6 +450,7 @@ export async function verifyBatchStudentDiscountProofs(
         }
 
         results.push({
+          index,
           id: itemId,
           userId: item.userId,
           studentId: item.studentId,
@@ -353,6 +462,7 @@ export async function verifyBatchStudentDiscountProofs(
         });
       } else {
         results.push({
+          index,
           id: itemId,
           userId: item.userId,
           studentId: item.studentId,
@@ -363,6 +473,7 @@ export async function verifyBatchStudentDiscountProofs(
       }
     } catch (err: any) {
       results.push({
+        index,
         id: itemId,
         userId: item.userId,
         studentId: item.studentId,
@@ -386,4 +497,367 @@ export async function verifyBatchStudentDiscountProofs(
     batchHash,
   };
 }
+
+// ─── Parallel Web Worker Pool for Batch ZK Proofs (#5067) ────────────────────
+
+export interface BatchStudentProofItem extends StudentMembershipProofInput {
+  id?: string;
+  studentId?: string;
+  userId?: string;
+}
+
+export interface BatchStudentProofResultItem {
+  id: string;
+  studentId?: string;
+  userId?: string;
+  valid: boolean;
+  proof?: any;
+  publicSignals?: string[];
+  durationMs: number;
+  workerIndex?: number;
+  error?: string;
+}
+
+export interface BatchStudentProofGenerationResult {
+  success: boolean;
+  completedCount: number;
+  failedCount: number;
+  totalCount: number;
+  results: BatchStudentProofResultItem[];
+  totalDurationMs: number;
+  proofsPerSecond: number;
+  concurrency: number;
+  speedupEstimate?: number;
+}
+
+export interface BatchProofOptions {
+  concurrency?: number;
+  onProgress?: (
+    completed: number,
+    total: number,
+    latestResult?: BatchStudentProofResultItem,
+  ) => void;
+  timeoutMs?: number;
+}
+
+export interface BatchWorkerPoolMetrics {
+  poolSize: number;
+  totalBatchesProcessed: number;
+  totalProofsGenerated: number;
+  averageProofDurationMs: number;
+  throughputProofsPerSec: number;
+}
+
+export interface ZkpWorkerInstance {
+  id: number;
+  busy: boolean;
+  execute: (
+    input: BatchStudentProofItem,
+    options?: BatchProofOptions,
+  ) => Promise<{ proof: any; publicSignals: string[]; ms: number }>;
+  terminate: () => void;
+}
+
+/**
+ * Multi-threaded Worker Pool distributing student ZKP witness calculations
+ * and Groth16 proof generation across Web Workers matching hardware concurrency.
+ */
+export class BatchStudentZkpWorkerPool {
+  private poolSize: number;
+  private workers: ZkpWorkerInstance[] = [];
+  private totalProofsGenerated = 0;
+  private totalProofDurationMs = 0;
+  private totalBatchesProcessed = 0;
+  private isTerminated = false;
+
+  constructor(options?: { poolSize?: number }) {
+    this.poolSize = this.resolveConcurrency(options?.poolSize);
+    this.initPool();
+  }
+
+  private resolveConcurrency(customSize?: number): number {
+    if (customSize && customSize > 0) return customSize;
+    if (typeof navigator !== "undefined" && navigator.hardwareConcurrency) {
+      return Math.max(1, navigator.hardwareConcurrency);
+    }
+    return 4;
+  }
+
+  public getPoolSize(): number {
+    return this.poolSize;
+  }
+
+  public setPoolSize(size: number): void {
+    if (size <= 0) throw new RangeError("Pool size must be at least 1");
+    this.poolSize = size;
+    this.initPool();
+  }
+
+  private initPool(): void {
+    for (const w of this.workers) {
+      try {
+        w.terminate();
+      } catch {}
+    }
+    this.workers = [];
+
+    for (let i = 0; i < this.poolSize; i++) {
+      this.workers.push(this.createWorkerInstance(i));
+    }
+  }
+
+  private createWorkerInstance(id: number): ZkpWorkerInstance {
+    let worker: Worker | null = null;
+    const isBrowserWorker =
+      typeof window !== "undefined" && typeof Worker !== "undefined";
+
+    if (isBrowserWorker) {
+      try {
+        worker = new Worker(
+          new URL("../../workers/zkpWorker.ts", import.meta.url),
+          { type: "module" },
+        );
+      } catch {
+        worker = null;
+      }
+    }
+
+    return {
+      id,
+      busy: false,
+      execute: async (input: BatchStudentProofItem, options?: BatchProofOptions) => {
+        const start = Date.now();
+        if (worker) {
+          return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              cleanup();
+              reject(new Error(`ZKP worker #${id} witness calculation timed out`));
+            }, options?.timeoutMs || 45000);
+
+            const onMessage = (e: MessageEvent) => {
+              if (e.data?.type === "success") {
+                cleanup();
+                resolve({
+                  proof: e.data.proof,
+                  publicSignals: e.data.publicSignals,
+                  ms: Date.now() - start,
+                });
+              } else if (e.data?.type === "error") {
+                cleanup();
+                reject(new Error(e.data.error || "Worker proving failed"));
+              }
+            };
+
+            const onError = (e: ErrorEvent) => {
+              cleanup();
+              reject(new Error(e.message || "Worker execution error"));
+            };
+
+            const cleanup = () => {
+              clearTimeout(timeout);
+              worker?.removeEventListener("message", onMessage);
+              worker?.removeEventListener("error", onError);
+            };
+
+            worker?.addEventListener("message", onMessage);
+            worker?.addEventListener("error", onError);
+
+            worker?.postMessage({
+              type: "prove-student",
+              secret: String(input.secret),
+              epoch: input.epoch,
+              root: String(input.root),
+              pathElements: input.pathElements.map(String),
+              pathIndices: input.pathIndices.map(Number),
+            });
+          });
+        }
+
+        // Node.js / In-process snarkjs proving fallback
+        const res = await proveStudentMembership(input);
+        return {
+          proof: res.proof,
+          publicSignals: res.publicSignals,
+          ms: res.ms || Date.now() - start,
+        };
+      },
+      terminate: () => {
+        if (worker) {
+          try {
+            worker.terminate();
+          } catch {}
+          worker = null;
+        }
+      },
+    };
+  }
+
+  /**
+   * Distributes batch zero-knowledge proof generation across the worker pool.
+   */
+  public async generateBatch(
+    items: BatchStudentProofItem[],
+    options?: BatchProofOptions,
+  ): Promise<BatchStudentProofGenerationResult> {
+    if (this.isTerminated) {
+      throw new Error("BatchStudentZkpWorkerPool has been terminated");
+    }
+
+    if (!items || items.length === 0) {
+      return {
+        success: true,
+        completedCount: 0,
+        failedCount: 0,
+        totalCount: 0,
+        results: [],
+        totalDurationMs: 0,
+        proofsPerSecond: 0,
+        concurrency: this.poolSize,
+      };
+    }
+
+    const startBatch = Date.now();
+    const effectiveConcurrency = Math.min(this.poolSize, items.length);
+    const results: BatchStudentProofResultItem[] = new Array(items.length);
+    let completedCount = 0;
+    let failedCount = 0;
+    let nextIndex = 0;
+
+    // Distribute queue dynamically across active workers
+    const runWorkerTask = async (worker: ZkpWorkerInstance) => {
+      while (nextIndex < items.length) {
+        const currentIndex = nextIndex++;
+        const item = items[currentIndex];
+        const itemId = item.id || item.studentId || `item-${currentIndex + 1}`;
+
+        worker.busy = true;
+        try {
+          const res = await worker.execute(item, options);
+          const resultItem: BatchStudentProofResultItem = {
+            id: itemId,
+            studentId: item.studentId,
+            userId: item.userId,
+            valid: true,
+            proof: res.proof,
+            publicSignals: res.publicSignals,
+            durationMs: res.ms,
+            workerIndex: worker.id,
+          };
+          results[currentIndex] = resultItem;
+          completedCount++;
+          this.totalProofsGenerated++;
+          this.totalProofDurationMs += res.ms;
+          options?.onProgress?.(completedCount, items.length, resultItem);
+        } catch (err: any) {
+          const resultItem: BatchStudentProofResultItem = {
+            id: itemId,
+            studentId: item.studentId,
+            userId: item.userId,
+            valid: false,
+            durationMs: 0,
+            workerIndex: worker.id,
+            error: err?.message || "Proof generation failed",
+          };
+          results[currentIndex] = resultItem;
+          failedCount++;
+          options?.onProgress?.(
+            completedCount + failedCount,
+            items.length,
+            resultItem,
+          );
+        } finally {
+          worker.busy = false;
+        }
+      }
+    };
+
+    const activeWorkers = this.workers.slice(0, effectiveConcurrency);
+    await Promise.all(activeWorkers.map((w) => runWorkerTask(w)));
+
+    const totalDurationMs = Math.max(1, Date.now() - startBatch);
+    const proofsPerSecond = Number(
+      ((completedCount / totalDurationMs) * 1000).toFixed(2),
+    );
+    this.totalBatchesProcessed++;
+
+    const avgProofDuration =
+      completedCount > 0 ? this.totalProofDurationMs / completedCount : 1;
+    const speedupEstimate = Number(
+      Math.min(
+        effectiveConcurrency,
+        Math.max(1, (avgProofDuration * completedCount) / totalDurationMs),
+      ).toFixed(2),
+    );
+
+    return {
+      success: completedCount === items.length,
+      completedCount,
+      failedCount,
+      totalCount: items.length,
+      results,
+      totalDurationMs,
+      proofsPerSecond,
+      concurrency: effectiveConcurrency,
+      speedupEstimate,
+    };
+  }
+
+  public getMetrics(): BatchWorkerPoolMetrics {
+    return {
+      poolSize: this.poolSize,
+      totalBatchesProcessed: this.totalBatchesProcessed,
+      totalProofsGenerated: this.totalProofsGenerated,
+      averageProofDurationMs:
+        this.totalProofsGenerated > 0
+          ? Math.round(this.totalProofDurationMs / this.totalProofsGenerated)
+          : 0,
+      throughputProofsPerSec:
+        this.totalProofDurationMs > 0
+          ? Number(
+              (
+                (this.totalProofsGenerated / this.totalProofDurationMs) *
+                1000
+              ).toFixed(2),
+            )
+          : 0,
+    };
+  }
+
+  public terminate(): void {
+    this.isTerminated = true;
+    for (const w of this.workers) {
+      w.terminate();
+    }
+    this.workers = [];
+  }
+}
+
+let globalBatchWorkerPool: BatchStudentZkpWorkerPool | null = null;
+
+export function getBatchZkpWorkerPool(options?: {
+  poolSize?: number;
+}): BatchStudentZkpWorkerPool {
+  if (!globalBatchWorkerPool) {
+    globalBatchWorkerPool = new BatchStudentZkpWorkerPool(options);
+  } else if (
+    options?.poolSize &&
+    options.poolSize !== globalBatchWorkerPool.getPoolSize()
+  ) {
+    globalBatchWorkerPool.setPoolSize(options.poolSize);
+  }
+  return globalBatchWorkerPool;
+}
+
+export async function generateBatchStudentProofs(
+  items: BatchStudentProofItem[],
+  options?: BatchProofOptions,
+): Promise<BatchStudentProofGenerationResult> {
+  const pool = getBatchZkpWorkerPool(
+    options ? { poolSize: options.concurrency } : undefined,
+  );
+  return pool.generateBatch(items, options);
+}
+
+export { BatchStudentZkpWorkerPool as BatchZkpWorkerPool };
+
 

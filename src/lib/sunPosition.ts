@@ -13,6 +13,8 @@ export interface SunPosition {
   altitude: number;
   /** True azimuth in degrees clockwise from North (0–360) */
   azimuth: number;
+  /** Solar zenith angle in degrees clamped between 0 and 180 */
+  zenith: number;
   /** Whether the sun is currently above the horizon */
   isAboveHorizon: boolean;
   /** Altitude normalized to [0, 1] against a 90° zenith (clamped at 0 when below horizon) */
@@ -48,6 +50,22 @@ function toRad(deg: number): number {
 
 function toDeg(rad: number): number {
   return (rad * 180) / Math.PI;
+}
+
+/**
+ * Clamps a solar zenith angle to the physically valid range [0, 180] degrees.
+ */
+export function clampZenith(zenithDeg: number): number {
+  if (isNaN(zenithDeg) || !isFinite(zenithDeg)) return 90;
+  return Math.min(180, Math.max(0, zenithDeg));
+}
+
+/**
+ * Normalizes an azimuth angle to the range [0, 360) degrees.
+ */
+export function normalizeAzimuth(azimuthDeg: number): number {
+  if (isNaN(azimuthDeg) || !isFinite(azimuthDeg)) return 0;
+  return ((azimuthDeg % 360) + 360) % 360;
 }
 
 /** Julian Day Number from a UTC Date */
@@ -177,21 +195,38 @@ export function calculateSunPosition(
   const cosZenith =
     Math.sin(latRad) * Math.sin(decl) +
     Math.cos(latRad) * Math.cos(decl) * Math.cos(ha);
-  const zenithRad = Math.acos(Math.min(1, Math.max(-1, cosZenith)));
-  const altitude = 90 - toDeg(zenithRad);
+  const rawZenithRad = Math.acos(Math.min(1, Math.max(-1, cosZenith)));
+  const rawZenithDeg = toDeg(rawZenithRad);
+  const zenith = clampZenith(rawZenithDeg);
+  const zenithRad = toRad(zenith);
+  const altitude = 90 - zenith;
 
   // Azimuth (0–360, clockwise from North)
-  const cosAz =
-    (Math.sin(latRad) * Math.cos(zenithRad) - Math.sin(decl)) /
-    (Math.cos(latRad) * Math.sin(zenithRad));
-  let azimuth = toDeg(Math.acos(Math.min(1, Math.max(-1, cosAz))));
-  if (hourAngleDeg > 0) {
-    azimuth = 360 - azimuth;
+  const sinZenith = Math.sin(zenithRad);
+  let azimuth: number;
+
+  if (sinZenith === 0) {
+    azimuth = latitude < 0 ? 0 : 180;
+  } else {
+    const cosAz =
+      (Math.sin(latRad) * Math.cos(zenithRad) - Math.sin(decl)) /
+      (Math.cos(latRad) * sinZenith);
+    const gamma = toDeg(Math.acos(Math.min(1, Math.max(-1, cosAz))));
+
+    if (hourAngleDeg > 0) {
+      azimuth = (gamma + 180) % 360;
+    } else {
+      azimuth = (540 - gamma) % 360;
+    }
   }
+
+  // Normalize azimuth within [0, 360)
+  azimuth = normalizeAzimuth(azimuth);
 
   return {
     altitude,
     azimuth,
+    zenith,
     isAboveHorizon: altitude > 0,
     normalizedAltitude: Math.max(0, Math.min(1, altitude / 90)),
   };
@@ -337,3 +372,175 @@ export function sunExposureColour(label: SunExposureLabel): {
       };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Optimal Natural Light Seating & Glare Avoidance Recommendation (#5064)
+// ---------------------------------------------------------------------------
+
+export const BEST_NATURAL_LIGHT_BADGE = "Best Natural Light";
+
+export interface NaturalLightDeskInput {
+  id: string;
+  label?: string;
+  /** Distance from perimeter window in meters or floor plan units (default: inferred from coordinates or row) */
+  windowDistance?: number;
+  /** Direction the desk or closest window faces in degrees (0–360, default: uses venueCompassOrientation) */
+  facingOrientationDeg?: number;
+  /** Normalized or spatial coordinate (0-indexed or meters) */
+  x?: number;
+  y?: number;
+  row?: number;
+  col?: number;
+}
+
+export interface NaturalLightRecommendationOptions {
+  latitude: number;
+  longitude: number;
+  /** Compass orientation of venue window perimeter in degrees (0=N, 90=E, 180=S, 270=W). Default: 180 (South-facing) */
+  venueCompassOrientation?: number;
+  date?: Date;
+  /** Glare threshold angle in degrees: solar angles narrower than this cause direct screen glare (default: 25) */
+  glareAngleThresholdDeg?: number;
+  /** Minimum sun altitude in degrees for usable natural daylight (default: 10) */
+  minDaylightAltitudeDeg?: number;
+}
+
+export interface NaturalLightDeskRecommendation {
+  deskId: string;
+  isOptimalNaturalLight: boolean;
+  badgeLabel?: typeof BEST_NATURAL_LIGHT_BADGE;
+  relativeSunAngle: number; // Angle difference between sun azimuth and window orientation [0, 180]
+  sunAltitude: number;
+  sunAzimuth: number;
+  daylightQuality: "optimal" | "glare" | "dim" | "shaded" | "night";
+  score: number; // 0 to 1 daylight comfort score
+  reason: string;
+}
+
+/**
+ * Computes current sun angle relative to venue compass orientation in degrees [0, 180].
+ * 0° means the sun is directly aligned with the venue orientation; 180° means directly opposite.
+ */
+export function computeRelativeSunAngle(
+  sunAzimuth: number,
+  venueOrientationDeg: number,
+): number {
+  return Math.abs(
+    ((((sunAzimuth - venueOrientationDeg + 180) % 360) + 360) % 360) - 180,
+  );
+}
+
+/**
+ * Recommends desks offering optimal natural daylight while avoiding direct solar glare
+ * based on current solar geometry and venue compass orientation (#5064).
+ */
+export function recommendNaturalLightDesks(
+  desks: NaturalLightDeskInput[],
+  options: NaturalLightRecommendationOptions,
+): NaturalLightDeskRecommendation[] {
+  const {
+    latitude,
+    longitude,
+    venueCompassOrientation = 180,
+    date = new Date(),
+    glareAngleThresholdDeg = 25,
+    minDaylightAltitudeDeg = 10,
+  } = options;
+
+  const sun = calculateSunPosition(latitude, longitude, date);
+  const relativeSunAngle = computeRelativeSunAngle(
+    sun.azimuth,
+    venueCompassOrientation,
+  );
+
+  return desks.map((desk) => {
+    // If sun is below horizon or altitude too low for daylight
+    if (!sun.isAboveHorizon || sun.altitude < minDaylightAltitudeDeg) {
+      return {
+        deskId: desk.id,
+        isOptimalNaturalLight: false,
+        relativeSunAngle,
+        sunAltitude: sun.altitude,
+        sunAzimuth: sun.azimuth,
+        daylightQuality: sun.isAboveHorizon ? "dim" : "night",
+        score: 0,
+        reason: sun.isAboveHorizon
+          ? "Sun altitude is too low for significant natural daylight."
+          : "Sun is below horizon (night/dusk).",
+      };
+    }
+
+    // Determine desk window distance (normalized or meters, default ~3m)
+    const windowDist =
+      desk.windowDistance !== undefined
+        ? desk.windowDistance
+        : desk.row !== undefined
+          ? Math.max(1, desk.row * 1.5 + 1)
+          : 3.0;
+
+    const deskOrientation = desk.facingOrientationDeg ?? venueCompassOrientation;
+    const deskRelativeAngle = computeRelativeSunAngle(sun.azimuth, deskOrientation);
+
+    // Sun is illuminating the window facade if relative angle <= 90°
+    const isFacadeIlluminated = deskRelativeAngle <= 90;
+
+    if (!isFacadeIlluminated) {
+      // Shaded facade: ambient indirect light without glare
+      // Desks close to window get soft diffuse daylight (optimal if windowDist between 1 and 4.5m)
+      const isOptimal = windowDist >= 1 && windowDist <= 4.5;
+      return {
+        deskId: desk.id,
+        isOptimalNaturalLight: isOptimal,
+        badgeLabel: isOptimal ? BEST_NATURAL_LIGHT_BADGE : undefined,
+        relativeSunAngle: deskRelativeAngle,
+        sunAltitude: sun.altitude,
+        sunAzimuth: sun.azimuth,
+        daylightQuality: isOptimal ? "optimal" : "shaded",
+        score: isOptimal ? 0.85 : 0.4,
+        reason: isOptimal
+          ? "Receives pleasant soft, indirect natural light from shaded facade without solar glare."
+          : "In shaded zone away from direct windows.",
+      };
+    }
+
+    // Facade is directly illuminated by sun
+    // If sun enters at an acute direct angle (< glareAngleThresholdDeg) and desk is immediately at window, direct glare occurs
+    const isDirectGlare =
+      deskRelativeAngle < glareAngleThresholdDeg && windowDist < 2.0 && sun.altitude < 50;
+
+    if (isDirectGlare) {
+      return {
+        deskId: desk.id,
+        isOptimalNaturalLight: false,
+        relativeSunAngle: deskRelativeAngle,
+        sunAltitude: sun.altitude,
+        sunAzimuth: sun.azimuth,
+        daylightQuality: "glare",
+        score: 0.25,
+        reason: "Subject to direct solar glare on screens from low-angle direct sunlight.",
+      };
+    }
+
+    // Optimal daylight zone:
+    // Either oblique sun illumination (relative angle between glare threshold and 85°),
+    // OR desk is slightly recessed (e.g. 2m-5.5m) buffering direct beam while capturing generous daylight.
+    const isOptimalAngle = deskRelativeAngle >= glareAngleThresholdDeg && deskRelativeAngle <= 85;
+    const isOptimalDistance = windowDist >= 1.5 && windowDist <= 5.5;
+    const isOptimal = (isOptimalAngle && isOptimalDistance) || (isOptimalDistance && sun.altitude >= 30);
+
+    return {
+      deskId: desk.id,
+      isOptimalNaturalLight: isOptimal,
+      badgeLabel: isOptimal ? BEST_NATURAL_LIGHT_BADGE : undefined,
+      relativeSunAngle: deskRelativeAngle,
+      sunAltitude: sun.altitude,
+      sunAzimuth: sun.azimuth,
+      daylightQuality: isOptimal ? "optimal" : "shaded",
+      score: isOptimal ? 0.95 : 0.5,
+      reason: isOptimal
+        ? "Optimal natural daylight with comfortable illumination and no direct screen glare."
+        : "Moderate daylight; positioned deeper in venue floorplan.",
+    };
+  });
+}
+

@@ -113,6 +113,84 @@ export function drawVectorQrMatrix(
 }
 
 /**
+ * Wraps text into multiple lines so that each line's rendered width does not exceed maxWidth.
+ */
+export function wrapText(
+  text: string,
+  font: PDFFont,
+  fontSize: number,
+  maxWidth: number,
+): string[] {
+  if (!text) return [];
+  const lines: string[] = [];
+  const paragraphs = String(text).split(/\r?\n/);
+
+  const getWidth = (t: string) => {
+    try {
+      return font.widthOfTextAtSize(t.replace(/[^\x20-\x7E]/g, "?"), fontSize);
+    } catch {
+      return t.length * fontSize * 0.6;
+    }
+  };
+
+  for (const paragraph of paragraphs) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) {
+      continue;
+    }
+
+    let currentLine = "";
+
+    for (const word of words) {
+      if (!currentLine) {
+        if (getWidth(word) <= maxWidth) {
+          currentLine = word;
+        } else {
+          // Token itself exceeds maxWidth; split by characters
+          let chunk = "";
+          for (const char of word) {
+            if (getWidth(chunk + char) <= maxWidth) {
+              chunk += char;
+            } else {
+              if (chunk) lines.push(chunk);
+              chunk = char;
+            }
+          }
+          currentLine = chunk;
+        }
+      } else {
+        const testLine = `${currentLine} ${word}`;
+        if (getWidth(testLine) <= maxWidth) {
+          currentLine = testLine;
+        } else {
+          lines.push(currentLine);
+          if (getWidth(word) <= maxWidth) {
+            currentLine = word;
+          } else {
+            let chunk = "";
+            for (const char of word) {
+              if (getWidth(chunk + char) <= maxWidth) {
+                chunk += char;
+              } else {
+                if (chunk) lines.push(chunk);
+                chunk = char;
+              }
+            }
+            currentLine = chunk;
+          }
+        }
+      }
+    }
+
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+  }
+
+  return lines;
+}
+
+/**
  * Generates a complete booking confirmation receipt PDF with an embedded
  * verification QR code in the upper-right header.
  */
@@ -288,15 +366,43 @@ export async function generateBookingPdf(
   y -= 18;
   const venueName = booking.venue?.name || "WorkSphere Verified Venue";
   const venueCategory = booking.venue?.category || "Coworking Space";
-  const venueAddress = booking.venue?.address || "Address provided upon arrival";
+  const rawVenueAddress = booking.venue?.address || "Address provided upon arrival";
+  const venueAddress = typeof rawVenueAddress === "string" ? rawVenueAddress : String(rawVenueAddress);
 
   drawSafeText(venueName, margin, y, 12, boldFont, darkNavy);
-  drawSafeText(`(${venueCategory.toUpperCase()})`, margin + boldFont.widthOfTextAtSize(venueName, 12) + 8, y + 1, 8.5, boldFont, primaryBlue);
+  drawSafeText(
+    `(${venueCategory.toUpperCase()})`,
+    margin + boldFont.widthOfTextAtSize(venueName.replace(/[^\x20-\x7E]/g, "?"), 12) + 8,
+    y + 1,
+    8.5,
+    boldFont,
+    primaryBlue,
+  );
 
   y -= 16;
-  drawSafeText(`Address: ${venueAddress}`, margin, y, 9, font, slateGrey);
+  const addressLabel = "Address: ";
+  const addressFontSize = 9;
+  const addressLineHeight = 13;
+  const addressLabelWidth = font.widthOfTextAtSize(addressLabel, addressFontSize);
+  const maxAddressWidth = contentWidth - addressLabelWidth;
+  const addressLines = wrapText(venueAddress, font, addressFontSize, maxAddressWidth);
 
-  y -= 30;
+  if (addressLines.length === 0) {
+    drawSafeText(`${addressLabel}Address provided upon arrival`, margin, y, addressFontSize, font, slateGrey);
+    y -= 16;
+  } else {
+    for (let i = 0; i < addressLines.length; i++) {
+      if (i === 0) {
+        drawSafeText(addressLabel, margin, y, addressFontSize, font, slateGrey);
+        drawSafeText(addressLines[0], margin + addressLabelWidth, y, addressFontSize, font, slateGrey);
+      } else {
+        drawSafeText(addressLines[i], margin + addressLabelWidth, y, addressFontSize, font, slateGrey);
+      }
+      y -= addressLineHeight;
+    }
+  }
+
+  y -= 14;
 
   // Guest Details Section
   drawSafeText("GUEST DETAILS", margin, y, 10, boldFont, darkNavy);

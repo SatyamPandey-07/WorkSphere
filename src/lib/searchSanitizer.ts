@@ -29,12 +29,18 @@ export function sanitizeSearchQuery(value: unknown): string {
 }
 
 /**
- * Splits a sanitized comma-separated value (currently used for the `cities`
+ * Splits a comma-separated value (currently used for the `cities`
  * parameter) into individual trimmed, non-empty entries.
+ *
+ * Splits the raw input string by comma first, then sanitizes each entry
+ * individually so entries are sanitized without prematurely truncating the entire list.
  */
-export function splitSearchList(value: string): string[] {
-  return sanitizeSearchQuery(value)
+export function splitSearchList(value: unknown): string[] {
+  if (typeof value !== "string") {
+    return [];
+  }
+  return value
     .split(",")
-    .map((entry) => entry.trim())
+    .map((entry) => sanitizeSearchQuery(entry))
     .filter(Boolean);
 }

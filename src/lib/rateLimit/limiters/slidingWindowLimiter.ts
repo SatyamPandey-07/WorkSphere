@@ -29,14 +29,21 @@ export class SlidingWindowLimiter implements IRateLimiter {
   }
 
   async consume(key: string, points = 1): Promise<RateLimitResult> {
+    const now = Date.now();
     const redis = getRedisClient();
     if (redis) {
       const redisKey = `worksphere:ratelimit:${this.namespace}:${key}`;
+      const storeKey = `${this.namespace}:${key}`;
+
+      // Enforce strict sub-bucket pruning & eviction of disconnected fallback entries on Redis reconnect (#5037)
+      await this.pruneAndSyncMemoryOnReconnect(redis, redisKey, storeKey, now);
+
       const atomicResult = await executeAtomicSlidingWindow(
         redis,
         redisKey,
         this.limit,
-        this.windowMs
+        this.windowMs,
+        now
       );
       if (atomicResult !== null) {
         return atomicResult;
@@ -44,6 +51,42 @@ export class SlidingWindowLimiter implements IRateLimiter {
     }
 
     return this.consumeMemory(key, points);
+  }
+
+  private async pruneAndSyncMemoryOnReconnect(
+    redis: any,
+    redisKey: string,
+    storeKey: string,
+    now: number
+  ): Promise<void> {
+    const windowStart = now - this.windowMs;
+    const memoryEntry = this.memoryStore.getSlidingWindowEntry(storeKey);
+    if (!memoryEntry || !memoryEntry.timestamps || memoryEntry.timestamps.length === 0) {
+      return;
+    }
+
+    // Purge expired sub-bucket timestamps older than windowStart (now - windowMs)
+    const validTimestamps = memoryEntry.timestamps.filter((ts) => ts > windowStart);
+
+    if (validTimestamps.length > 0) {
+      for (const ts of validTimestamps) {
+        const member = microTimestampMember(
+          Math.floor(ts / 1000),
+          (ts % 1000) * 1000,
+          Math.random().toString(36).slice(2, 10)
+        );
+        try {
+          if (typeof redis.zadd === "function") {
+            await redis.zadd(redisKey, { score: ts, member });
+          }
+        } catch {
+          // Non-blocking sync retry
+        }
+      }
+    }
+
+    // Purge local in-memory sub-bucket entry after syncing valid timestamps to Redis
+    this.memoryStore.deleteSlidingWindowEntry(storeKey);
   }
 
   private consumeMemory(key: string, _points = 1): RateLimitResult {
@@ -99,6 +142,13 @@ export class SlidingWindowLimiter implements IRateLimiter {
 
   async check(key: string): Promise<RateLimitResult> {
     const now = Date.now();
+    const redis = getRedisClient();
+    if (redis) {
+      const redisKey = `worksphere:ratelimit:${this.namespace}:${key}`;
+      const storeKey = `${this.namespace}:${key}`;
+      await this.pruneAndSyncMemoryOnReconnect(redis, redisKey, storeKey, now);
+    }
+
     const windowStart = now - this.windowMs;
     const storeKey = `${this.namespace}:${key}`;
 

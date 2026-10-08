@@ -101,10 +101,14 @@ describe("Partition Date Calculations & Export (#3777, #4914)", () => {
     it("should escape commas, quotes, and newlines properly", () => {
       expect(escapeCsv("hello,world")).toBe('"hello,world"');
       expect(escapeCsv('foo"bar')).toBe('"foo""bar"');
+      expect(escapeCsv('hello,"world"')).toBe('"hello,""world"""');
       expect(escapeCsv("line1\nline2")).toBe('"line1\nline2"');
       expect(escapeCsv("normal")).toBe("normal");
       expect(escapeCsv(123)).toBe("123");
       expect(escapeCsv(null)).toBe("");
+      expect(escapeCsv(new Date("2026-03-15T10:00:00.000Z"))).toBe(
+        "2026-03-15T10:00:00.000Z",
+      );
     });
   });
 

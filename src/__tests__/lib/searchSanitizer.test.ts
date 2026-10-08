@@ -68,11 +68,26 @@ describe("splitSearchList", () => {
     expect(splitSearchList("Mum\0bai,\x1bDelhi")).toEqual(["Mumbai", "Delhi"]);
   });
 
-  it("applies the query length cap before splitting", () => {
+  it("applies the query length cap per entry without truncating the full list", () => {
     const long = `Mumbai,${"x".repeat(MAX_SEARCH_QUERY_LENGTH + 20)}`;
     const result = splitSearchList(long);
     expect(result[0]).toBe("Mumbai");
-    expect(result.join(",").length).toBeLessThanOrEqual(MAX_SEARCH_QUERY_LENGTH);
+    expect(result[1]).toHaveLength(MAX_SEARCH_QUERY_LENGTH);
+  });
+
+  it("sanitizes long multi-item lists without mid-word truncation", () => {
+    const list = [
+      "San Francisco",
+      "Los Angeles",
+      "New York City",
+      "Chicago",
+      "Seattle",
+      "Philadelphia",
+      "Washington",
+      "Boston",
+    ];
+    const raw = list.join(",");
+    expect(splitSearchList(raw)).toEqual(list);
   });
 
   it("returns an empty array for an empty value", () => {

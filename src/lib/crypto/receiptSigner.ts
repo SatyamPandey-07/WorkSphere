@@ -68,18 +68,46 @@ export interface ReceiptVerificationResult {
 }
 
 /**
- * Deterministically creates a canonical JSON string for signing by sorting keys
- * and omitting undefined values.
+ * Recursively canonicalizes JSON data per RFC 8785 (JSON Canonicalization Scheme - JCS)
+ * sorting object keys alphabetically and omitting undefined properties.
  */
-export function canonicalizeReceiptPayload(payload: ReservationReceiptPayload): string {
-  const sortedKeys = Object.keys(payload).sort() as (keyof ReservationReceiptPayload)[];
+export function canonicalizeJson(value: any): any {
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalizeJson(item));
+  }
+
+  const sortedKeys = Object.keys(value).sort();
   const sortedObj: Record<string, any> = {};
-  for (const k of sortedKeys) {
-    if (payload[k] !== undefined) {
-      sortedObj[k] = payload[k];
+  for (const key of sortedKeys) {
+    const val = value[key];
+    if (val !== undefined) {
+      sortedObj[key] = canonicalizeJson(val);
     }
   }
-  return JSON.stringify(sortedObj);
+  return sortedObj;
+}
+
+/**
+ * Deterministically creates a canonical JSON string for signing by recursively sorting keys
+ * per RFC 8785 (JSON Canonicalization Scheme - JCS) and omitting undefined values.
+ */
+export function canonicalizeReceiptPayload(
+  payload: ReservationReceiptPayload | Record<string, any> | string
+): string {
+  let obj = payload;
+  if (typeof payload === "string") {
+    try {
+      obj = JSON.parse(payload);
+    } catch {
+      return payload;
+    }
+  }
+  const canonicalObj = canonicalizeJson(obj);
+  return JSON.stringify(canonicalObj);
 }
 
 /**
@@ -227,7 +255,6 @@ export function verifyReservationReceipt(
     const config = ALGORITHM_CONFIGS[algorithm] || ALGORITHM_CONFIGS["RSA-SHA256"];
     const canonicalPayload = canonicalizeReceiptPayload(payload);
     const computedDigest = computeReceiptDigest(canonicalPayload);
-    const digestMatches = !expectedDigest || expectedDigest === computedDigest;
 
     const verifier = crypto.createVerify(config.hash);
     verifier.update(canonicalPayload, "utf8");
@@ -243,6 +270,9 @@ export function verifyReservationReceipt(
       verifyOptions,
       Buffer.from(signatureBase64, "base64")
     );
+    const digestMatches = expectedDigest
+      ? expectedDigest === computedDigest
+      : isSignatureValid;
     const isValid = isSignatureValid && digestMatches;
 
     return {

@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import {
   signReservationReceipt,
   verifyReservationReceipt,
@@ -204,19 +205,85 @@ describe("Cryptographic Receipt Signing and Verification", () => {
     expect(verification.valid).toBe(false);
   });
 
+  it("verifies signature regardless of initial key ordering in nested receipt structures (RFC 8785)", () => {
+    const { publicKeyPem, privateKeyPem } = generateReceiptKeyPair("ECDSA-P256");
+
+    const payloadWithNested = {
+      bookingId: "booking_abc",
+      confirmationId: "CONF-123",
+      venueId: "venue_xyz",
+      venueName: "Metro Hub",
+      userId: "user_1",
+      date: "2026-10-09",
+      time: "10:00",
+      totalAmount: 50,
+      currency: "USD",
+      issuedAt: "2026-10-09T00:00:00Z",
+      status: "CONFIRMED",
+      metadata: {
+        zKey: "last",
+        aKey: "first",
+        nested: {
+          beta: 2,
+          alpha: 1,
+        },
+      },
+    } as unknown as ReservationReceiptPayload;
+
+    const signature = signReservationReceipt(payloadWithNested, {
+      algorithm: "ECDSA-P256",
+      privateKeyPem,
+      publicKeyPem,
+    });
+
+    // Create an equivalent payload with completely reversed / shuffled key order at every level
+    const shuffledPayload = {
+      status: "CONFIRMED",
+      metadata: {
+        nested: {
+          alpha: 1,
+          beta: 2,
+        },
+        aKey: "first",
+        zKey: "last",
+      },
+      time: "10:00",
+      issuedAt: "2026-10-09T00:00:00Z",
+      date: "2026-10-09",
+      currency: "USD",
+      totalAmount: 50,
+      userId: "user_1",
+      venueName: "Metro Hub",
+      venueId: "venue_xyz",
+      confirmationId: "CONF-123",
+      bookingId: "booking_abc",
+    } as unknown as ReservationReceiptPayload;
+
+    const result = verifyReservationReceipt(
+      shuffledPayload,
+      signature.signature,
+      publicKeyPem,
+      "ECDSA-P256",
+      signature.digest
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.digestMatches).toBe(true);
+  });
+
   describe("Raw Buffer Digital Signature Verification (PDF bytes)", () => {
     it("verifies valid raw PDF buffer signature using RSA-SHA256", () => {
       const pdfBytes = Buffer.from("%PDF-1.4 sample reservation receipt bytes");
       const { publicKeyPem, privateKeyPem } = generateReceiptKeyPair("RSA");
 
       // Sign raw buffer
-      const signer = require("crypto").createSign("SHA256");
+      const signer = crypto.createSign("SHA256");
       signer.update(pdfBytes);
       signer.end();
       const signatureBase64 = signer.sign(
         {
           key: privateKeyPem,
-          padding: require("crypto").constants.RSA_PKCS1_PADDING,
+          padding: crypto.constants.RSA_PKCS1_PADDING,
         },
         "base64"
       );
@@ -234,7 +301,7 @@ describe("Cryptographic Receipt Signing and Verification", () => {
       const pdfBytes = Buffer.from("%PDF-1.4 high security receipt");
       const { publicKeyPem, privateKeyPem } = generateReceiptKeyPair("ECDSA-P384");
 
-      const signer = require("crypto").createSign("SHA384");
+      const signer = crypto.createSign("SHA384");
       signer.update(pdfBytes);
       signer.end();
       const signatureBase64 = signer.sign(

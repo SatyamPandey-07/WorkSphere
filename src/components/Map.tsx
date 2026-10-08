@@ -170,6 +170,23 @@ function MapController({ mapView }: { mapView: MapView | null }) {
   return null;
 }
 
+function ResetMapViewControl({ center }: { center: [number, number] }) {
+  const map = useMap();
+
+  return (
+    <div className="absolute bottom-3 right-3 z-[1000]">
+      <button
+        type="button"
+        aria-label="Reset Map View"
+        onClick={() => map.setView(center, 13)}
+        className="rounded-lg border border-zinc-700 bg-zinc-900/90 px-3 py-1.5 text-xs font-semibold text-zinc-200 shadow-md backdrop-blur-md transition-colors hover:bg-zinc-800 hover:text-white"
+      >
+        Reset Map View
+      </button>
+    </div>
+  );
+}
+
 function AutoCenter({
   markers,
   userLocation,
@@ -1305,6 +1322,7 @@ const Map = ({
         }}
       >
         <ScaleControl position="bottomleft" metric={true} imperial={false} />
+        <ResetMapViewControl center={center} />
 
         {/* Map Control Options: High-Contrast Mode Toggle (WCAG 2.1 AA) */}
         <div className="map-accessibility-controls absolute top-3 left-16 z-[1000]">

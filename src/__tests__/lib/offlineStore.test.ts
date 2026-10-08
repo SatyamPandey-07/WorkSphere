@@ -32,9 +32,9 @@ describe("offlineStore – queueOfflineFavorite", () => {
     expect(typeof entry!.id).toBe("number");
   });
 
-  it("does NOT throw a ConstraintError when called twice in rapid succession (double-click)", async () => {
+  it("coalesces the same favorite action when called twice in rapid succession", async () => {
     // Fire both calls concurrently without awaiting the first — this mirrors
-    // what happens when a user double-clicks the Check In / Favourite button.
+    // what happens when a user double-clicks the Favourite button.
     await expect(
       Promise.all([
         queueOfflineFavorite("venue-double", "ADD"),
@@ -45,12 +45,47 @@ describe("offlineStore – queueOfflineFavorite", () => {
     const queued = await getQueuedFavorites();
     const entries = queued.filter((a) => a.venueId === "venue-double");
 
-    // Both inserts must have succeeded — two distinct records in the store.
-    expect(entries).toHaveLength(2);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].action).toBe("ADD");
+    expect(typeof entries[0].id).toBe("number");
+  });
 
-    // Each record must have a unique autoIncrement id.
-    const ids = entries.map((e) => e.id);
-    expect(new Set(ids).size).toBe(2);
+  it("keeps only the final action for repeated changes to one venue", async () => {
+    await queueOfflineFavorite("venue-latest", "ADD");
+    await queueOfflineFavorite("venue-latest", "REMOVE");
+    await queueOfflineFavorite("venue-latest", "ADD");
+    await queueOfflineFavorite("venue-latest", "REMOVE");
+
+    const entries = (await getQueuedFavorites()).filter(
+      (a) => a.venueId === "venue-latest",
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].action).toBe("REMOVE");
+  });
+
+  it("keeps queued actions for different venues independent", async () => {
+    await queueOfflineFavorite("venue-independent-a", "ADD");
+    await queueOfflineFavorite("venue-independent-b", "ADD");
+    await queueOfflineFavorite("venue-independent-a", "REMOVE");
+
+    const entries = (await getQueuedFavorites()).filter((a) =>
+      a.venueId.startsWith("venue-independent-"),
+    );
+
+    expect(entries).toHaveLength(2);
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          venueId: "venue-independent-a",
+          action: "REMOVE",
+        }),
+        expect.objectContaining({
+          venueId: "venue-independent-b",
+          action: "ADD",
+        }),
+      ]),
+    );
   });
 
   it("queues a REMOVE action correctly", async () => {

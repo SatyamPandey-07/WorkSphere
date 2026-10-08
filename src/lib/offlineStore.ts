@@ -244,34 +244,37 @@ export async function queueOfflineFavorite(
     try {
       const db = await getDB();
 
-      // Check for existing identical action before inserting
-      const existing = await new Promise<OfflineAction | undefined>(
-        (resolve, reject) => {
-          const tx = db.transaction(STORE_NAME, "readonly");
-          const store = tx.objectStore(STORE_NAME);
-          const request = store.getAll();
-          request.onsuccess = () =>
-            resolve(
-              (request.result || []).find(
-                (a) => a.venueId === venueId && a.action === action,
-              ),
-            );
-          request.onerror = () => reject(request.error);
-        },
-      );
-      if (existing) return;
-
       return new Promise<void>((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, "readwrite");
         const store = tx.objectStore(STORE_NAME);
-        store.add({
-          venueId,
-          action,
-          timestamp: Date.now(),
-          retryCount: 0,
-        });
+        const request = store.getAll();
+
+        request.onsuccess = () => {
+          const existing = (request.result as OfflineAction[]).filter(
+            (item) => item.venueId === venueId,
+          );
+          const matching = existing.filter((item) => item.action === action);
+          const retained = matching.sort(
+            (a, b) => (b.timestamp || 0) - (a.timestamp || 0),
+          )[0];
+
+          for (const item of existing) {
+            if (item !== retained) store.delete(item.id!);
+          }
+
+          if (!retained) {
+            store.add({
+              venueId,
+              action,
+              timestamp: Date.now(),
+              retryCount: 0,
+            });
+          }
+        };
+        request.onerror = () => reject(request.error);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(tx.error);
       });
     } catch (err: any) {
       console.error("Failed to queue offline action:", err);

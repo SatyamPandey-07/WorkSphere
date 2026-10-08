@@ -42,6 +42,9 @@ export const AccessibleMarker = memo(
   }: AccessibleMarkerProps) {
     console.count(`Rendered marker: ${name}`);
     const markerRef = useRef<LeafletMarker | null>(null);
+    const popupEscapeHandlerRef = useRef<((event: KeyboardEvent) => void) | null>(
+      null,
+    );
 
     // Formats a WCAG 2.1 AA descriptive accessibility label
     const buildAriaLabel = useCallback(() => {
@@ -126,13 +129,34 @@ export const AccessibleMarker = memo(
           popupEl.setAttribute("aria-modal", "true");
           popupEl.setAttribute("aria-label", name);
         }
+
+        popupEscapeHandlerRef.current = (event: KeyboardEvent) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            e.target.closePopup();
+          }
+        };
+        document.addEventListener("keydown", popupEscapeHandlerRef.current);
       },
       [name],
     );
 
     const handlePopupClose = useCallback(() => {
+      if (popupEscapeHandlerRef.current) {
+        document.removeEventListener("keydown", popupEscapeHandlerRef.current);
+        popupEscapeHandlerRef.current = null;
+      }
       markerRef.current?.getElement()?.focus();
     }, []);
+
+    useEffect(
+      () => () => {
+        if (popupEscapeHandlerRef.current) {
+          document.removeEventListener("keydown", popupEscapeHandlerRef.current);
+        }
+      },
+      [],
+    );
 
     // Direct Leaflet element updates to prevent map pin flicker
     useEffect(() => {

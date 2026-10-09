@@ -174,6 +174,8 @@ jest.mock("leaflet", () => ({
 import Map from "@/components/Map";
 import { MapMarker } from "@/types/map";
 
+import { fireEvent, render, screen } from "@testing-library/react";
+
 describe("Map Marker Accessibility (Issue #3446)", () => {
   const defaultLocation = { latitude: 37.7749, longitude: -122.4194 };
   const mockMarkers: MapMarker[] = [
@@ -203,7 +205,31 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
+    it(
+    "provides an accessible label for removing a venue from the routing queue",
+    async () => {
+      render(
+        <Map
+          location={defaultLocation}
+          markers={mockMarkers}
+          routes={[]}
+          mapView={null}
+        />,
+      );
 
+      const addButtons = screen.getAllByRole("button", {
+        name: /add to workday timeline/i,
+      });
+
+      fireEvent.click(addButtons[0]);
+
+      const removeButton = await screen.findByRole("button", {
+        name: "Remove Artisan Coffee Cafe from routing queue",
+      });
+
+      expect(removeButton).toBeInTheDocument();
+    },
+  );
   describe("Focus Ring Indicators (Scope & Requirements 1)", () => {
     it("renders high-visibility focus indicators with var(--primary-accent) and 2px offset in styles", () => {
       const { container } = render(

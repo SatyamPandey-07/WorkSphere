@@ -6,6 +6,7 @@
 
 import { ItineraryGraph } from "./ItineraryGraph";
 import { TimeWindowConstraint } from "./TimeWindowConstraint";
+import type { TransitEdge } from "./ItineraryGraph";
 
 export interface ItinerarySolution {
   sequence: string[]; // Ordered list of venue IDs
@@ -13,6 +14,8 @@ export interface ItinerarySolution {
   totalTransitTimeMinutes: number;
   totalDwellTimeMinutes: number;
   totalWaitTimeMinutes: number;
+  totalCarbonGrams: number;
+  totalCost: number;
   startTime: Date;
   endTime: Date;
   schedule: Array<{
@@ -21,13 +24,26 @@ export interface ItinerarySolution {
     arrivalTime: Date;
     departureTime: Date;
     waitTimeMinutes: number;
+    carbonGrams: number;
+    mode?: TransitEdge["mode"];
   }>;
 }
+
+export type TransitOptimizationObjective = "time" | "cost" | "carbon";
+
+export const TRANSIT_EMISSION_COEFFICIENTS: Record<TransitEdge["mode"], number> = {
+  walking: 0,
+  cycling: 4,
+  train: 41,
+  rideshare: 120,
+  driving: 171,
+};
 
 export interface TransitSolverOptions {
   maxDepth?: number;
   maxExecutionTimeMs?: number;
   pruneTimeWindowViolations?: boolean;
+  objective?: TransitOptimizationObjective;
 }
 
 export class TransitSolver {
@@ -61,6 +77,7 @@ export class TransitSolver {
     );
     let bestSolution: ItinerarySolution | null = null;
     let bestCost = Infinity;
+    const objective = options.objective ?? "time";
 
     // Search state for Branch-and-Bound recursion
     const initialScheduleItem = {
@@ -71,6 +88,7 @@ export class TransitSolver {
         startTime.getTime() + startNode.averageDwellTimeMinutes * 60000,
       ),
       waitTimeMinutes: 0,
+      carbonGrams: 0,
     };
 
     const search = (
@@ -81,6 +99,8 @@ export class TransitSolver {
       accumulatedTransitTime: number,
       accumulatedDwellTime: number,
       accumulatedWaitTime: number,
+      accumulatedCarbonGrams: number,
+      accumulatedCost: number,
       remainingTargets: Set<string>,
     ) => {
       // Check execution time safety limit
@@ -93,14 +113,22 @@ export class TransitSolver {
         const totalDuration =
           accumulatedTransitTime + accumulatedDwellTime + accumulatedWaitTime;
 
-        if (totalDuration < bestCost) {
-          bestCost = totalDuration;
+        const objectiveValue =
+          objective === "carbon"
+            ? accumulatedCarbonGrams
+            : objective === "cost"
+              ? accumulatedCost
+              : totalDuration;
+        if (objectiveValue < bestCost) {
+          bestCost = objectiveValue;
           bestSolution = {
             sequence: [...visited],
             totalDurationMinutes: totalDuration,
             totalTransitTimeMinutes: accumulatedTransitTime,
             totalDwellTimeMinutes: accumulatedDwellTime,
             totalWaitTimeMinutes: accumulatedWaitTime,
+            totalCarbonGrams: accumulatedCarbonGrams,
+            totalCost: accumulatedCost,
             startTime,
             endTime: currentTime,
             schedule: [...currentSchedule],
@@ -116,7 +144,7 @@ export class TransitSolver {
         accumulatedWaitTime +
         this.computeLowerBound(currentVenueId, remainingTargets);
 
-      if (lowerBound >= bestCost) {
+      if (objective === "time" && lowerBound >= bestCost) {
         return; // PRUNE: Lower bound exceeds best solution cost found so far
       }
 
@@ -137,6 +165,7 @@ export class TransitSolver {
         if (!nextNode) continue;
 
         const transitTime = edge.transitTimeMinutes;
+        const carbonGrams = this.calculateEdgeCarbonGrams(edge);
         const arrivalTimestamp = new Date(
           currentTime.getTime() + transitTime * 60000,
         );
@@ -181,11 +210,15 @@ export class TransitSolver {
               arrivalTime: effectiveArrival,
               departureTime,
               waitTimeMinutes: waitTime,
+              carbonGrams,
+              mode: edge.mode,
             },
           ],
           accumulatedTransitTime + transitTime,
           accumulatedDwellTime + nextNode.averageDwellTimeMinutes,
           accumulatedWaitTime + waitTime,
+          accumulatedCarbonGrams + carbonGrams,
+          accumulatedCost + (edge.cost ?? 0),
           newRemaining,
         );
       }
@@ -198,6 +231,8 @@ export class TransitSolver {
       [initialScheduleItem],
       0,
       startNode.averageDwellTimeMinutes,
+      0,
+      0,
       0,
       unvisited,
     );
@@ -212,8 +247,11 @@ export class TransitSolver {
     startVenueId: string,
     targetVenueIds: string[],
     startTime: Date,
+    objective: TransitOptimizationObjective = "time",
   ) {
-    const res = this.solve(startVenueId, targetVenueIds, startTime);
+    const res = this.solve(startVenueId, targetVenueIds, startTime, {
+      objective,
+    });
     if (!res) {
       return {
         startVenueId,
@@ -234,11 +272,50 @@ export class TransitSolver {
         dwellMinutes: Math.round(
           (s.departureTime.getTime() - s.arrivalTime.getTime()) / 60000,
         ),
+        mode: s.mode,
+        carbonGrams: s.carbonGrams,
       })),
       totalTravelMinutes: res.totalTransitTimeMinutes,
       totalDurationMinutes: res.totalDurationMinutes,
+      totalCarbonGrams: res.totalCarbonGrams,
+      totalCost: res.totalCost,
+      objective,
       isFeasible: true,
     };
+  }
+
+  public optimizePareto(
+    startVenueId: string,
+    targetVenueIds: string[],
+    startTime: Date,
+  ) {
+    return (["time", "carbon"] as const)
+      .map((objective) =>
+        this.solve(startVenueId, targetVenueIds, startTime, { objective }),
+      )
+      .filter((solution): solution is ItinerarySolution => solution !== null)
+      .filter(
+        (solution, index, solutions) =>
+          solutions.findIndex(
+            (candidate) =>
+              candidate.sequence.join("|") === solution.sequence.join("|"),
+          ) === index,
+      )
+      .map((solution) => ({
+        sequence: solution.sequence,
+        totalDurationMinutes: solution.totalDurationMinutes,
+        totalCarbonGrams: solution.totalCarbonGrams,
+        totalCost: solution.totalCost,
+      }));
+  }
+
+  private calculateEdgeCarbonGrams(edge: TransitEdge): number {
+    const coefficient =
+      edge.co2GramsPerKm ?? TRANSIT_EMISSION_COEFFICIENTS[edge.mode];
+    if (!Number.isFinite(coefficient) || coefficient < 0) {
+      throw new Error(`Invalid carbon coefficient for ${edge.mode} edge`);
+    }
+    return Math.round((edge.distanceMeters / 1000) * coefficient * 100) / 100;
   }
 
   /**

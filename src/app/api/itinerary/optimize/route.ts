@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ItineraryGraph, VenueNode, TransitEdge } from '@/core/itinerary/ItineraryGraph';
 import { TimeWindowConstraint } from '@/core/itinerary/TimeWindowConstraint';
 import { TransitSolver } from '@/core/itinerary/TransitSolver';
+import type { TransitOptimizationObjective } from '@/core/itinerary/TransitSolver';
 
 export interface OptimizeRequestPayload {
   startVenueId: string;
@@ -15,6 +16,7 @@ export interface OptimizeRequestPayload {
   venues: VenueNode[];
   edges: TransitEdge[];
   startTime: string; // ISO string
+  objective?: TransitOptimizationObjective;
 }
 
 export async function POST(request: NextRequest) {
@@ -41,11 +43,21 @@ export async function POST(request: NextRequest) {
     const solver = new TransitSolver(graph, timeConstraint);
     const startTime = new Date(body.startTime);
 
-    const solution = solver.optimize(body.startVenueId, body.targetVenueIds, startTime);
+    const solution = solver.optimize(
+      body.startVenueId,
+      body.targetVenueIds,
+      startTime,
+      body.objective ?? "time",
+    );
+    const paretoSuggestions = solver.optimizePareto(
+      body.startVenueId,
+      body.targetVenueIds,
+      startTime,
+    );
 
     return NextResponse.json({
       success: true,
-      data: solution
+      data: { ...solution, paretoSuggestions }
     }, { status: 200 });
 
   } catch (error) {

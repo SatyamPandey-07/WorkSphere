@@ -19,7 +19,9 @@ export interface TransitEdge {
     toVenueId: string;
     transitTimeMinutes: number;
     distanceMeters: number;
-    mode: 'walking' | 'driving' | 'cycling';
+    mode: 'walking' | 'cycling' | 'train' | 'rideshare' | 'driving';
+    co2GramsPerKm?: number;
+    cost?: number;
 }
 
 export class ItineraryGraph {

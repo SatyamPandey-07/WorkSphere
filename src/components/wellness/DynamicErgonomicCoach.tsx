@@ -177,8 +177,20 @@ export default function DynamicErgonomicCoach() {
         });
       }, 1000);
     }
-    return () => clearInterval(timer);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
   }, [stretchTimerActive, selectedStretch, soundEnabled]);
+
+  // Cleanup and reset state on unmount/dismissal
+  useEffect(() => {
+    return () => {
+      setStretchTimerActive(false);
+      setStretchSecondsLeft(MICRO_STRETCH_CATALOG[0].durationSeconds);
+      setEyeBreakActive(false);
+      setEyeBreakSecondsLeft(20);
+    };
+  }, []);
 
   const togglePostureState = () => {
     setSession((prev) => {

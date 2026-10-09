@@ -9,6 +9,31 @@ export const SOLANA_USDC_MINT_MAINNET =
 export const DEFAULT_TREASURY_SOLANA_ADDRESS =
   "WorkSpHere5oLanaPayUSDC111111111111111111111";
 
+export const DEFAULT_MAX_RELAY_FEE_LAMPORTS = 10_000;
+
+export interface GaslessTransactionRequest {
+  transaction: string;
+}
+
+/**
+ * Rejects transaction fees that could unexpectedly drain the relayer wallet.
+ */
+export function validateRelayFeeLamports(
+  feeLamports: number,
+  maxFeeLamports = DEFAULT_MAX_RELAY_FEE_LAMPORTS,
+): number {
+  if (!Number.isSafeInteger(feeLamports) || feeLamports < 0) {
+    throw new RangeError("Relay fee must be a non-negative integer");
+  }
+  if (!Number.isSafeInteger(maxFeeLamports) || maxFeeLamports < 0) {
+    throw new RangeError("Maximum relay fee must be a non-negative integer");
+  }
+  if (feeLamports > maxFeeLamports) {
+    throw new RangeError("Transaction fee exceeds the relayer limit");
+  }
+  return feeLamports;
+}
+
 export interface SolanaPayParams {
   recipient: string;
   amount: number; // USDC amount

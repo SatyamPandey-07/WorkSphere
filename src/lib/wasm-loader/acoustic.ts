@@ -2,6 +2,8 @@
  * acoustic.ts
  * Utility to asynchronously load, instantiate, and interface with the acoustic WASM module.
  * Provides a clean Promise-based API for the main thread to communicate with the worker.
+ * Supports SharedArrayBuffer zero-copy transfer and falls back to asynchronous transferable
+ * ArrayBuffer and postMessage structured cloning when crossOriginIsolated is disabled (#5312).
  */
 
 export interface AcousticFingerprintResult {
@@ -11,26 +13,62 @@ export interface AcousticFingerprintResult {
     sampleRate: number;
 }
 
+/**
+ * Automatically detects whether the browser environment is cross-origin isolated.
+ * When COOP/COEP headers are missing, crossOriginIsolated is false and SharedArrayBuffer is disabled.
+ */
+export function isCrossOriginIsolated(): boolean {
+    return typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated === true;
+}
+
+/**
+ * Checks whether SharedArrayBuffer is available and enabled in the current environment.
+ */
+export function isSharedArrayBufferSupported(): boolean {
+    return typeof SharedArrayBuffer !== 'undefined' && typeof Atomics !== 'undefined' && isCrossOriginIsolated();
+}
+
 export class AcousticFingerprintLoader {
     private worker: Worker | null = null;
+    private createWorker?: () => Worker;
     private isReady: boolean = false;
     private resolveReady: (() => void) | null = null;
     private readyPromise: Promise<void>;
 
-    constructor() {
-        this.readyPromise = new Promise((resolve) => {
-            this.resolveReady = resolve;
-        });
+    constructor(worker?: Worker, createWorker?: () => Worker) {
+        if (worker) {
+            this.worker = worker;
+            this.isReady = true;
+            this.readyPromise = Promise.resolve();
+        } else {
+            this.createWorker = createWorker;
+            this.readyPromise = new Promise((resolve) => {
+                this.resolveReady = resolve;
+            });
+        }
     }
 
-    public async initialize(wasmUrl: string = '/wasm/acoustic_fft.wasm'): Promise<void> {
+    public getExecutionMode(): 'shared-array-buffer' | 'transferable' | 'structured-clone' {
+        if (isSharedArrayBufferSupported()) {
+            return 'shared-array-buffer';
+        }
+        return 'transferable';
+    }
+
+    public async initialize(
+        wasmUrl: string = '/wasm/acoustic_fft.wasm',
+        createWorker?: () => Worker
+    ): Promise<void> {
         if (typeof Worker === 'undefined') {
             throw new Error('Web Workers are not supported in this environment.');
         }
 
-        this.worker = new Worker(new URL('../../workers/acousticFingerprintWorker.ts', import.meta.url), {
-            type: 'module'
-        });
+        const factory = createWorker || this.createWorker;
+        if (factory) {
+            this.worker = factory();
+        } else {
+            this.worker = new Worker('/workers/acousticFingerprintWorker.js', { type: 'module' });
+        }
 
         this.worker.onmessage = (event) => {
             const { type, success, error } = event.data;
@@ -61,23 +99,63 @@ export class AcousticFingerprintLoader {
                 return;
             }
 
+            const cleanup = () => {
+                this.worker?.removeEventListener('message', handleMessage);
+                this.worker?.removeEventListener('error', handleError);
+            };
+
             const handleMessage = (event: MessageEvent) => {
                 if (event.data.type === 'FINGERPRINT_RESULT') {
-                    this.worker?.removeEventListener('message', handleMessage);
+                    cleanup();
                     resolve(event.data.payload as AcousticFingerprintResult);
+                } else if (event.data.type === 'FINGERPRINT_ERROR' || event.data.type === 'ERROR') {
+                    cleanup();
+                    reject(new Error(event.data.error || 'Failed to process audio'));
                 }
             };
 
-            this.worker.addEventListener('message', handleMessage);
+            const handleError = (error: ErrorEvent) => {
+                cleanup();
+                reject(new Error(error.message || 'Worker encountered an error during audio analysis'));
+            };
 
-            // Transfer the audioData buffer to avoid copying overhead
-            this.worker.postMessage(
-                {
+            this.worker.addEventListener('message', handleMessage);
+            this.worker.addEventListener('error', handleError);
+
+            // ponytail: detect crossOriginIsolated; use SharedArrayBuffer if available, otherwise transferable ArrayBuffer with fallback to structured cloning
+            if (isSharedArrayBufferSupported()) {
+                try {
+                    const sab = new SharedArrayBuffer(audioData.byteLength);
+                    new Float32Array(sab).set(audioData);
+                    const sharedAudio = new Float32Array(sab);
+                    this.worker.postMessage({
+                        type: 'PROCESS_AUDIO',
+                        payload: { audioData: sharedAudio, sampleRate }
+                    });
+                    return;
+                } catch {
+                    // Fall through to transferable ArrayBuffer fallback
+                }
+            }
+
+            // Fallback for environments where SharedArrayBuffer is disabled (missing COOP headers)
+            // Try transferable ArrayBuffer first; if transfer fails, fall back to postMessage structured cloning
+            try {
+                const transferableData = audioData.slice();
+                this.worker.postMessage(
+                    {
+                        type: 'PROCESS_AUDIO',
+                        payload: { audioData: transferableData, sampleRate }
+                    },
+                    [transferableData.buffer]
+                );
+            } catch {
+                // ponytail: fallback to postMessage structured cloning without crashing WebAssembly audio analysis
+                this.worker.postMessage({
                     type: 'PROCESS_AUDIO',
                     payload: { audioData, sampleRate }
-                },
-                [audioData.buffer]
-            );
+                });
+            }
         });
     }
 

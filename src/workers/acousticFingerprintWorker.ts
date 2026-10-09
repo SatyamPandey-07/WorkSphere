@@ -2,6 +2,7 @@
  * acousticFingerprintWorker.ts
  * Web Worker script to offload heavy audio processing from the main thread.
  * Receives AudioBuffer data, processes it via WASM, and posts fingerprint results.
+ * Supports SharedArrayBuffer, transferable ArrayBuffer, and structured cloning (#5312).
  */
 
 let wasmModule: WebAssembly.Module | null = null;
@@ -38,34 +39,47 @@ self.onmessage = async (event: MessageEvent) => {
     }
 
     if (type === 'PROCESS_AUDIO' && wasmInstance && wasmMemory) {
-        const { audioData, sampleRate } = payload; // audioData is Float32Array
+        try {
+            const { audioData, sampleRate } = payload; // audioData is Float32Array (SAB, transferred, or structured cloned)
 
-        // Copy audio data to WASM memory
-        const bytesPerFloat = 4;
-        const numBytes = audioData.length * bytesPerFloat;
-
-        // Find a free offset in memory (simplified: using offset 0 for this example)
-        const memoryView = new Float32Array(wasmMemory.buffer, 0, audioData.length);
-        memoryView.set(audioData);
-
-        // Call WASM function
-        const dominantBand = (wasmInstance.exports.acoustic_fft_process_block as CallableFunction)(0, audioData.length);
-
-        // Extract energies
-        const energies: Record<string, number> = {};
-        for (let i = 0; i < 7; i++) {
-            const energy = (wasmInstance.exports.acoustic_fft_get_band_energy as CallableFunction)(i);
-            energies[BAND_NAMES[i]] = energy;
-        }
-
-        self.postMessage({
-            type: 'FINGERPRINT_RESULT',
-            payload: {
-                dominantBand: BAND_NAMES[dominantBand],
-                dominantBandIndex: dominantBand,
-                energies,
-                sampleRate
+            if (!audioData || audioData.length === 0) {
+                self.postMessage({
+                    type: 'FINGERPRINT_ERROR',
+                    error: 'Empty audioData received'
+                });
+                return;
             }
-        });
+
+            // Copy audio data to WASM memory
+            // Find a free offset in memory (using offset 0)
+            const memoryView = new Float32Array(wasmMemory.buffer, 0, audioData.length);
+            memoryView.set(audioData);
+
+            // Call WASM function
+            const dominantBand = (wasmInstance.exports.acoustic_fft_process_block as CallableFunction)(0, audioData.length);
+
+            // Extract energies
+            const energies: Record<string, number> = {};
+            for (let i = 0; i < 7; i++) {
+                const energy = (wasmInstance.exports.acoustic_fft_get_band_energy as CallableFunction)(i);
+                energies[BAND_NAMES[i]] = energy;
+            }
+
+            self.postMessage({
+                type: 'FINGERPRINT_RESULT',
+                payload: {
+                    dominantBand: BAND_NAMES[dominantBand],
+                    dominantBandIndex: dominantBand,
+                    energies,
+                    sampleRate
+                }
+            });
+        } catch (error) {
+            // ponytail: catch processing errors so worker thread stays alive
+            self.postMessage({
+                type: 'FINGERPRINT_ERROR',
+                error: String(error)
+            });
+        }
     }
 };

@@ -251,7 +251,7 @@ export function SearchBar({
               className="w-4 h-4 text-blue-500 animate-spin"
             />
           )}
-          {query.length === 0 && (
+          {query.trim().length === 0 && (
             <kbd
               data-testid="search-bar-shortcut-badge"
               onClick={() => inputRef.current?.focus()}
@@ -260,7 +260,7 @@ export function SearchBar({
               {shortcutKey}
             </kbd>
           )}
-          {query.length > 0 && (
+          {query.trim().length > 0 && (
             <button
               type="button"
               data-testid="search-bar-clear-btn"

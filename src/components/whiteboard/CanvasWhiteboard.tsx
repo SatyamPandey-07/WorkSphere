@@ -6,6 +6,7 @@ import { useMeshCanvasWhiteboard } from "@/hooks/useMeshCanvasWhiteboard";
 import { CanvasToolbar } from "@/components/whiteboard/CanvasToolbar";
 import { DrawingCanvas } from "@/components/whiteboard/DrawingCanvas";
 import { RemoteCursors } from "@/components/whiteboard/RemoteCursors";
+import { StickyNotes } from "@/components/whiteboard/StickyNotes";
 
 interface CanvasWhiteboardProps {
   canvasId: string;
@@ -90,6 +91,10 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
           onUpdateShape={handleUpdateShape}
           onCursorMove={updateCursor}
           userId={userId}
+        />
+        <StickyNotes
+          notes={shapeSnapshots.filter((shape) => shape.type === "sticky")}
+          onUpdate={handleUpdateShape}
         />
       </div>
     </div>

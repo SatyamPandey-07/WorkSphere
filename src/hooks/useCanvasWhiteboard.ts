@@ -20,6 +20,7 @@ export interface ShapeData {
   deletedAt?: number;
   updatedAt?: number;
   clock?: number;
+  text?: string;
 }
 
 export interface RemoteCursor {

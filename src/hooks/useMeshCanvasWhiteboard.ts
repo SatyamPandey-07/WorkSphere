@@ -54,6 +54,7 @@ function shapeMapToData(map: Y.Map<unknown>): ShapeData {
     deletedAt,
     updatedAt,
     clock,
+    text: map.get("text") as string | undefined,
   };
 }
 
@@ -420,6 +421,7 @@ export function useMeshCanvasWhiteboard(
               map.set("width", data.width);
               map.set("opacity", data.opacity);
               map.set("userId", data.userId);
+              if (data.text !== undefined) map.set("text", data.text);
               map.set("deleted", false);
               map.set("updatedAt", now);
               map.set("clock", now);
@@ -436,6 +438,7 @@ export function useMeshCanvasWhiteboard(
         map.set("width", data.width);
         map.set("opacity", data.opacity);
         map.set("userId", data.userId);
+        if (data.text !== undefined) map.set("text", data.text);
         map.set("deleted", false);
         map.set("updatedAt", now);
         map.set("clock", now);
@@ -602,6 +605,7 @@ export function useMeshCanvasWhiteboard(
             if (updates.opacity !== undefined) {
               map.set("opacity", updates.opacity);
             }
+            if (updates.text !== undefined) map.set("text", updates.text);
             if (updates.deleted !== undefined) {
               map.set("deleted", updates.deleted);
             }

@@ -173,11 +173,15 @@ export function DrawingCanvas({
       pendingShapeRef.current = {
         id,
         type: toolRef.current,
-        points: [x, y],
+        points:
+          toolRef.current === "sticky"
+            ? [x, y, x + 220, y + 160]
+            : [x, y],
         color: colorRef.current,
         width: strokeWidthRef.current,
         opacity: 1,
         userId,
+        text: toolRef.current === "sticky" ? "## New note\n\nWrite here..." : undefined,
       };
     },
     [getCanvasPos, userId],
@@ -199,7 +203,8 @@ export function DrawingCanvas({
         } else if (
           p.type === "line" ||
           p.type === "rect" ||
-          p.type === "circle"
+          p.type === "circle" ||
+          p.type === "sticky"
         ) {
           const [sx, sy] = [
             currentPointsRef.current[0],
@@ -223,7 +228,7 @@ export function DrawingCanvas({
       const id = currentIdRef.current;
       const finalType = toolRef.current;
 
-      if (points.length >= 4) {
+      if (points.length >= 2) {
         const shape: ShapeData = {
           id,
           type: finalType,
@@ -232,6 +237,7 @@ export function DrawingCanvas({
           opacity: 1,
           points: points.slice(),
           userId,
+          text: pendingShapeRef.current?.text,
         };
 
         if (

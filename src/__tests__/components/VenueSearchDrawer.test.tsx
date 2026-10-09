@@ -10,6 +10,9 @@ describe("VenueSearchDrawer Component (#1429)", () => {
     const handleNoiseLevelChange = jest.fn();
     const handlePriceRangeChange = jest.fn();
     const handleCategoryChange = jest.fn();
+    const handleMaxDistanceChange = jest.fn();
+    const handleCapacityChange = jest.fn();
+    const handleSortByChange = jest.fn();
     const handleClearFilters = jest.fn();
 
     render(
@@ -26,6 +29,12 @@ describe("VenueSearchDrawer Component (#1429)", () => {
         onPriceRangeChange={handlePriceRangeChange}
         category="cafe"
         onCategoryChange={handleCategoryChange}
+        maxDistance={3}
+        onMaxDistanceChange={handleMaxDistanceChange}
+        minCapacity={4}
+        onMinCapacityChange={handleCapacityChange}
+        sortBy="capacity_asc"
+        onSortByChange={handleSortByChange}
         onClearFilters={handleClearFilters}
       />,
     );
@@ -55,12 +64,16 @@ describe("VenueSearchDrawer Component (#1429)", () => {
     const clearBtn = screen.getByTestId("clear-filters-btn");
     fireEvent.click(clearBtn);
 
-    // Assert that callbacks were triggered with cleared / default values
-    expect(handleSearchChange).toHaveBeenCalledWith("");
+    // Search remains unchanged while all other filters return to defaults.
+    expect(handleSearchChange).not.toHaveBeenCalled();
+    expect(searchInput).toHaveValue("Coffee Shop");
     expect(handleAmenitiesChange).toHaveBeenCalledWith([]);
     expect(handleNoiseLevelChange).toHaveBeenCalledWith("all");
     expect(handlePriceRangeChange).toHaveBeenCalledWith("all");
     expect(handleCategoryChange).toHaveBeenCalledWith("all");
+    expect(handleMaxDistanceChange).toHaveBeenCalledWith(0);
+    expect(handleCapacityChange).toHaveBeenCalledWith(1);
+    expect(handleSortByChange).toHaveBeenCalledWith("default");
     expect(handleClearFilters).toHaveBeenCalledTimes(1);
   });
 
@@ -95,24 +108,17 @@ describe("VenueSearchDrawer Component (#1429)", () => {
       expect(screen.queryByTestId("active-filter-badge")).not.toBeInTheDocument();
     });
 
-    it("displays Clear Filters button and active chips when search text is entered", () => {
+    it("does not treat search text alone as an active filter", () => {
       render(<VenueSearchDrawer isOpen={true} onClose={jest.fn()} />);
 
       const searchInput = screen.getByTestId("search-input");
       fireEvent.change(searchInput, { target: { value: "Library" } });
 
-      expect(screen.getByTestId("clear-filters-btn")).toBeInTheDocument();
-      expect(screen.getByTestId("header-clear-all-btn")).toBeInTheDocument();
-      expect(screen.getByTestId("active-filters-bar")).toBeInTheDocument();
-      expect(screen.getByTestId("active-filter-badge")).toHaveTextContent("1");
-      expect(screen.getByText('"Library"')).toBeInTheDocument();
-
-      // Dismiss search chip
-      const dismissSearch = screen.getByTestId("clear-search-chip");
-      fireEvent.click(dismissSearch);
-
       expect(screen.queryByTestId("clear-filters-btn")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("header-clear-all-btn")).not.toBeInTheDocument();
       expect(screen.queryByTestId("active-filters-bar")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("active-filter-badge")).not.toBeInTheDocument();
+      expect(searchInput).toHaveValue("Library");
     });
 
     it("displays active chips and allows individual dismissal for category, noise, and price", () => {
@@ -305,4 +311,3 @@ describe("VenueSearchDrawer Component (#1429)", () => {
     });
   });
 });
-

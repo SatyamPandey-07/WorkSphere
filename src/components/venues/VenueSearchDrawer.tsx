@@ -198,7 +198,6 @@ export function VenueSearchDrawer({
   const currentSortBy = externalSortBy ?? internalSortBy;
 
   const hasActiveFilters =
-    search.trim() !== "" ||
     amenities.length > 0 ||
     noise !== "all" ||
     price !== "all" ||
@@ -206,9 +205,7 @@ export function VenueSearchDrawer({
     distance > 0 ||
     (capacity !== undefined && capacity > 1) ||
     currentSortBy !== "default";
-
   const activeFilterCount =
-    (search.trim() !== "" ? 1 : 0) +
     amenities.length +
     (noise !== "all" ? 1 : 0) +
     (price !== "all" ? 1 : 0) +
@@ -353,9 +350,6 @@ export function VenueSearchDrawer({
   const handleClear = () => {
     setActivePresetId(null);
     setIsSavingPreset(false);
-
-    if (onSearchChange) onSearchChange("");
-    setInternalSearch("");
 
     if (onAmenitiesChange) onAmenitiesChange([]);
     setInternalAmenities([]);

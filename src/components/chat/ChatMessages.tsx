@@ -54,6 +54,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ComparisonDrawer } from "@/components/ComparisonDrawer";
 import { ChatMessageSkeleton } from "@/components/ui/skeleton";
 import { ReadAloudButton } from "./ReadAloudButton";
+import { TranslatedMessage } from "./TranslatedMessage";
 import { RecentlyViewedVenues } from "@/components/venues/RecentlyViewedVenues";
 import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
 import { getVenueHoursStatus } from "@/lib/venueHours";
@@ -1237,9 +1238,10 @@ export function MessageList({
                       )}
                     </div>
                   ) : (
-                    <span className="whitespace-pre-wrap">
-                      {message.content}
-                    </span>
+                    <TranslatedMessage
+                      messageId={message.id}
+                      text={message.content}
+                    />
                   )}
                 </div>
               </div>

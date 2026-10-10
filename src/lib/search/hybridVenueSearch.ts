@@ -20,6 +20,41 @@ export interface RankedVenueId {
   search_document?: string;
 }
 
+export const DEFAULT_RRF_K = 60;
+
+/**
+ * Validates and clamps the RRF smoothing constant k to an integer >= 1.
+ * Defaults to 60 if not provided or invalid.
+ */
+export function validateAndClampRrfK(k?: number): number {
+  if (typeof k !== "number" || !Number.isFinite(k)) {
+    return DEFAULT_RRF_K;
+  }
+  return Math.max(1, Math.floor(k));
+}
+
+/**
+ * Calculates a single Reciprocal Rank Fusion (RRF) score component: weight / (k + rank).
+ * Strictly enforces k >= 1 and guards against zero, negative, or non-integer ranks
+ * to prevent division by zero, infinite, or negative scores.
+ */
+export function calculateRrfScore(
+  rank: number | null | undefined,
+  k: number = DEFAULT_RRF_K,
+  weight: number = 1,
+): number {
+  if (rank === null || rank === undefined || !Number.isFinite(rank) || rank <= 0) {
+    return 0;
+  }
+  const safeRank = Math.floor(rank);
+  if (safeRank < 1) {
+    return 0;
+  }
+  const safeK = validateAndClampRrfK(k);
+  const safeWeight = Number.isFinite(weight) ? Math.max(0, weight) : 0;
+  return safeWeight / (safeK + safeRank);
+}
+
 const indexingVenueIds = new Set<string>();
 
 export async function indexVenueSearchEmbedding(
@@ -114,10 +149,7 @@ export async function searchVenuesWithRrf(
   const sumWeights = rawTextWeight + rawSemanticWeight;
   const fullTextWeight = sumWeights > 0 ? rawTextWeight / sumWeights : 0.5;
   const semanticWeight = sumWeights > 0 ? rawSemanticWeight / sumWeights : 0.5;
-  const rrfK =
-    typeof filters.rrfK === "number" && Number.isFinite(filters.rrfK) && filters.rrfK > 0
-      ? Math.floor(filters.rrfK)
-      : 60;
+  const rrfK = validateAndClampRrfK(filters.rrfK);
 
   if (filters.minLat !== undefined) {
     predicates.push(Prisma.sql`v."latitude" >= ${filters.minLat}`);
@@ -211,8 +243,8 @@ export async function searchVenuesWithRrf(
     fused_scores AS (
       SELECT
         "id",
-        SUM(CASE WHEN rank_bm25 IS NOT NULL THEN ${fullTextWeight} / (${rrfK} + rank_bm25) ELSE 0 END)
-        + SUM(CASE WHEN rank_vector IS NOT NULL THEN ${semanticWeight} / (${rrfK} + rank_vector) ELSE 0 END) AS rrf_score
+        SUM(CASE WHEN rank_bm25 IS NOT NULL AND rank_bm25 >= 1 THEN ${fullTextWeight} / (${rrfK} + FLOOR(rank_bm25)::bigint) ELSE 0 END)
+        + SUM(CASE WHEN rank_vector IS NOT NULL AND rank_vector >= 1 THEN ${semanticWeight} / (${rrfK} + FLOOR(rank_vector)::bigint) ELSE 0 END) AS rrf_score
       FROM fused_candidates
       GROUP BY "id"
     )

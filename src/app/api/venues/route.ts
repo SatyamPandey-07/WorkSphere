@@ -12,6 +12,10 @@ import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 import { ensureUserExists } from "@/lib/auth";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { sanitizeSearchQuery, splitSearchList } from "@/lib/searchSanitizer";
+import {
+  indexVenueSearchEmbedding,
+  searchVenuesWithRrf,
+} from "@/lib/search/hybridVenueSearch";
 
 // Search/autocomplete is expected to fire on every keystroke (debounced client-side
 // to ~250-300ms), which can mean several requests per second while someone types a
@@ -147,19 +151,59 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      if (queryParam) {
-        andConditions.push({
-          OR: [
-            { name: { contains: queryParam, mode: "insensitive" } },
-            { address: { contains: queryParam, mode: "insensitive" } },
-          ],
-        });
-      }
-
       if (andConditions.length === 1) {
         Object.assign(where, andConditions[0]);
       } else if (andConditions.length > 1) {
         where.AND = andConditions;
+      }
+
+      if (queryParam) {
+        const ranked = await searchVenuesWithRrf(queryParam, {
+          minLat:
+            minLatParam !== null && Number.isFinite(Number(minLatParam))
+              ? Number(minLatParam)
+              : undefined,
+          maxLat:
+            maxLatParam !== null && Number.isFinite(Number(maxLatParam))
+              ? Number(maxLatParam)
+              : undefined,
+          minLng:
+            minLngParam !== null && Number.isFinite(Number(minLngParam))
+              ? Number(minLngParam)
+              : undefined,
+          maxLng:
+            maxLngParam !== null && Number.isFinite(Number(maxLngParam))
+              ? Number(maxLngParam)
+              : undefined,
+          cities: citiesParam ? splitSearchList(citiesParam) : undefined,
+        });
+        const rankedIds = ranked.map(({ id }) => id);
+        const matchingVenues = rankedIds.length
+          ? await prisma.venue.findMany({
+              where: { ...where, id: { in: rankedIds } },
+              include: {
+                _count: { select: { favorites: true, ratings: true } },
+                foodValidations: true,
+              },
+            })
+          : [];
+        const venueMap = new Map(matchingVenues.map((venue) => [venue.id, venue]));
+        const orderedVenues = rankedIds
+          .map((id) => venueMap.get(id))
+          .filter((venue): venue is (typeof matchingVenues)[number] => Boolean(venue));
+        const venues = orderedVenues.slice(skip, skip + limit);
+        const total = orderedVenues.length;
+
+        return NextResponse.json({
+          venues,
+          pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+            hasNextPage: skip + venues.length < total,
+          },
+        });
       }
 
       const hasWhere = Object.keys(where).length > 0;
@@ -403,31 +447,48 @@ export async function GET(req: NextRequest) {
     }
 
     const querySearch = rawData.query || rawData.q;
-    if (querySearch) {
-      const queryConditions = [
-        { name: { contains: querySearch, mode: "insensitive" } },
-        { address: { contains: querySearch, mode: "insensitive" } },
-      ];
-      if (where.OR) {
-        where.AND = [{ OR: where.OR }, { OR: queryConditions }];
-        delete where.OR;
-      } else {
-        where.OR = queryConditions;
-      }
-    }
+    let total: number;
+    let venues: any[];
 
-    let total = await prisma.venue.count({ where });
-    let venues = await prisma.venue.findMany({
-      where,
-      include: {
-        _count: {
-          select: { favorites: true, ratings: true },
+    if (querySearch) {
+      const ranked = await searchVenuesWithRrf(querySearch, {
+        minLat: where.latitude?.gte,
+        maxLat: where.latitude?.lte,
+        minLng: where.longitude?.gte,
+        maxLng: where.longitude?.lte,
+        category: where.category,
+        cities: rawData.cities ? splitSearchList(String(rawData.cities)) : undefined,
+      });
+      const rankedIds = ranked.map(({ id }) => id);
+      const matchingVenues = rankedIds.length
+        ? await prisma.venue.findMany({
+            where: { AND: [where, { id: { in: rankedIds } }] },
+            include: {
+              _count: { select: { favorites: true, ratings: true } },
+              foodValidations: true,
+            },
+          })
+        : [];
+      const venueMap = new Map(matchingVenues.map((venue) => [venue.id, venue]));
+      const orderedVenues = rankedIds
+        .map((id) => venueMap.get(id))
+        .filter((venue): venue is (typeof matchingVenues)[number] => Boolean(venue));
+      total = orderedVenues.length;
+      venues = orderedVenues.slice(skip, skip + limit);
+    } else {
+      total = await prisma.venue.count({ where });
+      venues = await prisma.venue.findMany({
+        where,
+        include: {
+          _count: {
+            select: { favorites: true, ratings: true },
+          },
+          foodValidations: true,
         },
-        foodValidations: true,
-      },
-      skip,
-      take: limit,
-    });
+        skip,
+        take: limit,
+      });
+    }
 
     // ── Fuzzy typo-tolerant search fallback (#3958) ─────────────────────────
     // If strict substring search returned 0 results and a text query was provided,
@@ -675,6 +736,33 @@ export async function POST(req: NextRequest) {
         creatorId: userId,
       },
     });
+
+    void indexVenueSearchEmbedding(
+      venue.id,
+      [
+        venue.name,
+        venue.category,
+        venue.address,
+        ...(venue.foodTags ?? []),
+        ...(venue.powerTypes ?? []),
+        venue.noiseLevel,
+        venue.lighting,
+        venue.musicStyle,
+        venue.wifiQuality !== null ? "wifi wireless internet" : null,
+        venue.wifiSpeed !== null ? `${venue.wifiSpeed} mbps fast wifi` : null,
+        venue.hasOutlets ? "power outlets charging" : null,
+        venue.hasErgonomic ? "ergonomic seating chair" : null,
+        venue.hasPhoneBooths ? "phone booth private calls" : null,
+        venue.hasQuietZone || venue.noiseLevel === "quiet"
+          ? "quiet focus concentration"
+          : null,
+        venue.hasNoMusic ? "no music silent" : null,
+        venue.dogFriendly || venue.petsAllowedIndoors ? "dog pet friendly" : null,
+        venue.hasAncHeadsetRental ? "noise cancelling headset" : null,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
 
     if (venue.creatorId === userId) {
       emitWebhookEvent(userId, "VENUE_CREATED", {

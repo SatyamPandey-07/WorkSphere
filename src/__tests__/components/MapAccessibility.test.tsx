@@ -174,7 +174,6 @@ jest.mock("leaflet", () => ({
 import Map from "@/components/Map";
 import { MapMarker } from "@/types/map";
 
-import { fireEvent, render, screen } from "@testing-library/react";
 
 describe("Map Marker Accessibility (Issue #3446)", () => {
   const defaultLocation = { latitude: 37.7749, longitude: -122.4194 };
@@ -214,6 +213,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           markers={mockMarkers}
           routes={[]}
           mapView={null}
+          enableClustering={false}
         />,
       );
 
@@ -230,6 +230,46 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
       expect(removeButton).toBeInTheDocument();
     },
   );
+  it("clears all venues from the routing queue", async () => {
+  render(
+  <Map
+      location={defaultLocation}
+      markers={mockMarkers}
+      routes={[]}
+      mapView={null}
+      enableClustering={false}
+    />,
+  );
+  const addButtons = screen.getAllByRole("button", {
+    name: /add to workday timeline/i,
+  });
+
+  fireEvent.click(addButtons[0]);
+
+  // Verify that the venue was added.
+  expect(
+    await screen.findByRole("button", {
+      name: "Remove Artisan Coffee Cafe from routing queue",
+    }),
+  ).toBeInTheDocument();
+
+  // Click Clear Queue.
+  fireEvent.click(
+    screen.getByRole("button", { name: /clear queue/i }),
+  );
+
+  // Verify that the venue is no longer in the queue.
+  expect(
+    screen.queryByRole("button", {
+      name: "Remove Artisan Coffee Cafe from routing queue",
+    }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByText(
+      /click markers or venue listings to chain multiple destinations/i,
+    ),
+  ).toBeInTheDocument();
+  });
   describe("Focus Ring Indicators (Scope & Requirements 1)", () => {
     it("renders high-visibility focus indicators with var(--primary-accent) and 2px offset in styles", () => {
       const { container } = render(
@@ -238,6 +278,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           markers={mockMarkers}
           routes={[]}
           mapView={null}
+          enableClustering={false}
         />,
       );
 
@@ -257,6 +298,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           markers={mockMarkers}
           routes={[]}
           mapView={null}
+          enableClustering={false}
         />,
       );
 
@@ -286,6 +328,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           markers={mockMarkers}
           routes={[]}
           mapView={null}
+          enableClustering={false}
         />,
       );
 
@@ -314,6 +357,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           markers={mockMarkers}
           routes={[]}
           mapView={null}
+          enableClustering={false}
         />,
       );
 
@@ -334,6 +378,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           markers={mockMarkers}
           routes={[]}
           mapView={null}
+          enableClustering={false}
         />,
       );
 
@@ -354,6 +399,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           markers={mockMarkers}
           routes={[]}
           mapView={null}
+          enableClustering={false}
         />,
       );
 
@@ -376,6 +422,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           markers={mockMarkers}
           routes={[]}
           mapView={null}
+          enableClustering={false}
         />,
       );
 
@@ -395,6 +442,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           markers={mockMarkers}
           routes={[]}
           mapView={null}
+          enableClustering={false}
           onHighContrastChange={onHighContrastChange}
         />,
       );
@@ -426,6 +474,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           routes={[]}
           mapView={null}
           initialHighContrast={true}
+          enableClustering={false}
         />,
       );
 
@@ -494,6 +543,7 @@ describe("Map Marker Accessibility (Issue #3446)", () => {
           markers={mockMarkers}
           routes={[]}
           mapView={null}
+          enableClustering={false}
         />,
       );
 

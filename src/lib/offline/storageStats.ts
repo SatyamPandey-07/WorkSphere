@@ -39,6 +39,20 @@ export const DEFAULT_OFFLINE_STORAGE_STATS: OfflineStorageStats = {
 };
 
 export const STORAGE_STATS_CACHE_KEY = "worksphere_offline_storage_stats";
+export const STALE_FLOOR_PLAN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+const FLOOR_PLAN_STORES = ["venues", "favorites", "recentlyViewedVenues"] as const;
+
+interface CachedFloorPlanRecord {
+  id?: string;
+  floorplan?: unknown;
+  lastAccessedAt?: number;
+}
+
+export interface StaleFloorPlanCacheStats {
+  count: number;
+  reclaimableBytes: number;
+}
 
 /**
  * Safely parses and validates a raw string or payload into OfflineStorageStats.
@@ -210,6 +224,108 @@ export function calculateFloorPlanByteSize(floorplan: unknown): number {
   } catch {
     return 0;
   }
+}
+
+/**
+ * Finds cached floorplans that have not been accessed in the last 30 days.
+ */
+export async function getStaleFloorPlanCacheStats(
+  now = Date.now(),
+): Promise<StaleFloorPlanCacheStats> {
+  const database = await initOfflineDB();
+  const storeNames = FLOOR_PLAN_STORES.filter((name) =>
+    database.objectStoreNames.contains(name),
+  );
+  if (storeNames.length === 0) return { count: 0, reclaimableBytes: 0 };
+
+  const transaction = database.transaction([...storeNames], "readonly");
+  const records = await Promise.all(
+    storeNames.map(
+      (storeName) =>
+        new Promise<CachedFloorPlanRecord[]>((resolve, reject) => {
+          const request = transaction.objectStore(storeName).getAll();
+          request.onsuccess = () => resolve(request.result as CachedFloorPlanRecord[]);
+          request.onerror = () => reject(request.error ?? new Error(`Failed reading ${storeName}`));
+        }),
+    ),
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () =>
+      reject(transaction.error ?? new Error("Failed reading cached floorplans"));
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error("Cached floorplan scan was aborted"));
+  });
+
+  const cutoff = now - STALE_FLOOR_PLAN_AGE_MS;
+  let count = 0;
+  let reclaimableBytes = 0;
+  for (const storeRecords of records) {
+    for (const record of storeRecords) {
+      if (
+        record?.floorplan != null &&
+        typeof record.lastAccessedAt === "number" &&
+        record.lastAccessedAt < cutoff
+      ) {
+        count++;
+        reclaimableBytes += calculateFloorPlanByteSize(record.floorplan);
+      }
+    }
+  }
+
+  return { count, reclaimableBytes };
+}
+
+/**
+ * Removes floorplan payloads from stale records while preserving cached venue metadata.
+ * Access timestamps are checked again inside the write transaction to avoid removing a
+ * floorplan that was accessed after the user reviewed the confirmation prompt.
+ */
+export async function purgeStaleFloorPlanCache(
+  now = Date.now(),
+): Promise<StaleFloorPlanCacheStats> {
+  const database = await initOfflineDB();
+  const storeNames = FLOOR_PLAN_STORES.filter((name) =>
+    database.objectStoreNames.contains(name),
+  );
+  if (storeNames.length === 0) return { count: 0, reclaimableBytes: 0 };
+
+  const cutoff = now - STALE_FLOOR_PLAN_AGE_MS;
+  const transaction = database.transaction([...storeNames], "readwrite");
+  let count = 0;
+  let reclaimableBytes = 0;
+
+  for (const storeName of storeNames) {
+    const request = transaction.objectStore(storeName).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+
+      const record = cursor.value as CachedFloorPlanRecord;
+      if (
+        record?.floorplan != null &&
+        typeof record.lastAccessedAt === "number" &&
+        record.lastAccessedAt < cutoff
+      ) {
+        const { floorplan, ...metadata } = record;
+        count++;
+        reclaimableBytes += calculateFloorPlanByteSize(floorplan);
+        cursor.update(metadata);
+      }
+      cursor.continue();
+    };
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () =>
+      reject(transaction.error ?? new Error("Failed purging stale floorplans"));
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error("Stale floorplan cleanup was aborted"));
+  });
+
+  return { count, reclaimableBytes };
 }
 
 /**

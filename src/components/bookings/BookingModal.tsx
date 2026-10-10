@@ -73,7 +73,7 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
             <button
               type="button"
               onClick={() => setShowWaitlist(true)}
-              className="mt-2 text-xs font-semibold text-violet-400 hover:text-violet-300 underline underline-offset-2"
+              className="mt-2 text-xs font-semibold text-violet-400 hover:text-violet-300 underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
             >
               Join the seat waitlist instead →
             </button>
@@ -87,7 +87,7 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
               type="date" 
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus:outline-none"
+              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
             />
           </div>
           <div>
@@ -96,7 +96,7 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
               type="time" 
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus:outline-none"
+              className="w-full rounded-xl border border-white/10 bg-black p-3 text-white focus:border-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
             />
           </div>
         </div>
@@ -106,7 +106,7 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
           <button
             type="button"
             onClick={() => setShowWaitlist(true)}
-            className="text-xs font-medium text-violet-400 hover:text-violet-300 transition"
+            className="text-xs font-medium text-violet-400 hover:text-violet-300 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
           >
             Join Seat Waitlist
           </button>
@@ -115,14 +115,14 @@ export function BookingModal({ venueId, venueName, onClose, onSuccess }: Booking
         <div className="mt-6 flex gap-3">
           <button 
             onClick={onClose}
-            className="flex-1 rounded-xl border border-white/10 p-3 text-zinc-300 hover:bg-white/5 transition"
+            className="flex-1 rounded-xl border border-white/10 p-3 text-zinc-300 hover:bg-white/5 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
           >
             Cancel
           </button>
           <button 
             onClick={handleReserve}
             disabled={loading}
-            className="flex-1 rounded-xl bg-violet-600 p-3 font-semibold text-white hover:bg-violet-700 disabled:opacity-50 transition"
+            className="flex-1 rounded-xl bg-violet-600 p-3 font-semibold text-white hover:bg-violet-700 disabled:opacity-50 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500 dark:focus-visible:ring-offset-slate-900"
           >
             {loading ? 'Confirming...' : 'Confirm Booking'}
           </button>

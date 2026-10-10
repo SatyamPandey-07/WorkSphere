@@ -3,6 +3,68 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer utilities {
+  :where(
+      a,
+      button,
+      input,
+      select,
+      textarea,
+      summary,
+      [role="button"],
+      [role="link"],
+      [role="checkbox"],
+      [role="radio"],
+      [role="switch"],
+      [role="tab"],
+      [role="combobox"],
+      [role="option"],
+      [role="menuitem"],
+      [role="menuitemcheckbox"],
+      [role="menuitemradio"],
+      [role="treeitem"],
+      [role="slider"],
+      [role="spinbutton"],
+      [role="textbox"],
+      [role="searchbox"],
+      [role="gridcell"],
+      [tabindex]:not([tabindex="-1"]),
+      [contenteditable="true"]
+    ):focus-visible {
+    @apply outline-none ring-2 ring-offset-2 ring-blue-500;
+  }
+
+  @variant dark {
+    :where(
+        a,
+        button,
+        input,
+        select,
+        textarea,
+        summary,
+        [role="button"],
+        [role="link"],
+        [role="checkbox"],
+        [role="radio"],
+        [role="switch"],
+        [role="tab"],
+        [role="combobox"],
+        [role="option"],
+        [role="menuitem"],
+        [role="menuitemcheckbox"],
+        [role="menuitemradio"],
+        [role="treeitem"],
+        [role="slider"],
+        [role="spinbutton"],
+        [role="textbox"],
+        [role="searchbox"],
+        [role="gridcell"],
+        [tabindex]:not([tabindex="-1"]),
+        [contenteditable="true"]
+      ):focus-visible {
+      @apply ring-offset-slate-900;
+    }
+  }
+
   .glass-card {
     @apply bg-white border border-zinc-200 shadow-xl;
     @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl;
@@ -815,5 +877,4 @@ html.high-contrast.dark kbd {
   border: 2px solid #ffffff !important;
   font-weight: 700 !important;
 }
-
 

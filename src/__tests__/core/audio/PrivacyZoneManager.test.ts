@@ -6,6 +6,7 @@
 import {
   PrivacyZoneManager,
   SpatialEntity,
+  BEAM_PRESETS,
 } from "@/core/audio/PrivacyZoneManager";
 
 describe("PrivacyZoneManager HRTF & Orientation Tracking", () => {
@@ -252,6 +253,124 @@ describe("PrivacyZoneManager HRTF & Orientation Tracking", () => {
 
       const count = manager.getNearbyUntrustedCount({ x: 0, y: 0, z: 0 });
       expect(count).toBe(1);
+    });
+  });
+
+  describe("Beamforming Presets & Filter Weight Reconfiguration", () => {
+    it("defines the preset dictionary with correct names, polar patterns, and weights", () => {
+      expect(BEAM_PRESETS.narrow.name).toBe("Narrow Focus");
+      expect(BEAM_PRESETS.narrow.description).toBe("single speaker cardioid");
+      expect(BEAM_PRESETS.narrow.polarPattern).toBe("cardioid");
+      expect(BEAM_PRESETS.narrow.polarWeights.front).toBe(1.0);
+      expect(BEAM_PRESETS.narrow.polarWeights.back).toBe(0.0);
+
+      expect(BEAM_PRESETS.meeting.name).toBe("Meeting Mode");
+      expect(BEAM_PRESETS.meeting.description).toBe("bilateral interview");
+      expect(BEAM_PRESETS.meeting.polarPattern).toBe("bidirectional");
+      expect(BEAM_PRESETS.meeting.polarWeights.front).toBe(1.0);
+      expect(BEAM_PRESETS.meeting.polarWeights.back).toBe(1.0);
+      expect(BEAM_PRESETS.meeting.polarWeights.left).toBe(0.0);
+
+      expect(BEAM_PRESETS.omnidirectional.name).toBe("Ambient Off");
+      expect(BEAM_PRESETS.omnidirectional.description).toBe(
+        "omnidirectional raw audio",
+      );
+      expect(BEAM_PRESETS.omnidirectional.polarPattern).toBe("omnidirectional");
+      expect(BEAM_PRESETS.omnidirectional.polarWeights.front).toBe(1.0);
+      expect(BEAM_PRESETS.omnidirectional.polarWeights.back).toBe(1.0);
+      expect(BEAM_PRESETS.omnidirectional.polarWeights.left).toBe(1.0);
+    });
+
+    it("defaults to omnidirectional preset and allows custom initial preset", () => {
+      const defaultManager = new PrivacyZoneManager("user-default");
+      expect(defaultManager.getBeamPreset()).toBe("omnidirectional");
+
+      const narrowManager = new PrivacyZoneManager(
+        "user-narrow",
+        2.0,
+        null,
+        "narrow",
+      );
+      expect(narrowManager.getBeamPreset()).toBe("narrow");
+    });
+
+    it("reconfigures filter weight matrix when switching presets", () => {
+      const manager = new PrivacyZoneManager("user-1");
+
+      // Initially omnidirectional
+      expect(manager.getFilterWeightMatrix()).toEqual(
+        BEAM_PRESETS.omnidirectional.filterWeightMatrix,
+      );
+
+      // Switch to Narrow Focus (cardioid)
+      const narrowConfig = manager.setBeamPreset("narrow");
+      expect(manager.getBeamPreset()).toBe("narrow");
+      expect(narrowConfig.name).toBe("Narrow Focus");
+      expect(manager.getFilterWeightMatrix()).toEqual(
+        BEAM_PRESETS.narrow.filterWeightMatrix,
+      );
+      expect(manager.getPolarWeights()).toEqual(
+        BEAM_PRESETS.narrow.polarWeights,
+      );
+
+      // Switch to Meeting Mode (bilateral)
+      const meetingConfig = manager.setBeamPreset("meeting");
+      expect(manager.getBeamPreset()).toBe("meeting");
+      expect(meetingConfig.name).toBe("Meeting Mode");
+      expect(manager.getFilterWeightMatrix()).toEqual(
+        BEAM_PRESETS.meeting.filterWeightMatrix,
+      );
+      expect(manager.getPolarWeights()).toEqual(
+        BEAM_PRESETS.meeting.polarWeights,
+      );
+
+      // Switch back to Ambient Off (omnidirectional)
+      const omniConfig = manager.setBeamPreset("omnidirectional");
+      expect(manager.getBeamPreset()).toBe("omnidirectional");
+      expect(omniConfig.name).toBe("Ambient Off");
+      expect(manager.getFilterWeightMatrix()).toEqual(
+        BEAM_PRESETS.omnidirectional.filterWeightMatrix,
+      );
+    });
+
+    it("ensures filter weight matrix is cloned and protected from external mutation", () => {
+      const manager = new PrivacyZoneManager("user-1");
+      manager.setBeamPreset("narrow");
+
+      const matrix = manager.getFilterWeightMatrix();
+      matrix[0][0] = 999.0;
+
+      expect(manager.getFilterWeightMatrix()[0][0]).toBe(1.0);
+    });
+
+    it("throws an error when an invalid preset is passed", () => {
+      const manager = new PrivacyZoneManager("user-1");
+      expect(() => {
+        // @ts-expect-error testing runtime validation
+        manager.setBeamPreset("invalid_preset");
+      }).toThrow(/Unknown beamforming preset/);
+    });
+
+    it("computes directional beam gains according to active polar pattern", () => {
+      const manager = new PrivacyZoneManager("user-1");
+
+      // Omnidirectional: uniform gain
+      manager.setBeamPreset("omnidirectional");
+      expect(manager.calculateBeamGain(0)).toBe(1.0);
+      expect(manager.calculateBeamGain(Math.PI / 2)).toBe(1.0);
+      expect(manager.calculateBeamGain(Math.PI)).toBe(1.0);
+
+      // Narrow Focus (cardioid): front=1.0, side=0.5, rear=0.0
+      manager.setBeamPreset("narrow");
+      expect(manager.calculateBeamGain(0)).toBeCloseTo(1.0, 3);
+      expect(manager.calculateBeamGain(Math.PI / 2)).toBeCloseTo(0.5, 3);
+      expect(manager.calculateBeamGain(Math.PI)).toBeCloseTo(0.0, 3);
+
+      // Meeting Mode (bilateral): front=1.0, rear=1.0, sides=0.0
+      manager.setBeamPreset("meeting");
+      expect(manager.calculateBeamGain(0)).toBeCloseTo(1.0, 3);
+      expect(manager.calculateBeamGain(Math.PI)).toBeCloseTo(1.0, 3);
+      expect(manager.calculateBeamGain(Math.PI / 2)).toBeCloseTo(0.0, 3);
     });
   });
 });

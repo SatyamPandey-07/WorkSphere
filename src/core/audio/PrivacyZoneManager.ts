@@ -27,6 +27,85 @@ export interface SpatialRecalculationBenchmark {
   withinBudget: boolean;
 }
 
+export type BeamPreset = "narrow" | "meeting" | "omnidirectional";
+
+export interface PolarWeights {
+  front: number;
+  back: number;
+  left: number;
+  right: number;
+}
+
+export interface BeamformingPresetConfig {
+  id: BeamPreset;
+  name: "Narrow Focus" | "Meeting Mode" | "Ambient Off";
+  description: string;
+  polarPattern: "cardioid" | "bidirectional" | "omnidirectional";
+  polarWeights: PolarWeights;
+  filterWeightMatrix: number[][];
+  cardioidAlpha: number;
+}
+
+export const BEAM_PRESETS: Record<BeamPreset, BeamformingPresetConfig> = {
+  narrow: {
+    id: "narrow",
+    name: "Narrow Focus",
+    description: "single speaker cardioid",
+    polarPattern: "cardioid",
+    polarWeights: {
+      front: 1.0,
+      back: 0.0,
+      left: 0.25,
+      right: 0.25,
+    },
+    filterWeightMatrix: [
+      [1.0, 0.0, 0.0, 0.0],
+      [0.707, 0.293, 0.0, 0.0],
+      [0.25, 0.0, 0.0, 0.25],
+      [0.0, 0.0, 0.0, 0.0],
+    ],
+    cardioidAlpha: 0.5,
+  },
+  meeting: {
+    id: "meeting",
+    name: "Meeting Mode",
+    description: "bilateral interview",
+    polarPattern: "bidirectional",
+    polarWeights: {
+      front: 1.0,
+      back: 1.0,
+      left: 0.0,
+      right: 0.0,
+    },
+    filterWeightMatrix: [
+      [1.0, 0.0, 0.0, 0.0],
+      [0.0, 0.0, 0.0, 0.0],
+      [0.0, 0.0, 1.0, 0.0],
+      [0.0, 0.0, 0.0, 0.0],
+    ],
+    cardioidAlpha: 0.0,
+  },
+  omnidirectional: {
+    id: "omnidirectional",
+    name: "Ambient Off",
+    description: "omnidirectional raw audio",
+    polarPattern: "omnidirectional",
+    polarWeights: {
+      front: 1.0,
+      back: 1.0,
+      left: 1.0,
+      right: 1.0,
+    },
+    filterWeightMatrix: [
+      [0.25, 0.25, 0.25, 0.25],
+      [0.25, 0.25, 0.25, 0.25],
+      [0.25, 0.25, 0.25, 0.25],
+      [0.25, 0.25, 0.25, 0.25],
+    ],
+    cardioidAlpha: 1.0,
+  },
+};
+
 export class PrivacyZoneManager {
   private userId: string;
   private entities: Map<string, SpatialEntity>;
@@ -51,17 +130,22 @@ export class PrivacyZoneManager {
     y: 0,
     z: 0,
   };
+  private activeBeamPreset: BeamPreset = "omnidirectional";
+  private filterWeightMatrix: number[][] = [];
 
   constructor(
     userId: string,
     privacyRadius: number = 2.0,
     audioContext: AudioContext | null = null,
+    initialPreset: BeamPreset = "omnidirectional",
   ) {
     this.userId = userId;
     this.entities = new Map();
     this.entityAudioChains = new Map();
     this.privacyRadius = privacyRadius;
     this.audioContext = audioContext;
+
+    this.setBeamPreset(initialPreset);
 
     if (typeof window !== "undefined") {
       this.startOrientationTracking();
@@ -77,6 +161,60 @@ export class PrivacyZoneManager {
 
   public getAudioContext(): AudioContext | null {
     return this.audioContext;
+  }
+
+  /**
+   * Sets the active beamforming preset and reconfigures the polar filter weight matrix.
+   */
+  public setBeamPreset(
+    preset: "narrow" | "meeting" | "omnidirectional",
+  ): BeamformingPresetConfig {
+    const config = BEAM_PRESETS[preset];
+    if (!config) {
+      throw new Error(
+        `Unknown beamforming preset: "${preset}". Valid presets are 'narrow', 'meeting', 'omnidirectional'.`,
+      );
+    }
+
+    this.activeBeamPreset = preset;
+    // Deep clone the filter weight matrix to guarantee isolation
+    this.filterWeightMatrix = config.filterWeightMatrix.map((row) => [...row]);
+    return config;
+  }
+
+  public getBeamPreset(): BeamPreset {
+    return this.activeBeamPreset;
+  }
+
+  public getBeamPresetConfig(): BeamformingPresetConfig {
+    return BEAM_PRESETS[this.activeBeamPreset];
+  }
+
+  public getFilterWeightMatrix(): number[][] {
+    return this.filterWeightMatrix.map((row) => [...row]);
+  }
+
+  public getPolarWeights(): PolarWeights {
+    return { ...BEAM_PRESETS[this.activeBeamPreset].polarWeights };
+  }
+
+  /**
+   * Calculates polar beamforming gain multiplier for an entity at a given azimuth angle.
+   */
+  public calculateBeamGain(azimuthRad: number): number {
+    const config = BEAM_PRESETS[this.activeBeamPreset];
+    if (config.polarPattern === "omnidirectional") {
+      return 1.0;
+    }
+    if (config.polarPattern === "bidirectional") {
+      return Math.abs(Math.cos(azimuthRad));
+    }
+    // Cardioid: alpha + (1 - alpha) * cos(theta), clamped to [0, 1]
+    return Math.max(
+      0.0,
+      config.cardioidAlpha +
+        (1.0 - config.cardioidAlpha) * Math.cos(azimuthRad),
+    );
   }
 
   /**

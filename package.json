@@ -34,7 +34,7 @@
     "@xmldom/xmldom": "^0.9.12",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
-    "cloudinary": "^2.10.1",
+    "cloudinary": "^2.11.0",
     "clsx": "^2.1.1",
     "fast-xml-parser": "^5.11.2",
     "framer-motion": "^13.4.2",

@@ -50,6 +50,10 @@ export class LightingWasmLoader {
     }
   }
 
+  public getIsReady(): boolean {
+    return this.isReady;
+  }
+
   public async getInstance(): Promise<WebAssembly.Instance> {
     await this.readyPromise;
     if (!this.wasmInstance) throw new Error("WASM instance not initialized");

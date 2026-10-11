@@ -138,3 +138,31 @@ export function escapeCsv(
   }
   return str;
 }
+
+/**
+ * Sanitizes table names and export partition filenames.
+ * - Guards against path traversal (../ or ..\)
+ * - Strips directory separators
+ * - Replaces whitespace and unsafe characters with underscores
+ * - Escapes double quotes for safe Content-Disposition headers
+ */
+export function sanitizeExportFilename(name: string, fallback = "export"): string {
+  if (!name || typeof name !== "string") {
+    return fallback;
+  }
+
+  // Remove path traversal sequences (../, ..\, etc.)
+  let sanitized = name.replace(/\.\.+[/\\]?/g, "");
+
+  // Remove directory separators (/ and \)
+  sanitized = sanitized.replace(/[/\\]/g, "");
+
+  // Replace whitespace, control characters, and unsafe header characters with underscore
+  sanitized = sanitized.replace(/[\s"';,&=?*:<>/\\|%^#@![\]{}()+`~]+/g, "_");
+
+  // Trim leading/trailing underscores and dots
+  sanitized = sanitized.replace(/^[_.]+|[_.]+$/g, "");
+
+  return sanitized || fallback;
+}
+

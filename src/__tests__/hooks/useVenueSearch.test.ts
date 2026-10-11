@@ -410,4 +410,56 @@ describe("useVenueSearch (#3513)", () => {
     );
     expect(result.current.venues).toEqual(mockVenues);
   });
+
+  it("aborts in-flight HTTP request and immediately resets results on rapid typing and clearing sequence", async () => {
+    let slowRequestSignal: AbortSignal | undefined;
+    mockFetch.mockImplementationOnce((_url, options) => {
+      slowRequestSignal = options?.signal;
+      return new Promise((resolve) => {
+        // Slow response that resolves after 500ms
+        setTimeout(() => {
+          resolve({
+            ok: true,
+            json: async () => ({ venues: [{ id: "v99", name: "Stale Venue" }] }),
+          });
+        }, 500);
+      });
+    });
+
+    const { result } = renderHook(() => useVenueSearch());
+
+    // 1. User types search query
+    act(() => {
+      result.current.setQuery("central park");
+    });
+
+    // 2. Advance time past debounce (250ms) so request is dispatched
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(slowRequestSignal).toBeDefined();
+    expect(slowRequestSignal?.aborted).toBe(false);
+
+    // 3. User rapidly clears input before slow response resolves
+    act(() => {
+      result.current.setQuery("");
+    });
+
+    // Verify immediate reset and abortion
+    expect(slowRequestSignal?.aborted).toBe(true);
+    expect(result.current.venues).toEqual([]);
+    expect(result.current.query).toBe("");
+    expect(result.current.isLoading).toBe(false);
+
+    // 4. Advance time past slow request completion
+    await act(async () => {
+      jest.advanceTimersByTime(500);
+    });
+
+    // Result should stay cleared and NOT be overwritten by stale data
+    expect(result.current.venues).toEqual([]);
+    expect(result.current.isLoading).toBe(false);
+  });
 });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminUser } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
-import { calculatePartitionDates, escapeCsv } from "../dateHelper";
+import { calculatePartitionDates, escapeCsv, sanitizeExportFilename } from "../dateHelper";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +26,18 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const yearParam = searchParams.get("year");
     const monthParam = searchParams.get("month");
+    const tableParam = searchParams.get("tableName") || searchParams.get("table");
     const typeParam = (
-      searchParams.get("type") || "telemetry"
+      searchParams.get("type") || (tableParam && tableParam.toLowerCase().includes("push") ? "push" : "telemetry")
     ).toLowerCase() as PartitionExportType;
+
+    // Guard against path traversal sequences in table / tableName parameter
+    if (tableParam && (tableParam.includes("..") || /[/\\]/.test(tableParam))) {
+      return NextResponse.json(
+        { error: "Invalid table name: path traversal sequences are not allowed" },
+        { status: 400 },
+      );
+    }
 
     const now = new Date();
     const year = yearParam ? parseInt(yearParam, 10) : now.getUTCFullYear();
@@ -54,9 +63,68 @@ export async function GET(request: NextRequest) {
     const monthStr = String(month + 1).padStart(2, "0");
 
     const isTelemetry = typeParam === "telemetry";
-    const filename = isTelemetry
-      ? `telemetry-records-${year}-${monthStr}.csv`
-      : `push-logs-${year}-${monthStr}.csv`;
+    const rawPrefix = tableParam
+      ? sanitizeExportFilename(tableParam)
+      : isTelemetry
+        ? "telemetry-records"
+        : "push-logs";
+    const rawFilename = `${rawPrefix}-${year}-${monthStr}.csv`;
+    const filename = sanitizeExportFilename(rawFilename);
+
+    // Support preview / dryRun parameter to return row count and estimated size metadata before export (#5764)
+    const isPreview =
+      searchParams.get("preview") === "true" ||
+      searchParams.get("dryRun") === "true";
+
+    if (isPreview) {
+      let rowCount = 0;
+      if (isTelemetry) {
+        const countRes = await prisma.$queryRawUnsafe<{ count: string | number }[]>(
+          `
+          SELECT COUNT(*)::int AS count
+          FROM "TelemetryRecord"
+          WHERE "timestamp" >= $1::timestamp
+            AND "timestamp" < $2::timestamp
+        `,
+          startIso,
+          endIso,
+        );
+        rowCount = countRes && countRes[0] ? Number(countRes[0].count) : 0;
+      } else {
+        const countRes = await prisma.$queryRawUnsafe<{ count: string | number }[]>(
+          `
+          SELECT COUNT(*)::int AS count
+          FROM "PushNotificationLog"
+          WHERE "createdAt" >= $1::timestamp
+            AND "createdAt" < $2::timestamp
+        `,
+          startIso,
+          endIso,
+        );
+        rowCount = countRes && countRes[0] ? Number(countRes[0].count) : 0;
+      }
+
+      // Estimate byte size based on average CSV row size (telemetry ~100 bytes/row, push ~120 bytes/row) + header size
+      const headerLength = isTelemetry ? 95 : 65;
+      const avgBytesPerRow = isTelemetry ? 100 : 120;
+      const estimatedSizeBytes = rowCount > 0 ? headerLength + rowCount * avgBytesPerRow : 0;
+
+      return NextResponse.json({
+        success: true,
+        preview: true,
+        tableName: rawPrefix,
+        filename,
+        type: typeParam,
+        rowCount,
+        estimatedSizeBytes,
+        partitionRange: {
+          start: startIso,
+          end: endIso,
+          year,
+          month: month + 1,
+        },
+      });
+    }
 
     const headers = isTelemetry
       ? [
@@ -229,5 +297,101 @@ export async function GET(request: NextRequest) {
       { error: "Failed to export partition logs" },
       { status: 500 },
     );
+  }
+}
+
+export async function HEAD(request: NextRequest) {
+  try {
+    const admin = await getAdminUser();
+    if (!admin) {
+      return new NextResponse(null, { status: 403 });
+    }
+
+    const { searchParams } = request.nextUrl;
+    const yearParam = searchParams.get("year");
+    const monthParam = searchParams.get("month");
+    const tableParam = searchParams.get("tableName") || searchParams.get("table");
+    const typeParam = (
+      searchParams.get("type") || (tableParam && tableParam.toLowerCase().includes("push") ? "push" : "telemetry")
+    ).toLowerCase() as PartitionExportType;
+
+    if (tableParam && (tableParam.includes("..") || /[/\\]/.test(tableParam))) {
+      return new NextResponse(null, { status: 400 });
+    }
+
+    const now = new Date();
+    const year = yearParam ? parseInt(yearParam, 10) : now.getUTCFullYear();
+    const month = monthParam ? parseInt(monthParam, 10) : now.getUTCMonth();
+
+    if (
+      isNaN(year) ||
+      isNaN(month) ||
+      month < 0 ||
+      month > 11 ||
+      year < 2020 ||
+      year > 2100
+    ) {
+      return new NextResponse(null, { status: 400 });
+    }
+
+    const { start, end } = calculatePartitionDates(year, month);
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+    const monthStr = String(month + 1).padStart(2, "0");
+
+    const isTelemetry = typeParam === "telemetry";
+    const rawPrefix = tableParam
+      ? sanitizeExportFilename(tableParam)
+      : isTelemetry
+        ? "telemetry-records"
+        : "push-logs";
+    const rawFilename = `${rawPrefix}-${year}-${monthStr}.csv`;
+    const filename = sanitizeExportFilename(rawFilename);
+
+    let rowCount = 0;
+    if (isTelemetry) {
+      const countRes = await prisma.$queryRawUnsafe<{ count: string | number }[]>(
+        `
+        SELECT COUNT(*)::int AS count
+        FROM "TelemetryRecord"
+        WHERE "timestamp" >= $1::timestamp
+          AND "timestamp" < $2::timestamp
+      `,
+        startIso,
+        endIso,
+      );
+      rowCount = countRes && countRes[0] ? Number(countRes[0].count) : 0;
+    } else {
+      const countRes = await prisma.$queryRawUnsafe<{ count: string | number }[]>(
+        `
+        SELECT COUNT(*)::int AS count
+        FROM "PushNotificationLog"
+        WHERE "createdAt" >= $1::timestamp
+          AND "createdAt" < $2::timestamp
+      `,
+        startIso,
+        endIso,
+      );
+      rowCount = countRes && countRes[0] ? Number(countRes[0].count) : 0;
+    }
+
+    const headerLength = isTelemetry ? 95 : 65;
+    const avgBytesPerRow = isTelemetry ? 100 : 120;
+    const estimatedSizeBytes = rowCount > 0 ? headerLength + rowCount * avgBytesPerRow : 0;
+
+    return new NextResponse(null, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "X-Row-Count": String(rowCount),
+        "X-Estimated-Size-Bytes": String(estimatedSizeBytes),
+        "X-Partition-Start": startIso,
+        "X-Partition-End": endIso,
+      },
+    });
+  } catch (error) {
+    console.error("[Admin Partitions Export HEAD]", error);
+    return new NextResponse(null, { status: 500 });
   }
 }

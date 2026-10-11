@@ -438,3 +438,75 @@ export async function getCachedFloorPlanStorageStats(): Promise<OfflineStorageSt
   saveOfflineStorageStats(stats);
   return stats;
 }
+
+export interface StorageCategoryBreakdown {
+  name: string;
+  bytes: number;
+  percentage: number;
+  formattedBytes: string;
+  formattedPercent: string;
+}
+
+export interface StorageBreakdownResult {
+  totalBytes: number;
+  formattedTotal: string;
+  categories: StorageCategoryBreakdown[];
+}
+
+/**
+ * Formats a storage breakdown category cleanly as e.g. "0 B (0%)" or "1.5 MB (25%)".
+ * Guards against zero denominator and NaN.
+ */
+export function formatStorageBreakdown(bytes: number, totalBytes: number): string {
+  const formatted = formatBytes(bytes);
+  if (!totalBytes || totalBytes <= 0 || !Number.isFinite(totalBytes) || !bytes || bytes <= 0) {
+    return `${formatted} (0%)`;
+  }
+  const percent = Math.min(100, Math.max(0, Math.round((bytes / totalBytes) * 100)));
+  return `${formatted} (${percent}%)`;
+}
+
+/**
+ * Calculates storage breakdown metrics across categories.
+ * When total storage used is 0, category percentages safely default to 0% rather than evaluating to NaN.
+ */
+export async function getStorageBreakdown(
+  stats?: OfflineStorageStats,
+): Promise<StorageBreakdownResult> {
+  const currentStats = stats ?? (await getCachedFloorPlanStorageStats());
+  const totalBytes = currentStats.usageBytes || currentStats.floorPlanBytes || 0;
+
+  const floorPlanBytes = currentStats.floorPlanBytes || 0;
+  const otherBytes = Math.max(0, (currentStats.usageBytes || 0) - floorPlanBytes);
+
+  const calculatePercent = (bytes: number): number => {
+    if (!totalBytes || totalBytes <= 0 || !Number.isFinite(totalBytes) || !bytes || bytes <= 0) {
+      return 0;
+    }
+    const pct = (bytes / totalBytes) * 100;
+    return Number.isFinite(pct) ? Math.min(100, Math.max(0, Math.round(pct * 10) / 10)) : 0;
+  };
+
+  const categories: StorageCategoryBreakdown[] = [
+    {
+      name: "Floor Plans",
+      bytes: floorPlanBytes,
+      percentage: calculatePercent(floorPlanBytes),
+      formattedBytes: formatBytes(floorPlanBytes),
+      formattedPercent: `${calculatePercent(floorPlanBytes)}%`,
+    },
+    {
+      name: "Metadata & Cache",
+      bytes: otherBytes,
+      percentage: calculatePercent(otherBytes),
+      formattedBytes: formatBytes(otherBytes),
+      formattedPercent: `${calculatePercent(otherBytes)}%`,
+    },
+  ];
+
+  return {
+    totalBytes,
+    formattedTotal: formatBytes(totalBytes),
+    categories,
+  };
+}

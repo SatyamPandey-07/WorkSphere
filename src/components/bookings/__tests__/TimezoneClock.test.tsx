@@ -47,4 +47,60 @@ describe("TimezoneClock", () => {
     expect(screen.getByText("--:--:-- --")).toBeInTheDocument();
     expect(screen.getByText("Invalid/Timezone")).toBeInTheDocument();
   });
+
+  it("filters timezones with debounced search query and shows clear button", () => {
+    const handleTimezoneChange = jest.fn();
+    render(
+      <TimezoneClock
+        timeZone="UTC"
+        selectable
+        onTimezoneChange={handleTimezoneChange}
+      />
+    );
+
+    // Open dropdown
+    const button = screen.getByTestId("timezone-selector-button");
+    button.click();
+
+    const searchInput = screen.getByTestId("timezone-search-input") as HTMLInputElement;
+    expect(searchInput).toBeInTheDocument();
+
+    // Type query "Tokyo"
+    searchInput.value = "Tokyo";
+    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    // Advance fake timer for debounce (200ms)
+    jest.advanceTimersByTime(250);
+
+    // Should find Tokyo
+    expect(screen.getByText(/Tokyo/i)).toBeInTheDocument();
+
+    // Clear query button
+    const clearBtn = screen.getByTestId("timezone-clear-query-button");
+    clearBtn.click();
+    jest.advanceTimersByTime(250);
+
+    expect(searchInput.value).toBe("");
+  });
+
+  it("displays 'No matching timezones found' with clear query button on empty search result", () => {
+    render(<TimezoneClock timeZone="UTC" selectable />);
+
+    const button = screen.getByTestId("timezone-selector-button");
+    button.click();
+
+    const searchInput = screen.getByTestId("timezone-search-input") as HTMLInputElement;
+    searchInput.value = "NonExistentTimezoneXYZ";
+    searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    jest.advanceTimersByTime(250);
+
+    expect(screen.getByText("No matching timezones found")).toBeInTheDocument();
+
+    const resetBtn = screen.getByTestId("timezone-clear-search-btn");
+    resetBtn.click();
+    jest.advanceTimersByTime(250);
+
+    expect(screen.queryByText("No matching timezones found")).not.toBeInTheDocument();
+  });
 });

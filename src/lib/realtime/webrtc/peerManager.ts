@@ -25,6 +25,13 @@ import {
   MeshPathBalancer,
   type MeshLinkTelemetry,
   type MeshRoute,
+  MIN_CHUNK_SIZE,
+  MAX_CHUNK_SIZE,
+  DEFAULT_CHUNK_SIZE,
+  type MeshLinkTelemetry,
+  type MeshRoute,
+  type MtuProbeMessage,
+  type MtuProbeAckMessage,
 } from "./meshPathBalancer";
 import {
   PeerConnection,
@@ -84,6 +91,13 @@ export class WebRTCPeerManager {
   protected lifecycleHandlers: Set<LifecycleChangeHandler> = new Set();
   protected adjacency = new Map<string, Set<string>>();
   protected pathBalancer = new MeshPathBalancer();
+  protected pendingMtuProbes = new Map<
+    string,
+    {
+      resolve: (success: boolean) => void;
+      timeoutId: ReturnType<typeof setTimeout>;
+    }
+  >();
   protected telemetryTimer: ReturnType<typeof setInterval> | null = null;
   protected topologyTimer: ReturnType<typeof setInterval> | null = null;
   protected pendingTelemetryPings = new Map<string, number>();
@@ -320,6 +334,44 @@ export class WebRTCPeerManager {
     peerId: string,
     message: Record<string, unknown>,
   ): boolean {
+    if (message.type === "mesh-mtu-probe") {
+      const peer = this.peers.get(peerId);
+      if (
+        peer?.dataChannel?.readyState === "open" &&
+        typeof message.probeId === "string" &&
+        typeof message.size === "number"
+      ) {
+        try {
+          peer.dataChannel.send(
+            JSON.stringify({
+              type: "mesh-mtu-probe-ack",
+              probeId: message.probeId,
+              size: message.size,
+              timestamp: Date.now(),
+            }),
+          );
+        } catch (error) {
+          console.warn(
+            `[WebRTCPeerManager] Failed sending MTU probe ACK to ${peerId}:`,
+            error,
+          );
+        }
+      }
+      return true;
+    }
+
+    if (message.type === "mesh-mtu-probe-ack") {
+      if (typeof message.probeId === "string") {
+        const pending = this.pendingMtuProbes.get(message.probeId);
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          this.pendingMtuProbes.delete(message.probeId);
+          pending.resolve(true);
+        }
+      }
+      return true;
+    }
+
     if (message.type === "mesh-telemetry-ping") {
       const peer = this.peers.get(peerId);
       if (
@@ -783,6 +835,7 @@ export class WebRTCPeerManager {
       sharedKey: null,
       status: "connecting",
       lifecycleState: ConnectionLifecycleState.CONNECTING,
+      optimalChunkSize: DEFAULT_CHUNK_SIZE,
     };
 
     this.peers.set(peerId, peer);
@@ -834,6 +887,7 @@ export class WebRTCPeerManager {
       sharedKey: null,
       status: "connecting",
       lifecycleState: ConnectionLifecycleState.CONNECTING,
+      optimalChunkSize: DEFAULT_CHUNK_SIZE,
     };
 
     this.peers.set(peerId, peer);
@@ -898,6 +952,7 @@ export class WebRTCPeerManager {
       this.deriveKeyForPeer(peerId);
       this.notifyHandlers();
       this.broadcastTopology();
+      void this.probePeerMtu(peerId);
     };
 
     channel.onclose = () => {
@@ -910,6 +965,7 @@ export class WebRTCPeerManager {
           ConnectionLifecycleState.DISCONNECTED,
         );
       }
+      this.pathBalancer.removePeer(peerId);
       this.adjacency.get(this.localPeerId)?.delete(peerId);
       this.broadcastTopology();
       this.notifyHandlers();
@@ -1035,6 +1091,72 @@ export class WebRTCPeerManager {
     }
   }
 
+  public getOptimalChunkSize(peerId: string): number {
+    return (
+      this.peers.get(peerId)?.optimalChunkSize ??
+      this.pathBalancer.getOptimalChunkSize(peerId)
+    );
+  }
+
+  public async probePeerMtu(peerId: string): Promise<number> {
+    const peer = this.peers.get(peerId);
+    if (!peer || peer.dataChannel?.readyState !== "open") {
+      return MIN_CHUNK_SIZE;
+    }
+
+    try {
+      const optimal = await this.pathBalancer.probeChannelMtu(
+        peerId,
+        (size) => this.sendMtuProbe(peerId, size),
+      );
+      if (peer) {
+        peer.optimalChunkSize = optimal;
+      }
+      return optimal;
+    } catch (error) {
+      console.warn(
+        `[WebRTCPeerManager] MTU probe sequence failed for ${peerId}:`,
+        error,
+      );
+      const fallback = MIN_CHUNK_SIZE;
+      if (peer) {
+        peer.optimalChunkSize = fallback;
+      }
+      return fallback;
+    }
+  }
+
+  protected sendMtuProbe(
+    peerId: string,
+    size: number,
+    timeoutMs = 2000,
+  ): Promise<boolean> {
+    const peer = this.peers.get(peerId);
+    if (!peer?.dataChannel || peer.dataChannel.readyState !== "open") {
+      return Promise.resolve(false);
+    }
+    const probe = this.pathBalancer.createProbePacket(size);
+    return new Promise<boolean>((resolve) => {
+      const timeoutId = setTimeout(() => {
+        this.pendingMtuProbes.delete(probe.probeId);
+        resolve(false);
+      }, timeoutMs);
+
+      this.pendingMtuProbes.set(probe.probeId, {
+        resolve,
+        timeoutId,
+      });
+
+      try {
+        peer.dataChannel!.send(JSON.stringify(probe));
+      } catch {
+        clearTimeout(timeoutId);
+        this.pendingMtuProbes.delete(probe.probeId);
+        resolve(false);
+      }
+    });
+  }
+
   public async sendFile(file: File, peerId: string): Promise<FileTransfer> {
     const sharedKey = await this.getSharedKeyForPeer(peerId);
     if (!sharedKey || this.routesTo(peerId).length === 0) {
@@ -1055,9 +1177,11 @@ export class WebRTCPeerManager {
 
     try {
       transfer.status = "encrypting";
+      const chunkSize = this.getOptimalChunkSize(peerId);
       const { chunks, checksum, totalChunks } = await encryptFile(
         file,
         sharedKey,
+        chunkSize,
       );
 
       transfer.status = "sending";
@@ -1124,6 +1248,11 @@ export class WebRTCPeerManager {
     this.peers.clear();
     this.adjacency.clear();
     this.previousPacketCounters.clear();
+    for (const pending of this.pendingMtuProbes.values()) {
+      clearTimeout(pending.timeoutId);
+      pending.resolve(false);
+    }
+    this.pendingMtuProbes.clear();
     this.pendingTelemetryPings.clear();
     this.pingTimeouts.clear();
     this.previousRtt.clear();

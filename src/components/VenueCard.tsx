@@ -36,8 +36,22 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { getVenueCoverTransitionName } from "@/lib/viewTransitions";
-import { NoiseTimeChart } from "@/components/noise/NoiseTimeChart";
-import { AmbientSoundPlayer } from "@/components/noise/AmbientSoundPlayer";
+import dynamic from "next/dynamic";
+
+const NoiseTimeChart = dynamic(
+  () => import("@/components/noise/NoiseTimeChart"),
+  {
+    ssr: false,
+    loading: () => <div className="h-16 animate-pulse bg-muted rounded" />,
+  },
+);
+
+const AmbientSoundPlayer = dynamic(
+  () => import("@/components/noise/AmbientSoundPlayer"),
+  {
+    ssr: false,
+  },
+);
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
 import { useCurrency } from "@/context/CurrencyContext";

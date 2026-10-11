@@ -208,9 +208,31 @@ describe("AudioEqualizer Component (#859)", () => {
     fireEvent.change(slider1kHz, { target: { value: "-4" } });
     expect(screen.getByText("-4 dB")).toBeInTheDocument();
 
-    // Reset EQ
-    const resetBtn = screen.getByTitle("Reset all EQ gains to 0 dB");
+    // Reset to Flat EQ
+    const resetBtn =
+      screen.queryByTestId("reset-to-flat-button") ||
+      screen.getByRole("button", { name: /Reset to Flat/i });
     fireEvent.click(resetBtn);
+    expect(screen.getAllByText("0 dB")).toHaveLength(5);
+  });
+
+  it("smoothly resets all bands to 0 dB on Reset to Flat click (#5515)", () => {
+    const onGainChange = jest.fn();
+    render(<AudioEqualizer venueName="Test Workspace" onGainChange={onGainChange} />);
+
+    // Start playing
+    const playButton = screen.getByTitle("Listen to Ambience");
+    fireEvent.click(playButton);
+
+    const slider = screen.getByRole("slider", { name: "60Hz Gain" });
+    fireEvent.change(slider, { target: { value: "10" } });
+    expect(screen.getByText("+10 dB")).toBeInTheDocument();
+
+    const resetBtn = screen.getByRole("button", { name: /Reset to Flat/i });
+    expect(resetBtn).toBeInTheDocument();
+    fireEvent.click(resetBtn);
+
+    // Audio gains return to 0 dB
     expect(screen.getAllByText("0 dB")).toHaveLength(5);
   });
 });

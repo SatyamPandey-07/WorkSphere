@@ -1,17 +1,47 @@
+/**
+ * @deprecated Standalone offlineStore.ts is deprecated in favor of unified offline storage in @/lib/offline.
+ * Import directly from `@/lib/offline` instead.
+ */
+
 export { withWebLock } from "./webLock";
 import { withWebLock } from "./webLock";
+import { syncQueueManager } from "./offline/SyncQueueManager";
+
+// Register checkin handler with consolidated SyncQueueManager
+syncQueueManager.registerHandler("checkin", async (item) => {
+  const payload = item.payload as { venueId: string };
+  if (!payload?.venueId) return;
+
+  const res = await fetch(`/api/venues/${encodeURIComponent(payload.venueId)}/check-in`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ timestamp: item.timestamp }),
+  });
+  if (!res.ok) {
+    throw new Error(`Check-in sync failed: ${res.statusText}`);
+  }
+});
+
+// Register amenity_vote handler with consolidated SyncQueueManager
+syncQueueManager.registerHandler("amenity_vote", async (item) => {
+  const payload = item.payload as { venueId: string; amenityId?: string; vote?: number };
+  if (!payload?.venueId) return;
+
+  const res = await fetch(`/api/venues/${encodeURIComponent(payload.venueId)}/amenity-votes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error(`Amenity vote sync failed: ${res.statusText}`);
+  }
+});
+
 const STORE_NAME = "favorites-outbox";
 const CHECKIN_STORE_NAME = "checkins-outbox";
 export const TAG_STORE_NAME = "favorite-tags-outbox";
 const DB_NAME = "WorkSphereOfflineDB";
 
-/**
- * Maximum number of times the service worker will attempt to sync a queued
- * action before giving up. Once an action hits this count, it is removed
- * from the outbox and the user is notified via a postMessage to open
- * clients (see public/sw.js `syncFavoritesOutbox`) — it is never silently
- * dropped. (Issue #712)
- */
 export const MAX_SYNC_RETRIES = 3;
 
 export interface OfflineAction {
@@ -235,6 +265,7 @@ export function getDB(): Promise<IDBDatabase> {
  * Pushes a target action into the client IndexedDB transaction queue.
  * Wrapped with Web Locks API to serialize multi-tab storage access (#910),
  * now sharing the same lock as offlineStorage.ts (fix for #829).
+ * @deprecated Use @/lib/offline instead.
  */
 export async function queueOfflineFavorite(
   venueId: string,
@@ -304,6 +335,7 @@ export async function queueOfflineFavorite(
 }
  /**
  * Retrieves all currently queued actions awaiting synchronization
+ * @deprecated Use @/lib/offline instead.
  */
 export async function getQueuedFavorites(): Promise<OfflineAction[]> {
   return withWebLock(async () => {
@@ -397,6 +429,7 @@ export async function restoreFailedPayload(id: number): Promise<boolean> {
 
 /**
  * Clears an action from the store once it has been processed
+ * @deprecated Use @/lib/offline instead.
  */
 export async function dequeueOfflineAction(id: number): Promise<void> {
   if (id === undefined || id === null || isNaN(id)) return;
@@ -418,6 +451,7 @@ export async function dequeueOfflineAction(id: number): Promise<void> {
 
 /**
  * Pushes a check-in action into the client IndexedDB checkin queue.
+ * @deprecated Use @/lib/offline instead.
  */
 export async function queueOfflineCheckIn(venueId: string): Promise<void> {
   return withWebLock(async () => {
@@ -445,6 +479,13 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
           timestamp: Date.now(),
           retryCount: 0,
         });
+        void syncQueueManager
+          .enqueue<OfflineCheckIn>({
+            entity: "checkin",
+            action: "create",
+            payload: { venueId, timestamp: Date.now() },
+          })
+          .catch(() => {});
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });
@@ -457,6 +498,7 @@ export async function queueOfflineCheckIn(venueId: string): Promise<void> {
 
 /**
  * Retrieves all queued check-ins
+ * @deprecated Use @/lib/offline instead.
  */
 export async function getQueuedCheckIns(): Promise<OfflineCheckIn[]> {
   return withWebLock(async () => {
@@ -478,6 +520,7 @@ export async function getQueuedCheckIns(): Promise<OfflineCheckIn[]> {
 
 /**
  * Records a failed sync attempt for a queued check-in
+ * @deprecated Use @/lib/offline instead.
  */
 export async function incrementCheckInRetryCount(
   id: number,
@@ -512,6 +555,7 @@ export async function incrementCheckInRetryCount(
 
 /**
  * Clears a check-in from the store
+ * @deprecated Use @/lib/offline instead.
  */
 export async function dequeueOfflineCheckIn(id: number): Promise<void> {
   return withWebLock(async () => {

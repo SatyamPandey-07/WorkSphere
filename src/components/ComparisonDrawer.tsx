@@ -3,16 +3,7 @@
 import { X, Check } from "lucide-react";
 import { RadarChart } from "./ui/RadarChart";
 
-// Assuming these match your venue data structure
-interface Venue {
-  id: string;
-  name: string;
-  wifiQuality: number; // e.g., 1-5
-  hasOutlets: boolean;
-  noiseLevel: "quiet" | "moderate" | "loud";
-  seating?: number;
-  coffee?: number;
-}
+import type { Venue } from "@/types/venue";
 
 interface ComparisonDrawerProps {
   selectedVenues: Venue[];
@@ -29,7 +20,7 @@ export function ComparisonDrawer({
   // --- Helper Functions to determine the "winning" stat ---
   const maxWifi = Math.max(...selectedVenues.map((v) => v.wifiQuality || 0));
 
-  const getNoiseScore = (level: string) => {
+  const getNoiseScore = (level?: string | null) => {
     if (level === "quiet") return 3;
     if (level === "moderate") return 2;
     return 1;

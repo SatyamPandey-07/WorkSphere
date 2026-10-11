@@ -32,6 +32,7 @@ describe("WebGLHeatmapRenderer Engine & Shaders (#818)", () => {
       clearColor: jest.fn(),
       clear: jest.fn(),
       uniform1f: jest.fn(),
+      uniform1i: jest.fn(),
       uniform2f: jest.fn(),
       enableVertexAttribArray: jest.fn(),
       vertexAttribPointer: jest.fn(),
@@ -62,16 +63,42 @@ describe("WebGLHeatmapRenderer Engine & Shaders (#818)", () => {
     expect(HEATMAP_VERTEX_SHADER).toContain("a_intensity");
     expect(HEATMAP_FRAGMENT_SHADER).toContain("gl_PointCoord");
     expect(HEATMAP_FRAGMENT_SHADER).toContain("getHeatColor");
+    expect(HEATMAP_FRAGMENT_SHADER).toContain("u_paletteMode");
   });
 
-  test("initializes WebGL buffers and shader programs", () => {
+  test("initializes WebGL buffers and shader programs with palette uniform", () => {
     const renderer = new WebGLHeatmapRenderer(canvas, {
       opacity: 0.8,
       blur: 1.2,
+      palette: "neon",
     });
     expect(mockGl.createProgram).toHaveBeenCalled();
     expect(mockGl.createBuffer).toHaveBeenCalled();
     expect(mockGl.enable).toHaveBeenCalledWith(mockGl.BLEND);
+    expect(renderer.getPalette()).toBe("neon");
+    expect(mockGl.uniform1i).toHaveBeenCalledWith(expect.anything(), 1);
+    renderer.destroy();
+  });
+
+  test("dynamically switches palette uniform without rebuilding WebGL context (#5390)", () => {
+    const renderer = new WebGLHeatmapRenderer(canvas);
+    expect(renderer.getPalette()).toBe("thermal");
+
+    // Switch to Cyber Neon
+    renderer.setPalette("neon");
+    expect(renderer.getPalette()).toBe("neon");
+    expect(mockGl.uniform1i).toHaveBeenCalledWith(expect.anything(), 1);
+
+    // Switch to Accessible Grayscale
+    renderer.setPalette("grayscale");
+    expect(renderer.getPalette()).toBe("grayscale");
+    expect(mockGl.uniform1i).toHaveBeenCalledWith(expect.anything(), 2);
+
+    // Switch back to Thermal
+    renderer.setPalette("thermal");
+    expect(renderer.getPalette()).toBe("thermal");
+    expect(mockGl.uniform1i).toHaveBeenCalledWith(expect.anything(), 0);
+
     renderer.destroy();
   });
 

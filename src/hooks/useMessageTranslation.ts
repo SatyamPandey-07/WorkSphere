@@ -1,4 +1,5 @@
 "use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -22,11 +23,39 @@ function getCacheKey(text: string, targetLanguage: string): string {
   return JSON.stringify([text, targetLanguage]);
 }
 
+/**
+ * Executes or deduplicates translation request.
+ * Early-returns empty/whitespace string without issuing network request (#5596).
+ */
+export async function translateMessage(
+  text: string,
+  targetLanguage: string = "en"
+): Promise<MessageTranslation> {
+  const trimmed = typeof text === "string" ? text.trim() : "";
+  if (!trimmed) {
+    return {
+      translatedText: trimmed,
+      sourceLanguage: "Unknown",
+    };
+  }
+
+  const key = getCacheKey(text, targetLanguage);
+  return requestTranslation(text, targetLanguage, key);
+}
+
 async function requestTranslation(
   text: string,
   targetLanguage: string,
   key: string,
 ): Promise<MessageTranslation> {
+  const trimmed = typeof text === "string" ? text.trim() : "";
+  if (!trimmed) {
+    return {
+      translatedText: trimmed,
+      sourceLanguage: "Unknown",
+    };
+  }
+
   const cached = translationCache.get(key);
   if (cached) return cached;
 
@@ -101,6 +130,17 @@ export function useMessageTranslation(messageId: string, text: string) {
 
   const translate = useCallback(async () => {
     if (!text.trim()) return;
+    const trimmed = typeof text === "string" ? text.trim() : "";
+    if (!trimmed) {
+      setState({
+        key: translationKey,
+        translation: { translatedText: trimmed, sourceLanguage: "Unknown" },
+        error: null,
+        isLoading: false,
+      });
+      return;
+    }
+
     setState({ key: translationKey, translation: null, error: null, isLoading: true });
     try {
       const translation = await requestTranslation(

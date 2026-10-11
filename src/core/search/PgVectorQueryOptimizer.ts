@@ -22,7 +22,15 @@ export class PgVectorQueryOptimizer {
         this.vectorColumn = vectorColumn;
     }
 
-    public buildQuery(queryVector: number[], filters: SearchFilters, limit: number = 10): { sql: string; params: any[] } {
+    public static readonly DEFAULT_LIMIT = 10;
+    public static readonly MAX_LIMIT = 50;
+
+    public buildQuery(queryVector: number[], filters: SearchFilters = {}, limit: number = PgVectorQueryOptimizer.DEFAULT_LIMIT): { sql: string; params: any[] } {
+        // Enforce upper bound limit to prevent memory spikes on unbounded vector similarity queries (#5491)
+        const safeLimit = Math.min(
+            Math.max(1, typeof limit === 'number' && !isNaN(limit) ? Math.floor(limit) : PgVectorQueryOptimizer.DEFAULT_LIMIT),
+            PgVectorQueryOptimizer.MAX_LIMIT
+        );
         const params: any[] = [`[${queryVector.join(',')}]`];
         let paramIndex = 2;
 
@@ -63,7 +71,7 @@ export class PgVectorQueryOptimizer {
       ORDER BY ${this.vectorColumn} <=> $1::vector ASC
       LIMIT $${paramIndex}
     `;
-        params.push(limit);
+        params.push(safeLimit);
 
         return { sql, params };
     }

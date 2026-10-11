@@ -9,7 +9,7 @@
  * announce the same payment twice.
  */
 
-import { GET, POST } from "../../app/api/pay/split/[token]/route";
+import { GET, POST } from "../../app/api/payments/split/[token]/route";
 import { prisma } from "@/lib/prisma";
 import { eventBus } from "@/core/events";
 import { generateSplitPaymentToken } from "@/lib/billing/splitPayment";
@@ -86,7 +86,7 @@ beforeEach(() => {
   emit.mockResolvedValue(undefined);
 });
 
-describe("GET /api/pay/split/[token]", () => {
+describe("GET /api/payments/split/[token]", () => {
   it("does not treat an RSVP 'ACCEPTED' guest as paid", async () => {
     db.booking.findUnique.mockResolvedValue(
       bookingRow({ id: "guest_wxyz5678", status: "ACCEPTED", paidAt: null }),
@@ -120,7 +120,7 @@ describe("GET /api/pay/split/[token]", () => {
   });
 });
 
-describe("POST /api/pay/split/[token]", () => {
+describe("POST /api/payments/split/[token]", () => {
   it("records payment for an RSVP-accepted guest and announces it once", async () => {
     db.bookingGuest.findUnique.mockResolvedValue(guestRow({ status: "ACCEPTED" }));
     db.bookingGuest.updateMany.mockResolvedValue({ count: 1 });

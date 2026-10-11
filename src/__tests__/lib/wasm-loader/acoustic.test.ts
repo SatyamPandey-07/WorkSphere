@@ -212,5 +212,83 @@ describe('Acoustic WASM Loader & Worker SAB Fallback (#5312)', () => {
         'WASM memory allocation failed'
       );
     });
+
+    it('downsamples high sample rate audio (96kHz and 192kHz) to prevent WASM buffer overflow (#5279)', async () => {
+      (globalThis as any).crossOriginIsolated = false;
+
+      const postMessageSpy = jest.fn();
+      const mockWorker = {
+        postMessage: postMessageSpy,
+        addEventListener: jest.fn((event: string, handler: (e: any) => void) => {
+          if (event === 'message') {
+            setTimeout(() => {
+              handler({
+                data: {
+                  type: 'FINGERPRINT_RESULT',
+                  payload: {
+                    dominantBand: 'Mid',
+                    dominantBandIndex: 3,
+                    energies: { Mid: 0.8 },
+                    sampleRate: 48000,
+                  },
+                },
+              });
+            }, 0);
+          }
+        }),
+        removeEventListener: jest.fn(),
+      } as unknown as Worker;
+
+      const loader = new AcousticFingerprintLoader(mockWorker);
+      const highRateAudio = new Float32Array(9600); // 100ms at 96kHz
+
+      const result = await loader.processAudio(highRateAudio, 96000);
+
+      expect(result.dominantBand).toBe('Mid');
+      expect(postMessageSpy).toHaveBeenCalledTimes(1);
+      const sentPayload = postMessageSpy.mock.calls[0][0].payload;
+      // Effective sample rate downsampled by factor of 2 (96kHz -> 48kHz)
+      expect(sentPayload.sampleRate).toBe(48000);
+      // Audio buffer capped or downsampled so it won't exceed MAX_FFT_WINDOW (4096)
+      expect(sentPayload.audioData.length).toBeLessThanOrEqual(4096);
+    });
+
+    it('downsamples 192kHz audio by 4x to 48kHz without buffer overflow (#5279)', async () => {
+      (globalThis as any).crossOriginIsolated = false;
+
+      const postMessageSpy = jest.fn();
+      const mockWorker = {
+        postMessage: postMessageSpy,
+        addEventListener: jest.fn((event: string, handler: (e: any) => void) => {
+          if (event === 'message') {
+            setTimeout(() => {
+              handler({
+                data: {
+                  type: 'FINGERPRINT_RESULT',
+                  payload: {
+                    dominantBand: 'Presence',
+                    dominantBandIndex: 5,
+                    energies: { Presence: 0.9 },
+                    sampleRate: 48000,
+                  },
+                },
+              });
+            }, 0);
+          }
+        }),
+        removeEventListener: jest.fn(),
+      } as unknown as Worker;
+
+      const loader = new AcousticFingerprintLoader(mockWorker);
+      const ultraRateAudio = new Float32Array(19200); // 100ms at 192kHz
+
+      const result = await loader.processAudio(ultraRateAudio, 192000);
+
+      expect(result.dominantBand).toBe('Presence');
+      expect(postMessageSpy).toHaveBeenCalledTimes(1);
+      const sentPayload = postMessageSpy.mock.calls[0][0].payload;
+      expect(sentPayload.sampleRate).toBe(48000);
+      expect(sentPayload.audioData.length).toBeLessThanOrEqual(4096);
+    });
   });
 });

@@ -34,13 +34,17 @@ export function useIndoorNavigation(venueId: string) {
                 } else if (event.data.type === 'POSITION_UPDATE') {
                     if (event.data.error) {
                         setError(event.data.error);
-                    } else {
+                    } else if (
+                        event.data.payload &&
+                        Number.isFinite(event.data.payload.x) &&
+                        Number.isFinite(event.data.payload.y)
+                    ) {
                         setPosition({
                             x: event.data.payload.x,
                             y: event.data.payload.y,
-                            z: event.data.payload.z,
-                            accuracy: event.data.payload.accuracy,
-                            apsUsed: event.data.payload.apsUsed,
+                            z: event.data.payload.z ?? 0,
+                            accuracy: event.data.payload.accuracy ?? 0,
+                            apsUsed: event.data.payload.apsUsed ?? 0,
                             isAvailable: true
                         });
                         setError(null);

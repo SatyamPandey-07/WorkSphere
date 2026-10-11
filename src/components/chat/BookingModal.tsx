@@ -27,7 +27,7 @@ import {
 } from "react";
 import { useUser } from "@clerk/nextjs";
 import confetti from "canvas-confetti";
-import { Venue } from "./ChatMessages";
+import { Venue } from "@/types/venue";
 import { trackEvent } from "@/lib/analytics";
 import { getCalendarUrls, downloadICS } from "@/lib/calendar";
 import GuestsInput, { type GuestEntry } from "@/components/GuestsInput";

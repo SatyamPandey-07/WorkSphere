@@ -191,10 +191,10 @@ function StickyNote({ note, onUpdate }: { note: ShapeData; onUpdate: StickyNotes
         onPointerUp={handleDragEnd}
         onPointerCancel={handleDragEnd}
       >
-        <span>Sticky note</span>
-        <span aria-hidden="true">↕</span>
+        <span className="truncate pr-1">Sticky note</span>
+        <span aria-hidden="true" className="shrink-0">↕</span>
       </div>
-      <div className="grid h-[calc(100%-1.75rem)] grid-rows-1 overflow-hidden">
+      <div className="grid h-[calc(100%-1.75rem)] grid-rows-1 overflow-hidden pt-1">
         <div className="grid min-h-0 grid-cols-2 gap-1 p-2">
           <textarea
             aria-label={`Edit sticky note ${note.id}`}

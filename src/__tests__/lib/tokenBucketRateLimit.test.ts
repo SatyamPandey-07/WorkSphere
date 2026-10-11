@@ -70,6 +70,7 @@ describe("Multi-Tier Token Bucket Rate Limiting (#3529)", () => {
     it("exempts webhooks and cron jobs from rate limiting", () => {
       const exemptPaths = [
         "/api/webhook",
+        "/api/webhooks",
         "/api/webhooks/worker",
         "/api/cron/reminders",
         "/api/cron/partition-maintenance",

@@ -498,3 +498,5 @@ export function AmbientSoundPlayer({ noiseLevel }: AmbientSoundPlayerProps) {
     </div>
   );
 }
+
+export default AmbientSoundPlayer;

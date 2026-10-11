@@ -24,6 +24,11 @@
 }
 
 :global(.transform-style-3d) {
+.perspective1000 {
+  perspective: 1000px;
+}
+
+.transformStyle3d {
   transform-style: preserve-3d;
 }
 
@@ -48,6 +53,12 @@
   border: 10px ridge #d4a35d;
   border-radius: 50%;
   background: radial-gradient(circle at 33% 25%, #ffe1a7, #b87b36 49%, #704722 100%);
+  background: radial-gradient(
+    circle at 33% 25%,
+    #ffe1a7,
+    #b87b36 49%,
+    #704722 100%
+  );
   box-shadow:
     inset 0 0 0 3px #f5d18f,
     inset 0 0 18px 8px rgb(71 42 18 / 75%),
@@ -57,6 +68,7 @@
 }
 
 :global(.rotate-y-180) {
+.rotateY180 {
   transform: rotateY(180deg);
 }
 
@@ -113,6 +125,9 @@
 .verified {
   color: #eff6e9;
   font: 700 1.05rem/1 Georgia, serif;
+  font:
+    700 1.05rem/1 Georgia,
+    serif;
 }
 
 .hash {
@@ -120,6 +135,11 @@
   overflow: hidden;
   color: #d8e4df;
   font: 500 0.52rem/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    500 0.52rem/1.7 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
   overflow-wrap: anywhere;
 }
 

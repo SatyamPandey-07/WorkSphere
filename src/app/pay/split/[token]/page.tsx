@@ -35,7 +35,7 @@ export default function GuestSplitPaymentPage({ params }: PageProps) {
   useEffect(() => {
     async function loadDetails() {
       try {
-        const res = await fetch(`/api/pay/split/${encodeURIComponent(token)}`);
+        const res = await fetch(`/api/payments/split/${encodeURIComponent(token)}`);
         const json = await res.json();
         if (!res.ok) {
           throw new Error(json.error || "Invalid or expired payment link");
@@ -67,7 +67,7 @@ export default function GuestSplitPaymentPage({ params }: PageProps) {
     setPaying(true);
     setError(null);
     try {
-      const res = await fetch(`/api/pay/split/${encodeURIComponent(token)}`, {
+      const res = await fetch(`/api/payments/split/${encodeURIComponent(token)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });

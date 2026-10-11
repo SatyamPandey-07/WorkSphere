@@ -489,20 +489,28 @@ export function MicCalibrationWizard({
               <div className="p-6 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center text-center space-y-3">
                 <div className="flex items-baseline gap-2">
                   <span className="text-4xl sm:text-5xl font-black tracking-tight text-zinc-900 dark:text-zinc-50 font-mono">
-                    {isListening ? liveCalibratedDb.toFixed(1) : "--"}
+                    {isListening ? Math.max(0, Math.min(120, liveCalibratedDb)).toFixed(1) : "--"}
                   </span>
                   <span className="text-base font-bold text-zinc-500">
                     dB SPL
                   </span>
                 </div>
 
-                {/* Level Meter Progress Bar */}
+                {/* Microphone Muted / Inactive Visual Feedback Label */}
+                {isListening && liveCalibratedDb <= 0 && (
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-200/80 dark:bg-zinc-700/80 text-zinc-600 dark:text-zinc-300 text-[11px] font-bold">
+                    <VolumeX className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>Microphone Muted / Silent</span>
+                  </div>
+                )}
+
+                {/* Level Meter Progress Bar (Normalized 0 to 120 dB SPL) */}
                 <div className="w-full max-w-sm h-4 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden p-0.5 relative">
                   <div
                     className={`h-full rounded-full transition-all duration-75 ${getMeterColor(liveCalibratedDb)}`}
                     style={{
                       width: isListening
-                        ? `${Math.min(100, Math.max(0, ((liveCalibratedDb - 20) / 80) * 100))}%`
+                        ? `${Math.min(100, Math.max(0, (Math.max(0, liveCalibratedDb) / 120) * 100))}%`
                         : "0%",
                     }}
                   />
@@ -510,9 +518,9 @@ export function MicCalibrationWizard({
 
                 {/* Gauge Markers */}
                 <div className="w-full max-w-sm flex justify-between text-[10px] text-zinc-400 font-mono">
-                  <span>20 dB (Whisper)</span>
+                  <span>0 dB (Silence)</span>
                   <span>60 dB (Normal)</span>
-                  <span>100 dB (Loud)</span>
+                  <span>120 dB (Max SPL)</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 w-full pt-3 border-t border-zinc-200 dark:border-zinc-700/60 text-xs">
@@ -521,7 +529,7 @@ export function MicCalibrationWizard({
                       Raw Input:
                     </span>{" "}
                     <span className="font-mono font-bold text-zinc-700 dark:text-zinc-200">
-                      {liveRawDb.toFixed(1)} dB
+                      {Math.max(0, Math.min(120, liveRawDb)).toFixed(1)} dB
                     </span>
                   </div>
                   <div>
@@ -529,7 +537,7 @@ export function MicCalibrationWizard({
                       Peak Observed:
                     </span>{" "}
                     <span className="font-mono font-bold text-zinc-700 dark:text-zinc-200">
-                      {peakDb.toFixed(1)} dB
+                      {Math.max(0, Math.min(120, peakDb)).toFixed(1)} dB
                     </span>
                   </div>
                 </div>
@@ -696,8 +704,8 @@ export function MicCalibrationWizard({
                 </span>
                 <span className="font-mono font-black text-sm text-blue-700 dark:text-blue-300">
                   {isListening
-                    ? `${liveCalibratedDb.toFixed(1)} dB`
-                    : `${(45 + profile.offsetDb).toFixed(1)} dB (test)`}
+                    ? `${Math.max(0, Math.min(120, liveCalibratedDb)).toFixed(1)} dB`
+                    : `${Math.max(0, Math.min(120, 45 + profile.offsetDb)).toFixed(1)} dB (test)`}
                 </span>
               </div>
 

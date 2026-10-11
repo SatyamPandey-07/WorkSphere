@@ -66,36 +66,12 @@ import {
 
 // ─── Shared types (re-declared so sub-components are self-contained) ──────────
 
-export interface Venue {
-  id: string;
-  name: string;
-  lat: number;
-  lng: number;
-  category: string;
-  foodTags?: string[];
-  mealPrice?: string;
-  lunchDealSchedule?: string;
-  address?: string;
-  wifi?: boolean;
-  hasOutlets?: boolean;
-  noiseLevel?: "quiet" | "moderate" | "loud";
-  score?: number;
-  description?: string;
-  hasErgonomic?: boolean;
-  outletDensity?: string;
-  lighting?: string;
-  wifiSpeed?: number | null;
-  musicStyle?: string;
-  hasPhoneBooths?: boolean;
-  hasNoMusic?: boolean;
-  hasQuietZone?: boolean;
-  hasAncHeadsetRental?: boolean;
-  outletLocations?: string[];
-  openingHours?: string;
-  isClaimed?: boolean;
-  ownerId?: string | null;
-  hostMessage?: string | null;
-}
+import type { Venue, ClientVenue } from "@/types/venue";
+
+/**
+ * @deprecated Venue has moved to `@/types/venue`. Import Venue or ClientVenue from `@/types/venue` instead.
+ */
+export type { Venue, ClientVenue };
 
 export interface Message {
   id: string;

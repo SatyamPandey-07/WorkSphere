@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import { useMeshCanvasWhiteboard } from "@/hooks/useMeshCanvasWhiteboard";
 import { CanvasToolbar } from "@/components/whiteboard/CanvasToolbar";
 import { DrawingCanvas } from "@/components/whiteboard/DrawingCanvas";
 import { RemoteCursors } from "@/components/whiteboard/RemoteCursors";
 import { StickyNotes } from "@/components/whiteboard/StickyNotes";
+import { KeyboardShortcutModal } from "@/components/whiteboard/KeyboardShortcutModal";
+import {
+  exportCanvasAsPng,
+  exportCanvasAsSvg,
+} from "@/lib/whiteboard/canvasExport";
 
 interface CanvasWhiteboardProps {
   canvasId: string;
@@ -21,6 +26,7 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
     : "#ffffff";
 
   const userAvatar = user?.imageUrl;
+  const [isShortcutModalOpen, setIsShortcutModalOpen] = useState(false);
 
   const {
     shapeSnapshots,
@@ -64,6 +70,60 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
     setTool("pen");
   }, [clearCanvas, setTool]);
 
+  const handleExportPNG = useCallback((ratio?: 1 | 2 | 4) => {
+    exportCanvasAsPng(shapeSnapshots, {
+      pixelRatio: ratio ?? 2,
+      filename: `whiteboard-${canvasId || "export"}-${Date.now()}.png`,
+    });
+  }, [shapeSnapshots, canvasId]);
+
+  const handleExportSVG = useCallback(() => {
+    exportCanvasAsSvg(shapeSnapshots, {
+      filename: `whiteboard-${canvasId || "export"}-${Date.now()}.svg`,
+    });
+  }, [shapeSnapshots, canvasId]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore keystrokes inside text inputs, textareas or contenteditable
+      const target = e.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      // Toggle shortcut modal on '?' or Shift + '/'
+      if (e.key === "?" || (e.shiftKey && e.key === "/")) {
+        e.preventDefault();
+        setIsShortcutModalOpen((prev) => !prev);
+        return;
+      }
+
+      // Check for hotkeys when no modifier keys (except shift if applicable)
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        const key = e.key.toLowerCase();
+        if (key === "p") {
+          e.preventDefault();
+          setTool("pen");
+        } else if (key === "e") {
+          e.preventDefault();
+          setTool("eraser");
+        } else if (key === "n") {
+          e.preventDefault();
+          setTool("sticky");
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [setTool]);
+
   return (
     <div className="relative flex flex-col gap-3">
       <div className="flex justify-center">
@@ -81,6 +141,9 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
           onUndo={undo}
           onRedo={redo}
           onClear={handleClear}
+          onOpenShortcuts={() => setIsShortcutModalOpen(true)}
+          onExportPNG={handleExportPNG}
+          onExportSVG={handleExportSVG}
         />
       </div>
 
@@ -102,6 +165,11 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
           onUpdate={handleUpdateShape}
         />
       </div>
+
+      <KeyboardShortcutModal
+        isOpen={isShortcutModalOpen}
+        onClose={() => setIsShortcutModalOpen(false)}
+      />
     </div>
   );
 }

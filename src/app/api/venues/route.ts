@@ -158,6 +158,8 @@ export async function GET(req: NextRequest) {
       }
 
       if (queryParam) {
+        const semanticWeightParam = searchParams.get("semanticWeight");
+        const fullTextWeightParam = searchParams.get("fullTextWeight");
         const ranked = await searchVenuesWithRrf(queryParam, {
           minLat:
             minLatParam !== null && Number.isFinite(Number(minLatParam))
@@ -176,6 +178,14 @@ export async function GET(req: NextRequest) {
               ? Number(maxLngParam)
               : undefined,
           cities: citiesParam ? splitSearchList(citiesParam) : undefined,
+          semanticWeight:
+            semanticWeightParam !== null && Number.isFinite(Number(semanticWeightParam))
+              ? Number(semanticWeightParam)
+              : undefined,
+          fullTextWeight:
+            fullTextWeightParam !== null && Number.isFinite(Number(fullTextWeightParam))
+              ? Number(fullTextWeightParam)
+              : undefined,
         });
         const rankedIds = ranked.map(({ id }) => id);
         const matchingVenues = rankedIds.length
@@ -203,6 +213,13 @@ export async function GET(req: NextRequest) {
             totalPages: Math.ceil(total / limit),
             hasNextPage: skip + venues.length < total,
           },
+          fuzzyMatched: Boolean(ranked.fuzzyMatched),
+          ...(ranked.suggestedQuery
+            ? {
+                suggestedQuery: ranked.suggestedQuery,
+                notice: `Showing results for ${ranked.suggestedQuery}`,
+              }
+            : {}),
         });
       }
 
@@ -267,6 +284,8 @@ export async function GET(req: NextRequest) {
       "maxLat",
       "minLng",
       "maxLng",
+      "semanticWeight",
+      "fullTextWeight",
     ];
     for (const key of keys) {
       const val = searchParams.get(key);
@@ -449,6 +468,8 @@ export async function GET(req: NextRequest) {
     const querySearch = rawData.query || rawData.q;
     let total: number;
     let venues: any[];
+    let fuzzyMatched = false;
+    let suggestedQuery: string | undefined;
 
     if (querySearch) {
       const ranked = await searchVenuesWithRrf(querySearch, {
@@ -459,6 +480,17 @@ export async function GET(req: NextRequest) {
         category: where.category,
         cities: rawData.cities ? splitSearchList(String(rawData.cities)) : undefined,
       });
+        semanticWeight:
+          rawData.semanticWeight !== undefined && Number.isFinite(Number(rawData.semanticWeight))
+            ? Number(rawData.semanticWeight)
+            : undefined,
+        fullTextWeight:
+          rawData.fullTextWeight !== undefined && Number.isFinite(Number(rawData.fullTextWeight))
+            ? Number(rawData.fullTextWeight)
+            : undefined,
+      });
+      fuzzyMatched = Boolean(ranked.fuzzyMatched);
+      suggestedQuery = ranked.suggestedQuery;
       const rankedIds = ranked.map(({ id }) => id);
       const matchingVenues = rankedIds.length
         ? await prisma.venue.findMany({
@@ -531,6 +563,8 @@ export async function GET(req: NextRequest) {
 
       const matchedFuzzy = fuzzyFilterVenues(allCandidates, querySearch);
       if (matchedFuzzy.length > 0) {
+        fuzzyMatched = true;
+        suggestedQuery = matchedFuzzy[0]?.name;
         total = matchedFuzzy.length;
         const pageItems = matchedFuzzy.slice(skip, skip + limit);
         const pageIds = pageItems.map((v) => v.id);
@@ -565,6 +599,13 @@ export async function GET(req: NextRequest) {
         totalPages: Math.ceil(total / limit),
         hasNextPage: skip + venues.length < total,
       },
+      fuzzyMatched: Boolean(fuzzyMatched),
+      ...(suggestedQuery
+        ? {
+            suggestedQuery,
+            notice: `Showing results for ${suggestedQuery}`,
+          }
+        : {}),
     });
   } catch (error) {
     console.error("GET /api/venues error:", error);

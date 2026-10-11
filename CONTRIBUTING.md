@@ -26,12 +26,48 @@ To keep the repository clean and manageable, please follow this flow:
 
 1. **Fork** the repository and clone it locally.
 2. **Create a branch** using a descriptive naming convention:
-   - `feature/your-feature-name` for new features.
-   - `bugfix/issue-description` for bug fixes.
+   - `feat/your-feature-name` for new features.
+   - `fix/issue-description` for bug fixes.
    - `docs/topic-name` for documentation updates.
+   - `refactor/topic-name` for code restructuring without behavior changes.
+   - `test/topic-name` for test-related changes.
+
+   Use lowercase words separated by hyphens, and keep the branch name short and descriptive.
 3. **Write code** and ensure all [testing](#3-testing-conventions-jest--rtl) and [pre-commit checks](#5-pre-commit-quality-verification-checklist) pass.
 4. **Commit** your changes with clear, structured commit messages (e.g., `feat: add map route coordinates validation`). See below for detailed commit formatting rules.
 5. **Push** to your fork and open a **Pull Request (PR)** against the `main` branch. Ensure the PR title adheres to the strict formatting rules outlined in Section 1.2.
+
+### Recommended Terminal Workflow
+
+Use the following commands as a guide. Replace the example branch name with the branch for your task.
+
+```bash
+# 1. Get the latest repository changes
+git fetch upstream
+git switch main
+git rebase upstream/main
+
+# 2. Create a branch for your issue
+git switch -c docs/contributing-guide
+
+# 3. Review your changes
+git status
+git diff
+git diff --check
+
+# 4. Stage and commit your documentation changes
+git add CONTRIBUTING.md
+git commit -m "docs: improve contributing guide"
+
+# 5. Push your branch to your fork
+git push -u origin docs/contributing-guide
+```
+
+Before starting work, claim an available issue by commenting `/claim` on GitHub and wait for the assignment confirmation. If the `upstream` remote is not configured, add it with:
+
+```bash
+git remote add upstream https://github.com/SatyamPandey-07/WorkSphere.git
+```
 
 ### 1.1 OSCI'26 Issue Assignment & Claiming Policy (/claim)
 

@@ -17,10 +17,19 @@ import {
   type CanvasWhiteboardState,
   type WhiteboardParticipant,
   type UseCanvasWhiteboardOptions,
-  PRESET_COLORS,
+  PARTYKIT_HOST,
   IDLE_TIMEOUT_MS,
   HEARTBEAT_INTERVAL_MS,
-} from "@/hooks/useCanvasWhiteboard";
+  getDefaultColor,
+  shapeMapToData,
+  applyShapePointsToDoc,
+  addShapeToDoc,
+  updateShapeInDoc,
+  deleteShapeInDoc,
+  clearCanvasInDoc,
+  extractAwarenessUsers,
+  useStrokeBuffer,
+} from "@/lib/whiteboard/whiteboardCore";
 
 /**
  * Latency instrumentation for Issue #1318 mesh sync benchmarking.
@@ -29,34 +38,6 @@ import {
  * Tests and benchmarks can read these entries to measure round-trip latency.
  */
 export const meshSendTimestamps = new Map<string, number>();
-
-const PARTYKIT_HOST = process.env.NEXT_PUBLIC_PARTYKIT_URL ?? "127.0.0.1:1999";
-
-function getDefaultColor(index: number): string {
-  return PRESET_COLORS[index % PRESET_COLORS.length];
-}
-
-function shapeMapToData(map: Y.Map<unknown>): ShapeData {
-  const isDeleted = (map.get("deleted") as boolean) ?? false;
-  const deletedAt = map.get("deletedAt") as number | undefined;
-  const updatedAt = map.get("updatedAt") as number | undefined;
-  const clock = (map.get("clock") as number) ?? updatedAt ?? deletedAt;
-
-  return {
-    id: map.get("id") as string,
-    type: map.get("type") as ToolType,
-    points: (map.get("points") as number[]) ?? [],
-    color: map.get("color") as string,
-    width: map.get("width") as number,
-    opacity: map.get("opacity") as number,
-    userId: map.get("userId") as string,
-    deleted: isDeleted,
-    deletedAt,
-    updatedAt,
-    clock,
-    text: map.get("text") as string | undefined,
-  };
-}
 
 export function useMeshCanvasWhiteboard(
   canvasId: string | null,
@@ -78,12 +59,6 @@ export function useMeshCanvasWhiteboard(
   // synchronous doc update handler (avoids stale closure over mesh.isConnected).
   const meshConnectedRef = useRef<boolean>(false);
 
-  // Issue #4918: Buffer raw stroke coordinate points to throttle broadcasts to 60fps
-  const strokeBufferRef = useRef<Map<string, number[]>>(new Map());
-  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rafIdRef = useRef<number | null>(null);
-  const lastDispatchTimeRef = useRef<number>(0);
-
   const [shapeSnapshots, setShapeSnapshots] = useState<ShapeData[]>([]);
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
   const [participants, setParticipants] = useState<WhiteboardParticipant[]>([]);
@@ -100,42 +75,6 @@ export function useMeshCanvasWhiteboard(
   const userAvatar = options?.userAvatar;
   const localUserId = options?.userId ?? "anonymous";
 
-  const meshRoomId = canvasId ? `canvas-${canvasId}` : "canvas-none";
-
-  const onMeshData = useCallback((peerId: string, data: ArrayBuffer) => {
-    const doc = docRef.current;
-    if (!doc) return;
-    try {
-      const rawUpdate = new Uint8Array(data);
-      const decompressed = decompressYjsUpdate(rawUpdate);
-      Y.applyUpdate(doc, decompressed, "mesh");
-    } catch (err) {
-      console.warn("Failed to apply mesh update from", peerId, err);
-    }
-  }, []);
-
-  const mesh = useMeshDataChannels({
-    roomId: meshRoomId,
-    userId: localUserId !== "anonymous" ? localUserId : null,
-    onData: onMeshData,
-  });
-
-  // Issue #1318: Keep meshConnectedRef in sync with the reactive mesh state
-  // so the doc update handler always reads the latest connectivity status.
-  useEffect(() => {
-    meshConnectedRef.current = mesh.isConnected;
-  }, [mesh.isConnected]);
-
-  useEffect(() => {
-    if (!canvasId) return;
-
-    if (typeof getToken === "function") {
-      getToken()
-        .then((t: any) => setToken(t ?? null))
-        .catch(() => setToken(null));
-    }
-  }, [canvasId, getToken]);
-
   const touchActivity = useCallback(() => {
     lastActiveAtRef.current = Date.now();
     const p = providerRef.current;
@@ -151,6 +90,82 @@ export function useMeshCanvasWhiteboard(
     }
   }, []);
 
+  // WebRTC mesh data channel integration
+  const mesh = useMeshDataChannels({
+    channelName: canvasId ? `mesh-${canvasId}` : null,
+    onData: (payload: unknown) => {
+      if (
+        !payload ||
+        typeof payload !== "object" ||
+        (payload as { type?: string }).type !== "yjs-update"
+      ) {
+        return;
+      }
+
+      const msg = payload as {
+        type: "yjs-update";
+        update: string;
+        compressed?: boolean;
+        updateId?: string;
+        sentAt?: number;
+      };
+
+      if (typeof msg.update !== "string") return;
+
+      const doc = docRef.current;
+      if (!doc) return;
+
+      try {
+        const updateBinary =
+          msg.compressed === false
+            ? Uint8Array.from(atob(msg.update), (c) => c.charCodeAt(0))
+            : decompressYjsUpdate(msg.update);
+
+        if (msg.updateId && meshSendTimestamps.has(msg.updateId)) {
+          meshSendTimestamps.set(msg.updateId, performance.now());
+        }
+
+        Y.applyUpdate(doc, updateBinary, "mesh");
+      } catch (err) {
+        console.error(
+          "[useMeshCanvasWhiteboard] failed to apply mesh update:",
+          err,
+        );
+      }
+    },
+  });
+
+  meshConnectedRef.current = mesh.isConnected;
+
+  useEffect(() => {
+    if (!canvasId) return;
+
+    getToken()
+      .then((t) => setToken(t ?? null))
+      .catch(() => setToken(null));
+  }, [canvasId, getToken]);
+
+  // Stroke point applier shared between buffered & immediate dispatch
+  const applyShapePoints = useCallback(
+    (id: string, points: number[]) => {
+      applyShapePointsToDoc(
+        shapesRef.current,
+        docRef.current,
+        id,
+        points,
+        localUserId,
+      );
+    },
+    [localUserId],
+  );
+
+  const {
+    strokeBufferRef,
+    flushStrokeBuffer,
+    broadcastStroke,
+    bufferStrokePoints,
+  } = useStrokeBuffer({ onApplyPoints: applyShapePoints });
+
   useEffect(() => {
     if (!canvasId || token === undefined) return;
 
@@ -163,7 +178,6 @@ export function useMeshCanvasWhiteboard(
 
     try {
       newProvider = new YProvider(PARTYKIT_HOST, roomId, doc, {
-
         params: token ? { token } : {},
       });
 
@@ -181,111 +195,72 @@ export function useMeshCanvasWhiteboard(
         if (status === "disconnected") {
           failoverSync.handleDisconnect();
           setIsConnected(false);
-        } else if (status === "connected") {
-          const sendFn = (msg: string) => {
-            if (newProvider?.ws) {
-              newProvider.ws.send(msg);
-            }
-          };
-          failoverSync.handleConnect(sendFn, roomId);
         }
       };
+      newProvider.on("status", handleStatus);
 
       handleSync = (synced: boolean) => {
-        if (synced && failoverSync.getStatus() !== "syncing_snapshot") {
+        if (synced) {
+          failoverSync.handleSync();
           setIsConnected(true);
         }
       };
-
-      newProvider.on("status", handleStatus);
       newProvider.on("sync", handleSync);
-    } catch (err) {
-      console.warn("YProvider connection initialization deferred:", err);
+    } catch (e) {
+      console.error("[useMeshCanvasWhiteboard] failed to create provider:", e);
     }
 
     const shapes = doc.getArray<Y.Map<unknown>>("shapes");
     shapesRef.current = shapes;
 
     const updateSnapshots = () => {
-      const activeShapes: ShapeData[] = [];
-      for (const map of shapes.toArray()) {
-        const data = shapeMapToData(map);
-        const isDeleted = (map.get("deleted") as boolean) ?? false;
-        const delClock =
-          (map.get("deletedAt") as number) ??
-          (map.get("clock") as number) ??
-          0;
-        const editClock = (map.get("updatedAt") as number) ?? 0;
-        if (!isDeleted || editClock > delClock) {
-          activeShapes.push(data);
-        }
+      const items: ShapeData[] = [];
+      for (let i = 0; i < shapes.length; i++) {
+        items.push(shapeMapToData(shapes.get(i)));
       }
-      setShapeSnapshots(activeShapes);
+      setShapeSnapshots(items);
     };
+
     shapes.observeDeep(updateSnapshots);
     updateSnapshots();
 
+    // Hook up local Yjs update distribution via WebRTC Data Channels
+    const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+      if (origin === "mesh") return;
+
+      if (meshConnectedRef.current) {
+        const updateId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        meshSendTimestamps.set(updateId, performance.now());
+
+        const compressedBase64 = compressYjsUpdate(update);
+        mesh.sendToAll({
+          type: "yjs-update",
+          update: compressedBase64,
+          compressed: true,
+          updateId,
+          sentAt: Date.now(),
+        });
+      }
+    };
+
+    doc.on("update", handleDocUpdate);
+    unsubDocUpdateRef.current = () => {
+      doc.off("update", handleDocUpdate);
+    };
+
     const um = new Y.UndoManager(shapes, {
-      captureTimeout: 500,
       trackedOrigins: new Set([localUserId]),
     });
     undoManagerRef.current = um;
 
     const updateUndoState = () => {
-      setCanUndo(um.undoStack.length > 0);
-      setCanRedo(um.redoStack.length > 0);
+      setCanUndo(um.canUndo());
+      setCanRedo(um.canRedo());
     };
+
     um.on("stack-item-added", updateUndoState);
     um.on("stack-item-popped", updateUndoState);
     updateUndoState();
-
-    // Issue #1318: Conditional mesh routing with PartyKit fallback.
-    // Local user edits (origin === localUserId) are sent through the mesh
-    // when WebRTC is connected. Updates from remote sources ("mesh" or the
-    // y-partykit provider) are never re-broadcast to prevent echo loops.
-    // PartyKit (y-partykit) always remains active as the authoritative sync
-    // channel — we do NOT suppress it when mesh is available, per the
-    // dual-path architecture described in the spec.
-    const sendToAll = mesh.sendToAll;
-    const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
-      // Never re-broadcast updates received from the mesh
-      if (origin === "mesh") return;
-
-      // Only send local edits through the mesh (direct user actions or local undo/redo);
-      // updates arriving from the y-partykit provider (or any other remote origin)
-      // are not re-relayed to avoid duplicate delivery and echo loops.
-      if (origin !== localUserId && origin !== um) return;
-
-      // Issue #1318: Route through mesh when WebRTC channels are open
-      if (meshConnectedRef.current) {
-        const compressed = compressYjsUpdate(update);
-        // Record send timestamp for latency benchmarking (Issue #1318)
-        const tsKey = `${Date.now()}-${update.byteLength}`;
-        meshSendTimestamps.set(tsKey, performance.now());
-        // Trim old entries to prevent memory leak in long sessions
-        if (meshSendTimestamps.size > 1000) {
-          const firstKey = meshSendTimestamps.keys().next().value;
-          if (firstKey !== undefined) meshSendTimestamps.delete(firstKey);
-        }
-        const exactBuffer = (
-          compressed.byteOffset === 0 &&
-          compressed.byteLength === compressed.buffer.byteLength
-            ? compressed.buffer
-            : compressed.buffer.slice(
-                compressed.byteOffset,
-                compressed.byteOffset + compressed.byteLength,
-              )
-        ) as ArrayBuffer;
-        sendToAll(exactBuffer);
-      }
-      // PartyKit provider is always active and independently syncs the
-      // same Y.Doc, so no explicit fallback send is needed here — the
-      // y-partykit provider's own update observer handles it.
-    };
-    doc.on("update", handleDocUpdate);
-    unsubDocUpdateRef.current = () => {
-      doc.off("update", handleDocUpdate);
-    };
 
     const awareness = newProvider?.awareness;
     const initNow = Date.now();
@@ -303,49 +278,10 @@ export function useMeshCanvasWhiteboard(
     });
 
     const handleAwarenessChange = () => {
-      if (!awareness) return;
-      const states = Array.from(awareness.getStates().entries()) as [
-        number,
-        any,
-      ][];
-      const curTime = Date.now();
-      const cursors: RemoteCursor[] = [];
-      const participantsList: WhiteboardParticipant[] = [];
-
-      for (const [clientId, state] of states) {
-        if (!state) continue;
-        const s = state as Record<string, unknown>;
-
-        if (clientId !== awareness.clientID) {
-          if (typeof s.x === "number" && typeof s.y === "number") {
-            cursors.push({
-              userId: (s.userId as string) ?? `user-${clientId}`,
-              x: s.x as number,
-              y: s.y as number,
-              name: (s.name as string) ?? "Unknown",
-              color: (s.color as string) ?? getDefaultColor(clientId),
-            });
-          }
-        }
-
-        const lastActive =
-          typeof s.lastActiveAt === "number" ? s.lastActiveAt : curTime;
-        const isIdle =
-          curTime - lastActive > IDLE_TIMEOUT_MS || s.status === "idle";
-
-        participantsList.push({
-          clientId,
-          userId:
-            (s.userId as string) ??
-            (clientId === awareness.clientID ? localUserId : `user-${clientId}`),
-          name: (s.name as string) ?? "Unknown",
-          avatar: typeof s.avatar === "string" ? s.avatar : undefined,
-          color: (s.color as string) ?? getDefaultColor(clientId),
-          lastActiveAt: lastActive,
-          status: isIdle ? "idle" : "active",
-        });
-      }
-
+      const { cursors, participants: participantsList } = extractAwarenessUsers(
+        awareness,
+        localUserId,
+      );
       setRemoteCursors(cursors);
       setParticipants(participantsList);
     };
@@ -369,6 +305,9 @@ export function useMeshCanvasWhiteboard(
     }, HEARTBEAT_INTERVAL_MS);
 
     return () => {
+      flushStrokeBuffer();
+      strokeBufferRef.current.clear();
+
       clearInterval(heartbeatTimer);
       shapes.unobserveDeep(updateSnapshots);
       awareness?.off("change", handleAwarenessChange);
@@ -394,167 +333,16 @@ export function useMeshCanvasWhiteboard(
     userAvatar,
     localUserId,
     mesh.sendToAll,
+    flushStrokeBuffer,
+    strokeBufferRef,
   ]);
 
   const addShape = useCallback(
     (data: ShapeData) => {
       touchActivity();
-      const shapes = shapesRef.current;
-      const doc = docRef.current;
-      if (!shapes || !doc) return;
-
-      const now = data.clock ?? data.updatedAt ?? Date.now();
-
-      doc.transact(() => {
-        for (let i = 0; i < shapes.length; i++) {
-          const map = shapes.get(i);
-          if (map.get("id") === data.id) {
-            const isDeleted = (map.get("deleted") as boolean) ?? false;
-            const delClock =
-              (map.get("deletedAt") as number) ??
-              (map.get("clock") as number) ??
-              0;
-            if (!isDeleted || now > delClock) {
-              map.set("type", data.type);
-              map.set("points", data.points.slice());
-              map.set("color", data.color);
-              map.set("width", data.width);
-              map.set("opacity", data.opacity);
-              map.set("userId", data.userId);
-              if (data.text !== undefined) map.set("text", data.text);
-              map.set("deleted", false);
-              map.set("updatedAt", now);
-              map.set("clock", now);
-            }
-            return;
-          }
-        }
-
-        const map = new Y.Map<unknown>();
-        map.set("id", data.id);
-        map.set("type", data.type);
-        map.set("points", data.points.slice());
-        map.set("color", data.color);
-        map.set("width", data.width);
-        map.set("opacity", data.opacity);
-        map.set("userId", data.userId);
-        if (data.text !== undefined) map.set("text", data.text);
-        map.set("deleted", false);
-        map.set("updatedAt", now);
-        map.set("clock", now);
-        shapes.push([map]);
-      }, localUserId);
+      addShapeToDoc(shapesRef.current, docRef.current, data, localUserId);
     },
-    [localUserId],
-  );
-
-  const applyShapePoints = useCallback(
-    (id: string, points: number[]) => {
-      const shapes = shapesRef.current;
-      const doc = docRef.current;
-      if (!shapes || !doc) return;
-      const now = Date.now();
-
-      doc.transact(() => {
-        for (let i = 0; i < shapes.length; i++) {
-          const map = shapes.get(i);
-          if (map.get("id") === id) {
-            const isDeleted = (map.get("deleted") as boolean) ?? false;
-            const delClock = (map.get("deletedAt") as number) ?? 0;
-            const curClock =
-              (map.get("clock") as number) ??
-              (map.get("updatedAt") as number) ??
-              0;
-
-            if (isDeleted && now <= delClock) return;
-            if (now < curClock) return;
-
-            map.set("points", points.slice());
-            map.set("updatedAt", now);
-            map.set("clock", now);
-            break;
-          }
-        }
-      }, localUserId);
-    },
-    [localUserId],
-  );
-
-  const flushStrokeBuffer = useCallback(
-    (targetId?: string) => {
-      if (throttleTimerRef.current !== null) {
-        clearTimeout(throttleTimerRef.current);
-        throttleTimerRef.current = null;
-      }
-      if (
-        rafIdRef.current !== null &&
-        typeof cancelAnimationFrame !== "undefined"
-      ) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
-      }
-
-      const buffer = strokeBufferRef.current;
-      if (buffer.size === 0) return;
-
-      if (targetId) {
-        const points = buffer.get(targetId);
-        if (points) {
-          applyShapePoints(targetId, points);
-          buffer.delete(targetId);
-        }
-      } else {
-        buffer.forEach((points, id) => {
-          applyShapePoints(id, points);
-        });
-        buffer.clear();
-      }
-      lastDispatchTimeRef.current = Date.now();
-    },
-    [applyShapePoints],
-  );
-
-  const scheduleDispatch = useCallback(() => {
-    if (throttleTimerRef.current !== null || rafIdRef.current !== null) {
-      return;
-    }
-
-    const now = Date.now();
-    const elapsed = now - lastDispatchTimeRef.current;
-    const remaining = Math.max(0, 16 - elapsed);
-
-    if (typeof requestAnimationFrame !== "undefined" && remaining === 0) {
-      rafIdRef.current = requestAnimationFrame(() => {
-        rafIdRef.current = null;
-        flushStrokeBuffer();
-      });
-    } else {
-      throttleTimerRef.current = setTimeout(() => {
-        throttleTimerRef.current = null;
-        flushStrokeBuffer();
-      }, remaining || 16);
-    }
-  }, [flushStrokeBuffer]);
-
-  const broadcastStroke = useCallback(
-    (id: string, points: number[]) => {
-      strokeBufferRef.current.set(id, points.slice());
-      scheduleDispatch();
-    },
-    [scheduleDispatch],
-  );
-
-  const bufferStrokePoints = useCallback(
-    (id: string, points: number[]) => {
-      const existing = strokeBufferRef.current.get(id);
-      if (existing) {
-        strokeBufferRef.current.set(id, [...existing, ...points]);
-      } else {
-        strokeBufferRef.current.set(id, points.slice());
-      }
-      scheduleDispatch();
-    },
-    [scheduleDispatch],
+    [localUserId, touchActivity],
   );
 
   const updateShape = useCallback(
@@ -571,78 +359,20 @@ export function useMeshCanvasWhiteboard(
       }
 
       flushStrokeBuffer(id);
-      const shapes = shapesRef.current;
-      const doc = docRef.current;
-      if (!shapes || !doc) return;
-
-      const now = updates.clock ?? updates.updatedAt ?? Date.now();
-
-      doc.transact(() => {
-        for (let i = 0; i < shapes.length; i++) {
-          const map = shapes.get(i);
-          if (map.get("id") === id) {
-            const isDeleted = (map.get("deleted") as boolean) ?? false;
-            const delClock = (map.get("deletedAt") as number) ?? 0;
-            const curClock =
-              (map.get("clock") as number) ??
-              (map.get("updatedAt") as number) ??
-              0;
-
-            // Adopt Last-Write-Wins (LWW) element tombstone semantics:
-            // guarantee that a deletion clock always supersedes previous edits.
-            if (isDeleted && now <= delClock) {
-              return;
-            }
-            if (now < curClock) {
-              return;
-            }
-
-            if (updates.points !== undefined) {
-              map.set("points", updates.points.slice());
-            }
-            if (updates.color !== undefined) map.set("color", updates.color);
-            if (updates.width !== undefined) map.set("width", updates.width);
-            if (updates.opacity !== undefined) {
-              map.set("opacity", updates.opacity);
-            }
-            if (updates.text !== undefined) map.set("text", updates.text);
-            if (updates.deleted !== undefined) {
-              map.set("deleted", updates.deleted);
-            }
-            map.set("updatedAt", now);
-            map.set("clock", now);
-            break;
-          }
-        }
-      }, localUserId);
+      updateShapeInDoc(
+        shapesRef.current,
+        docRef.current,
+        id,
+        updates,
+        localUserId,
+      );
     },
-    [localUserId],
+    [localUserId, broadcastStroke, flushStrokeBuffer],
   );
 
   const deleteShape = useCallback(
     (id: string) => {
-      const shapes = shapesRef.current;
-      const doc = docRef.current;
-      if (!shapes || !doc) return;
-
-      const now = Date.now();
-
-      doc.transact(() => {
-        for (let i = 0; i < shapes.length; i++) {
-          const map = shapes.get(i);
-          if (map.get("id") === id) {
-            const curClock =
-              (map.get("clock") as number) ??
-              (map.get("updatedAt") as number) ??
-              0;
-            const delClock = Math.max(now, curClock + 1);
-            map.set("deleted", true);
-            map.set("deletedAt", delClock);
-            map.set("clock", delClock);
-            break;
-          }
-        }
-      }, localUserId);
+      deleteShapeInDoc(shapesRef.current, docRef.current, id, localUserId);
     },
     [localUserId],
   );
@@ -658,25 +388,7 @@ export function useMeshCanvasWhiteboard(
   const clearCanvas = useCallback(() => {
     touchActivity();
     setTool("pen");
-    const shapes = shapesRef.current;
-    const doc = docRef.current;
-    if (!shapes || !doc || shapes.length === 0) return;
-
-    const now = Date.now();
-
-    doc.transact(() => {
-      for (let i = 0; i < shapes.length; i++) {
-        const map = shapes.get(i);
-        const curClock =
-          (map.get("clock") as number) ??
-          (map.get("updatedAt") as number) ??
-          0;
-        const delClock = Math.max(now, curClock + 1);
-        map.set("deleted", true);
-        map.set("deletedAt", delClock);
-        map.set("clock", delClock);
-      }
-    }, localUserId);
+    clearCanvasInDoc(shapesRef.current, docRef.current, localUserId);
   }, [localUserId, touchActivity, setTool]);
 
   const updateCursor = useCallback(
@@ -726,3 +438,5 @@ export function useMeshCanvasWhiteboard(
     updateCursor,
   };
 }
+
+export default useMeshCanvasWhiteboard;

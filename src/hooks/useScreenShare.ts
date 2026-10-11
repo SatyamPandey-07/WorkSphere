@@ -294,6 +294,59 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
     socketRef.current = socket;
   }, [socket]);
 
+  // Throttle frame rate to 1fps or pause video transmission when document visibility state transitions to hidden (#5487)
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const handleVisibilityChange = async () => {
+      const isHidden = document.visibilityState === "hidden";
+
+      // Throttle or pause sender tracks on all active peer connections
+      for (const pc of peersRef.current.values()) {
+        if (pc.signalingState === "closed" || pc.connectionState === "closed") continue;
+
+        try {
+          const senders = pc.getSenders ? pc.getSenders() : [];
+          for (const sender of senders) {
+            if (sender.track && sender.track.kind === "video") {
+              const params = sender.getParameters ? sender.getParameters() : null;
+              if (params && params.encodings && params.encodings.length > 0) {
+                params.encodings.forEach((enc) => {
+                  enc.maxFramerate = isHidden ? 1 : 15;
+                  if (isHidden) {
+                    enc.maxBitrate = 50_000; // 50 kbps background limit
+                  } else {
+                    delete enc.maxBitrate;
+                  }
+                });
+                await sender.setParameters(params).catch(() => {});
+              }
+            }
+          }
+        } catch {
+          // Ignore unsupported setParameters
+        }
+      }
+
+      // If local stream video track is active, adjust constraints where possible
+      const localVideoTrack = localStreamRef.current?.getVideoTracks()[0];
+      if (localVideoTrack && typeof localVideoTrack.applyConstraints === "function") {
+        try {
+          await localVideoTrack.applyConstraints({
+            frameRate: isHidden ? { max: 1 } : { ideal: 15, max: 30 },
+          }).catch(() => {});
+        } catch {
+          // Ignore unsupported applyConstraints
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
+
   useEffect(() => {
     return () => {
       cleanupAll();

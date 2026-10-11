@@ -5,144 +5,50 @@ import { useAuth } from "@clerk/nextjs";
 import * as Y from "yjs";
 import YProvider from "y-partykit/provider";
 import { FailoverSyncManager } from "@/lib/edge/failoverSync";
+import {
+  type ToolType,
+  type ShapeData,
+  type RemoteCursor,
+  type WhiteboardParticipant,
+  type CanvasWhiteboardState,
+  type ColorSwatch,
+  type StrokeHistoryAction,
+  type UseCanvasWhiteboardOptions,
+  PARTYKIT_HOST,
+  IDLE_TIMEOUT_MS,
+  HEARTBEAT_INTERVAL_MS,
+  WHITEBOARD_COLOR_SWATCHES,
+  PRESET_COLORS,
+  WHITEBOARD_COLORS,
+  getDefaultColor,
+  shapeMapToData,
+  applyShapePointsToDoc,
+  addShapeToDoc,
+  updateShapeInDoc,
+  deleteShapeInDoc,
+  clearCanvasInDoc,
+  extractAwarenessUsers,
+  useStrokeBuffer,
+} from "@/lib/whiteboard/whiteboardCore";
 
-export type ToolType = "pen" | "eraser" | "rect" | "circle" | "line" | "sticky";
-
-export interface ShapeData {
-  id: string;
-  type: ToolType;
-  points: number[];
-  color: string;
-  width: number;
-  opacity: number;
-  userId: string;
-  deleted?: boolean;
-  deletedAt?: number;
-  updatedAt?: number;
-  clock?: number;
-  text?: string;
-}
-
-export interface RemoteCursor {
-  userId: string;
-  x: number;
-  y: number;
-  name: string;
-  color: string;
-}
-
-export interface WhiteboardParticipant {
-  clientId: number;
-  userId: string;
-  name: string;
-  avatar?: string;
-  color: string;
-  lastActiveAt: number;
-  status: "active" | "idle";
-}
-
-export interface CanvasWhiteboardState {
-  addShape: (shape: ShapeData) => void;
-  updateShape: (id: string, updates: Partial<ShapeData>) => void;
-  deleteShape?: (id: string) => void;
-  broadcastStroke: (id: string, points: number[]) => void;
-  bufferStrokePoints?: (id: string, points: number[]) => void;
-  flushStrokeBuffer?: (id?: string) => void;
-  shapeSnapshots: ShapeData[];
-  remoteCursors: RemoteCursor[];
-  participants: WhiteboardParticipant[];
-  tool: ToolType;
-  color: string;
-  colors?: readonly string[];
-  strokeWidth: number;
-  isConnected: boolean;
-  provider: YProvider | null;
-  yDoc: Y.Doc | null;
-  setTool: (tool: ToolType) => void;
-  setColor: (color: string) => void;
-  setStrokeWidth: (width: number) => void;
-  undo: () => void;
-  redo: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  clearCanvas: () => void;
-  updateCursor: (x: number, y: number) => void;
-}
-
-const PARTYKIT_HOST = process.env.NEXT_PUBLIC_PARTYKIT_URL ?? "127.0.0.1:1999";
-
-/**
- * Inactivity timeout before marking a participant as idle (#3471).
- */
-export const IDLE_TIMEOUT_MS = 45000;
-
-/**
- * Periodic interval checking local and remote participant idle state (#3471).
- */
-export const HEARTBEAT_INTERVAL_MS = 5000;
-
-/**
- * 60fps throttle window (~16.6ms) for stroke point dispatch buffering (#4918).
- */
-export const THROTTLE_INTERVAL_MS = 16;
-
-export interface ColorSwatch {
-  name: string;
-  hex: string;
-}
-
-export const WHITEBOARD_COLOR_SWATCHES: readonly ColorSwatch[] = [
-  { name: "Black", hex: "#000000" },
-  { name: "Indigo", hex: "#6366f1" },
-  { name: "Blue", hex: "#3b82f6" },
-  { name: "Emerald", hex: "#10b981" },
-  { name: "Amber", hex: "#f59e0b" },
-  { name: "Rose", hex: "#f43f5e" },
-  { name: "Purple", hex: "#a855f7" },
-  { name: "Orange", hex: "#f97316" },
-] as const;
-
-export const PRESET_COLORS = WHITEBOARD_COLOR_SWATCHES.map((s) => s.hex);
-
-export const WHITEBOARD_COLORS = PRESET_COLORS;
-
-function getDefaultColor(index: number): string {
-  return PRESET_COLORS[index % PRESET_COLORS.length];
-}
-
-function shapeMapToData(map: Y.Map<unknown>): ShapeData {
-  const isDeleted = (map.get("deleted") as boolean) ?? false;
-  const deletedAt = map.get("deletedAt") as number | undefined;
-  const updatedAt = map.get("updatedAt") as number | undefined;
-  const clock = (map.get("clock") as number) ?? updatedAt ?? deletedAt;
-
-  return {
-    id: map.get("id") as string,
-    type: map.get("type") as ToolType,
-    points: (map.get("points") as number[]) ?? [],
-    color: map.get("color") as string,
-    width: map.get("width") as number,
-    opacity: map.get("opacity") as number,
-    userId: map.get("userId") as string,
-    deleted: isDeleted,
-    deletedAt,
-    updatedAt,
-    clock,
-  };
-}
-
-export type StrokeHistoryAction =
-  | { type: "add"; shape: ShapeData }
-  | { type: "update"; id: string; prev: ShapeData; next: Partial<ShapeData> }
-  | { type: "delete"; shape: ShapeData }
-  | { type: "clear"; shapes: ShapeData[] };
-
-export interface UseCanvasWhiteboardOptions {
-  userName?: string;
-  userColor?: string;
-  userId?: string;
-  userAvatar?: string;
-}
+export {
+  type ToolType,
+  type ShapeData,
+  type RemoteCursor,
+  type WhiteboardParticipant,
+  type CanvasWhiteboardState,
+  type ColorSwatch,
+  type StrokeHistoryAction,
+  type UseCanvasWhiteboardOptions,
+  PARTYKIT_HOST,
+  IDLE_TIMEOUT_MS,
+  HEARTBEAT_INTERVAL_MS,
+  WHITEBOARD_COLOR_SWATCHES,
+  PRESET_COLORS,
+  WHITEBOARD_COLORS,
+  getDefaultColor,
+  shapeMapToData,
+};
 
 export function useCanvasWhiteboard(
   canvasId: string | null,
@@ -161,12 +67,6 @@ export function useCanvasWhiteboard(
 
   const localUndoStackRef = useRef<StrokeHistoryAction[]>([]);
   const localRedoStackRef = useRef<StrokeHistoryAction[]>([]);
-
-  // Issue #4918: Buffer raw stroke coordinate points to throttle WebSocket broadcasts to 60fps (16ms)
-  const strokeBufferRef = useRef<Map<string, number[]>>(new Map());
-  const throttleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rafIdRef = useRef<number | null>(null);
-  const lastDispatchTimeRef = useRef<number>(0);
 
   const [shapeSnapshots, setShapeSnapshots] = useState<ShapeData[]>([]);
   const [remoteCursors, setRemoteCursors] = useState<RemoteCursor[]>([]);
@@ -220,6 +120,35 @@ export function useCanvasWhiteboard(
       .catch(() => setToken(null));
   }, [canvasId, getToken]);
 
+  // Stroke point applier shared between buffered & immediate dispatch
+  const applyShapePoints = useCallback(
+    (id: string, points: number[]) => {
+      const shapes = shapesRef.current;
+      const doc = docRef.current;
+      const now = Date.now();
+
+      if (shapes && doc) {
+        applyShapePointsToDoc(shapes, doc, id, points, localUserId);
+      } else {
+        setShapeSnapshots((prev) =>
+          prev.map((s) =>
+            s.id === id
+              ? { ...s, points: points.slice(), updatedAt: now, clock: now }
+              : s,
+          ),
+        );
+      }
+    },
+    [localUserId],
+  );
+
+  const {
+    strokeBufferRef,
+    flushStrokeBuffer,
+    broadcastStroke,
+    bufferStrokePoints,
+  } = useStrokeBuffer({ onApplyPoints: applyShapePoints });
+
   useEffect(() => {
     if (!canvasId || token === undefined) return;
 
@@ -248,52 +177,37 @@ export function useCanvasWhiteboard(
         if (status === "disconnected") {
           failoverSync.handleDisconnect();
           setIsConnected(false);
-        } else if (status === "connected") {
-          const sendFn = (msg: string) => {
-            if (newProvider?.ws) {
-              newProvider.ws.send(msg);
-            }
-          };
-          failoverSync.handleConnect(sendFn, roomId);
         }
       };
+      newProvider.on("status", handleStatus);
 
       handleSync = (synced: boolean) => {
-        if (synced && failoverSync.getStatus() !== "syncing_snapshot") {
+        if (synced) {
+          failoverSync.handleSync();
           setIsConnected(true);
         }
       };
-
-      newProvider.on("status", handleStatus);
       newProvider.on("sync", handleSync);
-    } catch (err) {
-      console.warn("YProvider connection initialization deferred:", err);
+    } catch (e) {
+      console.error("[useCanvasWhiteboard] failed to create provider:", e);
     }
 
     const shapes = doc.getArray<Y.Map<unknown>>("shapes");
     shapesRef.current = shapes;
 
     const updateSnapshots = () => {
-      const activeShapes: ShapeData[] = [];
-      for (const map of shapes.toArray()) {
-        const data = shapeMapToData(map);
-        const isDeleted = (map.get("deleted") as boolean) ?? false;
-        const delClock =
-          (map.get("deletedAt") as number) ??
-          (map.get("clock") as number) ??
-          0;
-        const editClock = (map.get("updatedAt") as number) ?? 0;
-        if (!isDeleted || editClock > delClock) {
-          activeShapes.push(data);
-        }
+      const items: ShapeData[] = [];
+      for (let i = 0; i < shapes.length; i++) {
+        items.push(shapeMapToData(shapes.get(i)));
       }
-      setShapeSnapshots(activeShapes);
+      setShapeSnapshots(items);
+      updateUndoState();
     };
+
     shapes.observeDeep(updateSnapshots);
     updateSnapshots();
 
     const um = new Y.UndoManager(shapes, {
-      captureTimeout: 500,
       trackedOrigins: new Set([localUserId]),
     });
     undoManagerRef.current = um;
@@ -321,49 +235,10 @@ export function useCanvasWhiteboard(
     });
 
     const handleAwarenessChange = () => {
-      if (!awareness) return;
-      const states = Array.from(awareness.getStates().entries()) as [
-        number,
-        any,
-      ][];
-      const curTime = Date.now();
-      const cursors: RemoteCursor[] = [];
-      const participantsList: WhiteboardParticipant[] = [];
-
-      for (const [clientId, state] of states) {
-        if (!state) continue;
-        const s = state as Record<string, unknown>;
-
-        if (clientId !== awareness.clientID) {
-          if (typeof s.x === "number" && typeof s.y === "number") {
-            cursors.push({
-              userId: (s.userId as string) ?? `user-${clientId}`,
-              x: s.x as number,
-              y: s.y as number,
-              name: (s.name as string) ?? "Unknown",
-              color: (s.color as string) ?? getDefaultColor(clientId),
-            });
-          }
-        }
-
-        const lastActive =
-          typeof s.lastActiveAt === "number" ? s.lastActiveAt : curTime;
-        const isIdle =
-          curTime - lastActive > IDLE_TIMEOUT_MS || s.status === "idle";
-
-        participantsList.push({
-          clientId,
-          userId:
-            (s.userId as string) ??
-            (clientId === awareness.clientID ? localUserId : `user-${clientId}`),
-          name: (s.name as string) ?? "Unknown",
-          avatar: typeof s.avatar === "string" ? s.avatar : undefined,
-          color: (s.color as string) ?? getDefaultColor(clientId),
-          lastActiveAt: lastActive,
-          status: isIdle ? "idle" : "active",
-        });
-      }
-
+      const { cursors, participants: participantsList } = extractAwarenessUsers(
+        awareness,
+        localUserId,
+      );
       setRemoteCursors(cursors);
       setParticipants(participantsList);
     };
@@ -387,17 +262,7 @@ export function useCanvasWhiteboard(
     }, HEARTBEAT_INTERVAL_MS);
 
     return () => {
-      if (throttleTimerRef.current !== null) {
-        clearTimeout(throttleTimerRef.current);
-        throttleTimerRef.current = null;
-      }
-      if (
-        rafIdRef.current !== null &&
-        typeof cancelAnimationFrame !== "undefined"
-      ) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
-      }
+      flushStrokeBuffer();
       strokeBufferRef.current.clear();
 
       clearInterval(heartbeatTimer);
@@ -423,6 +288,8 @@ export function useCanvasWhiteboard(
     options?.userAvatar,
     localUserId,
     updateUndoState,
+    flushStrokeBuffer,
+    strokeBufferRef,
   ]);
 
   const addShape = useCallback(
@@ -430,184 +297,24 @@ export function useCanvasWhiteboard(
       touchActivity();
       const shapes = shapesRef.current;
       const doc = docRef.current;
-      const now = data.clock ?? data.updatedAt ?? Date.now();
 
       if (shapes && doc) {
-        doc.transact(() => {
-          for (let i = 0; i < shapes.length; i++) {
-            const map = shapes.get(i);
-            if (map.get("id") === data.id) {
-              const isDeleted = (map.get("deleted") as boolean) ?? false;
-              const delClock =
-                (map.get("deletedAt") as number) ??
-                (map.get("clock") as number) ??
-                0;
-              if (!isDeleted || now > delClock) {
-                map.set("type", data.type);
-                map.set("points", data.points.slice());
-                map.set("color", data.color);
-                map.set("width", data.width);
-                map.set("opacity", data.opacity);
-                map.set("userId", data.userId);
-                map.set("deleted", false);
-                map.set("updatedAt", now);
-                map.set("clock", now);
-              }
-              return;
-            }
-          }
-
-          const map = new Y.Map<unknown>();
-          map.set("id", data.id);
-          map.set("type", data.type);
-          map.set("points", data.points.slice());
-          map.set("color", data.color);
-          map.set("width", data.width);
-          map.set("opacity", data.opacity);
-          map.set("userId", data.userId);
-          map.set("deleted", false);
-          map.set("updatedAt", now);
-          map.set("clock", now);
-          shapes.push([map]);
-        }, localUserId);
+        addShapeToDoc(shapes, doc, data, localUserId);
       } else {
         setShapeSnapshots((prev) => {
-          const filtered = prev.filter((s) => s.id !== data.id);
-          return [
-            ...filtered,
-            { ...data, deleted: false, updatedAt: now, clock: now },
-          ];
+          const exists = prev.some((s) => s.id === data.id);
+          const next = exists
+            ? prev.map((s) => (s.id === data.id ? { ...data } : s))
+            : [...prev, { ...data }];
+          return next;
         });
       }
 
-      localUndoStackRef.current.push({ type: "add", shape: { ...data } });
+      localUndoStackRef.current.push({ type: "add", shape: data });
       localRedoStackRef.current = [];
       updateUndoState();
     },
-    [localUserId, updateUndoState],
-  );
-
-  const applyShapePoints = useCallback(
-    (id: string, points: number[]) => {
-      touchActivity();
-      const shapes = shapesRef.current;
-      const doc = docRef.current;
-      const now = Date.now();
-
-      if (shapes && doc) {
-        doc.transact(() => {
-          for (let i = 0; i < shapes.length; i++) {
-            const map = shapes.get(i);
-            if (map.get("id") === id) {
-              const isDeleted = (map.get("deleted") as boolean) ?? false;
-              const delClock = (map.get("deletedAt") as number) ?? 0;
-              const curClock =
-                (map.get("clock") as number) ??
-                (map.get("updatedAt") as number) ??
-                0;
-
-              if (isDeleted && now <= delClock) {
-                return;
-              }
-              if (now < curClock) {
-                return;
-              }
-
-              map.set("points", points.slice());
-              map.set("updatedAt", now);
-              map.set("clock", now);
-              break;
-            }
-          }
-        }, localUserId);
-      } else {
-        setShapeSnapshots((prev) =>
-          prev.map((s) =>
-            s.id === id
-              ? { ...s, points: points.slice(), updatedAt: now, clock: now }
-              : s,
-          ),
-        );
-      }
-    },
-    [localUserId],
-  );
-
-  const flushStrokeBuffer = useCallback(
-    (targetId?: string) => {
-      if (throttleTimerRef.current !== null) {
-        clearTimeout(throttleTimerRef.current);
-        throttleTimerRef.current = null;
-      }
-      if (
-        rafIdRef.current !== null &&
-        typeof cancelAnimationFrame !== "undefined"
-      ) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
-      }
-
-      const buffer = strokeBufferRef.current;
-      if (buffer.size === 0) return;
-
-      if (targetId) {
-        const points = buffer.get(targetId);
-        if (points) {
-          applyShapePoints(targetId, points);
-          buffer.delete(targetId);
-        }
-      } else {
-        buffer.forEach((points, id) => {
-          applyShapePoints(id, points);
-        });
-        buffer.clear();
-      }
-      lastDispatchTimeRef.current = Date.now();
-    },
-    [applyShapePoints],
-  );
-
-  const scheduleDispatch = useCallback(() => {
-    if (throttleTimerRef.current !== null || rafIdRef.current !== null) {
-      return;
-    }
-
-    const now = Date.now();
-    const elapsed = now - lastDispatchTimeRef.current;
-    const remaining = Math.max(0, THROTTLE_INTERVAL_MS - elapsed);
-
-    if (typeof requestAnimationFrame !== "undefined" && remaining === 0) {
-      rafIdRef.current = requestAnimationFrame(() => {
-        rafIdRef.current = null;
-        flushStrokeBuffer();
-      });
-    } else {
-      throttleTimerRef.current = setTimeout(() => {
-        throttleTimerRef.current = null;
-        flushStrokeBuffer();
-      }, remaining || THROTTLE_INTERVAL_MS);
-    }
-  }, [flushStrokeBuffer]);
-
-  const broadcastStroke = useCallback(
-    (id: string, points: number[]) => {
-      strokeBufferRef.current.set(id, points.slice());
-      scheduleDispatch();
-    },
-    [scheduleDispatch],
-  );
-
-  const bufferStrokePoints = useCallback(
-    (id: string, points: number[]) => {
-      const existing = strokeBufferRef.current.get(id);
-      if (existing) {
-        strokeBufferRef.current.set(id, [...existing, ...points]);
-      } else {
-        strokeBufferRef.current.set(id, points.slice());
-      }
-      scheduleDispatch();
-    },
-    [scheduleDispatch],
+    [localUserId, touchActivity, updateUndoState],
   );
 
   const updateShape = useCallback(
@@ -629,46 +336,10 @@ export function useCanvasWhiteboard(
       const shapes = shapesRef.current;
       const doc = docRef.current;
       const now = updates.clock ?? updates.updatedAt ?? Date.now();
-
       let prevShape: ShapeData | null = null;
 
       if (shapes && doc) {
-        doc.transact(() => {
-          for (let i = 0; i < shapes.length; i++) {
-            const map = shapes.get(i);
-            if (map.get("id") === id) {
-              prevShape = shapeMapToData(map);
-              const isDeleted = (map.get("deleted") as boolean) ?? false;
-              const delClock = (map.get("deletedAt") as number) ?? 0;
-              const curClock =
-                (map.get("clock") as number) ??
-                (map.get("updatedAt") as number) ??
-                0;
-
-              if (isDeleted && now <= delClock) {
-                return;
-              }
-              if (now < curClock) {
-                return;
-              }
-
-              if (updates.points !== undefined) {
-                map.set("points", updates.points.slice());
-              }
-              if (updates.color !== undefined) map.set("color", updates.color);
-              if (updates.width !== undefined) map.set("width", updates.width);
-              if (updates.opacity !== undefined) {
-                map.set("opacity", updates.opacity);
-              }
-              if (updates.deleted !== undefined) {
-                map.set("deleted", updates.deleted);
-              }
-              map.set("updatedAt", now);
-              map.set("clock", now);
-              break;
-            }
-          }
-        }, localUserId);
+        prevShape = updateShapeInDoc(shapes, doc, id, updates, localUserId);
       } else {
         setShapeSnapshots((prev) => {
           const item = prev.find((s) => s.id === id);
@@ -693,7 +364,13 @@ export function useCanvasWhiteboard(
         updateUndoState();
       }
     },
-    [localUserId, updateUndoState],
+    [
+      localUserId,
+      touchActivity,
+      broadcastStroke,
+      flushStrokeBuffer,
+      updateUndoState,
+    ],
   );
 
   const deleteShape = useCallback(
@@ -701,27 +378,10 @@ export function useCanvasWhiteboard(
       touchActivity();
       const shapes = shapesRef.current;
       const doc = docRef.current;
-      const now = Date.now();
       let deletedShape: ShapeData | null = null;
 
       if (shapes && doc) {
-        doc.transact(() => {
-          for (let i = 0; i < shapes.length; i++) {
-            const map = shapes.get(i);
-            if (map.get("id") === id) {
-              deletedShape = shapeMapToData(map);
-              const curClock =
-                (map.get("clock") as number) ??
-                (map.get("updatedAt") as number) ??
-                0;
-              const delClock = Math.max(now, curClock + 1);
-              map.set("deleted", true);
-              map.set("deletedAt", delClock);
-              map.set("clock", delClock);
-              break;
-            }
-          }
-        }, localUserId);
+        deletedShape = deleteShapeInDoc(shapes, doc, id, localUserId);
       } else {
         setShapeSnapshots((prev) => {
           const item = prev.find((s) => s.id === id);
@@ -739,7 +399,7 @@ export function useCanvasWhiteboard(
         updateUndoState();
       }
     },
-    [localUserId, updateUndoState],
+    [localUserId, touchActivity, updateUndoState],
   );
 
   const undo = useCallback(() => {
@@ -772,7 +432,6 @@ export function useCanvasWhiteboard(
         });
       }
     }
-
     updateUndoState();
   }, [updateUndoState]);
 
@@ -790,10 +449,7 @@ export function useCanvasWhiteboard(
         setShapeSnapshots((prev) => {
           switch (action.type) {
             case "add":
-              return [
-                ...prev.filter((s) => s.id !== action.shape.id),
-                action.shape,
-              ];
+              return [...prev, action.shape];
             case "update":
               return prev.map((s) =>
                 s.id === action.id ? { ...s, ...action.next } : s,
@@ -808,52 +464,28 @@ export function useCanvasWhiteboard(
         });
       }
     }
-
     updateUndoState();
   }, [updateUndoState]);
 
   const clearCanvas = useCallback(() => {
     touchActivity();
-    setTool("pen");
     const shapes = shapesRef.current;
     const doc = docRef.current;
-    const now = Date.now();
-    const activeShapes: ShapeData[] = [];
+    let cleared: ShapeData[] = [];
 
-    if (shapes && doc && shapes.length > 0) {
-      doc.transact(() => {
-        for (let i = 0; i < shapes.length; i++) {
-          const map = shapes.get(i);
-          const isDeleted = (map.get("deleted") as boolean) ?? false;
-          if (!isDeleted) {
-            activeShapes.push(shapeMapToData(map));
-            const curClock =
-              (map.get("clock") as number) ??
-              (map.get("updatedAt") as number) ??
-              0;
-            const delClock = Math.max(now, curClock + 1);
-            map.set("deleted", true);
-            map.set("deletedAt", delClock);
-            map.set("clock", delClock);
-          }
-        }
-      }, localUserId);
+    if (shapes && doc) {
+      cleared = clearCanvasInDoc(shapes, doc, localUserId);
     } else {
-      setShapeSnapshots((prev) => {
-        if (prev.length > 0) {
-          activeShapes.push(...prev);
-          return [];
-        }
-        return prev;
-      });
+      cleared = [...shapeSnapshots];
+      setShapeSnapshots([]);
     }
 
-    if (activeShapes.length > 0) {
-      localUndoStackRef.current.push({ type: "clear", shapes: activeShapes });
+    if (cleared.length > 0) {
+      localUndoStackRef.current.push({ type: "clear", shapes: cleared });
       localRedoStackRef.current = [];
       updateUndoState();
     }
-  }, [localUserId, touchActivity, updateUndoState, setTool]);
+  }, [localUserId, shapeSnapshots, touchActivity, updateUndoState]);
 
   const updateCursor = useCallback(
     (x: number, y: number) => {
@@ -861,18 +493,26 @@ export function useCanvasWhiteboard(
       const p = providerRef.current;
       if (!p) return;
       const aw = p.awareness;
-      const state = aw?.getLocalState() as Record<string, unknown> | null;
-      if (state) {
-        aw.setLocalState({
-          ...state,
-          x,
-          y,
-          status: "active",
-          lastActiveAt: Date.now(),
-        });
-      }
+      const current = aw?.getLocalState() as Record<string, unknown> | null;
+      aw?.setLocalState({
+        ...current,
+        x,
+        y,
+        userId: localUserId,
+        name: options?.userName ?? "Anonymous",
+        avatar: options?.userAvatar,
+        color: options?.userColor ?? getDefaultColor(0),
+        lastActiveAt: Date.now(),
+        status: "active",
+      });
     },
-    [touchActivity],
+    [
+      localUserId,
+      options?.userName,
+      options?.userAvatar,
+      options?.userColor,
+      touchActivity,
+    ],
   );
 
   return {
@@ -887,7 +527,7 @@ export function useCanvasWhiteboard(
     participants,
     tool,
     color,
-    colors: PRESET_COLORS,
+    colors: WHITEBOARD_COLORS,
     strokeWidth,
     isConnected,
     provider,
@@ -903,3 +543,5 @@ export function useCanvasWhiteboard(
     updateCursor,
   };
 }
+
+export default useCanvasWhiteboard;

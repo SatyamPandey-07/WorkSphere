@@ -12,5 +12,10 @@ export { MultiCityComparison } from "./MultiCityComparison";
 export { PremiumZkpGate } from "./PremiumZkpGate";
 export { DistanceFilterSlider } from "./DistanceFilterSlider";
 export type { DistanceFilterSliderProps } from "./DistanceFilterSlider";
+export { HybridSearchWeightSlider } from "./HybridSearchWeightSlider";
+export type {
+  HybridSearchWeightSliderProps,
+  SearchWeightPreset,
+} from "./HybridSearchWeightSlider";
 export { VenueList } from "./VenueList";
 export type { VenueListProps } from "./VenueList";

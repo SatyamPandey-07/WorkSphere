@@ -23,6 +23,7 @@ import {
 } from "@/lib/venueFilterPresets";
 import { sanitizeCapacityInput } from "@/lib/filters";
 import { DistanceFilterSlider } from "./DistanceFilterSlider";
+import { HybridSearchWeightSlider } from "./HybridSearchWeightSlider";
 
 export interface VenueSearchDrawerProps {
   isOpen: boolean;
@@ -45,6 +46,14 @@ export interface VenueSearchDrawerProps {
   onCapacityChange?: (capacity: number) => void;
   sortBy?: string;
   onSortByChange?: (sortBy: string) => void;
+  semanticWeight?: number;
+  onSemanticWeightChange?: (weight: number) => void;
+  fullTextWeight?: number;
+  onFullTextWeightChange?: (weight: number) => void;
+  onSearchWeightsChange?: (weights: {
+    semanticWeight: number;
+    fullTextWeight: number;
+  }) => void;
   onClearFilters?: () => void;
   onApplyFilters?: () => void;
 }
@@ -145,6 +154,11 @@ export function VenueSearchDrawer({
   onCapacityChange,
   sortBy: externalSortBy,
   onSortByChange,
+  semanticWeight: externalSemanticWeight,
+  onSemanticWeightChange,
+  fullTextWeight: externalFullTextWeight,
+  onFullTextWeightChange,
+  onSearchWeightsChange,
   onClearFilters,
   onApplyFilters,
 }: VenueSearchDrawerProps) {
@@ -159,6 +173,8 @@ export function VenueSearchDrawer({
     undefined,
   );
   const [internalSortBy, setInternalSortBy] = useState("default");
+  const [internalSemanticWeight, setInternalSemanticWeight] = useState(0.5);
+  const [internalFullTextWeight, setInternalFullTextWeight] = useState(0.5);
 
   // Preset management state
   const [presets, setPresets] = useState<FilterPreset[]>([]);
@@ -196,6 +212,8 @@ export function VenueSearchDrawer({
     externalCapacity ??
     internalCapacity;
   const currentSortBy = externalSortBy ?? internalSortBy;
+  const semanticWeight = externalSemanticWeight ?? internalSemanticWeight;
+  const fullTextWeight = externalFullTextWeight ?? internalFullTextWeight;
 
   const hasActiveFilters =
     amenities.length > 0 ||
@@ -204,7 +222,9 @@ export function VenueSearchDrawer({
     cat !== "all" ||
     distance > 0 ||
     (capacity !== undefined && capacity > 1) ||
-    currentSortBy !== "default";
+    currentSortBy !== "default" ||
+    semanticWeight !== 0.5 ||
+    fullTextWeight !== 0.5;
   const activeFilterCount =
     amenities.length +
     (noise !== "all" ? 1 : 0) +
@@ -212,7 +232,8 @@ export function VenueSearchDrawer({
     (cat !== "all" ? 1 : 0) +
     (distance > 0 ? 1 : 0) +
     (capacity !== undefined && capacity > 1 ? 1 : 0) +
-    (currentSortBy !== "default" ? 1 : 0);
+    (currentSortBy !== "default" ? 1 : 0) +
+    (semanticWeight !== 0.5 || fullTextWeight !== 0.5 ? 1 : 0);
 
   const handleSearchInput = (val: string) => {
     setActivePresetId(null);
@@ -271,6 +292,26 @@ export function VenueSearchDrawer({
     setActivePresetId(null);
     if (onSortByChange) onSortByChange(val);
     else setInternalSortBy(val);
+  };
+
+  const handleSearchWeightsChange = (weights: {
+    semanticWeight: number;
+    fullTextWeight: number;
+  }) => {
+    setActivePresetId(null);
+    if (onSearchWeightsChange) {
+      onSearchWeightsChange(weights);
+    }
+    if (onSemanticWeightChange) {
+      onSemanticWeightChange(weights.semanticWeight);
+    } else {
+      setInternalSemanticWeight(weights.semanticWeight);
+    }
+    if (onFullTextWeightChange) {
+      onFullTextWeightChange(weights.fullTextWeight);
+    } else {
+      setInternalFullTextWeight(weights.fullTextWeight);
+    }
   };
 
   const handleApplyPreset = (preset: FilterPreset) => {
@@ -372,6 +413,16 @@ export function VenueSearchDrawer({
 
     if (onSortByChange) onSortByChange("default");
     setInternalSortBy("default");
+
+    if (onSemanticWeightChange) onSemanticWeightChange(0.5);
+    setInternalSemanticWeight(0.5);
+
+    if (onFullTextWeightChange) onFullTextWeightChange(0.5);
+    setInternalFullTextWeight(0.5);
+
+    if (onSearchWeightsChange) {
+      onSearchWeightsChange({ semanticWeight: 0.5, fullTextWeight: 0.5 });
+    }
 
     if (onClearFilters) onClearFilters();
   };
@@ -684,20 +735,42 @@ export function VenueSearchDrawer({
             Search Keyword
           </label>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
             <input
               type="text"
               data-testid="search-input"
               value={search}
               onChange={(e) => handleSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  handleSearchInput("");
+                  e.currentTarget.blur();
+                }
+              }}
               placeholder="Search by venue name, street, or tag..."
               aria-label={`Search venues (${formatShortcut("K")})`}
               aria-keyshortcuts={getAriaKeyshortcuts("K")}
               title={`Search venues (${formatShortcut("K")})`}
               className="w-full pl-9 pr-16 py-2.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl text-xs text-zinc-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none hidden sm:flex items-center">
-              <KeyboardShortcutBadge shortcut="K" size="xs" variant="subtle" />
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+              {search.trim().length > 0 && (
+                <button
+                  type="button"
+                  data-testid="clear-search-input-btn"
+                  onClick={() => handleSearchInput("")}
+                  aria-label="Clear search input"
+                  className="p-1 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {search.trim().length === 0 && (
+                <div className="pointer-events-none hidden sm:flex items-center">
+                  <KeyboardShortcutBadge shortcut="K" size="xs" variant="subtle" />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -757,6 +830,13 @@ export function VenueSearchDrawer({
           max={50}
           step={1}
           presets={[5, 10, 25, 50]}
+        />
+
+        {/* Hybrid Search Scoring Weights (Semantic vs Full-Text) */}
+        <HybridSearchWeightSlider
+          semanticWeight={semanticWeight}
+          fullTextWeight={fullTextWeight}
+          onChange={handleSearchWeightsChange}
         />
 
         {/* Amenity filter chips (#2177) */}

@@ -30,6 +30,7 @@ import {
   PawPrint,
   BadgeCheck,
   Music,
+  Sunset,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import Image from "next/image";
@@ -56,13 +57,16 @@ import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
-import { getOpeningHoursStatus } from "@/lib/openingHours";
 import { getVenueHoursStatus } from "@/lib/venueHours";
 import { MUSIC_GENRE_EMOJI, type MusicGenre } from "@/hooks/useLiveVenueData";
 import { HighlightedText } from "@/components/ui/HighlightedText";
 import { useSeatAvailability } from "@/hooks/useSeatAvailability";
 import { formatWalkingTimeBadge, haversineKm } from "@/lib/distance";
 import { generateBlurSvgDataUri } from "@/lib/image/blurPlaceholder";
+import {
+  calculateVenueSolarPhase,
+  supportsCircadianLighting,
+} from "@/lib/geo/circadianLighting";
 
 interface VenueEnrichData {
   found: boolean;
@@ -101,6 +105,8 @@ interface VenueCardProps {
   onReportMusicGenre?: (genre: MusicGenre) => void;
   /** Active search query — matching terms are highlighted in the venue name */
   searchQuery?: string;
+  /** Optional timestamp override for computing local solar phase */
+  currentTimestamp?: Date | number;
 }
 
 interface VoteMetricState {
@@ -123,6 +129,7 @@ export function VenueCard({
   checkedInVenueId,
   onReportMusicGenre,
   searchQuery = "",
+  currentTimestamp,
 }: VenueCardProps) {
   const [isFavorited, setIsFavorited] = useState(false);
   const [isSavingFavorite, setIsSavingFavorite] = useState(false);
@@ -165,6 +172,15 @@ export function VenueCard({
 
   const isCheckedInHere = checkedInVenueId === venue.id;
   const activeMusicGenre = liveData?.musicGenre ?? null;
+
+  const isCircadianSupported = supportsCircadianLighting(venue);
+  const circadianStatus = isCircadianSupported
+    ? calculateVenueSolarPhase(
+        venue.position?.lat ?? 0,
+        currentTimestamp ?? new Date(),
+        venue.position?.lng ?? 0,
+      )
+    : null;
 
   // Defer time-dependent rendering (open/closed status) to after hydration to
   // prevent SSR/client mismatch caused by new Date() producing different values
@@ -540,7 +556,9 @@ export function VenueCard({
             fill
             className="object-cover transition-opacity duration-300 ease-in-out"
             placeholder="blur"
-            blurDataURL={generateBlurSvgDataUri(photos[photoIndex] || venue.name)}
+            blurDataURL={generateBlurSvgDataUri(
+              photos[photoIndex] || venue.name,
+            )}
             unoptimized // External URLs from Foursquare
             onError={() => setPhotoError(true)}
             style={{
@@ -768,7 +786,8 @@ export function VenueCard({
           if (!hoursStr) return null;
 
           const operatingStatus = getVenueHoursStatus(hoursStr);
-          if (!operatingStatus.isAvailable && !operatingStatus.badgeText) return null;
+          if (!operatingStatus.isAvailable && !operatingStatus.badgeText)
+            return null;
 
           const isOpen = operatingStatus.isOpen;
           const is24Hours = operatingStatus.is24Hours;
@@ -856,6 +875,51 @@ export function VenueCard({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Real-time Circadian Lighting Status Badge */}
+        {circadianStatus && (
+          <div className="flex items-center gap-2 mb-3">
+            <div
+              data-testid="circadian-lighting-badge"
+              role="status"
+              className={`group relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-all cursor-help ${
+                circadianStatus.mode === "Bright Daylight Work"
+                  ? "border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200"
+                  : "border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 text-orange-800 dark:text-orange-200"
+              }`}
+              title={circadianStatus.tooltip}
+              aria-label={`Circadian lighting: ${circadianStatus.mode}`}
+            >
+              {circadianStatus.mode === "Bright Daylight Work" ? (
+                <Sun className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              ) : (
+                <Sunset className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+              )}
+              <span className="truncate">{circadianStatus.mode}</span>
+              <span className="text-[10px] opacity-75 font-normal">
+                ({circadianStatus.colorTemperature}K)
+              </span>
+
+              {/* Tooltip explaining circadian lighting capabilities */}
+              <div
+                role="tooltip"
+                data-testid="circadian-tooltip"
+                className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:flex group-focus-within:flex flex-col gap-1 w-64 p-2.5 rounded-lg bg-zinc-900 text-zinc-100 text-xs shadow-xl border border-zinc-700 z-50 transition-opacity"
+              >
+                <div className="font-semibold flex items-center gap-1.5 text-zinc-200">
+                  <span>✨ Circadian Lighting</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono">
+                    {circadianStatus.mode}
+                  </span>
+                </div>
+                <p className="text-[11px] text-zinc-300 leading-relaxed font-normal">
+                  {circadianStatus.tooltip}
+                </p>
+              </div>
+            </div>
+            <span className="text-[10px] text-zinc-400">circadian</span>
           </div>
         )}
 

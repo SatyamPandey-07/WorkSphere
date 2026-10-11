@@ -106,7 +106,7 @@
     "fake-indexeddb": "^6.2.5",
     "husky": "^9.1.7",
     "jest": "^30.5.2",
-    "jest-environment-jsdom": "^30.5.1",
+    "jest-environment-jsdom": "^30.5.2",
     "jest-util": "30.5.1",
     "lint-staged": "^17.5.1",
     "prettier": "^3.9.6",

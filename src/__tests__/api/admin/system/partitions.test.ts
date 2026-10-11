@@ -7,7 +7,10 @@ import {
   DATE_STRING_REGEX,
   sanitizeExportFilename,
 } from "../../../../app/api/admin/system/partitions/dateHelper";
-import { GET, HEAD } from "../../../../app/api/admin/system/partitions/export/route";
+import {
+  GET,
+  HEAD,
+} from "../../../../app/api/admin/system/partitions/export/route";
 import { getAdminUser } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
 import { NextRequest } from "next/server";
@@ -31,7 +34,7 @@ jest.mock("@/lib/prisma", () => ({
 
 describe("Partition Date Calculations & Export (#3777, #4914)", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   describe("dateHelper validation (#4914)", () => {
@@ -186,9 +189,12 @@ describe("Partition Date Calculations & Export (#3777, #4914)", () => {
       expect(res.status).toBe(200);
       const disposition = res.headers.get("Content-Disposition");
       expect(disposition).toBeDefined();
-      expect(disposition).toContain('filename="Telemetry_Records_alert_1_-2026-03.csv"');
+      expect(disposition).toContain(
+        'filename="Telemetry_Records_alert_1-2026-03.csv"',
+      );
       expect(disposition).not.toContain(" ");
       expect(disposition).not.toContain(";alert");
+      await res.text();
     });
 
     it("guards against path traversal sequences (../) in export tableName parameter", async () => {
@@ -204,7 +210,9 @@ describe("Partition Date Calculations & Export (#3777, #4914)", () => {
 
       expect(res.status).toBe(400);
       const json = await res.json();
-      expect(json.error).toBe("Invalid table name: path traversal sequences are not allowed");
+      expect(json.error).toBe(
+        "Invalid table name: path traversal sequences are not allowed",
+      );
     });
 
     it("returns metadata JSON when preview=true or dryRun=true query param is provided (#5764)", async () => {
@@ -252,7 +260,9 @@ describe("Partition Date Calculations & Export (#3777, #4914)", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("X-Row-Count")).toBe("1200");
       expect(res.headers.get("X-Estimated-Size-Bytes")).toBeDefined();
-      expect(Number(res.headers.get("X-Estimated-Size-Bytes"))).toBeGreaterThan(0);
+      expect(Number(res.headers.get("X-Estimated-Size-Bytes"))).toBeGreaterThan(
+        0,
+      );
       expect(res.headers.get("X-Partition-Start")).toContain("2026-03-01");
       expect(res.headers.get("X-Partition-End")).toContain("2026-04-01");
     });
@@ -260,19 +270,29 @@ describe("Partition Date Calculations & Export (#3777, #4914)", () => {
 
   describe("sanitizeExportFilename helper", () => {
     it("replaces spaces and special characters with underscores", () => {
-      expect(sanitizeExportFilename("Telemetry Records (2026)!")).toBe("Telemetry_Records_2026");
-      expect(sanitizeExportFilename('foo"bar;baz?qux=1')).toBe("foo_bar_baz_qux_1");
+      expect(sanitizeExportFilename("Telemetry Records (2026)!")).toBe(
+        "Telemetry_Records_2026",
+      );
+      expect(sanitizeExportFilename('foo"bar;baz?qux=1')).toBe(
+        "foo_bar_baz_qux_1",
+      );
     });
 
     it("guards against path traversal sequences and slashes", () => {
-      expect(sanitizeExportFilename("../../secrets/passwords.csv")).toBe("secrets_passwords.csv");
-      expect(sanitizeExportFilename("..\\..\\windows\\win.ini")).toBe("windows_win.ini");
+      expect(sanitizeExportFilename("../../secrets/passwords.csv")).toBe(
+        "secrets_passwords.csv",
+      );
+      expect(sanitizeExportFilename("..\\..\\windows\\win.ini")).toBe(
+        "windows_win.ini",
+      );
     });
 
     it("falls back to default fallback when string is empty or invalid", () => {
       expect(sanitizeExportFilename("")).toBe("export");
       expect(sanitizeExportFilename("___")).toBe("export");
-      expect(sanitizeExportFilename(null as unknown as string, "fallback")).toBe("fallback");
+      expect(
+        sanitizeExportFilename(null as unknown as string, "fallback"),
+      ).toBe("fallback");
     });
   });
 });

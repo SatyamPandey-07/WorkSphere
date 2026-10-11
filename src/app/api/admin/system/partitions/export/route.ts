@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminUser } from "@/lib/admin";
 import { prisma } from "@/lib/prisma";
-import { calculatePartitionDates, escapeCsv, sanitizeExportFilename } from "../dateHelper";
+import {
+  calculatePartitionDates,
+  escapeCsv,
+  sanitizeExportFilename,
+  validateIso8601Timestamp,
+  constructAuditLogFilterConditions,
+} from "../dateHelper";
 
 export const dynamic = "force-dynamic";
 
-export type PartitionExportType = "telemetry" | "push";
+export type PartitionExportType = "telemetry" | "push" | "audit";
 
 interface ExportRow {
   [key: string]: unknown;
@@ -26,15 +32,23 @@ export async function GET(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const yearParam = searchParams.get("year");
     const monthParam = searchParams.get("month");
-    const tableParam = searchParams.get("tableName") || searchParams.get("table");
+    const tableParam =
+      searchParams.get("tableName") || searchParams.get("table");
     const typeParam = (
-      searchParams.get("type") || (tableParam && tableParam.toLowerCase().includes("push") ? "push" : "telemetry")
+      searchParams.get("type") ||
+      (tableParam && tableParam.toLowerCase().includes("push")
+        ? "push"
+        : tableParam && tableParam.toLowerCase().includes("audit")
+          ? "audit"
+          : "telemetry")
     ).toLowerCase() as PartitionExportType;
 
     // Guard against path traversal sequences in table / tableName parameter
     if (tableParam && (tableParam.includes("..") || /[/\\]/.test(tableParam))) {
       return NextResponse.json(
-        { error: "Invalid table name: path traversal sequences are not allowed" },
+        {
+          error: "Invalid table name: path traversal sequences are not allowed",
+        },
         { status: 400 },
       );
     }
@@ -57,19 +71,74 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Extract multi-criteria audit filter parameters
+    const actorIdParam =
+      searchParams.get("actorId") || searchParams.get("adminId");
+    const startDateParam = searchParams.get("startDate");
+    const endDateParam = searchParams.get("endDate");
+    const actionTypeParam =
+      searchParams.get("actionType") || searchParams.get("action");
+
+    let customStartDate: Date | null = null;
+    let customEndDate: Date | null = null;
+
+    if (startDateParam) {
+      customStartDate = validateIso8601Timestamp(startDateParam);
+      if (!customStartDate) {
+        return NextResponse.json(
+          {
+            error: `Invalid startDate format: "${startDateParam}". Expected ISO 8601 timestamp.`,
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    if (endDateParam) {
+      customEndDate = validateIso8601Timestamp(endDateParam);
+      if (!customEndDate) {
+        return NextResponse.json(
+          {
+            error: `Invalid endDate format: "${endDateParam}". Expected ISO 8601 timestamp.`,
+          },
+          { status: 400 },
+        );
+      }
+    }
+
     const { start, end } = calculatePartitionDates(year, month);
-    const startIso = start.toISOString();
-    const endIso = end.toISOString();
+    const startIso = customStartDate
+      ? customStartDate.toISOString()
+      : start.toISOString();
+    const endIso = customEndDate
+      ? customEndDate.toISOString()
+      : end.toISOString();
     const monthStr = String(month + 1).padStart(2, "0");
 
-    const isTelemetry = typeParam === "telemetry";
+    const isAudit =
+      typeParam === "audit" ||
+      (tableParam ? tableParam.toLowerCase().includes("audit") : false);
+    const isTelemetry = !isAudit && typeParam === "telemetry";
+
     const rawPrefix = tableParam
       ? sanitizeExportFilename(tableParam)
-      : isTelemetry
-        ? "telemetry-records"
-        : "push-logs";
+      : isAudit
+        ? "audit-logs"
+        : isTelemetry
+          ? "telemetry-records"
+          : "push-logs";
     const rawFilename = `${rawPrefix}-${year}-${monthStr}.csv`;
     const filename = sanitizeExportFilename(rawFilename);
+
+    const auditFilters = isAudit
+      ? constructAuditLogFilterConditions({
+          actorId: actorIdParam,
+          startDate: startIso,
+          endDate: endIso,
+          actionType: actionTypeParam,
+          startParamIndex: 1,
+        })
+      : null;
 
     // Support preview / dryRun parameter to return row count and estimated size metadata before export (#5764)
     const isPreview =
@@ -78,8 +147,22 @@ export async function GET(request: NextRequest) {
 
     if (isPreview) {
       let rowCount = 0;
-      if (isTelemetry) {
-        const countRes = await prisma.$queryRawUnsafe<{ count: string | number }[]>(
+      if (isAudit && auditFilters) {
+        const countRes = await prisma.$queryRawUnsafe<
+          { count: string | number }[]
+        >(
+          `
+          SELECT COUNT(*)::int AS count
+          FROM "AdminAuditLog"
+          ${auditFilters.whereClause}
+        `,
+          ...auditFilters.params,
+        );
+        rowCount = countRes && countRes[0] ? Number(countRes[0].count) : 0;
+      } else if (isTelemetry) {
+        const countRes = await prisma.$queryRawUnsafe<
+          { count: string | number }[]
+        >(
           `
           SELECT COUNT(*)::int AS count
           FROM "TelemetryRecord"
@@ -91,7 +174,9 @@ export async function GET(request: NextRequest) {
         );
         rowCount = countRes && countRes[0] ? Number(countRes[0].count) : 0;
       } else {
-        const countRes = await prisma.$queryRawUnsafe<{ count: string | number }[]>(
+        const countRes = await prisma.$queryRawUnsafe<
+          { count: string | number }[]
+        >(
           `
           SELECT COUNT(*)::int AS count
           FROM "PushNotificationLog"
@@ -104,10 +189,11 @@ export async function GET(request: NextRequest) {
         rowCount = countRes && countRes[0] ? Number(countRes[0].count) : 0;
       }
 
-      // Estimate byte size based on average CSV row size (telemetry ~100 bytes/row, push ~120 bytes/row) + header size
-      const headerLength = isTelemetry ? 95 : 65;
+      // Estimate byte size based on average CSV row size (telemetry ~100 bytes/row, push/audit ~120 bytes/row) + header size
+      const headerLength = isAudit ? 80 : isTelemetry ? 95 : 65;
       const avgBytesPerRow = isTelemetry ? 100 : 120;
-      const estimatedSizeBytes = rowCount > 0 ? headerLength + rowCount * avgBytesPerRow : 0;
+      const estimatedSizeBytes =
+        rowCount > 0 ? headerLength + rowCount * avgBytesPerRow : 0;
 
       return NextResponse.json({
         success: true,
@@ -126,30 +212,40 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const headers = isTelemetry
+    const headers = isAudit
       ? [
           "id",
-          "venueId",
-          "timestamp",
-          "download",
-          "upload",
-          "latency",
-          "noiseLevel",
-          "occupancy",
-          "presence",
-          "crowdLevel",
-        ]
-      : [
-          "id",
-          "userId",
-          "venueId",
-          "title",
-          "body",
-          "status",
-          "error",
-          "read",
+          "adminId",
+          "action",
+          "entityType",
+          "entityId",
+          "details",
           "createdAt",
-        ];
+        ]
+      : isTelemetry
+        ? [
+            "id",
+            "venueId",
+            "timestamp",
+            "download",
+            "upload",
+            "latency",
+            "noiseLevel",
+            "occupancy",
+            "presence",
+            "crowdLevel",
+          ]
+        : [
+            "id",
+            "userId",
+            "venueId",
+            "title",
+            "body",
+            "status",
+            "error",
+            "read",
+            "createdAt",
+          ];
 
     // Using Node.js / Web standard TransformStream for streaming response
     const transformStream = new TransformStream();
@@ -177,7 +273,41 @@ export async function GET(request: NextRequest) {
         while (hasMore && !aborted && !request.signal.aborted) {
           let rows: ExportRow[] = [];
 
-          if (isTelemetry) {
+          if (isAudit && auditFilters) {
+            if (cursorId) {
+              const cursorParamIdx = auditFilters.nextParamIndex;
+              const limitParamIdx = cursorParamIdx + 1;
+              const whereSql = auditFilters.whereClause
+                ? `${auditFilters.whereClause} AND "id" > $${cursorParamIdx}`
+                : `WHERE "id" > $${cursorParamIdx}`;
+
+              rows = await prisma.$queryRawUnsafe<ExportRow[]>(
+                `
+                SELECT "id", "adminId", "action", "entityType", "entityId", "details", "createdAt"
+                FROM "AdminAuditLog"
+                ${whereSql}
+                ORDER BY "id" ASC
+                LIMIT $${limitParamIdx}
+              `,
+                ...auditFilters.params,
+                cursorId,
+                BATCH_SIZE,
+              );
+            } else {
+              const limitParamIdx = auditFilters.nextParamIndex;
+              rows = await prisma.$queryRawUnsafe<ExportRow[]>(
+                `
+                SELECT "id", "adminId", "action", "entityType", "entityId", "details", "createdAt"
+                FROM "AdminAuditLog"
+                ${auditFilters.whereClause}
+                ORDER BY "id" ASC
+                LIMIT $${limitParamIdx}
+              `,
+                ...auditFilters.params,
+                BATCH_SIZE,
+              );
+            }
+          } else if (isTelemetry) {
             if (cursorId) {
               rows = await prisma.$queryRawUnsafe<ExportRow[]>(
                 `
@@ -285,7 +415,7 @@ export async function GET(request: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": `attachment;filename="${filename}"`,
         "Transfer-Encoding": "chunked",
         "Cache-Control": "private, no-store, max-age=0, must-revalidate",
         "X-Content-Type-Options": "nosniff",
@@ -310,9 +440,15 @@ export async function HEAD(request: NextRequest) {
     const { searchParams } = request.nextUrl;
     const yearParam = searchParams.get("year");
     const monthParam = searchParams.get("month");
-    const tableParam = searchParams.get("tableName") || searchParams.get("table");
+    const tableParam =
+      searchParams.get("tableName") || searchParams.get("table");
     const typeParam = (
-      searchParams.get("type") || (tableParam && tableParam.toLowerCase().includes("push") ? "push" : "telemetry")
+      searchParams.get("type") ||
+      (tableParam && tableParam.toLowerCase().includes("push")
+        ? "push"
+        : tableParam && tableParam.toLowerCase().includes("audit")
+          ? "audit"
+          : "telemetry")
     ).toLowerCase() as PartitionExportType;
 
     if (tableParam && (tableParam.includes("..") || /[/\\]/.test(tableParam))) {
@@ -334,23 +470,79 @@ export async function HEAD(request: NextRequest) {
       return new NextResponse(null, { status: 400 });
     }
 
+    const actorIdParam =
+      searchParams.get("actorId") || searchParams.get("adminId");
+    const startDateParam = searchParams.get("startDate");
+    const endDateParam = searchParams.get("endDate");
+    const actionTypeParam =
+      searchParams.get("actionType") || searchParams.get("action");
+
+    let customStartDate: Date | null = null;
+    let customEndDate: Date | null = null;
+
+    if (startDateParam) {
+      customStartDate = validateIso8601Timestamp(startDateParam);
+      if (!customStartDate) {
+        return new NextResponse(null, { status: 400 });
+      }
+    }
+
+    if (endDateParam) {
+      customEndDate = validateIso8601Timestamp(endDateParam);
+      if (!customEndDate) {
+        return new NextResponse(null, { status: 400 });
+      }
+    }
+
     const { start, end } = calculatePartitionDates(year, month);
-    const startIso = start.toISOString();
-    const endIso = end.toISOString();
+    const startIso = customStartDate
+      ? customStartDate.toISOString()
+      : start.toISOString();
+    const endIso = customEndDate
+      ? customEndDate.toISOString()
+      : end.toISOString();
     const monthStr = String(month + 1).padStart(2, "0");
 
-    const isTelemetry = typeParam === "telemetry";
+    const isAudit =
+      typeParam === "audit" ||
+      (tableParam ? tableParam.toLowerCase().includes("audit") : false);
+    const isTelemetry = !isAudit && typeParam === "telemetry";
+
     const rawPrefix = tableParam
       ? sanitizeExportFilename(tableParam)
-      : isTelemetry
-        ? "telemetry-records"
-        : "push-logs";
+      : isAudit
+        ? "audit-logs"
+        : isTelemetry
+          ? "telemetry-records"
+          : "push-logs";
     const rawFilename = `${rawPrefix}-${year}-${monthStr}.csv`;
     const filename = sanitizeExportFilename(rawFilename);
 
     let rowCount = 0;
-    if (isTelemetry) {
-      const countRes = await prisma.$queryRawUnsafe<{ count: string | number }[]>(
+    if (isAudit) {
+      const auditFilters = constructAuditLogFilterConditions({
+        actorId: actorIdParam,
+        startDate: startIso,
+        endDate: endIso,
+        actionType: actionTypeParam,
+        startParamIndex: 1,
+      });
+
+      const countRes = await prisma.$queryRawUnsafe<
+        { count: string | number }[]
+      >(
+        `
+        SELECT COUNT(*)::int AS count
+        FROM "AdminAuditLog"
+        ${auditFilters.whereClause}
+      `,
+        ...auditFilters.params,
+      );
+      rowCount = countRes && countRes[0] ? Number(countRes[0].count) : 0;
+    } else if (isTelemetry) {
+      const countRes = await prisma.$queryRawUnsafe<
+        { count: string | number }[]
+      >(
         `
         SELECT COUNT(*)::int AS count
         FROM "TelemetryRecord"
@@ -362,7 +554,9 @@ export async function HEAD(request: NextRequest) {
       );
       rowCount = countRes && countRes[0] ? Number(countRes[0].count) : 0;
     } else {
-      const countRes = await prisma.$queryRawUnsafe<{ count: string | number }[]>(
+      const countRes = await prisma.$queryRawUnsafe<
+        { count: string | number }[]
+      >(
         `
         SELECT COUNT(*)::int AS count
         FROM "PushNotificationLog"
@@ -375,15 +569,16 @@ export async function HEAD(request: NextRequest) {
       rowCount = countRes && countRes[0] ? Number(countRes[0].count) : 0;
     }
 
-    const headerLength = isTelemetry ? 95 : 65;
+    const headerLength = isAudit ? 80 : isTelemetry ? 95 : 65;
     const avgBytesPerRow = isTelemetry ? 100 : 120;
-    const estimatedSizeBytes = rowCount > 0 ? headerLength + rowCount * avgBytesPerRow : 0;
+    const estimatedSizeBytes =
+      rowCount > 0 ? headerLength + rowCount * avgBytesPerRow : 0;
 
     return new NextResponse(null, {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Content-Disposition": `attachment;filename="${filename}"`,
         "X-Row-Count": String(rowCount),
         "X-Estimated-Size-Bytes": String(estimatedSizeBytes),
         "X-Partition-Start": startIso,

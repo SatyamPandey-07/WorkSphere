@@ -14,9 +14,15 @@ export async function GET() {
     });
 
     return NextResponse.json(venues);
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[MANAGED_GET]", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Internal Server Error",
+      },
+      { status: 500 },
+    );
   }
 }
 
@@ -27,11 +33,41 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await req.json();
-    const { venueId, hostMessage, name, address, openingHours } = body;
+    const body: unknown = await req.json();
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 },
+      );
+    }
+    const values = body as Record<string, unknown>;
+    const { venueId, hostMessage, name, address, openingHours } = values;
 
-    if (!venueId) {
-      return NextResponse.json({ error: "Venue ID is required" }, { status: 400 });
+    if (typeof venueId !== "string" || !venueId) {
+      return NextResponse.json(
+        { error: "Venue ID is required" },
+        { status: 400 },
+      );
+    }
+
+    const calibrationProvided =
+      values.beaconReferenceRssi !== undefined ||
+      values.beaconPathLossExponent !== undefined;
+    if (
+      calibrationProvided &&
+      (typeof values.beaconReferenceRssi !== "number" ||
+        !Number.isFinite(values.beaconReferenceRssi) ||
+        values.beaconReferenceRssi < -150 ||
+        values.beaconReferenceRssi > 0 ||
+        typeof values.beaconPathLossExponent !== "number" ||
+        !Number.isFinite(values.beaconPathLossExponent) ||
+        values.beaconPathLossExponent <= 0 ||
+        values.beaconPathLossExponent > 10)
+    ) {
+      return NextResponse.json(
+        { error: "Invalid beacon calibration values" },
+        { status: 400 },
+      );
     }
 
     // Verify ownership
@@ -44,7 +80,10 @@ export async function PUT(req: NextRequest) {
     }
 
     if (venue.ownerId !== userId) {
-      return NextResponse.json({ error: "Forbidden: You do not own this venue" }, { status: 403 });
+      return NextResponse.json(
+        { error: "Forbidden: You do not own this venue" },
+        { status: 403 },
+      );
     }
 
     const updatedVenue = await prisma.venue.update({
@@ -53,13 +92,26 @@ export async function PUT(req: NextRequest) {
         hostMessage,
         name: name || venue.name,
         address: address !== undefined ? address : venue.address,
-        openingHours: openingHours !== undefined ? openingHours : venue.openingHours,
+        openingHours:
+          openingHours !== undefined ? openingHours : venue.openingHours,
+        ...(calibrationProvided
+          ? {
+              beaconReferenceRssi: values.beaconReferenceRssi as number,
+              beaconPathLossExponent: values.beaconPathLossExponent as number,
+            }
+          : {}),
       },
     });
 
     return NextResponse.json({ success: true, venue: updatedVenue });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("[MANAGED_PUT]", error);
-    return NextResponse.json({ error: error.message || "Internal Server Error" }, { status: 500 });
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Internal Server Error",
+      },
+      { status: 500 },
+    );
   }
 }

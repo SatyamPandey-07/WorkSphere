@@ -5,57 +5,64 @@
  */
 
 export class CrowdWasmLoader {
-    private wasmInstance: WebAssembly.Instance | null = null;
-    private wasmMemory: WebAssembly.Memory | null = null;
-    private isReady: boolean = false;
-    private resolveReady: (() => void) | null = null;
-    private readyPromise: Promise<void>;
+  private wasmInstance: WebAssembly.Instance | null = null;
+  private wasmMemory: WebAssembly.Memory | null = null;
+  private isReady: boolean = false;
+  private resolveReady: (() => void) | null = null;
+  private readyPromise: Promise<void>;
 
-    constructor() {
-        this.readyPromise = new Promise((resolve) => {
-            this.resolveReady = resolve;
-        });
+  constructor() {
+    this.readyPromise = new Promise((resolve) => {
+      this.resolveReady = resolve;
+    });
+  }
+
+  public async initialize(
+    wasmUrl: string = "/wasm/crowd_counter.wasm",
+  ): Promise<void> {
+    if (typeof WebAssembly === "undefined") {
+      throw new Error("WebAssembly is not supported in this environment.");
     }
 
-    public async initialize(wasmUrl: string = '/wasm/crowd_counter.wasm'): Promise<void> {
-        if (typeof WebAssembly === 'undefined') {
-            throw new Error('WebAssembly is not supported in this environment.');
-        }
+    try {
+      const response = await fetch(wasmUrl);
+      const buffer = await response.arrayBuffer();
+      const wasmModule = await WebAssembly.compile(buffer);
 
-        try {
-            const response = await fetch(wasmUrl);
-            const buffer = await response.arrayBuffer();
-            const module = await WebAssembly.compile(buffer);
+      // Allocate sufficient memory for two 320x240 RGB frames (~460KB each)
+      const importObject = {
+        env: {
+          memory: new WebAssembly.Memory({ initial: 256 }),
+        },
+      };
 
-            // Allocate sufficient memory for two 320x240 RGB frames (~460KB each)
-            const importObject = {
-                env: {
-                    memory: new WebAssembly.Memory({ initial: 256 }),
-                }
-            };
+      this.wasmInstance = await WebAssembly.instantiate(
+        wasmModule,
+        importObject,
+      );
+      this.wasmMemory = importObject.env.memory as WebAssembly.Memory;
+      this.isReady = true;
 
-            this.wasmInstance = await WebAssembly.instantiate(module, importObject);
-            this.wasmMemory = importObject.env.memory as WebAssembly.Memory;
-            this.isReady = true;
-
-            if (this.resolveReady) this.resolveReady();
-        } catch (error) {
-            console.error('Failed to initialize Crowd WASM:', error);
-            throw error;
-        }
+      if (this.resolveReady) this.resolveReady();
+    } catch (error) {
+      console.error("Failed to initialize Crowd WASM:", error);
+      throw error;
     }
+  }
 
-    public async getInstance(): Promise<WebAssembly.Instance> {
-        await this.readyPromise;
-        if (!this.wasmInstance) throw new Error('WASM instance not initialized');
-        return this.wasmInstance;
-    }
+  public async getInstance(): Promise<WebAssembly.Instance> {
+    await this.readyPromise;
+    if (!this.wasmInstance) throw new Error("WASM instance not initialized");
+    return this.wasmInstance;
+  }
 
-    public async getMemory(): Promise<WebAssembly.Memory> {
-        await this.readyPromise;
-        if (!this.wasmMemory) throw new Error('WASM memory not initialized');
-        return this.wasmMemory;
-    }
+  public async getMemory(): Promise<WebAssembly.Memory> {
+    await this.readyPromise;
+    if (!this.wasmMemory) throw new Error("WASM memory not initialized");
+    return this.wasmMemory;
+  }
 }
 
 export const crowdWasm = new CrowdWasmLoader();
+
+export * from "./crowdCounter";

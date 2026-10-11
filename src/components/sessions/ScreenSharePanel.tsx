@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { MonitorUp, PictureInPicture2, Square } from "lucide-react";
 import { useScreenShare } from "@/hooks/useScreenShare";
+import { DataSaverToggle } from "@/components/sessions/DataSaverToggle";
 
 type Props = {
   sessionSlug: string;
@@ -25,8 +26,10 @@ export default function ScreenSharePanel({
     remoteStream,
     error,
     pipSupported,
+    dataSaverMode,
     startShare,
     stopShare,
+    setDataSaverMode,
     requestPip,
   } = useScreenShare({
     roomId: `session-${sessionSlug}`,
@@ -83,14 +86,20 @@ export default function ScreenSharePanel({
             </button>
           )}
           {isHost && sharing && (
-            <button
-              type="button"
-              onClick={stopShare}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10"
-            >
-              <Square className="h-4 w-4" />
-              Stop sharing
-            </button>
+            <>
+              <DataSaverToggle
+                enabled={dataSaverMode}
+                onChange={(enabled) => void setDataSaverMode(enabled)}
+              />
+              <button
+                type="button"
+                onClick={stopShare}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium hover:bg-white/10"
+              >
+                <Square className="h-4 w-4" />
+                Stop sharing
+              </button>
+            </>
           )}
           {showStage && pipSupported && (
             <button

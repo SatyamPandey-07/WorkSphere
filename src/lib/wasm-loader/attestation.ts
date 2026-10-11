@@ -1,4 +1,4 @@
-﻿/**
+/**
  * attestation.ts
  * Utility to load the ECDSA WASM module and perform client-side verification of PoAP badges without server roundtrips.
  * Now equipped with a multi-threaded batch ECDSA signature verification worker pool (#5526).
@@ -50,7 +50,9 @@ export class AttestationWasmLoader {
     });
   }
 
-  public async initialize(wasmUrl: string = "/wasm/ecdsa_verify.wasm"): Promise<void> {
+  public async initialize(
+    wasmUrl: string = "/wasm/ecdsa_verify.wasm",
+  ): Promise<void> {
     if (typeof WebAssembly === "undefined") {
       throw new Error("WebAssembly is not supported in this environment.");
     }
@@ -58,7 +60,7 @@ export class AttestationWasmLoader {
     try {
       const response = await fetch(wasmUrl);
       const buffer = await response.arrayBuffer();
-      const module = await WebAssembly.compile(buffer);
+      const wasmModule = await WebAssembly.compile(buffer);
 
       const importObject = {
         env: {
@@ -66,7 +68,10 @@ export class AttestationWasmLoader {
         },
       };
 
-      this.wasmInstance = await WebAssembly.instantiate(module, importObject);
+      this.wasmInstance = await WebAssembly.instantiate(
+        wasmModule,
+        importObject,
+      );
       this.wasmMemory = importObject.env.memory as WebAssembly.Memory;
       this.isReady = true;
 
@@ -81,7 +86,9 @@ export class AttestationWasmLoader {
    * Initializes a dedicated Web Worker pool scaling across available hardware cores.
    * Offloads bulk signature verification to keep the UI completely non-blocking (#5526).
    */
-  public async initializeWorkerPool(options: WorkerPoolOptions = {}): Promise<void> {
+  public async initializeWorkerPool(
+    options: WorkerPoolOptions = {},
+  ): Promise<void> {
     if (this.isPoolReady && this.workerPool.length > 0) {
       return;
     }
@@ -125,13 +132,18 @@ export class AttestationWasmLoader {
             activeRequests: 0,
           };
 
-          worker.onmessage = (event: MessageEvent<EcdsaWorkerMessageResponse>) => {
+          worker.onmessage = (
+            event: MessageEvent<EcdsaWorkerMessageResponse>,
+          ) => {
             const data = event.data;
             if (data?.requestId !== undefined) {
               const cb = this.pendingCallbacks.get(data.requestId);
               if (cb) {
                 this.pendingCallbacks.delete(data.requestId);
-                workerTask.activeRequests = Math.max(0, workerTask.activeRequests - 1);
+                workerTask.activeRequests = Math.max(
+                  0,
+                  workerTask.activeRequests - 1,
+                );
                 cb(data);
               }
             }
@@ -157,60 +169,39 @@ export class AttestationWasmLoader {
           initPromises.push(p);
         }
 
-    /**
-     * Checks if the S-component of the signature (last 32 bytes) is <= n/2 (BIP-62 low-S).
-     */
-    public isCanonicalLowS(signatureBytes: Uint8Array): boolean {
-        if (signatureBytes.length < 64) return false;
-        // secp256k1 half-order: n/2
-        const halfOrder = [
-            0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d,
-            0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0
-        ];
-        const sBytes = signatureBytes.slice(32, 64);
-        for (let i = 0; i < 32; i++) {
-            if (sBytes[i] < halfOrder[i]) return true;
-            if (sBytes[i] > halfOrder[i]) return false;
+        if (this.workerPool.length > 0) {
+          await Promise.all(initPromises);
         }
-        return true;
+        this.isPoolReady = true;
+        resolve();
+      } catch (err) {
+        console.error("Failed to initialize ECDSA worker pool:", err);
+        this.isPoolReady = false;
+        reject(err);
+      }
+    });
+
+    return this.poolReadyPromise;
+  }
+
+  /**
+   * Checks if the S-component of the signature (last 32 bytes) is <= n/2 (BIP-62 low-S).
+   */
+  public isCanonicalLowS(signatureBytes: Uint8Array): boolean {
+    if (signatureBytes.length < 64) return false;
+    // secp256k1 half-order: n/2
+    const halfOrder = [
+      0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      0xff, 0xff, 0xff, 0xff, 0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d,
+      0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0,
+    ];
+    const sBytes = signatureBytes.slice(32, 64);
+    for (let i = 0; i < 32; i++) {
+      if (sBytes[i] < halfOrder[i]) return true;
+      if (sBytes[i] > halfOrder[i]) return false;
     }
-
-    public async verifySignature(
-        publicKeyHex: string,
-        message: string,
-        signatureHex: string
-    ): Promise<boolean> {
-        const signatureBytes = new Uint8Array(this.hexToBytes(signatureHex));
-        if (!this.isCanonicalLowS(signatureBytes)) {
-            // Reject malleable high-S signatures in accordance with BIP-62 (#5492)
-            return false;
-        }
-
-        await this.readyPromise;
-        if (!this.wasmInstance || !this.wasmMemory) {
-            throw new Error('WASM instance not initialized');
-        }
-
-        const publicKey = new Uint8Array(this.hexToBytes(publicKeyHex));
-        const messageBytes = new TextEncoder().encode(message);
-        const signature = signatureBytes;
-
-        const pkPtr = 0;
-        const msgPtr = 32;
-        const sigPtr = msgPtr + messageBytes.length;
-
-        const memoryView = new Uint8Array(this.wasmMemory.buffer);
-        memoryView.set(publicKey, pkPtr);
-        memoryView.set(messageBytes, msgPtr);
-        memoryView.set(signature, sigPtr);
-
-        const verifyFn = this.wasmInstance.exports.ecdsa_verify_attestation as CallableFunction;
-        const result = verifyFn(pkPtr, msgPtr, messageBytes.length, sigPtr);
-
-        return result === 0;
-    }
+    return true;
+  }
 
   public getPoolSize(): number {
     return this.workerPool.length;
@@ -220,7 +211,7 @@ export class AttestationWasmLoader {
     for (const item of this.workerPool) {
       try {
         item.worker.terminate();
-      } catch (e) {
+      } catch {
         // Ignore termination errors
       }
     }
@@ -235,7 +226,7 @@ export class AttestationWasmLoader {
    * Easily processes 500+ signatures in under 100ms without freezing the main thread (#5526).
    */
   public async verifySignatureBatch(
-    items: VerifySignatureItem[]
+    items: VerifySignatureItem[],
   ): Promise<VerifySignatureBatchResult[]> {
     if (!items || items.length === 0) {
       return [];
@@ -253,7 +244,7 @@ export class AttestationWasmLoader {
           const valid = this.verifySignatureFallback(
             item.publicKeyHex,
             item.message,
-            item.signatureHex
+            item.signatureHex,
           );
           return { id: item.id, valid };
         } catch (err) {
@@ -287,7 +278,13 @@ export class AttestationWasmLoader {
           if (response.type === "VERIFY_BATCH_RESULT") {
             resolve(response.results);
           } else {
-            resolve(chunk.map((c) => ({ id: c.id, valid: false, error: "Invalid response" })));
+            resolve(
+              chunk.map((c) => ({
+                id: c.id,
+                valid: false,
+                error: "Invalid response",
+              })),
+            );
           }
         });
 
@@ -308,8 +305,14 @@ export class AttestationWasmLoader {
   public async verifySignature(
     publicKeyHex: string,
     message: string,
-    signatureHex: string
+    signatureHex: string,
   ): Promise<boolean> {
+    const signatureBytes = new Uint8Array(this.hexToBytes(signatureHex));
+    if (!this.isCanonicalLowS(signatureBytes)) {
+      // Reject malleable high-S signatures in accordance with BIP-62 (#5492)
+      return false;
+    }
+
     // If worker pool is active, delegate single verification to worker pool to prevent UI blocking
     if (this.isPoolReady && this.workerPool.length > 0) {
       const results = await this.verifySignatureBatch([
@@ -325,7 +328,7 @@ export class AttestationWasmLoader {
 
     const publicKey = new Uint8Array(this.hexToBytes(publicKeyHex));
     const messageBytes = new TextEncoder().encode(message);
-    const signature = new Uint8Array(this.hexToBytes(signatureHex));
+    const signature = signatureBytes;
 
     const pkPtr = 0;
     const msgPtr = 32;
@@ -336,7 +339,8 @@ export class AttestationWasmLoader {
     memoryView.set(messageBytes, msgPtr);
     memoryView.set(signature, sigPtr);
 
-    const verifyFn = this.wasmInstance.exports.ecdsa_verify_attestation as CallableFunction;
+    const verifyFn = this.wasmInstance.exports
+      .ecdsa_verify_attestation as CallableFunction;
     const result = verifyFn(pkPtr, msgPtr, messageBytes.length, sigPtr);
 
     return result === 0;
@@ -345,13 +349,14 @@ export class AttestationWasmLoader {
   private verifySignatureFallback(
     publicKeyHex: string,
     message: string,
-    signatureHex: string
+    signatureHex: string,
   ): boolean {
     const pkBytes = this.hexToBytes(publicKeyHex);
     const msgBytes = new TextEncoder().encode(message);
     const sigBytes = this.hexToBytes(signatureHex);
     if (!pkBytes.length || !msgBytes.length || !sigBytes.length) return false;
-    const expectedFirstByte = (pkBytes[0] ^ (msgBytes[0 % msgBytes.length] ^ 0)) & 0xff;
+    const expectedFirstByte =
+      (pkBytes[0] ^ (msgBytes[0 % msgBytes.length] ^ 0)) & 0xff;
     return sigBytes[0] === expectedFirstByte;
   }
 

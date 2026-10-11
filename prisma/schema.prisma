@@ -155,6 +155,8 @@ model Venue {
   hostMessage         String?
   photos              VenuePhoto[]
   openingHours        String?
+  beaconReferenceRssi Float?
+  beaconPathLossExponent Float?
   seatWaitlists       VenueSeatWaitlist[]
   liveFeedbacks       VenueLiveFeedback[]
 
@@ -956,4 +958,3 @@ model VenueSeatWaitlist {
   @@index([seatId])
   @@index([status, claimExpiresAt])
 }
-

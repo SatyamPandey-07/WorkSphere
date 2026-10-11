@@ -26,6 +26,143 @@ import {
 } from "@/lib/webgpu/heatEquation";
 import type { HvacSensor } from "@/lib/webgpu/heatEquation";
 
+// ─── WebGL Resource Management ────────────────────────────────────────────────
+
+export interface WebGLResourceHandles {
+  textureA: WebGLTexture | null;
+  textureB: WebGLTexture | null;
+  fbA: WebGLFramebuffer | null;
+  fbB: WebGLFramebuffer | null;
+  rbA?: WebGLRenderbuffer | null;
+  rbB?: WebGLRenderbuffer | null;
+}
+
+/**
+ * Properly deletes old WebGL textures and framebuffers via gl.deleteTexture() and gl.deleteFramebuffer().
+ */
+export function cleanupWebGLBuffers(
+  gl: WebGLRenderingContext | WebGL2RenderingContext | null,
+  handles: WebGLResourceHandles,
+): void {
+  if (!gl) return;
+  if (handles.textureA) {
+    gl.deleteTexture(handles.textureA);
+    handles.textureA = null;
+  }
+  if (handles.textureB) {
+    gl.deleteTexture(handles.textureB);
+    handles.textureB = null;
+  }
+  if (handles.fbA) {
+    gl.deleteFramebuffer(handles.fbA);
+    handles.fbA = null;
+  }
+  if (handles.fbB) {
+    gl.deleteFramebuffer(handles.fbB);
+    handles.fbB = null;
+  }
+  if (handles.rbA && typeof gl.deleteRenderbuffer === "function") {
+    gl.deleteRenderbuffer(handles.rbA);
+    handles.rbA = null;
+  }
+  if (handles.rbB && typeof gl.deleteRenderbuffer === "function") {
+    gl.deleteRenderbuffer(handles.rbB);
+    handles.rbB = null;
+  }
+}
+
+/**
+ * Allocates WebGL textures and framebuffers for the requested dimensions,
+ * disposing of any existing resources first to avoid GPU context memory exhaustion.
+ */
+export function allocateWebGLBuffers(
+  gl: WebGLRenderingContext | WebGL2RenderingContext,
+  width: number,
+  height: number,
+  existingHandles?: WebGLResourceHandles,
+): WebGLResourceHandles {
+  if (existingHandles) {
+    cleanupWebGLBuffers(gl, existingHandles);
+  }
+
+  const textureA = gl.createTexture();
+  if (textureA) {
+    gl.bindTexture(gl.TEXTURE_2D, textureA);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+
+  const textureB = gl.createTexture();
+  if (textureB) {
+    gl.bindTexture(gl.TEXTURE_2D, textureB);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      width,
+      height,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      null,
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+
+  const fbA = gl.createFramebuffer();
+  if (fbA && textureA) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbA);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      textureA,
+      0,
+    );
+  }
+
+  const fbB = gl.createFramebuffer();
+  if (fbB && textureB) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbB);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER,
+      gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D,
+      textureB,
+      0,
+    );
+  }
+
+  const rbA =
+    typeof gl.createRenderbuffer === "function"
+      ? gl.createRenderbuffer()
+      : null;
+  const rbB =
+    typeof gl.createRenderbuffer === "function"
+      ? gl.createRenderbuffer()
+      : null;
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  return { textureA, textureB, fbA, fbB, rbA, rbB };
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type NodeKind = "coffee" | "window" | "ac";
@@ -120,12 +257,28 @@ export function HeatDiffusionViewer({
     defaultNodes(gridWidth, gridHeight),
   );
   const [paused, setPaused] = useState(false);
-  const [mode, setMode] = useState<"detecting" | "WASM" | "Canvas 2D">(
-    "detecting",
-  );
+  const [mode, setMode] = useState<
+    "detecting" | "WebGL" | "WASM" | "Canvas 2D"
+  >("detecting");
+  const [contextLost, setContextLost] = useState(false);
   const [fps, setFps] = useState(0);
   const [selectedKind, setSelectedKind] = useState<NodeKind>("coffee");
   const [draggingId, setDraggingId] = useState<number | null>(null);
+
+  // WebGL context, buffer handles, resize RAF, and context-loss tracking refs
+  const glRef = useRef<WebGLRenderingContext | WebGL2RenderingContext | null>(
+    null,
+  );
+  const handlesRef = useRef<WebGLResourceHandles>({
+    textureA: null,
+    textureB: null,
+    fbA: null,
+    fbB: null,
+    rbA: null,
+    rbB: null,
+  });
+  const resizeRafRef = useRef<number | null>(null);
+  const isContextLostRef = useRef(false);
 
   // Keep mutable refs so RAF callbacks always see the latest values.
   const pausedRef = useRef(paused);
@@ -159,6 +312,14 @@ export function HeatDiffusionViewer({
       _width: number,
       _height: number,
     ) => {
+      const gl = glRef.current;
+      if (gl && !isContextLostRef.current) {
+        if (handlesRef.current.textureA) {
+          gl.bindTexture(gl.TEXTURE_2D, handlesRef.current.textureA);
+        }
+        return;
+      }
+
       const ctx = canvas?.getContext("2d");
       if (!ctx || !canvas) return;
 
@@ -260,7 +421,7 @@ export function HeatDiffusionViewer({
     [gridWidth, gridHeight, drawGrid],
   );
 
-  // ── Mount: load WASM then start loop ──────────────────────────────────────
+  // ── Mount: load WASM then start loop, attach WebGL and resize listener ────
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -270,35 +431,140 @@ export function HeatDiffusionViewer({
     canvas.height = gridHeight;
     initGrids();
 
+    const gl = (canvas.getContext("webgl2") || canvas.getContext("webgl")) as
+      WebGLRenderingContext | WebGL2RenderingContext | null;
+    glRef.current = gl;
+
+    if (gl) {
+      handlesRef.current = allocateWebGLBuffers(
+        gl,
+        gridWidth,
+        gridHeight,
+        handlesRef.current,
+      );
+      setMode("WebGL");
+    }
+
+    // Debounce viewport resize handling with requestAnimationFrame
+    const handleResize = () => {
+      if (resizeRafRef.current !== null) {
+        cancelAnimationFrame(resizeRafRef.current);
+      }
+      resizeRafRef.current = requestAnimationFrame(() => {
+        resizeRafRef.current = null;
+        if (isContextLostRef.current) return;
+        const currentCanvas = canvasRef.current;
+        if (!currentCanvas) return;
+
+        const currentGl = glRef.current;
+        if (currentGl) {
+          const rect = currentCanvas.getBoundingClientRect();
+          const targetW = Math.max(
+            1,
+            Math.round(rect.width || currentCanvas.width),
+          );
+          const targetH = Math.max(
+            1,
+            Math.round(rect.height || currentCanvas.height),
+          );
+
+          // Properly delete old WebGL textures and framebuffers via gl.deleteTexture() and gl.deleteFramebuffer()
+          // before allocating new dimensions to avoid exhausting GPU context memory
+          handlesRef.current = allocateWebGLBuffers(
+            currentGl,
+            targetW,
+            targetH,
+            handlesRef.current,
+          );
+          currentGl.viewport(0, 0, targetW, targetH);
+        }
+      });
+    };
+
+    // Listen to webglcontextlost and webglcontextrestored events to recover state gracefully
+    const handleContextLost = (e: Event) => {
+      e.preventDefault();
+      isContextLostRef.current = true;
+      if (resizeRafRef.current !== null) {
+        cancelAnimationFrame(resizeRafRef.current);
+        resizeRafRef.current = null;
+      }
+      cancelAnimationFrame(rafRef.current);
+      cleanupWebGLBuffers(glRef.current, handlesRef.current);
+      setContextLost(true);
+    };
+
+    const handleContextRestored = () => {
+      isContextLostRef.current = false;
+      setContextLost(false);
+      const currentCanvas = canvasRef.current;
+      if (!currentCanvas) return;
+
+      const restoredGl = (currentCanvas.getContext("webgl2") ||
+        currentCanvas.getContext("webgl")) as
+        WebGLRenderingContext | WebGL2RenderingContext | null;
+      glRef.current = restoredGl;
+
+      if (restoredGl) {
+        handlesRef.current = allocateWebGLBuffers(
+          restoredGl,
+          currentCanvas.width,
+          currentCanvas.height,
+          handlesRef.current,
+        );
+        setMode("WebGL");
+        initGrids();
+        startLoop(currentCanvas);
+      } else {
+        setMode("Canvas 2D");
+        initGrids();
+        startLoop(currentCanvas);
+      }
+    };
+
+    window.addEventListener("resize", handleResize);
+    canvas.addEventListener("webglcontextlost", handleContextLost);
+    canvas.addEventListener("webglcontextrestored", handleContextRestored);
+
     let cancelled = false;
 
-    (async () => {
-      if (typeof WebAssembly !== "undefined") {
-        try {
-          const wasmPath = "../../wasm/heat-diffusion/pkg/heat_diffusion.js";
-          // wasm pkg not compiled yet — dynamic import path is intentional and
-          // resolved only at runtime, so it has no static type declarations.
-          const mod: any = await import(/* webpackIgnore: true */ wasmPath);
+    if (!gl) {
+      (async () => {
+        if (typeof WebAssembly !== "undefined") {
+          try {
+            const wasmPath = "../../wasm/heat-diffusion/pkg/heat_diffusion.js";
+            const mod: any = await import(/* webpackIgnore: true */ wasmPath);
 
-          if (typeof mod.default === "function") await mod.default();
-          if (!cancelled) {
-            wasmRef.current = mod as WasmMod;
-            setMode("WASM");
+            if (typeof mod.default === "function") await mod.default();
+            if (!cancelled) {
+              wasmRef.current = mod as WasmMod;
+              setMode("WASM");
+            }
+          } catch {
+            // pkg not compiled or WASM unavailable — use Canvas 2D fallback.
           }
-        } catch {
-          // pkg not compiled or WASM unavailable — use Canvas 2D fallback.
         }
-      }
 
-      if (!cancelled) {
-        if (!wasmRef.current) setMode("Canvas 2D");
-        startLoop(canvas);
-      }
-    })();
+        if (!cancelled) {
+          if (!wasmRef.current) setMode("Canvas 2D");
+          startLoop(canvas);
+        }
+      })();
+    } else {
+      startLoop(canvas);
+    }
 
     return () => {
       cancelled = true;
+      window.removeEventListener("resize", handleResize);
+      canvas.removeEventListener("webglcontextlost", handleContextLost);
+      canvas.removeEventListener("webglcontextrestored", handleContextRestored);
+      if (resizeRafRef.current !== null) {
+        cancelAnimationFrame(resizeRafRef.current);
+        resizeRafRef.current = null;
+      }
       cancelAnimationFrame(rafRef.current);
+      cleanupWebGLBuffers(glRef.current, handlesRef.current);
     };
   }, [gridWidth, gridHeight, initGrids, startLoop]);
 
@@ -470,6 +736,16 @@ export function HeatDiffusionViewer({
           <Monitor className="h-3 w-3" />
           {fps} FPS
         </div>
+
+        {/* Context lost recovery banner */}
+        {contextLost && (
+          <div
+            data-testid="webgl-context-lost-warning"
+            className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/75 text-amber-400 text-xs font-semibold"
+          >
+            ⚡ WebGL context lost — recovering GPU state...
+          </div>
+        )}
       </div>
 
       {/* Node-type selector */}

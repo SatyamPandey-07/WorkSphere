@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Mic, MicOff } from "lucide-react";
 import { AudioLevelIndicator } from "./AudioLevelIndicator";
 import { usePeakDecayLevel } from "@/hooks/usePeakDecayLevel";
 type PeerAvatarTileProps = {
@@ -44,6 +45,73 @@ export function PeerAvatarTile({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const smoothedAudioLevel = usePeakDecayLevel(audioLevel);
 
+  // Track the audio track's enabled/muted property dynamically
+  const [trackEnabled, setTrackEnabled] = useState<boolean>(() => {
+    if (!stream) return true;
+    const tracks = stream.getAudioTracks();
+    if (tracks.length === 0) return true;
+    return tracks.some((t) => t.enabled && !t.muted);
+  });
+
+  useEffect(() => {
+    if (!stream) {
+      setTrackEnabled(true);
+      return;
+    }
+
+    const updateTrackState = () => {
+      const tracks = stream.getAudioTracks();
+      if (tracks.length === 0) {
+        setTrackEnabled(true);
+      } else {
+        setTrackEnabled(tracks.some((t) => t.enabled && !t.muted));
+      }
+    };
+
+    updateTrackState();
+
+    const tracks = stream.getAudioTracks();
+    if (tracks.length === 0) {
+      setTrackEnabled(true);
+      return;
+    }
+
+    const handleTrackChange = () => updateTrackState();
+
+    tracks.forEach((track) => {
+      track.addEventListener("mute", handleTrackChange);
+      track.addEventListener("unmute", handleTrackChange);
+      track.addEventListener("ended", handleTrackChange);
+    });
+
+    stream.addEventListener("addtrack", handleTrackChange);
+    stream.addEventListener("removetrack", handleTrackChange);
+
+    // Poll for track.enabled changes since property mutation does not fire standard DOM events
+    const interval = setInterval(updateTrackState, 200);
+    if (
+      typeof interval === "object" &&
+      interval !== null &&
+      "unref" in interval
+    ) {
+      (interval as unknown as { unref: () => void }).unref();
+    }
+
+    return () => {
+      clearInterval(interval);
+      tracks.forEach((track) => {
+        track.removeEventListener("mute", handleTrackChange);
+        track.removeEventListener("unmute", handleTrackChange);
+        track.removeEventListener("ended", handleTrackChange);
+      });
+      stream.removeEventListener("addtrack", handleTrackChange);
+      stream.removeEventListener("removetrack", handleTrackChange);
+    };
+  }, [stream]);
+
+  const effectiveAudioEnabled = audioEnabled && trackEnabled;
+  const effectiveIsSpeaking = effectiveAudioEnabled && isSpeaking;
+
   // Attach media stream to video element
   useEffect(() => {
     const el = videoRef.current;
@@ -71,7 +139,7 @@ export function PeerAvatarTile({
   return (
     <div
       className={`group relative flex flex-col items-center gap-2 rounded-2xl border bg-black/40 p-3 transition-all duration-200 ${
-        isSpeaking && audioEnabled
+        effectiveIsSpeaking
           ? "border-emerald-400/40 shadow-lg shadow-emerald-500/10"
           : "border-white/10 hover:border-white/20"
       }`}
@@ -84,12 +152,70 @@ export function PeerAvatarTile({
         )}
       </span>
 
+      {/* Mic status badge */}
+      <div
+        data-testid="mic-status-badge"
+        data-state={
+          !effectiveAudioEnabled
+            ? "muted"
+            : effectiveIsSpeaking
+              ? "transmitting"
+              : "silent"
+        }
+        title={
+          !effectiveAudioEnabled
+            ? "Participant muted"
+            : effectiveIsSpeaking
+              ? "Speaking"
+              : "Microphone silent"
+        }
+        aria-label={
+          !effectiveAudioEnabled
+            ? "Participant muted"
+            : effectiveIsSpeaking
+              ? "Speaking"
+              : "Microphone silent"
+        }
+        className={`absolute top-2 right-3 z-20 flex h-6 w-6 items-center justify-center rounded-full backdrop-blur-sm transition-all duration-200 ${
+          !effectiveAudioEnabled
+            ? "border border-rose-500/30 bg-rose-500/20 text-rose-400"
+            : effectiveIsSpeaking
+              ? "border border-emerald-500/40 bg-emerald-500/20 text-emerald-400"
+              : "border border-white/10 bg-black/60 text-zinc-400"
+        }`}
+      >
+        {!effectiveAudioEnabled ? (
+          <MicOff
+            className="h-3 w-3 text-rose-400"
+            data-testid="mic-muted-icon"
+          />
+        ) : effectiveIsSpeaking ? (
+          <div className="relative flex items-center justify-center">
+            {/* Animated green radiating waves */}
+            <span
+              data-testid="radiating-waves"
+              className="absolute -inset-1 animate-ping rounded-full bg-emerald-400/40 pointer-events-none"
+            />
+            <span className="absolute -inset-2 animate-pulse rounded-full border border-emerald-400/40 pointer-events-none" />
+            <Mic
+              className="relative z-10 h-3 w-3 text-emerald-400"
+              data-testid="mic-transmitting-icon"
+            />
+          </div>
+        ) : (
+          <Mic
+            className="h-3 w-3 text-zinc-400"
+            data-testid="mic-silent-icon"
+          />
+        )}
+      </div>
+
       {/* Audio level ring with avatar / video inside */}
       <AudioLevelIndicator
         level={smoothedAudioLevel}
         size={88}
         strokeWidth={3}
-        muted={!audioEnabled}
+        muted={!effectiveAudioEnabled}
       >
         {hasVideo ? (
           <video
@@ -117,7 +243,7 @@ export function PeerAvatarTile({
 
       {/* Status badges */}
       <div className="flex items-center gap-2">
-        {!audioEnabled && (
+        {!effectiveAudioEnabled && (
           <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 px-2 py-0.5 text-[9px] font-medium text-rose-300">
             <svg
               width="10"
@@ -154,7 +280,7 @@ export function PeerAvatarTile({
             Video off
           </span>
         )}
-        {isSpeaking && audioEnabled && (
+        {effectiveIsSpeaking && (
           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[9px] font-medium text-emerald-300 animate-pulse">
             Speaking
           </span>

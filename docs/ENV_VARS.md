@@ -58,6 +58,7 @@ These variables power auxiliary features. If left unset during local development
 | `PEXELS_API_KEY` | Built-in Unsplash & Static Placeholders | Venue and gallery photo retrieval. Unset falls back to static curated workspace images. |
 | `UNSPLASH_ACCESS_KEY` | Static Placeholder Images | Client/Server Unsplash photo integration fallback. |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | Application base URL used for metadata, social cards, and share links. |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | OpenStreetMap / CartoCDN Tiles | Public Mapbox access token for vector map styles. When omitted, automatically falls back to OpenStreetMap and CartoCDN raster tile servers without error. |
 
 ---
 
@@ -116,6 +117,34 @@ WorkSphere can be developed locally entirely on **free tier** developer resource
    ```env
    GROQ_API_KEY=gsk_...
    ```
+
+### 4. Mapbox Vector Map Tokens & OpenStreetMap Fallback
+WorkSphere renders interactive Leaflet maps with custom styling for venue locations, coworking spaces, and spatial navigation.
+
+#### How to Obtain a Mapbox Token:
+1. Sign up for a free developer account at [mapbox.com](https://www.mapbox.com).
+2. Go to your **Account Dashboard** -> **Tokens**.
+3. Create a public token with default scopes (`styles:tiles`, `styles:read`).
+4. Add to `.env.local`:
+   ```env
+   NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ1IjoieW91ci11c2VybmFtZSIsImEiOiJ5b3VyLXRva2VuIn0...
+   ```
+
+#### Automatic Fallback to OpenStreetMap & CartoCDN:
+If `NEXT_PUBLIC_MAPBOX_TOKEN` is unset or omitted during local development:
+- **No Crash or Missing Map**: WorkSphere automatically and gracefully degrades to public tile servers:
+  - **Light Theme**: CartoCDN Light tiles (`https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png`)
+  - **Cyberpunk / Dark Theme**: CartoCDN Dark tiles (`https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png`)
+  - **Default Theme**: Standard OpenStreetMap raster tiles (`https://tile.openstreetmap.org/{z}/{x}/{y}.png`)
+- **Supported Fallback Layers**:
+  - Interactive marker pins and cluster groups
+  - Venue location popups and directions links
+  - User geolocation center marker
+  - Full touch/scroll pan and zoom controls
+- **Rate Limit & Fair Use Caveats**:
+  - OpenStreetMap's public tile server (`tile.openstreetmap.org`) enforces a strict **Tile Usage Policy**: requests must include a valid HTTP `User-Agent` and should not generate heavy, automated bulk traffic.
+  - CartoCDN public basemaps are intended for non-commercial evaluation and development.
+  - For high-volume production deployments, configuring `NEXT_PUBLIC_MAPBOX_TOKEN` or self-hosting dedicated vector/raster tiles is strongly recommended.
 
 ---
 

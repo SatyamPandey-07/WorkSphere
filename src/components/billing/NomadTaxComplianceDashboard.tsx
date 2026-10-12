@@ -24,6 +24,7 @@ export default function NomadTaxComplianceDashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const fetchReport = async () => {
     setLoading(true);
@@ -69,6 +70,31 @@ export default function NomadTaxComplianceDashboard() {
     }
   };
 
+  const handleExportPDF = async () => {
+    if (!report) return;
+    setExportingPdf(true);
+    try {
+      const res = await fetch("/api/tax/nomad-compliance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ report, format: "pdf" }),
+      });
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `WorkSphere-Nomad-Tax-Audit-${report.taxYear}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("PDF Export error:", err);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6">
       {/* Header Banner */}
@@ -104,6 +130,15 @@ export default function NomadTaxComplianceDashboard() {
             >
               <FileSpreadsheet className="w-4 h-4" />
               {exporting ? "Generating..." : "Export CSV Dossier"}
+            </button>
+
+            <button
+              onClick={handleExportPDF}
+              disabled={exportingPdf || !report}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/20 transition disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              {exportingPdf ? "Generating PDF..." : "Export Audit PDF"}
             </button>
           </div>
         </div>

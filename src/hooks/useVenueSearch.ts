@@ -29,6 +29,10 @@ export interface UseVenueSearchOptions {
   minQueryLength?: number;
   /** Optional custom base API path (default: "/api/venues") */
   apiEndpoint?: string;
+  /** Configurable semantic vector scoring weight (0.0 - 1.0 or 0 - 100) */
+  semanticWeight?: number;
+  /** Configurable full-text keyword scoring weight (0.0 - 1.0 or 0 - 100) */
+  fullTextWeight?: number;
 }
 
 export interface UseVenueSearchReturn<T = VenueSearchResult> {
@@ -135,7 +139,13 @@ export function useVenueSearch<T = VenueSearchResult>(
 
       try {
         const delimiter = apiEndpoint.includes("?") ? "&" : "?";
-        const url = `${apiEndpoint}${delimiter}query=${encodeURIComponent(trimmedQuery)}`;
+        let url = `${apiEndpoint}${delimiter}query=${encodeURIComponent(trimmedQuery)}`;
+        if (options.semanticWeight !== undefined) {
+          url += `&semanticWeight=${encodeURIComponent(String(options.semanticWeight))}`;
+        }
+        if (options.fullTextWeight !== undefined) {
+          url += `&fullTextWeight=${encodeURIComponent(String(options.fullTextWeight))}`;
+        }
 
         const response = await fetch(url, {
           signal: controller.signal,
@@ -246,12 +256,23 @@ export function useVenueSearch<T = VenueSearchResult>(
 
   const handleSetQuery = useCallback(
     (newQuery: string) => {
+      const trimmed = newQuery.trim();
+      if (!trimmed || trimmed.length < minQueryLength) {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
+        }
+        abort();
+        setVenues([]);
+        setIsLoading(false);
+        setError(null);
+      }
       if (!isControlled) {
         setInternalQuery(newQuery);
       }
       setSuggestedQuery(null);
     },
-    [isControlled],
+    [abort, isControlled, minQueryLength],
   );
 
   return {

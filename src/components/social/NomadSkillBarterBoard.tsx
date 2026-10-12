@@ -31,6 +31,54 @@ import {
   type BarterMatchResult,
 } from "@/lib/social/skillBarterEngine";
 
+// Helper to safely parse and auto-link URLs in user bio and skill description text
+// Prevents XSS script injection while converting URLs into secure external links with target="_blank" and rel="noopener noreferrer"
+export function renderSanitizedBioText(rawText: string | undefined | null): React.ReactNode {
+  if (!rawText) return null;
+
+  // URL matching regex supporting http, https, and www prefixes
+  const urlRegex = /(https?:\/\/[^\s<>"'`]+|www\.[^\s<>"'`]+)/gi;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = urlRegex.exec(rawText)) !== null) {
+    const matchIndex = match.index;
+    const matchedUrl = match[0];
+
+    // Push the text before the URL (React automatically escapes plain text strings against XSS)
+    if (matchIndex > lastIndex) {
+      parts.push(rawText.substring(lastIndex, matchIndex));
+    }
+
+    const href = matchedUrl.startsWith("http://") || matchedUrl.startsWith("https://")
+      ? matchedUrl
+      : `https://${matchedUrl}`;
+
+    parts.push(
+      <a
+        key={`link-${matchIndex}`}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 break-all font-semibold"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {matchedUrl}
+      </a>
+    );
+
+    lastIndex = matchIndex + matchedUrl.length;
+  }
+
+  // Push remaining text
+  if (lastIndex < rawText.length) {
+    parts.push(rawText.substring(lastIndex));
+  }
+
+  return parts;
+}
+
 interface NomadSkillBarterBoardProps {
   venueId?: string;
   venueName?: string;
@@ -405,7 +453,7 @@ export default function NomadSkillBarterBoard({
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
                       {item.userName}
                     </h3>
-                    <p className="text-xs text-slate-400 line-clamp-1">{item.userTitle}</p>
+                    <p className="text-xs text-slate-400 line-clamp-1">{renderSanitizedBioText(item.userTitle)}</p>
                   </div>
 
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold shrink-0">
@@ -420,7 +468,7 @@ export default function NomadSkillBarterBoard({
                     <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1">
                       {getCategoryIcon(item.offeringCategory)} Offering Expertise
                     </span>
-                    <p className="text-slate-200 font-medium">{item.offeringSkill}</p>
+                    <p className="text-slate-200 font-medium">{renderSanitizedBioText(item.offeringSkill)}</p>
                   </div>
 
                   {/* Seeking */}
@@ -428,7 +476,7 @@ export default function NomadSkillBarterBoard({
                     <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
                       {getCategoryIcon(item.seekingCategory)} Seeking Knowledge
                     </span>
-                    <p className="text-slate-300">{item.seekingSkill}</p>
+                    <p className="text-slate-300">{renderSanitizedBioText(item.seekingSkill)}</p>
                   </div>
                 </div>
               </div>

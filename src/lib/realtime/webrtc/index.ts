@@ -7,6 +7,7 @@
 
 export * from "./types";
 export * from "./qualityMonitor";
+export * from "./meshPathBalancer";
 export * from "./simulcastController";
 export * from "./meshConnection";
 export * from "./peerManager";

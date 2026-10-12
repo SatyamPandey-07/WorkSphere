@@ -122,15 +122,43 @@ export class AcousticFingerprintLoader {
             this.worker.addEventListener('message', handleMessage);
             this.worker.addEventListener('error', handleError);
 
+            // Strictly downsample high sample rates (96kHz, 192kHz) to 48kHz max at WASM boundary
+            // to avoid out-of-bounds heap memory access and buffer overflow (#5279)
+            let processedAudio = audioData;
+            let effectiveSampleRate = sampleRate;
+
+            if (sampleRate > 48000) {
+                const decimationFactor = Math.round(sampleRate / 48000);
+                if (decimationFactor > 1) {
+                    const downsampledLength = Math.floor(audioData.length / decimationFactor);
+                    const downsampledData = new Float32Array(downsampledLength);
+                    for (let i = 0; i < downsampledLength; i++) {
+                        let sum = 0;
+                        for (let j = 0; j < decimationFactor; j++) {
+                            sum += audioData[i * decimationFactor + j];
+                        }
+                        downsampledData[i] = sum / decimationFactor;
+                    }
+                    processedAudio = downsampledData;
+                    effectiveSampleRate = Math.round(sampleRate / decimationFactor);
+                }
+            }
+
+            // Cap buffer length to maximum FFT window size (4096 samples)
+            const MAX_FFT_WINDOW = 4096;
+            if (processedAudio.length > MAX_FFT_WINDOW) {
+                processedAudio = processedAudio.subarray(0, MAX_FFT_WINDOW);
+            }
+
             // ponytail: detect crossOriginIsolated; use SharedArrayBuffer if available, otherwise transferable ArrayBuffer with fallback to structured cloning
             if (isSharedArrayBufferSupported()) {
                 try {
-                    const sab = new SharedArrayBuffer(audioData.byteLength);
-                    new Float32Array(sab).set(audioData);
+                    const sab = new SharedArrayBuffer(processedAudio.byteLength);
+                    new Float32Array(sab).set(processedAudio);
                     const sharedAudio = new Float32Array(sab);
                     this.worker.postMessage({
                         type: 'PROCESS_AUDIO',
-                        payload: { audioData: sharedAudio, sampleRate }
+                        payload: { audioData: sharedAudio, sampleRate: effectiveSampleRate }
                     });
                     return;
                 } catch {
@@ -141,11 +169,11 @@ export class AcousticFingerprintLoader {
             // Fallback for environments where SharedArrayBuffer is disabled (missing COOP headers)
             // Try transferable ArrayBuffer first; if transfer fails, fall back to postMessage structured cloning
             try {
-                const transferableData = audioData.slice();
+                const transferableData = processedAudio.slice();
                 this.worker.postMessage(
                     {
                         type: 'PROCESS_AUDIO',
-                        payload: { audioData: transferableData, sampleRate }
+                        payload: { audioData: transferableData, sampleRate: effectiveSampleRate }
                     },
                     [transferableData.buffer]
                 );
@@ -153,7 +181,7 @@ export class AcousticFingerprintLoader {
                 // ponytail: fallback to postMessage structured cloning without crashing WebAssembly audio analysis
                 this.worker.postMessage({
                     type: 'PROCESS_AUDIO',
-                    payload: { audioData, sampleRate }
+                    payload: { audioData: processedAudio, sampleRate: effectiveSampleRate }
                 });
             }
         });

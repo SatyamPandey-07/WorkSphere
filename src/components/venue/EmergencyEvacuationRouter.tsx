@@ -134,7 +134,7 @@ export default function EmergencyEvacuationRouter({
 
     setLoading(true);
     try {
-      const res = await fetch("/api/venue/evacuation", {
+      const res = await fetch(`/api/venues/${venueId}/evacuation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

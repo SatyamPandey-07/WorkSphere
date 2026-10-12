@@ -24,6 +24,8 @@ const LOW: BitrateTier = {
   audioMaxBitrate: 16_000,
   label: "low",
 };
+const DATA_SAVER_BITRATE_RATIO = 0.36;
+const DATA_SAVER_MAX_BITRATE = 900_000;
 
 export function pickBitrateTier(input: {
   rttMs?: number;
@@ -54,44 +56,64 @@ export function readNetworkHints(report: RTCStatsReport): {
   let packetsSent: number | undefined;
   let jitterMs: number | undefined;
 
-  report.forEach((stat: any) => {
-    if (stat.type === "candidate-pair" && (stat.state === "succeeded" || stat.nominated)) {
-      if (typeof stat.currentRoundTripTime === "number") {
+  report.forEach((stat) => {
+    if (
+      stat.type === "candidate-pair" &&
+      (("state" in stat && stat.state === "succeeded") ||
+        ("nominated" in stat && stat.nominated === true))
+    ) {
+      if (
+        "currentRoundTripTime" in stat &&
+        typeof stat.currentRoundTripTime === "number"
+      ) {
         rttMs = stat.currentRoundTripTime * 1000;
       }
     }
     if (stat.type === "remote-inbound-rtp") {
-      if (typeof stat.roundTripTime === "number") {
+      if ("roundTripTime" in stat && typeof stat.roundTripTime === "number") {
         rttMs = stat.roundTripTime * 1000;
       }
-      if (typeof stat.jitter === "number") {
+      if ("jitter" in stat && typeof stat.jitter === "number") {
         const jMs = stat.jitter * 1000;
         jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
       }
-      if (typeof stat.packetsLost === "number") {
+      if ("packetsLost" in stat && typeof stat.packetsLost === "number") {
         packetsLost = (packetsLost ?? 0) + stat.packetsLost;
       }
     }
     if (stat.type === "inbound-rtp") {
-      if (typeof stat.jitter === "number") {
+      if ("jitter" in stat && typeof stat.jitter === "number") {
         const jMs = stat.jitter * 1000;
         jitterMs = jitterMs !== undefined ? Math.max(jitterMs, jMs) : jMs;
       }
-      if (typeof stat.packetsLost === "number" && packetsLost === undefined) {
+      if (
+        "packetsLost" in stat &&
+        typeof stat.packetsLost === "number" &&
+        packetsLost === undefined
+      ) {
         packetsLost = (packetsLost ?? 0) + stat.packetsLost;
       }
       if (
+        "packetsReceived" in stat &&
         typeof stat.packetsReceived === "number" &&
         packetsSent === undefined
       ) {
-        packetsSent = (packetsSent ?? 0) + (stat.packetsReceived || 0) + (stat.packetsLost || 0);
+        const lost =
+          "packetsLost" in stat && typeof stat.packetsLost === "number"
+            ? stat.packetsLost
+            : 0;
+        packetsSent = (packetsSent ?? 0) + stat.packetsReceived + lost;
       }
     }
     if (stat.type === "outbound-rtp") {
-      if (typeof stat.packetsLost === "number" && packetsLost === undefined) {
+      if (
+        "packetsLost" in stat &&
+        typeof stat.packetsLost === "number" &&
+        packetsLost === undefined
+      ) {
         packetsLost = (packetsLost ?? 0) + stat.packetsLost;
       }
-      if (typeof stat.packetsSent === "number") {
+      if ("packetsSent" in stat && typeof stat.packetsSent === "number") {
         packetsSent = (packetsSent ?? 0) + stat.packetsSent;
       }
     }
@@ -102,6 +124,7 @@ export function readNetworkHints(report: RTCStatsReport): {
 
 export async function adaptVideoBitrate(
   pc: RTCPeerConnection,
+  options: { dataSaverMode?: boolean } = {},
 ): Promise<BitrateTier | null> {
   if (pc.signalingState === "closed" || (pc.connectionState && pc.connectionState === "closed")) {
     return null;
@@ -127,7 +150,18 @@ export async function adaptVideoBitrate(
       if (!params.encodings?.length) {
         params.encodings = [{}];
       }
-      params.encodings[0].maxBitrate = tier.maxBitrate;
+      const videoBitrate = options.dataSaverMode
+        ? Math.min(
+            tier.maxBitrate * DATA_SAVER_BITRATE_RATIO,
+            DATA_SAVER_MAX_BITRATE,
+          )
+        : tier.maxBitrate;
+      const perEncodingBitrate = Math.floor(
+        videoBitrate / params.encodings.length,
+      );
+      for (const encoding of params.encodings) {
+        encoding.maxBitrate = perEncodingBitrate;
+      }
       try {
         await videoSender.setParameters(params);
       } catch {

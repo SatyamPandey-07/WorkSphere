@@ -82,6 +82,8 @@ model Venue {
   id                  String              @id @default(cuid())
   placeId             String              @unique
   name                String
+  searchVector        Unsupported("tsvector")?
+  searchEmbedding     Unsupported("vector(1024)")?
   latitude            Float
   longitude           Float
   category            String // cafe, coworking, library
@@ -153,6 +155,8 @@ model Venue {
   hostMessage         String?
   photos              VenuePhoto[]
   openingHours        String?
+  beaconReferenceRssi Float?
+  beaconPathLossExponent Float?
   seatWaitlists       VenueSeatWaitlist[]
   liveFeedbacks       VenueLiveFeedback[]
 
@@ -954,4 +958,3 @@ model VenueSeatWaitlist {
   @@index([seatId])
   @@index([status, claimExpiresAt])
 }
-

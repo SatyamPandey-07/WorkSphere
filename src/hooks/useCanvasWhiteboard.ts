@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -6,7 +7,16 @@ import * as Y from "yjs";
 import YProvider from "y-partykit/provider";
 import { FailoverSyncManager } from "@/lib/edge/failoverSync";
 
-export type ToolType = "pen" | "eraser" | "rect" | "circle" | "line" | "sticky";
+import {
+  type ConstructType,
+  renderConstructToCanvas,
+  renderConstructSvg,
+} from "@/lib/whiteboard/constructGenerator";
+
+export { type ConstructType, renderConstructToCanvas, renderConstructSvg };
+
+export type ToolType =
+  "pen" | "eraser" | "rect" | "circle" | "line" | "sticky" | "construct";
 
 export interface ShapeData {
   id: string;
@@ -21,6 +31,7 @@ export interface ShapeData {
   updatedAt?: number;
   clock?: number;
   text?: string;
+  constructType?: ConstructType;
 }
 
 export interface RemoteCursor {
@@ -131,6 +142,8 @@ function shapeMapToData(map: Y.Map<unknown>): ShapeData {
     deletedAt,
     updatedAt,
     clock,
+    text: map.get("text") as string | undefined,
+    constructType: map.get("constructType") as ConstructType | undefined,
   };
 }
 
@@ -391,7 +404,10 @@ export function useCanvasWhiteboard(
       if (!awareness) return;
       const currentTime = Date.now();
       if (currentTime - lastActiveAtRef.current > IDLE_TIMEOUT_MS) {
-        const local = awareness.getLocalState() as Record<string, unknown> | null;
+        const local = awareness.getLocalState() as Record<
+          string,
+          unknown
+        > | null;
         if (local && local.status !== "idle") {
           awareness.setLocalState({
             ...local,
@@ -487,7 +503,9 @@ export function useCanvasWhiteboard(
           if (item) {
             prevShape = { ...item };
             return prev.map((s) =>
-              s.id === id ? { ...s, ...updates, updatedAt: now, clock: now } : s,
+              s.id === id
+                ? { ...s, ...updates, updatedAt: now, clock: now }
+                : s,
             );
           }
           return prev;

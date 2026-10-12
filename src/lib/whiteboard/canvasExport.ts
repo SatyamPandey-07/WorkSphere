@@ -1,4 +1,8 @@
 import type { ShapeData } from "@/hooks/useCanvasWhiteboard";
+import {
+  renderConstructToCanvas,
+  renderConstructSvg,
+} from "./constructGenerator";
 
 export interface ExportCanvasOptions {
   width?: number;
@@ -313,7 +317,9 @@ export async function exportCanvasToBlob(
     canvas = shapesOrCanvas;
   } else {
     if (typeof document === "undefined") {
-      throw new Error("Canvas export is only supported in browser environments.");
+      throw new Error(
+        "Canvas export is only supported in browser environments.",
+      );
     }
     const bounds = calculateCanvasBounds(
       shapesOrCanvas,
@@ -347,7 +353,9 @@ export async function exportCanvasToBlob(
     ctx.scale(scale, scale);
     ctx.clearRect(0, 0, width, height);
 
-    const activeShapes = shapesOrCanvas.filter((s) => !s.deleted && s.points.length >= 2);
+    const activeShapes = shapesOrCanvas.filter(
+      (s) => !s.deleted && s.points.length >= 2,
+    );
     for (const shape of activeShapes) {
       ctx.save();
       ctx.globalAlpha = shape.opacity ?? 1;
@@ -400,6 +408,8 @@ export async function exportCanvasToBlob(
         ctx.beginPath();
         ctx.ellipse(cx, cy, rx || 1, ry || 1, 0, 0, Math.PI * 2);
         ctx.stroke();
+      } else if (shape.type === "construct") {
+        renderConstructToCanvas(ctx, shape);
       } else if (shape.type === "sticky") {
         const x = shape.points[0];
         const y = shape.points[1];
@@ -538,6 +548,8 @@ export function generateSvgString(
       svgElements.push(
         `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" stroke="${color}" stroke-width="${strokeWidth}" fill="none" opacity="${opacity}" />`,
       );
+    } else if (shape.type === "construct") {
+      svgElements.push(renderConstructSvg(shape));
     } else if (shape.type === "sticky") {
       const x = shape.points[0];
       const y = shape.points[1];

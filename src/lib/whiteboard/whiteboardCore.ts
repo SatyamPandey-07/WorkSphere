@@ -1,9 +1,21 @@
-"use client";
-
 import { useCallback, useRef } from "react";
 import * as Y from "yjs";
+import {
+  type ConstructType,
+  renderConstructToCanvas,
+  renderConstructSvg,
+  generateConstructSvgPath,
+} from "./constructGenerator";
 
-export type ToolType = "pen" | "eraser" | "rect" | "circle" | "line" | "sticky";
+export {
+  type ConstructType,
+  renderConstructToCanvas,
+  renderConstructSvg,
+  generateConstructSvgPath,
+};
+
+export type ToolType =
+  "pen" | "eraser" | "rect" | "circle" | "line" | "sticky" | "construct";
 
 export interface ShapeData {
   id: string;
@@ -18,6 +30,7 @@ export interface ShapeData {
   updatedAt?: number;
   clock?: number;
   text?: string;
+  constructType?: ConstructType;
 }
 
 export interface RemoteCursor {
@@ -84,7 +97,8 @@ export interface UseCanvasWhiteboardOptions {
   userAvatar?: string;
 }
 
-export const PARTYKIT_HOST = process.env.NEXT_PUBLIC_PARTYKIT_URL ?? "127.0.0.1:1999";
+export const PARTYKIT_HOST =
+  process.env.NEXT_PUBLIC_PARTYKIT_URL ?? "127.0.0.1:1999";
 
 /** Inactivity timeout before marking a participant as idle (#3471). */
 export const IDLE_TIMEOUT_MS = 45000;
@@ -132,6 +146,7 @@ export function shapeMapToData(map: Y.Map<unknown>): ShapeData {
     updatedAt,
     clock,
     text: map.get("text") as string | undefined,
+    constructType: map.get("constructType") as ConstructType | undefined,
   };
 }
 
@@ -155,9 +170,7 @@ export function applyShapePointsToDoc(
         const isDeleted = (map.get("deleted") as boolean) ?? false;
         const delClock = (map.get("deletedAt") as number) ?? 0;
         const curClock =
-          (map.get("clock") as number) ??
-          (map.get("updatedAt") as number) ??
-          0;
+          (map.get("clock") as number) ?? (map.get("updatedAt") as number) ?? 0;
 
         if (isDeleted && now <= delClock) return;
         if (now < curClock) return;
@@ -189,9 +202,7 @@ export function addShapeToDoc(
       if (map.get("id") === data.id) {
         const isDeleted = (map.get("deleted") as boolean) ?? false;
         const delClock =
-          (map.get("deletedAt") as number) ??
-          (map.get("clock") as number) ??
-          0;
+          (map.get("deletedAt") as number) ?? (map.get("clock") as number) ?? 0;
         if (!isDeleted || now > delClock) {
           map.set("type", data.type);
           map.set("points", data.points.slice());
@@ -200,6 +211,9 @@ export function addShapeToDoc(
           map.set("opacity", data.opacity);
           map.set("userId", data.userId);
           if (data.text !== undefined) map.set("text", data.text);
+          if (data.constructType !== undefined) {
+            map.set("constructType", data.constructType);
+          }
           map.set("deleted", false);
           map.set("updatedAt", now);
           map.set("clock", now);
@@ -217,6 +231,9 @@ export function addShapeToDoc(
     map.set("opacity", data.opacity);
     map.set("userId", data.userId);
     if (data.text !== undefined) map.set("text", data.text);
+    if (data.constructType !== undefined) {
+      map.set("constructType", data.constructType);
+    }
     map.set("deleted", false);
     map.set("updatedAt", now);
     map.set("clock", now);
@@ -247,9 +264,7 @@ export function updateShapeInDoc(
         const isDeleted = (map.get("deleted") as boolean) ?? false;
         const delClock = (map.get("deletedAt") as number) ?? 0;
         const curClock =
-          (map.get("clock") as number) ??
-          (map.get("updatedAt") as number) ??
-          0;
+          (map.get("clock") as number) ?? (map.get("updatedAt") as number) ?? 0;
 
         if (isDeleted && now <= delClock) return;
         if (now < curClock) return;
@@ -262,6 +277,9 @@ export function updateShapeInDoc(
         if (updates.opacity !== undefined) map.set("opacity", updates.opacity);
         if (updates.deleted !== undefined) map.set("deleted", updates.deleted);
         if (updates.text !== undefined) map.set("text", updates.text);
+        if (updates.constructType !== undefined) {
+          map.set("constructType", updates.constructType);
+        }
         map.set("updatedAt", now);
         map.set("clock", now);
         break;
@@ -292,9 +310,7 @@ export function deleteShapeInDoc(
       if (map.get("id") === id) {
         deletedShape = shapeMapToData(map);
         const curClock =
-          (map.get("clock") as number) ??
-          (map.get("updatedAt") as number) ??
-          0;
+          (map.get("clock") as number) ?? (map.get("updatedAt") as number) ?? 0;
         const delClock = Math.max(now, curClock + 1);
         map.set("deleted", true);
         map.set("deletedAt", delClock);
@@ -326,9 +342,7 @@ export function clearCanvasInDoc(
       if (!isDel) {
         cleared.push(shapeMapToData(map));
         const curClock =
-          (map.get("clock") as number) ??
-          (map.get("updatedAt") as number) ??
-          0;
+          (map.get("clock") as number) ?? (map.get("updatedAt") as number) ?? 0;
         const delClock = Math.max(now, curClock + 1);
         map.set("deleted", true);
         map.set("deletedAt", delClock);
@@ -372,7 +386,8 @@ export function extractAwarenessUsers(
 
     const lastActive =
       typeof s.lastActiveAt === "number" ? s.lastActiveAt : curTime;
-    const isIdle = curTime - lastActive > IDLE_TIMEOUT_MS || s.status === "idle";
+    const isIdle =
+      curTime - lastActive > IDLE_TIMEOUT_MS || s.status === "idle";
 
     participantsList.push({
       clientId,

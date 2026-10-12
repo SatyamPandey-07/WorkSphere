@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -70,6 +71,7 @@ function shapeMapToData(map: Y.Map<unknown>): ShapeData {
     updatedAt,
     clock,
     text: map.get("text") as string | undefined,
+    constructType: map.get("constructType") as any,
   };
 }
 
@@ -94,7 +96,9 @@ export function useMeshCanvasWhiteboard(
   const meshConnectedRef = useRef<boolean>(false);
 
   const [shapeSnapshots, setShapeSnapshots] = useState<ShapeData[]>([]);
-  const [noteLeaseOwners, setNoteLeaseOwners] = useState<Record<string, string>>({});
+  const [noteLeaseOwners, setNoteLeaseOwners] = useState<
+    Record<string, string>
+  >({});
   const noteLeaseOwnersRef = useRef<Map<string, string>>(new Map());
   const pendingNoteLeasesRef = useRef<Map<string, PendingNoteLease>>(new Map());
   const nextNoteLeaseRequestRef = useRef(0);
@@ -115,14 +119,17 @@ export function useMeshCanvasWhiteboard(
 
   const meshRoomId = canvasId ? `canvas-${canvasId}` : "canvas-none";
 
-  const setNoteLeaseOwner = useCallback((noteId: string, ownerId: string | null) => {
-    if (ownerId) {
-      noteLeaseOwnersRef.current.set(noteId, ownerId);
-    } else {
-      noteLeaseOwnersRef.current.delete(noteId);
-    }
-    setNoteLeaseOwners(Object.fromEntries(noteLeaseOwnersRef.current));
-  }, []);
+  const setNoteLeaseOwner = useCallback(
+    (noteId: string, ownerId: string | null) => {
+      if (ownerId) {
+        noteLeaseOwnersRef.current.set(noteId, ownerId);
+      } else {
+        noteLeaseOwnersRef.current.delete(noteId);
+      }
+      setNoteLeaseOwners(Object.fromEntries(noteLeaseOwnersRef.current));
+    },
+    [],
+  );
 
   const acquireNoteLease = useCallback(
     (noteId: string) => {
@@ -138,10 +145,12 @@ export function useMeshCanvasWhiteboard(
         pendingNoteLeasesRef.current.set(requestId, { resolve, timeout });
 
         try {
-          socket.send(JSON.stringify({
-            type: "HOLD_NOTE",
-            payload: { noteId, userId: localUserId, requestId },
-          }));
+          socket.send(
+            JSON.stringify({
+              type: "HOLD_NOTE",
+              payload: { noteId, userId: localUserId, requestId },
+            }),
+          );
         } catch (error) {
           clearTimeout(timeout);
           pendingNoteLeasesRef.current.delete(requestId);
@@ -153,16 +162,21 @@ export function useMeshCanvasWhiteboard(
     [localUserId],
   );
 
-  const releaseNoteLease = useCallback((noteId: string) => {
-    const socket = providerRef.current?.ws;
-    if (!socket || socket.readyState !== 1) return;
-    try {
-      socket.send(JSON.stringify({ type: "RELEASE_NOTE", payload: { noteId } }));
-      setNoteLeaseOwner(noteId, null);
-    } catch (error) {
-      console.error("Failed to release sticky note lease:", error);
-    }
-  }, [setNoteLeaseOwner]);
+  const releaseNoteLease = useCallback(
+    (noteId: string) => {
+      const socket = providerRef.current?.ws;
+      if (!socket || socket.readyState !== 1) return;
+      try {
+        socket.send(
+          JSON.stringify({ type: "RELEASE_NOTE", payload: { noteId } }),
+        );
+        setNoteLeaseOwner(noteId, null);
+      } catch (error) {
+        console.error("Failed to release sticky note lease:", error);
+      }
+    },
+    [setNoteLeaseOwner],
+  );
 
   const onMeshData = useCallback((peerId: string, data: ArrayBuffer) => {
     const doc = docRef.current;
@@ -461,7 +475,10 @@ export function useMeshCanvasWhiteboard(
       if (!awareness) return;
       const currentTime = Date.now();
       if (currentTime - lastActiveAtRef.current > IDLE_TIMEOUT_MS) {
-        const local = awareness.getLocalState() as Record<string, unknown> | null;
+        const local = awareness.getLocalState() as Record<
+          string,
+          unknown
+        > | null;
         if (local && local.status !== "idle") {
           awareness.setLocalState({
             ...local,

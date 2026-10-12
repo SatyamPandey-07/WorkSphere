@@ -15,6 +15,7 @@ export type { DistanceFilterSliderProps } from "./DistanceFilterSlider";
 export { HybridSearchWeightSlider } from "./HybridSearchWeightSlider";
 export type {
   HybridSearchWeightSliderProps,
+  HybridSearchWeights,
   SearchWeightPreset,
 } from "./HybridSearchWeightSlider";
 export { VenueList } from "./VenueList";

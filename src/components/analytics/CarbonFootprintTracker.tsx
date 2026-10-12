@@ -74,6 +74,53 @@ export default function CarbonFootprintTracker() {
     }
   };
 
+  const handleExportCSV = () => {
+    if (!summary?.records.length) return;
+
+    const headers = [
+      "Date",
+      "Venue",
+      "Commute Mode",
+      "Distance (km)",
+      "CO2 (kg)",
+      "Offset Status",
+    ];
+    const escapeCsvValue = (value: string | number) => {
+      const csvValue =
+        typeof value === "string" && /^[\t\r ]*[=+\-@]/.test(value)
+          ? `'${value}`
+          : String(value);
+      return `"${csvValue.replace(/"/g, '""')}"`;
+    };
+    const rows = summary.records.map((record) => [
+      record.date,
+      record.venueName,
+      record.commuteMode,
+      safeParseDistance(record.distanceKm).toFixed(1),
+      (safeParseDistance(record.emissionsGramsCo2) / 1000).toFixed(3),
+      record.isGreenCertifiedVenue ? "Offset" : "Not offset",
+    ]);
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) => row.map(escapeCsvValue).join(",")),
+    ].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+
+    anchor.href = url;
+    anchor.download = `worksphere-carbon-report-${now.getFullYear()}-${month}.csv`;
+    try {
+      document.body.appendChild(anchor);
+      anchor.click();
+    } finally {
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    }
+  };
+
   const getModeIcon = (mode: CommuteMode) => {
     switch (mode) {
       case "WALKING":
@@ -106,11 +153,19 @@ export default function CarbonFootprintTracker() {
               Remote Work Carbon Footprint & Eco-Tracker
             </h1>
             <p className="text-xs md:text-sm text-slate-300 max-w-2xl">
-              Track commuter $\text{CO}_2$ emissions across walking, cycling, and transit. Certify green workspace visits and export corporate Scope 3 ESG carbon audit reports.
+              Track commuter CO₂ emissions across walking, cycling, and transit. Certify green workspace visits and export corporate Scope 3 ESG carbon audit reports.
             </p>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={handleExportCSV}
+              disabled={!summary?.records.length}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-emerald-500/40 bg-slate-900/70 hover:bg-slate-800 text-emerald-200 text-xs font-bold transition disabled:opacity-50"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Export CSV
+            </button>
             <button
               onClick={handleExportESG}
               disabled={exporting || !summary}

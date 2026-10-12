@@ -1,5 +1,5 @@
 import { useWebSocketLatency } from "@/hooks/useWebSocketLatency";
-import { renderHook } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 
 // Helper to create a minimal mock WebSocket
 function createMockSocket(readyState = WebSocket.OPEN): WebSocket {
@@ -34,7 +34,7 @@ describe("useWebSocketLatency", () => {
 
   afterEach(() => {
     jest.useRealTimers();
-    jest.clearAllMocks();
+    jest.restoreAllMocks();
   });
 
   it("starts with null latencyMs and 'unknown' tier", () => {
@@ -85,5 +85,44 @@ describe("useWebSocketLatency", () => {
     );
     unmount();
     expect(socket.removeEventListener).toHaveBeenCalled();
+  });
+
+  it("measures round-trip latency using monotonic performance.now() timestamps", () => {
+    let currentNow = 1000;
+    jest.spyOn(performance, "now").mockImplementation(() => currentNow);
+
+    const socket = createMockSocket(WebSocket.OPEN);
+    const { result } = renderHook(() =>
+      useWebSocketLatency(socket, { intervalMs: 60000 }),
+    );
+
+    // Ping was sent at performance.now() = 1000
+    // Pong arrives at performance.now() = 1042
+    currentNow = 1042;
+    act(() => {
+      (socket as any)._fire("message");
+    });
+
+    expect(result.current.latencyMs).toBe(42);
+    expect(result.current.tier).toBe("good");
+  });
+
+  it("clamps latency to a floor of 0ms during client clock skew", () => {
+    let currentNow = 1000;
+    jest.spyOn(performance, "now").mockImplementation(() => currentNow);
+
+    const socket = createMockSocket(WebSocket.OPEN);
+    const { result } = renderHook(() =>
+      useWebSocketLatency(socket, { intervalMs: 60000 }),
+    );
+
+    // Simulate clock drift / time jump backwards: now() returns 994
+    currentNow = 994;
+    act(() => {
+      (socket as any)._fire("message");
+    });
+
+    expect(result.current.latencyMs).toBe(0);
+    expect(result.current.tier).toBe("good");
   });
 });

@@ -138,7 +138,7 @@ export function DeskMatcherQuizModal({
               <p className="text-xs text-zinc-400">
                 {matchedResult
                   ? "Your Personalized Workspace Match"
-                  : `Question ${currentStep} of ${totalSteps}`}
+                  : `Step ${currentStep} of ${totalSteps}`}
               </p>
             </div>
           </div>
@@ -153,11 +153,44 @@ export function DeskMatcherQuizModal({
 
         {/* Progress Bar (During Quiz) */}
         {!matchedResult && (
-          <div className="h-1 w-full bg-zinc-800">
+          <div className="space-y-2 px-6 py-3" aria-label="Quiz progress">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-zinc-200" aria-live="polite">
+                Step {currentStep} of {totalSteps}
+              </span>
+              <span className="font-mono text-zinc-400">
+                {Math.round((currentStep / totalSteps) * 100)}%
+              </span>
+            </div>
             <div
-              className="h-full bg-gradient-to-r from-violet-500 via-indigo-500 to-emerald-400 transition-all duration-300"
-              style={{ width: `${(currentStep / totalSteps) * 100}%` }}
-            />
+              role="progressbar"
+              aria-label={`Quiz progress, step ${currentStep} of ${totalSteps}`}
+              aria-valuemin={1}
+              aria-valuemax={totalSteps}
+              aria-valuenow={currentStep}
+              className="flex gap-1.5"
+            >
+              {Array.from({ length: totalSteps }, (_, index) => {
+                const stepNumber = index + 1;
+                const isComplete = stepNumber <= currentStep;
+                return (
+                  <div
+                    key={stepNumber}
+                    aria-hidden="true"
+                    className="h-2 flex-1 overflow-hidden rounded-full bg-zinc-800"
+                  >
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        isComplete
+                          ? "bg-gradient-to-r from-violet-500 via-indigo-500 to-emerald-400"
+                          : "w-0"
+                      }`}
+                      style={{ width: isComplete ? "100%" : "0%" }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 

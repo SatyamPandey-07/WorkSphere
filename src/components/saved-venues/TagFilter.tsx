@@ -10,6 +10,7 @@ interface TagFilterProps {
   selectedTagIds: string[];
   onToggleTag: (tagId: string) => void;
   onClear: () => void;
+  onFilterChange?: (query: string) => void;
 }
 
 export function TagFilter({
@@ -17,6 +18,7 @@ export function TagFilter({
   selectedTagIds,
   onToggleTag,
   onClear,
+  onFilterChange,
 }: TagFilterProps) {
   const [search, setSearch] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -95,7 +97,10 @@ export function TagFilter({
               ref={inputRef}
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                onFilterChange?.(e.target.value);
+              }}
               placeholder="Search tags..."
               className="w-full pl-8 pr-8 py-1.5 bg-zinc-100 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg text-xs outline-none focus:border-[var(--primary-accent)] focus:ring-2 focus:ring-[var(--primary-accent)] focus:ring-offset-1 dark:focus:ring-offset-zinc-900 text-zinc-900 dark:text-white placeholder:text-zinc-400"
               aria-label="Search tags"
@@ -106,10 +111,11 @@ export function TagFilter({
                 type="button"
                 onClick={() => {
                   setSearch("");
+                  onFilterChange?.("");
                   inputRef.current?.focus();
                 }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary-accent)]"
-                aria-label="Clear search"
+                aria-label="Clear tag filter"
               >
                 <X className="w-3.5 h-3.5" />
               </button>

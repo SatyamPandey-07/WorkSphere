@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, Eye, EyeOff, Languages, Loader2 } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, Languages, Loader2, Info } from "lucide-react";
 import { useMessageTranslation } from "@/hooks/useMessageTranslation";
 
 const VIEW_MODE_STORAGE_KEY = "worksphere-translation-view-mode";
@@ -9,9 +9,10 @@ const VIEW_MODE_STORAGE_KEY = "worksphere-translation-view-mode";
 interface TranslatedMessageProps {
   messageId: string;
   text: string;
+  targetLanguage?: string;
 }
 
-export function TranslatedMessage({ messageId, text }: TranslatedMessageProps) {
+export function TranslatedMessage({ messageId, text, targetLanguage: propTargetLanguage }: TranslatedMessageProps) {
   const {
     translation,
     error,
@@ -73,6 +74,12 @@ export function TranslatedMessage({ messageId, text }: TranslatedMessageProps) {
       console.warn("Failed to copy translated text to clipboard:", err);
     }
   };
+
+  // Metrics: word and character counts
+  const sourceLang = (translation?.sourceLanguage || "AUTO").slice(0, 3).toUpperCase();
+  const targetLang = (propTargetLanguage || "EN").slice(0, 3).toUpperCase();
+  const charCount = currentText.length;
+  const wordCount = currentText.trim() ? currentText.trim().split(/\s+/).length : 0;
 
   return (
     <div>
@@ -171,6 +178,35 @@ export function TranslatedMessage({ messageId, text }: TranslatedMessageProps) {
       ) : (
         <span className="whitespace-pre-wrap">{currentText}</span>
       )}
+
+      {/* Language pill badge & character / word count metadata footer */}
+      {translation && (
+        <div
+          data-testid="translation-metadata-footer"
+          className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] text-zinc-500 select-none"
+        >
+          <span
+            data-testid="translation-lang-pill"
+            title="Translated via WorkSphere AI neural translation engine"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200/60 dark:border-zinc-700/60 text-zinc-600 dark:text-zinc-300 font-mono font-medium"
+            aria-label={`Translation from ${sourceLang} to ${targetLang}, ${charCount} characters, ${wordCount} words`}
+          >
+            <Languages className="w-2.5 h-2.5 text-blue-500" aria-hidden="true" />
+            <span>
+              {sourceLang} → {targetLang} • {charCount} chars ({wordCount} words)
+            </span>
+          </span>
+
+          <span
+            className="inline-flex items-center text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 cursor-help"
+            title="Provider: WorkSphere Neural Edge Translator (Gemini API / On-Device Model)"
+            aria-label="Provider: WorkSphere Neural Edge Translator"
+          >
+            <Info className="w-2.5 h-2.5" aria-hidden="true" />
+          </span>
+        </div>
+      )}
+
       {error && (
         <p role="alert" className="mt-1 text-xs text-red-500">
           {error}
@@ -200,3 +236,5 @@ export function TranslatedMessage({ messageId, text }: TranslatedMessageProps) {
     </div>
   );
 }
+
+export default TranslatedMessage;

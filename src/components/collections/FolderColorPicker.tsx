@@ -13,6 +13,16 @@ export const PRESET_FOLDER_COLORS = [
   { name: "Cyan", hex: "#06b6d4" },
 ];
 
+export function getContrastTextColor(hexColor: string): string {
+  const hex = hexColor.replace("#", "");
+  const r = parseInt(hex.substring(0, 2), 16) || 0;
+  const g = parseInt(hex.substring(2, 4), 16) || 0;
+  const b = parseInt(hex.substring(4, 6), 16) || 0;
+  // Perceived luminance formula (ITU-R BT.709)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.65 ? "#000000" : "#ffffff";
+}
+
 interface FolderColorPickerProps {
   selectedColor: string;
   onChange: (color: string) => void;
@@ -35,21 +45,28 @@ export function FolderColorPicker({
         {PRESET_FOLDER_COLORS.map((preset) => {
           const isSelected =
             normalizedColor.toLowerCase() === preset.hex.toLowerCase();
+          const checkmarkColor = getContrastTextColor(preset.hex);
           return (
             <button
               key={preset.hex}
               type="button"
               onClick={() => onChange(preset.hex)}
               title={preset.name}
-              className={`w-7 h-7 rounded-full flex items-center justify-center transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+              aria-label={preset.name}
+              aria-pressed={isSelected}
+              className={`w-7 h-7 rounded-full flex items-center justify-center transition-all duration-200 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
                 isSelected
-                  ? "scale-110 ring-2 ring-offset-2 ring-zinc-900 dark:ring-white"
-                  : ""
+                  ? "scale-110 ring-2 ring-offset-2 ring-zinc-900 dark:ring-white shadow-sm"
+                  : "hover:opacity-90"
               }`}
               style={{ backgroundColor: preset.hex }}
             >
               {isSelected && (
-                <Check className="w-4 h-4 text-white drop-shadow-sm" />
+                <Check
+                  className="w-4 h-4 drop-shadow-sm transition-all duration-200 animate-in zoom-in-50"
+                  style={{ color: checkmarkColor }}
+                  strokeWidth={2.75}
+                />
               )}
             </button>
           );

@@ -39,11 +39,11 @@ export function ReconnectingBadge({
     <div
       role="status"
       aria-live="polite"
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 backdrop-blur-sm transition-opacity duration-200 ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30 backdrop-blur-sm transition-opacity duration-200 ${className}`}
     >
-      <span className="relative flex h-2 w-2">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+      <span className="relative flex h-2 w-2" aria-hidden="true">
+        <span className="motion-safe:animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 motion-reduce:hidden" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500 motion-safe:animate-pulse" />
       </span>
       <span>Reconnecting...</span>
     </div>

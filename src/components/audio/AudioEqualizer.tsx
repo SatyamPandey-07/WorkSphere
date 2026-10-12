@@ -155,6 +155,7 @@ function smoothSetAudioParam(
 ) {
   if (!param) return;
 
+  
   if (typeof param.setTargetAtTime === "function") {
     param.setTargetAtTime(targetValue, currentTime, timeConstant);
   } else if (typeof param.linearRampToValueAtTime === "function") {
@@ -462,6 +463,7 @@ export function AudioEqualizer({
     }
 
     // Update Internal Standalone EQ if active
+    // Use smooth transition to eliminate audio pops and clicks
     const filter = eqFiltersRef.current[index];
     if (filter && filter.gain && audioContextRef.current) {
       smoothSetAudioParam(
@@ -511,6 +513,7 @@ export function AudioEqualizer({
       }
 
       // Apply to Internal Standalone EQ
+      // Apply smooth audio node param ramping
       if (audioContextRef.current) {
         const now = audioContextRef.current.currentTime;
         eqFiltersRef.current.forEach((filter, i) => {
@@ -525,6 +528,46 @@ export function AudioEqualizer({
 
   const handleResetEq = () => {
     handleEqPresetChange("flat");
+    // Smoothly animate all frequency sliders back to 0 dB and re-evaluate audio node gains
+    const flatGains = EQ_PRESETS.flat.gains;
+    const startGains = [...bandGains];
+    const duration = 200; // 200ms smooth slider animation
+    const startTime = performance.now();
+
+    const animateReset = (nowTime: number) => {
+      const elapsed = nowTime - startTime;
+      const progress = Math.min(1, elapsed / duration);
+      // Ease-out cubic animation curve
+      const eased = 1 - Math.pow(1 - progress, 3);
+
+      const interpolatedGains = startGains.map(
+        (startGain, i) => Math.round((startGain + (flatGains[i] - startGain) * eased) * 10) / 10,
+      );
+
+      setBandGains(interpolatedGains);
+
+      if (progress < 1) {
+        requestAnimationFrame(animateReset);
+      } else {
+        handleEqPresetChange("flat");
+      }
+    };
+
+    // Apply audio node param ramping immediately to smoothly ramp audio filter gains without clicks/pops
+    if (audioContextRef.current) {
+      const now = audioContextRef.current.currentTime;
+      eqFiltersRef.current.forEach((filter, i) => {
+        if (filter && filter.gain) {
+          smoothSetAudioParam(filter.gain, 0, now, 0.02);
+        }
+      });
+    }
+
+    if (startGains.some((g) => g !== 0)) {
+      requestAnimationFrame(animateReset);
+    } else {
+      handleEqPresetChange("flat");
+    }
   };
 
   // Play Sound Logic (Standalone Mode)

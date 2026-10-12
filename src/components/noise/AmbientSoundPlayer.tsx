@@ -1,102 +1,152 @@
 "use client";
 
-/**
- * AmbientSoundPlayer — Issue #701
- *
- * Renders a mini audio player trigger next to a venue's noise level indicator.
- * Plays short 5-second looping ambient soundscapes synthesized via the Web
- * Audio API (no external audio files required):
- *
- *   "quiet"    → Quiet Library  (~35 dB)  — barely-audible pink noise hum
- *   "moderate" → Cafe Chatter   (~55 dB)  — band-passed speech-frequency noise
- *   "loud"     → Bustling Lounge (~75 dB) — broadband noise + strong chatter
- *
- * Controls: play / pause toggle, inline volume slider, mute button.
- */
-
-import { useEffect, useRef, useState, useCallback } from "react";
-import { Volume2, VolumeX, Headphones, Square, Play } from "lucide-react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import {
+  Volume2,
+  VolumeX,
+  Headphones,
+  Play,
+  Pause,
+  X,
+  Sparkles,
+} from "lucide-react";
 
 // ---------------------------------------------------------------------------
-// Types
+// Types & Presets
 // ---------------------------------------------------------------------------
 
-type NoiseLevelKey = "quiet" | "moderate" | "loud";
+export type PresetId = "white_noise" | "pink_noise" | "rain" | "cafe_hum";
 
-interface SoundProfile {
-  label: string;
+export interface SoundscapePreset {
+  id: PresetId;
+  name: string;
   emoji: string;
   description: string;
-  /** Master gain (0–1) applied to the synthesized noise */
-  masterGain: number;
-  /** Band-pass filter centre frequency in Hz for the "chatter" layer */
-  speechFreq: number;
-  /** Gain of the speech / chatter band-pass layer (0 = silent) */
-  speechGain: number;
-  /** Colour classes for the playing badge */
+  defaultVolume: number;
   badgeClass: string;
-  /** Colour classes for the trigger button */
-  buttonClass: string;
+  accentClass: string;
 }
 
-const SOUND_PROFILES: Record<NoiseLevelKey, SoundProfile> = {
-  quiet: {
-    label: "Quiet Library",
-    emoji: "🍃",
-    description: "Barely-audible ambient hum — ideal for deep focus",
-    masterGain: 0.04,
-    speechFreq: 800,
-    speechGain: 0.0,
+export const PRESET_SOUNDSCAPES: SoundscapePreset[] = [
+  {
+    id: "white_noise",
+    name: "White Noise",
+    emoji: "📻",
+    description: "Broadband static sound to mask harsh ambient distractions",
+    defaultVolume: 60,
     badgeClass:
-      "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20",
-    buttonClass:
-      "text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10 border-emerald-500/30",
+      "bg-sky-500/10 text-sky-700 dark:text-sky-400 border-sky-500/20",
+    accentClass: "text-sky-500",
   },
-  moderate: {
-    label: "Cafe Chatter",
+  {
+    id: "pink_noise",
+    name: "Pink Noise",
+    emoji: "🌸",
+    description: "Deeper, balanced acoustic profile for calm focus",
+    defaultVolume: 60,
+    badgeClass:
+      "bg-pink-500/10 text-pink-700 dark:text-pink-400 border-pink-500/20",
+    accentClass: "text-pink-500",
+  },
+  {
+    id: "rain",
+    name: "Rain",
+    emoji: "🌧️",
+    description: "Gentle rhythmic precipitation and soft droplets",
+    defaultVolume: 70,
+    badgeClass:
+      "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20",
+    accentClass: "text-blue-500",
+  },
+  {
+    id: "cafe_hum",
+    name: "Coffee Shop Hum",
     emoji: "☕",
-    description: "Soft background chatter and ambient cafe sounds",
-    masterGain: 0.14,
-    speechFreq: 1200,
-    speechGain: 0.55,
+    description: "Warm room murmur and subtle distant café atmosphere",
+    defaultVolume: 65,
     badgeClass:
       "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
-    buttonClass:
-      "text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 border-amber-500/30",
+    accentClass: "text-amber-500",
   },
-  loud: {
-    label: "Bustling Lounge",
-    emoji: "🔊",
-    description: "Busy, energetic environment with lively ambient noise",
-    masterGain: 0.32,
-    speechFreq: 1600,
-    speechGain: 0.85,
-    badgeClass:
-      "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20",
-    buttonClass:
-      "text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 border-rose-500/30",
-  },
-};
+];
+
+export interface SoundscapeState {
+  isPlaying: boolean;
+  volume: number; // 0 to 100
+}
 
 // ---------------------------------------------------------------------------
-// Audio synthesis helpers
+// Seamless Audio Buffer Generation
 // ---------------------------------------------------------------------------
 
 /**
- * Generates a stereo pink-noise AudioBuffer (5 seconds) using the
- * Voss-McCartney algorithm.
+ * Crossfades the end of an AudioBuffer into the beginning to ensure
+ * click-free, gapless seamless looping.
  */
-function generatePinkNoiseBuffer(
+export function applySeamlessLoopCrossfade(
+  buffer: AudioBuffer,
+  crossfadeSeconds = 0.1,
+): void {
+  const sampleRate = buffer.sampleRate || 44100;
+  const crossfadeFrames = Math.max(
+    1,
+    Math.min(
+      Math.floor(sampleRate * crossfadeSeconds),
+      Math.floor(buffer.length / 4),
+    ),
+  );
+  const totalFrames = buffer.length;
+
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const data = buffer.getChannelData(c);
+    for (let i = 0; i < crossfadeFrames; i++) {
+      const progress = i / crossfadeFrames;
+      // Equal-power crossfade curve
+      const gainIn = Math.sin((progress * Math.PI) / 2);
+      const gainOut = Math.cos((progress * Math.PI) / 2);
+
+      const endIdx = totalFrames - crossfadeFrames + i;
+      const mixed = data[i] * gainIn + data[endIdx] * gainOut;
+      data[i] = mixed;
+      data[endIdx] = mixed;
+    }
+  }
+}
+
+/**
+ * Generates a White Noise buffer with seamless loop boundaries.
+ */
+export function generateWhiteNoiseBuffer(
   ctx: AudioContext,
-  durationSeconds = 5,
+  duration = 4,
 ): AudioBuffer {
-  const sampleRate = ctx.sampleRate;
-  const frameCount = Math.floor(sampleRate * durationSeconds);
+  const sampleRate = ctx.sampleRate || 44100;
+  const frameCount = Math.floor(sampleRate * duration);
   const buffer = ctx.createBuffer(2, frameCount, sampleRate);
 
-  for (let channel = 0; channel < 2; channel++) {
-    const data = buffer.getChannelData(channel);
-    // Voss-McCartney pink noise: sum of white noise layers at binary offsets
+  for (let c = 0; c < 2; c++) {
+    const data = buffer.getChannelData(c);
+    for (let i = 0; i < frameCount; i++) {
+      data[i] = (Math.random() * 2 - 1) * 0.15;
+    }
+  }
+  applySeamlessLoopCrossfade(buffer, 0.1);
+  return buffer;
+}
+
+/**
+ * Generates a Pink Noise buffer (1/f spectral slope) with seamless loop boundaries.
+ */
+export function generatePinkNoiseBuffer(
+  ctx: AudioContext,
+  duration = 4,
+): AudioBuffer {
+  const sampleRate = ctx.sampleRate || 44100;
+  const frameCount = Math.floor(sampleRate * duration);
+  const buffer = ctx.createBuffer(2, frameCount, sampleRate);
+
+  for (let c = 0; c < 2; c++) {
+    const data = buffer.getChannelData(c);
     let b0 = 0,
       b1 = 0,
       b2 = 0,
@@ -112,105 +162,94 @@ function generatePinkNoiseBuffer(
       b3 = 0.8665 * b3 + white * 0.3104856;
       b4 = 0.55 * b4 + white * 0.5329522;
       b5 = -0.7616 * b5 - white * 0.016898;
-      data[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) / 6.5;
+      data[i] =
+        ((b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) / 6.5) * 0.22;
       b6 = white * 0.115926;
     }
   }
-
+  applySeamlessLoopCrossfade(buffer, 0.1);
   return buffer;
 }
 
 /**
- * Creates and wires up the audio graph for a given sound profile.
- * Returns a cleanup function that stops all nodes.
+ * Generates a Rain soundscape buffer with low-frequency rumble and droplet grains.
  */
-function createSoundscape(
+export function generateRainBuffer(
   ctx: AudioContext,
-  profile: SoundProfile,
-  volumeNode: GainNode,
-  muteNode: GainNode,
-): () => void {
-  const noiseBuffer = generatePinkNoiseBuffer(ctx);
-  const cleanupFns: Array<() => void> = [];
+  duration = 4,
+): AudioBuffer {
+  const sampleRate = ctx.sampleRate || 44100;
+  const frameCount = Math.floor(sampleRate * duration);
+  const buffer = ctx.createBuffer(2, frameCount, sampleRate);
 
-  // ── Base pink noise layer ────────────────────────────────────────────────
-  const baseGain = ctx.createGain();
-  baseGain.gain.value = profile.masterGain;
-  baseGain.connect(volumeNode);
-
-  const baseSource = ctx.createBufferSource();
-  baseSource.buffer = noiseBuffer;
-  baseSource.loop = true;
-  baseSource.connect(baseGain);
-  baseSource.start();
-  cleanupFns.push(() => {
-    try {
-      baseSource.stop();
-    } catch {
-      /* already stopped */
-    }
-  });
-
-  // ── Speech / chatter band-pass layer ────────────────────────────────────
-  if (profile.speechGain > 0) {
-    const speechGain = ctx.createGain();
-    speechGain.gain.value = profile.speechGain;
-    speechGain.connect(volumeNode);
-
-    const bpf = ctx.createBiquadFilter();
-    bpf.type = "bandpass";
-    bpf.frequency.value = profile.speechFreq;
-    bpf.Q.value = 0.8;
-    bpf.connect(speechGain);
-
-    const speechSource = ctx.createBufferSource();
-    speechSource.buffer = generatePinkNoiseBuffer(ctx);
-    speechSource.loop = true;
-    speechSource.connect(bpf);
-    speechSource.start();
-    cleanupFns.push(() => {
-      try {
-        speechSource.stop();
-      } catch {
-        /* already stopped */
-      }
-    });
-
-    // ── Extra high-mid sparkle for "loud" ─────────────────────────────────
-    if (profile.masterGain > 0.25) {
-      const sparkleGain = ctx.createGain();
-      sparkleGain.gain.value = 0.3;
-      sparkleGain.connect(volumeNode);
-
-      const hpf = ctx.createBiquadFilter();
-      hpf.type = "highpass";
-      hpf.frequency.value = 2400;
-      hpf.Q.value = 0.5;
-      hpf.connect(sparkleGain);
-
-      const sparkleSource = ctx.createBufferSource();
-      sparkleSource.buffer = generatePinkNoiseBuffer(ctx);
-      sparkleSource.loop = true;
-      sparkleSource.connect(hpf);
-      sparkleSource.start();
-      cleanupFns.push(() => {
-        try {
-          sparkleSource.stop();
-        } catch {
-          /* already stopped */
-        }
-      });
+  for (let c = 0; c < 2; c++) {
+    const data = buffer.getChannelData(c);
+    let last = 0;
+    for (let i = 0; i < frameCount; i++) {
+      const white = Math.random() * 2 - 1;
+      // Gentle filtered lowpass base
+      last = (last + 0.04 * white) / 1.04;
+      // Soft droplets
+      const droplet = Math.random() < 0.015 ? (Math.random() * 2 - 1) * 0.2 : 0;
+      data[i] = (last * 1.8 + droplet) * 0.25;
     }
   }
+  applySeamlessLoopCrossfade(buffer, 0.15);
+  return buffer;
+}
 
-  volumeNode.connect(muteNode);
-  muteNode.connect(ctx.destination);
+/**
+ * Generates a Café Hum buffer with warm room resonances and murmur.
+ */
+export function generateCafeHumBuffer(
+  ctx: AudioContext,
+  duration = 4,
+): AudioBuffer {
+  const sampleRate = ctx.sampleRate || 44100;
+  const frameCount = Math.floor(sampleRate * duration);
+  const buffer = ctx.createBuffer(2, frameCount, sampleRate);
 
-  return () => cleanupFns.forEach((fn) => fn());
+  for (let c = 0; c < 2; c++) {
+    const data = buffer.getChannelData(c);
+    let low = 0;
+    let mid = 0;
+    for (let i = 0; i < frameCount; i++) {
+      const white = Math.random() * 2 - 1;
+      // Warm low frequency room tone
+      low = (low + 0.02 * white) / 1.02;
+      // Speech frequency murmur envelope modulation
+      const mod = 0.8 + 0.4 * Math.sin((2 * Math.PI * i) / (sampleRate * 1.5));
+      mid = (mid + 0.08 * white * mod) / 1.08;
+      data[i] = (low * 1.4 + mid * 0.8) * 0.22;
+    }
+  }
+  applySeamlessLoopCrossfade(buffer, 0.15);
+  return buffer;
+}
+
+/**
+ * Helper to generate AudioBuffer for any preset ID.
+ */
+export function generatePresetAudioBuffer(
+  ctx: AudioContext,
+  presetId: PresetId,
+): AudioBuffer {
+  switch (presetId) {
+    case "white_noise":
+      return generateWhiteNoiseBuffer(ctx);
+    case "pink_noise":
+      return generatePinkNoiseBuffer(ctx);
+    case "rain":
+      return generateRainBuffer(ctx);
+    case "cafe_hum":
+      return generateCafeHumBuffer(ctx);
+    default:
+      return generateWhiteNoiseBuffer(ctx);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Wave animation bars (CSS-in-JS via inline style — no Tailwind keyframes needed)
+// Animated Wave Bars
 // ---------------------------------------------------------------------------
 
 function WaveBars({ active }: { active: boolean }) {
@@ -230,8 +269,6 @@ function WaveBars({ active }: { active: boolean }) {
           }}
         />
       ))}
-
-      {/* Keyframe injection via a <style> tag scoped to the component */}
       <style>{`
         @keyframes ambient-wave-1 { from { height: 20% } to { height: 90% } }
         @keyframes ambient-wave-2 { from { height: 30% } to { height: 75% } }
@@ -242,35 +279,97 @@ function WaveBars({ active }: { active: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
-// Main component
+// Main Component
 // ---------------------------------------------------------------------------
 
-interface AmbientSoundPlayerProps {
-  /** Maps directly to venue.noiseLevel */
-  noiseLevel: string;
+export interface AmbientSoundPlayerProps {
+  /** Optional noise level string (e.g. "quiet" | "moderate" | "loud") */
+  noiseLevel?: string;
+  /** Whether to render as an inline standalone card player rather than a trigger popover */
+  standalone?: boolean;
+  /** Initial open state for the popover panel */
+  defaultOpen?: boolean;
+  /** Optional custom class name */
+  className?: string;
 }
 
-export function AmbientSoundPlayer({ noiseLevel }: AmbientSoundPlayerProps) {
-  const level = (
-    ["quiet", "moderate", "loud"].includes(noiseLevel) ? noiseLevel : "moderate"
-  ) as NoiseLevelKey;
+export function AmbientSoundPlayer({
+  noiseLevel,
+  standalone = false,
+  defaultOpen = false,
+  className = "",
+}: AmbientSoundPlayerProps) {
+  const [showPanel, setShowPanel] = useState(defaultOpen);
+  const [masterVolume, setMasterVolume] = useState(70);
+  const [isMasterMuted, setIsMasterMuted] = useState(false);
 
-  const profile = SOUND_PROFILES[level];
+  // Individual preset soundscape states
+  const [soundscapeStates, setSoundscapeStates] = useState<
+    Record<PresetId, SoundscapeState>
+  >(() => ({
+    white_noise: { isPlaying: false, volume: 60 },
+    pink_noise: { isPlaying: false, volume: 60 },
+    rain: { isPlaying: false, volume: 70 },
+    cafe_hum: { isPlaying: false, volume: 65 },
+  }));
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [volume, setVolume] = useState(70); // 0–100
-  const [showPanel, setShowPanel] = useState(false);
-
+  // Audio nodes and context refs
   const ctxRef = useRef<AudioContext | null>(null);
-  const volumeNodeRef = useRef<GainNode | null>(null);
-  const muteNodeRef = useRef<GainNode | null>(null);
-  const stopSoundRef = useRef<(() => void) | null>(null);
+  const masterGainRef = useRef<GainNode | null>(null);
+  const muteGainRef = useRef<GainNode | null>(null);
+  const presetBuffersRef = useRef<Map<PresetId, AudioBuffer>>(new Map());
+  const presetNodesRef = useRef<
+    Map<PresetId, { source: AudioBufferSourceNode; gain: GainNode }>
+  >(new Map());
 
-  // Tear down on unmount
+  // Safe AudioContext getter
+  const getOrCreateAudioContext = useCallback((): AudioContext | null => {
+    if (typeof window === "undefined") return null;
+
+    if (!ctxRef.current || ctxRef.current.state === "closed") {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      if (!AudioCtx) return null;
+
+      const ctx = new AudioCtx();
+      ctxRef.current = ctx;
+
+      const masterGain = ctx.createGain();
+      masterGain.gain.value = masterVolume / 100;
+      masterGainRef.current = masterGain;
+
+      const muteGain = ctx.createGain();
+      muteGain.gain.value = isMasterMuted ? 0 : 1;
+      muteGainRef.current = muteGain;
+
+      masterGain.connect(muteGain);
+      muteGain.connect(ctx.destination);
+    }
+
+    return ctxRef.current;
+  }, [masterVolume, isMasterMuted]);
+
+  // Cleanup on unmount
   useEffect(() => {
+    const presetNodes = presetNodesRef.current;
     return () => {
-      stopSoundRef.current?.();
+      presetNodes.forEach(({ source, gain }) => {
+        try {
+          source.stop();
+        } catch {
+          // ignore
+        }
+        try {
+          source.disconnect();
+          gain.disconnect();
+        } catch {
+          // ignore
+        }
+      });
+      presetNodes.clear();
+
       if (ctxRef.current && ctxRef.current.state !== "closed") {
         ctxRef.current.close().catch(() => {});
       }
@@ -278,220 +377,370 @@ export function AmbientSoundPlayer({ noiseLevel }: AmbientSoundPlayerProps) {
     };
   }, []);
 
-  const startPlayback = useCallback(async () => {
-    // Resume or create AudioContext (browser requires user gesture)
-    if (!ctxRef.current || ctxRef.current.state === "closed") {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!Ctx) return; // browser doesn't support Web Audio
-      ctxRef.current = new Ctx();
-    }
+  // Toggle play/pause for a specific preset soundscape
+  const togglePresetPlay = useCallback(
+    async (presetId: PresetId) => {
+      const currentState = soundscapeStates[presetId];
+      const shouldPlay = !currentState.isPlaying;
 
-    const ctx = ctxRef.current;
-    if (ctx.state === "suspended") await ctx.resume();
+      const ctx = getOrCreateAudioContext();
+      if (!ctx) return;
 
-    const volumeNode = ctx.createGain();
-    volumeNode.gain.value = volume / 100;
-    volumeNodeRef.current = volumeNode;
+      if (ctx.state === "suspended") {
+        await ctx.resume().catch(() => {});
+      }
 
-    const muteNode = ctx.createGain();
-    muteNode.gain.value = isMuted ? 0 : 1;
-    muteNodeRef.current = muteNode;
+      if (shouldPlay) {
+        // Retrieve or generate cached buffer
+        let buffer = presetBuffersRef.current.get(presetId);
+        if (!buffer) {
+          buffer = generatePresetAudioBuffer(ctx, presetId);
+          presetBuffersRef.current.set(presetId, buffer);
+        }
 
-    const stop = createSoundscape(ctx, profile, volumeNode, muteNode);
-    stopSoundRef.current = stop;
+        // Stop any existing node
+        const existing = presetNodesRef.current.get(presetId);
+        if (existing) {
+          try {
+            existing.source.stop();
+          } catch {
+            // ignore
+          }
+          existing.source.disconnect();
+          existing.gain.disconnect();
+        }
 
-    setIsPlaying(true);
-  }, [profile, volume, isMuted]);
+        // Create independent gain node for this soundscape
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = currentState.volume / 100;
+        gainNode.connect(masterGainRef.current!);
 
-  const stopPlayback = useCallback(() => {
-    stopSoundRef.current?.();
-    stopSoundRef.current = null;
-    setIsPlaying(false);
-  }, []);
+        // Create buffer source node with seamless looping enabled
+        const sourceNode = ctx.createBufferSource();
+        sourceNode.buffer = buffer;
+        sourceNode.loop = true;
+        sourceNode.connect(gainNode);
+        sourceNode.start();
 
-  const togglePlay = useCallback(async () => {
-    if (isPlaying) {
-      stopPlayback();
-    } else {
-      await startPlayback();
-    }
-  }, [isPlaying, startPlayback, stopPlayback]);
+        presetNodesRef.current.set(presetId, {
+          source: sourceNode,
+          gain: gainNode,
+        });
 
-  const handleVolumeChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = Number(e.target.value);
-      setVolume(val);
-      if (
-        volumeNodeRef.current &&
-        ctxRef.current &&
-        ctxRef.current.state !== "closed"
-      ) {
-        volumeNodeRef.current.gain.setTargetAtTime(
+        setSoundscapeStates((prev) => ({
+          ...prev,
+          [presetId]: { ...prev[presetId], isPlaying: true },
+        }));
+      } else {
+        // Stop playback
+        const node = presetNodesRef.current.get(presetId);
+        if (node) {
+          try {
+            if (ctx.state !== "closed") {
+              node.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+              setTimeout(() => {
+                try {
+                  node.source.stop();
+                } catch {
+                  // ignore
+                }
+                node.source.disconnect();
+                node.gain.disconnect();
+              }, 60);
+            } else {
+              node.source.stop();
+            }
+          } catch {
+            // ignore
+          }
+          presetNodesRef.current.delete(presetId);
+        }
+
+        setSoundscapeStates((prev) => ({
+          ...prev,
+          [presetId]: { ...prev[presetId], isPlaying: false },
+        }));
+      }
+    },
+    [soundscapeStates, getOrCreateAudioContext],
+  );
+
+  // Handle independent volume adjustment per soundscape
+  const handlePresetVolumeChange = useCallback(
+    (presetId: PresetId, val: number) => {
+      setSoundscapeStates((prev) => ({
+        ...prev,
+        [presetId]: { ...prev[presetId], volume: val },
+      }));
+
+      const node = presetNodesRef.current.get(presetId);
+      if (node && ctxRef.current && ctxRef.current.state !== "closed") {
+        node.gain.gain.setTargetAtTime(
           val / 100,
           ctxRef.current.currentTime,
-          0.05,
+          0.03,
         );
       }
     },
     [],
   );
 
-  const toggleMute = useCallback(() => {
-    setIsMuted((prev) => {
+  // Handle master volume adjustment
+  const handleMasterVolumeChange = useCallback((val: number) => {
+    setMasterVolume(val);
+    if (
+      masterGainRef.current &&
+      ctxRef.current &&
+      ctxRef.current.state !== "closed"
+    ) {
+      masterGainRef.current.gain.setTargetAtTime(
+        val / 100,
+        ctxRef.current.currentTime,
+        0.03,
+      );
+    }
+  }, []);
+
+  // Handle master mute toggle
+  const toggleMasterMute = useCallback(() => {
+    setIsMasterMuted((prev) => {
       const next = !prev;
       if (
-        muteNodeRef.current &&
+        muteGainRef.current &&
         ctxRef.current &&
         ctxRef.current.state !== "closed"
       ) {
-        muteNodeRef.current.gain.setTargetAtTime(
+        muteGainRef.current.gain.setTargetAtTime(
           next ? 0 : 1,
           ctxRef.current.currentTime,
-          0.05,
+          0.03,
         );
       }
       return next;
     });
   }, []);
 
+  const anyPlaying = Object.values(soundscapeStates).some((s) => s.isPlaying);
+
+  // Soundscape Cards UI Content
+  const soundscapePanelContent = (
+    <div
+      role="region"
+      aria-label="Preset Soundscapes Player"
+      data-testid="soundscape-player-panel"
+      className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-2xl p-4 space-y-4"
+    >
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2 border-b border-zinc-150 dark:border-zinc-800 pb-3">
+        <div>
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <h3 className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-zinc-50">
+              Focus Soundscapes
+            </h3>
+          </div>
+          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+            Mask café noise with seamless audio loops
+          </p>
+        </div>
+        {!standalone && (
+          <button
+            type="button"
+            onClick={() => setShowPanel(false)}
+            aria-label="Close soundscape panel"
+            className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Master Volume Controls */}
+      <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-850/80 border border-zinc-200/80 dark:border-zinc-750/80">
+        <div className="flex items-center justify-between text-xs font-bold text-zinc-700 dark:text-zinc-300 mb-1.5">
+          <span>Master Volume</span>
+          <span
+            data-testid="master-volume-label"
+            className="font-mono text-[11px] text-zinc-500"
+          >
+            {isMasterMuted ? "Muted" : `${masterVolume}%`}
+          </span>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={toggleMasterMute}
+            aria-label={isMasterMuted ? "Unmute master" : "Mute master"}
+            data-testid="master-mute-btn"
+            className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors shrink-0"
+          >
+            {isMasterMuted ? (
+              <VolumeX className="w-4 h-4 text-rose-500" />
+            ) : (
+              <Volume2 className="w-4 h-4" />
+            )}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={masterVolume}
+            aria-label="Master volume"
+            data-testid="master-volume-slider"
+            onChange={(e) => handleMasterVolumeChange(Number(e.target.value))}
+            className="flex-1 h-2 rounded-lg bg-zinc-200 dark:bg-zinc-700 accent-blue-600 cursor-pointer"
+          />
+        </div>
+      </div>
+
+      {/* Preset Soundscapes Cards Grid */}
+      <div
+        data-testid="soundscapes-grid"
+        className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+      >
+        {PRESET_SOUNDSCAPES.map((preset) => {
+          const state = soundscapeStates[preset.id];
+          return (
+            <div
+              key={preset.id}
+              data-testid={`soundscape-card-${preset.id}`}
+              className={`p-3 rounded-xl border transition-all ${
+                state.isPlaying
+                  ? "border-blue-500/40 bg-blue-50/20 dark:bg-blue-950/20 shadow-sm"
+                  : "border-zinc-200 dark:border-zinc-750 bg-zinc-50/60 dark:bg-zinc-850/50"
+              } flex flex-col justify-between`}
+            >
+              <div>
+                <div className="flex items-start justify-between gap-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base" role="img" aria-hidden="true">
+                      {preset.emoji}
+                    </span>
+                    <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                      {preset.name}
+                    </span>
+                  </div>
+                  {state.isPlaying && (
+                    <span
+                      data-testid={`status-badge-${preset.id}`}
+                      className={`px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border shrink-0 ${preset.badgeClass}`}
+                    >
+                      Playing
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2 leading-relaxed">
+                  {preset.description}
+                </p>
+              </div>
+
+              <div className="mt-3 space-y-2.5">
+                {/* Independent Volume Slider */}
+                <div className="flex items-center gap-2">
+                  <Volume2 className="w-3 h-3 text-zinc-400 shrink-0" />
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={state.volume}
+                    aria-label={`${preset.name} volume`}
+                    data-testid={`volume-slider-${preset.id}`}
+                    onChange={(e) =>
+                      handlePresetVolumeChange(
+                        preset.id,
+                        Number(e.target.value),
+                      )
+                    }
+                    className="flex-1 h-1.5 rounded-lg bg-zinc-200 dark:bg-zinc-700 accent-blue-600 cursor-pointer"
+                  />
+                  <span
+                    data-testid={`volume-label-${preset.id}`}
+                    className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400 w-7 text-right tabular-nums"
+                  >
+                    {state.volume}%
+                  </span>
+                </div>
+
+                {/* Play / Pause Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => void togglePresetPlay(preset.id)}
+                  aria-label={
+                    state.isPlaying
+                      ? `Pause ${preset.name}`
+                      : `Play ${preset.name}`
+                  }
+                  data-testid={`play-toggle-${preset.id}`}
+                  className={`w-full py-1.5 px-3 rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all active:scale-[0.98] ${
+                    state.isPlaying
+                      ? "bg-zinc-800 text-white dark:bg-zinc-700 hover:bg-zinc-700 dark:hover:bg-zinc-600 shadow-sm"
+                      : "bg-blue-600 text-white hover:bg-blue-500 shadow-sm"
+                  }`}
+                >
+                  {state.isPlaying ? (
+                    <>
+                      <Pause className="w-3.5 h-3.5 fill-current" />
+                      <span>Pause</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Play</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // If standalone, render the soundscape cards directly
+  if (standalone) {
+    return (
+      <div className={`w-full ${className}`}>{soundscapePanelContent}</div>
+    );
+  }
+
+  // Popover trigger mode (for VenueCard integration)
   return (
-    <div className="relative inline-flex items-center">
+    <div className={`relative inline-flex items-center ${className}`}>
       {/* Trigger button */}
       <button
-        id={`ambient-player-trigger-${level}`}
+        id={`ambient-player-trigger-${noiseLevel ?? "default"}`}
         type="button"
         onClick={() => setShowPanel((v) => !v)}
-        aria-label={`Preview ${profile.label} ambient sound`}
-        title={`Preview: ${profile.label} — ${profile.description}`}
+        aria-label="Preset focus soundscapes player"
+        title="Focus Soundscapes: White Noise, Rain, Café Hum"
+        data-testid="ambient-sound-trigger"
         className={`
           inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold
           transition-all duration-150 active:scale-95
-          ${profile.buttonClass}
-          ${showPanel ? "ring-1 ring-current ring-offset-1" : ""}
+          text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 border-zinc-300 dark:border-zinc-700
+          ${showPanel ? "ring-1 ring-blue-500 ring-offset-1" : ""}
         `}
       >
-        <Headphones className="w-3 h-3 shrink-0" />
-        <span className="sr-only">Preview ambient sound</span>
-        {isPlaying && <WaveBars active />}
+        <Headphones className="w-3 h-3 shrink-0 text-blue-500" />
+        <span className="sr-only">Focus soundscapes</span>
+        {anyPlaying && <WaveBars active={!isMasterMuted} />}
       </button>
 
       {/* Floating control panel */}
       {showPanel && (
         <>
-          {/* Backdrop */}
           <div
             className="fixed inset-0 z-40"
             onClick={() => setShowPanel(false)}
             aria-hidden="true"
           />
-
           <div
             role="dialog"
-            aria-label={`Ambient sound player — ${profile.label}`}
-            className="
-              absolute bottom-full left-0 z-50 mb-2
-              w-64 rounded-2xl border border-zinc-200 dark:border-zinc-700
-              bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md
-              shadow-2xl shadow-black/10 dark:shadow-black/40
-              p-4 space-y-3
-              animate-in fade-in slide-in-from-bottom-2 duration-150
-            "
+            aria-label="Ambient soundscapes player"
+            className="absolute bottom-full left-0 z-50 mb-2 w-80 sm:w-96 max-w-[95vw]"
           >
-            {/* Header */}
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-xs font-black uppercase tracking-wider text-zinc-900 dark:text-zinc-50">
-                  {profile.emoji} {profile.label}
-                </p>
-                <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">
-                  {profile.description}
-                </p>
-              </div>
-              {/* Playing badge */}
-              {isPlaying && (
-                <span
-                  className={`
-                    flex-shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-black uppercase tracking-wider
-                    ${profile.badgeClass}
-                  `}
-                >
-                  <WaveBars active={!isMuted} />
-                  {isMuted ? "MUTED" : "LIVE"}
-                </span>
-              )}
-            </div>
-
-            {/* Play / Stop control */}
-            <button
-              id={`ambient-player-play-${level}`}
-              type="button"
-              onClick={togglePlay}
-              className={`
-                w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5
-                text-xs font-black uppercase tracking-tight text-white
-                transition-all duration-150 active:scale-[0.97] shadow-md
-                ${
-                  isPlaying
-                    ? "bg-zinc-800 hover:bg-zinc-700 dark:bg-zinc-700 dark:hover:bg-zinc-600"
-                    : level === "quiet"
-                      ? "bg-emerald-600 hover:bg-emerald-500"
-                      : level === "moderate"
-                        ? "bg-amber-500 hover:bg-amber-400"
-                        : "bg-rose-600 hover:bg-rose-500"
-                }
-              `}
-            >
-              {isPlaying ? (
-                <>
-                  <Square className="h-3.5 w-3.5 fill-current" />
-                  Stop Preview
-                </>
-              ) : (
-                <>
-                  <Play className="h-3.5 w-3.5 fill-current" />
-                  Play 5-sec Loop
-                </>
-              )}
-            </button>
-
-            {/* Volume + Mute row */}
-            <div className="flex items-center gap-2">
-              <button
-                id={`ambient-player-mute-${level}`}
-                type="button"
-                onClick={toggleMute}
-                aria-label={isMuted ? "Unmute" : "Mute"}
-                title={isMuted ? "Unmute" : "Mute"}
-                className="flex-shrink-0 p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-zinc-500 dark:text-zinc-400"
-              >
-                {isMuted ? (
-                  <VolumeX className="w-3.5 h-3.5" />
-                ) : (
-                  <Volume2 className="w-3.5 h-3.5" />
-                )}
-              </button>
-
-              <input
-                id={`ambient-player-volume-${level}`}
-                type="range"
-                min={0}
-                max={100}
-                value={volume}
-                onChange={handleVolumeChange}
-                aria-label="Volume"
-                className="flex-1 h-1.5 rounded-full accent-blue-500 cursor-pointer"
-                style={{ accentColor: "currentColor" }}
-              />
-
-              <span className="text-[10px] font-bold text-zinc-400 w-7 text-right tabular-nums">
-                {isMuted ? "—" : `${volume}%`}
-              </span>
-            </div>
-
-            {/* Decibel range hint */}
-            <p className="text-[9px] text-zinc-400 dark:text-zinc-500 text-center border-t border-zinc-100 dark:border-zinc-800 pt-2">
-              Simulates ambient decibel level recorded at similar venues
-            </p>
+            {soundscapePanelContent}
           </div>
         </>
       )}

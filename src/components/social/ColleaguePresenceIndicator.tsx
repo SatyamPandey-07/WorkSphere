@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Users,
   Sparkles,
-  MapPin,
   Clock,
   CheckCircle2,
   X,
@@ -16,11 +15,76 @@ import {
 } from "lucide-react";
 import { useColleaguePresence } from "@/hooks/useColleaguePresence";
 
+export const PRESENCE_REFRESH_INTERVAL_MS = 60000; // 60 seconds
+
+export interface ColleaguePresenceItem {
+  userId: string;
+  name: string;
+  imageUrl?: string | null;
+  statusNote?: string | null;
+  seatNumber?: string | null;
+  until?: string | null;
+  lastSeen?: string | number | Date | null;
+  lastActive?: string | number | Date | null;
+  presenceType?: "buddy_status" | "checked_in" | "active_booking";
+}
+
+export interface FormatLastSeenOptions {
+  locale?: string;
+  style?: "narrow" | "short" | "long";
+}
+
+/**
+ * Formats a colleague's last-seen timestamp as a localized relative time string (e.g. "Active just now", "Active 5m ago", "Active 1h ago").
+ */
+export function formatRelativeLastSeen(
+  timestamp?: string | number | Date | null,
+  now: Date = new Date(),
+  options: FormatLastSeenOptions | string = {},
+): string {
+  const opts: FormatLastSeenOptions =
+    typeof options === "string" ? { locale: options } : options;
+  const locale = opts.locale;
+  const style = opts.style || "short";
+
+  if (!timestamp) return "Active just now";
+  const date = new Date(timestamp);
+  if (isNaN(date.getTime())) return "Active recently";
+
+  const diffMs = now.getTime() - date.getTime();
+  const diffSeconds = Math.round(diffMs / 1000);
+
+  if (diffSeconds < 60 && diffSeconds >= 0) {
+    return "Active just now";
+  }
+
+  const rtf = new Intl.RelativeTimeFormat(locale || undefined, {
+    numeric: "always",
+    style,
+  });
+
+  const diffMinutes = Math.max(1, Math.round(diffSeconds / 60));
+  if (diffMinutes < 60) {
+    return `Active ${rtf.format(-diffMinutes, "minute")}`;
+  }
+
+  const diffHours = Math.max(1, Math.round(diffMinutes / 60));
+  if (diffHours < 24) {
+    return `Active ${rtf.format(-diffHours, "hour")}`;
+  }
+
+  const diffDays = Math.max(1, Math.round(diffHours / 24));
+  return `Active ${rtf.format(-diffDays, "day")}`;
+}
+
 export interface ColleaguePresenceIndicatorProps {
   venueId: string;
   venueName?: string;
   className?: string;
   compact?: boolean;
+  refreshIntervalMs?: number;
+  initialColleagues?: ColleaguePresenceItem[];
+  locale?: string;
 }
 
 export function ColleaguePresenceIndicator({
@@ -28,19 +92,35 @@ export function ColleaguePresenceIndicator({
   venueName = "Workspace",
   className = "",
   compact = false,
+  refreshIntervalMs = PRESENCE_REFRESH_INTERVAL_MS,
+  initialColleagues,
+  locale,
 }: ColleaguePresenceIndicatorProps) {
-  const {
-    activeCount,
-    colleagues,
-    isSelfPresent,
-    isLoading,
-    publishPresence,
-    leaveVenue,
-  } = useColleaguePresence(venueId);
+  const presence = useColleaguePresence(venueId);
+
+  const activeCount = initialColleagues
+    ? initialColleagues.length
+    : presence.activeCount;
+  const colleagues: ColleaguePresenceItem[] = (initialColleagues ||
+    presence.colleagues) as ColleaguePresenceItem[];
+  const isSelfPresent = presence.isSelfPresent;
+  const isLoading = initialColleagues ? false : presence.isLoading;
+  const publishPresence = presence.publishPresence;
+  const leaveVenue = presence.leaveVenue;
 
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
   const [sharingNote, setSharingNote] = useState("");
   const [isSharing, setIsSharing] = useState(false);
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
+  // Periodically refresh relative timestamps every 60 seconds (or custom interval)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, refreshIntervalMs);
+
+    return () => clearInterval(timer);
+  }, [refreshIntervalMs]);
 
   if (isLoading && activeCount === 0) {
     return null;
@@ -90,6 +170,7 @@ export function ColleaguePresenceIndicator({
                     title={c.name}
                   >
                     {c.imageUrl ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img
                         src={c.imageUrl}
                         alt={c.name}
@@ -117,7 +198,9 @@ export function ColleaguePresenceIndicator({
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                       </span>
                       <span>
-                        {activeCount} {activeCount === 1 ? "Teammate" : "Teammates"} Working Here
+                        {activeCount}{" "}
+                        {activeCount === 1 ? "Teammate" : "Teammates"} Working
+                        Here
                       </span>
                     </>
                   ) : (
@@ -197,56 +280,80 @@ export function ColleaguePresenceIndicator({
                     Currently Checked In ({colleagues.length})
                   </span>
 
-                  {colleagues.map((c) => (
-                    <div
-                      key={c.userId}
-                      className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3.5 flex items-start justify-between gap-3 shadow-sm"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-500 text-white flex items-center justify-center text-sm font-bold uppercase overflow-hidden shadow">
-                          {c.imageUrl ? (
-                            <img
-                              src={c.imageUrl}
-                              alt={c.name}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            c.name.slice(0, 2)
-                          )}
-                        </div>
+                  {colleagues.map((c) => {
+                    const lastSeenTimestamp =
+                      c.lastSeen ??
+                      c.lastActive ??
+                      (c as Record<string, unknown>).updatedAt ??
+                      (c as Record<string, unknown>).createdAt;
+                    const relativeTime = formatRelativeLastSeen(
+                      lastSeenTimestamp as
+                        string | number | Date | null | undefined,
+                      currentTime,
+                      locale,
+                    );
 
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-bold text-white">
-                              {c.name}
-                            </span>
-                            {c.seatNumber && (
-                              <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-mono font-semibold">
-                                Seat {c.seatNumber}
-                              </span>
+                    return (
+                      <div
+                        key={c.userId}
+                        className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3.5 flex items-start justify-between gap-3 shadow-sm"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-tr from-violet-600 to-indigo-500 text-white flex items-center justify-center text-sm font-bold uppercase overflow-hidden shadow">
+                            {c.imageUrl ? (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img
+                                src={c.imageUrl}
+                                alt={c.name}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              c.name.slice(0, 2)
                             )}
                           </div>
-                          {c.statusNote && (
-                            <p className="text-xs text-zinc-300 italic">
-                              "{c.statusNote}"
-                            </p>
-                          )}
-                          {c.until && (
-                            <p className="text-[10px] text-zinc-500 flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              Working until{" "}
-                              {new Date(c.until).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </p>
-                          )}
-                        </div>
-                      </div>
 
-                      <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_10px_rgba(52,211,153,.8)] mt-1.5" />
-                    </div>
-                  ))}
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-white">
+                                {c.name}
+                              </span>
+                              {c.seatNumber && (
+                                <span className="px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-mono font-semibold">
+                                  Seat {c.seatNumber}
+                                </span>
+                              )}
+                            </div>
+                            {c.statusNote && (
+                              <p className="text-xs text-zinc-300 italic">
+                                &quot;{c.statusNote}&quot;
+                              </p>
+                            )}
+
+                            {/* Dynamically updating last-seen relative timestamp */}
+                            <p
+                              data-testid="colleague-last-seen"
+                              className="text-[10px] text-zinc-400 flex items-center gap-1"
+                            >
+                              <Clock className="w-3 h-3 text-zinc-500 shrink-0" />
+                              <span>{relativeTime}</span>
+                            </p>
+
+                            {c.until && (
+                              <p className="text-[10px] text-zinc-500 flex items-center gap-1">
+                                Working until{" "}
+                                {new Date(c.until).toLocaleTimeString([], {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_10px_rgba(52,211,153,.8)] mt-1.5" />
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="py-6 text-center text-zinc-500 text-xs">
@@ -258,7 +365,9 @@ export function ColleaguePresenceIndicator({
               <div className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
                 <span className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-                  {isSelfPresent ? "Your Status is Live" : "Broadcast Your Presence"}
+                  {isSelfPresent
+                    ? "Your Status is Live"
+                    : "Broadcast Your Presence"}
                 </span>
 
                 {isSelfPresent ? (
@@ -292,7 +401,9 @@ export function ColleaguePresenceIndicator({
                       className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow transition-colors disabled:opacity-50 cursor-pointer"
                     >
                       <Send className="w-3.5 h-3.5" />
-                      <span>{isSharing ? "Broadcasting..." : "Share My Work Status"}</span>
+                      <span>
+                        {isSharing ? "Broadcasting..." : "Share My Work Status"}
+                      </span>
                     </button>
                   </div>
                 )}

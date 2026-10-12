@@ -4,7 +4,27 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Mic, MicOff } from "lucide-react";
 import { AudioLevelIndicator } from "./AudioLevelIndicator";
 import { usePeakDecayLevel } from "@/hooks/usePeakDecayLevel";
-type PeerAvatarTileProps = {
+
+/**
+ * Calculates decibel volume: 20 * log10(amplitude), mapped from [-50dB, 0dB] to [0, 1].
+ */
+export function calculateDecibelVolume(amplitude: number): {
+  decibels: number;
+  normalizedDb: number;
+} {
+  if (amplitude <= 0.001) {
+    return { decibels: -60, normalizedDb: 0 };
+  }
+  const db = 20 * Math.log10(Math.min(1, Math.max(0.001, amplitude)));
+  const clampedDb = Math.max(-50, Math.min(0, db));
+  const normalizedDb = (clampedDb + 50) / 50;
+  return {
+    decibels: Math.round(db * 10) / 10,
+    normalizedDb: Math.round(normalizedDb * 100) / 100,
+  };
+}
+
+export type PeerAvatarTileProps = {
   /** Unique peer identifier */
   peerId: string;
   /** Display name */
@@ -29,7 +49,8 @@ type PeerAvatarTileProps = {
 
 /**
  * PeerAvatarTile renders a single peer in the mesh call grid.
- * Shows user avatar / video thumbnail wrapped in an animated audio level ring.
+ * When a remote participant speaks, displays radiating circular hard-light energy shockwaves
+ * pulsing outward proportional to real-time voice amplitude and decibel volume.
  */
 export function PeerAvatarTile({
   name,
@@ -44,6 +65,9 @@ export function PeerAvatarTile({
 }: PeerAvatarTileProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const smoothedAudioLevel = usePeakDecayLevel(audioLevel);
+
+  // Track real-time amplitude via Web Audio AnalyserNode
+  const [analyserLevel, setAnalyserLevel] = useState<number>(0);
 
   // Track the audio track's enabled/muted property dynamically
   const [trackEnabled, setTrackEnabled] = useState<boolean>(() => {
@@ -87,7 +111,6 @@ export function PeerAvatarTile({
     stream.addEventListener("addtrack", handleTrackChange);
     stream.addEventListener("removetrack", handleTrackChange);
 
-    // Poll for track.enabled changes since property mutation does not fire standard DOM events
     const interval = setInterval(updateTrackState, 200);
     if (
       typeof interval === "object" &&
@@ -109,8 +132,98 @@ export function PeerAvatarTile({
     };
   }, [stream]);
 
+  // Calculate voice amplitude from Web Audio AnalyserNode
+  useEffect(() => {
+    if (!stream || !audioEnabled) {
+      setAnalyserLevel(0);
+      return;
+    }
+
+    const audioTracks = stream.getAudioTracks();
+    if (
+      audioTracks.length === 0 ||
+      !audioTracks[0].enabled ||
+      audioTracks[0].muted
+    ) {
+      setAnalyserLevel(0);
+      return;
+    }
+
+    if (typeof window === "undefined") return;
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+
+    let ctx: AudioContext | null = null;
+    let source: MediaStreamAudioSourceNode | null = null;
+    let analyser: AnalyserNode | null = null;
+    let animId: number | null = null;
+
+    try {
+      ctx = new AudioCtx();
+      source = ctx.createMediaStreamSource(stream);
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.3;
+      source.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      const checkAudio = () => {
+        if (!analyser) return;
+        analyser.getByteFrequencyData(dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < bufferLength; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / bufferLength;
+        const normalized = Math.min(1, Math.max(0, avg / 128));
+
+        if (normalized < 0.02) {
+          setAnalyserLevel(0);
+        } else {
+          setAnalyserLevel(normalized);
+        }
+
+        animId = requestAnimationFrame(checkAudio);
+      };
+
+      animId = requestAnimationFrame(checkAudio);
+    } catch {
+      // Safe fallback if stream source cannot be created in environment
+    }
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+      try {
+        source?.disconnect();
+        if (ctx && ctx.state !== "closed") {
+          ctx.close();
+        }
+      } catch {
+        // cleanup safe
+      }
+      setAnalyserLevel(0);
+    };
+  }, [stream, audioEnabled]);
+
   const effectiveAudioEnabled = audioEnabled && trackEnabled;
   const effectiveIsSpeaking = effectiveAudioEnabled && isSpeaking;
+
+  // Real-time amplitude combining props & AnalyserNode
+  const currentAmplitude = Math.max(
+    smoothedAudioLevel,
+    analyserLevel,
+    effectiveIsSpeaking ? 0.35 : 0,
+  );
+
+  // Decibel volume calculation
+  const dbData = calculateDecibelVolume(currentAmplitude);
+
+  // Active speaking condition for hard-light shockwaves
+  const isShockwaveActive =
+    effectiveAudioEnabled && (effectiveIsSpeaking || currentAmplitude > 0.04);
 
   // Attach media stream to video element
   useEffect(() => {
@@ -139,8 +252,8 @@ export function PeerAvatarTile({
   return (
     <div
       className={`group relative flex flex-col items-center gap-2 rounded-2xl border bg-black/40 p-3 transition-all duration-200 ${
-        effectiveIsSpeaking
-          ? "border-emerald-400/40 shadow-lg shadow-emerald-500/10"
+        isShockwaveActive
+          ? "border-emerald-400/80 shadow-[0_0_25px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400/40"
           : "border-white/10 hover:border-white/20"
       }`}
     >
@@ -210,36 +323,80 @@ export function PeerAvatarTile({
         )}
       </div>
 
-      {/* Audio level ring with avatar / video inside */}
-      <AudioLevelIndicator
-        level={smoothedAudioLevel}
-        size={88}
-        strokeWidth={3}
-        muted={!effectiveAudioEnabled}
-      >
-        {hasVideo ? (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted={isLocal}
-            className="h-[76px] w-[76px] rounded-full object-cover"
-          />
-        ) : (
-          <div className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-gradient-to-br from-violet-600/30 to-fuchsia-600/20 text-lg font-bold tracking-wide text-violet-200">
-            {avatarUrl ? (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={avatarUrl}
-                alt={name}
-                className="h-full w-full rounded-full object-cover"
-              />
-            ) : (
-              initials
-            )}
+      {/* Center Avatar Container with Radiating Hard-Light Shockwaves */}
+      <div className="relative flex items-center justify-center my-1">
+        {/* Radiating Circular Hard-Light Energy Shockwaves - Cleaned up on silence */}
+        {isShockwaveActive && (
+          <div
+            data-testid="radiating-shockwaves"
+            className="pointer-events-none absolute inset-0 -m-6 flex items-center justify-center z-0 overflow-visible"
+            aria-hidden="true"
+          >
+            {/* Primary hard-light pulse ring */}
+            <span
+              data-testid="shockwave-ring-1"
+              style={{
+                transform: `scale(${1.08 + dbData.normalizedDb * 0.4})`,
+                opacity: Math.min(0.95, 0.35 + dbData.normalizedDb * 0.6),
+              }}
+              className="absolute w-24 h-24 rounded-full border-2 border-emerald-400 bg-emerald-400/15 shadow-[0_0_20px_rgba(16,185,129,0.6)] animate-ping"
+            />
+
+            {/* Secondary radiating wave ring */}
+            <span
+              data-testid="shockwave-ring-2"
+              style={{
+                transform: `scale(${1.28 + dbData.normalizedDb * 0.6})`,
+                opacity: Math.min(0.75, 0.25 + dbData.normalizedDb * 0.5),
+              }}
+              className="absolute w-28 h-28 rounded-full border border-emerald-400/70 shadow-[0_0_25px_rgba(52,211,153,0.5)] animate-pulse"
+            />
+
+            {/* Tertiary outer ambient halo ring */}
+            <span
+              data-testid="shockwave-ring-3"
+              style={{
+                transform: `scale(${1.48 + dbData.normalizedDb * 0.8})`,
+                opacity: Math.min(0.55, 0.15 + dbData.normalizedDb * 0.4),
+              }}
+              className="absolute w-32 h-32 rounded-full border border-emerald-300/40 shadow-[0_0_30px_rgba(110,231,183,0.3)] animate-pulse"
+            />
           </div>
         )}
-      </AudioLevelIndicator>
+
+        {/* Audio level ring with avatar / video inside */}
+        <div className="relative z-10">
+          <AudioLevelIndicator
+            level={currentAmplitude}
+            size={88}
+            strokeWidth={3}
+            muted={!effectiveAudioEnabled}
+          >
+            {hasVideo ? (
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted={isLocal}
+                className="h-[76px] w-[76px] rounded-full object-cover"
+              />
+            ) : (
+              <div className="flex h-[76px] w-[76px] items-center justify-center rounded-full bg-gradient-to-br from-violet-600/30 to-fuchsia-600/20 text-lg font-bold tracking-wide text-violet-200">
+                {avatarUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={avatarUrl}
+                    alt={name}
+                    className="h-full w-full rounded-full object-cover"
+                  />
+                ) : (
+                  initials
+                )}
+              </div>
+            )}
+          </AudioLevelIndicator>
+        </div>
+      </div>
 
       {/* Status badges */}
       <div className="flex items-center gap-2">

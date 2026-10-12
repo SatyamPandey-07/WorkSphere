@@ -6,3 +6,16 @@ export type { VenueBeaconDiagnosticDrawerProps } from "./VenueBeaconDiagnosticDr
 
 export { IndoorPositioningMap } from "./IndoorPositioningMap";
 export type { IndoorPositioningMapProps } from "./IndoorPositioningMap";
+
+export {
+  SpatialAudioStage,
+  stageToAudioCoordinates,
+  updatePannerCoordinates,
+  updateListenerCoordinates,
+} from "./SpatialAudioStage";
+export type {
+  SpatialAudioStageProps,
+  PeerAvatar,
+  LocalUserAvatar,
+  StagePosition,
+} from "./SpatialAudioStage";

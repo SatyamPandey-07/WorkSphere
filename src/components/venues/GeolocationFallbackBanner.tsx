@@ -12,13 +12,72 @@ import {
   CheckCircle2,
   Info,
 } from "lucide-react";
-import { geocodePostalOrCity, GeocodedLocation } from "@/hooks/useUserLocation";
+import {
+  geocodePostalOrCity,
+  GeocodedLocation,
+  GeolocationPermissionState,
+} from "@/hooks/useUserLocation";
 
 export interface GeolocationFallbackBannerProps {
   onLocationSelected?: (location: GeocodedLocation) => void;
   currentLocationName?: string | null;
   onDismiss?: () => void;
   className?: string;
+  status?: GeolocationPermissionState | "prompt" | "granted" | "denied";
+  variant?: "default" | "skeleton" | "shimmer";
+  isLoading?: boolean;
+}
+
+/**
+ * Skeleton shimmer placeholder matching GeolocationFallbackBanner dimensions.
+ * Preserves layout height (min-h-[148px]) to eliminate Cumulative Layout Shift (CLS)
+ * while awaiting browser geolocation permission prompt.
+ */
+export function GeolocationFallbackSkeleton({
+  className = "",
+}: {
+  className?: string;
+}) {
+  return (
+    <div
+      role="status"
+      aria-label="Checking location permission"
+      aria-busy="true"
+      data-testid="geolocation-shimmer-skeleton"
+      className={`relative rounded-2xl border border-zinc-200/60 dark:border-zinc-800/60 bg-zinc-100/60 dark:bg-zinc-900/60 backdrop-blur-md p-4 sm:p-5 shadow-lg shadow-black/5 overflow-hidden min-h-[148px] animate-in fade-in duration-200 ${className}`}
+    >
+      {/* Shimmer sweep overlay */}
+      <div
+        data-testid="shimmer-sweep"
+        className="pointer-events-none absolute inset-0 -translate-x-full animate-[shimmer_1.8s_infinite] bg-gradient-to-r from-transparent via-white/40 dark:via-white/10 to-transparent"
+      />
+
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div className="ws-skeleton w-9 h-9 rounded-xl shrink-0 mt-0.5" />
+
+          <div className="flex-1 min-w-0 space-y-2">
+            <div className="ws-skeleton h-4 w-44 rounded-md" />
+            <div className="ws-skeleton h-3.5 w-3/4 max-w-sm rounded-md" />
+
+            {/* Search form skeleton */}
+            <div className="mt-3 flex flex-wrap sm:flex-nowrap items-center gap-2 pt-1">
+              <div className="ws-skeleton h-8 flex-1 min-w-[200px] rounded-xl" />
+              <div className="ws-skeleton h-8 w-24 rounded-xl shrink-0" />
+            </div>
+
+            {/* Instruction toggle skeleton */}
+            <div className="pt-2">
+              <div className="ws-skeleton h-3 w-52 rounded" />
+            </div>
+          </div>
+        </div>
+
+        {/* Dismiss button placeholder */}
+        <div className="ws-skeleton w-6 h-6 rounded-lg shrink-0" />
+      </div>
+    </div>
+  );
 }
 
 export function GeolocationFallbackBanner({
@@ -26,6 +85,9 @@ export function GeolocationFallbackBanner({
   currentLocationName,
   onDismiss,
   className = "",
+  status,
+  variant,
+  isLoading = false,
 }: GeolocationFallbackBannerProps) {
   const [query, setQuery] = useState("");
   const [isResolving, setIsResolving] = useState(false);
@@ -35,6 +97,18 @@ export function GeolocationFallbackBanner({
   const [isDismissed, setIsDismissed] = useState(false);
 
   if (isDismissed) return null;
+  if (status === "granted") return null;
+
+  // Render skeleton shimmer placeholder when permission is pending (status === 'prompt')
+  // or explicitly set to skeleton/shimmer variant
+  if (
+    status === "prompt" ||
+    variant === "skeleton" ||
+    variant === "shimmer" ||
+    isLoading
+  ) {
+    return <GeolocationFallbackSkeleton className={className} />;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,7 +132,9 @@ export function GeolocationFallbackBanner({
         );
       }
     } catch {
-      setError("Failed to geocode location. Please check your network connection.");
+      setError(
+        "Failed to geocode location. Please check your network connection.",
+      );
     } finally {
       setIsResolving(false);
     }
@@ -68,7 +144,8 @@ export function GeolocationFallbackBanner({
     <div
       role="region"
       aria-label="Location permission fallback"
-      className={`relative rounded-2xl border border-amber-500/30 bg-amber-500/10 dark:bg-amber-950/30 backdrop-blur-md p-4 sm:p-5 shadow-lg shadow-amber-500/5 transition-all ${className}`}
+      data-testid="geolocation-fallback-banner"
+      className={`relative rounded-2xl border border-amber-500/30 bg-amber-500/10 dark:bg-amber-950/30 backdrop-blur-md p-4 sm:p-5 shadow-lg shadow-amber-500/5 transition-all min-h-[148px] animate-in fade-in duration-300 ${className}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -81,11 +158,15 @@ export function GeolocationFallbackBanner({
               <span>Location access disabled</span>
             </h4>
             <p className="text-xs text-zinc-600 dark:text-zinc-300 mt-0.5 leading-relaxed">
-              Location access disabled. Enter city or postal code to find nearby spots.
+              Location access disabled. Enter city or postal code to find nearby
+              spots.
             </p>
 
             {/* Postal code / City search form */}
-            <form onSubmit={handleSubmit} className="mt-3 flex flex-wrap sm:flex-nowrap items-center gap-2">
+            <form
+              onSubmit={handleSubmit}
+              className="mt-3 flex flex-wrap sm:flex-nowrap items-center gap-2"
+            >
               <div className="relative flex-1 min-w-[200px]">
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                 <input
@@ -125,7 +206,9 @@ export function GeolocationFallbackBanner({
             {successLocation && (
               <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1.5 animate-in fade-in">
                 <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Map centered at: {successLocation}</span>
+                <span className="truncate">
+                  Map centered at: {successLocation}
+                </span>
               </div>
             )}
 
@@ -139,7 +222,10 @@ export function GeolocationFallbackBanner({
             {/* Current fallback indicator */}
             {currentLocationName && !successLocation && (
               <p className="mt-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                Currently showing default area: <span className="font-semibold text-zinc-700 dark:text-zinc-300">{currentLocationName}</span>
+                Currently showing default area:{" "}
+                <span className="font-semibold text-zinc-700 dark:text-zinc-300">
+                  {currentLocationName}
+                </span>
               </p>
             )}
 
@@ -162,16 +248,33 @@ export function GeolocationFallbackBanner({
               {showInstructions && (
                 <div className="mt-2.5 p-3 rounded-xl bg-white/70 dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 text-[11px] space-y-2 text-zinc-600 dark:text-zinc-300 animate-in fade-in">
                   <div>
-                    <strong className="text-zinc-800 dark:text-zinc-200">Chrome / Edge / Brave:</strong> Click the tune or lock icon next to the URL in the address bar &rarr; enable <em>Location</em> &rarr; refresh the page.
+                    <strong className="text-zinc-800 dark:text-zinc-200">
+                      Chrome / Edge / Brave:
+                    </strong>{" "}
+                    Click the tune or lock icon next to the URL in the address
+                    bar &rarr; enable <em>Location</em> &rarr; refresh the page.
                   </div>
                   <div>
-                    <strong className="text-zinc-800 dark:text-zinc-200">Safari (Mac):</strong> Safari &rarr; Settings &rarr; Websites &rarr; Location &rarr; set WorkSphere to <em>Allow</em>.
+                    <strong className="text-zinc-800 dark:text-zinc-200">
+                      Safari (Mac):
+                    </strong>{" "}
+                    Safari &rarr; Settings &rarr; Websites &rarr; Location
+                    &rarr; set WorkSphere to <em>Allow</em>.
                   </div>
                   <div>
-                    <strong className="text-zinc-800 dark:text-zinc-200">Firefox:</strong> Click the permissions icon on the left of the address bar &rarr; remove the <em>Blocked</em> permission &rarr; refresh.
+                    <strong className="text-zinc-800 dark:text-zinc-200">
+                      Firefox:
+                    </strong>{" "}
+                    Click the permissions icon on the left of the address bar
+                    &rarr; remove the <em>Blocked</em> permission &rarr;
+                    refresh.
                   </div>
                   <div>
-                    <strong className="text-zinc-800 dark:text-zinc-200">Mobile (iOS / Android):</strong> Ensure browser location is enabled in your phone&apos;s Settings &rarr; Privacy &rarr; Location Services.
+                    <strong className="text-zinc-800 dark:text-zinc-200">
+                      Mobile (iOS / Android):
+                    </strong>{" "}
+                    Ensure browser location is enabled in your phone&apos;s
+                    Settings &rarr; Privacy &rarr; Location Services.
                   </div>
                 </div>
               )}

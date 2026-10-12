@@ -7,7 +7,11 @@ export { VenueSearchDrawer } from "./VenueSearchDrawer";
 export { VenueSearchEmptyState } from "./VenueSearchEmptyState";
 export { VenueSeatWaitlistModal } from "./VenueSeatWaitlistModal";
 export { AmenityFilterPills } from "./AmenityFilterPills";
-export { GeolocationFallbackBanner } from "./GeolocationFallbackBanner";
+export {
+  GeolocationFallbackBanner,
+  GeolocationFallbackSkeleton,
+} from "./GeolocationFallbackBanner";
+export type { GeolocationFallbackBannerProps } from "./GeolocationFallbackBanner";
 export { MultiCityComparison } from "./MultiCityComparison";
 export { PremiumZkpGate } from "./PremiumZkpGate";
 export { DistanceFilterSlider } from "./DistanceFilterSlider";

@@ -23,6 +23,8 @@ import {
   type OfflineStorageStats,
   type StaleFloorPlanCacheStats,
 } from "@/lib/offlineStorage";
+import { getQueuedCheckIns } from "@/lib/offlineStore";
+import { syncQueueManager } from "@/lib/offline/SyncQueueManager";
 
 export interface StorageStatsDrawerProps {
   /** Controls drawer open/closed state */
@@ -35,6 +37,10 @@ export interface StorageStatsDrawerProps {
   onStatsUpdated?: (stats: OfflineStorageStats) => void;
   /** Optional trigger value to force refresh */
   refreshTrigger?: number | string | boolean;
+  /** Optional custom clear cache handler */
+  onClearCache?: () => Promise<void> | void;
+  /** Optional initial unsynced check-ins count override (e.g. for testing) */
+  initialUnsyncedCheckIns?: number;
 }
 
 export function StorageStatsDrawer({
@@ -43,14 +49,24 @@ export function StorageStatsDrawer({
   initialStats = null,
   onStatsUpdated,
   refreshTrigger,
+  onClearCache,
+  initialUnsyncedCheckIns,
 }: StorageStatsDrawerProps) {
   const [stats, setStats] = useState<OfflineStorageStats | null>(initialStats);
   const [loading, setLoading] = useState(!initialStats);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [staleStats, setStaleStats] = useState<StaleFloorPlanCacheStats | null>(null);
+  const [staleStats, setStaleStats] = useState<StaleFloorPlanCacheStats | null>(
+    null,
+  );
   const [isCalculatingStale, setIsCalculatingStale] = useState(true);
   const [isPurgingStale, setIsPurgingStale] = useState(false);
   const [showCleanConfirmation, setShowCleanConfirmation] = useState(false);
+  const [showClearCacheConfirmation, setShowClearCacheConfirmation] =
+    useState(false);
+  const [isClearingCache, setIsClearingCache] = useState(false);
+  const [unsyncedCheckIns, setUnsyncedCheckIns] = useState<number>(
+    initialUnsyncedCheckIns ?? 0,
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -75,36 +91,79 @@ export function StorageStatsDrawer({
       const data = await getStaleFloorPlanCacheStats();
       setStaleStats(data);
     } catch (err) {
-      console.error("[StorageStatsDrawer] Failed to calculate stale cache:", err);
+      console.error(
+        "[StorageStatsDrawer] Failed to calculate stale cache:",
+        err,
+      );
     } finally {
       setIsCalculatingStale(false);
     }
   }, []);
 
+  const fetchUnsyncedCheckIns = useCallback(async () => {
+    if (initialUnsyncedCheckIns !== undefined) {
+      setUnsyncedCheckIns(initialUnsyncedCheckIns);
+      return;
+    }
+    let count = 0;
+    try {
+      const queued = await getQueuedCheckIns();
+      count = Math.max(count, queued?.length ?? 0);
+    } catch {
+      // IndexedDB uninitialized or restricted
+    }
+    try {
+      const syncItems = await syncQueueManager.getQueue("checkin");
+      count = Math.max(count, syncItems?.length ?? 0);
+    } catch {
+      // SyncQueueManager fallback
+    }
+    setUnsyncedCheckIns(count);
+  }, [initialUnsyncedCheckIns]);
+
   useEffect(() => {
     if (isOpen) {
       fetchStats();
       fetchStaleStats();
+      fetchUnsyncedCheckIns();
       setSuccessMessage(null);
     }
-  }, [isOpen, fetchStats, fetchStaleStats, refreshTrigger]);
+  }, [
+    isOpen,
+    fetchStats,
+    fetchStaleStats,
+    fetchUnsyncedCheckIns,
+    refreshTrigger,
+  ]);
 
-  // Handle ESC key to close drawer
+  // Handle ESC key to close modals or drawer
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (showClearCacheConfirmation) {
+          setShowClearCacheConfirmation(false);
+          return;
+        }
+        if (showCleanConfirmation) {
+          setShowCleanConfirmation(false);
+          return;
+        }
         onClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, showClearCacheConfirmation, showCleanConfirmation, onClose]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     setErrorMessage(null);
-    await Promise.all([fetchStats(), fetchStaleStats()]);
+    await Promise.all([
+      fetchStats(),
+      fetchStaleStats(),
+      fetchUnsyncedCheckIns(),
+    ]);
   };
 
   const handlePurgeStale = async () => {
@@ -114,13 +173,68 @@ export function StorageStatsDrawer({
       await purgeStaleFloorPlanCache();
       setShowCleanConfirmation(false);
       setSuccessMessage("Stale cache successfully purged!");
-      await Promise.all([fetchStats(), fetchStaleStats()]);
+      await Promise.all([
+        fetchStats(),
+        fetchStaleStats(),
+        fetchUnsyncedCheckIns(),
+      ]);
       setTimeout(() => setSuccessMessage(null), 4000);
     } catch (err) {
       console.error("[StorageStatsDrawer] Failed to purge stale cache:", err);
       setErrorMessage("Failed to clean stale cache. Please try again.");
     } finally {
       setIsPurgingStale(false);
+    }
+  };
+
+  const handleConfirmClearCache = async () => {
+    setIsClearingCache(true);
+    setErrorMessage(null);
+    try {
+      if (onClearCache) {
+        await onClearCache();
+      } else {
+        // Clear window service worker caches if available
+        if (typeof window !== "undefined" && "caches" in window) {
+          try {
+            const cacheKeys = await caches.keys();
+            await Promise.all(cacheKeys.map((key) => caches.delete(key)));
+          } catch (e) {
+            console.warn("[StorageStatsDrawer] Failed to clear caches:", e);
+          }
+        }
+
+        // Clear IndexedDB databases
+        if (typeof window !== "undefined" && "indexedDB" in window) {
+          try {
+            const dbNames = ["WorkSphereOfflineDB", "WorkSphereOfflineCache"];
+            for (const name of dbNames) {
+              const req = indexedDB.deleteDatabase(name);
+              await new Promise<void>((resolve) => {
+                req.onsuccess = () => resolve();
+                req.onerror = () => resolve();
+                req.onblocked = () => resolve();
+              });
+            }
+          } catch (e) {
+            console.warn("[StorageStatsDrawer] Failed to clear IndexedDB:", e);
+          }
+        }
+      }
+
+      setShowClearCacheConfirmation(false);
+      setSuccessMessage("Offline cache successfully cleared!");
+      await Promise.all([
+        fetchStats(),
+        fetchStaleStats(),
+        fetchUnsyncedCheckIns(),
+      ]);
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err) {
+      console.error("[StorageStatsDrawer] Failed to clear offline cache:", err);
+      setErrorMessage("Failed to clear offline cache. Please try again.");
+    } finally {
+      setIsClearingCache(false);
     }
   };
 
@@ -133,7 +247,7 @@ export function StorageStatsDrawer({
     floorPlanBytes = 0,
     floorPlanCount = 0,
     floorPlanPercentOfUsage = 0,
-    floorPlanPercentOfQuota = 0,
+    floorPlanPercentOfQuota: _floorPlanPercentOfQuota = 0,
     isEstimateAvailable = false,
   } = stats || {};
 
@@ -211,7 +325,9 @@ export function StorageStatsDrawer({
               aria-label="Refresh storage stats"
               className="p-2 rounded-xl text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
             >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin text-blue-500" : ""}`} />
+              <RefreshCw
+                className={`w-4 h-4 ${isRefreshing ? "animate-spin text-blue-500" : ""}`}
+              />
             </button>
             <button
               type="button"
@@ -229,7 +345,9 @@ export function StorageStatsDrawer({
           {loading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-3 text-zinc-400">
               <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-              <p className="text-sm font-medium">Estimating browser storage quota…</p>
+              <p className="text-sm font-medium">
+                Estimating browser storage quota…
+              </p>
             </div>
           ) : (
             <>
@@ -282,12 +400,16 @@ export function StorageStatsDrawer({
                   <div className="pt-2">
                     <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400 mb-1">
                       <span>Breakdown by Data Type</span>
-                      <span>{floorPlanPercentOfUsage.toFixed(0)}% floor plans</span>
+                      <span>
+                        {floorPlanPercentOfUsage.toFixed(0)}% floor plans
+                      </span>
                     </div>
                     <div className="h-2 w-full bg-zinc-200 dark:bg-zinc-800 rounded-full overflow-hidden flex">
                       <div
                         className="h-full bg-indigo-500 transition-all duration-500"
-                        style={{ width: `${Math.min(100, floorPlanPercentOfUsage)}%` }}
+                        style={{
+                          width: `${Math.min(100, floorPlanPercentOfUsage)}%`,
+                        }}
                         title={`Floor Plans: ${formattedFloorPlanBytes}`}
                       />
                       <div
@@ -365,7 +487,9 @@ export function StorageStatsDrawer({
                   <button
                     type="button"
                     onClick={() => setShowCleanConfirmation(true)}
-                    disabled={isCalculatingStale || isPurgingStale || !staleStats?.count}
+                    disabled={
+                      isCalculatingStale || isPurgingStale || !staleStats?.count
+                    }
                     className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -380,10 +504,38 @@ export function StorageStatsDrawer({
                 )}
 
                 {errorMessage && (
-                  <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+                  <p
+                    className="text-xs text-red-600 dark:text-red-400"
+                    role="alert"
+                  >
                     {errorMessage}
                   </p>
                 )}
+              </div>
+
+              {/* Clear Offline Cache Section */}
+              <div className="p-4 rounded-2xl bg-red-50/70 dark:bg-red-950/20 border border-red-200/80 dark:border-red-900/50 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                      <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                      Clear Offline Cache
+                    </h3>
+                    <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
+                      Wipe local IndexedDB databases, stored venues, and cached
+                      assets.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowClearCacheConfirmation(true)}
+                    disabled={isClearingCache || loading}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Clear Offline Cache
+                  </button>
+                </div>
               </div>
 
               {/* Information Note */}
@@ -411,7 +563,7 @@ export function StorageStatsDrawer({
         </div>
       </div>
 
-      {/* Clean Confirmation Modal */}
+      {/* Clean Stale Floor Plans Confirmation Modal */}
       {showCleanConfirmation && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
@@ -436,8 +588,10 @@ export function StorageStatsDrawer({
             </h4>
             <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
               This will remove {staleStats?.count ?? 0} cached floor plan
-              {staleStats?.count === 1 ? "" : "s"} not accessed in 30 days, freeing approximately{" "}
-              {((staleStats?.reclaimableBytes ?? 0) / (1024 * 1024)).toFixed(2)} MB.
+              {staleStats?.count === 1 ? "" : "s"} not accessed in 30 days,
+              freeing approximately{" "}
+              {((staleStats?.reclaimableBytes ?? 0) / (1024 * 1024)).toFixed(2)}{" "}
+              MB.
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button
@@ -454,8 +608,108 @@ export function StorageStatsDrawer({
                 disabled={isPurgingStale}
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-blue-600 hover:bg-blue-700 text-white transition-colors"
               >
-                {isPurgingStale ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                {isPurgingStale ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
                 {isPurgingStale ? "Cleaning…" : "Clean cache"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Offline Cache Confirmation Modal */}
+      {showClearCacheConfirmation && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !isClearingCache) {
+              setShowClearCacheConfirmation(false);
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-clear-cache-title"
+          >
+            <div className="flex items-center gap-2.5 text-red-600 dark:text-red-400">
+              <div className="p-2 rounded-xl bg-red-100 dark:bg-red-950/50">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <h4
+                id="confirm-clear-cache-title"
+                className="text-base font-semibold text-zinc-900 dark:text-zinc-100"
+              >
+                Clear Offline Cache?
+              </h4>
+            </div>
+
+            <div className="mt-3 space-y-3">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                This action will delete all locally cached venues, floor plans,
+                and offline IndexedDB data.
+              </p>
+
+              {/* Formatted byte size readout */}
+              <div
+                data-testid="free-up-bytes-badge"
+                className="flex items-center gap-2 p-3 rounded-xl bg-zinc-100 dark:bg-zinc-800/60 text-zinc-800 dark:text-zinc-200 text-xs font-semibold"
+              >
+                <HardDrive className="w-4 h-4 text-blue-500 shrink-0" />
+                <span>
+                  Free up {(usageBytes / (1024 * 1024)).toFixed(1)} MB
+                </span>
+                <span className="text-zinc-400 dark:text-zinc-500 font-normal ml-auto">
+                  ({formattedTotalUsage})
+                </span>
+              </div>
+
+              {/* Unsaved offline changes warning */}
+              {unsyncedCheckIns > 0 ? (
+                <div
+                  role="alert"
+                  data-testid="unsaved-changes-warning"
+                  className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 text-amber-800 dark:text-amber-200 text-xs space-y-1"
+                >
+                  <div className="flex items-center gap-1.5 font-bold text-amber-900 dark:text-amber-100">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                    Unsaved Offline Changes Detected
+                  </div>
+                  <p className="leading-relaxed">
+                    Warning: You have {unsyncedCheckIns} unsynced offline
+                    check-in draft{unsyncedCheckIns === 1 ? "" : "s"}. Unsaved
+                    offline changes will be discarded.
+                  </p>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowClearCacheConfirmation(false)}
+                disabled={isClearingCache}
+                className="px-4 py-2 text-sm font-medium rounded-xl border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClearCache}
+                disabled={isClearingCache}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
+              >
+                {isClearingCache ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+                {isClearingCache ? "Clearing…" : "Clear Cache"}
               </button>
             </div>
           </div>

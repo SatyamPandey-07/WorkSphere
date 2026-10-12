@@ -3,6 +3,68 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @layer utilities {
+  :where(
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [role="button"],
+    [role="link"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="switch"],
+    [role="tab"],
+    [role="combobox"],
+    [role="option"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="treeitem"],
+    [role="slider"],
+    [role="spinbutton"],
+    [role="textbox"],
+    [role="searchbox"],
+    [role="gridcell"],
+    [tabindex]:not([tabindex="-1"]),
+    [contenteditable="true"]
+  ):focus-visible {
+    @apply outline-none ring-2 ring-offset-2 ring-blue-500;
+  }
+
+  @variant dark {
+    :where(
+      a,
+      button,
+      input,
+      select,
+      textarea,
+      summary,
+      [role="button"],
+      [role="link"],
+      [role="checkbox"],
+      [role="radio"],
+      [role="switch"],
+      [role="tab"],
+      [role="combobox"],
+      [role="option"],
+      [role="menuitem"],
+      [role="menuitemcheckbox"],
+      [role="menuitemradio"],
+      [role="treeitem"],
+      [role="slider"],
+      [role="spinbutton"],
+      [role="textbox"],
+      [role="searchbox"],
+      [role="gridcell"],
+      [tabindex]:not([tabindex="-1"]),
+      [contenteditable="true"]
+    ):focus-visible {
+      @apply ring-offset-slate-900;
+    }
+  }
+
   .glass-card {
     @apply bg-white border border-zinc-200 shadow-xl;
     @apply bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xl;
@@ -22,6 +84,16 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --contrast-border: #e4e4e7;
+  --contrast-text: #171717;
+  --contrast-text-muted: #71717a;
+  --contrast-bg: #ffffff;
+  --contrast-card-bg: #ffffff;
+  --contrast-focus: #3b82f6;
+  --contrast-outline: 2px solid #3b82f6;
+  --contrast-btn-bg: #18181b;
+  --contrast-btn-text: #ffffff;
+  --contrast-interactive-active: #2563eb;
   --primary-accent: #3b82f6;
   --primary-accent-rgb: 59, 130, 246;
   color-scheme: light;
@@ -43,6 +115,16 @@
 .dark {
   --background: #0a0a0a;
   --foreground: #ededed;
+  --contrast-border: #27272a;
+  --contrast-text: #ededed;
+  --contrast-text-muted: #a1a1aa;
+  --contrast-bg: #0a0a0a;
+  --contrast-card-bg: #18181b;
+  --contrast-focus: #60a5fa;
+  --contrast-outline: 2px solid #60a5fa;
+  --contrast-btn-bg: #ffffff;
+  --contrast-btn-text: #18181b;
+  --contrast-interactive-active: #3b82f6;
 }
 
 .dark,
@@ -466,9 +548,15 @@ textarea:focus::placeholder {
 
 /* Animated gradient border for active/upcoming booking cards */
 @keyframes gradient-border-spin {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 .booking-card-active {
@@ -477,7 +565,7 @@ textarea:focus::placeholder {
 }
 
 .booking-card-active::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: -2px;
   border-radius: inherit;
@@ -485,7 +573,9 @@ textarea:focus::placeholder {
   background: linear-gradient(270deg, #6366f1, #8b5cf6, #06b6d4, #6366f1);
   background-size: 300% 300%;
   animation: gradient-border-spin 4s ease infinite;
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
@@ -496,10 +586,14 @@ textarea:focus::placeholder {
    ========================================================= */
 @keyframes theme-reveal {
   from {
-    clip-path: circle(0% at var(--theme-reveal-x, 50%) var(--theme-reveal-y, 50%));
+    clip-path: circle(
+      0% at var(--theme-reveal-x, 50%) var(--theme-reveal-y, 50%)
+    );
   }
   to {
-    clip-path: circle(150% at var(--theme-reveal-x, 50%) var(--theme-reveal-y, 50%));
+    clip-path: circle(
+      150% at var(--theme-reveal-x, 50%) var(--theme-reveal-y, 50%)
+    );
   }
 }
 
@@ -577,6 +671,15 @@ html.high-contrast {
   --background: #ffffff;
   --foreground: #000000;
   --contrast-border: #000000;
+  --contrast-text: #000000;
+  --contrast-text-muted: #000000;
+  --contrast-bg: #ffffff;
+  --contrast-card-bg: #ffffff;
+  --contrast-focus: #000000;
+  --contrast-outline: 3px solid #000000;
+  --contrast-btn-bg: #000000;
+  --contrast-btn-text: #ffffff;
+  --contrast-interactive-active: #0047bb;
   --primary-accent: #0047bb;
   --primary-accent-rgb: 0, 71, 187;
   color-scheme: light;
@@ -590,6 +693,15 @@ html[data-high-contrast="true"].dark {
   --background: #000000;
   --foreground: #ffffff;
   --contrast-border: #ffffff;
+  --contrast-text: #ffffff;
+  --contrast-text-muted: #ffffff;
+  --contrast-bg: #000000;
+  --contrast-card-bg: #000000;
+  --contrast-focus: #ffea00;
+  --contrast-outline: 3px solid #ffea00;
+  --contrast-btn-bg: #ffffff;
+  --contrast-btn-text: #000000;
+  --contrast-interactive-active: #38bdf8;
   --primary-accent: #38bdf8;
   --primary-accent-rgb: 56, 189, 248;
   color-scheme: dark;
@@ -676,7 +788,9 @@ html.high-contrast [role="option"]:focus-visible,
 html.high-contrast [tabindex]:focus-visible {
   outline: 3px solid #000000 !important;
   outline-offset: 2px !important;
-  box-shadow: 0 0 0 4px #ffd600, 0 0 0 6px #000000 !important;
+  box-shadow:
+    0 0 0 4px #ffd600,
+    0 0 0 6px #000000 !important;
 }
 
 html.high-contrast.dark :focus-visible,
@@ -694,7 +808,9 @@ html.high-contrast.dark [role="option"]:focus-visible,
 html.high-contrast.dark [tabindex]:focus-visible {
   outline: 3px solid #ffea00 !important;
   outline-offset: 2px !important;
-  box-shadow: 0 0 0 4px #000000, 0 0 0 6px #ffffff !important;
+  box-shadow:
+    0 0 0 4px #000000,
+    0 0 0 6px #ffffff !important;
 }
 
 /* ─── Modal & Dialog High-Contrast Support ────────────────────────── */
@@ -706,7 +822,9 @@ html.high-contrast .dialog-content {
   background-color: #ffffff !important;
   color: #000000 !important;
   border: 3px solid #000000 !important;
-  box-shadow: 0 0 0 3px #ffffff, 0 25px 50px -12px rgba(0, 0, 0, 0.75) !important;
+  box-shadow:
+    0 0 0 3px #ffffff,
+    0 25px 50px -12px rgba(0, 0, 0, 0.75) !important;
 }
 
 html.high-contrast.dark [role="dialog"],
@@ -717,7 +835,9 @@ html.high-contrast.dark .dialog-content {
   background-color: #000000 !important;
   color: #ffffff !important;
   border: 3px solid #ffffff !important;
-  box-shadow: 0 0 0 3px #000000, 0 25px 50px -12px rgba(255, 255, 255, 0.35) !important;
+  box-shadow:
+    0 0 0 3px #000000,
+    0 25px 50px -12px rgba(255, 255, 255, 0.35) !important;
 }
 
 /* Modal Backdrops in High Contrast mode */
@@ -744,7 +864,9 @@ html.high-contrast [role="dialog"] [role="tab"]:focus-visible,
 html.high-contrast [role="dialog"] [tabindex]:focus-visible {
   outline: 3px solid #000000 !important;
   outline-offset: 3px !important;
-  box-shadow: 0 0 0 5px #ffd600, 0 0 0 7px #000000 !important;
+  box-shadow:
+    0 0 0 5px #ffd600,
+    0 0 0 7px #000000 !important;
   z-index: 10003 !important;
 }
 
@@ -760,7 +882,9 @@ html.high-contrast.dark [role="dialog"] [role="tab"]:focus-visible,
 html.high-contrast.dark [role="dialog"] [tabindex]:focus-visible {
   outline: 3px solid #ffea00 !important;
   outline-offset: 3px !important;
-  box-shadow: 0 0 0 5px #000000, 0 0 0 7px #ffffff !important;
+  box-shadow:
+    0 0 0 5px #000000,
+    0 0 0 7px #ffffff !important;
   z-index: 10003 !important;
 }
 
@@ -815,5 +939,3 @@ html.high-contrast.dark kbd {
   border: 2px solid #ffffff !important;
   font-weight: 700 !important;
 }
-
-

@@ -15,6 +15,7 @@ import {
   HelpCircle,
   Play,
   Square,
+  Mic,
 } from "lucide-react";
 import {
   MicCalibrationProfile,
@@ -54,6 +55,8 @@ export function MicCalibrationWizard({
   const [isSamplingNoiseFloor, setIsSamplingNoiseFloor] = useState(false);
   const [samplingCountdown, setSamplingCountdown] = useState(3);
   const [micError, setMicError] = useState<string | null>(null);
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("");
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -62,6 +65,25 @@ export function MicCalibrationWizard({
   const sampledValuesRef = useRef<number[]>([]);
   const isSamplingRef = useRef(false);
   const samplingIntervalRef = useRef<number | null>(null);
+  const selectedDeviceIdRef = useRef<string>("");
+
+  useEffect(() => {
+    selectedDeviceIdRef.current = selectedDeviceId;
+  }, [selectedDeviceId]);
+
+  const loadAudioDevices = useCallback(async () => {
+    try {
+      if (!navigator.mediaDevices?.enumerateDevices) return;
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      const audioInputs = allDevices.filter((d) => d.kind === "audioinput");
+      setDevices(audioInputs);
+      if (audioInputs.length > 0 && !selectedDeviceIdRef.current) {
+        setSelectedDeviceId(audioInputs[0].deviceId);
+      }
+    } catch (err) {
+      console.warn("Failed to enumerate audio devices:", err);
+    }
+  }, []);
 
   const stopAudioStream = useCallback(() => {
     if (animationFrameRef.current) {
@@ -90,10 +112,19 @@ export function MicCalibrationWizard({
       setProfile(getMicCalibration());
       setStep(1);
       setMicError(null);
+      void loadAudioDevices();
+
+      const handleDeviceChange = () => {
+        void loadAudioDevices();
+      };
+      navigator.mediaDevices?.addEventListener?.("devicechange", handleDeviceChange);
+      return () => {
+        navigator.mediaDevices?.removeEventListener?.("devicechange", handleDeviceChange);
+      };
     } else {
       stopAudioStream();
     }
-  }, [isOpen, stopAudioStream]);
+  }, [isOpen, stopAudioStream, loadAudioDevices]);
 
   useWebAudioAutoPause({
     isActive: isListening,
@@ -108,17 +139,21 @@ export function MicCalibrationWizard({
   }, [stopAudioStream]);
 
   // Start microphone stream
-  const startAudioStream = async () => {
+  const startAudioStream = async (deviceIdToUse?: string) => {
     setMicError(null);
     try {
       stopAudioStream();
 
+      const activeId = deviceIdToUse || selectedDeviceIdRef.current;
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        ...(activeId ? { deviceId: { exact: activeId } } : {}),
+      };
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
+        audio: audioConstraints,
       });
 
       streamRef.current = stream;
@@ -373,6 +408,41 @@ export function MicCalibrationWizard({
                 </span>
               </div>
 
+              {devices.length > 0 && (
+                <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-800 rounded-2xl space-y-1.5">
+                  <label
+                    htmlFor="mic-device-select"
+                    className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5"
+                  >
+                    <Mic className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Input Microphone Device</span>
+                  </label>
+                  <select
+                    id="mic-device-select"
+                    aria-label="Select audio input device"
+                    value={selectedDeviceId}
+                    onChange={(e) => {
+                      const newDeviceId = e.target.value;
+                      setSelectedDeviceId(newDeviceId);
+                      const dev = devices.find((d) => d.deviceId === newDeviceId);
+                      if (dev?.label) {
+                        setProfile((prev) => ({ ...prev, deviceName: dev.label }));
+                      }
+                      if (isListening) {
+                        void startAudioStream(newDeviceId);
+                      }
+                    }}
+                    className="w-full text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-2 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {devices.map((device, idx) => (
+                      <option key={device.deviceId || idx} value={device.deviceId}>
+                        {device.label || `Microphone ${idx + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
                   {
@@ -457,7 +527,7 @@ export function MicCalibrationWizard({
                 </div>
                 <button
                   type="button"
-                  onClick={isListening ? stopAudioStream : startAudioStream}
+                  onClick={isListening ? stopAudioStream : () => void startAudioStream()}
                   className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
                     isListening
                       ? "bg-rose-500 hover:bg-rose-600 text-white"
@@ -478,6 +548,41 @@ export function MicCalibrationWizard({
                 </button>
               </div>
 
+              {devices.length > 0 && (
+                <div className="p-3 bg-zinc-50 dark:bg-zinc-850 border border-zinc-200 dark:border-zinc-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <label
+                    htmlFor="mic-device-select-step2"
+                    className="font-medium text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5 shrink-0"
+                  >
+                    <Mic className="w-3.5 h-3.5 text-blue-500" />
+                    <span>Microphone:</span>
+                  </label>
+                  <select
+                    id="mic-device-select-step2"
+                    aria-label="Select audio input device live"
+                    value={selectedDeviceId}
+                    onChange={(e) => {
+                      const newDeviceId = e.target.value;
+                      setSelectedDeviceId(newDeviceId);
+                      const dev = devices.find((d) => d.deviceId === newDeviceId);
+                      if (dev?.label) {
+                        setProfile((prev) => ({ ...prev, deviceName: dev.label }));
+                      }
+                      if (isListening) {
+                        void startAudioStream(newDeviceId);
+                      }
+                    }}
+                    className="w-full sm:w-auto flex-1 text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-2.5 py-1.5 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {devices.map((device, idx) => (
+                      <option key={device.deviceId || idx} value={device.deviceId}>
+                        {device.label || `Microphone ${idx + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {micError && (
                 <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-500 flex items-center gap-2">
                   <VolumeX className="w-4 h-4 shrink-0" />
@@ -489,20 +594,28 @@ export function MicCalibrationWizard({
               <div className="p-6 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center text-center space-y-3">
                 <div className="flex items-baseline gap-2">
                   <span className="text-4xl sm:text-5xl font-black tracking-tight text-zinc-900 dark:text-zinc-50 font-mono">
-                    {isListening ? liveCalibratedDb.toFixed(1) : "--"}
+                    {isListening ? Math.max(0, Math.min(120, liveCalibratedDb)).toFixed(1) : "--"}
                   </span>
                   <span className="text-base font-bold text-zinc-500">
                     dB SPL
                   </span>
                 </div>
 
-                {/* Level Meter Progress Bar */}
+                {/* Microphone Muted / Inactive Visual Feedback Label */}
+                {isListening && liveCalibratedDb <= 0 && (
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-200/80 dark:bg-zinc-700/80 text-zinc-600 dark:text-zinc-300 text-[11px] font-bold">
+                    <VolumeX className="w-3.5 h-3.5 text-zinc-500" />
+                    <span>Microphone Muted / Silent</span>
+                  </div>
+                )}
+
+                {/* Level Meter Progress Bar (Normalized 0 to 120 dB SPL) */}
                 <div className="w-full max-w-sm h-4 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden p-0.5 relative">
                   <div
                     className={`h-full rounded-full transition-all duration-75 ${getMeterColor(liveCalibratedDb)}`}
                     style={{
                       width: isListening
-                        ? `${Math.min(100, Math.max(0, ((liveCalibratedDb - 20) / 80) * 100))}%`
+                        ? `${Math.min(100, Math.max(0, (Math.max(0, liveCalibratedDb) / 120) * 100))}%`
                         : "0%",
                     }}
                   />
@@ -510,9 +623,9 @@ export function MicCalibrationWizard({
 
                 {/* Gauge Markers */}
                 <div className="w-full max-w-sm flex justify-between text-[10px] text-zinc-400 font-mono">
-                  <span>20 dB (Whisper)</span>
+                  <span>0 dB (Silence)</span>
                   <span>60 dB (Normal)</span>
-                  <span>100 dB (Loud)</span>
+                  <span>120 dB (Max SPL)</span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 w-full pt-3 border-t border-zinc-200 dark:border-zinc-700/60 text-xs">
@@ -521,7 +634,7 @@ export function MicCalibrationWizard({
                       Raw Input:
                     </span>{" "}
                     <span className="font-mono font-bold text-zinc-700 dark:text-zinc-200">
-                      {liveRawDb.toFixed(1)} dB
+                      {Math.max(0, Math.min(120, liveRawDb)).toFixed(1)} dB
                     </span>
                   </div>
                   <div>
@@ -529,7 +642,7 @@ export function MicCalibrationWizard({
                       Peak Observed:
                     </span>{" "}
                     <span className="font-mono font-bold text-zinc-700 dark:text-zinc-200">
-                      {peakDb.toFixed(1)} dB
+                      {Math.max(0, Math.min(120, peakDb)).toFixed(1)} dB
                     </span>
                   </div>
                 </div>
@@ -696,8 +809,8 @@ export function MicCalibrationWizard({
                 </span>
                 <span className="font-mono font-black text-sm text-blue-700 dark:text-blue-300">
                   {isListening
-                    ? `${liveCalibratedDb.toFixed(1)} dB`
-                    : `${(45 + profile.offsetDb).toFixed(1)} dB (test)`}
+                    ? `${Math.max(0, Math.min(120, liveCalibratedDb)).toFixed(1)} dB`
+                    : `${Math.max(0, Math.min(120, 45 + profile.offsetDb)).toFixed(1)} dB (test)`}
                 </span>
               </div>
 

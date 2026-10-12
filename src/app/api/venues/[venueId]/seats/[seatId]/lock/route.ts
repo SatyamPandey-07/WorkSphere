@@ -4,6 +4,7 @@ import {
   acquireSeatWebLock,
   releaseSeatWebLock,
   getSeatWebLock,
+  withSeatWebLock,
   DEFAULT_LOCK_TTL_SECONDS,
 } from "@/lib/locks/seatHoldLock";
 import { apiError } from "@/lib/apiResponse";

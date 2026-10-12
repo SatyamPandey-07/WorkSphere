@@ -17,6 +17,8 @@ Please read our [Code of Conduct](CODE_OF_CONDUCT.md) before contributing to hel
 3. [Testing Conventions (Jest & RTL)](#3-testing-conventions-jest--rtl)
 4. [E2E Testing (Playwright)](#4-e2e-testing-playwright)
 5. [Pre-Commit Quality Verification Checklist](#5-pre-commit-quality-verification-checklist)
+6. [Windows Husky & Git Hooks Troubleshooting](#6-windows-husky--git-hooks-troubleshooting)
+7. [PR Pre-flight Checklist](#7-pr-pre-flight-checklist)
 
 ---
 
@@ -26,12 +28,49 @@ To keep the repository clean and manageable, please follow this flow:
 
 1. **Fork** the repository and clone it locally.
 2. **Create a branch** using a descriptive naming convention:
-   - `feature/your-feature-name` for new features.
-   - `bugfix/issue-description` for bug fixes.
+   - `feat/your-feature-name` for new features.
+   - `fix/issue-description` for bug fixes.
    - `docs/topic-name` for documentation updates.
+   - `refactor/topic-name` for code restructuring without behavior changes.
+   - `test/topic-name` for test-related changes.
+
+   Use lowercase words separated by hyphens, and keep the branch name short and descriptive.
+
 3. **Write code** and ensure all [testing](#3-testing-conventions-jest--rtl) and [pre-commit checks](#5-pre-commit-quality-verification-checklist) pass.
 4. **Commit** your changes with clear, structured commit messages (e.g., `feat: add map route coordinates validation`). See below for detailed commit formatting rules.
 5. **Push** to your fork and open a **Pull Request (PR)** against the `main` branch. Ensure the PR title adheres to the strict formatting rules outlined in Section 1.2.
+
+### Recommended Terminal Workflow
+
+Use the following commands as a guide. Replace the example branch name with the branch for your task.
+
+```bash
+# 1. Get the latest repository changes
+git fetch upstream
+git switch main
+git rebase upstream/main
+
+# 2. Create a branch for your issue
+git switch -c docs/contributing-guide
+
+# 3. Review your changes
+git status
+git diff
+git diff --check
+
+# 4. Stage and commit your documentation changes
+git add CONTRIBUTING.md
+git commit -m "docs: improve contributing guide"
+
+# 5. Push your branch to your fork
+git push -u origin docs/contributing-guide
+```
+
+Before starting work, claim an available issue by commenting `/claim` on GitHub and wait for the assignment confirmation. If the `upstream` remote is not configured, add it with:
+
+```bash
+git remote add upstream https://github.com/SatyamPandey-07/WorkSphere.git
+```
 
 ### 1.1 OSCI'26 Issue Assignment & Claiming Policy (/claim)
 
@@ -63,6 +102,7 @@ All Pull Request titles must follow the strict machine-parseable convention:
 ```
 
 For example:
+
 ```text
 fix: handle geolocation access permission denied error gracefully (closes #100)
 feat: add ambient noise decibel trend graph (closes #3955)
@@ -81,21 +121,22 @@ WorkSphere enforces the [Conventional Commits](https://www.conventionalcommits.o
 
 #### Supported Commit Types:
 
-| Commit Type | Purpose & Scope | Example Commit Message |
-| :--- | :--- | :--- |
-| **`feat`** | Introducing a new feature, user-facing capability, or algorithm | `feat: add hourly ambient noise decibel trend graph` |
-| **`fix`** | Patching a bug, crash, calculation error, or broken behavior | `fix: clamp user distance calculation when latitude exceeds bounds` |
-| **`docs`** | Creating or updating documentation, specs, runbooks, or guides | `docs: document commit message format and PR guidelines for OSCI'26` |
-| **`perf`** | Optimizations enhancing execution speed, latency, or memory consumption | `perf: vectorize audio FFT filter coefficients using WASM SIMD` |
-| **`test`** | Adding, updating, or fixing unit tests, RTL mocks, or E2E suites | `test: add unit coverage for coordinate boundary clamping` |
-| **`chore`** | Maintenance, script updates, dependency tweaks, or workspace configs | `chore: configure dynamic co-authorship attribution in merge workflows` |
-| **`refactor`**| Restructuring code without altering functional behavior or features | `refactor: extract geographic distance calculations into modular helpers` |
-| **`style`** | Code formatting, whitespace, or lint-only fixes with no code logic change | `style: format acoustics module with prettier` |
-| **`build`** | Build system, bundler, Prisma generation, or Next.js config updates | `build: upgrade prisma adapter and engine configurations` |
-| **`ci`** | GitHub Actions workflow, automation scripts, or deployment pipelines | `ci: add automated triage and label assignment for OSCI'26 PRs` |
-| **`revert`** | Reverting a previous commit that introduced an unintended defect | `revert: rollback rating distribution safari patch` |
+| Commit Type    | Purpose & Scope                                                           | Example Commit Message                                                    |
+| :------------- | :------------------------------------------------------------------------ | :------------------------------------------------------------------------ |
+| **`feat`**     | Introducing a new feature, user-facing capability, or algorithm           | `feat: add hourly ambient noise decibel trend graph`                      |
+| **`fix`**      | Patching a bug, crash, calculation error, or broken behavior              | `fix: clamp user distance calculation when latitude exceeds bounds`       |
+| **`docs`**     | Creating or updating documentation, specs, runbooks, or guides            | `docs: document commit message format and PR guidelines for OSCI'26`      |
+| **`perf`**     | Optimizations enhancing execution speed, latency, or memory consumption   | `perf: vectorize audio FFT filter coefficients using WASM SIMD`           |
+| **`test`**     | Adding, updating, or fixing unit tests, RTL mocks, or E2E suites          | `test: add unit coverage for coordinate boundary clamping`                |
+| **`chore`**    | Maintenance, script updates, dependency tweaks, or workspace configs      | `chore: configure dynamic co-authorship attribution in merge workflows`   |
+| **`refactor`** | Restructuring code without altering functional behavior or features       | `refactor: extract geographic distance calculations into modular helpers` |
+| **`style`**    | Code formatting, whitespace, or lint-only fixes with no code logic change | `style: format acoustics module with prettier`                            |
+| **`build`**    | Build system, bundler, Prisma generation, or Next.js config updates       | `build: upgrade prisma adapter and engine configurations`                 |
+| **`ci`**       | GitHub Actions workflow, automation scripts, or deployment pipelines      | `ci: add automated triage and label assignment for OSCI'26 PRs`           |
+| **`revert`**   | Reverting a previous commit that introduced an unintended defect          | `revert: rollback rating distribution safari patch`                       |
 
 #### Commit Best Practices:
+
 - **Imperative Mood**: Use imperative, present tense: `fix: clamp latitude` (not `fixed` or `fixes`).
 - **Atomic Commits**: Keep each commit focused on one cohesive logical change. Avoid monolithic commits that mix unrelated bug fixes and UI updates.
 - **No Unrelated Changes**: Do not bundle stylistic reformatting of unrelated files or unnecessary dependency updates in a bug-fix PR.
@@ -284,6 +325,7 @@ moduleNameMapper: {
 ```
 
 **What contributors should know:**
+
 - Tests that import ZKP-related modules work automatically — no manual mocking needed
 - If you add a new package that ships ESM-only and fails with `SyntaxError: Cannot use import statement`, add a similar entry to `moduleNameMapper` in `jest.config.js`
 - ZKP proof generation is CPU and memory intensive; the config sets `workerIdleMemoryLimit: '256MB'` and `maxWorkers: '50%'` to prevent heap exhaustion during the full test suite
@@ -314,6 +356,7 @@ npm run zkp:compile
 ```
 
 This will:
+
 1. Compile `circuits/premium_membership.circom` → R1CS, WASM, SYM files in `circuits/build/`
 2. Generate a small Powers-of-Tau ceremony (`pot12_final.ptau`) if one doesn't already exist
 3. Run the Groth16 trusted-setup → outputs `premium_membership_final.zkey`
@@ -321,6 +364,7 @@ This will:
 5. Copy the WASM prover to `public/zkp/`
 
 **Notes:**
+
 - The build step can take 30–90 seconds on a typical laptop
 - The generated `.ptau` and `.zkey` files are large; they are committed to the repo so other contributors don't need to regenerate them
 - If `npm run zkp:compile` fails with "circom not found", ensure `@iden3/circom` is on your PATH
@@ -362,17 +406,17 @@ npx playwright install-deps
 
 ### Playwright Command Cheat Sheet
 
-| Command | Description |
-| :--- | :--- |
-| `npx playwright install` | Download required browser binaries (Chromium, Firefox, WebKit) |
-| `npm run test:e2e` | Run all E2E test suites in headless mode |
-| `npm run test:e2e:ui` | Open interactive Playwright UI mode with time-travel inspection |
-| `npx playwright test e2e/search.spec.ts` | Run a specific E2E test file |
-| `npx playwright test -g "filter query"` | Run tests matching a specific title or pattern |
-| `npx playwright test --project=chromium` | Run E2E tests using only the Chromium browser |
-| `npx playwright test --headed` | Run tests in visible browser window mode |
-| `npx playwright test --debug` | Step through test execution using Playwright Inspector |
-| `npx playwright show-trace <path-to-trace.zip>` | Open Playwright Trace Viewer for failed test runs |
+| Command                                         | Description                                                     |
+| :---------------------------------------------- | :-------------------------------------------------------------- |
+| `npx playwright install`                        | Download required browser binaries (Chromium, Firefox, WebKit)  |
+| `npm run test:e2e`                              | Run all E2E test suites in headless mode                        |
+| `npm run test:e2e:ui`                           | Open interactive Playwright UI mode with time-travel inspection |
+| `npx playwright test e2e/search.spec.ts`        | Run a specific E2E test file                                    |
+| `npx playwright test -g "filter query"`         | Run tests matching a specific title or pattern                  |
+| `npx playwright test --project=chromium`        | Run E2E tests using only the Chromium browser                   |
+| `npx playwright test --headed`                  | Run tests in visible browser window mode                        |
+| `npx playwright test --debug`                   | Step through test execution using Playwright Inspector          |
+| `npx playwright show-trace <path-to-trace.zip>` | Open Playwright Trace Viewer for failed test runs               |
 
 ### Viewing Failure Traces with Playwright Trace Viewer
 
@@ -440,7 +484,17 @@ Before submitting a pull request, run the following validation steps in order:
 
 ---
 
-## 6. PR Pre-flight Checklist
+## 6. Windows Husky & Git Hooks Troubleshooting
+
+Contributors developing on Windows environments may encounter execution policy restrictions (`PSSecurityException`) or line-ending mismatches (`CRLF` vs `LF`) when running Husky pre-commit hooks (`lint-staged`).
+
+For complete configuration commands (`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` and `git config --global core.autocrlf true`) and step-by-step FAQ solutions for `.husky/pre-commit: command not found`, refer to our dedicated guide:
+
+👉 **[Windows Husky & Git Hooks Troubleshooting Guide](docs/contributing/WINDOWS_HOOKS_TROUBLESHOOTING.md)**
+
+---
+
+## 7. PR Pre-flight Checklist
 
 Before opening a pull request, work through this checklist top-to-bottom. Each step is a gate — don't move to the next until the current one is green.
 

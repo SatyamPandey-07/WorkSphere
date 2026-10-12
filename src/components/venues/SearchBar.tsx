@@ -79,10 +79,14 @@ export function SearchBar({
     // Graceful fallback for testing environments
   }
 
-  const { query, setQuery, venues, isLoading, clear } = useVenueSearch({
-    initialQuery,
-    debounceMs,
-  });
+  const {
+    query,
+    setQuery,
+    venues,
+    suggestedQuery,
+    isLoading,
+    clear,
+  } = useVenueSearch({ initialQuery, debounceMs });
 
   // Preserve cursor selection range across debounced controlled re-renders
   useEffect(() => {
@@ -195,6 +199,14 @@ export function SearchBar({
     onSelect?.(venue);
     onSearch?.(trimmedName);
     updateUrlQuery(trimmedName);
+  };
+
+  const handleSelectSuggestion = () => {
+    if (!suggestedQuery) return;
+    setQuery(suggestedQuery);
+    onSearch?.(suggestedQuery);
+    updateUrlQuery(suggestedQuery);
+    setIsOpen(true);
   };
 
   const handleClear = (e?: React.MouseEvent<HTMLButtonElement>) => {
@@ -325,6 +337,24 @@ export function SearchBar({
             <option value={3}>3km</option>
             <option value={5}>5km</option>
           </select>
+        </div>
+      )}
+
+      {isOpen && venues.length === 0 && suggestedQuery && (
+        <div
+          role="status"
+          data-testid="search-bar-suggestion"
+          className="absolute z-50 left-0 right-0 mt-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-600 dark:text-zinc-300 shadow-xl"
+        >
+          Did you mean:{" "}
+          <button
+            type="button"
+            onClick={handleSelectSuggestion}
+            className="font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline underline-offset-2"
+          >
+            {suggestedQuery}
+          </button>
+          ?
         </div>
       )}
 

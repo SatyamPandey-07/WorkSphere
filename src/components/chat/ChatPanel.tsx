@@ -615,6 +615,15 @@ export function ChatPanel({
     }
     prevMessageCountRef.current = combinedMessages.length;
   }, [combinedMessages]);
+  
+  const characterCount = input.length;
+
+  const characterCounterColor =
+    characterCount >= 500
+      ? "text-red-600 dark:text-red-400"
+      : characterCount >= 480
+      ? "text-amber-600 dark:text-amber-400"
+      : "text-zinc-500 dark:text-zinc-400";
 
   return (
     <div
@@ -709,22 +718,38 @@ export function ChatPanel({
             }
             onSubmit(e);
           }}
-          className="p-3 border-t border-zinc-200 dark:border-zinc-800 flex gap-2"
+          className="p-3 border-t border-zinc-200 dark:border-zinc-800 flex flex-col gap-2"
         >
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => onInputChange?.(e.target.value)}
-            placeholder="Type a message..."
-            className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
-          />
-          <button
-            type="submit"
-            disabled={!input || input.trim().length === 0}
-            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Send
-          </button>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={input}
+              maxLength={500}
+              aria-label="Chat message"
+              onChange={(e) => onInputChange?.(e.target.value.slice(0, 500))}
+              placeholder="Type a message..."
+              className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+            />
+
+            <button
+              type="submit"
+              disabled={!input || input.trim().length === 0}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Send
+            </button>
+          </div>
+
+          {characterCount > 400 && (
+            <div
+              data-testid="character-counter"
+              aria-live="polite"
+              className={`text-right text-xs font-medium ${characterCounterColor}`}
+            >
+              {characterCount} / 500
+            </div>
+          )}
+
         </form>
       )}
 

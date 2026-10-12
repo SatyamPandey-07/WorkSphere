@@ -1,28 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { ensureUserExists } from "@/lib/auth";
 import { processVenueReviewSubmission } from "@/lib/venueReviewService";
 import { apiError } from "@/lib/apiResponse";
+import { apiHandler } from "@/lib/apiHandler";
 
 // POST /api/venues/[venueId]/rate - Add rating (delegates to shared venueReviewService)
-export async function POST(
-  req: NextRequest,
-  context: { params: Promise<{ venueId: string }> },
-) {
-  try {
-    const { userId: rawUserId } = await auth();
-
-    if (!rawUserId) {
-      return apiError("Unauthorized", 401, "UNAUTHORIZED");
-    }
-    const userId: string = rawUserId;
-
+export const POST = apiHandler<Record<string, any>, { venueId: string }>({
+  authRequired: true,
+  handler: async ({ body, params, userId, req }) => {
     // Ensure Identity 💎
-    await ensureUserExists(userId);
+    await ensureUserExists(userId!);
 
-    const { venueId } = await context.params;
-    const body = await req.json();
+    const { venueId } = params;
 
     const idempotencyKey =
       req.headers.get("x-idempotency-key") || body?.idempotencyKey || body?.id;
@@ -31,7 +21,7 @@ export async function POST(
       req.headers.get("x-force-overwrite") === "true";
 
     const result = await processVenueReviewSubmission({
-      userId,
+      userId: userId!,
       venueId,
       body,
       idempotencyKey,
@@ -53,25 +43,14 @@ export async function POST(
     }
 
     return NextResponse.json(result.data, { status: result.status });
-  } catch (error) {
-    console.error("POST /api/venues/[venueId]/rate error:", error);
-    return apiError("Failed to submit rating", 500, "INTERNAL_ERROR");
-  }
-}
+  },
+});
 
 // GET /api/venues/[venueId]/rate - Get user's rating
-export async function GET(
-  req: NextRequest,
-  context: { params: Promise<{ venueId: string }> },
-) {
-  try {
-    const { userId } = await auth();
-
-    if (!userId) {
-      return apiError("Unauthorized", 401, "UNAUTHORIZED");
-    }
-
-    const { venueId } = await context.params;
+export const GET = apiHandler<void, { venueId: string }>({
+  authRequired: true,
+  handler: async ({ params, userId }) => {
+    const { venueId } = params;
 
     // Find the venue first to get our internal ID (venueId from URL might be a placeId)
     const venue = await prisma.venue.findFirst({
@@ -88,15 +67,12 @@ export async function GET(
     const rating = await prisma.venueRating.findUnique({
       where: {
         userId_venueId: {
-          userId,
+          userId: userId!,
           venueId: venue.id,
         },
       },
     });
 
     return NextResponse.json({ rating });
-  } catch (error) {
-    console.error("GET /api/venues/[venueId]/rate error:", error);
-    return apiError("Failed to fetch rating", 500, "INTERNAL_ERROR");
-  }
-}
+  },
+});

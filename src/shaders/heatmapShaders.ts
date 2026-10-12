@@ -41,28 +41,47 @@ precision highp float;
 in float v_intensity;
 in float v_radius;
 
-uniform float u_opacity; // Layer overall opacity
-uniform float u_blur;    // Gaussian blur softness factor
+uniform float u_opacity;     // Layer overall opacity
+uniform float u_blur;        // Gaussian blur softness factor
+uniform int u_paletteMode;   // 0: Thermal (Red-Yellow-Blue), 1: Cyber Neon, 2: Accessible Grayscale
 
 out vec4 fragColor;
 
 // Dynamic multi-stop heat gradient color ramp lookup
 vec4 getHeatColor(float density) {
-    // Color stops: 
-    // 0.0 -> Transparent Blue
-    // 0.25 -> Electric Cyan
-    // 0.50 -> Mint Emerald
-    // 0.75 -> Vibrant Yellow
-    // 0.90 -> Fiery Orange
-    // 1.00 -> Glowing Crimson Red
-    vec4 c0 = vec4(0.05, 0.15, 0.45, 0.0);
-    vec4 c1 = vec4(0.0, 0.8, 1.0, 0.4);
-    vec4 c2 = vec4(0.1, 0.9, 0.4, 0.65);
-    vec4 c3 = vec4(1.0, 0.85, 0.1, 0.85);
-    vec4 c4 = vec4(1.0, 0.4, 0.0, 0.95);
-    vec4 c5 = vec4(0.95, 0.05, 0.15, 1.0);
-
     if (density <= 0.0) return vec4(0.0);
+
+    // Thermal color stops (Red-Yellow-Blue)
+    vec4 t0 = vec4(0.05, 0.15, 0.45, 0.0);
+    vec4 t1 = vec4(0.0, 0.8, 1.0, 0.4);
+    vec4 t2 = vec4(0.1, 0.9, 0.4, 0.65);
+    vec4 t3 = vec4(1.0, 0.85, 0.1, 0.85);
+    vec4 t4 = vec4(1.0, 0.4, 0.0, 0.95);
+    vec4 t5 = vec4(0.95, 0.05, 0.15, 1.0);
+
+    // Cyber Neon color stops (Cyan-Magenta-Yellow)
+    vec4 n0 = vec4(0.02, 0.05, 0.20, 0.0);
+    vec4 n1 = vec4(0.0, 0.9, 1.0, 0.4);     // Cyan
+    vec4 n2 = vec4(0.5, 0.1, 0.85, 0.65);  // Purple
+    vec4 n3 = vec4(0.85, 0.1, 0.9, 0.85);  // Vivid Magenta
+    vec4 n4 = vec4(1.0, 0.2, 0.6, 0.95);   // Hot Pink
+    vec4 n5 = vec4(1.0, 0.95, 0.2, 1.0);   // Electric Yellow
+
+    // Accessible Grayscale color stops (WCAG compliant high-contrast grayscale)
+    vec4 g0 = vec4(0.05, 0.05, 0.05, 0.0);
+    vec4 g1 = vec4(0.20, 0.20, 0.20, 0.4);
+    vec4 g2 = vec4(0.45, 0.45, 0.45, 0.65);
+    vec4 g3 = vec4(0.70, 0.70, 0.70, 0.85);
+    vec4 g4 = vec4(0.88, 0.88, 0.88, 0.95);
+    vec4 g5 = vec4(0.98, 0.98, 0.98, 1.0);
+
+    vec4 c0 = (u_paletteMode == 1) ? n0 : ((u_paletteMode == 2) ? g0 : t0);
+    vec4 c1 = (u_paletteMode == 1) ? n1 : ((u_paletteMode == 2) ? g1 : t1);
+    vec4 c2 = (u_paletteMode == 1) ? n2 : ((u_paletteMode == 2) ? g2 : t2);
+    vec4 c3 = (u_paletteMode == 1) ? n3 : ((u_paletteMode == 2) ? g3 : t3);
+    vec4 c4 = (u_paletteMode == 1) ? n4 : ((u_paletteMode == 2) ? g4 : t4);
+    vec4 c5 = (u_paletteMode == 1) ? n5 : ((u_paletteMode == 2) ? g5 : t5);
+
     if (density < 0.2) return mix(c0, c1, density / 0.2);
     if (density < 0.4) return mix(c1, c2, (density - 0.2) / 0.2);
     if (density < 0.7) return mix(c2, c3, (density - 0.4) / 0.3);

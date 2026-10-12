@@ -19,6 +19,15 @@ export interface OperationLogEntry {
     timestamp: number;
 }
 
+interface NoteLease {
+    ownerId: string;
+    ownerUserId: string;
+    expiresAt: number;
+    timeout: ReturnType<typeof setTimeout>;
+}
+
+export const NOTE_LEASE_TIMEOUT_MS = 5000;
+
 export default class WhiteboardRoom implements Party.Server {
     private document: CrdtDocument;
     private roomId: string;
@@ -29,6 +38,7 @@ export default class WhiteboardRoom implements Party.Server {
     // Track expected client sequence numbers to buffer and reconcile out-of-order buffered strokes
     private clientSequences: Map<string, number> = new Map();
     private clientPendingBuffers: Map<string, SequencedOperation[]> = new Map();
+    private noteLeases: Map<string, NoteLease> = new Map();
 
     constructor(readonly room: Party.Room) {
         this.roomId = room.id;
@@ -43,9 +53,98 @@ export default class WhiteboardRoom implements Party.Server {
             payload: this.document.getState(),
             sequenceNumber: this.sequenceNumber,
         }));
+        for (const [noteId, lease] of this.noteLeases) {
+            if (lease.expiresAt > Date.now()) {
+                conn.send(JSON.stringify({
+                    type: 'NOTE_LOCK_STATE',
+                    payload: { noteId, ownerUserId: lease.ownerUserId, expiresAt: lease.expiresAt },
+                }));
+            }
+        }
+    }
+
+    private getActiveNoteLease(noteId: string): NoteLease | undefined {
+        const lease = this.noteLeases.get(noteId);
+        if (!lease) return undefined;
+        if (lease.expiresAt > Date.now()) return lease;
+        clearTimeout(lease.timeout);
+        this.noteLeases.delete(noteId);
+        this.broadcastNoteLease(noteId, null);
+        return undefined;
+    }
+
+    private broadcastNoteLease(noteId: string, lease: NoteLease | null) {
+        this.room.broadcast(JSON.stringify({
+            type: 'NOTE_LOCK_STATE',
+            payload: {
+                noteId,
+                ownerUserId: lease?.ownerUserId ?? null,
+                expiresAt: lease?.expiresAt ?? null,
+            },
+        }));
+    }
+
+    private releaseNoteLease(noteId: string, ownerId: string) {
+        const lease = this.noteLeases.get(noteId);
+        if (!lease || lease.ownerId !== ownerId) return false;
+        clearTimeout(lease.timeout);
+        this.noteLeases.delete(noteId);
+        this.broadcastNoteLease(noteId, null);
+        return true;
+    }
+
+    private handleHoldNote(payload: { noteId?: unknown; userId?: unknown; requestId?: unknown }, sender: Party.Connection) {
+        const noteId = payload.noteId;
+        const requestId = payload.requestId;
+        if (typeof noteId !== 'string' || noteId.length === 0) return;
+
+        const currentLease = this.getActiveNoteLease(noteId);
+        if (currentLease && currentLease.ownerId !== sender.id) {
+            sender.send(JSON.stringify({
+                type: 'NOTE_LOCK_DENIED',
+                payload: { noteId, requestId },
+            }));
+            return;
+        }
+
+        if (currentLease) clearTimeout(currentLease.timeout);
+        const lease: NoteLease = {
+            ownerId: sender.id,
+            ownerUserId:
+                (sender.state as { userId?: string } | null)?.userId ??
+                (typeof payload.userId === 'string' ? payload.userId : sender.id),
+            expiresAt: Date.now() + NOTE_LEASE_TIMEOUT_MS,
+            timeout: setTimeout(() => {
+                if (this.noteLeases.get(noteId) !== lease) return;
+                this.noteLeases.delete(noteId);
+                this.broadcastNoteLease(noteId, null);
+            }, NOTE_LEASE_TIMEOUT_MS),
+        };
+        this.noteLeases.set(noteId, lease);
+
+        sender.send(JSON.stringify({
+            type: 'NOTE_LOCK_GRANTED',
+            payload: { noteId, requestId, expiresAt: lease.expiresAt },
+        }));
+        this.broadcastNoteLease(noteId, lease);
+    }
+
+    private isOperationBlockedByNoteLease(op: SequencedOperation, sender: Party.Connection): boolean {
+        const noteId = typeof op.payload?.noteId === 'string' ? op.payload.noteId : op.id;
+        const lease = this.getActiveNoteLease(noteId);
+        if (!lease || lease.ownerId === sender.id) return false;
+
+        sender.send(JSON.stringify({
+            type: 'OPERATION_REJECTED',
+            id: op.id,
+            reason: 'NOTE_LOCKED',
+            noteId,
+        }));
+        return true;
     }
 
     private applyAndBroadcast(op: SequencedOperation, sender: Party.Connection): boolean {
+        if (this.isOperationBlockedByNoteLease(op, sender)) return false;
         this.sequenceNumber += 1;
         const stampedOp: SequencedOperation = {
             ...op,
@@ -144,7 +243,12 @@ export default class WhiteboardRoom implements Party.Server {
         try {
             const parsed = JSON.parse(message);
 
-            if (parsed.type === 'APPLY_OPERATION') {
+            if (parsed.type === 'HOLD_NOTE') {
+                this.handleHoldNote(parsed.payload ?? {}, sender);
+            } else if (parsed.type === 'RELEASE_NOTE') {
+                const noteId = parsed.payload?.noteId;
+                if (typeof noteId === 'string') this.releaseNoteLease(noteId, sender.id);
+            } else if (parsed.type === 'APPLY_OPERATION') {
                 const op = parsed.payload as SequencedOperation;
                 this.processClientOperation(op, sender);
             } else if (parsed.type === 'APPLY_BATCH' || parsed.type === 'BATCH_OPERATIONS') {
@@ -160,6 +264,7 @@ export default class WhiteboardRoom implements Party.Server {
 
                 const appliedOps: SequencedOperation[] = [];
                 for (const op of sortedOps) {
+                    if (this.isOperationBlockedByNoteLease(op, sender)) continue;
                     this.sequenceNumber += 1;
                     const stampedOp: SequencedOperation = { ...op, sequenceNumber: this.sequenceNumber };
                     const merged = this.document.mergeRemoteOperation(stampedOp);
@@ -213,6 +318,14 @@ export default class WhiteboardRoom implements Party.Server {
                         }));
                         return;
                     }
+                }
+
+                async onClose(conn: Party.Connection) {
+                    for (const [noteId, lease] of this.noteLeases) {
+                        if (lease.ownerId === conn.id) this.releaseNoteLease(noteId, conn.id);
+                    }
+                    this.clientSequences.delete(conn.id);
+                    this.clientPendingBuffers.delete(conn.id);
                 }
 
                 // Fallback to full initial state

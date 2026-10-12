@@ -9,6 +9,8 @@ jest.mock("@/lib/prisma", () => ({
       findMany: jest.fn(),
       count: jest.fn(),
     },
+    $queryRaw: jest.fn().mockResolvedValue([]),
+    $executeRaw: jest.fn().mockResolvedValue(1),
   },
 }));
 
@@ -117,6 +119,7 @@ describe("GET /api/venues - Search and Pagination", () => {
     ];
     (prisma.venue.count as jest.Mock).mockResolvedValue(1);
     (prisma.venue.findMany as jest.Mock).mockResolvedValue(mockVenues);
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ id: "1", score: 0.03 }]);
 
     const req = new NextRequest("http://localhost/api/venues?q=coffee");
     const res = await GET(req);
@@ -125,15 +128,16 @@ describe("GET /api/venues - Search and Pagination", () => {
     const data = await res.json();
     expect(data.venues).toEqual(mockVenues);
 
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    const queryTemplate = (prisma.$queryRaw as jest.Mock).mock.calls[0][0];
+    const sql = queryTemplate.strings.join(" ");
+    expect(sql).toContain("WITH search_input");
+    expect(sql).toContain("rank_bm25");
+    expect(sql).toContain("rank_vector");
+    expect(sql).toContain("1.0 / (60 + rank_bm25)");
+    expect(sql).toContain("1.0 / (60 + rank_vector)");
     expect(prisma.venue.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          OR: [
-            { name: { contains: "coffee", mode: "insensitive" } },
-            { address: { contains: "coffee", mode: "insensitive" } },
-          ],
-        },
-      }),
+      expect.objectContaining({ where: { id: { in: ["1"] } } }),
     );
   });
 
@@ -143,6 +147,7 @@ describe("GET /api/venues - Search and Pagination", () => {
     ];
     (prisma.venue.count as jest.Mock).mockResolvedValue(1);
     (prisma.venue.findMany as jest.Mock).mockResolvedValue(mockVenues);
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([{ id: "2", score: 0.03 }]);
 
     const req = new NextRequest(
       "http://localhost/api/venues?lat=37.7749&lng=-122.4194&radius=1000&query=coffee",
@@ -155,12 +160,15 @@ describe("GET /api/venues - Search and Pagination", () => {
 
     expect(prisma.venue.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({
-          OR: [
-            { name: { contains: "coffee", mode: "insensitive" } },
-            { address: { contains: "coffee", mode: "insensitive" } },
+        where: {
+          AND: [
+            expect.objectContaining({
+              latitude: expect.any(Object),
+              longitude: expect.any(Object),
+            }),
+            { id: { in: ["2"] } },
           ],
-        }),
+        },
       }),
     );
   });

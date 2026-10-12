@@ -1,11 +1,6 @@
 import React from "react";
 import { Wifi, VolumeX, Plug, Activity } from "lucide-react";
-
-interface Venue {
-  wifiSpeed?: number | null;
-  noiseLevel?: string | null;
-  hasOutlets?: boolean;
-}
+import type { Venue } from "@/types/venue";
 
 interface MetricsWidgetProps {
   venues: { venue: Venue }[];

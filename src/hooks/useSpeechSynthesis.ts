@@ -184,27 +184,32 @@ export function useSpeechSynthesis(
       setIsSupported(true);
 
       const updateVoices = () => {
-        const availableVoices = window.speechSynthesis.getVoices();
+        const availableVoices = window.speechSynthesis.getVoices() || [];
         setVoices(availableVoices);
-        if (availableVoices.length === 0) return;
+        if (availableVoices.length === 0) {
+          setVoiceState(null);
+          return;
+        }
 
         setVoiceState((prev) => {
-          if (prev) {
+          if (prev && prev.voiceURI) {
             const stillAvailable = availableVoices.find(
-              (v) => v.voiceURI === prev.voiceURI,
+              (v) => v && v.voiceURI === prev.voiceURI,
             );
             if (stillAvailable) return stillAvailable;
           }
 
           const persistedURI = selectedVoiceURIRef.current;
           const persistedVoice = persistedURI
-            ? availableVoices.find((v) => v.voiceURI === persistedURI)
+            ? availableVoices.find((v) => v && v.voiceURI === persistedURI)
             : null;
           if (persistedVoice) return persistedVoice;
 
           const defaultLangVoice =
-            availableVoices.find((v) => v.lang.startsWith(lang)) ||
-            availableVoices.find((v) => v.default) ||
+            availableVoices.find(
+              (v) => v && v.lang && v.lang.startsWith(lang),
+            ) ||
+            availableVoices.find((v) => v && v.default) ||
             availableVoices[0];
           return defaultLangVoice || null;
         });
@@ -212,11 +217,21 @@ export function useSpeechSynthesis(
 
       updateVoices();
 
-      if (window.speechSynthesis.onvoiceschanged !== undefined) {
-        window.speechSynthesis.onvoiceschanged = updateVoices;
+      if (typeof window.speechSynthesis.addEventListener === "function") {
+        window.speechSynthesis.addEventListener("voiceschanged", updateVoices);
       }
+      window.speechSynthesis.onvoiceschanged = updateVoices;
 
       return () => {
+        if (typeof window.speechSynthesis.removeEventListener === "function") {
+          window.speechSynthesis.removeEventListener(
+            "voiceschanged",
+            updateVoices,
+          );
+        }
+        if (window.speechSynthesis.onvoiceschanged === updateVoices) {
+          window.speechSynthesis.onvoiceschanged = null;
+        }
         // Cancel any active or queued utterances when the component unmounts
         // (e.g. user navigates away) so speech doesn't continue in the background.
         window.speechSynthesis.cancel();
@@ -244,15 +259,28 @@ export function useSpeechSynthesis(
     setVoiceState(newVoice);
   }, []);
 
-  const resolveVoice = useCallback(() => {
+  const resolveVoice = useCallback((): SpeechSynthesisVoice | null => {
     if (typeof window === "undefined" || !("speechSynthesis" in window)) {
       return null;
     }
+    const currentVoices = window.speechSynthesis.getVoices() || [];
     const uri = selectedVoiceURIRef.current ?? voice?.voiceURI ?? null;
-    if (!uri) return voice;
-    const currentVoices = window.speechSynthesis.getVoices();
-    return currentVoices.find((v) => v.voiceURI === uri) || voice;
-  }, [voice]);
+    if (uri && currentVoices.length > 0) {
+      const match = currentVoices.find((v) => v && v.voiceURI === uri);
+      if (match) return match;
+    }
+    if (voice && typeof voice === "object" && "voiceURI" in voice) {
+      return voice;
+    }
+    if (currentVoices.length > 0) {
+      const defaultLangVoice =
+        currentVoices.find((v) => v && v.lang && v.lang.startsWith(lang)) ||
+        currentVoices.find((v) => v && v.default) ||
+        currentVoices[0];
+      if (defaultLangVoice) return defaultLangVoice;
+    }
+    return null;
+  }, [voice, lang]);
 
   const cleanupUtterance = useCallback(
     (utterance: SpeechSynthesisUtterance) => {
@@ -330,7 +358,11 @@ export function useSpeechSynthesis(
       utterance.volume = volume;
 
       const resolvedVoice = resolveVoice();
-      if (resolvedVoice) {
+      if (
+        resolvedVoice &&
+        typeof resolvedVoice === "object" &&
+        "voiceURI" in resolvedVoice
+      ) {
         utterance.voice = resolvedVoice;
       } else if (lang) {
         utterance.lang = lang;
@@ -411,7 +443,15 @@ export function useSpeechSynthesis(
         utterance.rate = rate;
         utterance.pitch = pitch;
         utterance.volume = volume;
-        if (resolvedVoice) utterance.voice = resolvedVoice;
+        if (
+          resolvedVoice &&
+          typeof resolvedVoice === "object" &&
+          "voiceURI" in resolvedVoice
+        ) {
+          utterance.voice = resolvedVoice;
+        } else if (lang) {
+          utterance.lang = lang;
+        }
 
         utterance.onstart = () => {
           setIsSpeaking(true);
@@ -450,6 +490,7 @@ export function useSpeechSynthesis(
       pitch,
       volume,
       resolveVoice,
+      lang,
       onStart,
       onEnd,
       onError,

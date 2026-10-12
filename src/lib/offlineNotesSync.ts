@@ -7,6 +7,30 @@
  */
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
+import { syncQueueManager } from "./offline/SyncQueueManager";
+
+// Register note sync handler with consolidated SyncQueueManager
+syncQueueManager.registerHandler("note", async (item) => {
+  const payload = item.payload as PendingNoteEdit;
+  if (!payload?.folderId) return;
+
+  try {
+    const res = await fetch(`/api/folders/${encodeURIComponent(payload.folderId)}/notes`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: payload.text,
+        timestamp: payload.timestamp,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`Notes sync failed: ${res.statusText}`);
+    }
+    await clearPendingEditsForFolder(payload.folderId);
+  } catch (err) {
+    throw err;
+  }
+});
 
 const DB_NAME = "worksphere-collaborative-notes";
 const DB_VERSION = 1;
@@ -103,6 +127,15 @@ export async function enqueuePendingNoteEdit(
   text: string,
   timestamp: number = Date.now(),
 ): Promise<number | undefined> {
+  void syncQueueManager
+    .enqueue<PendingNoteEdit>({
+      entity: "note",
+      action: "update",
+      payload: { folderId, text, timestamp },
+      timestamp,
+    })
+    .catch(() => {});
+
   try {
     const db = await getCollaborativeNotesDb();
     const id = await db.add(QUEUE_STORE, {

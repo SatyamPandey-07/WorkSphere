@@ -37,7 +37,9 @@ describe("ICS Calendar Utility (RFC 5545)", () => {
     it("escapes backslashes, semicolons, commas, and newlines per RFC 5545", () => {
       const raw = "Special; text, with\\backslash and\nnewline";
       const escaped = escapeIcsText(raw);
-      expect(escaped).toBe("Special\\; text\\, with\\\\backslash and\\nnewline");
+      expect(escaped).toBe(
+        "Special\\; text\\, with\\\\backslash and\\nnewline",
+      );
     });
 
     it("sanitizes CRLF and standalone CR line endings into literal \\n", () => {
@@ -65,8 +67,8 @@ describe("ICS Calendar Utility (RFC 5545)", () => {
     });
 
     it("folds lines correctly based on UTF-8 octets without splitting multi-byte characters", () => {
-      // 30 2-byte characters = 60 bytes + prefix 20 bytes = 80 bytes (exceeds 75 octets)
-      const multiByteLine = "DESCRIPTION:" + "é".repeat(30);
+      // 35 2-byte characters = 70 bytes + prefix 12 bytes = 82 bytes (exceeds 75 octets)
+      const multiByteLine = "DESCRIPTION:" + "é".repeat(35);
       const folded = foldIcsLine(multiByteLine);
       const parts = folded.split("\r\n");
       const encoder = new TextEncoder();
@@ -100,8 +102,12 @@ describe("ICS Calendar Utility (RFC 5545)", () => {
 
       // Verify unfolded content
       const unfolded = ics.replace(/\r\n /g, "");
-      expect(unfolded).toContain("SUMMARY:Booking at Indie Desk Hub (90 min) [WS-#482910] - 42 Market Street\\, Austin");
-      expect(unfolded).toContain("DESCRIPTION:Hot desk booking at Indie Desk Hub\\nVenue Address: 42 Market Street\\, Austin\\nBooking ID: WS-#482910\\nDuration: 90 min");
+      expect(unfolded).toContain(
+        "SUMMARY:Booking at Indie Desk Hub (90 min) [WS-#482910] - 42 Market Street\\, Austin",
+      );
+      expect(unfolded).toContain(
+        "DESCRIPTION:Hot desk booking at Indie Desk Hub\\nVenue Address: 42 Market Street\\, Austin\\nBooking ID: WS-#482910\\nDuration: 90 min",
+      );
     });
 
     it("generates RFC 5545 compliant iCalendar string with object options", () => {
@@ -122,10 +128,16 @@ describe("ICS Calendar Utility (RFC 5545)", () => {
       expect(ics).toContain("UID:BK-998877@worksphere.app");
 
       const unfolded = ics.replace(/\r\n /g, "");
-      expect(unfolded).toContain("SUMMARY:Booking at Creative Loft (120 min) [BK-998877] - 742 Evergreen Terrace\\, Springfield");
-      expect(unfolded).toContain("LOCATION:742 Evergreen Terrace\\, Springfield");
+      expect(unfolded).toContain(
+        "SUMMARY:Booking at Creative Loft (120 min) [BK-998877] - 742 Evergreen Terrace\\, Springfield",
+      );
+      expect(unfolded).toContain(
+        "LOCATION:742 Evergreen Terrace\\, Springfield",
+      );
       expect(unfolded).toContain("Booking ID: BK-998877");
-      expect(unfolded).toContain("Venue Address: 742 Evergreen Terrace\\, Springfield");
+      expect(unfolded).toContain(
+        "Venue Address: 742 Evergreen Terrace\\, Springfield",
+      );
     });
 
     it("returns empty string for invalid date/time", () => {
@@ -146,13 +158,15 @@ describe("ICS Calendar Utility (RFC 5545)", () => {
 
       const mockClick = jest.fn();
       const originalCreateElement = document.createElement.bind(document);
-      jest.spyOn(document, "createElement").mockImplementation((tagName: string) => {
-        const el = originalCreateElement(tagName);
-        if (tagName === "a") {
-          el.click = mockClick;
-        }
-        return el;
-      });
+      jest
+        .spyOn(document, "createElement")
+        .mockImplementation((tagName: string) => {
+          const el = originalCreateElement(tagName);
+          if (tagName === "a") {
+            el.click = mockClick;
+          }
+          return el;
+        });
 
       downloadICS({
         venueName: "Desk Co",
@@ -167,7 +181,9 @@ describe("ICS Calendar Utility (RFC 5545)", () => {
       expect(appendChildSpy).toHaveBeenCalled();
       expect(mockClick).toHaveBeenCalledTimes(1);
       expect(removeChildSpy).toHaveBeenCalled();
-      expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:http://localhost/test-ics");
+      expect(URL.revokeObjectURL).toHaveBeenCalledWith(
+        "blob:http://localhost/test-ics",
+      );
 
       URL.createObjectURL = originalCreateObjectURL;
       URL.revokeObjectURL = originalRevokeObjectURL;
@@ -228,13 +244,15 @@ describe("ICS Calendar Utility (RFC 5545)", () => {
 
       const mockClick = jest.fn();
       const originalCreateElement = document.createElement.bind(document);
-      jest.spyOn(document, "createElement").mockImplementation((tagName: string) => {
-        const el = originalCreateElement(tagName);
-        if (tagName === "a") {
-          el.click = mockClick;
-        }
-        return el;
-      });
+      jest
+        .spyOn(document, "createElement")
+        .mockImplementation((tagName: string) => {
+          const el = originalCreateElement(tagName);
+          if (tagName === "a") {
+            el.click = mockClick;
+          }
+          return el;
+        });
 
       downloadBulkICS([
         {

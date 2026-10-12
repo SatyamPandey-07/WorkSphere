@@ -14,12 +14,13 @@ It is intended for both new contributors writing their first E2E test and experi
 4. [Writing Playwright Tests](#4-writing-playwright-tests)
 5. [Page Object Model](#5-page-object-model)
 6. [Authentication & Mocking](#6-authentication--mocking)
-7. [CI/CD Integration](#7-cicd-integration)
-8. [Debugging Tests](#8-debugging-tests)
-9. [Assertion Guidelines](#9-assertion-guidelines)
-10. [Common Issues & Troubleshooting](#10-common-issues--troubleshooting)
-11. [Best Practices](#11-best-practices)
-12. [References](#12-references)
+7. [Offline Workflows, IndexedDB & Background Sync](#7-offline-workflows-indexeddb--background-sync)
+8. [CI/CD Integration](#8-cicd-integration)
+9. [Debugging Tests](#9-debugging-tests)
+10. [Assertion Guidelines](#10-assertion-guidelines)
+11. [Common Issues & Troubleshooting](#11-common-issues--troubleshooting)
+12. [Best Practices](#12-best-practices)
+13. [References](#13-references)
 
 ---
 
@@ -31,14 +32,14 @@ It is intended for both new contributors writing their first E2E test and experi
 
 ### Unit Tests vs E2E Tests
 
-| Aspect | Jest + RTL (Unit) | Playwright (E2E) |
-| :--- | :--- | :--- |
-| **What is tested** | Individual components, hooks, utilities | Full user journeys across pages |
-| **Environment** | Simulated DOM (jsdom) | Real browser (Chromium) |
-| **Speed** | Fast (milliseconds per test) | Slower (seconds per test) |
-| **Dependencies** | Mocked | Real app with real HTTP requests |
-| **Location** | `src/__tests__/` | `e2e/` |
-| **Command** | `npm test` | `npm run test:e2e` |
+| Aspect             | Jest + RTL (Unit)                       | Playwright (E2E)                 |
+| :----------------- | :-------------------------------------- | :------------------------------- |
+| **What is tested** | Individual components, hooks, utilities | Full user journeys across pages  |
+| **Environment**    | Simulated DOM (jsdom)                   | Real browser (Chromium)          |
+| **Speed**          | Fast (milliseconds per test)            | Slower (seconds per test)        |
+| **Dependencies**   | Mocked                                  | Real app with real HTTP requests |
+| **Location**       | `src/__tests__/`                        | `e2e/`                           |
+| **Command**        | `npm test`                              | `npm run test:e2e`               |
 
 ### When to Write E2E Tests
 
@@ -74,23 +75,21 @@ The Playwright configuration is located at the project root. Key settings:
 
 ```typescript
 export default defineConfig({
-  testDir: './e2e',         // All tests live in e2e/
-  fullyParallel: true,      // Tests run in parallel by default
-  forbidOnly: !!process.env.CI,  // Prevents .only() being committed
+  testDir: "./e2e", // All tests live in e2e/
+  fullyParallel: true, // Tests run in parallel by default
+  forbidOnly: !!process.env.CI, // Prevents .only() being committed
   retries: process.env.CI ? 2 : 0, // Retries flaky tests in CI only
   workers: process.env.CI ? 1 : undefined, // Single worker in CI for stability
-  reporter: 'html',         // Generates HTML report in playwright-report/
+  reporter: "html", // Generates HTML report in playwright-report/
   use: {
-    baseURL: 'http://localhost:3000',
-    trace: 'on-first-retry',        // Captures trace on first retry
-    screenshot: 'only-on-failure',  // Screenshots saved only on failure
+    baseURL: "http://localhost:3000",
+    trace: "on-first-retry", // Captures trace on first retry
+    screenshot: "only-on-failure", // Screenshots saved only on failure
   },
-  projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-  ],
+  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: 'npm run dev',         // Auto-starts dev server before tests
-    url: 'http://localhost:3000',
+    command: "npm run dev", // Auto-starts dev server before tests
+    url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI, // Reuses running server locally
     timeout: 120 * 1000,
   },
@@ -99,12 +98,12 @@ export default defineConfig({
 
 ### Test File Naming Convention
 
-| Pattern | Purpose |
-| :--- | :--- |
-| `*.spec.ts` | Standard Playwright test file |
-| `app.spec.ts` | Tests for the landing page and global UI |
-| `chat.spec.ts` | Tests for the AI chat interface and API routes |
-| `user-flows.spec.ts` | Tests for complete user journeys |
+| Pattern              | Purpose                                        |
+| :------------------- | :--------------------------------------------- |
+| `*.spec.ts`          | Standard Playwright test file                  |
+| `app.spec.ts`        | Tests for the landing page and global UI       |
+| `chat.spec.ts`       | Tests for the AI chat interface and API routes |
+| `user-flows.spec.ts` | Tests for complete user journeys               |
 
 Group related tests using `test.describe()` blocks within each file. Keep each file focused on one area of the application.
 
@@ -204,23 +203,25 @@ The report is saved to `playwright-report/` automatically after every test run.
 ### Recommended Test Structure
 
 ```typescript
-import { test, expect } from '@playwright/test';
+import { test, expect } from "@playwright/test";
 
-test.describe('Feature Area', () => {
+test.describe("Feature Area", () => {
   // Runs before every test in this describe block
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto("/");
   });
 
-  test('should describe the expected behaviour', async ({ page }) => {
+  test("should describe the expected behaviour", async ({ page }) => {
     // 1. Arrange — navigate and set up state
-    await page.goto('/sign-in');
+    await page.goto("/sign-in");
 
     // 2. Act — interact with the page
-    await page.locator('input[type="email"]').fill('user@example.com');
+    await page.locator('input[type="email"]').fill("user@example.com");
 
     // 3. Assert — verify the outcome
-    await expect(page.locator('input[type="email"]')).toHaveValue('user@example.com');
+    await expect(page.locator('input[type="email"]')).toHaveValue(
+      "user@example.com",
+    );
   });
 });
 ```
@@ -229,14 +230,14 @@ test.describe('Feature Area', () => {
 
 Prefer locators in this order — most stable to least stable:
 
-| Priority | Locator | Example |
-| :--- | :--- | :--- |
-| 1 | `data-testid` attribute | `page.locator('[data-testid="chat-input"]')` |
-| 2 | ARIA role + name | `page.getByRole('button', { name: 'Send' })` |
-| 3 | Label text | `page.getByLabel('Email address')` |
-| 4 | Placeholder text | `page.getByPlaceholder('Search venues...')` |
-| 5 | Visible text | `page.getByText('Get Started')` |
-| 6 | CSS class / tag | `page.locator('.leaflet-container')` — use only as a last resort |
+| Priority | Locator                 | Example                                                          |
+| :------- | :---------------------- | :--------------------------------------------------------------- |
+| 1        | `data-testid` attribute | `page.locator('[data-testid="chat-input"]')`                     |
+| 2        | ARIA role + name        | `page.getByRole('button', { name: 'Send' })`                     |
+| 3        | Label text              | `page.getByLabel('Email address')`                               |
+| 4        | Placeholder text        | `page.getByPlaceholder('Search venues...')`                      |
+| 5        | Visible text            | `page.getByText('Get Started')`                                  |
+| 6        | CSS class / tag         | `page.locator('.leaflet-container')` — use only as a last resort |
 
 Avoid selecting elements by position (`nth(0)`) or by internal implementation details like class names that may change.
 
@@ -246,7 +247,7 @@ Some pages in WorkSphere can render differently depending on authentication stat
 
 ```typescript
 const chatInput = page.locator('[placeholder*="Find"]');
-const signInPrompt = page.locator('text=Sign in');
+const signInPrompt = page.locator("text=Sign in");
 
 await expect(chatInput.or(signInPrompt)).toBeVisible({ timeout: 15000 });
 ```
@@ -259,10 +260,10 @@ Playwright automatically waits for elements to be ready before interacting. Avoi
 
 ```typescript
 // ✅ Good — waits for the element to be visible automatically
-await page.locator('text=WorkSphere').first().click();
+await page.locator("text=WorkSphere").first().click();
 
 // ✅ Good — waits for network to settle
-await page.waitForLoadState('networkidle');
+await page.waitForLoadState("networkidle");
 
 // ⚠️ Use sparingly — only when waiting for animations
 await page.waitForTimeout(500);
@@ -277,7 +278,9 @@ Add `data-testid` attributes to components that are tested frequently. This make
 
 ```tsx
 // In component
-<button data-testid="send-message-btn" type="submit">Send</button>
+<button data-testid="send-message-btn" type="submit">
+  Send
+</button>;
 
 // In test
 await page.locator('[data-testid="send-message-btn"]').click();
@@ -299,7 +302,7 @@ The Page Object Model separates page interaction logic from test assertions. Ben
 
 ```typescript
 // e2e/pages/LandingPage.ts
-import { type Page, type Locator, expect } from '@playwright/test';
+import { type Page, type Locator, expect } from "@playwright/test";
 
 export class LandingPage {
   readonly page: Page;
@@ -309,13 +312,15 @@ export class LandingPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.heading = page.locator('h1');
-    this.getStartedButton = page.locator('button:has-text("Get Started"), a:has-text("Get Started")').first();
+    this.heading = page.locator("h1");
+    this.getStartedButton = page
+      .locator('button:has-text("Get Started"), a:has-text("Get Started")')
+      .first();
     this.learnMoreLink = page.locator('a:has-text("Learn More")');
   }
 
   async goto() {
-    await this.page.goto('/');
+    await this.page.goto("/");
   }
 
   async clickGetStarted() {
@@ -328,7 +333,7 @@ export class LandingPage {
   }
 
   async assertLoaded() {
-    await expect(this.heading).toContainText('Find Your Perfect');
+    await expect(this.heading).toContainText("Find Your Perfect");
   }
 }
 ```
@@ -337,18 +342,18 @@ export class LandingPage {
 
 ```typescript
 // e2e/user-flows.spec.ts
-import { test, expect } from '@playwright/test';
-import { LandingPage } from './pages/LandingPage';
+import { test, expect } from "@playwright/test";
+import { LandingPage } from "./pages/LandingPage";
 
-test.describe('Landing Page', () => {
-  test('should display hero and scroll to features', async ({ page }) => {
+test.describe("Landing Page", () => {
+  test("should display hero and scroll to features", async ({ page }) => {
     const landing = new LandingPage(page);
 
     await landing.goto();
     await landing.assertLoaded();
     await landing.scrollToFeatures();
 
-    await expect(page.locator('text=WiFi Quality')).toBeVisible();
+    await expect(page.locator("text=WiFi Quality")).toBeVisible();
   });
 });
 ```
@@ -372,12 +377,12 @@ e2e/pages/
 WorkSphere uses [Clerk](https://clerk.com/) for authentication. The `/ai` and `/dashboard` routes require a signed-in session. Playwright tests should be written to handle both the authenticated and unauthenticated states:
 
 ```typescript
-test('should show chat interface or redirect to sign-in', async ({ page }) => {
-  await page.goto('/ai');
-  await page.waitForLoadState('networkidle');
+test("should show chat interface or redirect to sign-in", async ({ page }) => {
+  await page.goto("/ai");
+  await page.waitForLoadState("networkidle");
 
   const chatInput = page.locator('input[type="text"]').first();
-  const signInPage = page.locator('text=Sign in').first();
+  const signInPage = page.locator("text=Sign in").first();
 
   // Accept either state — tests should not depend on a live Clerk session
   await expect(chatInput.or(signInPage)).toBeVisible({ timeout: 15000 });
@@ -391,20 +396,26 @@ test('should show chat interface or redirect to sign-in', async ({ page }) => {
 Use `page.route()` to intercept and mock API responses. This makes tests deterministic and removes dependencies on live services:
 
 ```typescript
-test('should show venues returned by the API', async ({ page }) => {
+test("should show venues returned by the API", async ({ page }) => {
   // Intercept the venues API and return mock data
-  await page.route('/api/venues*', async (route) => {
+  await page.route("/api/venues*", async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify([
-        { id: '1', name: 'Test Cafe', category: 'cafe', lat: 37.77, lng: -122.41 },
+        {
+          id: "1",
+          name: "Test Cafe",
+          category: "cafe",
+          lat: 37.77,
+          lng: -122.41,
+        },
       ]),
     });
   });
 
-  await page.goto('/ai');
-  await expect(page.locator('text=Test Cafe')).toBeVisible();
+  await page.goto("/ai");
+  await expect(page.locator("text=Test Cafe")).toBeVisible();
 });
 ```
 
@@ -412,7 +423,7 @@ test('should show venues returned by the API', async ({ page }) => {
 
 ```typescript
 // Simulate a slow location API response
-await page.route('/api/location', async (route) => {
+await page.route("/api/location", async (route) => {
   await new Promise((resolve) => setTimeout(resolve, 1000));
   await route.fulfill({
     status: 200,
@@ -421,8 +432,8 @@ await page.route('/api/location', async (route) => {
 });
 
 // Simulate a failed API response
-await page.route('/api/chat', async (route) => {
-  await route.fulfill({ status: 500, body: 'Internal Server Error' });
+await page.route("/api/chat", async (route) => {
+  await route.fulfill({ status: 500, body: "Internal Server Error" });
 });
 ```
 
@@ -434,13 +445,289 @@ Each test should be fully independent. Use `test.beforeEach` to reset state and 
 test.beforeEach(async ({ page }) => {
   // Clear localStorage before each test
   await page.evaluate(() => localStorage.clear());
-  await page.goto('/');
+  await page.goto("/");
 });
 ```
 
 ---
 
-## 7. CI/CD Integration
+## 7. Offline Workflows, IndexedDB & Background Sync
+
+WorkSphere is designed with offline-first resilience for mobile nomads and cafe workers. When Wi-Fi connectivity is interrupted or lost, critical user interactions—such as booking desks, checking into venues, and saving collections—must remain responsive, optimistically update the UI, persist pending actions into IndexedDB (`worksphere-offline`), and automatically sync with the backend once network connectivity is restored.
+
+Playwright enables robust end-to-end testing of these offline workflows by leveraging the **Chrome DevTools Protocol (CDP)** via `CDPSession` to emulate network disconnection, latency, and background synchronization events.
+
+### CDP Network Condition Emulation (`Network.emulateNetworkConditions`)
+
+While Playwright's `browserContext.setOffline(true)` toggles basic offline state, using CDP's `Network.emulateNetworkConditions` enables precise, low-level control over network parameters (throughput, latency, connection type, and offline flags) that mirror unstable cafe networks:
+
+```typescript
+import { test, expect, type Page, type CDPSession } from "@playwright/test";
+
+/**
+ * Configure network conditions via Chrome DevTools Protocol
+ */
+export async function setNetworkConditions(
+  page: Page,
+  options: {
+    offline: boolean;
+    latency?: number; // Additional latency in ms
+    downloadThroughput?: number; // Bytes per second (-1 = unthrottled)
+    uploadThroughput?: number; // Bytes per second (-1 = unthrottled)
+    connectionType?: "none" | "cellular3g" | "cellular4g" | "wifi";
+  },
+): Promise<CDPSession> {
+  const client = await page.context().newCDPSession(page);
+  await client.send("Network.emulateNetworkConditions", {
+    offline: options.offline,
+    latency: options.latency ?? 0,
+    downloadThroughput: options.downloadThroughput ?? -1,
+    uploadThroughput: options.uploadThroughput ?? -1,
+    connectionType:
+      options.connectionType ?? (options.offline ? "none" : "wifi"),
+  });
+  return client;
+}
+```
+
+### Inspecting IndexedDB in Playwright Tests
+
+Because Playwright tests execute in Node.js, checking IndexedDB storage requires evaluating asynchronous queries inside the browser execution context via `page.evaluate()`:
+
+```typescript
+/**
+ * Reads all queued records from the IndexedDB outbox store
+ */
+export async function getQueuedOfflineActions(page: Page): Promise<any[]> {
+  return await page.evaluate(async () => {
+    return new Promise<any[]>((resolve, reject) => {
+      const request = indexedDB.open("worksphere-offline");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const db = request.result;
+        const storeName = db.objectStoreNames.contains("pending_sync_queue")
+          ? "pending_sync_queue"
+          : "pendingActions";
+
+        if (!db.objectStoreNames.contains(storeName)) {
+          resolve([]);
+          return;
+        }
+
+        const tx = db.transaction(storeName, "readonly");
+        const store = tx.objectStore(storeName);
+        const getAllReq = store.getAll();
+        getAllReq.onsuccess = () => resolve(getAllReq.result);
+        getAllReq.onerror = () => reject(getAllReq.error);
+      };
+    });
+  });
+}
+```
+
+### Example Test: Offline Booking Creation & IndexedDB Persistence
+
+This test verifies that when the network drops, submitting a booking form creates an optimistic record in the UI and writes the action payload to IndexedDB's `pending_sync_queue`:
+
+```typescript
+import { test, expect } from "@playwright/test";
+
+test.describe("Offline Booking Creation", () => {
+  test("should persist booking to IndexedDB outbox when offline", async ({
+    page,
+  }) => {
+    // 1. Load venue page while online
+    await page.goto("/venues/cafe-artisan");
+    await page.waitForLoadState("networkidle");
+
+    // 2. Sever network connection using Chrome DevTools Protocol
+    const client = await page.context().newCDPSession(page);
+    await client.send("Network.emulateNetworkConditions", {
+      offline: true,
+      latency: 0,
+      downloadThroughput: -1,
+      uploadThroughput: -1,
+      connectionType: "none",
+    });
+
+    // Dispatch offline event so app listeners update internal online state
+    await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+
+    // 3. Verify offline UI indicator appears
+    const offlineIndicator = page
+      .locator('text=Offline, [data-testid="offline-banner"]')
+      .first();
+    await expect(offlineIndicator).toBeVisible({ timeout: 5000 });
+
+    // 4. Fill in desk reservation details while offline
+    await page.fill(
+      'input[name="bookingDate"], [data-testid="date-input"]',
+      "2026-10-15",
+    );
+    await page.selectOption(
+      'select[name="bookingTime"], [data-testid="time-select"]',
+      "10:00",
+    );
+    await page.fill(
+      'input[name="customerEmail"], [data-testid="email-input"]',
+      "nomad@worksphere.dev",
+    );
+    await page.click(
+      'button:has-text("Reserve Desk"), button:has-text("Confirm Reservation")',
+    );
+
+    // 5. Assert optimistic UI confirmation with pending sync status
+    const pendingStatus = page
+      .locator(
+        'text=Queued for sync, text=Pending Sync, [data-testid="pending-badge"]',
+      )
+      .first();
+    await expect(pendingStatus).toBeVisible({ timeout: 5000 });
+
+    // 6. Assert IndexedDB outbox contains the pending booking record
+    const queuedActions = await page.evaluate(async () => {
+      return new Promise<any[]>((resolve, reject) => {
+        const req = indexedDB.open("worksphere-offline");
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          const db = req.result;
+          const storeName = db.objectStoreNames.contains("pending_sync_queue")
+            ? "pending_sync_queue"
+            : "pendingActions";
+          const tx = db.transaction(storeName, "readonly");
+          const getAll = tx.objectStore(storeName).getAll();
+          getAll.onsuccess = () => resolve(getAll.result);
+          getAll.onerror = () => reject(getAll.error);
+        };
+      });
+    });
+
+    expect(queuedActions.length).toBeGreaterThanOrEqual(1);
+    const booking = queuedActions.find(
+      (item) =>
+        item.domain === "booking" ||
+        item.action === "CREATE_BOOKING" ||
+        item.payload?.venueId === "cafe-artisan",
+    );
+    expect(booking).toBeDefined();
+    expect(booking.payload.customerEmail).toBe("nomad@worksphere.dev");
+    expect(booking.retryCount ?? 0).toBe(0);
+  });
+});
+```
+
+### Example Test: Automatic Background Synchronization upon Reconnection
+
+This test verifies that restoring network connectivity triggers the background synchronization pipeline, posts the queued payload to the server, and purges the outbox:
+
+```typescript
+import { test, expect } from "@playwright/test";
+
+test.describe("Background Synchronization upon Reconnection", () => {
+  test("should flush outbox queue and confirm booking once online", async ({
+    page,
+  }) => {
+    let syncEndpointHit = false;
+    let submittedPayload: any = null;
+
+    // 1. Intercept the sync endpoint to verify API transmission
+    await page.route("**/api/bookings/sync", async (route) => {
+      syncEndpointHit = true;
+      submittedPayload = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          processedCount: 1,
+          results: [
+            { confirmationId: "CONF-OFFLINE-789", status: "CONFIRMED" },
+          ],
+        }),
+      });
+    });
+
+    // 2. Open page and transition to offline state via CDP
+    await page.goto("/venues/cafe-artisan");
+    const client = await page.context().newCDPSession(page);
+    await client.send("Network.emulateNetworkConditions", {
+      offline: true,
+      latency: 0,
+      downloadThroughput: -1,
+      uploadThroughput: -1,
+      connectionType: "none",
+    });
+    await page.evaluate(() => window.dispatchEvent(new Event("offline")));
+
+    // 3. Queue an offline booking
+    await page.click('button:has-text("Quick Reserve Desk")');
+    await expect(
+      page.locator("text=Queued for sync, text=Pending Sync").first(),
+    ).toBeVisible();
+
+    // 4. Reconnect network using CDP
+    await client.send("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 20,
+      downloadThroughput: -1,
+      uploadThroughput: -1,
+      connectionType: "wifi",
+    });
+
+    // Dispatch online event to trigger SyncQueueManager auto-sync listener
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+
+    // 5. Poll IndexedDB until the outbox queue drains to 0
+    await expect
+      .poll(
+        async () => {
+          return await page.evaluate(async () => {
+            return new Promise<number>((resolve) => {
+              const req = indexedDB.open("worksphere-offline");
+              req.onsuccess = () => {
+                const db = req.result;
+                const storeName = db.objectStoreNames.contains(
+                  "pending_sync_queue",
+                )
+                  ? "pending_sync_queue"
+                  : "pendingActions";
+                const tx = db.transaction(storeName, "readonly");
+                const countReq = tx.objectStore(storeName).count();
+                countReq.onsuccess = () => resolve(countReq.result);
+                countReq.onerror = () => resolve(-1);
+              };
+              req.onerror = () => resolve(-1);
+            });
+          });
+        },
+        {
+          message: "Expected IndexedDB outbox queue to be fully drained",
+          timeout: 10000,
+          intervals: [500, 1000],
+        },
+      )
+      .toBe(0);
+
+    // 6. Assert backend API received the queued payload
+    expect(syncEndpointHit).toBe(true);
+
+    // 7. Verify UI transitions to confirmed state
+    await expect(
+      page
+        .locator(
+          'text=Confirmed, text=Reservation Synced, [data-testid="confirmed-badge"]',
+        )
+        .first(),
+    ).toBeVisible({
+      timeout: 5000,
+    });
+  });
+});
+```
+
+---
+
+## 8. CI/CD Integration
 
 ### How Playwright Runs in GitHub Actions
 
@@ -480,16 +767,16 @@ If you add Playwright to a GitHub Actions workflow, the recommended configuratio
 
 ### Environment Variables for E2E Tests
 
-| Variable | Purpose | Required for E2E |
-| :--- | :--- | :--- |
-| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk auth (client-side) | Yes |
-| `CLERK_SECRET_KEY` | Clerk auth (server-side) | Yes |
-| `DATABASE_URL` | Prisma database connection | Yes (for API routes) |
-| `GROQ_API_KEY` | AI chat responses | Optional (tests mock auth state) |
+| Variable                            | Purpose                    | Required for E2E                 |
+| :---------------------------------- | :------------------------- | :------------------------------- |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk auth (client-side)   | Yes                              |
+| `CLERK_SECRET_KEY`                  | Clerk auth (server-side)   | Yes                              |
+| `DATABASE_URL`                      | Prisma database connection | Yes (for API routes)             |
+| `GROQ_API_KEY`                      | AI chat responses          | Optional (tests mock auth state) |
 
 ---
 
-## 8. Debugging Tests
+## 9. Debugging Tests
 
 ### Playwright Inspector
 
@@ -516,6 +803,7 @@ npx playwright show-trace playwright-report/trace.zip
 ```
 
 The Trace Viewer shows:
+
 - Every action taken with timestamps
 - Before/after DOM snapshots
 - Network requests and responses
@@ -538,14 +826,14 @@ Videos are saved to the `playwright-report/` directory.
 Capture browser console output to help diagnose JavaScript errors:
 
 ```typescript
-test('capture console errors', async ({ page }) => {
+test("capture console errors", async ({ page }) => {
   const errors: string[] = [];
 
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') errors.push(msg.text());
+  page.on("console", (msg) => {
+    if (msg.type() === "error") errors.push(msg.text());
   });
 
-  await page.goto('/');
+  await page.goto("/");
 
   // Assert no console errors
   expect(errors).toHaveLength(0);
@@ -554,38 +842,38 @@ test('capture console errors', async ({ page }) => {
 
 ### Common Debugging Commands
 
-| Command | Purpose |
-| :--- | :--- |
-| `npx playwright test --debug` | Step through tests with Inspector |
-| `npx playwright test --headed` | Watch browser during test run |
-| `npx playwright test --ui` | Interactive UI mode |
-| `npx playwright show-report` | Open HTML report |
-| `npx playwright test --trace on` | Always capture traces |
-| `npx playwright test -g "test name"` | Run a single test by name |
-| `PWDEBUG=1 npx playwright test` | Enable verbose debug output |
+| Command                              | Purpose                           |
+| :----------------------------------- | :-------------------------------- |
+| `npx playwright test --debug`        | Step through tests with Inspector |
+| `npx playwright test --headed`       | Watch browser during test run     |
+| `npx playwright test --ui`           | Interactive UI mode               |
+| `npx playwright show-report`         | Open HTML report                  |
+| `npx playwright test --trace on`     | Always capture traces             |
+| `npx playwright test -g "test name"` | Run a single test by name         |
+| `PWDEBUG=1 npx playwright test`      | Enable verbose debug output       |
 
 ---
 
-## 9. Assertion Guidelines
+## 10. Assertion Guidelines
 
 ### Visibility Assertions
 
 ```typescript
 // ✅ Check element is visible
-await expect(page.locator('h1')).toBeVisible();
+await expect(page.locator("h1")).toBeVisible();
 
 // ✅ Check element is hidden
 await expect(page.locator('[data-testid="loading"]')).toBeHidden();
 
 // ✅ Check element count
-await expect(page.locator('.venue-card')).toHaveCount(5);
+await expect(page.locator(".venue-card")).toHaveCount(5);
 ```
 
 ### URL Assertions
 
 ```typescript
 // ✅ Exact URL match
-await expect(page).toHaveURL('/ai');
+await expect(page).toHaveURL("/ai");
 
 // ✅ URL contains pattern
 await expect(page).toHaveURL(/\/sign-in/);
@@ -595,33 +883,35 @@ await expect(page).toHaveURL(/\/sign-in/);
 
 ```typescript
 // ✅ Contains text
-await expect(page.locator('h1')).toContainText('Find Your Perfect');
+await expect(page.locator("h1")).toContainText("Find Your Perfect");
 
 // ✅ Exact text
-await expect(page.locator('[data-testid="status"]')).toHaveText('Connected');
+await expect(page.locator('[data-testid="status"]')).toHaveText("Connected");
 
 // ✅ Input value
-await expect(page.locator('input[type="email"]')).toHaveValue('user@example.com');
+await expect(page.locator('input[type="email"]')).toHaveValue(
+  "user@example.com",
+);
 ```
 
 ### Network Assertions
 
 ```typescript
 // ✅ Assert API response status using request fixture
-const response = await request.get('/api/venues?lat=37.77&lng=-122.41');
+const response = await request.get("/api/venues?lat=37.77&lng=-122.41");
 expect(response.status()).toBe(200);
 
 // ✅ Assert response body
 const body = await response.json();
-expect(body).toHaveProperty('venues');
+expect(body).toHaveProperty("venues");
 ```
 
 ### Accessibility Assertions
 
 ```typescript
 // ✅ Check keyboard focus
-await page.keyboard.press('Tab');
-const focused = page.locator(':focus');
+await page.keyboard.press("Tab");
+const focused = page.locator(":focus");
 await expect(focused).toBeVisible();
 
 // ✅ Check ARIA label
@@ -629,7 +919,7 @@ await expect(page.locator('[aria-label="Send message"]')).toBeVisible();
 
 // ✅ Check for duplicate IDs (accessibility violation)
 const ids = await page.evaluate(() =>
-  Array.from(document.querySelectorAll('[id]')).map((el) => el.id)
+  Array.from(document.querySelectorAll("[id]")).map((el) => el.id),
 );
 const uniqueIds = new Set(ids);
 expect(ids.length).toBe(uniqueIds.size);
@@ -640,21 +930,22 @@ expect(ids.length).toBe(uniqueIds.size);
 ```typescript
 // ❌ Avoid — hides real timing issues
 await page.waitForTimeout(2000);
-await expect(page.locator('text=Success')).toBeVisible();
+await expect(page.locator("text=Success")).toBeVisible();
 
 // ✅ Prefer — Playwright auto-waits up to the configured timeout
-await expect(page.locator('text=Success')).toBeVisible({ timeout: 10000 });
+await expect(page.locator("text=Success")).toBeVisible({ timeout: 10000 });
 ```
 
 ---
 
-## 10. Common Issues & Troubleshooting
+## 11. Common Issues & Troubleshooting
 
 ### Browser Installation Issues
 
 **Symptom:** `browserType.launch: Executable doesn't exist`
 
 **Solution:**
+
 ```bash
 npx playwright install chromium
 # or install all browsers
@@ -670,6 +961,7 @@ npx playwright install --with-deps
 **Cause:** The dev server failed to start within the 120-second timeout configured in `playwright.config.ts`.
 
 **Solution:**
+
 1. Start the dev server manually first: `npm run dev`
 2. Then run tests — Playwright will reuse the existing server (`reuseExistingServer: true` locally)
 3. Check for build errors: `npm run build`
@@ -681,13 +973,15 @@ npx playwright install --with-deps
 **Symptom:** `Timeout 30000ms exceeded` or `waiting for locator...`
 
 **Causes:**
+
 - Element never appears because the page state is different than expected
 - Auth redirect is happening unexpectedly
 
 **Solution:**
+
 ```typescript
 // Increase timeout for slow-loading elements
-await expect(page.locator('text=WorkSphere')).toBeVisible({ timeout: 15000 });
+await expect(page.locator("text=WorkSphere")).toBeVisible({ timeout: 15000 });
 
 // Use .or() to handle multiple possible states
 await expect(chatInput.or(signInPage)).toBeVisible({ timeout: 15000 });
@@ -711,13 +1005,13 @@ await expect(chatInput.or(signInPage)).toBeVisible({ timeout: 15000 });
 
 **Common causes and fixes:**
 
-| Cause | Fix |
-| :--- | :--- |
-| Using `waitForTimeout` instead of element-based waits | Replace with `expect(...).toBeVisible()` |
-| Race condition on page load | Use `waitForLoadState('networkidle')` |
-| Animation or transition timing | Add a short `waitForTimeout(300)` only for animations |
-| Shared state between tests | Clear `localStorage` in `beforeEach` |
-| Order-dependent tests | Ensure each test is fully independent |
+| Cause                                                 | Fix                                                   |
+| :---------------------------------------------------- | :---------------------------------------------------- |
+| Using `waitForTimeout` instead of element-based waits | Replace with `expect(...).toBeVisible()`              |
+| Race condition on page load                           | Use `waitForLoadState('networkidle')`                 |
+| Animation or transition timing                        | Add a short `waitForTimeout(300)` only for animations |
+| Shared state between tests                            | Clear `localStorage` in `beforeEach`                  |
+| Order-dependent tests                                 | Ensure each test is fully independent                 |
 
 ---
 
@@ -726,6 +1020,7 @@ await expect(chatInput.or(signInPage)).toBeVisible({ timeout: 15000 });
 **Symptom:** Tests pass locally but fail in CI.
 
 **Common causes:**
+
 - Different screen resolution in CI headless mode — always set viewport explicitly:
   ```typescript
   await page.setViewportSize({ width: 1280, height: 720 });
@@ -738,24 +1033,24 @@ await expect(chatInput.or(signInPage)).toBeVisible({ timeout: 15000 });
 
 ---
 
-## 11. Best Practices
+## 12. Best Practices
 
-| Practice | Reason |
-| :--- | :--- |
-| Write independent tests | Tests that depend on each other fail unpredictably when run in parallel |
-| Use `data-testid` for stable selectors | Class names and text content change; `data-testid` is explicit and intentional |
-| Mock external APIs with `page.route()` | Removes network dependencies and makes tests deterministic |
-| Use `waitForLoadState` instead of `waitForTimeout` | Element-based waits are more reliable and faster |
-| Group tests with `test.describe()` | Keeps related tests together and makes reports easier to read |
-| Use `test.beforeEach` to reset state | Prevents one test's side effects from affecting the next |
-| Use Page Objects for shared interactions | Reduces duplication and centralises selector maintenance |
-| Handle multiple page states with `.or()` | Tests remain stable regardless of auth status |
-| Keep assertions specific | Vague assertions like `toBeVisible()` on the wrong element can mask bugs |
-| Run `npx playwright show-report` after failures | The HTML report and trace viewer show exactly what went wrong |
+| Practice                                           | Reason                                                                         |
+| :------------------------------------------------- | :----------------------------------------------------------------------------- |
+| Write independent tests                            | Tests that depend on each other fail unpredictably when run in parallel        |
+| Use `data-testid` for stable selectors             | Class names and text content change; `data-testid` is explicit and intentional |
+| Mock external APIs with `page.route()`             | Removes network dependencies and makes tests deterministic                     |
+| Use `waitForLoadState` instead of `waitForTimeout` | Element-based waits are more reliable and faster                               |
+| Group tests with `test.describe()`                 | Keeps related tests together and makes reports easier to read                  |
+| Use `test.beforeEach` to reset state               | Prevents one test's side effects from affecting the next                       |
+| Use Page Objects for shared interactions           | Reduces duplication and centralises selector maintenance                       |
+| Handle multiple page states with `.or()`           | Tests remain stable regardless of auth status                                  |
+| Keep assertions specific                           | Vague assertions like `toBeVisible()` on the wrong element can mask bugs       |
+| Run `npx playwright show-report` after failures    | The HTML report and trace viewer show exactly what went wrong                  |
 
 ---
 
-## 12. References
+## 13. References
 
 - [Playwright Documentation](https://playwright.dev/docs/intro)
 - [Playwright Assertions](https://playwright.dev/docs/test-assertions)

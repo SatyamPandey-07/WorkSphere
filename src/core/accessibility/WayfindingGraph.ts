@@ -4,6 +4,8 @@
  * Forms the foundation for constrained shortest-path algorithms for mobility-impaired users.
  */
 
+import type { DirectionVector } from './GradientCalculator';
+
 export interface AccessibilityNode {
     id: string;
     latitude: number;
@@ -18,6 +20,7 @@ export interface AccessibilityEdge {
     fromId: string;
     toId: string;
     distanceMeters: number;
+    directionVector?: DirectionVector;
     hasStairs: boolean;
     maxGradientPercent: number;
     surfaceType: 'smooth' | 'rough' | 'gravel' | 'unknown';
@@ -66,15 +69,28 @@ export class WayfindingGraph {
                     isTactilePaving: element.tags?.tactile_paving === 'yes',
                     doorWidthCm: element.tags?.door_width ? parseInt(element.tags.door_width, 10) : undefined
                 });
-            } else if (element.type === 'way') {
+            }
+        }
+
+        for (const element of osmElements) {
+            if (element.type === 'way') {
                 const hasStairs = element.tags?.highway === 'steps' || element.tags?.stairs === 'yes';
                 const gradient = element.tags?.incline ? parseFloat(element.tags.incline) : 0;
 
                 for (let i = 0; i < element.nodes.length - 1; i++) {
+                    const fromId = `node-${element.nodes[i]}`;
+                    const toId = `node-${element.nodes[i + 1]}`;
+                    const fromNode = this.getNode(fromId);
+                    const toNode = this.getNode(toId);
+                    const directionVector = fromNode && toNode
+                        ? this.calculateDirectionVector(fromNode, toNode)
+                        : undefined;
+
                     this.addEdge({
-                        fromId: `node-${element.nodes[i]}`,
-                        toId: `node-${element.nodes[i + 1]}`,
+                        fromId,
+                        toId,
                         distanceMeters: element.tags?.length ? parseFloat(element.tags.length) : 10,
+                        ...(directionVector ? { directionVector } : {}),
                         hasStairs,
                         maxGradientPercent: Math.abs(gradient),
                         surfaceType: element.tags?.surface || 'unknown',
@@ -83,5 +99,14 @@ export class WayfindingGraph {
                 }
             }
         }
+    }
+
+    private calculateDirectionVector(from: AccessibilityNode, to: AccessibilityNode): DirectionVector {
+        const meanLatitude = ((from.latitude + to.latitude) / 2) * (Math.PI / 180);
+
+        return {
+            x: (to.longitude - from.longitude) * Math.cos(meanLatitude),
+            y: to.latitude - from.latitude
+        };
     }
 }

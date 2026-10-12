@@ -55,6 +55,7 @@ const AmbientSoundPlayer = dynamic(
 );
 import { AddToFolderModal } from "@/components/collections/AddToFolderModal";
 import { FolderPlus } from "lucide-react";
+import { MachSpeedBadge } from "@/components/ui/NoiseLevelBadge";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useHoverPredictor } from "@/hooks/useHoverPredictor";
 import { getVenueHoursStatus } from "@/lib/venueHours";
@@ -790,6 +791,13 @@ export function VenueCard({
             )}
           </div>
         )}
+
+        {/* Aerospace Mach Speed Classification Badge (#6175) */}
+        {venue.wifiSpeed ? (
+          <div className="flex items-center gap-2 mb-3">
+            <MachSpeedBadge downloadMbps={venue.wifiSpeed} size="sm" />
+          </div>
+        ) : null}
 
         {/* Hours */}
         {(() => {

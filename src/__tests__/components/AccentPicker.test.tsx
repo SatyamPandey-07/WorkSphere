@@ -119,4 +119,116 @@ describe("AccentPicker with Lantern Emerald (#6164)", () => {
     fireEvent.keyDown(buttons[4], { key: "Home" });
     expect(buttons[0]).toHaveAttribute("aria-checked", "true");
   });
+
+  describe("Emerald swatch glowing power ring pulse effect (#6170)", () => {
+    it("renders dual glowing pulse ring elements on emerald swatches", () => {
+      render(
+        <ThemeProvider initialAccent="blue">
+          <AccentPicker />
+        </ThemeProvider>,
+      );
+
+      const pulseRings = screen.getAllByTestId("emerald-pulse-ring");
+      expect(pulseRings.length).toBeGreaterThanOrEqual(1);
+
+      const emeraldButton = screen.getByRole("radio", {
+        name: /select emerald accent color/i,
+      });
+      expect(emeraldButton).toHaveAttribute("data-emerald-swatch", "true");
+      expect(emeraldButton.className).toMatch(/ring-emerald-400\/50/);
+    });
+
+    it("displays glowing power ring effect and scale on mouse hover", () => {
+      render(
+        <ThemeProvider initialAccent="blue">
+          <AccentPicker />
+        </ThemeProvider>,
+      );
+
+      const emeraldButton = screen.getByRole("radio", {
+        name: /select emerald accent color/i,
+      });
+
+      fireEvent.mouseEnter(emeraldButton);
+
+      expect(emeraldButton.className).toContain("ring-4");
+      expect(emeraldButton.className).toContain("ring-emerald-400/50");
+      expect(emeraldButton.className).toContain("scale-110");
+
+      fireEvent.mouseLeave(emeraldButton);
+      expect(emeraldButton.className).not.toMatch(/(^|\s)ring-4(\s|$)/);
+    });
+
+    it("displays glowing power ring effect on focus", () => {
+      render(
+        <ThemeProvider initialAccent="blue">
+          <AccentPicker />
+        </ThemeProvider>,
+      );
+
+      const emeraldButton = screen.getByRole("radio", {
+        name: /select emerald accent color/i,
+      });
+
+      fireEvent.focus(emeraldButton);
+
+      expect(emeraldButton.className).toContain("ring-4");
+      expect(emeraldButton.className).toContain("ring-emerald-400/50");
+
+      fireEvent.blur(emeraldButton);
+      expect(emeraldButton.className).not.toMatch(/(^|\s)ring-4(\s|$)/);
+    });
+
+    it("settles cleanly without outer pulse ring opacity when active/selected", () => {
+      render(
+        <ThemeProvider initialAccent="emerald">
+          <AccentPicker />
+        </ThemeProvider>,
+      );
+
+      const emeraldButton = screen.getByRole("radio", {
+        name: /select emerald accent color/i,
+      });
+      expect(emeraldButton).toHaveAttribute("aria-checked", "true");
+
+      // Finding the pulse ring inside this button
+      const pulseRing = emeraldButton.querySelector('[data-testid="emerald-pulse-ring"]');
+      expect(pulseRing).toHaveClass("opacity-0");
+    });
+
+    it("disables transform motion when prefers-reduced-motion is active", () => {
+      // Mock prefers-reduced-motion: reduce
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+        matches: query.includes("prefers-reduced-motion: reduce"),
+        media: query,
+        onchange: null,
+        addListener: jest.fn(),
+        removeListener: jest.fn(),
+        addEventListener: jest.fn(),
+        removeEventListener: jest.fn(),
+        dispatchEvent: jest.fn(),
+      }));
+
+      render(
+        <ThemeProvider initialAccent="blue">
+          <AccentPicker />
+        </ThemeProvider>,
+      );
+
+      const emeraldButton = screen.getByRole("radio", {
+        name: /select emerald accent color/i,
+      });
+
+      expect(emeraldButton.className).toContain("transform-none");
+
+      fireEvent.mouseEnter(emeraldButton);
+
+      // On hover with reduced motion, scale-110 must NOT be applied
+      expect(emeraldButton.className).not.toContain("scale-110");
+      expect(emeraldButton.className).toContain("ring-emerald-400/50");
+
+      window.matchMedia = originalMatchMedia;
+    });
+  });
 });

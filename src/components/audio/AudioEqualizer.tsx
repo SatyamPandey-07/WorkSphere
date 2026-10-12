@@ -130,6 +130,28 @@ function createBrownNoiseBuffer(ctx: AudioContext) {
   return buffer;
 }
 
+/**
+ * Smoothly transitions an AudioParam to a target value using setTargetAtTime
+ * to eliminate audible clicking artifacts.
+ */
+function smoothSetAudioParam(
+  param: AudioParam | null,
+  targetValue: number,
+  currentTime: number,
+  timeConstant: number = 0.02
+) {
+  if (!param) return;
+  
+  if (typeof param.setTargetAtTime === "function") {
+    param.setTargetAtTime(targetValue, currentTime, timeConstant);
+  } else if (typeof param.linearRampToValueAtTime === "function") {
+    param.setValueAtTime(param.value ?? 0, currentTime);
+    param.linearRampToValueAtTime(targetValue, currentTime + timeConstant * 3);
+  } else if (typeof param.setValueAtTime === "function") {
+    param.setValueAtTime(targetValue, currentTime);
+  }
+}
+
 export function AudioEqualizer({
   venueName = "Workspace",
   initialGains,
@@ -381,18 +403,15 @@ export function AudioEqualizer({
       onGainChange(index, clampedGain);
     }
 
+    // Use smooth transition to eliminate audio pops and clicks
     const filter = eqFiltersRef.current[index];
     if (filter && filter.gain && audioContextRef.current) {
-      const now = audioContextRef.current.currentTime;
-      if (typeof filter.gain.setTargetAtTime === "function") {
-        // Smooth audio param ramp to eliminate audio pops and clicks
-        filter.gain.setTargetAtTime(clampedGain, now, 0.015);
-      } else if (typeof filter.gain.linearRampToValueAtTime === "function") {
-        filter.gain.setValueAtTime(filter.gain.value ?? 0, now);
-        filter.gain.linearRampToValueAtTime(clampedGain, now + 0.03);
-      } else if (typeof filter.gain.setValueAtTime === "function") {
-        filter.gain.setValueAtTime(clampedGain, now);
-      }
+      smoothSetAudioParam(
+        filter.gain,
+        clampedGain,
+        audioContextRef.current.currentTime,
+        0.02
+      );
     }
   };
 
@@ -415,19 +434,13 @@ export function AudioEqualizer({
         gains.forEach((gain, i) => onGainChange(i, gain));
       }
 
+      // Apply smooth audio node param ramping
       if (audioContextRef.current) {
         const now = audioContextRef.current.currentTime;
         eqFiltersRef.current.forEach((filter, i) => {
           if (filter && filter.gain) {
             const targetGain = gains[i] ?? 0;
-            if (typeof filter.gain.setTargetAtTime === "function") {
-              filter.gain.setTargetAtTime(targetGain, now, 0.015);
-            } else if (typeof filter.gain.linearRampToValueAtTime === "function") {
-              filter.gain.setValueAtTime(filter.gain.value ?? 0, now);
-              filter.gain.linearRampToValueAtTime(targetGain, now + 0.03);
-            } else if (typeof filter.gain.setValueAtTime === "function") {
-              filter.gain.setValueAtTime(targetGain, now);
-            }
+            smoothSetAudioParam(filter.gain, targetGain, now, 0.02);
           }
         });
       }
@@ -465,14 +478,7 @@ export function AudioEqualizer({
       const now = audioContextRef.current.currentTime;
       eqFiltersRef.current.forEach((filter, i) => {
         if (filter && filter.gain) {
-          if (typeof filter.gain.setTargetAtTime === "function") {
-            filter.gain.setTargetAtTime(0, now, 0.015);
-          } else if (typeof filter.gain.linearRampToValueAtTime === "function") {
-            filter.gain.setValueAtTime(filter.gain.value ?? 0, now);
-            filter.gain.linearRampToValueAtTime(0, now + 0.03);
-          } else if (typeof filter.gain.setValueAtTime === "function") {
-            filter.gain.setValueAtTime(0, now);
-          }
+          smoothSetAudioParam(filter.gain, 0, now, 0.02);
         }
       });
     }
@@ -609,12 +615,12 @@ export function AudioEqualizer({
 
   useEffect(() => {
     if (masterGainRef.current && masterGainRef.current.gain) {
-      if (typeof masterGainRef.current.gain.setValueAtTime === "function") {
-        masterGainRef.current.gain.setValueAtTime(
-          muted ? 0 : volume,
-          audioContextRef.current ? audioContextRef.current.currentTime : 0,
-        );
-      }
+      smoothSetAudioParam(
+        masterGainRef.current.gain,
+        muted ? 0 : volume,
+        audioContextRef.current ? audioContextRef.current.currentTime : 0,
+        0.02
+      );
     }
   }, [volume, muted]);
 
@@ -940,3 +946,5 @@ export function AudioEqualizer({
     </div>
   );
 }
+
+export default AudioEqualizer;

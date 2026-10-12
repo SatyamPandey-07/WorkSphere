@@ -12,6 +12,9 @@ import {
   MetricSummary,
 } from "@/lib/webVitalsCollector";
 import { downloadWebVitalsCSV } from "@/lib/export/domain/systemVitalsExporter";
+import { TelemetryOscilloscope } from "./TelemetryOscilloscope";
+
+export { TelemetryOscilloscope } from "./TelemetryOscilloscope";
 
 export interface WebVitalsWidgetProps {
   initialRange?: string;
@@ -293,6 +296,15 @@ export function WebVitalsSkeletonShimmer() {
         </div>
       </div>
 
+      {/* Telemetry Oscilloscope Skeleton */}
+      <div className="rounded-2xl border border-white/10 bg-zinc-950/40 p-4 h-44 space-y-3">
+        <div className="flex justify-between items-center">
+          <div className="h-4 w-52 bg-zinc-800/80 rounded" />
+          <div className="h-4 w-20 bg-zinc-800/80 rounded" />
+        </div>
+        <div className="h-28 w-full bg-zinc-900/60 rounded-xl" />
+      </div>
+
       {/* Metric Cards Grid Skeleton */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {[1, 2, 3, 4, 5].map((i) => (
@@ -535,6 +547,20 @@ export function WebVitalsWidget({
               </div>
             </div>
           </div>
+
+          {/* Retro-futuristic Real-time Telemetry Oscilloscope Waveform */}
+          <TelemetryOscilloscope
+            className="mb-6"
+            latestMetric={
+              data.metrics.LCP
+                ? {
+                    name: "LCP",
+                    value: data.metrics.LCP.p75,
+                    rating: data.metrics.LCP.rating,
+                  }
+                : null
+            }
+          />
 
           {/* Active Tab View */}
           {activeTab === "gauges" && (

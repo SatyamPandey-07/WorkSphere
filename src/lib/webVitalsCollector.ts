@@ -328,6 +328,19 @@ export function recordWebVital(entry: Omit<WebVitalEntry, "id" | "timestamp">): 
     }
   }
 
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("worksphere:web-vital-recorded", { detail: fullEntry })
+      );
+      window.dispatchEvent(
+        new CustomEvent("web-vital-recorded", { detail: fullEntry })
+      );
+    } catch {
+      // Ignore in restricted environments
+    }
+  }
+
   return fullEntry;
 }
 

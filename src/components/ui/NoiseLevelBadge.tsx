@@ -11,8 +11,16 @@ export interface NoiseLevelInfo {
   description: string;
 }
 
-export function parseNoiseLevel(level?: string | null): NoiseLevelTier | null {
-  if (!level) return null;
+export function parseNoiseLevel(
+  level?: string | number | null,
+): NoiseLevelTier | null {
+  if (level === null || level === undefined) return null;
+  if (typeof level === "number") {
+    if (isNaN(level) || level <= 0) return null;
+    if (level < 50) return "quiet";
+    if (level <= 70) return "moderate";
+    return "loud";
+  }
   const normalized = level.trim().toLowerCase();
   if (
     normalized === "quiet" ||
@@ -37,6 +45,15 @@ export function parseNoiseLevel(level?: string | null): NoiseLevelTier | null {
   ) {
     return "loud";
   }
+
+  const numericMatch = normalized.match(/^(\d+(?:\.\d+)?)/);
+  if (numericMatch) {
+    const dB = parseFloat(numericMatch[1]);
+    if (dB < 50) return "quiet";
+    if (dB <= 70) return "moderate";
+    return "loud";
+  }
+
   return null;
 }
 
@@ -65,7 +82,7 @@ export const NOISE_LEVEL_MAP: Record<NoiseLevelTier, NoiseLevelInfo> = {
 };
 
 export interface NoiseLevelBadgeProps {
-  noiseLevel?: string | null;
+  noiseLevel?: string | number | null;
   showDecibels?: boolean;
   variant?: "default" | "compact" | "subtle";
   size?: "sm" | "md" | "lg";
@@ -98,7 +115,10 @@ export function NoiseLevelBadge({
               : "px-2.5 py-0.5 text-xs"
         } ${className}`}
       >
-        <Volume1 className={size === "lg" ? "h-4 w-4" : "h-3.5 w-3.5"} aria-hidden="true" />
+        <Volume1
+          className={size === "lg" ? "h-4 w-4" : "h-3.5 w-3.5"}
+          aria-hidden="true"
+        />
         <span>Unknown Noise</span>
       </span>
     );
@@ -147,6 +167,7 @@ export function NoiseLevelBadge({
   return (
     <span
       role="status"
+      data-testid="noise-level-badge"
       aria-label={`Ambient noise level: ${info.label} (${info.decibelRange})`}
       className={`inline-flex items-center rounded-full font-medium transition-colors ${
         variant !== "subtle" ? "border shadow-xs" : ""
@@ -192,7 +213,9 @@ export interface MachSpeedInfo {
  * - Supersonic: 50 - 250 Mbps
  * - Hypersonic Mach 5: > 250 Mbps
  */
-export function getMachSpeedTier(downloadMbps?: number | null): MachSpeedTier | null {
+export function getMachSpeedTier(
+  downloadMbps?: number | null,
+): MachSpeedTier | null {
   if (
     downloadMbps === null ||
     downloadMbps === undefined ||
@@ -214,7 +237,9 @@ export function getMachSpeedTier(downloadMbps?: number | null): MachSpeedTier | 
 /**
  * Parses numeric or string speed representations into a MachSpeedTier.
  */
-export function parseMachSpeed(speed?: number | string | null): MachSpeedTier | null {
+export function parseMachSpeed(
+  speed?: number | string | null,
+): MachSpeedTier | null {
   if (speed === null || speed === undefined) return null;
   if (typeof speed === "number") {
     return getMachSpeedTier(speed);
@@ -230,7 +255,8 @@ export const MACH_SPEED_MAP: Record<MachSpeedTier, MachSpeedInfo> = {
     shortLabel: "Subsonic",
     speedRange: "<50 Mbps",
     machRating: "Subsonic (< Mach 1)",
-    description: "Standard WiFi bandwidth suitable for light browsing & messaging",
+    description:
+      "Standard WiFi bandwidth suitable for light browsing & messaging",
   },
   supersonic: {
     tier: "supersonic",
@@ -238,7 +264,8 @@ export const MACH_SPEED_MAP: Record<MachSpeedTier, MachSpeedInfo> = {
     shortLabel: "Supersonic",
     speedRange: "50-250 Mbps",
     machRating: "Supersonic (Mach 1-3)",
-    description: "High-speed broadband for HD multi-party video conferencing & live streaming",
+    description:
+      "High-speed broadband for HD multi-party video conferencing & live streaming",
   },
   hypersonic: {
     tier: "hypersonic",
@@ -246,7 +273,8 @@ export const MACH_SPEED_MAP: Record<MachSpeedTier, MachSpeedInfo> = {
     shortLabel: "Hypersonic Mach 5",
     speedRange: ">250 Mbps",
     machRating: "Hypersonic (Mach 5+)",
-    description: "Extreme gigabit bandwidth for massive cloud workloads & high-speed engineering",
+    description:
+      "Extreme gigabit bandwidth for massive cloud workloads & high-speed engineering",
   },
 };
 
@@ -295,7 +323,10 @@ export function MachSpeedBadge({
               : "px-2.5 py-0.5 text-xs"
         } ${className}`}
       >
-        <Plane className={size === "lg" ? "h-4 w-4" : "h-3.5 w-3.5"} aria-hidden="true" />
+        <Plane
+          className={size === "lg" ? "h-4 w-4" : "h-3.5 w-3.5"}
+          aria-hidden="true"
+        />
         <span>Unknown Speed</span>
       </span>
     );
@@ -361,6 +392,7 @@ export function MachSpeedBadge({
     <div className="group relative inline-flex items-center">
       <span
         role="status"
+        data-testid="mach-speed-badge"
         aria-label={`Aerospace WiFi speed: ${info.label}${speedSpecs ? ` (${speedSpecs})` : ""}`}
         className={`inline-flex items-center rounded-full font-medium transition-colors cursor-help ${
           variant !== "subtle" ? "border shadow-xs" : ""
@@ -387,7 +419,10 @@ export function MachSpeedBadge({
       >
         <div className="font-semibold flex items-center justify-between text-zinc-200 border-b border-zinc-800 pb-1.5">
           <span className="flex items-center gap-1.5">
-            <Plane className="w-3.5 h-3.5 text-sky-400 shrink-0" aria-hidden="true" />
+            <Plane
+              className="w-3.5 h-3.5 text-sky-400 shrink-0"
+              aria-hidden="true"
+            />
             <span>{info.shortLabel}</span>
           </span>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 font-mono">
@@ -420,4 +455,3 @@ export function MachSpeedBadge({
     </div>
   );
 }
-

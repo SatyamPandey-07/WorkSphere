@@ -17,7 +17,9 @@ describe("NoiseLevelBadge component", () => {
   });
 
   it("returns null when noiseLevel is unrecognized and showUnknown is false", () => {
-    const { container } = render(<NoiseLevelBadge noiseLevel="unknown-noise" />);
+    const { container } = render(
+      <NoiseLevelBadge noiseLevel="unknown-noise" />,
+    );
     expect(container.firstChild).toBeNull();
   });
 
@@ -85,7 +87,9 @@ describe("NoiseLevelBadge component", () => {
   });
 
   it("applies size classes correctly for sm, md, and lg", () => {
-    const { rerender } = render(<NoiseLevelBadge noiseLevel="quiet" size="sm" />);
+    const { rerender } = render(
+      <NoiseLevelBadge noiseLevel="quiet" size="sm" />,
+    );
     expect(screen.getByRole("status").className).toContain("text-[11px]");
 
     rerender(<NoiseLevelBadge noiseLevel="quiet" size="lg" />);
@@ -93,8 +97,22 @@ describe("NoiseLevelBadge component", () => {
   });
 
   it("applies custom className", () => {
-    render(<NoiseLevelBadge noiseLevel="quiet" className="custom-test-class" />);
+    render(
+      <NoiseLevelBadge noiseLevel="quiet" className="custom-test-class" />,
+    );
     expect(screen.getByRole("status").className).toContain("custom-test-class");
+  });
+
+  it("renders with data-testid='noise-level-badge'", () => {
+    render(<NoiseLevelBadge noiseLevel="quiet" />);
+    expect(screen.getByTestId("noise-level-badge")).toBeInTheDocument();
+  });
+
+  it("accepts numeric decibel input directly in NoiseLevelBadge", () => {
+    render(<NoiseLevelBadge noiseLevel={42} />);
+    expect(screen.getByTestId("noise-level-badge")).toHaveTextContent(
+      "Quiet Focus",
+    );
   });
 });
 
@@ -129,8 +147,26 @@ describe("parseNoiseLevel helper", () => {
     expect(parseNoiseLevel("high")).toBe("loud");
   });
 
-  it("returns null for non-matching strings", () => {
+  it("correctly parses numeric decibel values into appropriate tiers", () => {
+    expect(parseNoiseLevel(35)).toBe("quiet");
+    expect(parseNoiseLevel(49.5)).toBe("quiet");
+    expect(parseNoiseLevel(50)).toBe("moderate");
+    expect(parseNoiseLevel(65)).toBe("moderate");
+    expect(parseNoiseLevel(70)).toBe("moderate");
+    expect(parseNoiseLevel(75)).toBe("loud");
+    expect(parseNoiseLevel(90)).toBe("loud");
+  });
+
+  it("correctly parses formatted decibel string inputs", () => {
+    expect(parseNoiseLevel("45 dB")).toBe("quiet");
+    expect(parseNoiseLevel("60 dB")).toBe("moderate");
+    expect(parseNoiseLevel("85 dB")).toBe("loud");
+  });
+
+  it("returns null for non-matching strings or invalid numbers", () => {
     expect(parseNoiseLevel("random-string")).toBeNull();
+    expect(parseNoiseLevel(-5)).toBeNull();
+    expect(parseNoiseLevel(NaN)).toBeNull();
   });
 });
 
@@ -150,7 +186,10 @@ describe("MachSpeedBadge component (#6175)", () => {
     const badge = screen.getByRole("status");
     expect(badge).toBeInTheDocument();
     expect(badge).toHaveTextContent("Unknown Speed");
-    expect(badge).toHaveAttribute("aria-label", "Aerospace WiFi speed: Unknown");
+    expect(badge).toHaveAttribute(
+      "aria-label",
+      "Aerospace WiFi speed: Unknown",
+    );
   });
 
   it("renders Subsonic (<50 Mbps) tier with jet icon and sky color styling", () => {
@@ -209,7 +248,9 @@ describe("MachSpeedBadge component (#6175)", () => {
   });
 
   it("applies size classes correctly for sm, md, and lg", () => {
-    const { rerender } = render(<MachSpeedBadge downloadMbps={100} size="sm" />);
+    const { rerender } = render(
+      <MachSpeedBadge downloadMbps={100} size="sm" />,
+    );
     expect(screen.getByRole("status").className).toContain("text-[11px]");
 
     rerender(<MachSpeedBadge downloadMbps={100} size="lg" />);
@@ -258,8 +299,9 @@ describe("getMachSpeedTier & parseMachSpeed helpers (#6175)", () => {
   it("exports valid MACH_SPEED_MAP configuration", () => {
     expect(MACH_SPEED_MAP.subsonic.label).toBe("Subsonic (<50 Mbps)");
     expect(MACH_SPEED_MAP.supersonic.label).toBe("Supersonic (50-250 Mbps)");
-    expect(MACH_SPEED_MAP.hypersonic.label).toBe("Hypersonic Mach 5 (>250 Mbps)");
+    expect(MACH_SPEED_MAP.hypersonic.label).toBe(
+      "Hypersonic Mach 5 (>250 Mbps)",
+    );
     expect(NOISE_LEVEL_MAP.quiet.label).toBe("Quiet Focus");
   });
 });
-

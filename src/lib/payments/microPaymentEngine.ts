@@ -65,7 +65,68 @@ export const LIVE_EXCHANGE_RATES: ExchangeRates = {
   lastUpdated: Date.now(),
 };
 
+export interface SatoshiValidationResult {
+  isValid: boolean;
+  error?: string;
+  sats?: number;
+}
+
 export class MicroPaymentEngine {
+  /**
+   * Validates that a requested satoshi amount is a strictly positive, finite integer.
+   * Rejects values <= 0, non-integers (decimals), NaN, infinite, or malformed numbers.
+   */
+  public static validateSatoshiAmount(amount: unknown): SatoshiValidationResult {
+    if (amount === undefined || amount === null || amount === "") {
+      return {
+        isValid: false,
+        error: "Satoshi amount is required",
+      };
+    }
+
+    const num = typeof amount === "number" ? amount : Number(amount);
+
+    if (typeof amount === "string" && isNaN(Number(amount))) {
+      return {
+        isValid: false,
+        error: "Malformed satoshi amount: must be a valid numeric value",
+      };
+    }
+
+    if (isNaN(num) || !Number.isFinite(num)) {
+      return {
+        isValid: false,
+        error: "Malformed satoshi amount: must be a finite number",
+      };
+    }
+
+    if (num <= 0) {
+      return {
+        isValid: false,
+        error: "Invalid satoshi amount: value must be strictly positive (> 0)",
+      };
+    }
+
+    if (!Number.isInteger(num)) {
+      return {
+        isValid: false,
+        error: "Invalid satoshi amount: must be a whole integer, decimal satoshis are not allowed",
+      };
+    }
+
+    return {
+      isValid: true,
+      sats: num,
+    };
+  }
+
+  /**
+   * Boolean check for strictly positive integer satoshi amount.
+   */
+  public static isValidSatoshiAmount(amount: unknown): boolean {
+    return this.validateSatoshiAmount(amount).isValid;
+  }
+
   /**
    * Calculates per-minute and per-hour rates across multiple currencies
    */
@@ -118,12 +179,14 @@ export class MicroPaymentEngine {
   }
 
   /**
-   * Synthesizes a BOLT11 Lightning Invoice or USDC deposit transaction
+   * Synthesizes a BOLT11 Lightning Invoice or USDC deposit transaction.
+   * Throws an Error if satoshi amount or amountUsd is <= 0 for Lightning invoices.
    */
   public static createMicroInvoice(
     sessionId: string,
     amountUsd: number,
-    rail: PaymentRail
+    rail: PaymentRail,
+    customSats?: number
   ): PaymentInvoice {
     const invoiceId = `inv-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const expiresAt = Date.now() + 15 * 60 * 1000; // 15 mins expiry
@@ -131,9 +194,27 @@ export class MicroPaymentEngine {
     let amountCrypto = '';
     let cryptoAddressOrInvoice = '';
     let qrPayload = '';
+    let resolvedAmountUsd = amountUsd;
 
     if (rail === 'lightning') {
-      const sats = Math.max(10, Math.ceil(amountUsd * LIVE_EXCHANGE_RATES.satsPerUsd));
+      let sats: number;
+      if (customSats !== undefined) {
+        const val = this.validateSatoshiAmount(customSats);
+        if (!val.isValid || val.sats === undefined) {
+          throw new Error(val.error || "Invalid satoshi amount: must be strictly positive (> 0)");
+        }
+        sats = val.sats;
+        resolvedAmountUsd = Number((sats / LIVE_EXCHANGE_RATES.satsPerUsd).toFixed(2));
+      } else {
+        if (typeof amountUsd !== "number" || isNaN(amountUsd) || amountUsd <= 0) {
+          throw new Error("Invalid satoshi amount: must be strictly positive (> 0)");
+        }
+        sats = Math.ceil(amountUsd * LIVE_EXCHANGE_RATES.satsPerUsd);
+        if (sats <= 0) {
+          throw new Error("Invalid satoshi amount: value must be strictly positive (> 0)");
+        }
+      }
+
       amountCrypto = `${sats.toLocaleString()} Sats`;
       cryptoAddressOrInvoice = `lnbc${sats}0n1p3${invoiceId.replace(/-/g, '')}workspheredesk${Math.random().toString(36).substr(2, 12)}`;
       qrPayload = `lightning:${cryptoAddressOrInvoice}`;
@@ -155,7 +236,7 @@ export class MicroPaymentEngine {
       invoiceId,
       sessionId,
       paymentRail: rail,
-      amountUsd: Number(amountUsd.toFixed(2)),
+      amountUsd: Number(resolvedAmountUsd.toFixed(2)),
       amountCrypto,
       cryptoAddressOrInvoice,
       qrPayload,

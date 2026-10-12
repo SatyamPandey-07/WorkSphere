@@ -20,6 +20,8 @@ import {
   Sparkles,
   TrendingUp,
   Zap,
+  Map as MapIcon,
+  Grid3X3,
 } from "lucide-react";
 import type {
   RouteHeatmapCell,
@@ -28,6 +30,8 @@ import type {
   LatencySeverity,
 } from "@/lib/telemetry/types";
 import usePartySocket from "@/hooks/usePartySocketReconnect";
+// Import the new Worker-based Canvas Component
+import { RouteLatencyHeatmap as GeoHeatmapCanvas } from "./RouteLatencyHeatmapCanvas"; // Assuming path based on context
 
 interface RouteLatencyHeatmapProps {
   className?: string;
@@ -36,6 +40,7 @@ interface RouteLatencyHeatmapProps {
 
 type MetricMode = "p95" | "p50" | "avg" | "count";
 type CategoryFilter = "all" | "ai" | "api" | "auth" | "db" | "telemetry" | "wallet" | "admin";
+type ViewMode = "grid" | "geo";
 
 export interface LatencyDeltaMessage {
   type: "LATENCY_DELTA" | "telemetry_update";
@@ -50,12 +55,20 @@ export interface LatencyDeltaMessage {
   bucketIndex?: number;
 }
 
+// Interface for the Geo/Scatter mode
+interface LatencyPoint {
+  x: number;
+  y: number;
+  latency: number; // 0.0 to 1.0
+}
+
 export function RouteLatencyHeatmap({
   className = "",
   initialRange = "1h",
 }: RouteLatencyHeatmapProps) {
   const [range, setRange] = useState<"1h" | "24h" | "7d">(initialRange);
   const [metricMode, setMetricMode] = useState<MetricMode>("p95");
+  const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [highlightSlowOnly, setHighlightSlowOnly] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<CategoryFilter>("all");
@@ -236,6 +249,31 @@ export function RouteLatencyHeatmap({
     });
   }, [data, highlightSlowOnly, selectedCategory, searchQuery]);
 
+  // Transform data for Geo/Scatter Mode
+  const geoPoints = useMemo<LatencyPoint[]>(() => {
+    if (!data || viewMode !== "geo") return [];
+    
+    // Mocking geographic distribution based on route hash for visualization purposes
+    // In a real app, this would come from actual geo-IP data in the API response
+    return data.routes.flatMap((row) => {
+      // Generate a point for each active time bucket
+      return row.cells
+        .filter(c => c.count > 0)
+        .map((cell, idx) => {
+          // Simple hash to determine X/Y position on the canvas (0-1 range)
+          const hash = row.route.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          const x = (hash % 100) / 100; 
+          const y = ((hash * idx) % 100) / 100;
+          
+          // Normalize latency for color intensity (0-1)
+          // Assume 500ms is max critical
+          const latencyNorm = Math.min(1, cell.p95Ms / 500);
+
+          return { x, y, latency: latencyNorm };
+        });
+    });
+  }, [data, viewMode]);
+
   // Helper to get fill color and styling for a latency value
   function getCellColor(cell: RouteHeatmapCell, mode: MetricMode): {
     fill: string;
@@ -273,10 +311,6 @@ export function RouteLatencyHeatmap({
     }
 
     // Latency heat map modes:
-    // < 80ms: Optimal (Emerald)
-    // 80 - 150ms: Normal (Cyan)
-    // 150 - 300ms: Amber (Elevated Warning)
-    // > 300ms: Red (Critical Slow Path)
     if (value < 80) {
       const alpha = 0.25 + (value / 80) * 0.35;
       return {
@@ -451,6 +485,32 @@ export function RouteLatencyHeatmap({
                 {item.label}
               </button>
             ))}
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex rounded-2xl border border-white/10 bg-white/[0.03] p-1 shadow-inner">
+             <button
+                onClick={() => setViewMode("grid")}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                  viewMode === "grid"
+                    ? "bg-white text-zinc-950 font-semibold shadow-md"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                <Grid3X3 className="h-3.5 w-3.5" />
+                Matrix
+              </button>
+              <button
+                onClick={() => setViewMode("geo")}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${
+                  viewMode === "geo"
+                    ? "bg-white text-zinc-950 font-semibold shadow-md"
+                    : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                <MapIcon className="h-3.5 w-3.5" />
+                Geo Map
+              </button>
           </div>
 
           {/* Auto Refresh Toggle */}
@@ -681,12 +741,26 @@ export function RouteLatencyHeatmap({
         </div>
       )}
 
-      {/* Main Heatmap Visualization */}
+      {/* Main Visualization Area */}
       <div className="relative z-10 mt-5 overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-inner">
         {loading && !data ? (
           <div className="flex h-96 flex-col items-center justify-center gap-3">
             <RefreshCw className="h-8 w-8 animate-spin text-amber-400" />
             <p className="text-xs text-zinc-400">Synthesizing real-time latency telemetry...</p>
+          </div>
+        ) : viewMode === "geo" ? (
+          // New Geo/Scatter Heatmap View
+          <div className="h-[500px] w-full p-2">
+             <GeoHeatmapCanvas 
+                points={geoPoints} 
+                width={800} 
+                height={500} 
+             />
+             <div className="absolute bottom-4 left-4 pointer-events-none">
+                <p className="text-xs text-zinc-400 bg-black/50 px-2 py-1 rounded backdrop-blur">
+                   Geographic Distribution of Latency Events (Simulated)
+                </p>
+             </div>
           </div>
         ) : filteredRows.length === 0 ? (
           <div className="flex h-64 flex-col items-center justify-center gap-2 text-zinc-500">
@@ -695,6 +769,7 @@ export function RouteLatencyHeatmap({
             <p className="text-xs text-zinc-600">Try clearing your search query or slow paths filter.</p>
           </div>
         ) : (
+          // Original Grid Matrix View
           <div className="overflow-x-auto">
             <div className="min-w-[760px] p-4">
               {/* Header row: Time bucket columns */}
@@ -815,8 +890,8 @@ export function RouteLatencyHeatmap({
         )}
       </div>
 
-      {/* Floating Tooltip */}
-      {hoveredCell && (
+      {/* Floating Tooltip (Grid Mode Only) */}
+      {hoveredCell && viewMode === "grid" && (
         <div
           style={{
             left: `${hoveredCell.clientX}px`,

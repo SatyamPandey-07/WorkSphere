@@ -26,19 +26,9 @@ import {
   type MeshLinkTelemetry,
   type MeshRoute,
   MIN_CHUNK_SIZE,
-  MAX_CHUNK_SIZE,
   DEFAULT_CHUNK_SIZE,
-  type MeshLinkTelemetry,
-  type MeshRoute,
-  type MtuProbeMessage,
-  type MtuProbeAckMessage,
 } from "./meshPathBalancer";
-import {
-  PeerConnection,
-  PeerStatus,
-  FileTransfer,
-  SignalMessage,
-} from "./types";
+import { PeerConnection, PeerStatus, FileTransfer } from "./types";
 
 export type { PeerConnection, PeerStatus, FileTransfer };
 
@@ -195,7 +185,9 @@ export class WebRTCPeerManager {
         });
       }
       try {
-        channel.send(JSON.stringify({ type: "mesh-telemetry-ping", sentAt: now }));
+        channel.send(
+          JSON.stringify({ type: "mesh-telemetry-ping", sentAt: now }),
+        );
         this.pendingTelemetryPings.set(peer.peerId, now);
       } catch (error) {
         console.warn(
@@ -266,7 +258,10 @@ export class WebRTCPeerManager {
           const previous = this.previousPacketCounters.get(peer.peerId);
           if (packetLoss === 0 && previous) {
             const lostDelta = Math.max(0, packetsLost - previous.lost);
-            const receivedDelta = Math.max(0, packetsReceived - previous.received);
+            const receivedDelta = Math.max(
+              0,
+              packetsReceived - previous.received,
+            );
             const total = lostDelta + receivedDelta;
             if (total > 0) packetLoss = lostDelta / total;
           }
@@ -277,7 +272,10 @@ export class WebRTCPeerManager {
 
           const pingMetrics = this.pathBalancer.getTelemetry(peer.peerId);
           const metrics: MeshLinkTelemetry = {
-            packetLoss: Math.max(packetLoss, this.pingTimeouts.has(peer.peerId) ? 0.1 : 0),
+            packetLoss: Math.max(
+              packetLoss,
+              this.pingTimeouts.has(peer.peerId) ? 0.1 : 0,
+            ),
             jitterMs: Math.max(jitterMs, pingMetrics?.jitterMs ?? 0),
             rttMs: Math.max(rttMs, pingMetrics?.rttMs ?? 0),
             sampledAt: Date.now(),
@@ -379,7 +377,10 @@ export class WebRTCPeerManager {
         typeof message.sentAt === "number"
       ) {
         peer.dataChannel.send(
-          JSON.stringify({ type: "mesh-telemetry-pong", sentAt: message.sentAt }),
+          JSON.stringify({
+            type: "mesh-telemetry-pong",
+            sentAt: message.sentAt,
+          }),
         );
       }
       return true;
@@ -412,11 +413,12 @@ export class WebRTCPeerManager {
 
     if (message.type === "key-exchange") {
       if (typeof message.publicKey === "string") {
-        void this.acceptPeerPublicKey(peerId, message.publicKey).catch((error) =>
-          console.error(
-            `[WebRTCPeerManager] Failed deriving a shared key for ${peerId}:`,
-            error,
-          ),
+        void this.acceptPeerPublicKey(peerId, message.publicKey).catch(
+          (error) =>
+            console.error(
+              `[WebRTCPeerManager] Failed deriving a shared key for ${peerId}:`,
+              error,
+            ),
         );
       }
       return true;
@@ -492,7 +494,9 @@ export class WebRTCPeerManager {
       message.sequence < 0 ||
       !Array.isArray(message.iv) ||
       message.iv.length !== 12 ||
-      !message.iv.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255) ||
+      !message.iv.every(
+        (byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255,
+      ) ||
       !Array.isArray(message.ciphertext) ||
       message.ciphertext.length === 0 ||
       message.ciphertext.length > 100_000 ||
@@ -505,7 +509,8 @@ export class WebRTCPeerManager {
 
     try {
       const sharedKey = await this.getSharedKeyForPeer(sourcePeerId);
-      if (!sharedKey) throw new Error(`No end-to-end key for peer ${sourcePeerId}`);
+      if (!sharedKey)
+        throw new Error(`No end-to-end key for peer ${sourcePeerId}`);
       const plaintext = await decryptChunk(
         {
           index: message.sequence,
@@ -545,7 +550,9 @@ export class WebRTCPeerManager {
       !Array.isArray(message.visited) ||
       message.visited.length === 0 ||
       message.visited.length > MAX_RELAY_HOPS + 1 ||
-      !message.visited.every((peer): peer is string => typeof peer === "string") ||
+      !message.visited.every(
+        (peer): peer is string => typeof peer === "string",
+      ) ||
       typeof message.hops !== "number" ||
       !Number.isInteger(message.hops) ||
       message.hops < 0 ||
@@ -619,7 +626,11 @@ export class WebRTCPeerManager {
     for (const [peerId, neighbors] of this.adjacency) {
       adjacency.set(
         peerId,
-        new Set(Array.from(neighbors).filter((neighbor) => !excludedPeers.has(neighbor))),
+        new Set(
+          Array.from(neighbors).filter(
+            (neighbor) => !excludedPeers.has(neighbor),
+          ),
+        ),
       );
     }
     const openNeighbors = new Set(
@@ -635,13 +646,13 @@ export class WebRTCPeerManager {
       adjacency,
       4,
       MAX_RELAY_HOPS,
-    ).filter((route) => this.peers.get(route.path[1])?.dataChannel?.readyState === "open");
+    ).filter(
+      (route) =>
+        this.peers.get(route.path[1])?.dataChannel?.readyState === "open",
+    );
   }
 
-  protected sendRelayToPeer(
-    peerId: string,
-    envelope: MeshRelayEnvelope,
-  ): void {
+  protected sendRelayToPeer(peerId: string, envelope: MeshRelayEnvelope): void {
     const peer = this.peers.get(peerId);
     if (!peer?.dataChannel || peer.dataChannel.readyState !== "open") {
       throw new Error(`Mesh relay next hop ${peerId} is not connected`);
@@ -665,7 +676,9 @@ export class WebRTCPeerManager {
         if (route.path.length === 2) {
           const peer = this.peers.get(nextPeerId);
           if (!peer?.dataChannel || peer.dataChannel.readyState !== "open") {
-            throw new Error(`Direct data channel to peer ${destination} is unavailable`);
+            throw new Error(
+              `Direct data channel to peer ${destination} is unavailable`,
+            );
           }
           peer.dataChannel.send(
             JSON.stringify({ ...payload, meshSequence: sequence }),
@@ -673,7 +686,9 @@ export class WebRTCPeerManager {
         } else {
           const sharedKey = await this.getSharedKeyForPeer(destination);
           if (!sharedKey) {
-            throw new Error(`No end-to-end encryption key for peer ${destination}`);
+            throw new Error(
+              `No end-to-end encryption key for peer ${destination}`,
+            );
           }
           const encrypted = await encryptChunk(
             new TextEncoder().encode(JSON.stringify(payload)),
@@ -722,7 +737,8 @@ export class WebRTCPeerManager {
       !Number.isInteger(sequence) ||
       sequence < 0
     ) {
-      for (const handler of this.messageHandlers) handler(sourcePeerId, payload);
+      for (const handler of this.messageHandlers)
+        handler(sourcePeerId, payload);
       return;
     }
 
@@ -942,6 +958,11 @@ export class WebRTCPeerManager {
   }
 
   protected setupDataChannel(channel: RTCDataChannel, peerId: string): void {
+    channel.binaryType = "arraybuffer";
+    try {
+      channel.bufferedAmountLowThreshold = 64 * 1024;
+    } catch {}
+
     channel.onopen = () => {
       const peer = this.peers.get(peerId);
       if (peer) {
@@ -973,6 +994,12 @@ export class WebRTCPeerManager {
 
     channel.onmessage = (event) => {
       try {
+        if (typeof event.data !== "string") {
+          for (const handler of this.messageHandlers) {
+            handler(peerId, event.data);
+          }
+          return;
+        }
         const data = JSON.parse(event.data);
         if (
           data &&
@@ -983,7 +1010,10 @@ export class WebRTCPeerManager {
         }
         this.dispatchTransferPayload(peerId, data as Record<string, unknown>);
       } catch (error) {
-        console.error(`[WebRTCPeerManager] Failed handling data from ${peerId}:`, error);
+        console.error(
+          `[WebRTCPeerManager] Failed handling data from ${peerId}:`,
+          error,
+        );
       }
     };
   }
@@ -1006,14 +1036,19 @@ export class WebRTCPeerManager {
     this.remotePublicKeys.set(peerId, publicKey);
     this.derivedSharedKeys.delete(peerId);
     const importedKey = await importPublicKey(publicKey);
-    const sharedKey = await deriveSharedKey(this.keyPair.privateKey, importedKey);
+    const sharedKey = await deriveSharedKey(
+      this.keyPair.privateKey,
+      importedKey,
+    );
     this.derivedSharedKeys.set(peerId, sharedKey);
     const peer = this.peers.get(peerId);
     if (peer) peer.sharedKey = sharedKey;
     this.broadcastTopology();
   }
 
-  protected async getSharedKeyForPeer(peerId: string): Promise<CryptoKey | null> {
+  protected async getSharedKeyForPeer(
+    peerId: string,
+  ): Promise<CryptoKey | null> {
     const directKey = this.peers.get(peerId)?.sharedKey;
     if (directKey) return directKey;
     const derivedKey = this.derivedSharedKeys.get(peerId);
@@ -1021,7 +1056,10 @@ export class WebRTCPeerManager {
     const publicKey = this.remotePublicKeys.get(peerId);
     if (!publicKey || !this.keyPair) return null;
     const importedKey = await importPublicKey(publicKey);
-    const sharedKey = await deriveSharedKey(this.keyPair.privateKey, importedKey);
+    const sharedKey = await deriveSharedKey(
+      this.keyPair.privateKey,
+      importedKey,
+    );
     this.derivedSharedKeys.set(peerId, sharedKey);
     return sharedKey;
   }
@@ -1105,9 +1143,8 @@ export class WebRTCPeerManager {
     }
 
     try {
-      const optimal = await this.pathBalancer.probeChannelMtu(
-        peerId,
-        (size) => this.sendMtuProbe(peerId, size),
+      const optimal = await this.pathBalancer.probeChannelMtu(peerId, (size) =>
+        this.sendMtuProbe(peerId, size),
       );
       if (peer) {
         peer.optimalChunkSize = optimal;
@@ -1240,10 +1277,7 @@ export class WebRTCPeerManager {
     for (const [peerId, peer] of this.peers.entries()) {
       peer.dataChannel?.close();
       peer.connection.close();
-      this.notifyLifecycleChange(
-        peerId,
-        ConnectionLifecycleState.DISCONNECTED,
-      );
+      this.notifyLifecycleChange(peerId, ConnectionLifecycleState.DISCONNECTED);
     }
     this.peers.clear();
     this.adjacency.clear();

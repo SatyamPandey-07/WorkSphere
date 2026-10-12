@@ -16,6 +16,7 @@ import {
   openCommandPalette,
   OPEN_COMMAND_PALETTE_EVENT,
 } from "@/hooks/usePlatformModifier";
+import { CockpitTargetingReticles } from "@/components/ui/QuickSearchTrigger";
 
 interface CommandItem {
   label: string;
@@ -174,11 +175,13 @@ export function CommandPaletteTrigger({
 export interface CommandPaletteProps {
   showTrigger?: boolean;
   triggerClassName?: string;
+  reducedMotion?: boolean;
 }
 
 export function CommandPalette({
   showTrigger = true,
   triggerClassName = "",
+  reducedMotion,
 }: CommandPaletteProps = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -261,62 +264,70 @@ export function CommandPalette({
       {isOpen && (
         <div className="fixed inset-0 z-[100] flex items-start justify-center pt-24 bg-black/50 backdrop-blur-sm">
           <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Command palette"
-            className="w-full max-w-lg mx-4 bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in fade-in zoom-in duration-150"
-            onKeyDown={handleKeyDown}
+            data-testid="command-palette-modal-wrapper"
+            className="relative w-full max-w-lg mx-4"
           >
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
-              <Search className="w-4 h-4 text-zinc-400 shrink-0" />
-              <input
-                autoFocus
-                value={query}
-                aria-keyshortcuts="Control+K Meta+K"
-                onChange={(e) => {
-                  // Strip control characters (<, >, HTML/script injection chars,
-                  // and non-printable chars) before storing the query.
-                  const sanitized = e.target.value
-                    .replace(/[<>"'`\x00-\x1F\x7F]/g, "")
-                    .slice(0, 200);
-                  setQuery(sanitized);
-                }}
-                placeholder="Jump to a page…"
-                className="w-full bg-transparent outline-none text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
-              />
-              <kbd className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-400 shrink-0">
-                Esc
-              </kbd>
-            </div>
+            {/* Cockpit corner targeting reticles */}
+            <CockpitTargetingReticles reducedMotion={reducedMotion} />
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Command palette"
+              data-reduced-motion={reducedMotion ? "true" : undefined}
+              className="relative w-full bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden animate-in fade-in zoom-in duration-150"
+              onKeyDown={handleKeyDown}
+            >
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
+                <Search className="w-4 h-4 text-zinc-400 shrink-0" />
+                <input
+                  autoFocus
+                  value={query}
+                  aria-keyshortcuts="Control+K Meta+K"
+                  onChange={(e) => {
+                    // Strip control characters (<, >, HTML/script injection chars,
+                    // and non-printable chars) before storing the query.
+                    const sanitized = e.target.value
+                      .replace(/[<>"'`\x00-\x1F\x7F]/g, "")
+                      .slice(0, 200);
+                    setQuery(sanitized);
+                  }}
+                  placeholder="Jump to a page…"
+                  className="w-full bg-transparent outline-none text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
+                />
+                <kbd className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 dark:border-zinc-700 text-zinc-400 shrink-0">
+                  Esc
+                </kbd>
+              </div>
 
-            <ul className="max-h-80 overflow-y-auto py-2">
-              {filtered.length === 0 && (
-                <li className="px-4 py-6 text-sm text-center text-zinc-400">
-                  No matching pages
-                </li>
-              )}
-              {filtered.map((item, index) => {
-                const Icon = item.icon;
-                const active = index === activeIndex;
-                return (
-                  <li key={`${item.href}-${item.label}`}>
-                    <button
-                      type="button"
-                      onClick={() => handleSelect(item.href)}
-                      onMouseEnter={() => setActiveIndex(index)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors ${
-                        active
-                          ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
-                          : "text-zinc-600 dark:text-zinc-400"
-                      }`}
-                    >
-                      <Icon className="w-4 h-4 shrink-0" />
-                      {item.label}
-                    </button>
+              <ul className="max-h-80 overflow-y-auto py-2">
+                {filtered.length === 0 && (
+                  <li className="px-4 py-6 text-sm text-center text-zinc-400">
+                    No matching pages
                   </li>
-                );
-              })}
-            </ul>
+                )}
+                {filtered.map((item, index) => {
+                  const Icon = item.icon;
+                  const active = index === activeIndex;
+                  return (
+                    <li key={`${item.href}-${item.label}`}>
+                      <button
+                        type="button"
+                        onClick={() => handleSelect(item.href)}
+                        onMouseEnter={() => setActiveIndex(index)}
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors ${
+                          active
+                            ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+                            : "text-zinc-600 dark:text-zinc-400"
+                        }`}
+                      >
+                        <Icon className="w-4 h-4 shrink-0" />
+                        {item.label}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </div>
         </div>
       )}

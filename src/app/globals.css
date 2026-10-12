@@ -939,3 +939,91 @@ html.high-contrast.dark kbd {
   border: 2px solid #ffffff !important;
   font-weight: 700 !important;
 }
+
+/* ─── Cockpit HUD Targeting Reticle Animations (Issue #6188) ──────── */
+@keyframes reticleSnapTL {
+  0% {
+    transform: translate(-14px, -14px) scale(1.15);
+    opacity: 0;
+  }
+  65% {
+    transform: translate(1px, 1px) scale(0.98);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes reticleSnapTR {
+  0% {
+    transform: translate(14px, -14px) scale(1.15);
+    opacity: 0;
+  }
+  65% {
+    transform: translate(-1px, 1px) scale(0.98);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes reticleSnapBL {
+  0% {
+    transform: translate(-14px, 14px) scale(1.15);
+    opacity: 0;
+  }
+  65% {
+    transform: translate(1px, -1px) scale(0.98);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes reticleSnapBR {
+  0% {
+    transform: translate(14px, 14px) scale(1.15);
+    opacity: 0;
+  }
+  65% {
+    transform: translate(-1px, -1px) scale(0.98);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-reticle-snap-tl {
+  animation: reticleSnapTL 0.38s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.animate-reticle-snap-tr {
+  animation: reticleSnapTR 0.38s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.animate-reticle-snap-bl {
+  animation: reticleSnapBL 0.38s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.animate-reticle-snap-br {
+  animation: reticleSnapBR 0.38s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-reticle-snap-tl,
+  .animate-reticle-snap-tr,
+  .animate-reticle-snap-bl,
+  .animate-reticle-snap-br {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+

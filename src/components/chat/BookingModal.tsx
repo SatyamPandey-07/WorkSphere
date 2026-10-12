@@ -258,7 +258,9 @@ export function BookingModal({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        onCloseRef.current();
+        if (!isSubmitting && !isSubmittingRef.current) {
+          onCloseRef.current();
+        }
         return;
       }
       if (event.key !== "Tab") return;
@@ -272,7 +274,7 @@ export function BookingModal({
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, step]);
+  }, [isOpen, step, isSubmitting]);
 
   const plannedDates = useMemo(
     () =>
@@ -296,6 +298,7 @@ export function BookingModal({
   };
 
   const handleBackdropClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (isSubmitting || isSubmittingRef.current) return;
     if (event.target !== event.currentTarget) return;
     if (
       shouldCloseFromBackdrop(

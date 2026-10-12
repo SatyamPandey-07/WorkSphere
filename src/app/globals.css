@@ -186,6 +186,7 @@ html.high-contrast .hard-light-pulse {
   --contrast-interactive-active: #2563eb;
   --primary-accent: #3b82f6;
   --primary-accent-rgb: 59, 130, 246;
+  --accent-lantern: #00ff88;
   color-scheme: light;
 }
 

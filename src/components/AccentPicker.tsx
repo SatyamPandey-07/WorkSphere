@@ -5,7 +5,7 @@ import { Check } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { ACCENT_OPTIONS, type AccentColor } from "@/lib/constants/theme";
 
-const ACCENT_NAVIGATION: AccentColor[] = ["blue", "purple", "emerald", "amber"];
+const ACCENT_NAVIGATION: AccentColor[] = ACCENT_OPTIONS.map((opt) => opt.name);
 
 export function AccentPicker() {
   const { accent, setAccent } = useTheme();

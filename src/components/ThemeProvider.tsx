@@ -87,6 +87,11 @@ function applyAccent(accent: AccentColor) {
   const hex = ACCENT_HEX_MAP[accent] || ACCENT_HEX_MAP[DEFAULT_ACCENT];
   root.style.setProperty("--primary-accent", hex);
   root.style.setProperty("--primary-accent-rgb", hexToRgb(hex));
+  if (accent === "lantern-emerald") {
+    root.style.setProperty("--accent-lantern", hex);
+  } else {
+    root.style.removeProperty("--accent-lantern");
+  }
 }
 
 function hexToRgb(hex: string): string {
@@ -131,7 +136,8 @@ export function ThemeProvider({
   const [accent, setAccentState] = useState<AccentColor>(() => {
     if (typeof window === "undefined") return initialAccent;
     const saved = window.localStorage.getItem(ACCENT_STORAGE_KEY);
-    return parseAccentColor(saved);
+    if (saved !== null) return parseAccentColor(saved);
+    return initialAccent;
   });
 
   const [highContrast, setHighContrastState] = useState<boolean>(() => {
@@ -193,6 +199,7 @@ export function ThemeProvider({
   const setAccent = useCallback((next: AccentColor) => {
     setAccentState(next);
     window.localStorage.setItem(ACCENT_STORAGE_KEY, next);
+    document.cookie = `${ACCENT_STORAGE_KEY}=${next}; path=/; max-age=31536000; SameSite=Lax`;
     applyAccent(next);
   }, []);
 

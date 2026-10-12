@@ -40,6 +40,9 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
     clearCanvas,
     addShape,
     updateShape,
+    acquireNoteLease,
+    releaseNoteLease,
+    noteLeaseOwners,
     updateCursor,
   } = useMeshCanvasWhiteboard(canvasId, {
     userName,
@@ -100,6 +103,10 @@ export function CanvasWhiteboard({ canvasId }: CanvasWhiteboardProps) {
         <StickyNotes
           notes={shapeSnapshots.filter((shape) => shape.type === "sticky")}
           onUpdate={handleUpdateShape}
+          onAcquireLease={acquireNoteLease}
+          onReleaseLease={releaseNoteLease}
+          noteLeaseOwners={noteLeaseOwners}
+          userId={userId}
         />
       </div>
     </div>

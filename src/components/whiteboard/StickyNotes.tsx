@@ -6,6 +6,10 @@ import type { ShapeData } from "@/hooks/useCanvasWhiteboard";
 interface StickyNotesProps {
   notes: ShapeData[];
   onUpdate: (id: string, updates: Partial<ShapeData>) => void;
+  onAcquireLease?: (noteId: string) => Promise<boolean>;
+  onReleaseLease?: (noteId: string) => void;
+  noteLeaseOwners?: Record<string, string>;
+  userId?: string;
 }
 
 const MIN_WIDTH = 160;
@@ -85,19 +89,57 @@ function MarkdownPreview({ markdown }: { markdown: string }) {
   );
 }
 
-export function StickyNotes({ notes, onUpdate }: StickyNotesProps) {
+export function StickyNotes({
+  notes,
+  onUpdate,
+  onAcquireLease,
+  onReleaseLease,
+  noteLeaseOwners = {},
+  userId,
+}: StickyNotesProps) {
   return (
     <div className="pointer-events-none absolute inset-0 z-10">
       {notes.map((note) => (
-        <StickyNote key={note.id} note={note} onUpdate={onUpdate} />
+        <StickyNote
+          key={note.id}
+          note={note}
+          onUpdate={onUpdate}
+          onAcquireLease={onAcquireLease}
+          onReleaseLease={onReleaseLease}
+          lockedByOther={Boolean(
+            noteLeaseOwners[note.id] &&
+              noteLeaseOwners[note.id] !== userId,
+          )}
+        />
       ))}
     </div>
   );
 }
 
-function StickyNote({ note, onUpdate }: { note: ShapeData; onUpdate: StickyNotesProps["onUpdate"] }) {
+function StickyNote({
+  note,
+  onUpdate,
+  onAcquireLease,
+  onReleaseLease,
+  lockedByOther,
+}: {
+  note: ShapeData;
+  onUpdate: StickyNotesProps["onUpdate"];
+  onAcquireLease: StickyNotesProps["onAcquireLease"];
+  onReleaseLease: StickyNotesProps["onReleaseLease"];
+  lockedByOther: boolean;
+}) {
   const bounds = getBounds(note);
   const dragStart = useRef<{ clientX: number; clientY: number; x: number; y: number } | null>(null);
+  const pendingDrag = useRef<{
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    latestX: number;
+    latestY: number;
+    cancelled: boolean;
+  } | null>(null);
   const resizeStart = useRef<{ clientX: number; clientY: number; width: number; height: number } | null>(null);
 
   const updatePoints = useCallback(
@@ -107,20 +149,64 @@ function StickyNote({ note, onUpdate }: { note: ShapeData; onUpdate: StickyNotes
     [note.id, onUpdate],
   );
 
-  const handleDragStart = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handleDragStart = async (event: React.PointerEvent<HTMLDivElement>) => {
+    if (lockedByOther) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture?.(event.pointerId);
     const clientX = Number.isFinite(event.clientX) ? event.clientX : 0;
     const clientY = Number.isFinite(event.clientY) ? event.clientY : 0;
-    dragStart.current = {
-      clientX,
-      clientY,
+    const request = {
+      startX: clientX,
+      startY: clientY,
       x: bounds.x,
       y: bounds.y,
+      latestX: clientX,
+      latestY: clientY,
+      cancelled: false,
     };
+    pendingDrag.current = request;
+
+    if (!onAcquireLease) {
+      pendingDrag.current = null;
+      dragStart.current = {
+        clientX: request.startX,
+        clientY: request.startY,
+        x: request.x,
+        y: request.y,
+      };
+      return;
+    }
+
+    const granted = await onAcquireLease(note.id);
+    if (pendingDrag.current !== request || request.cancelled || !granted) {
+      if (granted) onReleaseLease?.(note.id);
+      if (pendingDrag.current === request) pendingDrag.current = null;
+      return;
+    }
+
+    pendingDrag.current = null;
+    dragStart.current = {
+      clientX: request.startX,
+      clientY: request.startY,
+      x: request.x,
+      y: request.y,
+    };
+    if (request.latestX !== request.startX || request.latestY !== request.startY) {
+      updatePoints(
+        request.x + request.latestX - request.startX,
+        request.y + request.latestY - request.startY,
+        bounds.width,
+        bounds.height,
+      );
+    }
   };
 
   const handleDragMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (pendingDrag.current) {
+      pendingDrag.current.latestX = event.clientX;
+      pendingDrag.current.latestY = event.clientY;
+      return;
+    }
     if (!dragStart.current) return;
     const clientX = Number.isFinite(event.clientX)
       ? event.clientX
@@ -137,7 +223,14 @@ function StickyNote({ note, onUpdate }: { note: ShapeData; onUpdate: StickyNotes
   };
 
   const handleDragEnd = () => {
+    const pending = pendingDrag.current;
+    if (pending) {
+      pending.cancelled = true;
+      pendingDrag.current = null;
+    }
+    const held = dragStart.current !== null;
     dragStart.current = null;
+    if (held) onReleaseLease?.(note.id);
   };
 
   const handleResizeStart = (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -199,6 +292,7 @@ function StickyNote({ note, onUpdate }: { note: ShapeData; onUpdate: StickyNotes
           <textarea
             aria-label={`Edit sticky note ${note.id}`}
             value={note.text ?? ""}
+            disabled={lockedByOther}
             onChange={(event) => onUpdate(note.id, { text: event.target.value })}
             className="min-h-0 min-w-0 resize-none rounded border border-amber-300/60 bg-amber-50/70 p-1 text-xs outline-none focus:ring-1 focus:ring-amber-500 dark:bg-amber-100/70"
           />
@@ -211,6 +305,7 @@ function StickyNote({ note, onUpdate }: { note: ShapeData; onUpdate: StickyNotes
         type="button"
         aria-label={`Resize sticky note ${note.id}`}
         className="absolute bottom-0 right-0 h-4 w-4 cursor-se-resize bg-amber-400/70"
+        disabled={lockedByOther}
         onPointerDown={handleResizeStart}
         onPointerMove={handleResizeMove}
         onPointerUp={handleResizeEnd}

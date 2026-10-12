@@ -44,11 +44,14 @@ export interface WhiteboardParticipant {
 export interface CanvasWhiteboardState {
   addShape: (shape: ShapeData) => void;
   updateShape: (id: string, updates: Partial<ShapeData>) => void;
+  acquireNoteLease: (noteId: string) => Promise<boolean>;
+  releaseNoteLease: (noteId: string) => void;
   deleteShape?: (id: string) => void;
   broadcastStroke: (id: string, points: number[]) => void;
   bufferStrokePoints?: (id: string, points: number[]) => void;
   flushStrokeBuffer?: (id?: string) => void;
   shapeSnapshots: ShapeData[];
+  noteLeaseOwners: Record<string, string>;
   remoteCursors: RemoteCursor[];
   participants: WhiteboardParticipant[];
   tool: ToolType;

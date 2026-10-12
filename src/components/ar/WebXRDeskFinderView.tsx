@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import * as THREE from "three";
 import {
   Camera,
   Navigation,
@@ -15,6 +16,8 @@ import {
   Crosshair,
   Anchor,
   Scan,
+  CircleDot,
+  Zap,
 } from "lucide-react";
 import {
   calculate3DDistance,
@@ -26,6 +29,100 @@ import {
   type PositioningSensorMetrics,
   type PositioningSourceMode,
 } from "@/lib/spatial/arWayfindingEngine";
+
+/**
+ * Custom Emerald Emissive Bloom Shader for Green Lantern Power Ring Construct.
+ */
+export const EmeraldPowerRingShader = {
+  uniforms: {
+    time: { value: 0 },
+    emissiveColor: { value: new THREE.Color(0x10b981) }, // Emerald #10b981
+    coreColor: { value: new THREE.Color(0xa7f3d0) }, // Glowing Core #a7f3d0
+    pulseIntensity: { value: 1.5 },
+  },
+  vertexShader: `
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying vec2 vUv;
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform float time;
+    uniform vec3 emissiveColor;
+    uniform vec3 coreColor;
+    uniform float pulseIntensity;
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying vec2 vUv;
+    void main() {
+      vec3 viewDir = normalize(-vPosition);
+      float fresnel = pow(1.0 - max(0.0, dot(viewDir, vNormal)), 2.5);
+      float pulse = 0.8 + 0.3 * sin(time * 3.5);
+      vec3 glow = mix(emissiveColor, coreColor, fresnel * 0.7);
+      float alpha = clamp((0.6 + fresnel * 0.4) * pulse * pulseIntensity, 0.0, 1.0);
+      gl_FragColor = vec4(glow * (1.2 + fresnel), alpha);
+    }
+  `,
+};
+
+/**
+ * Creates 3D Green Lantern Power Ring construct mesh with custom emissive bloom shader
+ * and laser pointer beam projecting onto the targeted desk plane.
+ */
+export function createPowerRingConstructGroup(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "power-ring-construct";
+
+  // Outer primary power ring construct
+  const ringGeo = new THREE.TorusGeometry(0.14, 0.022, 24, 48);
+  const ringMat = new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 },
+      emissiveColor: { value: new THREE.Color(0x10b981) },
+      coreColor: { value: new THREE.Color(0xa7f3d0) },
+      pulseIntensity: { value: 1.5 },
+    },
+    vertexShader: EmeraldPowerRingShader.vertexShader,
+    fragmentShader: EmeraldPowerRingShader.fragmentShader,
+    transparent: true,
+    side: THREE.DoubleSide,
+  });
+  const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+  ringMesh.name = "power-ring-mesh";
+  group.add(ringMesh);
+
+  // Inner concentric power ring construct
+  const innerGeo = new THREE.TorusGeometry(0.075, 0.012, 16, 32);
+  const innerMesh = new THREE.Mesh(innerGeo, ringMat.clone());
+  innerMesh.name = "power-ring-inner-mesh";
+  group.add(innerMesh);
+
+  // Laser pointer beam projecting down onto the targeted desk plane
+  const beamLength = 0.8;
+  const beamGeo = new THREE.CylinderGeometry(0.003, 0.016, beamLength, 16);
+  beamGeo.translate(0, -beamLength / 2, 0); // Origin at top of laser beam
+  const beamMat = new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 },
+      emissiveColor: { value: new THREE.Color(0x34d399) },
+      coreColor: { value: new THREE.Color(0xecfdf5) },
+      pulseIntensity: { value: 1.8 },
+    },
+    vertexShader: EmeraldPowerRingShader.vertexShader,
+    fragmentShader: EmeraldPowerRingShader.fragmentShader,
+    transparent: true,
+  });
+  const beamMesh = new THREE.Mesh(beamGeo, beamMat);
+  beamMesh.name = "power-ring-laser-beam";
+  group.add(beamMesh);
+
+  return group;
+}
 
 /**
  * Calculates HUD badge opacity smoothly fading when distance <= 1.5m.
@@ -133,6 +230,8 @@ export default function WebXRDeskFinderView({
 
   const xrSessionRef = useRef<any>(null);
   const hitTestSourceRef = useRef<any>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const threeGroupRef = useRef<THREE.Group | null>(null);
 
   const kalmanFilterRef = useRef<AdaptiveWayfindingKalmanFilter | null>(null);
   if (!kalmanFilterRef.current) {
@@ -145,6 +244,87 @@ export default function WebXRDeskFinderView({
 
   // Video feed ref for real camera if permissions granted
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Three.js 3D WebGL Scene & Power Ring Construct Setup
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || typeof window === "undefined") return;
+
+    let renderer: THREE.WebGLRenderer | null = null;
+    let animId: number | null = null;
+
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        alpha: true,
+        antialias: true,
+      });
+      renderer.setSize(canvas.clientWidth || 800, canvas.clientHeight || 520);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        60,
+        (canvas.clientWidth || 800) / (canvas.clientHeight || 520),
+        0.1,
+        100,
+      );
+      camera.position.set(0, 0, 1.8);
+
+      const group = createPowerRingConstructGroup();
+      threeGroupRef.current = group;
+      scene.add(group);
+
+      const clock = new THREE.Clock();
+
+      const animate = () => {
+        const delta = clock.getDelta();
+        const elapsed = clock.getElapsedTime();
+
+        // Animate custom shader uniforms for emissive bloom pulse
+        group.traverse((obj) => {
+          if ((obj as THREE.Mesh).material) {
+            const mat = (obj as THREE.Mesh).material as THREE.ShaderMaterial;
+            if (mat.uniforms && mat.uniforms.time) {
+              mat.uniforms.time.value = elapsed;
+            }
+          }
+        });
+
+        // Float and pulse power ring in 3D camera space
+        group.rotation.y += delta * 0.8;
+        group.rotation.z = Math.sin(elapsed * 2.0) * 0.15;
+
+        // Position: tracks tabletop plane coordinates from WebXR hit test or snaps when anchored
+        const targetPos = isAnchored
+          ? anchoredPosition
+          : (hitTestResult?.position ?? { x: 0, y: -0.4, z: -1.8 });
+
+        if (targetPos) {
+          const hoverY = isAnchored
+            ? targetPos.y + 0.15
+            : targetPos.y + 0.35 + Math.sin(elapsed * 3.0) * 0.05;
+          group.position.set(targetPos.x * 0.5, hoverY, targetPos.z * 0.5);
+        }
+
+        renderer?.render(scene, camera);
+        animId = requestAnimationFrame(animate);
+      };
+
+      animId = requestAnimationFrame(animate);
+    } catch {
+      // Non-WebGL / test environment fallback
+    }
+
+    return () => {
+      if (animId) cancelAnimationFrame(animId);
+      try {
+        renderer?.dispose();
+      } catch {
+        // cleanup safe
+      }
+    };
+  }, [isAnchored, anchoredPosition, hitTestResult]);
 
   const fetchARRoute = useCallback(async () => {
     setLoading(true);
@@ -476,6 +656,48 @@ export default function WebXRDeskFinderView({
           {/* Perspective 3D Hallway Grid Simulation */}
           <div className="absolute inset-0 bg-[radial-gradient(#0ea5e9_1px,transparent_1px)] [background-size:24px_24px] opacity-20 pointer-events-none" />
 
+          {/* 3D WebGL Holographic Power Ring Canvas */}
+          <canvas
+            ref={canvasRef}
+            data-testid="webxr-power-ring-canvas"
+            className="absolute inset-0 w-full h-full pointer-events-none z-10"
+          />
+
+          {/* 3D Holographic Power Ring Construct Reticle Floating in 3D Camera Space */}
+          {hitTestActive && !isAnchored && (
+            <div
+              data-testid="power-ring-construct-reticle"
+              style={{
+                transform: `perspective(600px) translate3d(${cameraOffset.x * 35}px, ${cameraOffset.y * 20 - 35}px, 0)`,
+              }}
+              className="absolute top-24 flex flex-col items-center justify-center pointer-events-none transition-transform duration-200 z-10"
+            >
+              {/* Floating Pulsing 3D Power Ring Torus Construct */}
+              <div className="relative flex items-center justify-center w-28 h-28 rounded-full border-2 border-emerald-400 bg-emerald-500/10 shadow-[0_0_35px_rgba(16,185,129,0.8)] animate-pulse">
+                <div className="w-16 h-16 rounded-full border border-emerald-300/80 flex items-center justify-center">
+                  <CircleDot
+                    className="w-8 h-8 text-emerald-300 animate-spin"
+                    style={{ animationDuration: "10s" }}
+                  />
+                </div>
+                {/* Halo pulse ring */}
+                <span className="absolute -inset-2 rounded-full border border-emerald-400/40 animate-ping" />
+              </div>
+
+              {/* Laser Pointer Beam Projecting Down onto Targeted Desk Plane */}
+              <div
+                data-testid="power-ring-laser-beam"
+                className="w-1 h-32 bg-gradient-to-b from-emerald-400 via-emerald-300/80 to-transparent shadow-[0_0_15px_rgba(52,211,153,0.9)] animate-pulse"
+              />
+
+              {/* Power Ring Construct Telemetry Banner */}
+              <div className="mt-1 px-3 py-1 rounded-full bg-slate-950/90 border border-emerald-400/60 text-emerald-300 text-[10px] font-mono font-bold shadow-lg shadow-emerald-950/60 flex items-center gap-1.5 backdrop-blur-md">
+                <Zap className="w-3 h-3 text-emerald-400 animate-pulse" />
+                <span>POWER RING CONSTRUCT // EMERALD EMISSIVE BLOOM</span>
+              </div>
+            </div>
+          )}
+
           {/* Floating Glowing AR Waypoint Markers */}
           <div className="absolute flex flex-col items-center justify-center space-y-3 transition-all duration-500">
             {/* Floating Distance & Estimated Walking Time HUD Badge above the Target Desk */}
@@ -596,6 +818,13 @@ export default function WebXRDeskFinderView({
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold border border-emerald-500/40">
                   <Anchor className="w-3 h-3 text-emerald-400" />
                   <span>TABLETOP ANCHOR CONFIRMED</span>
+                </div>
+                <div
+                  data-testid="power-ring-construct-snapped"
+                  className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono border border-emerald-500/50"
+                >
+                  <Zap className="w-3 h-3 text-emerald-400" />
+                  <span>CONSTRUCT SNAPPED TO DESK COORDINATES</span>
                 </div>
                 <h3 className="text-base font-extrabold text-white">
                   {targetSeatNumber}

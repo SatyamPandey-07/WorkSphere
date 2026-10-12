@@ -1,8 +1,129 @@
 import React from "react";
 import { render, screen, fireEvent, act, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
+
+// Mock Three.js for JSDOM test environment
+jest.mock("three", () => {
+  class Vector3 {
+    x: number;
+    y: number;
+    z: number;
+    constructor(x = 0, y = 0, z = 0) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+    }
+    set(x: number, y: number, z: number) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+      return this;
+    }
+  }
+  class Color {
+    r: number;
+    g: number;
+    b: number;
+    constructor(_hex = 0) {
+      this.r = 0;
+      this.g = 1;
+      this.b = 0;
+    }
+  }
+  class Object3D {
+    position = new Vector3();
+    rotation = new Vector3();
+    scale = new Vector3(1, 1, 1);
+    children: any[] = [];
+    name = "";
+    add(...objs: any[]) {
+      this.children.push(...objs);
+      return this;
+    }
+    traverse(cb: any) {
+      cb(this);
+      this.children.forEach((c) => c.traverse?.(cb));
+    }
+    getObjectByName(name: string): any {
+      for (const c of this.children) {
+        if (c.name === name) return c;
+        if (c.getObjectByName) {
+          const res = c.getObjectByName(name);
+          if (res) return res;
+        }
+      }
+      return null;
+    }
+  }
+  class Group extends Object3D {}
+  class Scene extends Object3D {}
+  class PerspectiveCamera extends Object3D {
+    position = new Vector3();
+  }
+  class Mesh extends Object3D {
+    geometry: any;
+    material: any;
+    constructor(geo?: any, mat?: any) {
+      super();
+      this.geometry = geo;
+      this.material = mat;
+    }
+  }
+  class TorusGeometry {
+    radius: number;
+    tube: number;
+    constructor(r = 0.14, t = 0.02) {
+      this.radius = r;
+      this.tube = t;
+    }
+  }
+  class CylinderGeometry {
+    translate = jest.fn();
+  }
+  class ShaderMaterial {
+    uniforms: any;
+    vertexShader?: string;
+    fragmentShader?: string;
+    constructor(opts: any = {}) {
+      this.uniforms = opts.uniforms || {};
+      this.vertexShader = opts.vertexShader;
+      this.fragmentShader = opts.fragmentShader;
+    }
+    clone() {
+      return new ShaderMaterial({ uniforms: { ...this.uniforms } });
+    }
+  }
+  class WebGLRenderer {
+    setSize = jest.fn();
+    setPixelRatio = jest.fn();
+    render = jest.fn();
+    dispose = jest.fn();
+  }
+  class Clock {
+    getDelta = jest.fn().mockReturnValue(0.016);
+    getElapsedTime = jest.fn().mockReturnValue(1.0);
+  }
+  return {
+    Vector3,
+    Color,
+    Object3D,
+    Group,
+    Scene,
+    PerspectiveCamera,
+    Mesh,
+    TorusGeometry,
+    CylinderGeometry,
+    ShaderMaterial,
+    WebGLRenderer,
+    Clock,
+    DoubleSide: 2,
+  };
+});
+
 import WebXRDeskFinderView, {
   calculateSurfaceNormal,
+  createPowerRingConstructGroup,
+  EmeraldPowerRingShader,
 } from "@/components/ar/WebXRDeskFinderView";
 
 describe("WebXRDeskFinderView Surface Hit-Testing & Tabletop Anchoring (#5814)", () => {
@@ -240,6 +361,74 @@ describe("WebXRDeskFinderView Surface Hit-Testing & Tabletop Anchoring (#5814)",
         screen.queryByTestId("anchored-desk-badge"),
       ).not.toBeInTheDocument();
       expect(screen.getByTestId("ar-hit-test-reticle")).toBeInTheDocument();
+    });
+  });
+
+  describe("3D Holographic Power Ring Construct Reticle & Emissive Bloom Shader", () => {
+    it("creates 3D power ring mesh with custom emissive bloom shader and laser pointer beam", () => {
+      const ringGroup = createPowerRingConstructGroup();
+      expect(ringGroup.name).toBe("power-ring-construct");
+
+      const ringMesh = ringGroup.getObjectByName("power-ring-mesh");
+      const innerMesh = ringGroup.getObjectByName("power-ring-inner-mesh");
+      const laserBeam = ringGroup.getObjectByName("power-ring-laser-beam");
+
+      expect(ringMesh).toBeDefined();
+      expect(innerMesh).toBeDefined();
+      expect(laserBeam).toBeDefined();
+
+      // Verify custom shader uniforms and emerald emissive bloom
+      expect(EmeraldPowerRingShader.uniforms.emissiveColor.value.r).toBeCloseTo(
+        0,
+      );
+      expect(EmeraldPowerRingShader.uniforms.pulseIntensity.value).toBe(1.5);
+      expect(ringMesh.material.uniforms.emissiveColor).toBeDefined();
+      expect(ringMesh.material.uniforms.coreColor).toBeDefined();
+      expect(ringMesh.material.uniforms.time).toBeDefined();
+    });
+
+    it("renders floating 3D power ring construct reticle, WebGL canvas, and laser pointer beam in camera AR space", async () => {
+      await act(async () => {
+        render(<WebXRDeskFinderView autoStartHitTest={true} />);
+      });
+
+      expect(screen.getByTestId("webxr-power-ring-canvas")).toBeInTheDocument();
+      const ringReticle = screen.getByTestId("power-ring-construct-reticle");
+      expect(ringReticle).toBeInTheDocument();
+
+      const laserBeam = screen.getByTestId("power-ring-laser-beam");
+      expect(laserBeam).toBeInTheDocument();
+
+      expect(
+        screen.getByText(/POWER RING CONSTRUCT \/\/ EMERALD EMISSIVE BLOOM/i),
+      ).toBeInTheDocument();
+    });
+
+    it("snaps holographic power ring construct onto confirmed desk coordinates when anchored", async () => {
+      await act(async () => {
+        render(
+          <WebXRDeskFinderView
+            autoStartHitTest={true}
+            targetSeatNumber="Desk B-08 (Window Pod)"
+          />,
+        );
+      });
+
+      const anchorBtn = screen.getByTestId("anchor-desk-badge-btn");
+      await act(async () => {
+        fireEvent.click(anchorBtn);
+      });
+
+      // Reticle hides and construct snaps to desk coordinates badge
+      expect(
+        screen.queryByTestId("power-ring-construct-reticle"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId("power-ring-construct-snapped"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(/CONSTRUCT SNAPPED TO DESK COORDINATES/i),
+      ).toBeInTheDocument();
     });
   });
 });

@@ -179,12 +179,33 @@ export class CrdtDocument {
       const existingClock = new CrdtVectorClock(existingOp.vectorClock);
       const incomingClock = new CrdtVectorClock(op.vectorClock);
 
-      // If incoming is older or concurrent but lower nodeId, reject
-      if (incomingClock.compare(existingClock.getClock()) === "before") {
+      const relation = incomingClock.compare(existingClock.getClock());
+
+      // If incoming is older or has lower Lamport timestamp, reject
+      if (relation === "before") {
         return false;
       }
-      if (incomingClock.compare(existingClock.getClock()) === "concurrent") {
+
+      // If identical vector clocks:
+      if (relation === "equal") {
+        if (op.nodeId === existingOp.nodeId) {
+          // Idempotent rejection of exact duplicate operation
+          return false;
+        }
         if (op.nodeId < existingOp.nodeId) {
+          return false;
+        }
+        if (op.nodeId === existingOp.nodeId && op.timestamp <= existingOp.timestamp) {
+          return false;
+        }
+      }
+
+      // If concurrent with equal Lamport timestamp: tie-break deterministically
+      if (relation === "concurrent") {
+        if (op.nodeId < existingOp.nodeId) {
+          return false;
+        }
+        if (op.nodeId === existingOp.nodeId && op.timestamp <= existingOp.timestamp) {
           return false;
         }
       }
@@ -197,6 +218,13 @@ export class CrdtDocument {
     this.state.vectorClock = currentClock.getClock();
 
     return true;
+  }
+
+  /**
+   * Merges a batch of remote operations in order, returning boolean status for each (#5277).
+   */
+  public mergeRemoteOperations(ops: CrdtOperation[]): boolean[] {
+    return ops.map((op) => this.mergeRemoteOperation(op));
   }
 
   public getState(): CrdtState {

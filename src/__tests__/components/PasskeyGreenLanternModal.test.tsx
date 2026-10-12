@@ -160,6 +160,12 @@ describe("GreenLanternBatteryModal and PasskeyManager Biometric Ceremony", () =>
       );
 
       expect(screen.getByTestId("green-shockwave")).toBeInTheDocument();
+      expect(screen.getByTestId("green-lantern-ring-icon")).toBeInTheDocument();
+      expect(screen.getByTestId("ring-illumination")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("hard-light-construct-flare"),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId("reduced-motion-fallback")).toBeInTheDocument();
       expect(screen.getByTestId("biometric-state-indicator")).toHaveTextContent(
         /Willpower Verified \/\/ Access Granted/i,
       );

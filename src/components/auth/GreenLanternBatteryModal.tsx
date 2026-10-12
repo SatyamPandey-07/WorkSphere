@@ -170,6 +170,198 @@ export function GreenLanternEmblem({
   );
 }
 
+/**
+ * 3D Green Lantern Power Ring Icon with dynamic illumination, hard-light construct flare,
+ * and graceful non-flashing fallback for prefers-reduced-motion.
+ */
+export function GreenLanternRingIcon({
+  state,
+  className = "",
+}: {
+  state: BiometricVerificationState;
+  className?: string;
+}) {
+  const isCharging = state === "initiating" || state === "waiting";
+  const isSuccess = state === "success";
+  const isFailed = state === "failed";
+
+  return (
+    <div
+      data-testid="green-lantern-ring-icon"
+      className={`relative flex items-center justify-center select-none ${className}`}
+    >
+      {/* Hard-Light Construct Flare upon Successful Biometric Attestation */}
+      {isSuccess && (
+        <div
+          data-testid="hard-light-construct-flare"
+          className="absolute -inset-8 sm:-inset-12 flex items-center justify-center pointer-events-none motion-reduce:animate-none"
+        >
+          {/* Radial Construct Starburst Rays */}
+          <div
+            className="absolute inset-0 rounded-full animate-spin motion-reduce:animate-none opacity-80"
+            style={{
+              animationDuration: "8s",
+              background:
+                "conic-gradient(from 0deg, transparent 0deg, rgba(52,211,153,0.6) 20deg, transparent 40deg, rgba(16,185,129,0.7) 90deg, transparent 110deg, rgba(167,243,208,0.8) 180deg, transparent 200deg, rgba(52,211,153,0.6) 270deg, transparent 290deg)",
+              filter: "blur(4px)",
+            }}
+          />
+          {/* Concentric Flare Shockwave Ring */}
+          <div
+            className="absolute inset-0 rounded-full border-2 border-emerald-300 animate-ping motion-reduce:animate-none motion-reduce:opacity-60"
+            style={{
+              animationDuration: "1.4s",
+              boxShadow: "0 0 50px rgba(52, 211, 153, 0.9)",
+            }}
+          />
+        </div>
+      )}
+
+      {/* Reduced-Motion Graceful Non-Flashing Fallback Indicator */}
+      <div
+        data-testid="reduced-motion-fallback"
+        className="hidden motion-reduce:block absolute inset-0 rounded-full bg-emerald-500/20 border border-emerald-400/40 pointer-events-none"
+      />
+
+      {/* 3D Ring Isometric Volumetric Energy Halo */}
+      <div
+        className={`absolute inset-0 rounded-full blur-2xl transition-all duration-700 pointer-events-none ${
+          isSuccess
+            ? "bg-emerald-400/80 scale-150 motion-reduce:scale-110"
+            : isFailed
+              ? "bg-rose-500/40 scale-100"
+              : isCharging
+                ? "bg-emerald-500/50 animate-pulse motion-reduce:animate-none scale-120"
+                : "bg-emerald-600/30 scale-95"
+        }`}
+      />
+
+      {/* Ring Illumination Wrapper */}
+      <div
+        data-testid="ring-illumination"
+        className={`relative z-10 transition-transform duration-500 ${
+          isSuccess
+            ? "scale-110 motion-reduce:scale-100"
+            : isCharging
+              ? "animate-pulse motion-reduce:animate-none"
+              : ""
+        }`}
+      >
+        {/* SVG 3D Power Ring Construct */}
+        <svg
+          viewBox="0 0 100 100"
+          className="w-24 h-24 sm:w-28 sm:h-28 drop-shadow-[0_0_20px_rgba(16,185,129,0.8)]"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          data-testid="green-lantern-ring-svg"
+        >
+          <defs>
+            <linearGradient
+              id="ring-metal-band"
+              x1="0%"
+              y1="0%"
+              x2="100%"
+              y2="100%"
+            >
+              <stop offset="0%" stopColor={isFailed ? "#991b1b" : "#064e3b"} />
+              <stop offset="40%" stopColor={isFailed ? "#ef4444" : "#10b981"} />
+              <stop offset="70%" stopColor={isFailed ? "#f87171" : "#34d399"} />
+              <stop
+                offset="100%"
+                stopColor={isFailed ? "#7f1d1d" : "#022c22"}
+              />
+            </linearGradient>
+
+            <linearGradient
+              id="ring-face-bezel"
+              x1="0%"
+              y1="0%"
+              x2="0%"
+              y2="100%"
+            >
+              <stop offset="0%" stopColor={isFailed ? "#f87171" : "#a7f3d0"} />
+              <stop offset="50%" stopColor={isFailed ? "#ef4444" : "#10b981"} />
+              <stop
+                offset="100%"
+                stopColor={isFailed ? "#991b1b" : "#064e3b"}
+              />
+            </linearGradient>
+
+            <radialGradient id="ring-core-energy" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={isFailed ? "#fee2e2" : "#ffffff"} />
+              <stop offset="35%" stopColor={isFailed ? "#fca5a5" : "#a7f3d0"} />
+              <stop offset="70%" stopColor={isFailed ? "#ef4444" : "#10b981"} />
+              <stop
+                offset="100%"
+                stopColor={isFailed ? "#991b1b" : "#047857"}
+              />
+            </radialGradient>
+          </defs>
+
+          {/* 3D Ring Band Shanks (Torus Silhouette) */}
+          <ellipse
+            cx="50"
+            cy="68"
+            rx="32"
+            ry="18"
+            stroke="url(#ring-metal-band)"
+            strokeWidth="9"
+            fill="none"
+          />
+
+          {/* Raised Signet Ring Bezel Platform */}
+          <polygon
+            points="32,32 68,32 76,52 24,52"
+            fill="url(#ring-face-bezel)"
+            stroke={isFailed ? "#ef4444" : "#34d399"}
+            strokeWidth="2"
+          />
+
+          {/* Central Signet Ring Circular Enclosure */}
+          <circle
+            cx="50"
+            cy="42"
+            r="16"
+            fill={
+              isSuccess ? "url(#ring-core-energy)" : "url(#ring-metal-band)"
+            }
+            stroke={isFailed ? "#ef4444" : "#a7f3d0"}
+            strokeWidth="2.5"
+          />
+
+          {/* Green Lantern Ring Emblem Flanges */}
+          <rect
+            x="36"
+            y="29"
+            width="28"
+            height="3.5"
+            rx="1.5"
+            fill={isFailed ? "#fee2e2" : "#ecfdf5"}
+          />
+          <rect
+            x="36"
+            y="51.5"
+            width="28"
+            height="3.5"
+            rx="1.5"
+            fill={isFailed ? "#fee2e2" : "#ecfdf5"}
+          />
+
+          {/* Inner Hard-Light Aperture Circle */}
+          <circle
+            cx="50"
+            cy="42"
+            r="8"
+            fill="url(#ring-core-energy)"
+            stroke={isFailed ? "#f87171" : "#ecfdf5"}
+            strokeWidth="1.5"
+          />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 export function GreenLanternBatteryModal({
   isOpen,
   state,
@@ -244,9 +436,10 @@ export function GreenLanternBatteryModal({
           </p>
         </div>
 
-        {/* Glowing Green Lantern Power Battery Emblem */}
-        <div className="py-4 flex justify-center">
+        {/* Glowing Green Lantern Power Battery Emblem & 3D Power Ring Construct */}
+        <div className="py-2 sm:py-4 flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
           <GreenLanternEmblem state={state} />
+          <GreenLanternRingIcon state={state} />
         </div>
 
         {/* Biometric Verification State Badge */}

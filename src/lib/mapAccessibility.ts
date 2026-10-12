@@ -34,3 +34,26 @@ export function getVenueShape(category?: string): HighContrastShape {
   // Cafe: circle (also default)
   return "circle";
 }
+
+/**
+ * Returns a screen-reader friendly description of the geometric shape glyph.
+ */
+export function getShapeAriaDescription(shape: HighContrastShape): string {
+  switch (shape) {
+    case "square":
+      return "Square glyph (Coworking/Workspace)";
+    case "diamond":
+      return "Diamond glyph (Library/Study zone)";
+    case "circle":
+    default:
+      return "Circle glyph (Cafe/Coffee)";
+  }
+}
+
+/**
+ * Returns the CSS class for the high-contrast shape pin styling.
+ */
+export function getHighContrastIconClass(category?: string): string {
+  const shape = getVenueShape(category);
+  return `hc-shape-${shape}`;
+}

@@ -40,8 +40,8 @@ export const AccessibleMarker = memo(
     zIndexOffset = 0,
     onClick,
   }: AccessibleMarkerProps) {
-    console.count(`Rendered marker: ${name}`);
     const markerRef = useRef<LeafletMarker | null>(null);
+
     const popupEscapeHandlerRef = useRef<
       ((event: KeyboardEvent) => void) | null
     >(null);

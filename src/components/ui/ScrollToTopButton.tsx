@@ -17,12 +17,22 @@ export const SCROLL_THRESHOLD_PX = 300;
  *  - Fully keyboard-navigable (focus-visible ring)
  *  - Respects prefers-reduced-motion via CSS (globals.css already handles this)
  */
-export function ScrollToTopButton() {
+export interface ScrollToTopButtonProps {
+  threshold?: number;
+  className?: string;
+  ariaLabel?: string;
+}
+
+export function ScrollToTopButton({
+  threshold = SCROLL_THRESHOLD_PX,
+  className = "",
+  ariaLabel = "Scroll to top of page",
+}: ScrollToTopButtonProps = {}) {
   const [isVisible, setIsVisible] = useState(false);
 
   const handleScroll = useCallback(() => {
-    setIsVisible(window.scrollY > SCROLL_THRESHOLD_PX);
-  }, []);
+    setIsVisible(window.scrollY > threshold);
+  }, [threshold]);
 
   useEffect(() => {
     // Evaluate once on mount in case the page loads mid-scroll
@@ -41,8 +51,9 @@ export function ScrollToTopButton() {
   return (
     <button
       id="scroll-to-top-btn"
+      data-testid="scroll-to-top-btn"
       onClick={scrollToTop}
-      aria-label="Scroll to top of page"
+      aria-label={ariaLabel}
       className={[
         // Layout & shape
         "fixed bottom-6 right-6 z-50",
@@ -63,7 +74,10 @@ export function ScrollToTopButton() {
           : "opacity-0 scale-75 pointer-events-none",
         // Focus ring (project standard)
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
-      ].join(" ")}
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       {/* Up-arrow SVG icon */}
       <svg
@@ -82,3 +96,5 @@ export function ScrollToTopButton() {
     </button>
   );
 }
+
+export default ScrollToTopButton;

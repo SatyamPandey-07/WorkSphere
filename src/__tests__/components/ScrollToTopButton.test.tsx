@@ -35,7 +35,10 @@ describe("ScrollToTopButton", () => {
     render(<ScrollToTopButton />);
 
     act(() => {
-      Object.defineProperty(window, "scrollY", { configurable: true, value: 350 });
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 350,
+      });
       fireEvent.scroll(window);
     });
 
@@ -48,7 +51,10 @@ describe("ScrollToTopButton", () => {
     render(<ScrollToTopButton />);
 
     act(() => {
-      Object.defineProperty(window, "scrollY", { configurable: true, value: 300 });
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 300,
+      });
       fireEvent.scroll(window);
     });
 
@@ -61,13 +67,19 @@ describe("ScrollToTopButton", () => {
 
     // Scroll down
     act(() => {
-      Object.defineProperty(window, "scrollY", { configurable: true, value: 400 });
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 400,
+      });
       fireEvent.scroll(window);
     });
 
     // Scroll back up
     act(() => {
-      Object.defineProperty(window, "scrollY", { configurable: true, value: 100 });
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 100,
+      });
       fireEvent.scroll(window);
     });
 
@@ -79,14 +91,20 @@ describe("ScrollToTopButton", () => {
     render(<ScrollToTopButton />);
 
     act(() => {
-      Object.defineProperty(window, "scrollY", { configurable: true, value: 500 });
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 500,
+      });
       fireEvent.scroll(window);
     });
 
     const btn = screen.getByRole("button", { name: "Scroll to top of page" });
     fireEvent.click(btn);
 
-    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+    expect(window.scrollTo).toHaveBeenCalledWith({
+      top: 0,
+      behavior: "smooth",
+    });
   });
 
   it("has the correct aria-label for accessibility", () => {
@@ -96,8 +114,47 @@ describe("ScrollToTopButton", () => {
     expect(btn).toHaveAttribute("aria-label", "Scroll to top of page");
   });
 
-  it("has the id scroll-to-top-btn for browser testing", () => {
+  it("has the id and data-testid scroll-to-top-btn for browser testing", () => {
     render(<ScrollToTopButton />);
     expect(document.getElementById("scroll-to-top-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("scroll-to-top-btn")).toBeInTheDocument();
+  });
+
+  it("respects custom scroll threshold prop", () => {
+    render(<ScrollToTopButton threshold={150} />);
+
+    // At 100px, hidden
+    act(() => {
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 100,
+      });
+      fireEvent.scroll(window);
+    });
+    const btn = screen.getByTestId("scroll-to-top-btn");
+    expect(btn).toHaveClass("opacity-0");
+
+    // At 180px, visible
+    act(() => {
+      Object.defineProperty(window, "scrollY", {
+        configurable: true,
+        value: 180,
+      });
+      fireEvent.scroll(window);
+    });
+    expect(btn).toHaveClass("opacity-100");
+  });
+
+  it("supports custom className and ariaLabel props", () => {
+    render(
+      <ScrollToTopButton
+        className="custom-top-class"
+        ariaLabel="Back to top"
+      />,
+    );
+
+    const btn = screen.getByTestId("scroll-to-top-btn");
+    expect(btn).toHaveClass("custom-top-class");
+    expect(btn).toHaveAttribute("aria-label", "Back to top");
   });
 });

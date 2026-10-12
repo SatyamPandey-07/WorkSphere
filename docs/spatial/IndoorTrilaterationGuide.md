@@ -6,9 +6,9 @@ WorkSphere provides real-time indoor positioning, turn-by-turn floorplan navigat
 
 In WorkSphere, the indoor positioning pipeline integrates:
 
-1. **BLE Beacon Telemetry & Diagnostic Scanning** ([`src/components/spatial/IndoorPositioningMap.tsx`](file:///C:/Users/hr720/Desktop/WorkSphere/src/components/spatial/IndoorPositioningMap.tsx) and [`src/components/spatial/VenueBeaconDiagnosticDrawer.tsx`](file:///C:/Users/hr720/Desktop/WorkSphere/src/components/spatial/VenueBeaconDiagnosticDrawer.tsx))
-2. **Pedestrian Dead Reckoning (PDR) & Extended Kalman Filter (EKF)** ([`src/lib/spatial/indoorPdrEngine.ts`](file:///C:/Users/hr720/Desktop/WorkSphere/src/lib/spatial/indoorPdrEngine.ts))
-3. **Sensor Fusion React Hook** ([`src/hooks/useIndoorSensorFusion.ts`](file:///C:/Users/hr720/Desktop/WorkSphere/src/hooks/useIndoorSensorFusion.ts))
+1. **BLE Beacon Telemetry & Diagnostic Scanning** ([`src/components/spatial/IndoorPositioningMap.tsx`](../../src/components/spatial/IndoorPositioningMap.tsx) and [`src/components/spatial/VenueBeaconDiagnosticDrawer.tsx`](../../src/components/spatial/VenueBeaconDiagnosticDrawer.tsx))
+2. **Pedestrian Dead Reckoning (PDR) & Extended Kalman Filter (EKF)** ([`src/lib/spatial/indoorPdrEngine.ts`](../../src/lib/spatial/indoorPdrEngine.ts))
+3. **Sensor Fusion React Hook** ([`src/hooks/useIndoorSensorFusion.ts`](../../src/hooks/useIndoorSensorFusion.ts))
 
 ```mermaid
 flowchart TD
@@ -179,7 +179,7 @@ $$\mathbf{p}_{\text{centroid}} = \frac{\sum_{i=1}^m w_i \mathbf{b}_i}{\sum_{i=1}
 
 ### 5.1 TypeScript Reference Implementation
 
-Production-grade implementation matching [`src/lib/spatial/indoorPdrEngine.ts`](file:///C:/Users/hr720/Desktop/WorkSphere/src/lib/spatial/indoorPdrEngine.ts):
+Production-grade implementation matching [`src/lib/spatial/indoorPdrEngine.ts`](../../src/lib/spatial/indoorPdrEngine.ts):
 
 ```typescript
 export interface BeaconNode {
@@ -473,5 +473,5 @@ Before launching indoor navigation in a new WorkSphere venue, complete this veri
 - [ ] **TxPower Calibration ($1\text{m}$ Reference):** Measure RSSI at exactly $1.0\text{ meter}$ along the primary radiation lobe using a reference mobile device. Record the average across 50 packets as `txPower` (default: $-59\text{ dBm}$).
 - [ ] **Path Loss Exponent Tuning ($N$):** Perform a walk test recording RSSI at $1\text{m}, 3\text{m}, 5\text{m},$ and $8\text{m}$. Perform linear regression to calculate actual venue $N$ ($2.2$ for open lounge, $3.2$ for partitioned office).
 - [ ] **Broadcasting Frequency:** Set beacon advertising interval to $100\text{ ms} - 200\text{ ms}$ ($5\text{--}10\text{ Hz}$). Intervals slower than $500\text{ ms}$ cause sluggish PDR fusion updates while walking.
-- [ ] **Battery Telemetry Monitoring:** Ensure periodic battery voltage monitoring via [`VenueBeaconDiagnosticDrawer.tsx`](file:///C:/Users/hr720/Desktop/WorkSphere/src/components/spatial/VenueBeaconDiagnosticDrawer.tsx).
+- [ ] **Battery Telemetry Monitoring:** Ensure periodic battery voltage monitoring via [`VenueBeaconDiagnosticDrawer.tsx`](../../src/components/spatial/VenueBeaconDiagnosticDrawer.tsx).
 $$

@@ -1,6 +1,6 @@
 # `useIndoorSensorFusion`: Accelerometer, Gyroscope & BLE RSSI Sensor Fusion
 
-This document details the architectural design, sensor sampling rates, Extended Kalman Filter (EKF) state vector mathematics, drift compensation algorithms, and mobile permission lifecycles for the **`useIndoorSensorFusion`** hook ([`src/hooks/useIndoorSensorFusion.ts`](file:///c:/Users/hr720/Desktop/WorkSphere/src/hooks/useIndoorSensorFusion.ts)) and its underlying mathematical engine ([`src/lib/spatial/indoorPdrEngine.ts`](file:///c:/Users/hr720/Desktop/WorkSphere/src/lib/spatial/indoorPdrEngine.ts)).
+This document details the architectural design, sensor sampling rates, Extended Kalman Filter (EKF) state vector mathematics, drift compensation algorithms, and mobile permission lifecycles for the **`useIndoorSensorFusion`** hook ([`src/hooks/useIndoorSensorFusion.ts`](../../src/hooks/useIndoorSensorFusion.ts)) and its underlying mathematical engine ([`src/lib/spatial/indoorPdrEngine.ts`](../../src/lib/spatial/indoorPdrEngine.ts)).
 
 ---
 

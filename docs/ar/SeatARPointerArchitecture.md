@@ -1,6 +1,6 @@
 # SeatARPointer 3D Vector Transformations & Sensor Fusion Architecture
 
-This document provides a comprehensive architectural and mathematical reference for the Augmented Reality (AR) seat navigation system in WorkSphere, centered around [`SeatARPointer.tsx`](file:///c:/Users/hr720/Desktop/WorkSphere/src/components/ar/SeatARPointer.tsx), [`CompassFallback.tsx`](file:///c:/Users/hr720/Desktop/WorkSphere/src/components/ar/CompassFallback.tsx), [`quaternionOrientation.ts`](file:///c:/Users/hr720/Desktop/WorkSphere/src/lib/spatial/quaternionOrientation.ts), and [`useDeviceOrientation.ts`](file:///c:/Users/hr720/Desktop/WorkSphere/src/hooks/useDeviceOrientation.ts).
+This document provides a comprehensive architectural and mathematical reference for the Augmented Reality (AR) seat navigation system in WorkSphere, centered around [`SeatARPointer.tsx`](../../src/components/ar/SeatARPointer.tsx), [`CompassFallback.tsx`](../../src/components/ar/CompassFallback.tsx), [`quaternionOrientation.ts`](../../src/lib/spatial/quaternionOrientation.ts), and [`useDeviceOrientation.ts`](../../src/hooks/useDeviceOrientation.ts).
 
 ---
 
@@ -82,7 +82,7 @@ $$V = \begin{bmatrix} r_{11} & r_{12} & r_{13} & -\mathbf{r}_1 \cdot \mathbf{t}_
 
 ### 2.2 Seat Pointer Placement & Orientation in Camera Space
 
-In [`SeatARPointer.tsx`](file:///c:/Users/hr720/Desktop/WorkSphere/src/components/ar/SeatARPointer.tsx#L251-L300), the 3D directional arrow is attached to a floating position directly in front of the camera, continuously oriented to face the target seat anchor:
+In [`SeatARPointer.tsx`](../../src/components/ar/SeatARPointer.tsx#L251-L300), the 3D directional arrow is attached to a floating position directly in front of the camera, continuously oriented to face the target seat anchor:
 
 ```typescript
 // 1. Vector from camera eye level to target anchor
@@ -219,7 +219,7 @@ When a user holds their smartphone upright in AR camera mode, the device pitch $
 
 ### 4.2 Euler to Unit Quaternion Conversion
 
-To eliminate gimbal lock, [`quaternionOrientation.ts`](file:///c:/Users/hr720/Desktop/WorkSphere/src/lib/spatial/quaternionOrientation.ts) converts Euler angles directly into a unit quaternion $\mathbf{q} = [w, x, y, z]^T$:
+To eliminate gimbal lock, [`quaternionOrientation.ts`](../../src/lib/spatial/quaternionOrientation.ts) converts Euler angles directly into a unit quaternion $\mathbf{q} = [w, x, y, z]^T$:
 
 Given half-angles $\frac{\alpha}{2}, \frac{\beta}{2}, \frac{\gamma}{2}$:
 
@@ -304,7 +304,7 @@ To calibrate the magnetometer, the operating system requires rotating the device
 
 ### 5.3 Circular 1D Kalman Filtering
 
-Because compass angles wrap around $0^\circ / 360^\circ$, linear Kalman filters fail at the North boundary. WorkSphere utilizes a **Circular Kalman Filter** ([`CompassKalmanFilter`](file:///c:/Users/hr720/Desktop/WorkSphere/src/lib/spatial/compassFilter.ts)):
+Because compass angles wrap around $0^\circ / 360^\circ$, linear Kalman filters fail at the North boundary. WorkSphere utilizes a **Circular Kalman Filter** ([`CompassKalmanFilter`](../../src/lib/spatial/compassFilter.ts)):
 
 $$\tilde{y}_k = (z_k - \hat{x}_{k|k-1} + 180) \pmod{360} - 180$$
 
@@ -528,7 +528,7 @@ if __name__ == "__main__":
 When implementing or modifying AR pointer features in WorkSphere:
 
 1. **Coordinate Verification:** Confirm whether inputs are in world local-floor meters, WGS-84 GNSS coordinates, or camera view space before applying translations.
-2. **Singularity Protection:** Always route orientation inputs through [`QuaternionOrientationFilter`](file:///c:/Users/hr720/Desktop/WorkSphere/src/lib/spatial/quaternionOrientation.ts) rather than directly inspecting Euler angles $\alpha$ and $\beta$.
+2. **Singularity Protection:** Always route orientation inputs through [`QuaternionOrientationFilter`](../../src/lib/spatial/quaternionOrientation.ts) rather than directly inspecting Euler angles $\alpha$ and $\beta$.
 3. **Distance Filtering:** Apply `applyDistanceSmoothing` with $\alpha \le 0.3$ to suppress SLAM visual jitter.
 4. **Sensor Permissions:** Ensure iOS Safari users are presented with a direct button tap gesture to invoke `requestPermission()`.
 5. **Multi-Floor Awareness:** Check `isWrongLevel` before displaying on-level arrows; guide the user to stairs or elevators when $|\Delta h| > 1.5\text{ m}$.

@@ -42,4 +42,13 @@ self.onmessage = (event: MessageEvent) => {
     if (type === 'SET_DATA_CHANNEL') {
         dataChannel = payload.dataChannel;
     }
+
+    if (type === 'VISIBILITY_CHANGE' || type === 'THROTTLE_TRANSMISSION') {
+        const isHidden = payload?.hidden ?? true;
+        if (isHidden && testActive) {
+            // Throttle or pause active test transmissions on backgrounding (#5487)
+            testActive = false;
+            self.postMessage({ type: 'TRANSMISSION_PAUSED', reason: 'BACKGROUND_STATE' });
+        }
+    }
 };

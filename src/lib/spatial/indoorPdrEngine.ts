@@ -200,7 +200,8 @@ export function calculateRssiDistance(
     return 0.1;
   }
   const safeTxPower = Number.isFinite(txPower) ? txPower : -59;
-  const safePathLoss = Number.isFinite(pathLossExp) && pathLossExp > 0 ? pathLossExp : 2.5;
+  const safePathLoss =
+    Number.isFinite(pathLossExp) && pathLossExp > 0 ? pathLossExp : 2.5;
   const exponent = (safeTxPower - rssi) / (10 * safePathLoss);
   if (!Number.isFinite(exponent)) {
     return 0.1;
@@ -409,6 +410,8 @@ export class ExtendedKalmanFilter6D {
     this.P[21] = p33 + this.Q[3];
     this.P[28] = p44 + this.Q[4];
     this.P[35] = p55 + this.Q[5];
+    this.P[29] -= dt * this.P[35];
+    this.P[34] = this.P[29];
   }
 
   /**
@@ -475,28 +478,44 @@ export class ExtendedKalmanFilter6D {
     }
 
     // Kalman Gain K = P * H^T * S^-1 (6x2 matrix)
-    // K_row_i = [ P[i,0]*invS00 + P[i,1]*invS10, P[i,0]*invS01 + P[i,1]*invS11 ]
-    const k00 = this.P[0] * invS00 + this.P[1] * invS10;
-    const k01 = this.P[0] * invS01 + this.P[1] * invS11;
-
-    const k10 = this.P[6] * invS00 + this.P[7] * invS10;
-    const k11 = this.P[6] * invS01 + this.P[7] * invS11;
-
-    const k20 = this.P[12] * invS00 + this.P[13] * invS10;
-    const k21 = this.P[12] * invS01 + this.P[13] * invS11;
-
-    const k30 = this.P[18] * invS00 + this.P[19] * invS10;
-    const k31 = this.P[18] * invS01 + this.P[19] * invS11;
+    // Observation matrix H = [1 0 0 0 0 0; 0 1 0 0 0 0]
+    // P * H^T is 6x2 matrix where column 0 is P[:, 0], column 1 is P[:, 1]
+    const k = new Float64Array(12); // 6 rows x 2 cols
+    for (let i = 0; i < 6; i++) {
+      k[i * 2 + 0] = this.P[i * 6 + 0] * invS00 + this.P[i * 6 + 1] * invS10;
+      k[i * 2 + 1] = this.P[i * 6 + 0] * invS01 + this.P[i * 6 + 1] * invS11;
+    }
 
     // Update state x = x + K * y
-    this.x[0] += k00 * yX + k01 * yY;
-    this.x[1] += k10 * yX + k11 * yY;
-    this.x[2] += k20 * yX + k21 * yY;
-    this.x[3] += k30 * yX + k31 * yY;
+    for (let i = 0; i < 6; i++) {
+      this.x[i] += k[i * 2 + 0] * yX + k[i * 2 + 1] * yY;
+    }
+    this.x[4] = normalizeAngle(this.x[4]);
 
-    // Update covariance P = (I - K * H) * P
-    this.P[0] = Math.max(0.01, this.P[0] - (k00 * this.P[0] + k01 * this.P[6]));
-    this.P[7] = Math.max(0.01, this.P[7] - (k10 * this.P[1] + k11 * this.P[7]));
+    // Update covariance P = (I - K * H) * P = P - K * (H * P)
+    // H * P is 2x6: row 0 is P[0, :], row 1 is P[1, :]
+    const khp = new Float64Array(36);
+    for (let i = 0; i < 6; i++) {
+      const k0 = k[i * 2 + 0];
+      const k1 = k[i * 2 + 1];
+      for (let j = 0; j < 6; j++) {
+        khp[i * 6 + j] = k0 * this.P[0 * 6 + j] + k1 * this.P[1 * 6 + j];
+      }
+    }
+
+    for (let idx = 0; idx < 36; idx++) {
+      this.P[idx] -= khp[idx];
+    }
+
+    // Enforce symmetry and positive diagonal variance
+    for (let i = 0; i < 6; i++) {
+      for (let j = i + 1; j < 6; j++) {
+        const avg = (this.P[i * 6 + j] + this.P[j * 6 + i]) / 2;
+        this.P[i * 6 + j] = avg;
+        this.P[j * 6 + i] = avg;
+      }
+      this.P[i * 6 + i] = Math.max(0.001, this.P[i * 6 + i]);
+    }
 
     return true;
   }
@@ -573,6 +592,15 @@ export class ExtendedKalmanFilter6D {
       this.P[i * 6 + i] = Math.max(0.001, this.P[i * 6 + i]);
     }
 
+    // Symmetrize covariance matrix for numerical stability
+    for (let i = 0; i < 6; i++) {
+      for (let j = i + 1; j < 6; j++) {
+        const avg = (this.P[i * 6 + j] + this.P[j * 6 + i]) / 2;
+        this.P[i * 6 + j] = avg;
+        this.P[j * 6 + i] = avg;
+      }
+    }
+
     return true;
   }
 
@@ -585,8 +613,13 @@ export class ExtendedKalmanFilter6D {
     if (sH <= 1e-6) return;
 
     const kH = this.P[28] / sH;
+    const kBg = this.P[29] / sH;
     this.x[4] = normalizeAngle(this.x[4] + kH * yH);
+    this.x[5] = Math.max(-0.2, Math.min(0.2, this.x[5] + kBg * yH));
     this.P[28] = Math.max(0.001, (1 - kH) * this.P[28]);
+    this.P[35] = Math.max(0.0001, this.P[35] - kBg * this.P[29]);
+    this.P[29] = (1 - kH) * this.P[29];
+    this.P[34] = this.P[29];
   }
 
   /**
@@ -706,7 +739,13 @@ export class StepDetector {
   processSample(
     norm: number,
     timestamp: number,
-  ): { stepDetected: boolean; aMax: number; aMin: number; cadence?: number; stepFrequency?: number } {
+  ): {
+    stepDetected: boolean;
+    aMax: number;
+    aMin: number;
+    cadence?: number;
+    stepFrequency?: number;
+  } {
     // Ignore invalid zero-delta or non-increasing timestamp sensor samples (#4791)
     if (this.lastSampleTimestamp > 0 && timestamp <= this.lastSampleTimestamp) {
       return { stepDetected: false, aMax: 0, aMin: 0 };
@@ -763,7 +802,8 @@ export class StepDetector {
       const aMax = this.currentPeak;
       const aMin = this.currentValley;
 
-      const deltaMs = this.lastStepTimestamp > 0 ? timestamp - this.lastStepTimestamp : 0;
+      const deltaMs =
+        this.lastStepTimestamp > 0 ? timestamp - this.lastStepTimestamp : 0;
       this.cadence = calculateStepFrequency(deltaMs);
 
       // Reset extrema and arm state
@@ -773,7 +813,13 @@ export class StepDetector {
       this.lastStepTimestamp = timestamp;
       this.stepCount++;
 
-      return { stepDetected: true, aMax, aMin, cadence: this.cadence, stepFrequency: this.cadence };
+      return {
+        stepDetected: true,
+        aMax,
+        aMin,
+        cadence: this.cadence,
+        stepFrequency: this.cadence,
+      };
     }
 
     return { stepDetected: false, aMax: 0, aMin: 0 };
@@ -820,6 +866,7 @@ export class IndoorPdrEngine {
   private currentHeadingRad = 0;
   private totalDistance = 0;
   private hasReceivedFirstFix = false;
+  private lastBeaconFix: { x: number; y: number } | null = null;
   private trajectory: Array<{ x: number; y: number; timestamp: number }> = [];
 
   constructor(
@@ -845,7 +892,10 @@ export class IndoorPdrEngine {
    */
   processImuSample(sample: ImuSample): StepDetectionResult | null {
     // Ignore invalid zero-delta or non-increasing timestamp sensor samples (#4791)
-    if (this.lastSampleTimestamp > 0 && sample.timestamp <= this.lastSampleTimestamp) {
+    if (
+      this.lastSampleTimestamp > 0 &&
+      sample.timestamp <= this.lastSampleTimestamp
+    ) {
       return null;
     }
 
@@ -900,7 +950,10 @@ export class IndoorPdrEngine {
     );
 
     if (stepDetected) {
-      const deltaMs = this.lastStepTimestamp > 0 ? sample.timestamp - this.lastStepTimestamp : 0;
+      const deltaMs =
+        this.lastStepTimestamp > 0
+          ? sample.timestamp - this.lastStepTimestamp
+          : 0;
       this.currentCadence = calculateStepFrequency(deltaMs);
       this.lastStepTimestamp = sample.timestamp;
 
@@ -954,6 +1007,7 @@ export class IndoorPdrEngine {
 
     if (!this.hasReceivedFirstFix) {
       this.hasReceivedFirstFix = true;
+      this.lastBeaconFix = { x: fix.x, y: fix.y };
       this.ekf.reset(fix.x, fix.y, this.currentHeadingRad);
       this.trajectory.push({
         x: Math.round(fix.x * 100) / 100,
@@ -968,6 +1022,25 @@ export class IndoorPdrEngine {
     const accepted = this.ekf.updatePosition(fix.x, fix.y, rVariance);
 
     if (accepted) {
+      // Continuous heading drift correction: when moving, consecutive beacon fixes observe heading
+      if (this.lastBeaconFix) {
+        const dx = fix.x - this.lastBeaconFix.x;
+        const dy = fix.y - this.lastBeaconFix.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist >= 1.0) {
+          const beaconHeading = normalizeAngle(Math.atan2(dy, dx));
+          const headingVariance = Math.max(
+            0.04,
+            (fix.estimatedAccuracy / dist) ** 2,
+          );
+          this.ekf.updateHeading(beaconHeading, headingVariance);
+          this.currentHeadingRad = this.ekf.getState().heading;
+          this.lastBeaconFix = { x: fix.x, y: fix.y };
+        }
+      } else {
+        this.lastBeaconFix = { x: fix.x, y: fix.y };
+      }
+
       const state = this.ekf.getState();
       this.trajectory.push({
         x: Math.round(state.x * 100) / 100,
@@ -1013,7 +1086,12 @@ export class IndoorPdrEngine {
       return false;
     }
 
-    const accepted = this.ekf.updateRange(beacon.x, beacon.y, distance, rVariance);
+    const accepted = this.ekf.updateRange(
+      beacon.x,
+      beacon.y,
+      distance,
+      rVariance,
+    );
 
     if (accepted) {
       const state = this.ekf.getState();
@@ -1068,6 +1146,7 @@ export class IndoorPdrEngine {
    */
   reset(initialPosition = { x: 0, y: 0, heading: 0 }): void {
     this.hasReceivedFirstFix = false;
+    this.lastBeaconFix = null;
     this.ekf.reset(
       initialPosition.x,
       initialPosition.y,
@@ -1087,4 +1166,184 @@ export class IndoorPdrEngine {
       },
     ];
   }
+}
+
+export { ExtendedKalmanFilter6D as ExtendedKalmanFilter };
+
+export interface SimulationBenchmarkResult {
+  totalPathLengthMeters: number;
+  totalSteps: number;
+  averageEkfDriftMeters: number;
+  maxEkfDriftMeters: number;
+  finalEkfDriftMeters: number;
+  averageRawDriftMeters: number;
+  finalRawDriftMeters: number;
+  passedBenchmark: boolean;
+}
+
+/**
+ * Runs a 100-meter indoor walking path simulation benchmark comparing raw
+ * sensor dead reckoning (subject to cumulative gyro drift) against
+ * the EKF-fused IndoorPdrEngine with BLE beacon RSSI trilateration updates.
+ *
+ * Demonstrates that EKF fusion maintains < 1.0m average drift over the 100m path.
+ */
+export function simulateIndoor100mPathBenchmark(
+  options: {
+    pathLengthMeters?: number;
+    stepLength?: number;
+    gyroBiasRadPerSec?: number;
+    beaconIntervalMeters?: number;
+    beaconRssiNoiseDb?: number;
+  } = {},
+): SimulationBenchmarkResult {
+  const pathLength = options.pathLengthMeters ?? 100.0;
+  const nominalStepLength = options.stepLength ?? 0.7;
+  const gyroBias = options.gyroBiasRadPerSec ?? 0.015; // Realistic MEMS sensor drift
+  const beaconInterval = options.beaconIntervalMeters ?? 12.0;
+  const rssiNoise = options.beaconRssiNoiseDb ?? 1.5;
+
+  const totalSteps = Math.ceil(pathLength / nominalStepLength);
+  const sampleRateHz = 50;
+  const dt = 1 / sampleRateHz;
+  const stepDurationSec = 0.55;
+  const samplesPerStep = Math.round(stepDurationSec / dt);
+
+  // Deploy BLE beacons along the 100m corridor on alternating walls (y = -4m and y = +4m)
+  const facilityBeacons: Array<{
+    id: string;
+    x: number;
+    y: number;
+    txPower: number;
+    pathLossExponent: number;
+  }> = [];
+  for (let bx = 0; bx <= pathLength; bx += beaconInterval) {
+    facilityBeacons.push(
+      {
+        id: `beacon_south_${bx}`,
+        x: bx,
+        y: -4.0,
+        txPower: -59,
+        pathLossExponent: 2.5,
+      },
+      {
+        id: `beacon_north_${bx}`,
+        x: bx,
+        y: 4.0,
+        txPower: -59,
+        pathLossExponent: 2.5,
+      },
+    );
+  }
+
+  const ekfEngine = new IndoorPdrEngine({ x: 0, y: 0, heading: 0 });
+  const rawEngine = new IndoorPdrEngine({ x: 0, y: 0, heading: 0 });
+
+  let simTimeMs = 1_000_000;
+  let groundTruthX = 0;
+  const groundTruthY = 0;
+
+  const ekfErrors: number[] = [];
+  const rawErrors: number[] = [];
+
+  for (let step = 0; step < totalSteps; step++) {
+    const currentStepLen = nominalStepLength;
+    groundTruthX = Math.min(pathLength, (step + 1) * currentStepLen);
+
+    // IMU integration during step
+    for (let s = 0; s < samplesPerStep; s++) {
+      simTimeMs += Math.round(dt * 1000);
+      const walkingPhase = (2 * Math.PI * s) / samplesPerStep;
+      const az = 9.80665 + 4.0 * Math.sin(walkingPhase);
+
+      // Ingest IMU into EKF engine
+      ekfEngine.processImuSample({
+        timestamp: simTimeMs,
+        ax: 0,
+        ay: 0,
+        az,
+        gz: gyroBias,
+      });
+
+      // Ingest IMU into raw dead-reckoning engine
+      rawEngine.processImuSample({
+        timestamp: simTimeMs,
+        ax: 0,
+        ay: 0,
+        az,
+        gz: gyroBias,
+      });
+    }
+
+    // Every 2 steps (~1.1s), simulate BLE beacon RSSI readings
+    if (step % 2 === 0 || step === totalSteps - 1) {
+      const nearbyBeacons: BeaconReading[] = facilityBeacons
+        .map((b, idx) => {
+          const trueDist = Math.hypot(groundTruthX - b.x, groundTruthY - b.y);
+          const noise = Math.sin(step * 13 + idx * 7) * rssiNoise;
+          const trueRssi =
+            b.txPower -
+            10 * b.pathLossExponent * Math.log10(Math.max(0.2, trueDist));
+          return {
+            id: b.id,
+            x: b.x,
+            y: b.y,
+            rssi: Math.round((trueRssi + noise) * 10) / 10,
+            txPower: b.txPower,
+            pathLossExponent: b.pathLossExponent,
+          };
+        })
+        .filter((b) => {
+          const d = Math.hypot(groundTruthX - b.x, groundTruthY - b.y);
+          return d <= 18.0;
+        })
+        .sort((a, b) => {
+          const da = Math.hypot(groundTruthX - a.x, groundTruthY - a.y);
+          const db = Math.hypot(groundTruthX - b.x, groundTruthY - b.y);
+          return da - db;
+        });
+
+      if (nearbyBeacons.length >= 3) {
+        ekfEngine.processBeaconReadings(nearbyBeacons.slice(0, 4));
+        for (const b of nearbyBeacons.slice(0, 4)) {
+          ekfEngine.processSingleBeaconRssi(b);
+        }
+      }
+    }
+
+    const ekfState = ekfEngine.getState();
+    const rawState = rawEngine.getState();
+
+    const ekfErr = Math.hypot(
+      ekfState.x - groundTruthX,
+      ekfState.y - groundTruthY,
+    );
+    const rawErr = Math.hypot(
+      rawState.x - groundTruthX,
+      rawState.y - groundTruthY,
+    );
+
+    ekfErrors.push(ekfErr);
+    rawErrors.push(rawErr);
+  }
+
+  const avgEkfDrift =
+    ekfErrors.reduce((sum, e) => sum + e, 0) / Math.max(1, ekfErrors.length);
+  const maxEkfDrift = Math.max(...ekfErrors);
+  const finalEkfDrift = ekfErrors[ekfErrors.length - 1];
+
+  const avgRawDrift =
+    rawErrors.reduce((sum, e) => sum + e, 0) / Math.max(1, rawErrors.length);
+  const finalRawDrift = rawErrors[rawErrors.length - 1];
+
+  return {
+    totalPathLengthMeters: pathLength,
+    totalSteps,
+    averageEkfDriftMeters: Math.round(avgEkfDrift * 1000) / 1000,
+    maxEkfDriftMeters: Math.round(maxEkfDrift * 1000) / 1000,
+    finalEkfDriftMeters: Math.round(finalEkfDrift * 1000) / 1000,
+    averageRawDriftMeters: Math.round(avgRawDrift * 1000) / 1000,
+    finalRawDriftMeters: Math.round(finalRawDrift * 1000) / 1000,
+    passedBenchmark: avgEkfDrift < 1.0,
+  };
 }

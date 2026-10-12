@@ -13,12 +13,14 @@ import {
   Layers,
   ShieldCheck,
   Zap,
+  Signal,
 } from "lucide-react";
 import {
   useIndoorSensorFusion,
   UseIndoorSensorFusionOptions,
 } from "@/hooks/useIndoorSensorFusion";
 import { BeaconReading } from "@/lib/spatial/indoorPdrEngine";
+import { VenueBeaconDiagnosticDrawer } from "./VenueBeaconDiagnosticDrawer";
 
 interface IndoorPositioningMapProps {
   venueName?: string;
@@ -49,6 +51,7 @@ export function IndoorPositioningMap({
   const [showUncertainty, setShowUncertainty] = useState(true);
   const [showTrajectory, setShowTrajectory] = useState(true);
   const [simulatedHeading, setSimulatedHeading] = useState(0);
+  const [showDiagnosticDrawer, setShowDiagnosticDrawer] = useState(false);
 
   const {
     state,
@@ -404,10 +407,29 @@ export function IndoorPositioningMap({
                 <Radio className="w-3.5 h-3.5" />
                 <span>Ping BLE Beacons RSSI</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setShowDiagnosticDrawer(true)}
+                className="w-full flex items-center justify-center gap-2 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-bold transition-all"
+                data-testid="open-beacon-diagnostics-btn"
+              >
+                <Signal className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Beacon Diagnostics Drawer</span>
+              </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Venue Beacon Diagnostic Drawer */}
+      <VenueBeaconDiagnosticDrawer
+        isOpen={showDiagnosticDrawer}
+        onClose={() => setShowDiagnosticDrawer(false)}
+        venueName={venueName}
+        beacons={beaconList}
+        onPingBeacons={handleSimulateBeaconPing}
+      />
     </div>
   );
 }

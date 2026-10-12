@@ -475,3 +475,39 @@ export function resetMemorySeatLocks(): void {
   memoryLocks.clear();
 }
 
+/**
+ * Client-side Web Locks helper using Navigator.locks API.
+ * Holds an exclusive lock named `seat-hold:${venueId}:${seatId}` for as long as the seat is held,
+ * ensuring that if the tab or worker terminates unexpectedly, the lock is released immediately (#5489).
+ */
+export async function withSeatWebLock<T>(
+  venueId: string,
+  seatId: string,
+  callback: (releaseWebLock: () => void) => Promise<T>,
+): Promise<T> {
+  const lockName = `seat-hold:${venueId}:${seatId}`;
+  if (typeof navigator !== "undefined" && "locks" in navigator && navigator.locks?.request) {
+    return new Promise<T>((resolve, reject) => {
+      navigator.locks.request(lockName, { mode: "exclusive" }, async () => {
+        let releaseLockFn: () => void = () => {};
+        const releasePromise = new Promise<void>((res) => {
+          releaseLockFn = res;
+        });
+
+        try {
+          const result = await callback(releaseLockFn);
+          resolve(result);
+        } catch (err) {
+          releaseLockFn();
+          reject(err);
+        }
+
+        await releasePromise;
+      }).catch(reject);
+    });
+  }
+
+  // Fallback when Web Locks API is unavailable
+  return callback(() => {});
+}
+

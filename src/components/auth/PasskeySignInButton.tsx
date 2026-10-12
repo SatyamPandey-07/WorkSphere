@@ -30,7 +30,8 @@ export async function isConditionalMediationSupported(): Promise<boolean> {
   if (!browserSupportsWebAuthn()) return false;
   if (
     typeof window.PublicKeyCredential === "undefined" ||
-    typeof window.PublicKeyCredential.isConditionalMediationAvailable !== "function"
+    typeof window.PublicKeyCredential.isConditionalMediationAvailable !==
+      "function"
   ) {
     return false;
   }
@@ -85,6 +86,7 @@ export function PasskeySignInButton({
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState(false);
   const isAuthenticatingRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     setIsSupported(browserSupportsWebAuthn());
@@ -100,6 +102,19 @@ export function PasskeySignInButton({
 
     let isMounted = true;
     let timerId: ReturnType<typeof setTimeout> | null = null;
+
+    const handleAbort = () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      WebAuthnAbortService.cancelCeremony();
+    };
+
+    // Abort conditional ceremony when user leaves page or submits standard login form
+    window.addEventListener("beforeunload", handleAbort);
+    window.addEventListener("pagehide", handleAbort);
+    window.addEventListener("submit", handleAbort, true);
 
     async function initConditionalUI() {
       const supported = await isConditionalMediationSupported();
@@ -131,6 +146,9 @@ export function PasskeySignInButton({
         const optionsJSON = await fetchAuthOptions();
         if (!isMounted || isAuthenticatingRef.current) return;
 
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         // startAuthentication delegates to navigator.credentials.get with mediation: "conditional"
         // for Safari iOS 16+ and Android Chrome autofill integration
         const authenticationResponse = await startAuthentication({
@@ -149,10 +167,15 @@ export function PasskeySignInButton({
           err instanceof Error &&
           (err.name === "AbortError" || err.name === "NotAllowedError")
         ) {
-          console.debug("Passkey conditional autofill dismissed or aborted:", err.name);
+          console.debug(
+            "Passkey conditional autofill dismissed or aborted:",
+            err.name,
+          );
           return;
         }
         console.debug("Passkey conditional UI dismissed or skipped:", err);
+      } finally {
+        abortControllerRef.current = null;
       }
     }
 
@@ -163,7 +186,10 @@ export function PasskeySignInButton({
       if (timerId) {
         clearTimeout(timerId);
       }
-      WebAuthnAbortService.cancelCeremony();
+      window.removeEventListener("beforeunload", handleAbort);
+      window.removeEventListener("pagehide", handleAbort);
+      window.removeEventListener("submit", handleAbort, true);
+      handleAbort();
     };
   }, [conditional]);
 
@@ -174,6 +200,10 @@ export function PasskeySignInButton({
       isAuthenticatingRef.current = true;
 
       // Abort any active conditional request before starting explicit assertion
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
       WebAuthnAbortService.cancelCeremony();
 
       // 1. Fetch auth options from server

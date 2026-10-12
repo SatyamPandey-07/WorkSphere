@@ -13,6 +13,8 @@ export interface HeatmapDataPoint {
     value: number;
 }
 
+export type HeatmapPaletteMode = 'thermal' | 'neon' | 'grayscale';
+
 export class HeatmapRenderer {
     private canvas: HTMLCanvasElement;
     private gl: WebGLRenderingContext | null = null;
@@ -20,6 +22,7 @@ export class HeatmapRenderer {
     private positionBuffer: WebGLBuffer | null = null;
     private valueBuffer: WebGLBuffer | null = null;
     private isContextLost: boolean = false;
+    private currentPalette: HeatmapPaletteMode = 'thermal';
 
     // Floorplan texture and framebuffer pooling to prevent GPU memory leak on rapid floor changes
     private currentFloorId: string | null = null;
@@ -34,6 +37,7 @@ export class HeatmapRenderer {
     private uMapBoundsMaxLocation: WebGLUniformLocation | null = null;
     private uMaxValueLocation: WebGLUniformLocation | null = null;
     private uAlphaLocation: WebGLUniformLocation | null = null;
+    private uPaletteModeLocation: WebGLUniformLocation | null = null;
 
     private aPositionLocation: number = 0;
     private aValueLocation: number = 0;
@@ -42,8 +46,9 @@ export class HeatmapRenderer {
     private handleContextLostBound: (e: Event) => void;
     private handleContextRestoredBound: (e: Event) => void;
 
-    constructor(canvas: HTMLCanvasElement) {
+    constructor(canvas: HTMLCanvasElement, initialPalette: HeatmapPaletteMode = 'thermal') {
         this.canvas = canvas;
+        this.currentPalette = initialPalette;
         this.handleContextLostBound = this.handleContextLost.bind(this);
         this.handleContextRestoredBound = this.handleContextRestored.bind(this);
 
@@ -110,10 +115,51 @@ export class HeatmapRenderer {
         this.uMapBoundsMaxLocation = this.gl.getUniformLocation(this.program, 'u_mapBoundsMax');
         this.uMaxValueLocation = this.gl.getUniformLocation(this.program, 'u_maxValue');
         this.uAlphaLocation = this.gl.getUniformLocation(this.program, 'u_alpha');
+        this.uPaletteModeLocation = this.gl.getUniformLocation(this.program, 'u_paletteMode');
 
         // Get attribute locations
         this.aPositionLocation = this.gl.getAttribLocation(this.program, 'a_position');
         this.aValueLocation = this.gl.getAttribLocation(this.program, 'a_value');
+
+        // Apply initial palette uniform immediately
+        this.applyPaletteUniform(this.currentPalette);
+    }
+
+    private getPaletteModeIndex(palette: HeatmapPaletteMode): number {
+        switch (palette) {
+            case 'neon':
+                return 1;
+            case 'grayscale':
+                return 2;
+            case 'thermal':
+            default:
+                return 0;
+        }
+    }
+
+    private applyPaletteUniform(palette: HeatmapPaletteMode): void {
+        if (!this.gl || !this.program || !this.uPaletteModeLocation) return;
+        this.gl.useProgram(this.program);
+        this.gl.uniform1i(this.uPaletteModeLocation, this.getPaletteModeIndex(palette));
+    }
+
+    /**
+     * Dynamically switches the heatmap color palette uniform without rebuilding the WebGL context.
+     * Supported themes:
+     * - 'thermal': Red-Yellow-Blue standard thermal palette
+     * - 'neon': Cyber Neon Cyan-Magenta-Yellow high-energy palette
+     * - 'grayscale': Accessible high-contrast grayscale palette compliant with WCAG
+     */
+    public setPalette(palette: HeatmapPaletteMode): void {
+        this.currentPalette = palette;
+        this.applyPaletteUniform(palette);
+    }
+
+    /**
+     * Gets the currently active color palette theme.
+     */
+    public getPalette(): HeatmapPaletteMode {
+        return this.currentPalette;
     }
 
     private compileShader(type: number, source: string): WebGLShader {
@@ -179,6 +225,9 @@ export class HeatmapRenderer {
         this.gl.uniform2fv(this.uMapBoundsMaxLocation, mapBoundsMax);
         this.gl.uniform1f(this.uMaxValueLocation, maxValue || 1);
         this.gl.uniform1f(this.uAlphaLocation, 0.7);
+        if (this.uPaletteModeLocation) {
+            this.gl.uniform1i(this.uPaletteModeLocation, this.getPaletteModeIndex(this.currentPalette));
+        }
 
         // Draw
         this.gl.drawArrays(this.gl.POINTS, 0, dataPoints.length);

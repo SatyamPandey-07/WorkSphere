@@ -208,3 +208,19 @@ export interface ISyncPlugin<T = unknown> {
   onSuccess?(items: SyncItem<T>[]): Promise<void> | void;
   onFailure?(error: Error, items: SyncItem<T>[]): Promise<void> | void;
 }
+
+// ─── Unified Offline Queue Interface ─────────────────────────────────────────
+
+export interface OfflineQueueItem<T = unknown> {
+  id: string;
+  entity: "review" | "note" | "checkin" | "amenity_vote";
+  action: "create" | "update" | "delete";
+  payload: T;
+  timestamp: number;
+  retryCount: number;
+}
+
+export type OfflineQueueHandler<T = unknown> = (
+  item: OfflineQueueItem<T>
+) => Promise<boolean | void>;
+

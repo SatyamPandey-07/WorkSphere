@@ -16,20 +16,23 @@ describe("validateRelayFeeLamports", () => {
     ).toThrow("Transaction fee exceeds the relayer limit");
   });
 
-  it.each([-1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
-    "rejects invalid fee value %p",
+  it.each([-5000, -1, 0, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid or non-positive fee value %p",
     (fee) => {
       expect(() => validateRelayFeeLamports(fee)).toThrow(
-        "Relay fee must be a non-negative integer",
+        "Relay fee must be a positive integer greater than zero",
       );
     },
   );
 
-  it("rejects an invalid configured ceiling", () => {
-    expect(() => validateRelayFeeLamports(1, -1)).toThrow(
-      "Maximum relay fee must be a non-negative integer",
-    );
-  });
+  it.each([-1000, 0, 1.5])(
+    "rejects an invalid configured ceiling %p",
+    (ceiling) => {
+      expect(() => validateRelayFeeLamports(1, ceiling)).toThrow(
+        "Maximum relay fee must be a positive integer greater than zero",
+      );
+    },
+  );
 });
 
 describe("Solana Explorer URL helpers", () => {

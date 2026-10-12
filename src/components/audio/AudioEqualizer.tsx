@@ -411,6 +411,10 @@ export function AudioEqualizer({
         window.localStorage.setItem("webrtc_eq_gains", JSON.stringify(gains));
       }
 
+      if (onGainChange) {
+        gains.forEach((gain, i) => onGainChange(i, gain));
+      }
+
       if (audioContextRef.current) {
         const now = audioContextRef.current.currentTime;
         eqFiltersRef.current.forEach((filter, i) => {
@@ -418,6 +422,9 @@ export function AudioEqualizer({
             const targetGain = gains[i] ?? 0;
             if (typeof filter.gain.setTargetAtTime === "function") {
               filter.gain.setTargetAtTime(targetGain, now, 0.015);
+            } else if (typeof filter.gain.linearRampToValueAtTime === "function") {
+              filter.gain.setValueAtTime(filter.gain.value ?? 0, now);
+              filter.gain.linearRampToValueAtTime(targetGain, now + 0.03);
             } else if (typeof filter.gain.setValueAtTime === "function") {
               filter.gain.setValueAtTime(targetGain, now);
             }
@@ -428,7 +435,53 @@ export function AudioEqualizer({
   };
 
   const handleResetEq = () => {
-    handleEqPresetChange("flat");
+    // Smoothly animate all frequency sliders back to 0 dB and re-evaluate audio node gains
+    const flatGains = EQ_PRESETS.flat.gains;
+    const startGains = [...bandGains];
+    const duration = 200; // 200ms smooth slider animation
+    const startTime = performance.now();
+
+    const animateReset = (nowTime: number) => {
+      const elapsed = nowTime - startTime;
+      const progress = Math.min(1, elapsed / duration);
+      // Ease-out cubic animation curve
+      const eased = 1 - Math.pow(1 - progress, 3);
+
+      const interpolatedGains = startGains.map(
+        (startGain, i) => Math.round((startGain + (flatGains[i] - startGain) * eased) * 10) / 10,
+      );
+
+      setBandGains(interpolatedGains);
+
+      if (progress < 1) {
+        requestAnimationFrame(animateReset);
+      } else {
+        handleEqPresetChange("flat");
+      }
+    };
+
+    // Apply audio node param ramping immediately to smoothly ramp audio filter gains without clicks/pops
+    if (audioContextRef.current) {
+      const now = audioContextRef.current.currentTime;
+      eqFiltersRef.current.forEach((filter, i) => {
+        if (filter && filter.gain) {
+          if (typeof filter.gain.setTargetAtTime === "function") {
+            filter.gain.setTargetAtTime(0, now, 0.015);
+          } else if (typeof filter.gain.linearRampToValueAtTime === "function") {
+            filter.gain.setValueAtTime(filter.gain.value ?? 0, now);
+            filter.gain.linearRampToValueAtTime(0, now + 0.03);
+          } else if (typeof filter.gain.setValueAtTime === "function") {
+            filter.gain.setValueAtTime(0, now);
+          }
+        }
+      });
+    }
+
+    if (startGains.some((g) => g !== 0)) {
+      requestAnimationFrame(animateReset);
+    } else {
+      handleEqPresetChange("flat");
+    }
   };
 
   // Play Sound Logic
@@ -819,10 +872,12 @@ export function AudioEqualizer({
           <button
             onClick={handleResetEq}
             className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white transition-colors"
-            title="Reset all EQ gains to 0 dB"
+            title="Reset to Flat EQ preset (0 dB)"
+            aria-label="Reset to Flat"
+            data-testid="reset-to-flat-button"
           >
             <RotateCcw className="w-3 h-3" />
-            <span>Reset EQ</span>
+            <span>Reset to Flat</span>
           </button>
         </div>
 
@@ -830,7 +885,9 @@ export function AudioEqualizer({
           {EQ_BAND_LABELS.map((label, idx) => (
             <div
               key={label}
+              onDoubleClick={() => handleBandGainChange(idx, 0)}
               className="flex flex-col items-center justify-between gap-1 sm:gap-1.5 min-w-0"
+              title="Double-click to reset to 0 dB"
             >
               <span className="text-[9px] sm:text-[10px] font-mono text-zinc-400 whitespace-nowrap">
                 {label}
@@ -845,6 +902,10 @@ export function AudioEqualizer({
                 onChange={(e) =>
                   handleBandGainChange(idx, parseFloat(e.target.value))
                 }
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  handleBandGainChange(idx, 0);
+                }}
                 className="w-full h-1 bg-zinc-700 accent-indigo-500 rounded-lg cursor-pointer"
               />
               <span className="text-[8px] sm:text-[9px] font-mono text-indigo-400 whitespace-nowrap">

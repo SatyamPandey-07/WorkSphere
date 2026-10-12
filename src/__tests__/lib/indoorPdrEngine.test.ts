@@ -8,9 +8,11 @@ import {
   calculateRssiDistance,
   solveTrilateration,
   ExtendedKalmanFilter6D,
+  ExtendedKalmanFilter,
   StepDetector,
   IndoorPdrEngine,
   BeaconReading,
+  simulateIndoor100mPathBenchmark,
 } from "@/lib/spatial/indoorPdrEngine";
 
 describe("Indoor PDR Engine & Extended Kalman Filter", () => {
@@ -266,7 +268,10 @@ describe("Indoor PDR Engine & Extended Kalman Filter", () => {
       // Small jitter around 9.8 ± 0.2
       for (let i = 0; i < 20; i++) {
         time += 50;
-        const res = detector.processSample(9.8 + (i % 2 === 0 ? 0.2 : -0.2), time);
+        const res = detector.processSample(
+          9.8 + (i % 2 === 0 ? 0.2 : -0.2),
+          time,
+        );
         expect(res.stepDetected).toBe(false);
       }
 
@@ -492,6 +497,99 @@ describe("Indoor PDR Engine & Extended Kalman Filter", () => {
       const resSimultaneous = detector.processSample(14.0, 1000);
       expect(resSimultaneous.stepDetected).toBe(false);
       expect(detector.getStepCount()).toBe(0);
+    });
+  });
+
+  describe("EKF State Vector & Beacon Observation Matrix Updates", () => {
+    test("ExtendedKalmanFilter predicts position (x, y) and heading angle theta", () => {
+      const ekf = new ExtendedKalmanFilter({
+        x: 5.0,
+        y: 10.0,
+        heading: Math.PI / 4,
+      });
+      const initial = ekf.getState();
+      expect(initial.x).toBe(5.0);
+      expect(initial.y).toBe(10.0);
+      expect(initial.heading).toBeCloseTo(Math.PI / 4, 4);
+
+      // Step prediction with known displacement along heading
+      const stepLength = 0.75;
+      const heading = Math.PI / 2; // North
+      ekf.applyStep(stepLength, heading);
+
+      const predicted = ekf.getState();
+      expect(predicted.x).toBeCloseTo(5.0, 4);
+      expect(predicted.y).toBeCloseTo(10.75, 4);
+      expect(predicted.heading).toBeCloseTo(Math.PI / 2, 4);
+
+      // Gyro yaw integration over time delta dt
+      const dt = 0.1; // 100ms
+      const gyroZ = 0.5; // rad/s
+      ekf.predict(dt, gyroZ);
+
+      const afterGyro = ekf.getState();
+      // heading = pi/2 + 0.5 * 0.1 = 1.5708 + 0.05 = 1.6208
+      expect(afterGyro.heading).toBeCloseTo(Math.PI / 2 + 0.05, 3);
+    });
+
+    test("updates state covariance matrix using 2D BLE beacon observation matrix", () => {
+      const ekf = new ExtendedKalmanFilter({ x: 0, y: 0, heading: 0 });
+      const uncertBefore = ekf.getUncertaintyRadius();
+      const ellipseBefore = ekf.getUncertaintyEllipse();
+
+      // Measurement update with beacon trilateration fix (H = [1 0 0 0 0 0; 0 1 0 0 0 0])
+      const accepted = ekf.updatePosition(0.8, 0.4, 2.0);
+      expect(accepted).toBe(true);
+
+      const uncertAfter = ekf.getUncertaintyRadius();
+      const ellipseAfter = ekf.getUncertaintyEllipse();
+
+      // Covariance diagonal and uncertainty ellipse area must shrink
+      expect(uncertAfter).toBeLessThan(uncertBefore);
+      expect(ellipseAfter.area).toBeLessThan(ellipseBefore.area);
+      expect(ellipseAfter.semiMajorAxis).toBeLessThanOrEqual(
+        ellipseBefore.semiMajorAxis,
+      );
+    });
+
+    test("updates state covariance matrix using single-beacon range observation Jacobian H", () => {
+      const ekf = new ExtendedKalmanFilter({ x: 5.0, y: 5.0, heading: 0 });
+      const uncertBefore = ekf.getUncertaintyRadius();
+
+      // Beacon at (10.0, 5.0), true distance = 5.0m
+      const accepted = ekf.updateRange(10.0, 5.0, 4.8, 2.0);
+      expect(accepted).toBe(true);
+
+      const uncertAfter = ekf.getUncertaintyRadius();
+      expect(uncertAfter).toBeLessThan(uncertBefore);
+    });
+  });
+
+  describe("Simulation Benchmark: 100-Meter Indoor Walking Path Drift Correction", () => {
+    test("demonstrates < 1.0m average drift over a 100-meter indoor walking path with BLE beacon EKF updates", () => {
+      const benchmark = simulateIndoor100mPathBenchmark({
+        pathLengthMeters: 100.0,
+        stepLength: 0.7,
+        gyroBiasRadPerSec: 0.015, // Cumulative sensor drift
+        beaconIntervalMeters: 12.0,
+        beaconRssiNoiseDb: 1.5,
+      });
+
+      expect(benchmark.totalPathLengthMeters).toBe(100.0);
+      expect(benchmark.totalSteps).toBeGreaterThanOrEqual(140);
+
+      // Core Acceptance Criteria: average drift < 1.0m over 100m walking path
+      expect(benchmark.averageEkfDriftMeters).toBeLessThan(1.0);
+      expect(benchmark.passedBenchmark).toBe(true);
+
+      // Contrast with uncorrected dead reckoning: cumulative gyro drift causes severe divergence
+      expect(benchmark.averageRawDriftMeters).toBeGreaterThan(1.5);
+      expect(benchmark.finalRawDriftMeters).toBeGreaterThan(
+        benchmark.finalEkfDriftMeters,
+      );
+      expect(benchmark.averageEkfDriftMeters).toBeLessThan(
+        benchmark.averageRawDriftMeters,
+      );
     });
   });
 });

@@ -124,4 +124,55 @@ describe("useFocusTrap hook", () => {
 
     expect(document.activeElement).toBe(triggerBtn);
   });
+
+  it("safely ignores nested SVG elements with tabindex='0' lacking valid HTMLElement focus capabilities and continues trapping Tab cycle", () => {
+    // Create an SVG element with tabindex="0" that lacks a valid focus method or is not an HTMLElement
+    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svgEl.setAttribute("tabindex", "0");
+    // Explicitly delete focus or set to non-function to simulate older SVG element prototypes
+    (svgEl as any).focus = undefined;
+
+    // Also add a disabled button to ensure it is filtered out
+    const disabledBtn = document.createElement("button");
+    disabledBtn.setAttribute("disabled", "true");
+    disabledBtn.textContent = "Disabled";
+
+    container.insertBefore(svgEl, btn2);
+    container.insertBefore(disabledBtn, btn2);
+
+    const containerRef = { current: container };
+    const { result } = renderHook(() => useFocusTrap(containerRef, { isActive: true }));
+
+    act(() => {
+      jest.runAllTimers();
+    });
+
+    const focusable = result.current.getFocusableElements();
+    expect(focusable).not.toContain(svgEl);
+    expect(focusable).not.toContain(disabledBtn);
+    expect(focusable).toEqual([btn1, input1, btn2]);
+
+    // Test cycling forward from btn2 wraps back to btn1
+    btn2.focus();
+    expect(document.activeElement).toBe(btn2);
+
+    const forwardTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: false,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(forwardTab);
+    expect(document.activeElement).toBe(btn1);
+
+    // Test cycling backward from btn1 wraps to btn2
+    const backwardTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    document.dispatchEvent(backwardTab);
+    expect(document.activeElement).toBe(btn2);
+  });
 });

@@ -1,9 +1,17 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import {
   OfflineStorageInspector,
   formatSyncTimestamp,
+  pruneStaleEntries,
+  estimateStaleEntries,
+  DEFAULT_MAX_CACHE_AGE_MS,
   SyncLogItem,
 } from "../../components/OfflineStorageInspector";
+import * as offlineDbModule from "@/lib/offline/db";
+
+jest.mock("@/lib/offline/db", () => ({
+  initOfflineDB: jest.fn(),
+}));
 
 describe("OfflineStorageInspector - formatSyncTimestamp", () => {
   it("formats valid epoch timestamps correctly", () => {
@@ -58,6 +66,10 @@ describe("OfflineStorageInspector Component", () => {
       retryCount: 0,
     },
   ];
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
 
   it("does not render when isOpen is false", () => {
     const { container } = render(
@@ -120,5 +132,249 @@ describe("OfflineStorageInspector Component", () => {
     fireEvent.click(clearBtn);
 
     expect(handleClear).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Prune Stale Cache & Offline Store Transactions", () => {
+  const now = Date.now();
+  const eightDaysAgo = now - 8 * 24 * 60 * 60 * 1000;
+  const twoDaysAgo = now - 2 * 24 * 60 * 60 * 1000;
+
+  function createMockIndexedDB(storesData: Record<string, any[]>) {
+    return {
+      objectStoreNames: {
+        contains: (name: string) => name in storesData,
+      },
+      transaction: (storeNames: string[], _mode: string) => {
+        let activeStores = storeNames.length;
+        const tx: any = {
+          oncomplete: null,
+          onerror: null,
+          onabort: null,
+          error: null,
+          objectStore: (storeName: string) => {
+            const originalItems = [...(storesData[storeName] || [])];
+            return {
+              openCursor: () => {
+                let idx = 0;
+                const req: any = {
+                  result: null,
+                  onsuccess: null,
+                  onerror: null,
+                };
+
+                const advance = () => {
+                  if (idx < originalItems.length) {
+                    const currentItem = originalItems[idx];
+                    req.result = {
+                      value: currentItem,
+                      delete: () => {
+                        const deleteIdx =
+                          storesData[storeName].indexOf(currentItem);
+                        if (deleteIdx !== -1) {
+                          storesData[storeName].splice(deleteIdx, 1);
+                        }
+                      },
+                      continue: () => {
+                        idx++;
+                        setTimeout(advance, 0);
+                      },
+                    };
+                  } else {
+                    req.result = null;
+                  }
+
+                  if (req.onsuccess) {
+                    req.onsuccess();
+                  }
+
+                  if (idx >= originalItems.length) {
+                    activeStores--;
+                    if (activeStores <= 0) {
+                      setTimeout(() => {
+                        if (tx.oncomplete) {
+                          tx.oncomplete();
+                        }
+                      }, 0);
+                    }
+                  }
+                };
+
+                setTimeout(advance, 0);
+                return req;
+              },
+            };
+          },
+        };
+        return tx;
+      },
+    } as unknown as IDBDatabase;
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("prunes cache entries older than 7 days while preserving recent and protected entries", async () => {
+    const venuesData = [
+      { id: "v1", name: "Old Stale Venue", lastAccessedAt: eightDaysAgo },
+      { id: "v2", name: "Recent Venue", lastAccessedAt: twoDaysAgo },
+      {
+        id: "v3",
+        name: "Old Favorite",
+        lastAccessedAt: eightDaysAgo,
+        isFavorite: true,
+      },
+      {
+        id: "v4",
+        name: "Old Pinned",
+        lastAccessedAt: eightDaysAgo,
+        isPinned: true,
+      },
+    ];
+    const searchesData = [
+      { query: "coffee shops", timestamp: eightDaysAgo },
+      { query: "quiet libraries", timestamp: twoDaysAgo },
+    ];
+
+    const mockDb = createMockIndexedDB({
+      venues: venuesData,
+      recentlyViewedVenues: [],
+      searches: searchesData,
+      notes_cache: [],
+    });
+
+    (offlineDbModule.initOfflineDB as jest.Mock).mockResolvedValue(mockDb);
+
+    const result = await pruneStaleEntries(DEFAULT_MAX_CACHE_AGE_MS);
+
+    // v1 from venues and "coffee shops" from searches should be deleted (2 items)
+    expect(result.deletedCount).toBe(2);
+    expect(result.recoveredBytes).toBeGreaterThan(0);
+    expect(result.recoveredMB).toBeGreaterThanOrEqual(0);
+
+    // Ensure v2, v3, and v4 remain in venuesData
+    expect(venuesData.map((v) => v.id)).toEqual(["v2", "v3", "v4"]);
+    // Ensure "quiet libraries" remains in searchesData
+    expect(searchesData.map((s) => s.query)).toEqual(["quiet libraries"]);
+  });
+
+  it("estimates stale entries and reduction size accurately", async () => {
+    const venuesData = [
+      { id: "v1", name: "Old Stale Venue", savedAt: eightDaysAgo },
+      { id: "v2", name: "Recent Venue", savedAt: twoDaysAgo },
+    ];
+
+    const mockDb = createMockIndexedDB({
+      venues: venuesData,
+      recentlyViewedVenues: [],
+      searches: [],
+      notes_cache: [],
+    });
+
+    (offlineDbModule.initOfflineDB as jest.Mock).mockResolvedValue(mockDb);
+
+    const estimate = await estimateStaleEntries(DEFAULT_MAX_CACHE_AGE_MS);
+    expect(estimate.count).toBe(1);
+    expect(estimate.bytes).toBeGreaterThan(0);
+  });
+
+  it("renders Prune Stale Cache button with reduction estimate and quota badge", async () => {
+    const venuesData = [
+      { id: "v1", name: "Old Stale Venue", lastAccessedAt: eightDaysAgo },
+    ];
+
+    const mockDb = createMockIndexedDB({
+      venues: venuesData,
+      recentlyViewedVenues: [],
+      searches: [],
+      notes_cache: [],
+    });
+
+    (offlineDbModule.initOfflineDB as jest.Mock).mockResolvedValue(mockDb);
+
+    // Mock navigator.storage.estimate
+    Object.defineProperty(navigator, "storage", {
+      value: {
+        estimate: jest.fn().mockResolvedValue({
+          usage: 12.5 * 1024 * 1024,
+          quota: 500 * 1024 * 1024,
+        }),
+      },
+      writable: true,
+      configurable: true,
+    });
+
+    render(<OfflineStorageInspector isOpen={true} onClose={jest.fn()} />);
+
+    // Check Quota Used badge
+    await waitFor(() => {
+      expect(screen.getByTestId("storage-consumption-badge")).toHaveTextContent(
+        "12.5 MB / 500 MB",
+      );
+    });
+
+    // Check Prune Stale Cache button
+    const pruneBtn = screen.getByTestId("prune-stale-cache-btn");
+    expect(pruneBtn).toBeInTheDocument();
+    expect(pruneBtn).toHaveTextContent(/Prune Stale Cache/i);
+  });
+
+  it("triggers prune action and displays confirmation toast showing recovered megabytes", async () => {
+    const venuesData = [
+      {
+        id: "v1",
+        name: "Large Old Stale Venue Payload",
+        lastAccessedAt: eightDaysAgo,
+        data: "x".repeat(10000),
+      },
+      {
+        id: "v2",
+        name: "Another Old Payload",
+        lastAccessedAt: eightDaysAgo,
+        data: "y".repeat(10000),
+      },
+    ];
+
+    const mockDb = createMockIndexedDB({
+      venues: venuesData,
+      recentlyViewedVenues: [],
+      searches: [],
+      notes_cache: [],
+    });
+
+    (offlineDbModule.initOfflineDB as jest.Mock).mockResolvedValue(mockDb);
+
+    const onPruneMock = jest.fn();
+
+    render(
+      <OfflineStorageInspector
+        isOpen={true}
+        onClose={jest.fn()}
+        onPrune={onPruneMock}
+      />,
+    );
+
+    const pruneBtn = await screen.findByTestId("prune-stale-cache-btn");
+    fireEvent.click(pruneBtn);
+
+    // Confirmation toast should appear showing total megabytes recovered
+    await waitFor(() => {
+      const toast = screen.getByTestId("prune-confirmation-toast");
+      expect(toast).toBeInTheDocument();
+      expect(toast).toHaveTextContent(/Successfully pruned stale cache!/i);
+      expect(toast).toHaveTextContent(/Recovered/i);
+      expect(toast).toHaveTextContent(/MB/i);
+    });
+
+    expect(onPruneMock).toHaveBeenCalledTimes(1);
+
+    // Dismiss confirmation toast
+    const dismissBtn = screen.getByLabelText("Dismiss notification");
+    fireEvent.click(dismissBtn);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("prune-confirmation-toast")).toBeNull();
+    });
   });
 });

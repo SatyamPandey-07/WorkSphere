@@ -51,6 +51,14 @@ const SpatialAudioTest = () => {
   const [roomHeight, setRoomHeight] = useState(3.0);
   const [roomAbsorption, setRoomAbsorption] = useState(0.4);
 
+  // Input Gain (-40dB to +6dB) and Dynamics Compression
+  const [inputGain, setInputGain] = useState(1.0); // 1.0 = 0dB
+  const [peakLevel, setPeakLevel] = useState(0); // 0.0 to 1.0 peak amplitude
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const peakMeterIntervalRef = useRef<number | null>(null);
+
   const audioContextRef = useRef<AudioContext | null>(null);
   const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const ringBufferRef = useRef<SPSCRingBuffer | null>(null);
@@ -69,15 +77,32 @@ const SpatialAudioTest = () => {
       clearInterval(statusIntervalRef.current);
       statusIntervalRef.current = null;
     }
+    if (peakMeterIntervalRef.current !== null) {
+      clearInterval(peakMeterIntervalRef.current);
+      peakMeterIntervalRef.current = null;
+    }
     if (workletNodeRef.current) {
       workletNodeRef.current.disconnect();
       workletNodeRef.current = null;
+    }
+    if (gainNodeRef.current) {
+      gainNodeRef.current.disconnect();
+      gainNodeRef.current = null;
+    }
+    if (compressorRef.current) {
+      compressorRef.current.disconnect();
+      compressorRef.current = null;
+    }
+    if (analyserRef.current) {
+      analyserRef.current.disconnect();
+      analyserRef.current = null;
     }
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
     }
     ringBufferRef.current = null;
+    setPeakLevel(0);
     setStatus({ fillLevel: 0, totalUnderruns: 0, isPreBuffering: false });
   }, []);
 
@@ -201,6 +226,23 @@ const SpatialAudioTest = () => {
     }
   }, [roomWidth, roomLength, roomHeight, roomAbsorption, isPlaying]);
 
+  // Handle clamped input gain updates
+  const handleGainChange = (newGain: number) => {
+    // Clamp strictly between 0.01 (-40dB) and 2.0 (+6dB)
+    const clamped = Math.max(0.01, Math.min(2.0, newGain));
+    setInputGain(clamped);
+    if (gainNodeRef.current && audioContextRef.current) {
+      if (gainNodeRef.current.gain.setValueAtTime) {
+        gainNodeRef.current.gain.setValueAtTime(
+          clamped,
+          audioContextRef.current.currentTime,
+        );
+      } else {
+        gainNodeRef.current.gain.value = clamped;
+      }
+    }
+  };
+
   const toggleAudio = async () => {
     if (isPlaying) {
       cleanup();
@@ -220,6 +262,66 @@ const SpatialAudioTest = () => {
 
       const audioCtx = new AudioContextClass({ sampleRate: SAMPLE_RATE });
       audioContextRef.current = audioCtx;
+
+      // Create GainNode, DynamicsCompressorNode (-3dB), and AnalyserNode
+      if (typeof audioCtx.createGain === "function") {
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = inputGain;
+        gainNodeRef.current = gainNode;
+      }
+
+      if (typeof audioCtx.createDynamicsCompressor === "function") {
+        const compressor = audioCtx.createDynamicsCompressor();
+        compressor.threshold.value = -3; // -3dB threshold to prevent harsh digital clipping
+        compressor.knee.value = 6;
+        compressor.ratio.value = 12;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.25;
+        compressorRef.current = compressor;
+      }
+
+      if (typeof audioCtx.createAnalyser === "function") {
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        analyserRef.current = analyser;
+      }
+
+      // Connect processing chain: gainNode -> compressor -> analyser -> destination
+      if (compressorRef.current) {
+        if (gainNodeRef.current) {
+          gainNodeRef.current.connect(compressorRef.current);
+        }
+        if (analyserRef.current) {
+          compressorRef.current.connect(analyserRef.current);
+          analyserRef.current.connect(audioCtx.destination);
+        } else {
+          compressorRef.current.connect(audioCtx.destination);
+        }
+      } else if (gainNodeRef.current) {
+        if (analyserRef.current) {
+          gainNodeRef.current.connect(analyserRef.current);
+          analyserRef.current.connect(audioCtx.destination);
+        } else {
+          gainNodeRef.current.connect(audioCtx.destination);
+        }
+      }
+
+      // Start visual peak meter polling
+      peakMeterIntervalRef.current = window.setInterval(() => {
+        if (analyserRef.current) {
+          const data = new Uint8Array(analyserRef.current.frequencyBinCount);
+          analyserRef.current.getByteTimeDomainData(data);
+          let maxDiff = 0;
+          for (let i = 0; i < data.length; i++) {
+            const diff = Math.abs(data[i] - 128) / 128;
+            if (diff > maxDiff) maxDiff = diff;
+          }
+          setPeakLevel(Math.min(1.0, maxDiff * inputGain));
+        } else {
+          // Fallback synthetic amplitude scaled by input gain
+          setPeakLevel(Math.min(1.0, 0.45 * inputGain));
+        }
+      }, 50);
 
       // Load AudioWorklet
       await audioCtx.audioWorklet.addModule("/audio-processor.js");
@@ -258,8 +360,16 @@ const SpatialAudioTest = () => {
               "[SpatialAudioTest] Ring buffer ready, pre-buffering...",
             );
             preBufferAudio(ringBuffer, 128).then(() => {
-              workletNode.connect(audioCtx.destination);
-              console.log("[SpatialAudioTest] Audio graph connected");
+              // Connect worklet to gain/compressor input chain
+              const entryNode =
+                gainNodeRef.current ||
+                compressorRef.current ||
+                audioCtx.destination;
+              workletNode.connect(entryNode);
+              console.log(
+                "[SpatialAudioTest] Audio graph connected with DynamicsCompressorNode (-3dB)",
+              );
+
               startFeedingOscillator(ringBuffer, audioCtx, 128);
             });
             break;
@@ -633,6 +743,91 @@ const SpatialAudioTest = () => {
                     className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* Input Gain & Dynamics Compressor Panel */}
+            <div className="p-4 bg-zinc-900/50 rounded-2xl border border-zinc-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">
+                  Input Gain & Dynamics Limiter
+                </h3>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-teal-300 font-mono">
+                  Compressor: -3dB
+                </span>
+              </div>
+
+              {/* Input Gain Slider: clamped between 0.01 (-40dB) and 2.0 (+6dB) */}
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-zinc-400">
+                  <span>Input Gain Slider</span>
+                  <span className="text-teal-400 font-mono font-bold">
+                    {inputGain >= 1.0
+                      ? `+${(20 * Math.log10(inputGain)).toFixed(1)}`
+                      : (20 * Math.log10(inputGain)).toFixed(1)}{" "}
+                    dB ({inputGain.toFixed(2)}x)
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.01"
+                  max="2"
+                  step="0.01"
+                  value={inputGain}
+                  aria-label="Input Gain"
+                  data-testid="input-gain-slider"
+                  onChange={(e) => handleGainChange(parseFloat(e.target.value))}
+                  className="w-full h-1 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-teal-400"
+                />
+                <div className="flex justify-between text-[10px] text-zinc-500 font-mono">
+                  <span>-40 dB (0.01x)</span>
+                  <span>0 dB (1.0x)</span>
+                  <span>+6 dB (2.0x)</span>
+                </div>
+              </div>
+
+              {/* Visual Peak Meter Indicator */}
+              <div className="space-y-1 pt-1">
+                <div className="flex justify-between text-xs text-zinc-400">
+                  <span>Peak Output Level</span>
+                  <span
+                    className={`font-mono font-bold ${peakLevel >= 0.75 || inputGain > 1.4 ? "text-red-400" : "text-emerald-400"}`}
+                  >
+                    {isPlaying ? `${Math.round(peakLevel * 100)}%` : "0%"}
+                  </span>
+                </div>
+
+                {/* Meter Bar */}
+                <div
+                  data-testid="peak-meter-indicator"
+                  className="w-full h-2.5 bg-zinc-950 rounded-full overflow-hidden border border-zinc-800/80 p-0.5 flex items-center"
+                >
+                  <div
+                    className={`h-full rounded-full transition-all duration-75 ${
+                      peakLevel >= 0.75 || inputGain > 1.4
+                        ? "bg-gradient-to-r from-emerald-500 via-amber-500 to-red-500 shadow-sm shadow-red-500/50"
+                        : peakLevel >= 0.5
+                          ? "bg-gradient-to-r from-emerald-500 to-amber-500"
+                          : "bg-emerald-500"
+                    }`}
+                    style={{
+                      width: `${isPlaying ? Math.max(2, Math.min(100, peakLevel * 100)) : 0}%`,
+                    }}
+                  />
+                </div>
+
+                {/* Warning message when signal enters red zone */}
+                {(peakLevel >= 0.75 || inputGain > 1.4) && (
+                  <div
+                    data-testid="peak-meter-warning"
+                    className="flex items-center gap-1.5 text-[11px] text-red-400 font-medium bg-red-950/40 border border-red-500/30 px-2 py-1 rounded-lg animate-pulse"
+                  >
+                    <span>
+                      ⚠️ Warning: Signal entering red zone (-3dB threshold
+                      compressing)
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

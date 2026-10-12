@@ -4,6 +4,23 @@ This document catalogs the design token structure, utility class naming standard
 
 ---
 
+## Table of Contents
+
+- [1. CSS Custom Variables & Theme Tokens](#1-css-custom-variables--theme-tokens)
+- [2. High-Contrast Accessibility Tokens (`--contrast-*`)](#2-high-contrast-accessibility-tokens---contrast-)
+  - [2.1 High-Contrast Token Registry](#21-high-contrast-token-registry)
+  - [2.2 Default vs. High-Contrast Values Comparison Table](#22-default-vs-high-contrast-values-comparison-table)
+  - [2.3 Focus Outlines & Interactive State Standards](#23-focus-outlines--interactive-state-standards)
+  - [2.4 Code Example: Styling an Accessible Card Component with Contrast Tokens](#24-code-example-styling-an-accessible-card-component-with-contrast-tokens)
+- [3. Glassmorphism Template](#3-glassmorphism-template)
+- [4. Shadow Guidelines](#4-shadow-guidelines)
+- [5. Color Palette](#5-color-palette)
+- [6. Typography Guidelines](#6-typography-guidelines)
+- [7. Spacing Guidelines](#7-spacing-guidelines)
+- [8. Backdrop Guidelines](#8-backdrop-guidelines)
+
+---
+
 ## 1. CSS Custom Variables & Theme Tokens
 
 The layout uses custom properties mounted to the `:root` pseudo-class for system-wide light/dark theme tracking. Dark mode variables are injected via the `.dark` class hook.
@@ -38,7 +55,202 @@ The layout uses custom properties mounted to the `:root` pseudo-class for system
 
 ---
 
-## Glassmorphism Template
+## 2. High-Contrast Accessibility Tokens (`--contrast-*`)
+
+WorkSphere includes a dedicated High-Contrast Mode (WCAG 2.1 AAA compliant with 7:1+ contrast ratios) activated via `HighContrastToggle.tsx`. When toggled, `ThemeProvider.tsx` injects the `.high-contrast` class and `data-high-contrast="true"` attribute onto the root `<html>` element.
+
+To ensure custom components built by frontend contributors remain fully accessible without writing verbose ad-hoc CSS overrides, the design system exposes semantic `--contrast-*` custom properties that automatically adapt between standard light/dark modes and high-contrast modes.
+
+### 2.1 High-Contrast Token Registry
+
+The following `--contrast-*` tokens are available system-wide:
+
+- `--contrast-border`: Solid border color for cards, panels, dialogs, inputs, and dividers.
+- `--contrast-text`: Maximum-contrast primary text color for headings, titles, and body content.
+- `--contrast-text-muted`: Secondary text color elevated to guarantee 7:1 AAA contrast against the background.
+- `--contrast-bg`: Root background color for viewport and primary containers.
+- `--contrast-card-bg`: Surface background color for cards, modals, dropdowns, and flyout menus.
+- `--contrast-focus`: Accent indicator color for focused elements.
+- `--contrast-outline`: Solid 3px high-visibility outline for keyboard `:focus-visible` states.
+- `--contrast-btn-bg`: Solid background fill for primary interactive buttons.
+- `--contrast-btn-text`: High-contrast text label for primary buttons.
+- `--contrast-interactive-active`: Accent color for active switches, checked boxes, and focused links.
+
+---
+
+### 2.2 Default vs. High-Contrast Values Comparison Table
+
+| Token Name                      | Default Light Mode     | Default Dark Mode      | High-Contrast Light (`html.high-contrast`) | High-Contrast Dark (`html.high-contrast.dark`) | WCAG AAA Ratio & Purpose                 |
+| :------------------------------ | :--------------------- | :--------------------- | :----------------------------------------- | :--------------------------------------------- | :--------------------------------------- |
+| `--contrast-border`             | `#e4e4e7` (`zinc-200`) | `#27272a` (`zinc-800`) | `#000000` (Pure Black)                     | `#ffffff` (Pure White)                         | 21:1 ratio; delineates all boundaries    |
+| `--contrast-text`               | `#171717` (`zinc-900`) | `#ededed` (`zinc-100`) | `#000000` (Pure Black)                     | `#ffffff` (Pure White)                         | 21:1 ratio; maximum readability          |
+| `--contrast-text-muted`         | `#71717a` (`zinc-500`) | `#a1a1aa` (`zinc-400`) | `#000000` (Pure Black)                     | `#ffffff` (Pure White)                         | 21:1 ratio; eliminates low-contrast gray |
+| `--contrast-bg`                 | `#ffffff` (White)      | `#0a0a0a` (Near Black) | `#ffffff` (Pure White)                     | `#000000` (Pure Black)                         | Unifies viewport canvas                  |
+| `--contrast-card-bg`            | `#ffffff` (White)      | `#18181b` (`zinc-900`) | `#ffffff` (Pure White)                     | `#000000` (Pure Black)                         | Removes subtle gradients & opacity       |
+| `--contrast-focus`              | `#3b82f6` (`blue-500`) | `#60a5fa` (`blue-400`) | `#000000` (Pure Black)                     | `#ffea00` (Vivid Yellow)                       | >7:1 focus indicator visibility          |
+| `--contrast-outline`            | `2px solid #3b82f6`    | `2px solid #60a5fa`    | `3px solid #000000`                        | `3px solid #ffea00`                            | Eliminates invisible focus rings         |
+| `--contrast-btn-bg`             | `#18181b` (`zinc-900`) | `#ffffff` (White)      | `#000000` (Pure Black)                     | `#ffffff` (Pure White)                         | Maximum button prominence                |
+| `--contrast-btn-text`           | `#ffffff` (White)      | `#18181b` (`zinc-900`) | `#ffffff` (Pure White)                     | `#000000` (Pure Black)                         | 21:1 button label legibility             |
+| `--contrast-interactive-active` | `#2563eb` (`blue-600`) | `#3b82f6` (`blue-500`) | `#0047bb` (Deep Cobalt)                    | `#38bdf8` (Vivid Cyan)                         | >7:1 interactive active states           |
+
+---
+
+### 2.3 Focus Outlines & Interactive State Standards
+
+In high-contrast mode, default browser focus rings and subtle Tailwind box-shadows are replaced with high-visibility dual-ring outlines:
+
+- **Light Mode Focus**: `outline: 3px solid #000000 !important; outline-offset: 2px; box-shadow: 0 0 0 4px #ffd600, 0 0 0 6px #000000 !important;`
+- **Dark Mode Focus**: `outline: 3px solid #ffea00 !important; outline-offset: 2px; box-shadow: 0 0 0 4px #000000, 0 0 0 6px #ffffff !important;`
+
+This dual-layer outline ensures clear visibility against both dark and light surrounding surfaces, satisfying WCAG 2.1 Success Criterion 2.4.7 (Focus Visible) and 1.4.11 (Non-text Contrast).
+
+---
+
+### 2.4 Code Example: Styling an Accessible Card Component with Contrast Tokens
+
+Below is an example of an accessible workspace card component implemented in React and Tailwind CSS that utilizes `--contrast-*` tokens. It functions seamlessly in standard light/dark modes and automatically adapts when `HighContrastToggle` is engaged:
+
+```tsx
+import React from "react";
+import { Wifi, MapPin, ArrowRight } from "lucide-react";
+
+interface VenueCardProps {
+  name: string;
+  location: string;
+  wifiSpeed: string;
+  availableSeats: number;
+  onBook: () => void;
+}
+
+export function AccessibleVenueCard({
+  name,
+  location,
+  wifiSpeed,
+  availableSeats,
+  onBook,
+}: VenueCardProps) {
+  return (
+    <div
+      className="p-5 rounded-2xl transition-all shadow-md"
+      style={{
+        backgroundColor: "var(--contrast-card-bg)",
+        borderColor: "var(--contrast-border)",
+        borderWidth: "2px",
+        borderStyle: "solid",
+        color: "var(--contrast-text)",
+      }}
+    >
+      {/* Card Header */}
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <h3
+            className="text-lg font-bold tracking-tight"
+            style={{ color: "var(--contrast-text)" }}
+          >
+            {name}
+          </h3>
+          <p
+            className="flex items-center gap-1.5 text-sm mt-0.5"
+            style={{ color: "var(--contrast-text-muted)" }}
+          >
+            <MapPin className="w-4 h-4 shrink-0" aria-hidden="true" />
+            <span>{location}</span>
+          </p>
+        </div>
+
+        {/* Availability Badge */}
+        <span
+          className="px-2.5 py-1 rounded-full text-xs font-semibold"
+          style={{
+            borderColor: "var(--contrast-border)",
+            borderWidth: "1.5px",
+            borderStyle: "solid",
+            color: "var(--contrast-text)",
+            backgroundColor: "var(--contrast-bg)",
+          }}
+        >
+          {availableSeats} seats left
+        </span>
+      </div>
+
+      {/* Metrics Row */}
+      <div
+        className="flex items-center gap-4 py-3 my-3 border-t border-b"
+        style={{ borderColor: "var(--contrast-border)" }}
+      >
+        <div className="flex items-center gap-2 text-sm">
+          <Wifi className="w-4 h-4" aria-hidden="true" />
+          <span style={{ color: "var(--contrast-text)" }}>
+            <strong>{wifiSpeed}</strong> Mbps
+          </span>
+        </div>
+      </div>
+
+      {/* Interactive Action Button */}
+      <button
+        type="button"
+        onClick={onBook}
+        className="w-full mt-2 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm transition-all cursor-pointer focus-visible:outline-none"
+        style={{
+          backgroundColor: "var(--contrast-btn-bg)",
+          color: "var(--contrast-btn-text)",
+          borderColor: "var(--contrast-border)",
+          borderWidth: "2px",
+          borderStyle: "solid",
+          outline: "var(--contrast-outline)",
+          outlineOffset: "var(--contrast-focus-offset, 2px)",
+        }}
+      >
+        <span>Reserve Workspace</span>
+        <ArrowRight className="w-4 h-4" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+```
+
+#### Vanilla CSS Equivalent
+
+For components styled without Tailwind:
+
+```css
+.accessible-card {
+  background-color: var(--contrast-card-bg);
+  border: 2px solid var(--contrast-border);
+  color: var(--contrast-text);
+  border-radius: 1rem;
+  padding: 1.25rem;
+}
+
+.accessible-card-title {
+  color: var(--contrast-text);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.accessible-card-subtitle {
+  color: var(--contrast-text-muted);
+  font-size: 0.875rem;
+}
+
+.accessible-card-button {
+  background-color: var(--contrast-btn-bg);
+  color: var(--contrast-btn-text);
+  border: 2px solid var(--contrast-border);
+  border-radius: 0.75rem;
+  padding: 0.625rem 1rem;
+  font-weight: 600;
+}
+
+.accessible-card-button:focus-visible {
+  outline: var(--contrast-outline);
+  outline-offset: 2px;
+}
+```
+
+---
+
+## 3. Glassmorphism Template
 
 The project includes a reusable `.glass-card` utility for creating elevated, glass-style UI components.
 
@@ -59,7 +271,7 @@ The project includes a reusable `.glass-card` utility for creating elevated, gla
 
 ---
 
-## Shadow Guidelines
+## 4. Shadow Guidelines
 
 The design system uses both Tailwind shadow utilities and custom glow effects.
 
@@ -71,7 +283,7 @@ The design system uses both Tailwind shadow utilities and custom glow effects.
 
 ---
 
-## Color Palette
+## 5. Color Palette
 
 In addition to the global theme tokens, the project uses semantic accent colors throughout the interface.
 
@@ -86,7 +298,7 @@ In addition to the global theme tokens, the project uses semantic accent colors 
 
 ---
 
-## Typography Guidelines
+## 6. Typography Guidelines
 
 The project commonly uses the following typography utilities.
 
@@ -98,7 +310,7 @@ The project commonly uses the following typography utilities.
 
 ---
 
-## Spacing Guidelines
+## 7. Spacing Guidelines
 
 The project follows Tailwind's spacing scale for consistent layouts.
 
@@ -123,7 +335,7 @@ These spacing utilities are used throughout the project to maintain consistent l
 
 ---
 
-## Backdrop Guidelines
+## 8. Backdrop Guidelines
 
 The project uses Tailwind backdrop blur utilities to create translucent, glass-style interfaces.
 

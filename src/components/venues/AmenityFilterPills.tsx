@@ -10,7 +10,6 @@ import {
   Sun,
   Coffee,
   Check,
-  Sparkles,
 } from "lucide-react";
 
 export interface AmenityFilterItem {
@@ -65,6 +64,7 @@ export interface AmenityFilterPillsProps {
   selectedAmenities?: string[];
   onToggleAmenity?: (amenityId: string, active: boolean) => void;
   syncWithUrl?: boolean;
+  emptyMessage?: string;
 }
 
 /**
@@ -78,6 +78,7 @@ export function AmenityFilterPills({
   selectedAmenities: controlledSelected,
   onToggleAmenity,
   syncWithUrl = true,
+  emptyMessage,
 }: AmenityFilterPillsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -111,27 +112,32 @@ export function AmenityFilterPills({
     return set;
   }, [controlledSelected, searchParams, amenities]);
 
-  // Check scroll bounds for smooth scroll indicator
-  const updateScrollIndicators = () => {
-    const el = scrollContainerRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 4);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
-  };
+  const hasAmenities = amenities.length > 0;
 
+  // Check scroll bounds and attach listeners when the container is present.
   useEffect(() => {
-    updateScrollIndicators();
     const el = scrollContainerRef.current;
+
     if (!el) return;
 
-    el.addEventListener("scroll", updateScrollIndicators, { passive: true });
+    const updateScrollIndicators = () => {
+      setCanScrollLeft(el.scrollLeft > 4);
+      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+    };
+
+    updateScrollIndicators();
+
+    el.addEventListener("scroll", updateScrollIndicators, {
+      passive: true,
+    });
+
     window.addEventListener("resize", updateScrollIndicators);
 
     return () => {
       el.removeEventListener("scroll", updateScrollIndicators);
       window.removeEventListener("resize", updateScrollIndicators);
     };
-  }, []);
+  }, [hasAmenities]);
 
   const handleToggle = (item: AmenityFilterItem) => {
     const isActive = activeSet.has(item.id);
@@ -140,7 +146,9 @@ export function AmenityFilterPills({
     onToggleAmenity?.(item.id, nextState);
 
     if (syncWithUrl && pathname && router) {
-      const params = new URLSearchParams(searchParams ? searchParams.toString() : "");
+      const params = new URLSearchParams(
+        searchParams ? searchParams.toString() : "",
+      );
 
       if (nextState) {
         params.set(item.paramKey, "true");
@@ -167,6 +175,17 @@ export function AmenityFilterPills({
     }
   };
 
+  // Avoid rendering an empty scrollable container when no amenities exist.
+  if (amenities.length === 0) {
+    if (!emptyMessage) {
+      return null;
+    }
+    return (
+      <p className={`text-xs text-zinc-500 dark:text-zinc-400 ${className}`}>
+        {emptyMessage}
+      </p>
+    );
+  }
   return (
     <div
       className={`relative w-full ${className}`}

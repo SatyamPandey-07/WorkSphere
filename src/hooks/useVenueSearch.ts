@@ -36,6 +36,7 @@ export interface UseVenueSearchReturn<T = VenueSearchResult> {
   setQuery: (query: string) => void;
   venues: T[];
   results: T[];
+  suggestedQuery: string | null;
   isLoading: boolean;
   loading: boolean;
   error: string | null;
@@ -73,6 +74,7 @@ export function useVenueSearch<T = VenueSearchResult>(
   const activeQuery = isControlled ? controlledQuery : internalQuery;
 
   const [venues, setVenues] = useState<T[]>([]);
+  const [suggestedQuery, setSuggestedQuery] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -96,6 +98,7 @@ export function useVenueSearch<T = VenueSearchResult>(
     }
     abort();
     setVenues([]);
+    setSuggestedQuery(null);
     setIsLoading(false);
     setError(null);
     if (!isControlled) {
@@ -111,6 +114,7 @@ export function useVenueSearch<T = VenueSearchResult>(
       if (!trimmedQuery || trimmedQuery.length < minQueryLength) {
         abort();
         setVenues([]);
+        setSuggestedQuery(null);
         setIsLoading(false);
         setError(null);
         return;
@@ -127,6 +131,7 @@ export function useVenueSearch<T = VenueSearchResult>(
 
       setIsLoading(true);
       setError(null);
+      setSuggestedQuery(null);
 
       try {
         const delimiter = apiEndpoint.includes("?") ? "&" : "?";
@@ -154,6 +159,9 @@ export function useVenueSearch<T = VenueSearchResult>(
             : [];
 
         setVenues(items);
+        setSuggestedQuery(
+          typeof data?.suggestedQuery === "string" ? data.suggestedQuery : null,
+        );
         setIsLoading(false);
       } catch (err: unknown) {
         // Catch AbortError (or DOMException.ABORT_ERR) and ignore it silently
@@ -199,6 +207,7 @@ export function useVenueSearch<T = VenueSearchResult>(
     if (!trimmed || trimmed.length < minQueryLength) {
       abort();
       setVenues([]);
+      setSuggestedQuery(null);
       setIsLoading(false);
       setError(null);
       return;
@@ -240,6 +249,7 @@ export function useVenueSearch<T = VenueSearchResult>(
       if (!isControlled) {
         setInternalQuery(newQuery);
       }
+      setSuggestedQuery(null);
     },
     [isControlled],
   );
@@ -249,6 +259,7 @@ export function useVenueSearch<T = VenueSearchResult>(
     setQuery: handleSetQuery,
     venues,
     results: venues,
+    suggestedQuery,
     isLoading,
     loading: isLoading,
     error,

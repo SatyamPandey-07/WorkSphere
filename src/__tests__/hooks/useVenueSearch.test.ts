@@ -25,9 +25,33 @@ describe("useVenueSearch (#3513)", () => {
     expect(result.current.query).toBe("");
     expect(result.current.venues).toEqual([]);
     expect(result.current.results).toEqual([]);
+    expect(result.current.suggestedQuery).toBeNull();
     expect(result.current.isLoading).toBe(false);
     expect(result.current.loading).toBe(false);
     expect(result.current.error).toBeNull();
+  });
+
+  it("exposes a suggested query returned by the search API", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        venues: [],
+        suggestedQuery: "Starbucks",
+      }),
+    });
+
+    const { result } = renderHook(() => useVenueSearch());
+
+    act(() => {
+      result.current.setQuery("Starbuks");
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(250);
+    });
+
+    expect(result.current.suggestedQuery).toBe("Starbucks");
+    expect(result.current.venues).toEqual([]);
   });
 
   it("debounces rapid keystrokes by 250ms and fires at most one request", async () => {

@@ -12,6 +12,10 @@ import { rateLimit, getRateLimitInfo } from "@/lib/rateLimit";
 import { ensureUserExists } from "@/lib/auth";
 import { emitWebhookEvent } from "@/lib/webhooks/deliver";
 import { sanitizeSearchQuery, splitSearchList } from "@/lib/searchSanitizer";
+import {
+  getFuzzyThreshold,
+  isFuzzyMatch,
+} from "@/lib/search/fuzzySearch";
 
 // Search/autocomplete is expected to fire on every keystroke (debounced client-side
 // to ~250-300ms), which can mean several requests per second while someone types a
@@ -20,6 +24,25 @@ import { sanitizeSearchQuery, splitSearchList } from "@/lib/searchSanitizer";
 // burst-tolerant ceiling — generous enough for fast typing, still low enough to stop
 // scripted abuse. See #717.
 const VENUE_SEARCH_RATE_LIMIT = 60;
+
+function suggestVenueQuery(query: string, venueNames: string[]): string | undefined {
+  const trimmedQuery = query.trim();
+  const threshold = getFuzzyThreshold(trimmedQuery.length);
+  if (!trimmedQuery || threshold === 0) return undefined;
+
+  let suggestion: string | undefined;
+  let closestDistance = threshold + 1;
+
+  for (const name of venueNames) {
+    const match = isFuzzyMatch(trimmedQuery, name, threshold);
+    if (match.matched && match.distance > 0 && match.distance < closestDistance) {
+      suggestion = name;
+      closestDistance = match.distance;
+    }
+  }
+
+  return suggestion;
+}
 
 interface VenueSearchData {
   lat: number;
@@ -147,6 +170,12 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      const suggestionWhere =
+        andConditions.length === 1
+          ? andConditions[0]
+          : andConditions.length > 1
+            ? { AND: [...andConditions] }
+            : {};
       if (queryParam) {
         andConditions.push({
           OR: [
@@ -177,8 +206,25 @@ export async function GET(req: NextRequest) {
           foodValidations: true,
         },
       });
+      const suggestedQuery =
+        venues.length === 0 &&
+        queryParam &&
+        typeof queryParam === "string"
+          ? suggestVenueQuery(
+              queryParam,
+              (
+                await prisma.venue.findMany({
+                  where: suggestionWhere,
+                  select: { name: true },
+                  orderBy: { rating: "desc" },
+                  take: 500,
+                })
+              ).map((venue) => venue.name),
+            )
+          : undefined;
       return NextResponse.json({
         venues,
+        ...(suggestedQuery && { suggestedQuery }),
         pagination: {
           page,
           limit,
@@ -429,6 +475,7 @@ export async function GET(req: NextRequest) {
       take: limit,
     });
 
+    let suggestedQuery: string | undefined;
     // ── Fuzzy typo-tolerant search fallback (#3958) ─────────────────────────
     // If strict substring search returned 0 results and a text query was provided,
     // fetch candidate venues and apply Levenshtein / Damerau-Levenshtein distance.
@@ -492,11 +539,17 @@ export async function GET(req: NextRequest) {
         } else {
           venues = [];
         }
+      } else {
+        suggestedQuery = suggestVenueQuery(
+          querySearch,
+          allCandidates.map((venue) => venue.name),
+        );
       }
     }
 
     return NextResponse.json({
       venues,
+      ...(suggestedQuery && { suggestedQuery }),
       pagination: {
         page,
         limit,

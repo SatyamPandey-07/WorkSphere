@@ -17,6 +17,20 @@ import {
   Headphones,
   Sparkles,
 } from "lucide-react";
+import {
+  createGeodesicRadarDomeScene,
+  projectStageTo3DGround,
+  computeDomeSurfaceHeight,
+  isWebGLAvailable,
+  type GeodesicRadarDomeSceneController,
+} from "./geodesicRadarDomeScene";
+
+export {
+  createGeodesicRadarDomeScene,
+  projectStageTo3DGround,
+  computeDomeSurfaceHeight,
+  isWebGLAvailable,
+};
 
 export interface StagePosition {
   x: number;
@@ -63,9 +77,28 @@ export interface SpatialAudioStageProps {
 interface PeerAudioChain {
   peerId: string;
   source: MediaStreamAudioSourceNode;
+  analyser?: AnalyserNode;
   panner: PannerNode;
   gain: GainNode;
   stream: MediaStream;
+}
+
+/**
+ * Computes normalized RMS/average audio volume level (0.0 to 1.0) from an AnalyserNode.
+ */
+export function getPeerAudioLevel(analyser?: AnalyserNode): number {
+  if (!analyser) return 0;
+  try {
+    const dataArray = new Uint8Array(analyser.frequencyBinCount || 32);
+    analyser.getByteFrequencyData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      sum += dataArray[i];
+    }
+    return sum / (dataArray.length * 255);
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -227,6 +260,65 @@ export const SpatialAudioStage: React.FC<SpatialAudioStageProps> = ({
   const ownContextRef = useRef<boolean>(false);
   const chainsRef = useRef<Map<string, PeerAudioChain>>(new Map());
 
+  // 3D Geodesic Radar Dome Refs & State
+  const domeCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const domeControllerRef = useRef<GeodesicRadarDomeSceneController | null>(
+    null,
+  );
+  const activePeersRef = useRef(activePeers);
+  activePeersRef.current = activePeers;
+  const localUserRef = useRef(localUser);
+  localUserRef.current = localUser;
+
+  // Initialize 3D Geodesic Radar Dome Three.js / WebGL Scene
+  useEffect(() => {
+    const canvas = domeCanvasRef.current;
+    if (!canvas) return;
+
+    const controller = createGeodesicRadarDomeScene(canvas, {
+      stageWidth,
+      stageHeight,
+    });
+    domeControllerRef.current = controller;
+    controller.updatePeers(activePeersRef.current, localUserRef.current);
+
+    let animationFrameId: number;
+    let lastTime = performance.now();
+
+    const renderLoop = (time: number) => {
+      const delta = (time - lastTime) / 1000;
+      lastTime = time;
+
+      // Sample real-time audio levels from active peer streams
+      const peerAudioLevels: Record<string, number> = {};
+      let totalAudio = 0;
+      chainsRef.current.forEach((chain, peerId) => {
+        if (chain.analyser) {
+          const lvl = getPeerAudioLevel(chain.analyser);
+          peerAudioLevels[peerId] = lvl;
+          totalAudio += lvl;
+        }
+      });
+
+      controller.updatePeers(
+        activePeersRef.current,
+        localUserRef.current,
+        peerAudioLevels,
+      );
+      controller.animateFrame(delta, totalAudio);
+
+      animationFrameId = requestAnimationFrame(renderLoop);
+    };
+
+    animationFrameId = requestAnimationFrame(renderLoop);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      controller.dispose();
+      domeControllerRef.current = null;
+    };
+  }, [stageWidth, stageHeight]);
+
   // Initialize AudioContext
   useEffect(() => {
     if (externalAudioContext) {
@@ -255,6 +347,7 @@ export const SpatialAudioStage: React.FC<SpatialAudioStageProps> = ({
             chains.forEach((chain) => {
               try {
                 chain.source.disconnect();
+                chain.analyser?.disconnect();
                 chain.panner.disconnect();
                 chain.gain.disconnect();
               } catch {}
@@ -313,6 +406,7 @@ export const SpatialAudioStage: React.FC<SpatialAudioStageProps> = ({
         if (chain) {
           try {
             chain.source.disconnect();
+            chain.analyser?.disconnect();
             chain.panner.disconnect();
             chain.gain.disconnect();
           } catch {}
@@ -358,7 +452,17 @@ export const SpatialAudioStage: React.FC<SpatialAudioStageProps> = ({
           );
 
           // 3. Connect audio graph: source -> panner -> gain -> destination
+          // and tap AnalyserNode to drive 3D dome surface ripples
           const source = ctx.createMediaStreamSource(stream);
+          let analyser: AnalyserNode | undefined;
+          if (typeof ctx.createAnalyser === "function") {
+            try {
+              analyser = ctx.createAnalyser();
+              analyser.fftSize = 64;
+              analyser.smoothingTimeConstant = 0.4;
+              source.connect(analyser);
+            } catch {}
+          }
           const gain = ctx.createGain();
           gain.gain.value = peer.isMuted ? 0 : 1.0;
 
@@ -371,6 +475,7 @@ export const SpatialAudioStage: React.FC<SpatialAudioStageProps> = ({
           chain = {
             peerId: peer.id,
             source,
+            analyser,
             panner,
             gain,
             stream,
@@ -402,6 +507,7 @@ export const SpatialAudioStage: React.FC<SpatialAudioStageProps> = ({
       if (!activePeerIds.has(peerId)) {
         try {
           chain.source.disconnect();
+          chain.analyser?.disconnect();
           chain.panner.disconnect();
           chain.gain.disconnect();
         } catch {}
@@ -568,6 +674,13 @@ export const SpatialAudioStage: React.FC<SpatialAudioStageProps> = ({
             >
               Inverse Attenuation
             </span>
+            <span
+              data-testid="geodesic-dome-badge"
+              className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-mono font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              Geodesic Radar Dome 3D
+            </span>
           </div>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
             Drag avatars around the room floor. Audio pans and attenuates
@@ -605,9 +718,19 @@ export const SpatialAudioStage: React.FC<SpatialAudioStageProps> = ({
           style={{ width: stageWidth, height: stageHeight }}
           className="relative select-none overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-900 shadow-inner dark:border-zinc-800 touch-none"
         >
+          {/* 3D Geodesic Radar Dome WebGL Canvas Layer */}
+          <canvas
+            ref={domeCanvasRef}
+            data-testid="geodesic-radar-dome"
+            width={stageWidth}
+            height={stageHeight}
+            className="absolute inset-0 pointer-events-none z-0"
+            style={{ width: stageWidth, height: stageHeight }}
+          />
+
           {/* Floor grid markings */}
           <div
-            className="absolute inset-0 opacity-15 pointer-events-none"
+            className="absolute inset-0 opacity-15 pointer-events-none z-[1]"
             style={{
               backgroundImage:
                 "radial-gradient(circle, #3b82f6 1px, transparent 1px), linear-gradient(to right, #3f3f46 1px, transparent 1px), linear-gradient(to bottom, #3f3f46 1px, transparent 1px)",

@@ -377,4 +377,124 @@ describe("Prune Stale Cache & Offline Store Transactions", () => {
       expect(screen.queryByTestId("prune-confirmation-toast")).toBeNull();
     });
   });
+
+  describe("Storage Estimation Safeguards in Private Browsing / Restricted Mode", () => {
+    it("safely handles when navigator.storage.estimate is not a function", async () => {
+      Object.defineProperty(navigator, "storage", {
+        value: { estimate: "not-a-function" },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<OfflineStorageInspector isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("storage-unavailable-message"),
+        ).toHaveTextContent(
+          "Storage usage unavailable in private browsing mode",
+        );
+        expect(
+          screen.getByTestId("storage-consumption-badge"),
+        ).toHaveTextContent("0.0 MB");
+      });
+    });
+
+    it("displays descriptive message when navigator.storage.estimate rejects with TypeError", async () => {
+      Object.defineProperty(navigator, "storage", {
+        value: {
+          estimate: jest
+            .fn()
+            .mockRejectedValue(
+              new TypeError("Storage estimation disabled in private browsing"),
+            ),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<OfflineStorageInspector isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("storage-unavailable-message"),
+        ).toHaveTextContent(
+          "Storage usage unavailable in private browsing mode",
+        );
+        expect(
+          screen.getByTestId("storage-consumption-badge"),
+        ).toHaveTextContent("0.0 MB");
+      });
+    });
+
+    it("gracefully handles when estimate() resolves to null without crashing", async () => {
+      Object.defineProperty(navigator, "storage", {
+        value: {
+          estimate: jest.fn().mockResolvedValue(null),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<OfflineStorageInspector isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("storage-unavailable-message"),
+        ).toHaveTextContent(
+          "Storage usage unavailable in private browsing mode",
+        );
+        expect(
+          screen.getByTestId("storage-consumption-badge"),
+        ).toHaveTextContent("0.0 MB");
+      });
+    });
+
+    it("provides fallback values when estimate.usage and estimate.quota are undefined", async () => {
+      Object.defineProperty(navigator, "storage", {
+        value: {
+          estimate: jest.fn().mockResolvedValue({
+            usage: undefined,
+            quota: undefined,
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<OfflineStorageInspector isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("storage-consumption-badge"),
+        ).toHaveTextContent("0.0 MB");
+        expect(
+          screen.getByTestId("storage-unavailable-message"),
+        ).toHaveTextContent(
+          "Storage usage unavailable in private browsing mode",
+        );
+      });
+    });
+
+    it("provides fallback value when estimate.quota is undefined but usage is defined", async () => {
+      Object.defineProperty(navigator, "storage", {
+        value: {
+          estimate: jest.fn().mockResolvedValue({
+            usage: 5 * 1024 * 1024,
+            quota: undefined,
+          }),
+        },
+        writable: true,
+        configurable: true,
+      });
+
+      render(<OfflineStorageInspector isOpen={true} onClose={jest.fn()} />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("storage-consumption-badge"),
+        ).toHaveTextContent("5 MB");
+      });
+    });
+  });
 });

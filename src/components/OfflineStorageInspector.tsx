@@ -302,6 +302,9 @@ export function OfflineStorageInspector({
   const [storageQuotaMB, setStorageQuotaMB] = useState<number | null>(null);
   const [staleEstimateMB, setStaleEstimateMB] = useState<number>(0);
   const [isPruning, setIsPruning] = useState(false);
+  const [storageUnavailableMessage, setStorageUnavailableMessage] = useState<
+    string | null
+  >(null);
   const [confirmationToast, setConfirmationToast] = useState<{
     show: boolean;
     recoveredMB: number;
@@ -309,23 +312,60 @@ export function OfflineStorageInspector({
   } | null>(null);
 
   const loadStorageInfo = useCallback(async () => {
-    if (
+    setStorageUnavailableMessage(null);
+
+    const isStorageEstimateSupported =
       typeof navigator !== "undefined" &&
       "storage" in navigator &&
-      navigator.storage?.estimate
-    ) {
+      typeof navigator.storage?.estimate === "function";
+
+    if (!isStorageEstimateSupported) {
+      setStorageUsageMB(0);
+      setStorageQuotaMB(null);
+      setStorageUnavailableMessage(
+        "Storage usage unavailable in private browsing mode",
+      );
+    } else {
       try {
-        const { usage, quota } = await navigator.storage.estimate();
-        if (usage !== undefined) {
-          setStorageUsageMB(Number((usage / (1024 * 1024)).toFixed(2)));
-        }
-        if (quota !== undefined) {
-          setStorageQuotaMB(Number((quota / (1024 * 1024)).toFixed(2)));
+        const estimate = await navigator.storage.estimate();
+        if (!estimate) {
+          setStorageUsageMB(0);
+          setStorageQuotaMB(null);
+          setStorageUnavailableMessage(
+            "Storage usage unavailable in private browsing mode",
+          );
+        } else {
+          const usageBytes =
+            typeof estimate.usage === "number" && !isNaN(estimate.usage)
+              ? estimate.usage
+              : 0;
+          const quotaBytes =
+            typeof estimate.quota === "number" && !isNaN(estimate.quota)
+              ? estimate.quota
+              : null;
+
+          setStorageUsageMB(Number((usageBytes / (1024 * 1024)).toFixed(2)));
+          setStorageQuotaMB(
+            quotaBytes !== null
+              ? Number((quotaBytes / (1024 * 1024)).toFixed(2))
+              : null,
+          );
+
+          if (estimate.usage === undefined && estimate.quota === undefined) {
+            setStorageUnavailableMessage(
+              "Storage usage unavailable in private browsing mode",
+            );
+          }
         }
       } catch (e) {
         console.warn(
           "[OfflineStorageInspector] Failed to read storage estimate:",
           e,
+        );
+        setStorageUsageMB(0);
+        setStorageQuotaMB(null);
+        setStorageUnavailableMessage(
+          "Storage usage unavailable in private browsing mode",
         );
       }
     }
@@ -414,7 +454,7 @@ export function OfflineStorageInspector({
 
         {/* Storage Consumption & Prune Action Bar */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 bg-zinc-950/40 border-b border-zinc-800 text-xs">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5 text-zinc-400">
               <HardDrive className="w-3.5 h-3.5 text-orange-400" />
               <span className="font-medium">Quota Used:</span>
@@ -423,9 +463,21 @@ export function OfflineStorageInspector({
               className="font-mono text-zinc-200 bg-zinc-800/80 px-2 py-0.5 rounded border border-zinc-700/60"
               data-testid="storage-consumption-badge"
             >
-              {storageUsageMB !== null ? `${storageUsageMB} MB` : "0.0 MB"}
+              {storageUsageMB !== null && storageUsageMB > 0
+                ? `${storageUsageMB} MB`
+                : "0.0 MB"}
               {storageQuotaMB !== null ? ` / ${storageQuotaMB} MB` : ""}
             </span>
+            {storageUnavailableMessage && (
+              <span
+                role="status"
+                className="text-amber-400 text-xs flex items-center gap-1"
+                data-testid="storage-unavailable-message"
+              >
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{storageUnavailableMessage}</span>
+              </span>
+            )}
           </div>
 
           <button

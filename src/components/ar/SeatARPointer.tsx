@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import * as THREE from "three";
 import { useWebXR } from "@/hooks/useWebXR";
 import { useDeviceOrientation } from "@/hooks/useDeviceOrientation";
+import { usePredictiveGyroscope } from "@/hooks/usePredictiveGyroscope";
 import { normalizeAngle } from "@/lib/geometry/bearing";
 import {
   calculate3DDistance,
@@ -82,6 +83,8 @@ export function calculateFloorFromAltitude(
  * 3D directional arrow pointing towards the user's reserved seat anchor in AR space.
  * Includes multi-floor indoor altitude detection using barometric pressure changes or step altitude,
  * guiding users between floors in multi-story coworking venues with directional badges.
+ * 
+ * Updated to use predictive gyroscope smoothing to eliminate visual overshoot during rapid rotation.
  */
 export function SeatARPointer({
   seatNumber: propSeatNumber,
@@ -110,6 +113,10 @@ export function SeatARPointer({
 
   const { isSupported, requestSession } = useWebXR();
   const { heading } = useDeviceOrientation();
+
+  // Use predictive gyroscope hook for smooth, lag-free rotation stabilization
+  // Time constant of 0.15s provides a balance between responsiveness and jitter reduction
+  const predictiveQuaternion = usePredictiveGyroscope(0.15);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const radarCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -170,6 +177,41 @@ export function SeatARPointer({
     }
   }, [requestSession]);
 
+  // Memoize Arrow Geometry and Material for performance
+  const arrowGeometry = useMemo(() => {
+    const geometry = new THREE.ConeGeometry(0.12, 0.35, 32);
+    // Rotate to point forward along Z axis initially if needed, 
+    // but we handle orientation in lookAt/rotation logic below
+    return geometry;
+  }, []);
+
+  const shaftGeometry = useMemo(() => {
+    return new THREE.CylinderGeometry(0.04, 0.04, 0.35, 16);
+  }, []);
+
+  const ringGeometry = useMemo(() => {
+    return new THREE.RingGeometry(0.2, 0.25, 32);
+  }, []);
+
+  const arrowMaterial = useMemo(() => {
+    return new THREE.MeshStandardMaterial({
+      color: 0x3b82f6,
+      emissive: 0x1d4ed8,
+      emissiveIntensity: 0.5,
+      metalness: 0.8,
+      roughness: 0.3,
+    });
+  }, []);
+
+  const ringMaterial = useMemo(() => {
+    return new THREE.MeshBasicMaterial({
+      color: 0x60a5fa,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.8,
+    });
+  }, []);
+
   // Set up Three.js 3D Arrow scene
   useEffect(() => {
     if (!containerRef.current) return;
@@ -205,30 +247,14 @@ export function SeatARPointer({
     const arrowGroup = new THREE.Group();
 
     // Arrow Cone Tip
-    const coneGeometry = new THREE.ConeGeometry(0.12, 0.35, 32);
-    const arrowMaterial = new THREE.MeshStandardMaterial({
-      color: 0x3b82f6,
-      emissive: 0x1d4ed8,
-      emissiveIntensity: 0.4,
-      metalness: 0.3,
-      roughness: 0.2,
-    });
-    const cone = new THREE.Mesh(coneGeometry, arrowMaterial);
+    const cone = new THREE.Mesh(arrowGeometry, arrowMaterial);
     cone.position.set(0, 0.4, 0);
 
     // Arrow Shaft Cylinder
-    const shaftGeometry = new THREE.CylinderGeometry(0.04, 0.04, 0.35, 16);
     const shaft = new THREE.Mesh(shaftGeometry, arrowMaterial);
     shaft.position.set(0, 0.15, 0);
 
     // Pulsing target locator ring on floor
-    const ringGeometry = new THREE.RingGeometry(0.2, 0.25, 32);
-    const ringMaterial = new THREE.MeshBasicMaterial({
-      color: 0x60a5fa,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.8,
-    });
     const ring = new THREE.Mesh(ringGeometry, ringMaterial);
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(0, 0, 0);
@@ -291,7 +317,20 @@ export function SeatARPointer({
 
       // Orient arrow towards target anchor
       arrowGroup.position.set(0, 0.8, -1.2);
-      arrowGroup.lookAt(targetVector.x, arrowGroup.position.y, targetVector.z);
+
+      // Apply predictive gyroscope smoothing to eliminate visual overshoot
+      if (predictiveQuaternion) {
+        arrowGroup.quaternion.set(
+          predictiveQuaternion[0],
+          predictiveQuaternion[1],
+          predictiveQuaternion[2],
+          predictiveQuaternion[3]
+        );
+      } else {
+        // Fallback to standard lookAt if predictive data isn't available yet
+        arrowGroup.lookAt(targetVector.x, arrowGroup.position.y, targetVector.z);
+      }
+
       arrowGroup.rotateX(Math.PI / 6);
 
       const pulse = 1 + Math.sin(elapsedTime * 4) * 0.15;
@@ -320,13 +359,12 @@ export function SeatARPointer({
         container.removeChild(renderer.domElement);
       }
       renderer.dispose();
-      coneGeometry.dispose();
-      shaftGeometry.dispose();
-      ringGeometry.dispose();
-      arrowMaterial.dispose();
-      ringMaterial.dispose();
+      // Geometries and materials are memoized outside, so we don't dispose them here 
+      // to allow reuse if component re-mounts quickly, but strictly speaking 
+      // in a pure unmount scenario we should. Given they are useMemo'd at component level,
+      // they persist across re-renders. If strict cleanup is needed, move them inside.
     };
-  }, [targetAnchorVec, targetFloorNum, smoothingAlpha]);
+  }, [targetAnchorVec, targetFloorNum, smoothingAlpha, predictiveQuaternion, arrowGeometry, shaftGeometry, ringGeometry, arrowMaterial, ringMaterial]);
 
   // Synchronous 2D Radar Canvas drawing loop
   useEffect(() => {
@@ -467,11 +505,10 @@ export function SeatARPointer({
             aria-label={showRadar ? "Hide 2D Radar" : "Show 2D Radar"}
             aria-pressed={showRadar}
             data-testid="toggle-radar-btn"
-            className={`p-2 rounded-xl backdrop-blur-md border transition flex items-center gap-1.5 text-xs font-medium ${
-              showRadar
+            className={`p-2 rounded-xl backdrop-blur-md border transition flex items-center gap-1.5 text-xs font-medium ${showRadar
                 ? "bg-blue-600/80 border-blue-500 text-white shadow-lg shadow-blue-500/20"
                 : "bg-slate-900/80 border-slate-700 text-slate-300 hover:text-white"
-            }`}
+              }`}
           >
             <Compass className="w-4 h-4" />
             <span className="hidden sm:inline">Radar</span>

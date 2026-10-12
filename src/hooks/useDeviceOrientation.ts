@@ -3,6 +3,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 export interface DeviceOrientationState {
   heading: number | null;
   accuracy: number | null;
+  alpha: number | null;
+  beta: number | null;
+  gamma: number | null;
   error: string | null;
   isSupported: boolean;
   permissionState: "prompt" | "granted" | "denied" | "unsupported";
@@ -12,6 +15,9 @@ export interface DeviceOrientationState {
 export function useDeviceOrientation(): DeviceOrientationState {
   const [heading, setHeading] = useState<number | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [alpha, setAlpha] = useState<number | null>(null);
+  const [beta, setBeta] = useState<number | null>(null);
+  const [gamma, setGamma] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState<boolean>(true);
   const [permissionState, setPermissionState] = useState<
@@ -22,6 +28,29 @@ export function useDeviceOrientation(): DeviceOrientationState {
   const handleOrientation = useCallback((event: DeviceOrientationEvent) => {
     let h: number | null = null;
     let acc: number | null = null;
+
+    const evAlpha =
+      event.alpha !== null &&
+      event.alpha !== undefined &&
+      Number.isFinite(event.alpha)
+        ? event.alpha
+        : null;
+    const evBeta =
+      event.beta !== null &&
+      event.beta !== undefined &&
+      Number.isFinite(event.beta)
+        ? event.beta
+        : null;
+    const evGamma =
+      event.gamma !== null &&
+      event.gamma !== undefined &&
+      Number.isFinite(event.gamma)
+        ? event.gamma
+        : null;
+
+    setAlpha(evAlpha);
+    setBeta(evBeta);
+    setGamma(evGamma);
 
     // iOS Safari provides webkitCompassHeading directly (degrees from true north)
     // and webkitCompassAccuracy representing deviation tolerance in degrees
@@ -43,7 +72,7 @@ export function useDeviceOrientation(): DeviceOrientationState {
     ) {
       // Standard DeviceOrientationEvent: alpha is rotation around z-axis
       // True compass heading = (360 - alpha) % 360
-      h = ((360 - event.alpha) % 360 + 360) % 360;
+      h = (((360 - event.alpha) % 360) + 360) % 360;
     } else {
       // Device without hardware magnetometer emits null/undefined alpha
       // Gracefully fall back to stationary 0-degree heading without polluting calculation with NaN
@@ -158,5 +187,15 @@ export function useDeviceOrientation(): DeviceOrientationState {
     return true;
   }, [attachListener]);
 
-  return { heading, accuracy, error, isSupported, permissionState, requestPermission };
+  return {
+    heading,
+    accuracy,
+    alpha,
+    beta,
+    gamma,
+    error,
+    isSupported,
+    permissionState,
+    requestPermission,
+  };
 }

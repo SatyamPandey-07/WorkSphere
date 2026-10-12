@@ -7,7 +7,6 @@ import {
   MapContainer,
   TileLayer,
   Marker,
-  Popup,
   useMap,
   LayersControl,
   LayerGroup,
@@ -21,16 +20,8 @@ import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
 import { Contrast } from "lucide-react";
-import { type HighContrastShape } from "@/lib/mapAccessibility";
 import { formatDistance } from "@/lib/geo/formatDistance";
-import { throttle } from "@/lib/utils";
-import {
-  MapMarkerFactory,
-  getHighContrastIcon,
-  getVenueIcon,
-  getDestinationIcon,
-  SEAT_RING_COLORS,
-} from "./map/MapMarkerFactory";
+import { MapMarkerFactory, SEAT_RING_COLORS } from "./map/MapMarkerFactory";
 import { MapRouteLayer } from "./map/MapRouteLayer";
 import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
 
@@ -405,7 +396,10 @@ export function latLngToPixel(
   lng: number,
   zoom: number,
 ): { x: number; y: number } {
-  const siny = Math.min(Math.max(Math.sin((lat * Math.PI) / 180), -0.9999), 0.9999);
+  const siny = Math.min(
+    Math.max(Math.sin((lat * Math.PI) / 180), -0.9999),
+    0.9999,
+  );
   const scale = 256 * Math.pow(2, zoom);
   return {
     x: (0.5 + lng / 360) * scale,
@@ -659,6 +653,14 @@ const Map = ({
     initialLocation: location,
   });
 
+  const { latitude, longitude } = location;
+  const routingPanelRef = useRef<HTMLDivElement>(null);
+  // Forecast selector state
+  const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay()); // 0=Sun
+  const [selectedHour, setSelectedHour] = useState<number>(
+    new Date().getHours(),
+  );
+
   // Prevent touch/mouse/scroll event propagation on overlays from bubbling to Leaflet Map
   useEffect(() => {
     const el = routingPanelRef.current;
@@ -701,7 +703,7 @@ const Map = ({
   // marker offsets at a consistent on-screen pixel separation regardless of
   // how far the user has zoomed in/out.
   const [settledZoom, setSettledZoom] = useState<number>(13);
-  const [isZooming, setIsZooming] = useState(false);
+  const [, setIsZooming] = useState(false);
   const handleZoomSettled = useCallback((zoom: number) => {
     setSettledZoom(zoom);
     setIsZooming(false);
@@ -724,13 +726,13 @@ const Map = ({
   >("walking");
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
   useEffect(() => {
-  if (
-    selectedMarkerId !== null &&
-    !markers.some((marker) => marker.id === selectedMarkerId)
-  ) {
-    setSelectedMarkerId(null);
-  }
-}, [markers, selectedMarkerId]);
+    if (
+      selectedMarkerId !== null &&
+      !markers.some((marker) => marker.id === selectedMarkerId)
+    ) {
+      setSelectedMarkerId(null);
+    }
+  }, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
   const calculateOptimizedRoute = async (venuesList = routingQueue) => {
@@ -880,59 +882,62 @@ const Map = ({
   }, [heatmapPoints, markers]);
 
   // Helper to spiderfy overlapping markers
-  const computeSpiderfiedMarkers = useCallback((markerList: MapMarker[], zoom: number) => {
-    const groups: { [key: string]: any[] } = {};
-    markerList.forEach((m) => {
-      if (
-        m &&
-        m.position &&
-        m.position.lat != null &&
-        m.position.lng != null &&
-        !isNaN(Number(m.position.lat)) &&
-        !isNaN(Number(m.position.lng))
-      ) {
-        const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
-        if (!groups[key]) {
-          groups[key] = [];
+  const computeSpiderfiedMarkers = useCallback(
+    (markerList: MapMarker[], zoom: number) => {
+      const groups: { [key: string]: any[] } = {};
+      markerList.forEach((m) => {
+        if (
+          m &&
+          m.position &&
+          m.position.lat != null &&
+          m.position.lng != null &&
+          !isNaN(Number(m.position.lat)) &&
+          !isNaN(Number(m.position.lng))
+        ) {
+          const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
+          if (!groups[key]) {
+            groups[key] = [];
+          }
+          groups[key].push(m);
         }
-        groups[key].push(m);
-      }
-    });
+      });
 
-    const result: any[] = [];
-    Object.keys(groups).forEach((key) => {
-      const groupItems = groups[key];
-      const n = groupItems.length;
-      if (n === 1) {
-        result.push({
-          ...groupItems[0],
-          renderedLat: Number(groupItems[0].position.lat),
-          renderedLng: Number(groupItems[0].position.lng),
-        });
-      } else {
-        const centerLat = Number(groupItems[0].position.lat);
-        const centerLng = Number(groupItems[0].position.lng);
-
-        const metersPerPixel =
-          (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
-          Math.pow(2, zoom);
-        const targetPixelSeparation = 24 + 2 * n;
-        const radius = (metersPerPixel * targetPixelSeparation) / 111320;
-
-        groupItems.forEach((item, index) => {
-          const angle = (2 * Math.PI * index) / n;
-          const offsetLat = centerLat + radius * Math.cos(angle);
-          const offsetLng = centerLng + radius * Math.sin(angle);
+      const result: any[] = [];
+      Object.keys(groups).forEach((key) => {
+        const groupItems = groups[key];
+        const n = groupItems.length;
+        if (n === 1) {
           result.push({
-            ...item,
-            renderedLat: offsetLat,
-            renderedLng: offsetLng,
+            ...groupItems[0],
+            renderedLat: Number(groupItems[0].position.lat),
+            renderedLng: Number(groupItems[0].position.lng),
           });
-        });
-      }
-    });
-    return result;
-  }, []);
+        } else {
+          const centerLat = Number(groupItems[0].position.lat);
+          const centerLng = Number(groupItems[0].position.lng);
+
+          const metersPerPixel =
+            (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
+            Math.pow(2, zoom);
+          const targetPixelSeparation = 24 + 2 * n;
+          const radius = (metersPerPixel * targetPixelSeparation) / 111320;
+
+          groupItems.forEach((item, index) => {
+            const angle = (2 * Math.PI * index) / n;
+            const offsetLat = centerLat + radius * Math.cos(angle);
+            const offsetLng = centerLng + radius * Math.sin(angle);
+            result.push({
+              ...item,
+              renderedLat: offsetLat,
+              renderedLng: offsetLng,
+            });
+          });
+        }
+      });
+      return result;
+    },
+    [],
+  );
 
   // Group and cluster or spiderfy overlapping markers
   const { clusteredMarkers, spiderfiedMarkers } = useMemo(() => {

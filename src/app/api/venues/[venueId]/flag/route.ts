@@ -18,9 +18,7 @@ type FlagReason = (typeof VALID_REASONS)[number];
 
 const flagVenueSchema = z.object({
   reason: z.enum(VALID_REASONS, {
-    errorMap: () => ({
-      message: `Invalid reason. Must be one of: ${VALID_REASONS.join(", ")}`,
-    }),
+    error: `Invalid reason. Must be one of: ${VALID_REASONS.join(", ")}`,
   }),
 });
 
@@ -51,7 +49,12 @@ export const POST = apiHandler<{ reason: FlagReason }, { venueId: string }>({
 
     // Prevent duplicate flags from the same user for the same venue + reason
     const existing = await prisma.flaggedItem.findFirst({
-      where: { itemId: venueId, reportedById: userId!, reason, status: "PENDING" },
+      where: {
+        itemId: venueId,
+        reportedById: userId!,
+        reason,
+        status: "PENDING",
+      },
     });
     if (existing) {
       return NextResponse.json(

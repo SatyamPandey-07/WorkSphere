@@ -18,8 +18,7 @@ export async function GET() {
     console.error("[MANAGED_GET]", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Internal Server Error",
+        error: error instanceof Error ? error.message : "Internal Server Error",
       },
       { status: 500 },
     );
@@ -41,7 +40,7 @@ export async function PUT(req: NextRequest) {
       );
     }
     const values = body as Record<string, unknown>;
-    const { venueId, hostMessage, name, address, openingHours } = values;
+    const { venueId } = values;
 
     if (typeof venueId !== "string" || !venueId) {
       return NextResponse.json(
@@ -49,6 +48,21 @@ export async function PUT(req: NextRequest) {
         { status: 400 },
       );
     }
+
+    const textFields = ["hostMessage", "name", "address", "openingHours"];
+    const invalidField = textFields.find(
+      (field) => values[field] != null && typeof values[field] !== "string",
+    );
+    if (invalidField) {
+      return NextResponse.json(
+        { error: `${invalidField} must be a string` },
+        { status: 400 },
+      );
+    }
+    const { hostMessage, name, address, openingHours } = values as Record<
+      string,
+      string | null | undefined
+    >;
 
     const calibrationProvided =
       values.beaconReferenceRssi !== undefined ||
@@ -108,8 +122,7 @@ export async function PUT(req: NextRequest) {
     console.error("[MANAGED_PUT]", error);
     return NextResponse.json(
       {
-        error:
-          error instanceof Error ? error.message : "Internal Server Error",
+        error: error instanceof Error ? error.message : "Internal Server Error",
       },
       { status: 500 },
     );

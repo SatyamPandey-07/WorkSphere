@@ -636,7 +636,6 @@ export async function GET(req: NextRequest) {
           id: true,
           name: true,
           address: true,
-          description: true,
         },
         take: 500,
       });

@@ -5,7 +5,7 @@ generator client {
 
 datasource db {
   provider   = "postgresql"
-  extensions = [vector]
+  extensions = [vector, pg_trgm]
 }
 
 model User {
@@ -219,6 +219,7 @@ model VenueRating {
   comment            String?
   speedtestPhoto     String?
   createdAt          DateTime @default(now())
+  updatedAt          DateTime @default(now()) @updatedAt
   avgDecibels        Float?
   peakDecibels       Float?
   lighting           String?
@@ -693,6 +694,7 @@ enum WebhookEventType {
   REVIEW_SUBMITTED
   BOOKING_CONFIRMED
   BOOKING_CANCELLED
+  BOOKING_RESCHEDULED
 }
 
 model WebhookEndpoint {

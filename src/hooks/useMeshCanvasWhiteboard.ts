@@ -16,6 +16,7 @@ import {
   type ShapeData,
   type RemoteCursor,
   type CanvasWhiteboardState,
+  type NoteLeaseControls,
   type WhiteboardParticipant,
   type UseCanvasWhiteboardOptions,
   PARTYKIT_HOST,
@@ -40,7 +41,6 @@ import {
  */
 export const meshSendTimestamps = new Map<string, number>();
 
-const PARTYKIT_HOST = process.env.NEXT_PUBLIC_PARTYKIT_URL ?? "127.0.0.1:1999";
 const NOTE_LEASE_REQUEST_TIMEOUT_MS = 3000;
 
 interface PendingNoteLease {
@@ -48,37 +48,10 @@ interface PendingNoteLease {
   timeout: ReturnType<typeof setTimeout>;
 }
 
-function getDefaultColor(index: number): string {
-  return PRESET_COLORS[index % PRESET_COLORS.length];
-}
-
-function shapeMapToData(map: Y.Map<unknown>): ShapeData {
-  const isDeleted = (map.get("deleted") as boolean) ?? false;
-  const deletedAt = map.get("deletedAt") as number | undefined;
-  const updatedAt = map.get("updatedAt") as number | undefined;
-  const clock = (map.get("clock") as number) ?? updatedAt ?? deletedAt;
-
-  return {
-    id: map.get("id") as string,
-    type: map.get("type") as ToolType,
-    points: (map.get("points") as number[]) ?? [],
-    color: map.get("color") as string,
-    width: map.get("width") as number,
-    opacity: map.get("opacity") as number,
-    userId: map.get("userId") as string,
-    deleted: isDeleted,
-    deletedAt,
-    updatedAt,
-    clock,
-    text: map.get("text") as string | undefined,
-    constructType: map.get("constructType") as any,
-  };
-}
-
 export function useMeshCanvasWhiteboard(
   canvasId: string | null,
   options?: UseCanvasWhiteboardOptions,
-): CanvasWhiteboardState {
+): CanvasWhiteboardState & NoteLeaseControls {
   const { getToken } = useAuth();
   const [token, setToken] = useState<string | null>(null);
   const [provider, setProvider] = useState<YProvider | null>(null);
@@ -227,61 +200,6 @@ export function useMeshCanvasWhiteboard(
     }
   }, []);
 
-  // WebRTC mesh data channel integration
-  const mesh = useMeshDataChannels({
-    channelName: canvasId ? `mesh-${canvasId}` : null,
-    onData: (payload: unknown) => {
-      if (
-        !payload ||
-        typeof payload !== "object" ||
-        (payload as { type?: string }).type !== "yjs-update"
-      ) {
-        return;
-      }
-
-      const msg = payload as {
-        type: "yjs-update";
-        update: string;
-        compressed?: boolean;
-        updateId?: string;
-        sentAt?: number;
-      };
-
-      if (typeof msg.update !== "string") return;
-
-      const doc = docRef.current;
-      if (!doc) return;
-
-      try {
-        const updateBinary =
-          msg.compressed === false
-            ? Uint8Array.from(atob(msg.update), (c) => c.charCodeAt(0))
-            : decompressYjsUpdate(msg.update);
-
-        if (msg.updateId && meshSendTimestamps.has(msg.updateId)) {
-          meshSendTimestamps.set(msg.updateId, performance.now());
-        }
-
-        Y.applyUpdate(doc, updateBinary, "mesh");
-      } catch (err) {
-        console.error(
-          "[useMeshCanvasWhiteboard] failed to apply mesh update:",
-          err,
-        );
-      }
-    },
-  });
-
-  meshConnectedRef.current = mesh.isConnected;
-
-  useEffect(() => {
-    if (!canvasId) return;
-
-    getToken()
-      .then((t) => setToken(t ?? null))
-      .catch(() => setToken(null));
-  }, [canvasId, getToken]);
-
   // Stroke point applier shared between buffered & immediate dispatch
   const applyShapePoints = useCallback(
     (id: string, points: number[]) => {
@@ -299,9 +217,19 @@ export function useMeshCanvasWhiteboard(
   const {
     strokeBufferRef,
     flushStrokeBuffer,
-    broadcastStroke,
+    broadcastStroke: bufferStroke,
     bufferStrokePoints,
   } = useStrokeBuffer({ onApplyPoints: applyShapePoints });
+
+  const broadcastStroke = useCallback(
+    (id: string, points: number[]) => {
+      // A note held by another participant must not move under their cursor.
+      const leaseOwner = noteLeaseOwnersRef.current.get(id);
+      if (leaseOwner && leaseOwner !== localUserId) return;
+      bufferStroke(id, points);
+    },
+    [localUserId, bufferStroke],
+  );
 
   useEffect(() => {
     if (!canvasId || token === undefined) return;
@@ -382,8 +310,7 @@ export function useMeshCanvasWhiteboard(
       newProvider.on("status", handleStatus);
 
       handleSync = (synced: boolean) => {
-        if (synced) {
-          failoverSync.handleSync();
+        if (synced && failoverSync.getStatus() !== "syncing_snapshot") {
           setIsConnected(true);
         }
       };
@@ -406,30 +333,6 @@ export function useMeshCanvasWhiteboard(
     shapes.observeDeep(updateSnapshots);
     updateSnapshots();
 
-    // Hook up local Yjs update distribution via WebRTC Data Channels
-    const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
-      if (origin === "mesh") return;
-
-      if (meshConnectedRef.current) {
-        const updateId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        meshSendTimestamps.set(updateId, performance.now());
-
-        const compressedBase64 = compressYjsUpdate(update);
-        mesh.sendToAll({
-          type: "yjs-update",
-          update: compressedBase64,
-          compressed: true,
-          updateId,
-          sentAt: Date.now(),
-        });
-      }
-    };
-
-    doc.on("update", handleDocUpdate);
-    unsubDocUpdateRef.current = () => {
-      doc.off("update", handleDocUpdate);
-    };
-
     const um = new Y.UndoManager(shapes, {
       trackedOrigins: new Set([localUserId]),
     });
@@ -443,6 +346,44 @@ export function useMeshCanvasWhiteboard(
     um.on("stack-item-added", updateUndoState);
     um.on("stack-item-popped", updateUndoState);
     updateUndoState();
+
+    // Issue #1318: local edits (direct actions or local undo/redo) are also
+    // relayed over the WebRTC mesh when it is connected. Updates that arrived
+    // from the mesh or the y-partykit provider are never re-broadcast, which
+    // would echo them. PartyKit stays the authoritative sync channel.
+    const sendToAll = mesh.sendToAll;
+    const handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+      if (origin === "mesh") return;
+      if (origin !== localUserId && origin !== um) return;
+      if (!meshConnectedRef.current) return;
+
+      const compressed = compressYjsUpdate(update);
+      meshSendTimestamps.set(
+        `${Date.now()}-${update.byteLength}`,
+        performance.now(),
+      );
+      // Bound the benchmarking map so long sessions do not leak.
+      if (meshSendTimestamps.size > 1000) {
+        const firstKey = meshSendTimestamps.keys().next().value;
+        if (firstKey !== undefined) meshSendTimestamps.delete(firstKey);
+      }
+      // compressYjsUpdate may return a view into a larger allocation.
+      const exactBuffer = (
+        compressed.byteOffset === 0 &&
+        compressed.byteLength === compressed.buffer.byteLength
+          ? compressed.buffer
+          : compressed.buffer.slice(
+              compressed.byteOffset,
+              compressed.byteOffset + compressed.byteLength,
+            )
+      ) as ArrayBuffer;
+      sendToAll(exactBuffer);
+    };
+
+    doc.on("update", handleDocUpdate);
+    unsubDocUpdateRef.current = () => {
+      doc.off("update", handleDocUpdate);
+    };
 
     const awareness = newProvider?.awareness;
     const initNow = Date.now();
@@ -537,118 +478,7 @@ export function useMeshCanvasWhiteboard(
       touchActivity();
       addShapeToDoc(shapesRef.current, docRef.current, data, localUserId);
     },
-    [localUserId],
-  );
-
-  const applyShapePoints = useCallback(
-    (id: string, points: number[]) => {
-      const shapes = shapesRef.current;
-      const doc = docRef.current;
-      if (!shapes || !doc) return;
-      const now = Date.now();
-
-      doc.transact(() => {
-        for (let i = 0; i < shapes.length; i++) {
-          const map = shapes.get(i);
-          if (map.get("id") === id) {
-            const isDeleted = (map.get("deleted") as boolean) ?? false;
-            const delClock = (map.get("deletedAt") as number) ?? 0;
-            const curClock =
-              (map.get("clock") as number) ??
-              (map.get("updatedAt") as number) ??
-              0;
-
-            if (isDeleted && now <= delClock) return;
-            if (now < curClock) return;
-
-            map.set("points", points.slice());
-            map.set("updatedAt", now);
-            map.set("clock", now);
-            break;
-          }
-        }
-      }, localUserId);
-    },
-    [localUserId],
-  );
-
-  const flushStrokeBuffer = useCallback(
-    (targetId?: string) => {
-      if (throttleTimerRef.current !== null) {
-        clearTimeout(throttleTimerRef.current);
-        throttleTimerRef.current = null;
-      }
-      if (
-        rafIdRef.current !== null &&
-        typeof cancelAnimationFrame !== "undefined"
-      ) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
-      }
-
-      const buffer = strokeBufferRef.current;
-      if (buffer.size === 0) return;
-
-      if (targetId) {
-        const points = buffer.get(targetId);
-        if (points) {
-          applyShapePoints(targetId, points);
-          buffer.delete(targetId);
-        }
-      } else {
-        buffer.forEach((points, id) => {
-          applyShapePoints(id, points);
-        });
-        buffer.clear();
-      }
-      lastDispatchTimeRef.current = Date.now();
-    },
-    [applyShapePoints],
-  );
-
-  const scheduleDispatch = useCallback(() => {
-    if (throttleTimerRef.current !== null || rafIdRef.current !== null) {
-      return;
-    }
-
-    const now = Date.now();
-    const elapsed = now - lastDispatchTimeRef.current;
-    const remaining = Math.max(0, 16 - elapsed);
-
-    if (typeof requestAnimationFrame !== "undefined" && remaining === 0) {
-      rafIdRef.current = requestAnimationFrame(() => {
-        rafIdRef.current = null;
-        flushStrokeBuffer();
-      });
-    } else {
-      throttleTimerRef.current = setTimeout(() => {
-        throttleTimerRef.current = null;
-        flushStrokeBuffer();
-      }, remaining || 16);
-    }
-  }, [flushStrokeBuffer]);
-
-  const broadcastStroke = useCallback(
-    (id: string, points: number[]) => {
-      const leaseOwner = noteLeaseOwnersRef.current.get(id);
-      if (leaseOwner && leaseOwner !== localUserId) return;
-      strokeBufferRef.current.set(id, points.slice());
-      scheduleDispatch();
-    },
-    [localUserId, scheduleDispatch],
-  );
-
-  const bufferStrokePoints = useCallback(
-    (id: string, points: number[]) => {
-      const existing = strokeBufferRef.current.get(id);
-      if (existing) {
-        strokeBufferRef.current.set(id, [...existing, ...points]);
-      } else {
-        strokeBufferRef.current.set(id, points.slice());
-      }
-      scheduleDispatch();
-    },
-    [scheduleDispatch],
+    [localUserId, touchActivity],
   );
 
   const updateShape = useCallback(

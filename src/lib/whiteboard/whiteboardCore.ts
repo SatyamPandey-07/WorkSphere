@@ -79,6 +79,13 @@ export interface CanvasWhiteboardState {
   updateCursor: (x: number, y: number) => void;
 }
 
+/** Sticky-note drag leases, provided by the mesh-backed whiteboard hook. */
+export interface NoteLeaseControls {
+  acquireNoteLease: (noteId: string) => Promise<boolean>;
+  releaseNoteLease: (noteId: string) => void;
+  noteLeaseOwners: Record<string, string>;
+}
+
 export interface ColorSwatch {
   name: string;
   hex: string;

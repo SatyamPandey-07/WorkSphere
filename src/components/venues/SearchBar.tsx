@@ -67,26 +67,12 @@ export function SearchBar({
     end: null,
   });
 
-  // Navigation hooks with graceful fallback for environments outside Next.js App Router context
-  let router: any = null;
-  let searchParams: any = null;
-  let pathname: any = null;
-  try {
-    router = useRouter();
-    searchParams = useSearchParams();
-    pathname = usePathname();
-  } catch {
-    // Graceful fallback for testing environments
-  }
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
 
-  const {
-    query,
-    setQuery,
-    venues,
-    suggestedQuery,
-    isLoading,
-    clear,
-  } = useVenueSearch({ initialQuery, debounceMs });
+  const { query, setQuery, venues, suggestedQuery, isLoading, clear, search } =
+    useVenueSearch({ initialQuery, debounceMs });
 
   // Preserve cursor selection range across debounced controlled re-renders
   useEffect(() => {

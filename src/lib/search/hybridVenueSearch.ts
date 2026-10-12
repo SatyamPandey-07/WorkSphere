@@ -13,6 +13,10 @@ export interface HybridVenueSearchFilters {
   fullTextWeight?: number;
   rrfK?: number;
   queryEmbedding?: number[] | null;
+  /** Set to false to skip the trigram typo-tolerance fallback. */
+  enableFuzzyFallback?: boolean;
+  /** Minimum pg_trgm similarity for a fuzzy match (default 0.25). */
+  minSimilarity?: number;
 }
 
 export interface RankedVenueId {
@@ -494,7 +498,6 @@ export async function searchVenuesWithRrf(
             id: true,
             name: true,
             address: true,
-            description: true,
           },
           take: candidateLimit,
         });

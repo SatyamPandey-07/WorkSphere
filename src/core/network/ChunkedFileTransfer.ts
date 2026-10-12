@@ -21,7 +21,14 @@ export interface TransferProgress {
   receivedBytes: number;
   totalBytes: number;
   percentage: number;
-  status: 'transmitting' | 'receiving' | 'paused' | 'cancelled' | 'resuming' | 'complete' | 'error';
+  status:
+    | "transmitting"
+    | "receiving"
+    | "paused"
+    | "cancelled"
+    | "resuming"
+    | "complete"
+    | "error";
 }
 
 export interface TransferSession {
@@ -32,54 +39,61 @@ export interface TransferSession {
   chunkSize: number;
   receivedChunks: number[];
   transferredBytes: number;
-  status: 'transmitting' | 'receiving' | 'paused' | 'cancelled' | 'complete';
+  status: "transmitting" | "receiving" | "paused" | "cancelled" | "complete";
   updatedAt: number;
 }
 
 export interface TransferInquiry {
-  type: 'INQUIRY';
+  type: "INQUIRY";
   fileId: string;
 }
 
 export interface TransferInquiryResponse {
-  type: 'INQUIRY_RESPONSE';
+  type: "INQUIRY_RESPONSE";
   fileId: string;
   receivedChunkIndices: number[];
 }
 
 export class ChunkedFileTransfer {
   private chunkSize: number;
-  private receivingFiles: Map<string, {
-    chunks: Map<number, ArrayBuffer>;
-    fileName: string;
-    fileSize: number;
-    totalChunks: number;
-    receivedBytes: number;
-    receivedSequenceNumbers: Set<number>;
-  }>;
+  private receivingFiles: Map<
+    string,
+    {
+      chunks: Map<number, ArrayBuffer>;
+      fileName: string;
+      fileSize: number;
+      totalChunks: number;
+      receivedBytes: number;
+      receivedSequenceNumbers: Set<number>;
+    }
+  >;
 
   private onProgressCallback: ((progress: TransferProgress) => void) | null;
   private onCompleteCallback: ((fileId: string, blob: Blob) => void) | null;
 
   // Active sender tracking for pause, cancel, and resume
-  private activeSenders: Map<string, {
-    file: File;
-    sendFn: (chunk: FileChunk) => void;
-    isPaused: boolean;
-    isCancelled: boolean;
-    currentChunk: number;
-  }>;
+  private activeSenders: Map<
+    string,
+    {
+      file: File;
+      sendFn: (chunk: FileChunk) => void;
+      isPaused: boolean;
+      isCancelled: boolean;
+      currentChunk: number;
+    }
+  >;
   private pausedTransfers: Set<string>;
   private cancelledTransfers: Set<string>;
 
   // In-memory session store fallback when IndexedDB is unavailable
   private inMemorySessions: Map<string, TransferSession>;
 
-  private static readonly DB_NAME = 'WorkSphereChunkedTransferDB';
-  private static readonly STORE_NAME = 'transfer_sessions';
+  private static readonly DB_NAME = "WorkSphereChunkedTransferDB";
+  private static readonly STORE_NAME = "transfer_sessions";
   private dbPromise: Promise<IDBDatabase | null> | null = null;
 
-  constructor(chunkSize: number = 16384) { // 16KB default
+  constructor(chunkSize: number = 16384) {
+    // 16KB default
     this.chunkSize = chunkSize;
     this.receivingFiles = new Map();
     this.activeSenders = new Map();
@@ -95,7 +109,7 @@ export class ChunkedFileTransfer {
    * Returns null if IndexedDB is not supported in the execution environment.
    */
   private async getDB(): Promise<IDBDatabase | null> {
-    if (typeof indexedDB === 'undefined') {
+    if (typeof indexedDB === "undefined") {
       return null;
     }
     if (this.dbPromise) {
@@ -108,7 +122,9 @@ export class ChunkedFileTransfer {
         request.onupgradeneeded = (event) => {
           const db = (event.target as IDBOpenDBRequest).result;
           if (!db.objectStoreNames.contains(ChunkedFileTransfer.STORE_NAME)) {
-            db.createObjectStore(ChunkedFileTransfer.STORE_NAME, { keyPath: 'fileId' });
+            db.createObjectStore(ChunkedFileTransfer.STORE_NAME, {
+              keyPath: "fileId",
+            });
           }
         };
         request.onsuccess = () => resolve(request.result);
@@ -132,10 +148,15 @@ export class ChunkedFileTransfer {
 
     return new Promise((resolve) => {
       try {
-        const tx = db.transaction(ChunkedFileTransfer.STORE_NAME, 'readonly');
+        const tx = db.transaction(ChunkedFileTransfer.STORE_NAME, "readonly");
         const store = tx.objectStore(ChunkedFileTransfer.STORE_NAME);
         const req = store.get(fileId);
-        req.onsuccess = () => resolve((req.result as TransferSession) || this.inMemorySessions.get(fileId) || null);
+        req.onsuccess = () =>
+          resolve(
+            (req.result as TransferSession) ||
+              this.inMemorySessions.get(fileId) ||
+              null,
+          );
         req.onerror = () => resolve(this.inMemorySessions.get(fileId) || null);
       } catch {
         resolve(this.inMemorySessions.get(fileId) || null);
@@ -153,7 +174,7 @@ export class ChunkedFileTransfer {
 
     return new Promise((resolve) => {
       try {
-        const tx = db.transaction(ChunkedFileTransfer.STORE_NAME, 'readwrite');
+        const tx = db.transaction(ChunkedFileTransfer.STORE_NAME, "readwrite");
         const store = tx.objectStore(ChunkedFileTransfer.STORE_NAME);
         store.put(session);
         tx.oncomplete = () => resolve();
@@ -174,7 +195,7 @@ export class ChunkedFileTransfer {
 
     return new Promise((resolve) => {
       try {
-        const tx = db.transaction(ChunkedFileTransfer.STORE_NAME, 'readwrite');
+        const tx = db.transaction(ChunkedFileTransfer.STORE_NAME, "readwrite");
         const store = tx.objectStore(ChunkedFileTransfer.STORE_NAME);
         store.delete(fileId);
         tx.oncomplete = () => resolve();
@@ -197,7 +218,7 @@ export class ChunkedFileTransfer {
       }
       const existing = this.inMemorySessions.get(fileId);
       if (existing) {
-        existing.status = 'paused';
+        existing.status = "paused";
         void this.saveSession(existing);
       }
     } else {
@@ -206,7 +227,7 @@ export class ChunkedFileTransfer {
         sender.isPaused = true;
         const existing = this.inMemorySessions.get(id);
         if (existing) {
-          existing.status = 'paused';
+          existing.status = "paused";
           void this.saveSession(existing);
         }
       }
@@ -233,7 +254,7 @@ export class ChunkedFileTransfer {
         receivedBytes: 0,
         totalBytes: sender.file.size,
         percentage: 0,
-        status: 'cancelled',
+        status: "cancelled",
       });
     }
   }
@@ -245,14 +266,16 @@ export class ChunkedFileTransfer {
   public async resumeTransfer(
     fileId: string,
     file?: File,
-    sendFn?: (chunk: FileChunk) => void
+    sendFn?: (chunk: FileChunk) => void,
   ): Promise<void> {
     const sender = this.activeSenders.get(fileId);
     const targetFile = file || sender?.file;
     const targetSendFn = sendFn || sender?.sendFn;
 
     if (!targetFile || !targetSendFn) {
-      throw new Error(`Cannot resume transfer ${fileId}: missing file or send function.`);
+      throw new Error(
+        `Cannot resume transfer ${fileId}: missing file or send function.`,
+      );
     }
 
     this.pausedTransfers.delete(fileId);
@@ -260,14 +283,16 @@ export class ChunkedFileTransfer {
 
     if (this.onProgressCallback) {
       const session = await this.getSession(fileId);
-      const transferredBytes = session ? session.receivedChunks.length * this.chunkSize : 0;
+      const transferredBytes = session
+        ? session.receivedChunks.length * this.chunkSize
+        : 0;
       this.onProgressCallback({
         fileId,
         fileName: targetFile.name,
         receivedBytes: transferredBytes,
         totalBytes: targetFile.size,
         percentage: (transferredBytes / targetFile.size) * 100,
-        status: 'resuming',
+        status: "resuming",
       });
     }
 
@@ -278,7 +303,7 @@ export class ChunkedFileTransfer {
    * Creates an inquiry packet to request the list of received chunk indices from peer.
    */
   public createInquiry(fileId: string): TransferInquiry {
-    return { type: 'INQUIRY', fileId };
+    return { type: "INQUIRY", fileId };
   }
 
   /**
@@ -288,7 +313,7 @@ export class ChunkedFileTransfer {
     const fileState = this.receivingFiles.get(fileId);
     const received = fileState ? Array.from(fileState.chunks.keys()) : [];
     return {
-      type: 'INQUIRY_RESPONSE',
+      type: "INQUIRY_RESPONSE",
       fileId,
       receivedChunkIndices: received,
     };
@@ -301,7 +326,7 @@ export class ChunkedFileTransfer {
   public async sliceAndSend(
     file: File,
     sendFn: (chunk: FileChunk) => void,
-    existingFileId?: string
+    existingFileId?: string,
   ): Promise<void> {
     const fileId = existingFileId || crypto.randomUUID();
     const totalChunks = Math.ceil(file.size / this.chunkSize);
@@ -320,7 +345,9 @@ export class ChunkedFileTransfer {
 
     // Retrieve previously acknowledged chunks from session
     const existingSession = await this.getSession(fileId);
-    const receivedChunksSet = new Set<number>(existingSession ? existingSession.receivedChunks : []);
+    const receivedChunksSet = new Set<number>(
+      existingSession ? existingSession.receivedChunks : [],
+    );
 
     for (let i = 0; i < totalChunks; i++) {
       if (senderState.isCancelled || this.cancelledTransfers.has(fileId)) {
@@ -337,19 +364,22 @@ export class ChunkedFileTransfer {
           chunkSize: this.chunkSize,
           receivedChunks: Array.from(receivedChunksSet),
           transferredBytes: receivedChunksSet.size * this.chunkSize,
-          status: 'paused',
+          status: "paused",
           updatedAt: Date.now(),
         });
 
         if (this.onProgressCallback) {
-          const sentBytes = Math.min(receivedChunksSet.size * this.chunkSize, file.size);
+          const sentBytes = Math.min(
+            receivedChunksSet.size * this.chunkSize,
+            file.size,
+          );
           this.onProgressCallback({
             fileId,
             fileName: file.name,
             receivedBytes: sentBytes,
             totalBytes: file.size,
             percentage: (sentBytes / file.size) * 100,
-            status: 'paused',
+            status: "paused",
           });
         }
         return;
@@ -372,7 +402,7 @@ export class ChunkedFileTransfer {
         totalChunks,
         fileName: file.name,
         fileSize: file.size,
-        data: chunkData
+        data: chunkData,
       };
 
       sendFn(chunk);
@@ -386,13 +416,16 @@ export class ChunkedFileTransfer {
         totalChunks,
         chunkSize: this.chunkSize,
         receivedChunks: Array.from(receivedChunksSet),
-        transferredBytes: Math.min(receivedChunksSet.size * this.chunkSize, file.size),
-        status: 'transmitting',
+        transferredBytes: Math.min(
+          receivedChunksSet.size * this.chunkSize,
+          file.size,
+        ),
+        status: "transmitting",
         updatedAt: Date.now(),
       });
-      
+
       // Small delay to prevent channel flooding
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
     this.activeSenders.delete(fileId);
@@ -404,15 +437,20 @@ export class ChunkedFileTransfer {
       chunkSize: this.chunkSize,
       receivedChunks: Array.from(receivedChunksSet),
       transferredBytes: file.size,
-      status: 'complete',
+      status: "complete",
       updatedAt: Date.now(),
     });
   }
 
-  public processIncomingChunk(chunk: FileChunk, sendAckFn: (fileId: string, chunkIndex: number) => void): void {
+  public processIncomingChunk(
+    chunk: FileChunk,
+    sendAckFn: (fileId: string, chunkIndex: number) => void,
+  ): void {
     // Validate chunk parameters
     if (chunk.chunkIndex < 0 || chunk.chunkIndex >= chunk.totalChunks) {
-      console.warn(`[ChunkedFileTransfer] Discarding out-of-bounds chunk index ${chunk.chunkIndex} for total ${chunk.totalChunks}`);
+      console.warn(
+        `[ChunkedFileTransfer] Discarding out-of-bounds chunk index ${chunk.chunkIndex} for total ${chunk.totalChunks}`,
+      );
       return;
     }
 
@@ -423,15 +461,17 @@ export class ChunkedFileTransfer {
         fileSize: chunk.fileSize,
         totalChunks: chunk.totalChunks,
         receivedBytes: 0,
-        receivedSequenceNumbers: new Set()
+        receivedSequenceNumbers: new Set(),
       });
     }
 
     const fileState = this.receivingFiles.get(chunk.fileId)!;
-    
+
     // Resolve duplicate chunk sequence numbers / indices
     const seqNum = chunk.sequenceNumber ?? chunk.chunkIndex;
-    const isDuplicate = fileState.chunks.has(chunk.chunkIndex) || fileState.receivedSequenceNumbers.has(seqNum);
+    const isDuplicate =
+      fileState.chunks.has(chunk.chunkIndex) ||
+      fileState.receivedSequenceNumbers.has(seqNum);
 
     if (isDuplicate) {
       // Re-acknowledge duplicate chunk to resolve sender ACK timeout without double counting bytes
@@ -454,7 +494,10 @@ export class ChunkedFileTransfer {
       chunkSize: this.chunkSize,
       receivedChunks: Array.from(fileState.chunks.keys()),
       transferredBytes: fileState.receivedBytes,
-      status: fileState.chunks.size === fileState.totalChunks ? 'complete' : 'receiving',
+      status:
+        fileState.chunks.size === fileState.totalChunks
+          ? "complete"
+          : "receiving",
       updatedAt: Date.now(),
     });
 
@@ -465,8 +508,11 @@ export class ChunkedFileTransfer {
         fileName: chunk.fileName,
         receivedBytes: fileState.receivedBytes,
         totalBytes: chunk.fileSize,
-        percentage: Math.min(100, (fileState.receivedBytes / chunk.fileSize) * 100),
-        status: 'receiving'
+        percentage: Math.min(
+          100,
+          (fileState.receivedBytes / chunk.fileSize) * 100,
+        ),
+        status: "receiving",
       });
     }
 
@@ -488,8 +534,8 @@ export class ChunkedFileTransfer {
       }
     }
 
-    const blob = new Blob(chunks, { type: 'application/octet-stream' });
-    
+    const blob = new Blob(chunks, { type: "application/octet-stream" });
+
     if (this.onCompleteCallback) {
       this.onCompleteCallback(fileId, blob);
     }
@@ -515,10 +561,6 @@ export class ChunkedFileTransfer {
       }
     }
     return missing;
-  }
-
-  public cancelTransfer(fileId: string): void {
-    this.receivingFiles.delete(fileId);
   }
 
   public onProgress(callback: (progress: TransferProgress) => void): void {

@@ -33,7 +33,7 @@ export function ExportRatingsCSVButton({
   const handleDownload = () => {
     if (disabled || ratings.length === 0) return;
 
-    downloadRatingsCSV(ratings, { venueName, filename });
+    downloadRatingsCSV(ratings, venueName, filename);
     setDownloaded(true);
     if (onExport) {
       onExport();
@@ -74,7 +74,13 @@ export function ExportRatingsCSVButton({
     >
       {downloaded ? (
         <>
-          <Check className={variant === "compact" ? "w-3 h-3 text-green-400" : "w-4 h-4 text-green-400"} />
+          <Check
+            className={
+              variant === "compact"
+                ? "w-3 h-3 text-green-400"
+                : "w-4 h-4 text-green-400"
+            }
+          />
           <span className="text-green-400">Exported</span>
         </>
       ) : (

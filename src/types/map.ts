@@ -57,6 +57,7 @@ export interface MapMarker {
 
 export interface MapRoute {
   id: string;
+  name?: string;
   path: Array<{ lat: number; lng: number }>;
   distance?: number;
   duration?: number;

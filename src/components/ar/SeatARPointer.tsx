@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+} from "react";
 import * as THREE from "three";
 import { useWebXR } from "@/hooks/useWebXR";
 import { useDeviceOrientation } from "@/hooks/useDeviceOrientation";
@@ -55,6 +61,11 @@ export interface SeatARPointerProps {
   onClose?: () => void;
 }
 
+// Stable defaults: inline object literals would change identity every render
+// and re-run the effects that depend on them.
+const DEFAULT_TARGET_POSITION = { x: 0, y: 0.8, z: -3 };
+const DEFAULT_USER_POSITION = { x: 0, y: 1.2, z: 0 };
+
 /** Standard barometric altitude formula (hypsometric approximation) */
 export function calculateBarometricAltitude(
   currentHpa: number,
@@ -83,18 +94,18 @@ export function calculateFloorFromAltitude(
  * 3D directional arrow pointing towards the user's reserved seat anchor in AR space.
  * Includes multi-floor indoor altitude detection using barometric pressure changes or step altitude,
  * guiding users between floors in multi-story coworking venues with directional badges.
- * 
+ *
  * Updated to use predictive gyroscope smoothing to eliminate visual overshoot during rapid rotation.
  */
 export function SeatARPointer({
   seatNumber: propSeatNumber,
   targetSeatNumber,
   seatId: _seatId,
-  venueName = "WorkSphere Venue",
+  venueName: _venueName,
   floorLevel: propFloorLevel,
   targetFloor: propTargetFloor,
-  targetPosition = { x: 0, y: 0.8, z: -3 },
-  userPosition = { x: 0, y: 1.2, z: 0 },
+  targetPosition = DEFAULT_TARGET_POSITION,
+  userPosition = DEFAULT_USER_POSITION,
   userAltitude,
   currentPressureHpa,
   baselinePressureHpa = 1013.25,
@@ -103,13 +114,13 @@ export function SeatARPointer({
   onFloorReached,
   smoothingAlpha = 0.2,
   targetAnchor: propTargetAnchor,
-  userAnchor = { x: 0, y: 1.2, z: 0 },
+  userAnchor: _userAnchor,
   targetGps,
   onClose,
 }: SeatARPointerProps) {
   const seatLabel = targetSeatNumber ?? propSeatNumber ?? "1A";
   const targetFloorNum = propTargetFloor ?? propFloorLevel ?? 1;
-  const targetAnchorVec: Vector3 = propTargetAnchor ?? targetPosition ?? { x: 0, y: 0.8, z: -3 };
+  const targetAnchorVec: Vector3 = propTargetAnchor ?? targetPosition;
 
   const { isSupported, requestSession } = useWebXR();
   const { heading } = useDeviceOrientation();
@@ -124,8 +135,9 @@ export function SeatARPointer({
   const [sessionActive, setSessionActive] = useState(false);
   const [showRadar, setShowRadar] = useState(true);
   const [distanceToSeat, setDistanceToSeat] = useState<number>(3.0);
-  const [elevationDelta, setElevationDelta] = useState<number>(0);
-  const [elevationText, setElevationText] = useState<string>("Same Level (+0.0m)");
+  const [, setElevationDelta] = useState<number>(0);
+  const [elevationText, setElevationText] =
+    useState<string>("Same Level (+0.0m)");
   const [bearingAngle, setBearingAngle] = useState<number>(0);
 
   const prevDistanceRef = useRef<number | null>(null);
@@ -136,15 +148,23 @@ export function SeatARPointer({
       return userAltitude;
     }
     if (typeof currentPressureHpa === "number") {
-      return calculateBarometricAltitude(currentPressureHpa, baselinePressureHpa);
+      return calculateBarometricAltitude(
+        currentPressureHpa,
+        baselinePressureHpa,
+      );
     }
     return userPosition.y || 0;
   }, [userAltitude, currentPressureHpa, baselinePressureHpa, userPosition.y]);
 
   // Target elevation based on floor (ground floor = floor 1 = 0m elevation)
-  const targetElevation = (targetFloorNum - 1) * floorHeightMeters + (targetPosition.y || 0);
+  const targetElevation =
+    (targetFloorNum - 1) * floorHeightMeters + (targetPosition.y || 0);
   const floorElevationDelta = targetElevation - currentElevation;
-  const estimatedCurrentFloor = calculateFloorFromAltitude(currentElevation, floorHeightMeters, 1);
+  const estimatedCurrentFloor = calculateFloorFromAltitude(
+    currentElevation,
+    floorHeightMeters,
+    1,
+  );
 
   const isWrongLevel = Math.abs(floorElevationDelta) > verticalThresholdMeters;
   const needToGoUp = floorElevationDelta > 0;
@@ -161,10 +181,7 @@ export function SeatARPointer({
   // Initialize WebXR or Device Orientation projection
   const startARSession = useCallback(async () => {
     try {
-      const session = await requestSession("immersive-ar", {
-        requiredFeatures: ["local-floor"],
-        optionalFeatures: ["hit-test", "anchors", "dom-overlay"],
-      });
+      const session = await requestSession();
       if (session) {
         setXrSession(session);
         setSessionActive(true);
@@ -180,7 +197,7 @@ export function SeatARPointer({
   // Memoize Arrow Geometry and Material for performance
   const arrowGeometry = useMemo(() => {
     const geometry = new THREE.ConeGeometry(0.12, 0.35, 32);
-    // Rotate to point forward along Z axis initially if needed, 
+    // Rotate to point forward along Z axis initially if needed,
     // but we handle orientation in lookAt/rotation logic below
     return geometry;
   }, []);
@@ -303,7 +320,9 @@ export function SeatARPointer({
 
       setDistanceToSeat(smoothed);
       setElevationDelta(Math.round(metrics.elevationDelta * 10) / 10);
-      setElevationText(formatElevationIndicator(metrics.elevationDelta, targetFloorNum));
+      setElevationText(
+        formatElevationIndicator(metrics.elevationDelta, targetFloorNum),
+      );
 
       const dirToTarget = new THREE.Vector3().subVectors(
         targetVector,
@@ -324,11 +343,15 @@ export function SeatARPointer({
           predictiveQuaternion[0],
           predictiveQuaternion[1],
           predictiveQuaternion[2],
-          predictiveQuaternion[3]
+          predictiveQuaternion[3],
         );
       } else {
         // Fallback to standard lookAt if predictive data isn't available yet
-        arrowGroup.lookAt(targetVector.x, arrowGroup.position.y, targetVector.z);
+        arrowGroup.lookAt(
+          targetVector.x,
+          arrowGroup.position.y,
+          targetVector.z,
+        );
       }
 
       arrowGroup.rotateX(Math.PI / 6);
@@ -359,12 +382,22 @@ export function SeatARPointer({
         container.removeChild(renderer.domElement);
       }
       renderer.dispose();
-      // Geometries and materials are memoized outside, so we don't dispose them here 
-      // to allow reuse if component re-mounts quickly, but strictly speaking 
+      // Geometries and materials are memoized outside, so we don't dispose them here
+      // to allow reuse if component re-mounts quickly, but strictly speaking
       // in a pure unmount scenario we should. Given they are useMemo'd at component level,
       // they persist across re-renders. If strict cleanup is needed, move them inside.
     };
-  }, [targetAnchorVec, targetFloorNum, smoothingAlpha, predictiveQuaternion, arrowGeometry, shaftGeometry, ringGeometry, arrowMaterial, ringMaterial]);
+  }, [
+    targetAnchorVec,
+    targetFloorNum,
+    smoothingAlpha,
+    predictiveQuaternion,
+    arrowGeometry,
+    shaftGeometry,
+    ringGeometry,
+    arrowMaterial,
+    ringMaterial,
+  ]);
 
   // Synchronous 2D Radar Canvas drawing loop
   useEffect(() => {
@@ -406,7 +439,10 @@ export function SeatARPointer({
           >
             <div className="flex flex-col text-center">
               <span className="text-xs font-semibold uppercase tracking-wider text-amber-200">
-                Vertical Elevation: {floorElevationDelta > 0 ? `+${floorElevationDelta.toFixed(1)}m` : `${floorElevationDelta.toFixed(1)}m`}
+                Vertical Elevation:{" "}
+                {floorElevationDelta > 0
+                  ? `+${floorElevationDelta.toFixed(1)}m`
+                  : `${floorElevationDelta.toFixed(1)}m`}
               </span>
               <span className="text-sm font-bold">
                 {needToGoUp
@@ -414,15 +450,16 @@ export function SeatARPointer({
                   : `Take Elevator / Stairs to Floor ${targetFloorNum}`}
               </span>
               <span className="text-[11px] text-amber-100/90">
-                Current Level: Floor {estimatedCurrentFloor} · Target: Floor {targetFloorNum}
+                Current Level: Floor {estimatedCurrentFloor} · Target: Floor{" "}
+                {targetFloorNum}
               </span>
             </div>
           </div>
         )}
         <CompassFallback
-          targetBearing={bearingAngle}
-          seatNumber={seatLabel}
-          distance={distanceToSeat}
+          destinationLat={targetGps?.latitude}
+          destinationLng={targetGps?.longitude}
+          destinationName={`Seat ${seatLabel}`}
           onClose={onClose}
         />
       </div>
@@ -443,7 +480,10 @@ export function SeatARPointer({
         >
           <div className="flex flex-col text-center">
             <span className="text-xs font-semibold uppercase tracking-wider text-amber-200">
-              Vertical Elevation: {floorElevationDelta > 0 ? `+${floorElevationDelta.toFixed(1)}m` : `${floorElevationDelta.toFixed(1)}m`}
+              Vertical Elevation:{" "}
+              {floorElevationDelta > 0
+                ? `+${floorElevationDelta.toFixed(1)}m`
+                : `${floorElevationDelta.toFixed(1)}m`}
             </span>
             <span className="text-sm font-bold">
               {needToGoUp
@@ -451,7 +491,8 @@ export function SeatARPointer({
                 : `Take Elevator / Stairs to Floor ${targetFloorNum}`}
             </span>
             <span className="text-[11px] text-amber-100/90 mt-0.5">
-              Current Level: Floor {estimatedCurrentFloor} · Target: Floor {targetFloorNum}
+              Current Level: Floor {estimatedCurrentFloor} · Target: Floor{" "}
+              {targetFloorNum}
             </span>
           </div>
         </div>
@@ -465,7 +506,9 @@ export function SeatARPointer({
             <span className="w-2.5 h-2.5 rounded-full bg-green-400 animate-ping" />
             <span className="text-sm font-semibold">Seat {seatLabel}</span>
           </div>
-          <span className="text-xs text-blue-100">Floor {targetFloorNum} (On Target Level)</span>
+          <span className="text-xs text-blue-100">
+            Floor {targetFloorNum} (On Target Level)
+          </span>
         </div>
       )}
 
@@ -505,10 +548,11 @@ export function SeatARPointer({
             aria-label={showRadar ? "Hide 2D Radar" : "Show 2D Radar"}
             aria-pressed={showRadar}
             data-testid="toggle-radar-btn"
-            className={`p-2 rounded-xl backdrop-blur-md border transition flex items-center gap-1.5 text-xs font-medium ${showRadar
+            className={`p-2 rounded-xl backdrop-blur-md border transition flex items-center gap-1.5 text-xs font-medium ${
+              showRadar
                 ? "bg-blue-600/80 border-blue-500 text-white shadow-lg shadow-blue-500/20"
                 : "bg-slate-900/80 border-slate-700 text-slate-300 hover:text-white"
-              }`}
+            }`}
           >
             <Compass className="w-4 h-4" />
             <span className="hidden sm:inline">Radar</span>

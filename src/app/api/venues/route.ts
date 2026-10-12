@@ -242,9 +242,12 @@ export async function GET(req: NextRequest) {
               : undefined,
         });
         const rankedIds = ranked.map(({ id }) => id);
+        // The ranking already matched the query (full-text, semantic or
+        // fuzzy); re-applying the literal name/address filter would drop
+        // every result that is not an exact substring match.
         const matchingVenues = rankedIds.length
           ? await prisma.venue.findMany({
-              where: { ...where, id: { in: rankedIds } },
+              where: { ...suggestionWhere, id: { in: rankedIds } },
               include: {
                 _count: { select: { favorites: true, ratings: true } },
                 foodValidations: true,

@@ -40,7 +40,7 @@ export function isVenueCurrentlyOpen(venue: any, now = new Date()): boolean {
     const status = getVenueHoursStatus(
       typeof hours === "string" ? hours : JSON.stringify(hours),
       now,
-      venue.timezone || venue.timeZone
+      venue.timezone || venue.timeZone,
     );
     return Boolean(status.isOpen);
   }
@@ -82,7 +82,7 @@ export function VenueList({
           // Gracefully hide badge if location access is denied
           setInternalLocation(null);
         },
-        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 },
       );
     }
   }, [userLocation]);
@@ -122,7 +122,9 @@ export function VenueList({
                 : "bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 border border-zinc-200/80 dark:border-zinc-700/80"
             }`}
           >
-            <Clock className={`w-3.5 h-3.5 ${openNowOnly ? "text-white" : "text-emerald-500"}`} />
+            <Clock
+              className={`w-3.5 h-3.5 ${openNowOnly ? "text-white" : "text-emerald-500"}`}
+            />
             <span>Open Now</span>
             {openNowOnly && (
               <span className="ml-1 text-[10px] bg-white/20 px-1.5 py-0.2 rounded-full">
@@ -160,7 +162,7 @@ export function VenueList({
                     activeLocation.lat,
                     activeLocation.lng,
                     Number(vLat),
-                    Number(vLon)
+                    Number(vLon),
                   )
                 : null;
 
@@ -168,7 +170,14 @@ export function VenueList({
 
             return (
               <div key={venueId} className="relative group">
-                <VenueCard venue={venue} onBookmarkToggle={onBookmarkToggle} />
+                <VenueCard
+                  venue={venue}
+                  onSaveFavorite={
+                    onBookmarkToggle
+                      ? (saved) => onBookmarkToggle(saved.id)
+                      : undefined
+                  }
+                />
 
                 {computedDistance !== null && (
                   <div
@@ -202,4 +211,3 @@ export function VenueList({
 }
 
 export default VenueList;
-

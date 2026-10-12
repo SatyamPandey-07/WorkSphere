@@ -39,6 +39,7 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
   const [error, setError] = useState<string | null>(null);
   const [pipSupported, setPipSupported] = useState(false);
   const [dataSaverMode, setDataSaverModeState] = useState(false);
+  const [sender, setSender] = useState<RTCRtpSender | null>(null);
 
   const localStreamRef = useRef<MediaStream | null>(null);
   const originalVideoConstraintsRef = useRef(
@@ -121,6 +122,7 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
     setDataSaverModeState(false);
     setLocalStream(null);
     setRemoteStream(null);
+    setSender(null);
     setSharing(false);
   }, [cleanupPeer]);
 
@@ -151,7 +153,10 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
       };
 
       pc.onconnectionstatechange = () => {
-        if (pc.connectionState === "failed" || pc.connectionState === "closed") {
+        if (
+          pc.connectionState === "failed" ||
+          pc.connectionState === "closed"
+        ) {
           cleanupPeer(peerId);
         }
       };
@@ -160,7 +165,8 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
       if (local && asOfferer) {
         for (const track of local.getTracks()) {
           try {
-            pc.addTrack(track, local);
+            const trackSender = pc.addTrack(track, local);
+            if (track.kind === "video") setSender(trackSender);
           } catch {
             // Track may already be added
           }
@@ -176,7 +182,11 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
     if (bitrateTimerRef.current) clearInterval(bitrateTimerRef.current);
     bitrateTimerRef.current = setInterval(() => {
       for (const [peerId, pc] of [...peersRef.current.entries()]) {
-        if (pc.signalingState === "closed" || pc.connectionState === "closed" || pc.connectionState === "failed") {
+        if (
+          pc.signalingState === "closed" ||
+          pc.connectionState === "closed" ||
+          pc.connectionState === "failed"
+        ) {
           cleanupPeer(peerId);
           continue;
         }
@@ -303,13 +313,16 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
 
       // Throttle or pause sender tracks on all active peer connections
       for (const pc of peersRef.current.values()) {
-        if (pc.signalingState === "closed" || pc.connectionState === "closed") continue;
+        if (pc.signalingState === "closed" || pc.connectionState === "closed")
+          continue;
 
         try {
           const senders = pc.getSenders ? pc.getSenders() : [];
           for (const sender of senders) {
             if (sender.track && sender.track.kind === "video") {
-              const params = sender.getParameters ? sender.getParameters() : null;
+              const params = sender.getParameters
+                ? sender.getParameters()
+                : null;
               if (params && params.encodings && params.encodings.length > 0) {
                 params.encodings.forEach((enc) => {
                   enc.maxFramerate = isHidden ? 1 : 15;
@@ -330,11 +343,16 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
 
       // If local stream video track is active, adjust constraints where possible
       const localVideoTrack = localStreamRef.current?.getVideoTracks()[0];
-      if (localVideoTrack && typeof localVideoTrack.applyConstraints === "function") {
+      if (
+        localVideoTrack &&
+        typeof localVideoTrack.applyConstraints === "function"
+      ) {
         try {
-          await localVideoTrack.applyConstraints({
-            frameRate: isHidden ? { max: 1 } : { ideal: 15, max: 30 },
-          }).catch(() => {});
+          await localVideoTrack
+            .applyConstraints({
+              frameRate: isHidden ? { max: 1 } : { ideal: 15, max: 30 },
+            })
+            .catch(() => {});
         } catch {
           // Ignore unsupported applyConstraints
         }
@@ -401,69 +419,66 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
     }
   }, [isHost, userId, sendSignal, cleanupAll, startBitrateLoop]);
 
-  const setDataSaverMode = useCallback(
-    async (enabled: boolean) => {
-      const stream = localStreamRef.current;
-      const activeVideoTracks =
-        stream?.getVideoTracks().filter((track) => track.readyState === "live") ??
-        [];
+  const setDataSaverMode = useCallback(async (enabled: boolean) => {
+    const stream = localStreamRef.current;
+    const activeVideoTracks =
+      stream?.getVideoTracks().filter((track) => track.readyState === "live") ??
+      [];
 
-      if (activeVideoTracks.length === 0) {
-        setError("Data Saver Mode requires an active screen-share video track.");
-        return;
+    if (activeVideoTracks.length === 0) {
+      setError("Data Saver Mode requires an active screen-share video track.");
+      return;
+    }
+
+    const appliedTracks: MediaStreamTrack[] = [];
+    try {
+      for (const track of activeVideoTracks) {
+        const constraints = enabled
+          ? {
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
+              frameRate: { ideal: 15 },
+            }
+          : (originalVideoConstraintsRef.current.get(track) ?? {});
+        await track.applyConstraints(constraints);
+        appliedTracks.push(track);
+      }
+    } catch (err) {
+      const rollbackFailedTracks: MediaStreamTrack[] = [];
+      for (const track of appliedTracks) {
+        try {
+          await track.applyConstraints(
+            enabled
+              ? (originalVideoConstraintsRef.current.get(track) ?? {})
+              : {
+                  width: { ideal: 1280 },
+                  height: { ideal: 720 },
+                  frameRate: { ideal: 15 },
+                },
+          );
+        } catch {
+          rollbackFailedTracks.push(track);
+        }
       }
 
-      const appliedTracks: MediaStreamTrack[] = [];
-      try {
-        for (const track of activeVideoTracks) {
-          const constraints = enabled
-            ? {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
-                frameRate: { ideal: 15 },
-              }
-            : (originalVideoConstraintsRef.current.get(track) ?? {});
-          await track.applyConstraints(constraints);
-          appliedTracks.push(track);
-        }
-      } catch (err) {
-        const rollbackFailedTracks: MediaStreamTrack[] = [];
-        for (const track of appliedTracks) {
-          try {
-            await track.applyConstraints(
-              enabled
-                ? (originalVideoConstraintsRef.current.get(track) ?? {})
-                : {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    frameRate: { ideal: 15 },
-                  },
-            );
-          } catch {
-            rollbackFailedTracks.push(track);
-          }
-        }
-
-        const reason = err instanceof Error ? ` ${err.message}` : "";
-        setError(
-          rollbackFailedTracks.length > 0
-            ? `Data Saver Mode could not be applied, and some tracks could not be restored.${reason}`
-            : `Data Saver Mode could not be applied to this video track.${reason}`,
-        );
-        return;
-      }
-
-      dataSaverModeRef.current = enabled;
-      setDataSaverModeState(enabled);
-      setError(null);
-      await Promise.all(
-        [...peersRef.current.values()].map((pc) =>
-          adaptVideoBitrate(pc, { dataSaverMode: enabled }),
-        ),
+      const reason = err instanceof Error ? ` ${err.message}` : "";
+      setError(
+        rollbackFailedTracks.length > 0
+          ? `Data Saver Mode could not be applied, and some tracks could not be restored.${reason}`
+          : `Data Saver Mode could not be applied to this video track.${reason}`,
       );
-    },
-    [],
-  );
+      return;
+    }
+
+    dataSaverModeRef.current = enabled;
+    setDataSaverModeState(enabled);
+    setError(null);
+    await Promise.all(
+      [...peersRef.current.values()].map((pc) =>
+        adaptVideoBitrate(pc, { dataSaverMode: enabled }),
+      ),
+    );
+  }, []);
 
   const stopShare = useCallback(() => {
     sendSignal({ kind: "share-stop" });
@@ -490,6 +505,7 @@ export function useScreenShare({ roomId, userId, isHost }: Options) {
     sharing,
     localStream,
     remoteStream,
+    sender,
     error,
     pipSupported,
     dataSaverMode,

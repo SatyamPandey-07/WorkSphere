@@ -2,13 +2,7 @@
 
 import React from "react";
 import dynamic from "next/dynamic";
-import {
-  Wifi,
-  Zap,
-  Volume2,
-  Sun,
-  Info,
-} from "lucide-react";
+import { Wifi, Zap, Volume2, Sun, Info } from "lucide-react";
 import type { Venue } from "../ChatMessages";
 import { RatingDistribution } from "../RatingDistribution";
 import { NoiseReportingWidget } from "@/components/noise/NoiseReportingWidget";
@@ -32,7 +26,7 @@ const VenueNoiseChart = dynamic(
 const NoiseTimelineChart = dynamic(
   () =>
     import("@/components/noise/NoiseTimelineChart").then(
-      (mod) => mod.NoiseTimelineChart ?? mod.default,
+      (mod) => mod.NoiseTimelineChart,
     ),
   {
     ssr: false,
@@ -70,9 +64,7 @@ export function VenueNoiseSection({
         <button
           type="button"
           onClick={() =>
-            setActiveDistribution(
-              activeDistribution === "wifi" ? null : "wifi",
-            )
+            setActiveDistribution(activeDistribution === "wifi" ? null : "wifi")
           }
           className={`p-5 rounded-2xl flex flex-col items-center text-center border transition-all ${
             activeDistribution === "wifi"
@@ -87,7 +79,9 @@ export function VenueNoiseSection({
             WiFi
           </span>
           <span className="text-xl font-black text-white leading-none">
-            {venue.wifiSpeed ? `${venue.wifiSpeed}M` : `${venue.wifiQuality || 4}/5`}
+            {venue.wifiSpeed
+              ? `${venue.wifiSpeed}M`
+              : `${venue.wifiQuality || 4}/5`}
           </span>
         </button>
 
@@ -242,7 +236,9 @@ export function VenueNoiseSection({
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-black/40 text-zinc-200 border border-white/10 text-xs font-semibold">
                 <span>
                   🔌 Outlets:{" "}
-                  {venue.outletLocations.map((l) => l.replace("_", " ")).join(", ")}
+                  {venue.outletLocations
+                    .map((l) => l.replace("_", " "))
+                    .join(", ")}
                 </span>
               </div>
             )}

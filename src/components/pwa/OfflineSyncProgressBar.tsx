@@ -95,13 +95,13 @@ export function OfflineSyncProgressBar({
         } else {
           const pendingList = await processPendingActions();
           queue = (pendingList || []).map((item, i) => ({
+            ...item,
             id: item.id || `item-${i + 1}`,
             name: item.name || item.type || `Action ${i + 1}`,
             type: item.type || "offline-action",
             retryCount: item.retryCount ?? 0,
             status: (item.status as SyncQueueItem["status"]) || "pending",
             error: item.error,
-            ...item,
           }));
         }
 

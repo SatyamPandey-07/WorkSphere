@@ -13,7 +13,7 @@ export {
 } from "./GeolocationFallbackBanner";
 export type { GeolocationFallbackBannerProps } from "./GeolocationFallbackBanner";
 export { MultiCityComparison } from "./MultiCityComparison";
-export { PremiumZkpGate } from "./PremiumZkpGate";
+export { default as PremiumZkpGate } from "./PremiumZkpGate";
 export { DistanceFilterSlider } from "./DistanceFilterSlider";
 export type { DistanceFilterSliderProps } from "./DistanceFilterSlider";
 export { HybridSearchWeightSlider } from "./HybridSearchWeightSlider";

@@ -2,12 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import {
-  CanvasTexture,
-  DoubleSide,
-  Group,
-  SRGBColorSpace,
-} from "three";
+import { CanvasTexture, DoubleSide, Group, SRGBColorSpace } from "three";
 import type { PassportStamp } from "@/lib/zkp/nomadProof";
 import styles from "./NomadPassportCoin.module.css";
 
@@ -26,7 +21,14 @@ function createCoinTexture(stamp: PassportStamp, reverse: boolean) {
 
   const center = 512;
   const radius = 492;
-  const background = context.createRadialGradient(center, 420, 60, center, center, 510);
+  const background = context.createRadialGradient(
+    center,
+    420,
+    60,
+    center,
+    center,
+    510,
+  );
   background.addColorStop(0, reverse ? "#263a45" : "#30424a");
   background.addColorStop(0.68, reverse ? "#132832" : "#182d36");
   background.addColorStop(1, "#0c1b22");
@@ -51,7 +53,8 @@ function createCoinTexture(stamp: PassportStamp, reverse: boolean) {
   context.fillStyle = "#f4d59c";
 
   if (reverse) {
-    const attestation = stamp.nullifierHash || stamp.verificationSignature || stamp.stampId;
+    const attestation =
+      stamp.nullifierHash || stamp.verificationSignature || stamp.stampId;
     context.font = "600 34px monospace";
     context.fillText("WORKSPHERE ATTESTATION", center, 290);
     context.font = "700 54px Georgia, serif";
@@ -59,7 +62,11 @@ function createCoinTexture(stamp: PassportStamp, reverse: boolean) {
     context.font = "500 30px monospace";
     context.fillStyle = "#d6e0dc";
     for (let index = 0; index < 4; index++) {
-      context.fillText(attestation.slice(index * 16, index * 16 + 16), center, 540 + index * 48);
+      context.fillText(
+        attestation.slice(index * 16, index * 16 + 16),
+        center,
+        540 + index * 48,
+      );
     }
     context.font = "600 28px monospace";
     context.fillStyle = "#e9bd79";
@@ -83,9 +90,19 @@ function createCoinTexture(stamp: PassportStamp, reverse: boolean) {
     context.fillText(initials || "W", center, center + 15);
 
     context.font = "600 37px Georgia, serif";
-    context.fillText((stamp.venueName || "WORKSPHERE HUB").toUpperCase().slice(0, 25), center, 700);
+    context.fillText(
+      (stamp.venueName || "WORKSPHERE HUB").toUpperCase().slice(0, 25),
+      center,
+      700,
+    );
     context.font = "500 28px monospace";
-    context.fillText(stamp.countryCode ? `${stamp.countryCode} - VERIFIED VENUE` : "VERIFIED VENUE", center, 765);
+    context.fillText(
+      stamp.countryCode
+        ? `${stamp.countryCode} - VERIFIED VENUE`
+        : "VERIFIED VENUE",
+      center,
+      765,
+    );
   }
 
   const texture = new CanvasTexture(canvas);
@@ -94,7 +111,10 @@ function createCoinTexture(stamp: PassportStamp, reverse: boolean) {
   return texture;
 }
 
-function CoinMesh({ stamp, flipped }: NomadPassportCoinProps & { flipped: boolean }) {
+function CoinMesh({
+  stamp,
+  flipped,
+}: NomadPassportCoinProps & { flipped: boolean }) {
   const coin = useRef<Group>(null);
   const frontTexture = useMemo(() => createCoinTexture(stamp, false), [stamp]);
   const backTexture = useMemo(() => createCoinTexture(stamp, true), [stamp]);
@@ -111,15 +131,21 @@ function CoinMesh({ stamp, flipped }: NomadPassportCoinProps & { flipped: boolea
     if (!coin.current) return;
     const idleTurn = Math.sin(clock.elapsedTime * 0.42) * 0.08;
     const target = (flipped ? Math.PI : 0) + idleTurn;
-    coin.current.rotation.y += (target - coin.current.rotation.y) * (1 - Math.exp(-delta * 5));
-    coin.current.rotation.x += (0.08 - coin.current.rotation.x) * (1 - Math.exp(-delta * 4));
+    coin.current.rotation.y +=
+      (target - coin.current.rotation.y) * (1 - Math.exp(-delta * 5));
+    coin.current.rotation.x +=
+      (0.08 - coin.current.rotation.x) * (1 - Math.exp(-delta * 4));
   });
 
   return (
     <group ref={coin}>
       <mesh rotation={[Math.PI / 2, 0, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[1.23, 1.23, 0.15, 96, 1, false]} />
-        <meshStandardMaterial color="#c9934f" metalness={0.94} roughness={0.24} />
+        <meshStandardMaterial
+          color="#c9934f"
+          metalness={0.94}
+          roughness={0.24}
+        />
       </mesh>
       <mesh position={[0, 0, 0.078]}>
         <circleGeometry args={[1.19, 96]} />
@@ -143,14 +169,22 @@ function CoinMesh({ stamp, flipped }: NomadPassportCoinProps & { flipped: boolea
       </mesh>
       <mesh position={[0, 0, 0.02]} rotation={[0, 0, Math.PI / 2]}>
         <torusGeometry args={[1.205, 0.025, 12, 96]} />
-        <meshStandardMaterial color="#f0ca86" metalness={0.98} roughness={0.2} />
+        <meshStandardMaterial
+          color="#f0ca86"
+          metalness={0.98}
+          roughness={0.2}
+        />
       </mesh>
     </group>
   );
 }
 
-function CoinFallback({ stamp, flipped }: NomadPassportCoinProps & { flipped: boolean }) {
-  const attestation = stamp.nullifierHash || stamp.verificationSignature || stamp.stampId;
+function CoinFallback({
+  stamp,
+  flipped,
+}: NomadPassportCoinProps & { flipped: boolean }) {
+  const attestation =
+    stamp.nullifierHash || stamp.verificationSignature || stamp.stampId;
   const initials = (stamp.venueName || "WorkSphere")
     .split(/\s+/)
     .filter(Boolean)
@@ -161,12 +195,14 @@ function CoinFallback({ stamp, flipped }: NomadPassportCoinProps & { flipped: bo
   return (
     <div className={styles.fallback} aria-hidden="true">
       <div
-        className={`${styles.rotor} transform-style-3d ${flipped ? "rotate-y-180" : ""}`}
+        className={`${styles.rotor} ${styles.transformStyle3d} ${flipped ? styles.rotateY180 : ""}`}
       >
         <div className={styles.face}>
           <span className={styles.kicker}>NOMAD PASSPORT</span>
           <strong className={styles.initials}>{initials || "W"}</strong>
-          <span className={styles.venue}>{stamp.venueName || "WorkSphere Hub"}</span>
+          <span className={styles.venue}>
+            {stamp.venueName || "WorkSphere Hub"}
+          </span>
           <span className={styles.kicker}>VERIFIED VENUE</span>
         </div>
         <div className={`${styles.face} ${styles.faceBack}`}>
@@ -189,7 +225,10 @@ interface CoinErrorBoundaryState {
   failed: boolean;
 }
 
-class CoinErrorBoundary extends React.Component<CoinErrorBoundaryProps, CoinErrorBoundaryState> {
+class CoinErrorBoundary extends React.Component<
+  CoinErrorBoundaryProps,
+  CoinErrorBoundaryState
+> {
   state: CoinErrorBoundaryState = { failed: false };
 
   static getDerivedStateFromError(): CoinErrorBoundaryState {
@@ -213,13 +252,16 @@ export default function NomadPassportCoin({ stamp }: NomadPassportCoinProps) {
     const probe = document.createElement("canvas");
     let supported = false;
     try {
-      if (!window.WebGLRenderingContext && !("WebGL2RenderingContext" in window)) {
+      if (
+        !window.WebGLRenderingContext &&
+        !("WebGL2RenderingContext" in window)
+      ) {
         setWebglSupported(false);
         return;
       }
       supported = Boolean(
         probe.getContext("webgl2", { failIfMajorPerformanceCaveat: true }) ||
-          probe.getContext("webgl", { failIfMajorPerformanceCaveat: true }),
+        probe.getContext("webgl", { failIfMajorPerformanceCaveat: true }),
       );
       const context = probe.getContext("webgl2") || probe.getContext("webgl");
       context?.getExtension("WEBGL_lose_context")?.loseContext();
@@ -236,7 +278,7 @@ export default function NomadPassportCoin({ stamp }: NomadPassportCoinProps) {
       type="button"
       aria-label={`${stamp.venueName || "Nomad passport"} coin. Hover or activate to reveal its attestation hash.`}
       aria-pressed={flipped}
-      className={`${styles.button} perspective-1000`}
+      className={`${styles.button} ${styles.perspective1000}`}
       onMouseEnter={() => setFlipped(true)}
       onMouseLeave={() => setFlipped(false)}
       onFocus={() => setFlipped(true)}
@@ -253,14 +295,20 @@ export default function NomadPassportCoin({ stamp }: NomadPassportCoinProps) {
           >
             <ambientLight intensity={1.5} />
             <directionalLight position={[3, 4, 5]} intensity={4} castShadow />
-            <pointLight position={[-3, -2, 3]} intensity={1.3} color="#7ec9df" />
+            <pointLight
+              position={[-3, -2, 3]}
+              intensity={1.3}
+              color="#7ec9df"
+            />
             <CoinMesh stamp={stamp} flipped={flipped} />
           </Canvas>
         </CoinErrorBoundary>
       ) : (
         fallback
       )}
-      <span className="sr-only">{flipped ? "Attestation hash face" : "Venue logo face"}</span>
+      <span className="sr-only">
+        {flipped ? "Attestation hash face" : "Venue logo face"}
+      </span>
     </button>
   );
 }

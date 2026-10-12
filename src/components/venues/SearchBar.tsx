@@ -79,7 +79,15 @@ export function SearchBar({
     // Graceful fallback for testing environments
   }
 
-  const { query, setQuery, venues, isLoading, clear } = useVenueSearch({
+  const {
+    query,
+    setQuery,
+    venues,
+    isLoading,
+    suggestedQuery,
+    notice,
+    clear,
+  } = useVenueSearch({
     initialQuery,
     debounceMs,
   });
@@ -197,6 +205,16 @@ export function SearchBar({
     updateUrlQuery(trimmedName);
   };
 
+  const handleUseSuggestion = () => {
+    if (!suggestedQuery) return;
+    cursorRef.current = { start: null, end: null };
+    setQuery(suggestedQuery);
+    setIsOpen(true);
+    onSearch?.(suggestedQuery);
+    updateUrlQuery(suggestedQuery);
+    inputRef.current?.focus();
+  };
+
   const handleClear = (e?: React.MouseEvent<HTMLButtonElement>) => {
     if (e) {
       e.preventDefault();
@@ -295,6 +313,24 @@ export function SearchBar({
           )}
         </div>
       </div>
+
+      {suggestedQuery && (
+        <div
+          data-testid="search-suggestion"
+          className="mt-2 text-sm text-zinc-600 dark:text-zinc-300"
+        >
+          <span>Did you mean: </span>
+          <button
+            type="button"
+            onClick={handleUseSuggestion}
+            title={notice ?? undefined}
+            className="font-semibold text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            {suggestedQuery}
+          </button>
+          <span>?</span>
+        </div>
+      )}
 
       {/* Optional mobile amenity filter pill row below search bar */}
       {showAmenityPills && (

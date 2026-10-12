@@ -52,6 +52,84 @@ export function damerauLevenshteinDistance(a: string, b: string): number {
 
 export const levenshteinDistance = damerauLevenshteinDistance;
 
+export function suggestCorrectedQuery(
+  query: string,
+  candidates: readonly {
+    name: string;
+    foodTags?: readonly string[];
+  }[],
+): string | undefined {
+  const queryWords = Array.from(query.matchAll(/[\p{L}\p{N}]+/gu));
+  if (queryWords.length === 0) return undefined;
+
+  const candidateWords = new Set<string>();
+  for (const candidate of candidates) {
+    for (const text of [candidate.name, ...(candidate.foodTags ?? [])]) {
+      for (const match of text.matchAll(/[\p{L}\p{N}]+/gu)) {
+        candidateWords.add(match[0]);
+      }
+    }
+  }
+  const normalizedCandidateWords = new Set(
+    Array.from(candidateWords, (word) => word.toLowerCase()),
+  );
+
+  let bestCorrection:
+    | { start: number; end: number; word: string; distance: number }
+    | undefined;
+  let ambiguous = false;
+
+  for (const queryWord of queryWords) {
+    const normalizedQueryWord = queryWord[0].toLowerCase();
+    if (normalizedCandidateWords.has(normalizedQueryWord)) continue;
+    const threshold = getFuzzyThreshold(normalizedQueryWord.length);
+    if (threshold === 0) continue;
+
+    let wordCorrection: { word: string; distance: number } | undefined;
+    let wordAmbiguous = false;
+    for (const candidateWord of candidateWords) {
+      const normalizedCandidate = candidateWord.toLowerCase();
+      if (normalizedCandidate === normalizedQueryWord) continue;
+
+      const distance = levenshteinDistance(
+        normalizedQueryWord,
+        normalizedCandidate,
+      );
+      if (distance > threshold) continue;
+
+      if (!wordCorrection || distance < wordCorrection.distance) {
+        wordCorrection = { word: candidateWord, distance };
+        wordAmbiguous = false;
+      } else if (
+        distance === wordCorrection.distance &&
+        normalizedCandidate !== wordCorrection.word.toLowerCase()
+      ) {
+        wordAmbiguous = true;
+      }
+    }
+
+    if (!wordCorrection || wordAmbiguous) continue;
+    if (!bestCorrection || wordCorrection.distance < bestCorrection.distance) {
+      bestCorrection = {
+        start: queryWord.index,
+        end: queryWord.index + queryWord[0].length,
+        word: wordCorrection.word,
+        distance: wordCorrection.distance,
+      };
+      ambiguous = false;
+    } else if (wordCorrection.distance === bestCorrection.distance) {
+      ambiguous = true;
+    }
+  }
+
+  if (!bestCorrection || ambiguous) return undefined;
+  return (
+    query.slice(0, bestCorrection.start) +
+    bestCorrection.word +
+    query.slice(bestCorrection.end)
+  );
+}
+
 /**
  * Determines the allowable edit distance threshold based on query length:
  * - Query length < 4: threshold = 0 (exact match only)

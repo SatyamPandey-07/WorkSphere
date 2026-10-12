@@ -67,7 +67,16 @@ export function SearchBar({
     // Graceful fallback
   }
 
-  const { query, setQuery, venues, isLoading, clear, search } = useVenueSearch({
+  const {
+    query,
+    setQuery,
+    venues,
+    isLoading,
+    suggestedQuery,
+    notice,
+    clear,
+    search,
+  } = useVenueSearch({
     initialQuery,
     debounceMs,
   });
@@ -207,6 +216,17 @@ export function SearchBar({
     updateUrlQuery(trimmedName);
   };
 
+  const handleUseSuggestion = () => {
+    if (!suggestedQuery) return;
+    cursorRef.current = { start: null, end: null };
+    setQuery(suggestedQuery);
+    setValidationError(null);
+    setIsOpen(true);
+    onSearch?.(suggestedQuery);
+    updateUrlQuery(suggestedQuery);
+    inputRef.current?.focus();
+  };
+
   const handleClear = (e?: React.MouseEvent<HTMLButtonElement>) => {
     if (e) {
       e.preventDefault();
@@ -308,6 +328,24 @@ export function SearchBar({
         >
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           <span>{validationError}</span>
+        </div>
+      )}
+
+      {suggestedQuery && (
+        <div
+          data-testid="search-suggestion"
+          className="mt-2 text-sm text-zinc-600 dark:text-zinc-300"
+        >
+          <span>Did you mean: </span>
+          <button
+            type="button"
+            onClick={handleUseSuggestion}
+            title={notice ?? undefined}
+            className="font-semibold text-blue-600 underline decoration-blue-300 underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            {suggestedQuery}
+          </button>
+          <span>?</span>
         </div>
       )}
 

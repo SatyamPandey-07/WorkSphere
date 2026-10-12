@@ -141,6 +141,23 @@ describe("GET /api/venues - Search and Pagination", () => {
     );
   });
 
+  it("suggests a close venue tag when a text query has no strict results", async () => {
+    (prisma.$queryRaw as jest.Mock).mockResolvedValue([]);
+    (prisma.venue.findMany as jest.Mock).mockResolvedValue([
+      { name: "Corner Cafe", foodTags: ["coffee"] },
+    ]);
+
+    const req = new NextRequest("http://localhost/api/venues?query=coffe");
+    const res = await GET(req);
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      venues: [],
+      suggestedQuery: "coffee",
+      notice: "Did you mean: coffee?",
+    });
+  });
+
   it("should filter by text query in coordinate mode across valid venue fields (name, address)", async () => {
     const mockVenues = [
       { id: "2", name: "Philz Coffee", address: "456 Market St" },

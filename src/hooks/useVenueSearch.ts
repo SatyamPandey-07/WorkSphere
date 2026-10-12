@@ -39,6 +39,8 @@ export interface UseVenueSearchReturn<T = VenueSearchResult> {
   isLoading: boolean;
   loading: boolean;
   error: string | null;
+  suggestedQuery: string | null;
+  notice: string | null;
   clear: () => void;
   abort: () => void;
   search: (queryOverride?: string) => Promise<void>;
@@ -75,6 +77,8 @@ export function useVenueSearch<T = VenueSearchResult>(
   const [venues, setVenues] = useState<T[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [suggestedQuery, setSuggestedQuery] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Active AbortController reference stored in a useRef to cancel in-flight requests
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -98,6 +102,8 @@ export function useVenueSearch<T = VenueSearchResult>(
     setVenues([]);
     setIsLoading(false);
     setError(null);
+    setSuggestedQuery(null);
+    setNotice(null);
     if (!isControlled) {
       setInternalQuery("");
     }
@@ -113,6 +119,8 @@ export function useVenueSearch<T = VenueSearchResult>(
         setVenues([]);
         setIsLoading(false);
         setError(null);
+        setSuggestedQuery(null);
+        setNotice(null);
         return;
       }
 
@@ -127,6 +135,8 @@ export function useVenueSearch<T = VenueSearchResult>(
 
       setIsLoading(true);
       setError(null);
+      setSuggestedQuery(null);
+      setNotice(null);
 
       try {
         const delimiter = apiEndpoint.includes("?") ? "&" : "?";
@@ -140,20 +150,36 @@ export function useVenueSearch<T = VenueSearchResult>(
           throw new Error(`Search request failed with status ${response.status}`);
         }
 
-        const data = await response.json();
+        const data: unknown = await response.json();
 
         // Guard against race conditions if controller was aborted or superseded
         if (controller.signal.aborted || abortControllerRef.current !== controller) {
           return;
         }
 
+        const responseData =
+          typeof data === "object" && data !== null
+            ? (data as {
+                venues?: unknown;
+                suggestedQuery?: unknown;
+                notice?: unknown;
+              })
+            : null;
         const items: T[] = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.venues)
-            ? data.venues
+          ? (data as T[])
+          : Array.isArray(responseData?.venues)
+            ? (responseData.venues as T[])
             : [];
 
         setVenues(items);
+        setSuggestedQuery(
+          typeof responseData?.suggestedQuery === "string"
+            ? responseData.suggestedQuery
+            : null,
+        );
+        setNotice(
+          typeof responseData?.notice === "string" ? responseData.notice : null,
+        );
         setIsLoading(false);
       } catch (err: unknown) {
         // Catch AbortError (or DOMException.ABORT_ERR) and ignore it silently
@@ -201,6 +227,8 @@ export function useVenueSearch<T = VenueSearchResult>(
       setVenues([]);
       setIsLoading(false);
       setError(null);
+      setSuggestedQuery(null);
+      setNotice(null);
       return;
     }
 
@@ -239,6 +267,8 @@ export function useVenueSearch<T = VenueSearchResult>(
     (newQuery: string) => {
       if (!isControlled) {
         setInternalQuery(newQuery);
+        setSuggestedQuery(null);
+        setNotice(null);
       }
     },
     [isControlled],
@@ -252,6 +282,8 @@ export function useVenueSearch<T = VenueSearchResult>(
     isLoading,
     loading: isLoading,
     error,
+    suggestedQuery,
+    notice,
     clear,
     abort,
     search: performSearch,

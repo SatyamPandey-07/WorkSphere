@@ -16,6 +16,7 @@ import {
   indexVenueSearchEmbedding,
   searchVenuesWithRrf,
 } from "@/lib/search/hybridVenueSearch";
+import { suggestCorrectedQuery } from "@/lib/search/fuzzySearch";
 
 // Search/autocomplete is expected to fire on every keystroke (debounced client-side
 // to ~250-300ms), which can mean several requests per second while someone types a
@@ -158,6 +159,8 @@ export async function GET(req: NextRequest) {
       }
 
       if (queryParam) {
+        const semanticWeightParam = searchParams.get("semanticWeight");
+        const fullTextWeightParam = searchParams.get("fullTextWeight");
         const ranked = await searchVenuesWithRrf(queryParam, {
           minLat:
             minLatParam !== null && Number.isFinite(Number(minLatParam))
@@ -176,6 +179,14 @@ export async function GET(req: NextRequest) {
               ? Number(maxLngParam)
               : undefined,
           cities: citiesParam ? splitSearchList(citiesParam) : undefined,
+          semanticWeight:
+            semanticWeightParam !== null && Number.isFinite(Number(semanticWeightParam))
+              ? Number(semanticWeightParam)
+              : undefined,
+          fullTextWeight:
+            fullTextWeightParam !== null && Number.isFinite(Number(fullTextWeightParam))
+              ? Number(fullTextWeightParam)
+              : undefined,
         });
         const rankedIds = ranked.map(({ id }) => id);
         const matchingVenues = rankedIds.length
@@ -194,6 +205,16 @@ export async function GET(req: NextRequest) {
         const venues = orderedVenues.slice(skip, skip + limit);
         const total = orderedVenues.length;
 
+        let suggestedQuery: string | undefined;
+        if (total === 0) {
+          const suggestionCandidates = await prisma.venue.findMany({
+            where,
+            select: { name: true, foodTags: true },
+            take: 500,
+          });
+          suggestedQuery = suggestCorrectedQuery(queryParam, suggestionCandidates);
+        }
+
         return NextResponse.json({
           venues,
           pagination: {
@@ -203,6 +224,13 @@ export async function GET(req: NextRequest) {
             totalPages: Math.ceil(total / limit),
             hasNextPage: skip + venues.length < total,
           },
+          fuzzyMatched: false,
+          ...(suggestedQuery
+            ? {
+                suggestedQuery,
+                notice: `Did you mean: ${suggestedQuery}?`,
+              }
+            : {}),
         });
       }
 
@@ -267,6 +295,8 @@ export async function GET(req: NextRequest) {
       "maxLat",
       "minLng",
       "maxLng",
+      "semanticWeight",
+      "fullTextWeight",
     ];
     for (const key of keys) {
       const val = searchParams.get(key);
@@ -449,6 +479,11 @@ export async function GET(req: NextRequest) {
     const querySearch = rawData.query || rawData.q;
     let total: number;
     let venues: any[];
+    let fuzzyMatched = false;
+    let suggestedQuery: string | undefined;
+    let suggestionCandidates:
+      | Array<{ name: string; foodTags: string[] }>
+      | undefined;
 
     if (querySearch) {
       const ranked = await searchVenuesWithRrf(querySearch, {
@@ -458,6 +493,14 @@ export async function GET(req: NextRequest) {
         maxLng: where.longitude?.lte,
         category: where.category,
         cities: rawData.cities ? splitSearchList(String(rawData.cities)) : undefined,
+        semanticWeight:
+          rawData.semanticWeight !== undefined && Number.isFinite(Number(rawData.semanticWeight))
+            ? Number(rawData.semanticWeight)
+            : undefined,
+        fullTextWeight:
+          rawData.fullTextWeight !== undefined && Number.isFinite(Number(rawData.fullTextWeight))
+            ? Number(rawData.fullTextWeight)
+            : undefined,
       });
       const rankedIds = ranked.map(({ id }) => id);
       const matchingVenues = rankedIds.length
@@ -493,44 +536,31 @@ export async function GET(req: NextRequest) {
     // ── Fuzzy typo-tolerant search fallback (#3958) ─────────────────────────
     // If strict substring search returned 0 results and a text query was provided,
     // fetch candidate venues and apply Levenshtein / Damerau-Levenshtein distance.
+    const hadStrictResults = total > 0;
     if (
-      venues.length === 0 &&
+      !hadStrictResults &&
       querySearch &&
       typeof querySearch === "string" &&
       querySearch.trim().length >= 3
     ) {
       const { fuzzyFilterVenues } = await import("@/lib/search/fuzzySearch");
 
-      // Build fallback query without the strict text query condition
-      const fallbackWhere = { ...where };
-      if (fallbackWhere.AND) {
-        fallbackWhere.AND = fallbackWhere.AND.filter((cond: any) => {
-          if (!cond.OR || !Array.isArray(cond.OR)) return true;
-          const isQueryCond = cond.OR.some(
-            (c: any) =>
-              c.name?.contains === querySearch ||
-              c.address?.contains === querySearch,
-          );
-          return !isQueryCond;
-        });
-        if (fallbackWhere.AND.length === 0) delete fallbackWhere.AND;
-      } else {
-        delete fallbackWhere.OR;
-      }
-
       const allCandidates = await prisma.venue.findMany({
-        where: fallbackWhere,
+        where,
         select: {
           id: true,
           name: true,
           address: true,
           description: true,
+          foodTags: true,
         },
         take: 500,
       });
+      suggestionCandidates = allCandidates;
 
       const matchedFuzzy = fuzzyFilterVenues(allCandidates, querySearch);
       if (matchedFuzzy.length > 0) {
+        fuzzyMatched = true;
         total = matchedFuzzy.length;
         const pageItems = matchedFuzzy.slice(skip, skip + limit);
         const pageIds = pageItems.map((v) => v.id);
@@ -556,6 +586,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    if (querySearch && !hadStrictResults) {
+      if (!suggestionCandidates) {
+        suggestionCandidates = await prisma.venue.findMany({
+          where,
+          select: { name: true, foodTags: true },
+          take: 500,
+        });
+      }
+      suggestedQuery = suggestCorrectedQuery(querySearch, suggestionCandidates);
+    }
+
     return NextResponse.json({
       venues,
       pagination: {
@@ -565,6 +606,13 @@ export async function GET(req: NextRequest) {
         totalPages: Math.ceil(total / limit),
         hasNextPage: skip + venues.length < total,
       },
+      fuzzyMatched: Boolean(fuzzyMatched),
+      ...(suggestedQuery
+        ? {
+            suggestedQuery,
+            notice: `Did you mean: ${suggestedQuery}?`,
+          }
+        : {}),
     });
   } catch (error) {
     console.error("GET /api/venues error:", error);

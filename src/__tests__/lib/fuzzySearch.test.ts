@@ -1,12 +1,38 @@
 import {
   damerauLevenshteinDistance,
   levenshteinDistance,
+  suggestCorrectedQuery,
   getFuzzyThreshold,
   isFuzzyMatch,
   fuzzyFilterVenues,
 } from "@/lib/search/fuzzySearch";
 
 describe("Fuzzy Typo-Tolerant Search (#3958)", () => {
+  describe("suggestCorrectedQuery", () => {
+    it("corrects a misspelled word using venue names and tags", () => {
+      expect(
+        suggestCorrectedQuery("coffe", [
+          { name: "Corner Cafe", foodTags: ["coffee", "pastries"] },
+        ]),
+      ).toBe("coffee");
+    });
+
+    it("returns no correction when no close candidate exists", () => {
+      expect(
+        suggestCorrectedQuery("unknown", [{ name: "Corner Cafe", foodTags: [] }]),
+      ).toBeUndefined();
+    });
+
+    it("does not guess when equally close corrections exist", () => {
+      expect(
+        suggestCorrectedQuery("coffe", [
+          { name: "Coffee House" },
+          { name: "Coffer Shop" },
+        ]),
+      ).toBeUndefined();
+    });
+  });
+
   describe("Levenshtein / Damerau-Levenshtein distance calculation", () => {
     it("returns 0 for identical strings (case-insensitive)", () => {
       expect(damerauLevenshteinDistance("Starbucks", "starbucks")).toBe(0);
@@ -109,4 +135,3 @@ describe("Fuzzy Typo-Tolerant Search (#3958)", () => {
     });
   });
 });
-

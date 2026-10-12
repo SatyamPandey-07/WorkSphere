@@ -163,6 +163,50 @@ describe("SearchBar component (#4401, #4404)", () => {
     expect(input).toHaveValue("Artisan Coffee");
   });
 
+  it("applies a typo suggestion and searches again when clicked", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          venues: [],
+          suggestedQuery: "coffee",
+          notice: "Did you mean: coffee?",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          venues: [{ id: "coffee-shop", name: "Coffee Shop" }],
+        }),
+      });
+
+    render(<SearchBar syncWithUrl={false} />);
+    const input = screen.getByTestId("search-bar-input");
+    act(() => {
+      fireEvent.change(input, { target: { value: "coffe" } });
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+    });
+
+    const suggestion = screen.getByRole("button", { name: "coffee" });
+    expect(screen.getByTestId("search-suggestion")).toHaveTextContent(
+      "Did you mean: coffee?",
+    );
+    act(() => {
+      fireEvent.click(suggestion);
+    });
+    expect(input).toHaveValue("coffee");
+
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "/api/venues?query=coffee",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
   describe("Accessibility aria-live announcements (#4404)", () => {
     it("renders polite aria-live container with role status", () => {
       render(<SearchBar />);

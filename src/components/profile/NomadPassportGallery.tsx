@@ -16,7 +16,10 @@ import {
   MapPin,
   Calendar,
   Compass,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
+import confetti from "canvas-confetti";
 import {
   generateClientNomadProof,
   generateBadgeSvgMarkup,
@@ -25,6 +28,59 @@ import {
 } from "@/lib/zkp/nomadProof";
 import { downloadSVG } from "@/lib/qr/svgQr";
 import NomadPassportCoin from "./NomadPassportCoin";
+
+/**
+ * Celebratory sound chime synthesized using the Web Audio API upon successful PoAP token / passport stamp minting.
+ * Plays an ascending celebratory arpeggio (C5 -> E5 -> G5 -> C6 -> E6 + high C7 sparkle shimmer) with clean exponential decay.
+ */
+export function playPoapMintChime(volume = 0.5): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return false;
+    const ctx = new AudioCtx();
+
+    // Notes for celebratory harmonic arpeggio
+    const notes = [
+      { freq: 523.25, timeOffset: 0.0, duration: 0.5, type: "triangle" as OscillatorType, gainMul: 0.25 },
+      { freq: 659.25, timeOffset: 0.08, duration: 0.5, type: "triangle" as OscillatorType, gainMul: 0.25 },
+      { freq: 783.99, timeOffset: 0.16, duration: 0.6, type: "triangle" as OscillatorType, gainMul: 0.28 },
+      { freq: 1046.50, timeOffset: 0.24, duration: 0.8, type: "sine" as OscillatorType, gainMul: 0.3 },
+      { freq: 1318.51, timeOffset: 0.32, duration: 1.0, type: "sine" as OscillatorType, gainMul: 0.3 },
+      { freq: 2093.00, timeOffset: 0.36, duration: 1.1, type: "sine" as OscillatorType, gainMul: 0.15 },
+    ];
+
+    notes.forEach(({ freq, timeOffset, duration, type, gainMul }) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = type;
+      const startTime = ctx.currentTime + timeOffset;
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      gain.gain.setValueAtTime(0.001, startTime);
+      gain.gain.linearRampToValueAtTime(gainMul * volume, startTime + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(startTime);
+      osc.stop(startTime + duration + 0.05);
+    });
+
+    // Cleanly close AudioContext after chime finishes to prevent memory leaks
+    setTimeout(() => {
+      if (ctx.state !== "closed") {
+        ctx.close().catch(() => {});
+      }
+    }, 1800);
+
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const AVAILABLE_STATEMENTS: NomadProductivityStatement[] = [
   {
@@ -112,6 +168,27 @@ export default function NomadPassportGallery({
   );
   const [previewModalStamp, setPreviewModalStamp] = useState<PassportStamp | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const saved = localStorage.getItem("worksphere_poap_sound_enabled");
+      return saved === null ? true : saved === "true";
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleSound = () => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("worksphere_poap_sound_enabled", String(next));
+        } catch {}
+      }
+      return next;
+    });
+  };
 
   const handleGenerateAndVerifyProof = async () => {
     setGeneratingProof(true);
@@ -144,6 +221,24 @@ export default function NomadPassportGallery({
         setMintedStamps((prev) => [enrichedStamp, ...prev]);
         setActiveStamp(enrichedStamp);
         setSuccessMsg(`Minted Zero-Knowledge Passport Stamp: ${data.stamp.tierTitle}!`);
+
+        if (soundEnabled) {
+          playPoapMintChime(0.5);
+        }
+
+        const respectsReducedMotion =
+          typeof window !== "undefined" &&
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+        if (!respectsReducedMotion) {
+          confetti({
+            particleCount: 90,
+            spread: 80,
+            origin: { y: 0.6 },
+            zIndex: 25000,
+          });
+        }
       }
     } catch (err: any) {
       console.error("ZK Proof error:", err);
@@ -152,13 +247,11 @@ export default function NomadPassportGallery({
     }
   };
 
-  // Download crisp vector SVG badge containing venue name & visit date
   const handleDownloadBadgeSvg = (stamp: PassportStamp) => {
     const svgMarkup = generateBadgeSvgMarkup(stamp);
     downloadSVG(svgMarkup, `${stamp.stampId}-badge.svg`);
   };
 
-  // Download high-res PNG badge for personal portfolios
   const handleDownloadBadgePng = (stamp: PassportStamp) => {
     if (typeof window === "undefined" || typeof document === "undefined") return;
     const svgMarkup = generateBadgeSvgMarkup(stamp);
@@ -204,6 +297,21 @@ export default function NomadPassportGallery({
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
+            <button
+              type="button"
+              onClick={toggleSound}
+              data-testid="poap-sound-toggle-btn"
+              title={soundEnabled ? "Mute celebratory chime" : "Enable celebratory chime"}
+              aria-label={soundEnabled ? "Mute celebratory chime" : "Enable celebratory chime"}
+              className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-cyan-300 hover:border-slate-700 transition flex items-center justify-center"
+            >
+              {soundEnabled ? (
+                <Volume2 className="w-5 h-5 text-cyan-400" />
+              ) : (
+                <VolumeX className="w-5 h-5 text-slate-500" />
+              )}
+            </button>
+
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs space-y-1 font-mono">
               <span className="text-slate-400 block text-[10px]">Earned Country Badges</span>
               <strong className="text-cyan-400 text-base">{mintedStamps.length} Stamps Minted</strong>
@@ -314,7 +422,6 @@ export default function NomadPassportGallery({
 
       {/* Main Grid: Proof Builder & Active Stamp Visualizer */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: ZK Proof Minting (7 cols) */}
         <div className="lg:col-span-7 rounded-3xl bg-slate-900/80 border border-slate-800 p-6 space-y-5 backdrop-blur-md shadow-lg">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
@@ -323,7 +430,6 @@ export default function NomadPassportGallery({
             <span className="text-[11px] text-slate-400">Epoch 2026</span>
           </div>
 
-          {/* Statement Selectors */}
           <div className="space-y-3">
             {AVAILABLE_STATEMENTS.map((stmt) => {
               const isSelected = selectedStatement.badgeType === stmt.badgeType;
@@ -357,7 +463,6 @@ export default function NomadPassportGallery({
             })}
           </div>
 
-          {/* Mint Action Button */}
           <button
             onClick={handleGenerateAndVerifyProof}
             disabled={generatingProof}
@@ -384,7 +489,6 @@ export default function NomadPassportGallery({
           )}
         </div>
 
-        {/* Right Column: Active Stamp Visualizer (5 cols) */}
         <div className="lg:col-span-5 space-y-4">
           {activeStamp ? (
             <div className="p-6 rounded-3xl bg-slate-900/80 border border-slate-800 space-y-5 backdrop-blur-md shadow-lg flex flex-col items-center">
@@ -403,7 +507,6 @@ export default function NomadPassportGallery({
 
               <NomadPassportCoin stamp={activeStamp} />
 
-              {/* Stamp Metadata */}
               <div className="w-full space-y-2 text-xs font-mono pt-2 border-t border-slate-800">
                 <div className="flex justify-between text-slate-400">
                   <span>Venue:</span>
@@ -427,7 +530,6 @@ export default function NomadPassportGallery({
                 </div>
               </div>
 
-              {/* Action Buttons */}
               <div className="w-full space-y-2">
                 <button
                   type="button"
@@ -462,7 +564,6 @@ export default function NomadPassportGallery({
         </div>
       </div>
 
-      {/* Stamp Preview Modal with "Download Badge" option */}
       {previewModalStamp && (
         <div
           role="dialog"
@@ -476,7 +577,6 @@ export default function NomadPassportGallery({
             className="relative w-full max-w-lg rounded-3xl bg-slate-900 border border-slate-700/80 p-6 md:p-8 space-y-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Close Button */}
             <button
               type="button"
               onClick={() => setPreviewModalStamp(null)}
@@ -486,7 +586,6 @@ export default function NomadPassportGallery({
               <X className="w-5 h-5" />
             </button>
 
-            {/* Modal Header */}
             <div className="space-y-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-400">
                 Passport Stamp Preview
@@ -503,7 +602,6 @@ export default function NomadPassportGallery({
 
             <NomadPassportCoin stamp={previewModalStamp} />
 
-            {/* Badge Metadata Details */}
             <div className="grid grid-cols-2 gap-3 text-xs bg-slate-950/60 p-4 rounded-2xl border border-slate-800 font-mono">
               <div className="space-y-0.5">
                 <span className="text-slate-400 block text-[10px] flex items-center gap-1">
@@ -536,7 +634,6 @@ export default function NomadPassportGallery({
               </div>
             </div>
 
-            {/* Modal Action Buttons: "Download Badge" option */}
             <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
               <button
                 type="button"

@@ -3,77 +3,90 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   Volume2,
-  VolumeX,
   Sliders,
-  Sparkles,
   Layers,
   Coffee,
   PhoneCall,
   Users,
   DoorOpen,
   CheckCircle2,
-  AlertTriangle,
-  RefreshCw,
-  Info,
   Box,
-  Eye,
-  Maximize2,
 } from "lucide-react";
 import {
   generateAcousticField,
   decibelsToRgba,
+  clampDecibels,
+  normalizeAcousticDecibels,
+  MIN_ACOUSTIC_DB,
+  MAX_ACOUSTIC_DB,
   type SoundEmitter,
   type DeskSoundRating,
   type AcousticFieldMap,
 } from "@/lib/spatial/acousticGradientEngine";
 
-interface SpatialAcousticGradientViewerProps {
+export interface SpatialAcousticGradientViewerProps {
   venueId?: string;
   venueName?: string;
+  initialEmitters?: SoundEmitter[];
+  telemetryDb?: number;
 }
+
+const DEFAULT_DESKS = [
+  { id: "d-1", seatNumber: "Desk 01 (Quiet North Nook)", x: 25, y: 15 },
+  { id: "d-2", seatNumber: "Desk 02 (Center Hot Desk)", x: 45, y: 40 },
+  { id: "d-3", seatNumber: "Desk 03 (Barista Adjacent)", x: 75, y: 35 },
+  { id: "d-4", seatNumber: "Desk 04 (Lounge Perimeter)", x: 55, y: 75 },
+  { id: "d-5", seatNumber: "Desk 05 (East Glass Wall)", x: 85, y: 70 },
+];
 
 export default function SpatialAcousticGradientViewer({
   venueId = "venue-sf-01",
   venueName = "Mission Focus Coworking & Cafe",
+  initialEmitters,
+  telemetryDb = 45,
 }: SpatialAcousticGradientViewerProps) {
-  const [emitters, setEmitters] = useState<SoundEmitter[]>([
-    { id: "e1", name: "Espresso Bar & Steam Wand", type: "ESPRESSO_BAR", x: 80, y: 25, baseDecibels: 68, isActive: true },
-    { id: "e2", name: "Street Entrance Door", type: "ENTRANCE_DOOR", x: 15, y: 85, baseDecibels: 58, isActive: true },
-    { id: "e3", name: "Collaborative Team Lounge", type: "COLLABORATIVE_TABLE", x: 50, y: 60, baseDecibels: 54, isActive: true },
-    { id: "e4", name: "Acoustic Phone Booths", type: "PHONE_BOOTH", x: 20, y: 20, baseDecibels: 38, isActive: true },
-  ]);
+  const [telemetryInput, setTelemetryInput] = useState<number>(() => clampDecibels(telemetryDb));
 
-  const defaultDesks = [
-    { id: "d-1", seatNumber: "Desk 01 (Quiet North Nook)", x: 25, y: 15 },
-    { id: "d-2", seatNumber: "Desk 02 (Center Hot Desk)", x: 45, y: 40 },
-    { id: "d-3", seatNumber: "Desk 03 (Barista Adjacent)", x: 75, y: 35 },
-    { id: "d-4", seatNumber: "Desk 04 (Lounge Perimeter)", x: 55, y: 75 },
-    { id: "d-5", seatNumber: "Desk 05 (East Glass Wall)", x: 85, y: 70 },
-  ];
+  const [emitters, setEmitters] = useState<SoundEmitter[]>(() => {
+    const base = initialEmitters ?? [
+      { id: "e1", name: "Espresso Bar & Steam Wand", type: "ESPRESSO_BAR", x: 80, y: 25, baseDecibels: 68, isActive: true },
+      { id: "e2", name: "Street Entrance Door", type: "ENTRANCE_DOOR", x: 15, y: 85, baseDecibels: 58, isActive: true },
+      { id: "e3", name: "Collaborative Team Lounge", type: "COLLABORATIVE_TABLE", x: 50, y: 60, baseDecibels: 54, isActive: true },
+      { id: "e4", name: "Acoustic Phone Booths", type: "PHONE_BOOTH", x: 20, y: 20, baseDecibels: 38, isActive: true },
+    ];
+    return base.map((e) => ({ ...e, baseDecibels: clampDecibels(e.baseDecibels) }));
+  });
+
+  useEffect(() => {
+    if (telemetryDb !== undefined) {
+      setTelemetryInput(clampDecibels(telemetryDb));
+    }
+  }, [telemetryDb]);
 
   const [fieldMap, setFieldMap] = useState<AcousticFieldMap | null>(null);
   const [selectedDeskId, setSelectedDeskId] = useState<string>("d-1");
-  const [hoveredDesk, setHoveredDesk] = useState<DeskSoundRating | null>(null);
+  const [, setHoveredDesk] = useState<DeskSoundRating | null>(null);
   const [viewMode, setViewMode] = useState<"2D" | "3D">("2D");
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Recalculate field map on emitter toggles
   useEffect(() => {
-    const computed = generateAcousticField(emitters, defaultDesks, 50, 30);
+    const computed = generateAcousticField(emitters, DEFAULT_DESKS, 50, 30);
     setFieldMap(computed);
   }, [emitters]);
 
-  // Project (x, y, dB) into 3D isometric screen coordinates
+  // Project (x, y, dB) into 3D isometric screen coordinates with clamped dB floor
   const projectIso = useCallback(
-    (c: number, r: number, db: number, width: number, height: number) => {
+    (c: number, r: number, db: number, width: number, _height: number) => {
       const originX = width / 2;
       const originY = 85;
       const tileW = 6.4;
       const tileH = 3.6;
       const elevationScale = 1.4;
 
-      const z = Math.max(0, (db - 30) * elevationScale);
+      const clampedDb = clampDecibels(db);
+      const z = Math.max(0, (clampedDb - MIN_ACOUSTIC_DB) * elevationScale);
       const isoX = originX + (c - r) * (tileW / 2);
       const isoY = originY + (c + r) * (tileH / 2) - z;
 
@@ -230,7 +243,7 @@ export default function SpatialAcousticGradientViewer({
               <Layers className="w-3.5 h-3.5" /> 3D Spatial Acoustic Gradient
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-              Spatial Sound Zoning & Floorplan Heatmap
+              {venueName} &mdash; Spatial Sound Zoning & Floorplan Heatmap
             </h1>
             <p className="text-xs md:text-sm text-slate-300 max-w-2xl">
               Continuous spatial decay modeling and acoustic sound pressure interpolation. Pinpoint quiet reading nooks and avoid noisy coffee grinders in 2D or 3D isometric view.
@@ -355,6 +368,57 @@ export default function SpatialAcousticGradientViewer({
 
         {/* Right Column: Emitter Controllers & Selected Desk Inspector */}
         <div className="lg:col-span-5 space-y-5">
+          {/* Real-Time Microphone / Sensor Telemetry Monitor with 20dB - 110dB Clamping */}
+          <div
+            data-testid="acoustic-telemetry-monitor"
+            className="p-5 rounded-3xl bg-slate-900/80 border border-slate-800 space-y-3 backdrop-blur-md shadow-lg"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-emerald-400" /> Sensor Acoustic Telemetry
+              </h3>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
+                20dB - 110dB Clamped
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-slate-400 text-[10px] block font-sans">Clamped Sensor Level</span>
+                <strong data-testid="clamped-telemetry-db" className="text-emerald-400 text-base font-bold">
+                  {clampDecibels(telemetryInput)} dB
+                </strong>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                <span className="text-slate-400 text-[10px] block font-sans">Shader Normalization</span>
+                <strong data-testid="normalized-shader-coord" className="text-cyan-400 text-base font-bold">
+                  {normalizeAcousticDecibels(telemetryInput).toFixed(4)}
+                </strong>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex justify-between text-[11px] text-slate-400 font-mono">
+                <span>Floor: {MIN_ACOUSTIC_DB} dB</span>
+                <span>Ceiling: {MAX_ACOUSTIC_DB} dB</span>
+              </div>
+              <input
+                type="range"
+                data-testid="telemetry-db-slider"
+                aria-label="Telemetry input decibels"
+                min={0}
+                max={130}
+                value={telemetryInput}
+                onChange={(e) => setTelemetryInput(Number(e.target.value))}
+                className="w-full accent-emerald-500 h-1.5 bg-slate-800 rounded-lg cursor-pointer"
+              />
+              <span className="text-[10px] text-slate-500 block">
+                Raw input: {telemetryInput} dB (clamped between 20 dB and 110 dB to prevent color glitches).
+              </span>
+            </div>
+          </div>
+
           {/* Emitter Toggles */}
           <div className="p-5 rounded-3xl bg-slate-900/80 border border-slate-800 space-y-3 backdrop-blur-md shadow-lg">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">

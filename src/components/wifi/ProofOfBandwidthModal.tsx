@@ -1,15 +1,12 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import {
-  Wifi,
   Activity,
   Zap,
   ArrowDown,
   ArrowUp,
   ShieldCheck,
-  CheckCircle2,
-  RefreshCw,
   Play,
   Square,
   Copy,
@@ -36,6 +33,12 @@ export function formatSpeed(mbps: number | null | undefined): string {
   }
   return mbps.toFixed(1);
 }
+export function formatJitter(ms: number | null | undefined): string {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) {
+    return "--";
+  }
+  return ms.toFixed(1);
+}
 
 export default function ProofOfBandwidthModal({
   venueId = "sample-venue-sf",
@@ -48,9 +51,11 @@ export default function ProofOfBandwidthModal({
     currentProgressPct: 0,
   });
   const [metrics, setMetrics] = useState<BenchmarkMetrics | null>(null);
-  const [verifiedBadgeCode, setVerifiedBadgeCode] = useState<string | null>(null);
+  const [verifiedBadgeCode, setVerifiedBadgeCode] = useState<string | null>(
+    null,
+  );
   const [copied, setCopied] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const [, setSubmitting] = useState(false);
 
   const runnerRef = useRef<SpeedBenchmarkRunner | null>(null);
 
@@ -155,14 +160,16 @@ export default function ProofOfBandwidthModal({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div className="space-y-1">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold uppercase tracking-wider">
-            <Radio className="w-3.5 h-3.5 animate-pulse" /> Proof-of-Bandwidth Verifier
+            <Radio className="w-3.5 h-3.5 animate-pulse" /> Proof-of-Bandwidth
+            Verifier
           </div>
           <h2 className="text-xl font-bold text-white tracking-tight">
             Wi-Fi Speed & RFC 3550 Jitter Benchmark
           </h2>
           <p className="text-xs text-slate-400 flex items-center gap-1.5">
             <Server className="w-3.5 h-3.5 text-indigo-400" />
-            Testing Network for: <strong className="text-slate-200">{venueName}</strong>
+            Testing Network for:{" "}
+            <strong className="text-slate-200">{venueName}</strong>
           </p>
         </div>
 
@@ -190,18 +197,23 @@ export default function ProofOfBandwidthModal({
         {/* Speedometer Center Display */}
         <div className="flex flex-col items-center justify-center text-center space-y-1">
           <span className="text-xs font-mono uppercase tracking-widest text-slate-400">
-            {isRunning ? `Phase: ${progress.phase.toUpperCase()}` : metrics ? "Verified Throughput" : "Ready to Test"}
+            {isRunning
+              ? `Phase: ${progress.phase.toUpperCase()}`
+              : metrics
+                ? "Verified Throughput"
+                : "Ready to Test"}
           </span>
 
           <div className="flex items-baseline gap-2">
             <span className="text-5xl md:text-6xl font-black tracking-tight text-white font-mono">
               {isRunning
-                ? progress.instantaneousSpeedMbps != null && Number.isFinite(progress.instantaneousSpeedMbps)
+                ? progress.instantaneousSpeedMbps != null &&
+                  Number.isFinite(progress.instantaneousSpeedMbps)
                   ? formatSpeed(progress.instantaneousSpeedMbps)
-                  : progress.currentPingMs ?? "..."
+                  : (progress.currentPingMs ?? "...")
                 : metrics
-                ? formatSpeed(metrics.downloadMbps)
-                : "--"}
+                  ? formatSpeed(metrics.downloadMbps)
+                  : "--"}
             </span>
             <span className="text-sm font-bold text-blue-400 font-mono">
               {isRunning && progress.phase === "latency" ? "ms" : "Mbps"}
@@ -212,8 +224,8 @@ export default function ProofOfBandwidthModal({
             {isRunning
               ? "Running multi-stream packet latency & throughput sampler..."
               : metrics
-              ? `Stability Index: ${metrics.stabilityScore}/100`
-              : "Tests upload, download, latency, and packet jitter"}
+                ? `Stability Index: ${metrics.stabilityScore}/100`
+                : "Tests upload, download, latency, and packet jitter"}
           </span>
         </div>
 
@@ -266,11 +278,18 @@ export default function ProofOfBandwidthModal({
 
         <div className="p-3.5 rounded-2xl bg-slate-800/40 border border-slate-800 space-y-1">
           <span className="text-[11px] text-slate-400 flex items-center gap-1">
-            <Zap className="w-3.5 h-3.5 text-purple-400" /> RFC 3550 Jitter
+            <Zap className="w-3.5 h-3.5 text-purple-400" /> Jitter
           </span>
           <div className="text-lg font-bold text-white font-mono">
-            {metrics ? `±${metrics.jitterMs} ms` : "--"}
+            {metrics && metrics.meanJitterMs != null
+              ? `${formatJitter(metrics.meanJitterMs)} ms`
+              : "--"}
           </div>
+          {metrics && (
+            <div className="text-[10px] text-slate-500 font-mono">
+              {`RFC 3550: ±${metrics.jitterMs} ms`}
+            </div>
+          )}
         </div>
       </div>
 
@@ -280,7 +299,9 @@ export default function ProofOfBandwidthModal({
           {(() => {
             const tierInfo = getTierDetails(metrics.tier);
             return (
-              <div className={`p-4 rounded-2xl border ${tierInfo.color} space-y-2`}>
+              <div
+                className={`p-4 rounded-2xl border ${tierInfo.color} space-y-2`}
+              >
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold flex items-center gap-1.5">
                     <Sparkles className="w-4 h-4" /> {tierInfo.title}
@@ -300,8 +321,12 @@ export default function ProofOfBandwidthModal({
               <div className="flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
                 <div>
-                  <span className="text-slate-400 block text-[10px]">Verified Proof-of-Bandwidth Token</span>
-                  <code className="font-mono text-emerald-300 font-bold text-xs">{verifiedBadgeCode}</code>
+                  <span className="text-slate-400 block text-[10px]">
+                    Verified Proof-of-Bandwidth Token
+                  </span>
+                  <code className="font-mono text-emerald-300 font-bold text-xs">
+                    {verifiedBadgeCode}
+                  </code>
                 </div>
               </div>
 
@@ -309,7 +334,11 @@ export default function ProofOfBandwidthModal({
                 onClick={handleCopyBadge}
                 className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition shrink-0"
               >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
                 <span>{copied ? "Copied" : "Copy Badge"}</span>
               </button>
             </div>

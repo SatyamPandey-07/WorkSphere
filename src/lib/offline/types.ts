@@ -35,6 +35,10 @@ export interface OfflineVenue {
   amenities?: string[];
   floorplan?: unknown;
   hasAncHeadsetRental?: boolean;
+  wifiQuality?: number | null;
+  hasOutlets?: boolean;
+  noiseLevel?: string | null;
+  imageUrl?: string | null;
   savedAt?: number;
   lastAccessedAt?: number;
   isPinned?: boolean;
@@ -75,11 +79,7 @@ export interface ReceiptExportItem {
 }
 
 export type QueuedReviewStatus =
-  | "PENDING"
-  | "SYNCING"
-  | "FAILED"
-  | "CONFLICT"
-  | "AUTH_REQUIRED";
+  "PENDING" | "SYNCING" | "FAILED" | "CONFLICT" | "AUTH_REQUIRED";
 
 export interface QueuedVenueReview {
   id: string; // Client-generated UUID (idempotency key)
@@ -173,12 +173,7 @@ export interface IRepository<T, ID = string> {
 // ─── Generic Sync Engine Interface ────────────────────────────────────────────
 
 export type SyncItemStatus =
-  | "PENDING"
-  | "SYNCING"
-  | "SYNCED"
-  | "FAILED"
-  | "CONFLICT"
-  | "AUTH_REQUIRED";
+  "PENDING" | "SYNCING" | "SYNCED" | "FAILED" | "CONFLICT" | "AUTH_REQUIRED";
 
 export interface SyncItem<T = unknown> {
   id: string;
@@ -208,3 +203,18 @@ export interface ISyncPlugin<T = unknown> {
   onSuccess?(items: SyncItem<T>[]): Promise<void> | void;
   onFailure?(error: Error, items: SyncItem<T>[]): Promise<void> | void;
 }
+
+// ─── Unified Offline Queue Interface ─────────────────────────────────────────
+
+export interface OfflineQueueItem<T = unknown> {
+  id: string;
+  entity: "review" | "note" | "checkin" | "amenity_vote";
+  action: "create" | "update" | "delete";
+  payload: T;
+  timestamp: number;
+  retryCount: number;
+}
+
+export type OfflineQueueHandler<T = unknown> = (
+  item: OfflineQueueItem<T>,
+) => Promise<boolean | void>;

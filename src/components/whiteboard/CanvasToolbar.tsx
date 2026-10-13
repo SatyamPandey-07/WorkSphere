@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import {
   WHITEBOARD_COLOR_SWATCHES,
   type ToolType,
   type WhiteboardParticipant,
 } from "@/hooks/useCanvasWhiteboard";
+
+import type { ConstructType } from "@/lib/whiteboard/constructGenerator";
 
 export interface CanvasToolbarProps {
   tool: ToolType;
@@ -14,12 +17,17 @@ export interface CanvasToolbarProps {
   canRedo: boolean;
   isConnected: boolean;
   participants?: WhiteboardParticipant[];
+  constructType?: ConstructType;
   onToolChange: (tool: ToolType) => void;
   onColorChange: (color: string) => void;
   onStrokeWidthChange: (width: number) => void;
+  onConstructTypeChange?: (constructType: ConstructType) => void;
   onUndo: () => void;
   onRedo: () => void;
   onClear: () => void;
+  onOpenShortcuts?: () => void;
+  onExportPNG?: (ratio?: 1 | 2 | 4) => void;
+  onExportSVG?: () => void;
 }
 
 const TOOLS: { id: ToolType; label: string; icon: string }[] = [
@@ -41,6 +49,11 @@ const TOOLS: { id: ToolType; label: string; icon: string }[] = [
   },
   { id: "line", label: "Line", icon: "M3 17.25L20.25 4l-3.75 13.25L3 17.25z" },
   {
+    id: "construct",
+    label: "Construct Generator",
+    icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-4-8a4 4 0 1 1 8 0 4 4 0 0 1-8 0zm-2-4h12v2H6zm0 6h12v2H6z",
+  },
+  {
     id: "sticky",
     label: "Sticky Note",
     icon: "M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z",
@@ -55,21 +68,35 @@ export function CanvasToolbar({
   canRedo,
   isConnected,
   participants,
+  constructType = "shield",
   onToolChange,
   onColorChange,
   onStrokeWidthChange,
+  onConstructTypeChange,
   onUndo,
   onRedo,
   onClear,
+  onOpenShortcuts,
+  onExportPNG,
+  onExportSVG,
 }: CanvasToolbarProps) {
+  const [exportRatio, setExportRatio] = useState<1 | 2 | 4>(2);
+
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-zinc-900/90 px-3 py-2 shadow-lg backdrop-blur-sm">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-zinc-900/90 px-3 py-2 shadow-lg backdrop-blur-sm">
       {TOOLS.map((t) => (
         <button
           key={t.id}
           type="button"
+          data-testid={`tool-${t.id}`}
           title={t.label}
-          onClick={() => onToolChange(t.id)}
+          aria-label={t.id === "construct" ? "Emerald Construct" : t.label}
+          onClick={() => {
+            onToolChange(t.id);
+            if (t.id === "construct") {
+              onColorChange("#00FF88");
+            }
+          }}
           className={`rounded-md p-1.5 transition-colors ${
             tool === t.id
               ? "bg-zinc-700 text-white"
@@ -87,6 +114,53 @@ export function CanvasToolbar({
           </svg>
         </button>
       ))}
+
+      {tool === "construct" && (
+        <div
+          data-testid="construct-subtypes-bar"
+          className="flex items-center gap-1 rounded-md bg-emerald-950/60 p-1 border border-emerald-500/30 text-xs font-semibold text-emerald-400"
+        >
+          <button
+            type="button"
+            data-testid="construct-type-shield"
+            title="Hard-Light Shield"
+            onClick={() => onConstructTypeChange?.("shield")}
+            className={`rounded px-2 py-0.5 transition ${
+              constructType === "shield"
+                ? "bg-emerald-600 text-white shadow"
+                : "text-emerald-300 hover:bg-emerald-900/50"
+            }`}
+          >
+            Shield
+          </button>
+          <button
+            type="button"
+            data-testid="construct-type-hexagon"
+            title="Energy Hexagon"
+            onClick={() => onConstructTypeChange?.("hexagon")}
+            className={`rounded px-2 py-0.5 transition ${
+              constructType === "hexagon"
+                ? "bg-emerald-600 text-white shadow"
+                : "text-emerald-300 hover:bg-emerald-900/50"
+            }`}
+          >
+            Hexagon
+          </button>
+          <button
+            type="button"
+            data-testid="construct-type-flightArrow"
+            title="Flight Arrow"
+            onClick={() => onConstructTypeChange?.("flightArrow")}
+            className={`rounded px-2 py-0.5 transition ${
+              constructType === "flightArrow"
+                ? "bg-emerald-600 text-white shadow"
+                : "text-emerald-300 hover:bg-emerald-900/50"
+            }`}
+          >
+            Flight Arrow
+          </button>
+        </div>
+      )}
 
       <div className="mx-1 h-6 w-px bg-zinc-700" />
 
@@ -201,6 +275,90 @@ export function CanvasToolbar({
         </svg>
       </button>
 
+      {onExportPNG && (
+        <div className="flex items-center gap-1">
+          <select
+            value={exportRatio}
+            onChange={(e) =>
+              setExportRatio(Number(e.target.value) as 1 | 2 | 4)
+            }
+            className="rounded bg-zinc-800 px-1 py-1 text-[10px] text-zinc-300 hover:bg-zinc-700"
+            title="Export quality (DPI multiplier)"
+            aria-label="Export quality multiplier"
+            data-testid="export-dpi-select"
+          >
+            <option value={1}>1x</option>
+            <option value={2}>2x</option>
+            <option value={4}>4x</option>
+          </select>
+          <button
+            type="button"
+            title={`Export as transparent PNG (${exportRatio}x DPI)`}
+            aria-label="Export as transparent PNG"
+            onClick={() => onExportPNG(exportRatio)}
+            data-testid="export-png-btn"
+            className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {onExportSVG && (
+        <button
+          type="button"
+          title="Export as SVG"
+          aria-label="Export as SVG"
+          onClick={onExportSVG}
+          data-testid="export-svg-btn"
+          className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+        </button>
+      )}
+
+      {onOpenShortcuts && (
+        <button
+          type="button"
+          title="Keyboard shortcuts (?)"
+          aria-label="Keyboard shortcuts"
+          onClick={onOpenShortcuts}
+          data-testid="whiteboard-shortcuts-btn"
+          className="rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            className="h-5 w-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+        </button>
+      )}
+
       {participants && participants.length > 0 && (
         <>
           <div className="mx-1 h-6 w-px bg-zinc-700" />
@@ -226,6 +384,7 @@ export function CanvasToolbar({
                     data-testid={`avatar-ring-${p.clientId}`}
                   >
                     {p.avatar ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img
                         src={p.avatar}
                         alt={p.name}

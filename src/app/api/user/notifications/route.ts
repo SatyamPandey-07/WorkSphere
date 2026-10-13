@@ -86,6 +86,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true });
     }
 
+    if (
+      body.action === "markAsUnread" &&
+      Array.isArray(body.ids) &&
+      body.ids.length > 0
+    ) {
+      await executeWithRetry(async () => {
+        await prisma.pushNotificationLog.updateMany({
+          where: {
+            userId,
+            id: { in: body.ids },
+          },
+          data: {
+            status: "DELIVERED",
+            read: false,
+          },
+        });
+      });
+      return NextResponse.json({ success: true });
+    }
+
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error: any) {
     console.error("POST /api/user/notifications error:", error);

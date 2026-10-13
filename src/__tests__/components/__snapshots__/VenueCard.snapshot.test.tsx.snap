@@ -1,0 +1,3080 @@
+// Jest Snapshot v1, https://jestjs.io/docs/snapshot-testing
+
+exports[`VenueCard Visual Snapshot Tests matches snapshot for quiet library venue card without outlets 1`] = `
+<div
+  class="antialiased bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative"
+>
+  <div
+    class="p-4"
+  >
+    <div
+      class="flex items-start justify-between mb-2 mt-4"
+    >
+      <div
+        class="flex-1"
+      >
+        <h3
+          class="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2"
+        >
+          <a
+            class="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+            href="/venues/venue-2"
+          >
+            <span
+              class=""
+            >
+              City Central Library
+            </span>
+          </a>
+          <span
+            class="inline-flex shrink-0"
+            title="Verified Host"
+          >
+            <svg
+              aria-hidden="true"
+              class="lucide lucide-badge-check lucide-verified w-4 h-4 text-green-500 shrink-0"
+              fill="none"
+              height="24"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"
+              />
+              <path
+                d="m16 9-5.5 5.5L8 12"
+              />
+            </svg>
+          </span>
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-loader-circle lucide-loader-2 w-3 h-3 animate-spin accent-text shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M21 12a9 9 0 1 1-6.219-8.56"
+            />
+          </svg>
+        </h3>
+        <p
+          class="text-sm text-zinc-600 dark:text-zinc-400"
+        >
+          456 Market St, San Francisco, CA
+        </p>
+      </div>
+      <button
+        aria-label="Add City Central Library to favorites"
+        class="p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed  hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-heart w-5 h-5 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"
+          />
+        </svg>
+      </button>
+    </div>
+    <div
+      class="flex items-center gap-3 mb-3"
+    >
+      <div
+        class="inline-flex items-center gap-1 font-medium text-amber-500 dark:text-amber-400"
+        data-testid="star-rating-container"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-star w-4 h-4 shrink-0 text-amber-500 fill-amber-500 dark:text-amber-400 dark:fill-amber-400"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"
+          />
+        </svg>
+        <span
+          class="text-sm font-medium text-zinc-900 dark:text-zinc-50"
+        >
+          4.8
+        </span>
+      </div>
+      <span
+        class="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+      >
+        library
+      </span>
+      <span
+        class="ml-auto text-sm font-semibold text-green-600 dark:text-green-400"
+      >
+        8.5
+        /10
+      </span>
+    </div>
+    <div
+      class="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-clock w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+        />
+        <path
+          d="M12 6v6l4 2"
+        />
+      </svg>
+      <span
+        class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50"
+        title="Open Now · Closes 6 PM"
+      >
+        <span
+          class="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500"
+        />
+        Open Now · Closes 6 PM
+      </span>
+    </div>
+    <div
+      class="flex flex-col gap-2 mb-4 border-t border-zinc-100 dark:border-zinc-800 pt-3"
+    >
+      <span
+        class="text-[10px] font-bold text-zinc-400 tracking-wider uppercase"
+      >
+        Verify Amenities:
+      </span>
+      <div
+        class="flex flex-wrap gap-2"
+      >
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-wifi w-3.5 h-3.5 text-blue-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 20h.01"
+            />
+            <path
+              d="M2 8.82a15 15 0 0 1 20 0"
+            />
+            <path
+              d="M5 12.859a10 10 0 0 1 14 0"
+            />
+            <path
+              d="M8.5 16.429a5 5 0 0 1 7 0"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="WiFi (100%)"
+          >
+            WiFi (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-volume-x w-3.5 h-3.5 text-emerald-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M11 4.702a.7.7 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.7.7 0 0 0 11 19.298z"
+            />
+            <path
+              d="m16.5 14.5 5-5"
+            />
+            <path
+              d="m16.5 9.5 5 5"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Silent Room (100%)"
+          >
+            Silent Room (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-calendar w-3.5 h-3.5 text-indigo-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M8 2v3"
+            />
+            <path
+              d="M16 2v3"
+            />
+            <rect
+              height="18"
+              rx="2"
+              width="18"
+              x="3"
+              y="3"
+            />
+            <path
+              d="M3 9h18"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Study Tables (100%)"
+          >
+            Study Tables (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-printer w-3.5 h-3.5 text-cyan-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"
+            />
+            <path
+              d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"
+            />
+            <rect
+              height="8"
+              rx="1"
+              width="12"
+              x="6"
+              y="14"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Scanners/Printers (100%)"
+          >
+            Scanners/Printers (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-car w-3.5 h-3.5 text-blue-400 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"
+            />
+            <circle
+              cx="7"
+              cy="17"
+              r="2"
+            />
+            <path
+              d="M9 17h6"
+            />
+            <circle
+              cx="17"
+              cy="17"
+              r="2"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Street Parking (100%)"
+          >
+            Street Parking (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-circle-dollar-sign w-3.5 h-3.5 text-emerald-600 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="10"
+            />
+            <path
+              d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"
+            />
+            <path
+              d="M12 18V6"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Paid Garage (100%)"
+          >
+            Paid Garage (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-bike w-3.5 h-3.5 text-orange-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="18.5"
+              cy="17.5"
+              r="3.5"
+            />
+            <circle
+              cx="5.5"
+              cy="17.5"
+              r="3.5"
+            />
+            <circle
+              cx="15"
+              cy="5"
+              r="1"
+            />
+            <path
+              d="M12 17.5V14l-3-3 4-3 2 3h2"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Bicycle Rack (100%)"
+          >
+            Bicycle Rack (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-shield w-3.5 h-3.5 text-zinc-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Moto Parking (100%)"
+          >
+            Moto Parking (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-paw-print w-3.5 h-3.5 text-orange-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="11"
+              cy="4"
+              r="2"
+            />
+            <circle
+              cx="18"
+              cy="8"
+              r="2"
+            />
+            <circle
+              cx="20"
+              cy="16"
+              r="2"
+            />
+            <path
+              d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Pets Allowed (100%)"
+          >
+            Pets Allowed (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <span
+            class="truncate max-w-[200px]"
+            title="🐶 Dog Friendly (100%)"
+          >
+            🐶 Dog Friendly 
+             
+            (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <span
+            class="truncate max-w-[200px]"
+            title="🐱 Cats Allowed (100%)"
+          >
+            🐱 Cats Allowed 
+             
+            (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div
+      class="flex flex-wrap gap-2 mb-4"
+    />
+    <div
+      class="flex gap-2"
+    >
+      <button
+        class="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-navigation w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <polygon
+            points="3 11 22 2 13 21 11 13 3 11"
+          />
+        </svg>
+        Directions
+      </button>
+      <button
+        class="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-message-square w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"
+          />
+        </svg>
+        Rate
+      </button>
+      <button
+        class="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+        title="Add to Collection"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-folder-plus w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M12 10v6"
+          />
+          <path
+            d="M9 13h6"
+          />
+          <path
+            d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+          />
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`VenueCard Visual Snapshot Tests matches snapshot for standard verified venue card with live occupancy 1`] = `
+<div
+  class="antialiased bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative"
+>
+  <div
+    class="p-4"
+  >
+    <div
+      class="flex items-start justify-between mb-2 mt-4"
+    >
+      <div
+        class="flex-1"
+      >
+        <h3
+          class="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2"
+        >
+          <a
+            class="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+            href="/venues/venue-1"
+          >
+            <span
+              class=""
+            >
+              Artisan Coffee Roasters
+            </span>
+          </a>
+          <span
+            class="inline-flex shrink-0"
+            title="Verified Host"
+          >
+            <svg
+              aria-hidden="true"
+              class="lucide lucide-badge-check lucide-verified w-4 h-4 text-green-500 shrink-0"
+              fill="none"
+              height="24"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"
+              />
+              <path
+                d="m16 9-5.5 5.5L8 12"
+              />
+            </svg>
+          </span>
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-loader-circle lucide-loader-2 w-3 h-3 animate-spin accent-text shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M21 12a9 9 0 1 1-6.219-8.56"
+            />
+          </svg>
+        </h3>
+        <p
+          class="text-sm text-zinc-600 dark:text-zinc-400"
+        >
+          456 Market St, San Francisco, CA
+        </p>
+        <span
+          class="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+        >
+          <span
+            class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"
+          />
+          12
+           
+          people
+           here now
+        </span>
+        <span
+          aria-label="Venue is currently Moderate — 40% occupied"
+          class="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+          title="40% occupancy — Moderate"
+        >
+          Moderate
+        </span>
+      </div>
+      <button
+        aria-label="Add Artisan Coffee Roasters to favorites"
+        class="p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed  hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-heart w-5 h-5 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"
+          />
+        </svg>
+      </button>
+    </div>
+    <div
+      class="flex items-center gap-3 mb-3"
+    >
+      <div
+        class="inline-flex items-center gap-1 font-medium text-amber-500 dark:text-amber-400"
+        data-testid="star-rating-container"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-star w-4 h-4 shrink-0 text-amber-500 fill-amber-500 dark:text-amber-400 dark:fill-amber-400"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"
+          />
+        </svg>
+        <span
+          class="text-sm font-medium text-zinc-900 dark:text-zinc-50"
+        >
+          4.8
+        </span>
+      </div>
+      <span
+        class="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+      >
+        cafe
+      </span>
+      <span
+        class="ml-auto text-sm font-semibold text-green-600 dark:text-green-400"
+      >
+        9.2
+        /10
+      </span>
+    </div>
+    <div
+      class="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-clock w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+        />
+        <path
+          d="M12 6v6l4 2"
+        />
+      </svg>
+      <span
+        class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50"
+        title="Open Now · Closes 6 PM"
+      >
+        <span
+          class="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500"
+        />
+        Open Now · Closes 6 PM
+      </span>
+    </div>
+    <div
+      class="flex items-center gap-2 mb-3"
+    >
+      <div
+        class="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300"
+      >
+        <span
+          class="relative flex h-3 w-3 shrink-0"
+        >
+          <span
+            class="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"
+          />
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-music relative inline-flex h-3 w-3 text-purple-500"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M9 18V5l12-2v13"
+            />
+            <circle
+              cx="6"
+              cy="18"
+              r="3"
+            />
+            <circle
+              cx="18"
+              cy="16"
+              r="3"
+            />
+          </svg>
+        </span>
+        <span
+          class="text-[11px] font-semibold"
+        >
+           
+          lofi
+           playing
+        </span>
+      </div>
+      <span
+        class="text-[10px] text-zinc-400"
+      >
+        live
+      </span>
+    </div>
+    <div
+      class="flex flex-col gap-2 mb-4 border-t border-zinc-100 dark:border-zinc-800 pt-3"
+    >
+      <span
+        class="text-[10px] font-bold text-zinc-400 tracking-wider uppercase"
+      >
+        Verify Amenities:
+      </span>
+      <div
+        class="flex flex-wrap gap-2"
+      >
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-wifi w-3.5 h-3.5 text-blue-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 20h.01"
+            />
+            <path
+              d="M2 8.82a15 15 0 0 1 20 0"
+            />
+            <path
+              d="M5 12.859a10 10 0 0 1 14 0"
+            />
+            <path
+              d="M8.5 16.429a5 5 0 0 1 7 0"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="WiFi (100%)"
+          >
+            WiFi (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-zap w-3.5 h-3.5 text-yellow-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Outlets (100%)"
+          >
+            Outlets (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-car w-3.5 h-3.5 text-blue-400 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"
+            />
+            <circle
+              cx="7"
+              cy="17"
+              r="2"
+            />
+            <path
+              d="M9 17h6"
+            />
+            <circle
+              cx="17"
+              cy="17"
+              r="2"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Street Parking (100%)"
+          >
+            Street Parking (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-circle-dollar-sign w-3.5 h-3.5 text-emerald-600 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="10"
+            />
+            <path
+              d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"
+            />
+            <path
+              d="M12 18V6"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Paid Garage (100%)"
+          >
+            Paid Garage (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-bike w-3.5 h-3.5 text-orange-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="18.5"
+              cy="17.5"
+              r="3.5"
+            />
+            <circle
+              cx="5.5"
+              cy="17.5"
+              r="3.5"
+            />
+            <circle
+              cx="15"
+              cy="5"
+              r="1"
+            />
+            <path
+              d="M12 17.5V14l-3-3 4-3 2 3h2"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Bicycle Rack (100%)"
+          >
+            Bicycle Rack (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-shield w-3.5 h-3.5 text-zinc-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Moto Parking (100%)"
+          >
+            Moto Parking (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-paw-print w-3.5 h-3.5 text-orange-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="11"
+              cy="4"
+              r="2"
+            />
+            <circle
+              cx="18"
+              cy="8"
+              r="2"
+            />
+            <circle
+              cx="20"
+              cy="16"
+              r="2"
+            />
+            <path
+              d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Pets Allowed (100%)"
+          >
+            Pets Allowed (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <span
+            class="truncate max-w-[200px]"
+            title="🐶 Dog Friendly (100%)"
+          >
+            🐶 Dog Friendly 
+             
+            (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <span
+            class="truncate max-w-[200px]"
+            title="🐱 Cats Allowed (100%)"
+          >
+            🐱 Cats Allowed 
+             
+            (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div
+      class="flex flex-wrap gap-2 mb-4"
+    >
+      <div
+        class="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-zap w-4 h-4 text-yellow-600 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"
+          />
+        </svg>
+        <span
+          class="truncate max-w-[200px]"
+          title="Outlets"
+        >
+          Outlets
+        </span>
+      </div>
+    </div>
+    <div
+      class="flex gap-2"
+    >
+      <button
+        class="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-navigation w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <polygon
+            points="3 11 22 2 13 21 11 13 3 11"
+          />
+        </svg>
+        Directions
+      </button>
+      <button
+        class="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-message-square w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"
+          />
+        </svg>
+        Rate
+      </button>
+      <button
+        class="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+        title="Add to Collection"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-folder-plus w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M12 10v6"
+          />
+          <path
+            d="M9 13h6"
+          />
+          <path
+            d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+          />
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`VenueCard Visual Snapshot Tests matches snapshot for venue card in selected compare mode 1`] = `
+<div
+  class="antialiased bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative"
+>
+  <div
+    class="absolute top-2 right-2 z-20 flex items-center gap-2 bg-white/90 dark:bg-black/80 px-2 py-1 rounded-md shadow-sm border border-zinc-200 dark:border-zinc-700 cursor-pointer"
+  >
+    <input
+      checked=""
+      class="w-4 h-4 accent-text rounded border-zinc-300 focus:ring-[var(--primary-accent)] disabled:opacity-50 pointer-events-none"
+      readonly=""
+      type="checkbox"
+    />
+    <span
+      class="text-xs font-bold text-zinc-800 dark:text-zinc-200 select-none pointer-events-none"
+    >
+      Compare
+    </span>
+  </div>
+  <div
+    class="p-4"
+  >
+    <div
+      class="flex items-start justify-between mb-2 mt-4"
+    >
+      <div
+        class="flex-1"
+      >
+        <h3
+          class="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2"
+        >
+          <a
+            class="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+            href="/venues/venue-1"
+          >
+            <span
+              class=""
+            >
+              Artisan Coffee Roasters
+            </span>
+          </a>
+          <span
+            class="inline-flex shrink-0"
+            title="Verified Host"
+          >
+            <svg
+              aria-hidden="true"
+              class="lucide lucide-badge-check lucide-verified w-4 h-4 text-green-500 shrink-0"
+              fill="none"
+              height="24"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"
+              />
+              <path
+                d="m16 9-5.5 5.5L8 12"
+              />
+            </svg>
+          </span>
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-loader-circle lucide-loader-2 w-3 h-3 animate-spin accent-text shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M21 12a9 9 0 1 1-6.219-8.56"
+            />
+          </svg>
+        </h3>
+        <p
+          class="text-sm text-zinc-600 dark:text-zinc-400"
+        >
+          456 Market St, San Francisco, CA
+        </p>
+        <span
+          class="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+        >
+          <span
+            class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"
+          />
+          12
+           
+          people
+           here now
+        </span>
+        <span
+          aria-label="Venue is currently Moderate — 40% occupied"
+          class="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+          title="40% occupancy — Moderate"
+        >
+          Moderate
+        </span>
+      </div>
+      <button
+        aria-label="Add Artisan Coffee Roasters to favorites"
+        class="p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed  hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-heart w-5 h-5 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"
+          />
+        </svg>
+      </button>
+    </div>
+    <div
+      class="flex items-center gap-3 mb-3"
+    >
+      <div
+        class="inline-flex items-center gap-1 font-medium text-amber-500 dark:text-amber-400"
+        data-testid="star-rating-container"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-star w-4 h-4 shrink-0 text-amber-500 fill-amber-500 dark:text-amber-400 dark:fill-amber-400"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"
+          />
+        </svg>
+        <span
+          class="text-sm font-medium text-zinc-900 dark:text-zinc-50"
+        >
+          4.8
+        </span>
+      </div>
+      <span
+        class="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+      >
+        cafe
+      </span>
+      <span
+        class="ml-auto text-sm font-semibold text-green-600 dark:text-green-400"
+      >
+        9.2
+        /10
+      </span>
+    </div>
+    <div
+      class="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-clock w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+        />
+        <path
+          d="M12 6v6l4 2"
+        />
+      </svg>
+      <span
+        class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50"
+        title="Open Now · Closes 6 PM"
+      >
+        <span
+          class="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500"
+        />
+        Open Now · Closes 6 PM
+      </span>
+    </div>
+    <div
+      class="flex flex-col gap-2 mb-4 border-t border-zinc-100 dark:border-zinc-800 pt-3"
+    >
+      <span
+        class="text-[10px] font-bold text-zinc-400 tracking-wider uppercase"
+      >
+        Verify Amenities:
+      </span>
+      <div
+        class="flex flex-wrap gap-2"
+      >
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-wifi w-3.5 h-3.5 text-blue-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 20h.01"
+            />
+            <path
+              d="M2 8.82a15 15 0 0 1 20 0"
+            />
+            <path
+              d="M5 12.859a10 10 0 0 1 14 0"
+            />
+            <path
+              d="M8.5 16.429a5 5 0 0 1 7 0"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="WiFi (100%)"
+          >
+            WiFi (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-zap w-3.5 h-3.5 text-yellow-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Outlets (100%)"
+          >
+            Outlets (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-car w-3.5 h-3.5 text-blue-400 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"
+            />
+            <circle
+              cx="7"
+              cy="17"
+              r="2"
+            />
+            <path
+              d="M9 17h6"
+            />
+            <circle
+              cx="17"
+              cy="17"
+              r="2"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Street Parking (100%)"
+          >
+            Street Parking (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-circle-dollar-sign w-3.5 h-3.5 text-emerald-600 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="10"
+            />
+            <path
+              d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"
+            />
+            <path
+              d="M12 18V6"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Paid Garage (100%)"
+          >
+            Paid Garage (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-bike w-3.5 h-3.5 text-orange-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="18.5"
+              cy="17.5"
+              r="3.5"
+            />
+            <circle
+              cx="5.5"
+              cy="17.5"
+              r="3.5"
+            />
+            <circle
+              cx="15"
+              cy="5"
+              r="1"
+            />
+            <path
+              d="M12 17.5V14l-3-3 4-3 2 3h2"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Bicycle Rack (100%)"
+          >
+            Bicycle Rack (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-shield w-3.5 h-3.5 text-zinc-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Moto Parking (100%)"
+          >
+            Moto Parking (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-paw-print w-3.5 h-3.5 text-orange-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="11"
+              cy="4"
+              r="2"
+            />
+            <circle
+              cx="18"
+              cy="8"
+              r="2"
+            />
+            <circle
+              cx="20"
+              cy="16"
+              r="2"
+            />
+            <path
+              d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Pets Allowed (100%)"
+          >
+            Pets Allowed (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <span
+            class="truncate max-w-[200px]"
+            title="🐶 Dog Friendly (100%)"
+          >
+            🐶 Dog Friendly 
+             
+            (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <span
+            class="truncate max-w-[200px]"
+            title="🐱 Cats Allowed (100%)"
+          >
+            🐱 Cats Allowed 
+             
+            (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div
+      class="flex flex-wrap gap-2 mb-4"
+    >
+      <div
+        class="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-zap w-4 h-4 text-yellow-600 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"
+          />
+        </svg>
+        <span
+          class="truncate max-w-[200px]"
+          title="Outlets"
+        >
+          Outlets
+        </span>
+      </div>
+    </div>
+    <div
+      class="flex gap-2"
+    >
+      <button
+        class="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-navigation w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <polygon
+            points="3 11 22 2 13 21 11 13 3 11"
+          />
+        </svg>
+        Directions
+      </button>
+      <button
+        class="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-message-square w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"
+          />
+        </svg>
+        Rate
+      </button>
+      <button
+        class="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+        title="Add to Collection"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-folder-plus w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M12 10v6"
+          />
+          <path
+            d="M9 13h6"
+          />
+          <path
+            d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+          />
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`VenueCard Visual Snapshot Tests matches snapshot for venue card with highlighted search query 1`] = `
+<div
+  class="antialiased bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden shadow-[0_10px_30px_rgba(0,0,0,0.04)] border border-zinc-100 dark:border-zinc-800 transition-all hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col h-full group/card relative"
+>
+  <div
+    class="p-4"
+  >
+    <div
+      class="flex items-start justify-between mb-2 mt-4"
+    >
+      <div
+        class="flex-1"
+      >
+        <h3
+          class="font-semibold text-zinc-900 dark:text-zinc-50 flex items-center gap-2"
+        >
+          <a
+            class="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
+            href="/venues/venue-1"
+          >
+            <span
+              class=""
+            >
+              <mark
+                class="bg-yellow-200 dark:bg-yellow-600/40 text-yellow-900 dark:text-yellow-100 rounded px-0.5"
+              >
+                Artisan
+              </mark>
+               Coffee Roasters
+            </span>
+          </a>
+          <span
+            class="inline-flex shrink-0"
+            title="Verified Host"
+          >
+            <svg
+              aria-hidden="true"
+              class="lucide lucide-badge-check lucide-verified w-4 h-4 text-green-500 shrink-0"
+              fill="none"
+              height="24"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              viewBox="0 0 24 24"
+              width="24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"
+              />
+              <path
+                d="m16 9-5.5 5.5L8 12"
+              />
+            </svg>
+          </span>
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-loader-circle lucide-loader-2 w-3 h-3 animate-spin accent-text shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M21 12a9 9 0 1 1-6.219-8.56"
+            />
+          </svg>
+        </h3>
+        <p
+          class="text-sm text-zinc-600 dark:text-zinc-400"
+        >
+          456 Market St, San Francisco, CA
+        </p>
+        <span
+          class="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400"
+        >
+          <span
+            class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"
+          />
+          12
+           
+          people
+           here now
+        </span>
+        <span
+          aria-label="Venue is currently Moderate — 40% occupied"
+          class="mt-0.5 inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
+          title="40% occupancy — Moderate"
+        >
+          Moderate
+        </span>
+      </div>
+      <button
+        aria-label="Add Artisan Coffee Roasters to favorites"
+        class="p-2 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed  hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-heart w-5 h-5 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"
+          />
+        </svg>
+      </button>
+    </div>
+    <div
+      class="flex items-center gap-3 mb-3"
+    >
+      <div
+        class="inline-flex items-center gap-1 font-medium text-amber-500 dark:text-amber-400"
+        data-testid="star-rating-container"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-star w-4 h-4 shrink-0 text-amber-500 fill-amber-500 dark:text-amber-400 dark:fill-amber-400"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"
+          />
+        </svg>
+        <span
+          class="text-sm font-medium text-zinc-900 dark:text-zinc-50"
+        >
+          4.8
+        </span>
+      </div>
+      <span
+        class="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300"
+      >
+        cafe
+      </span>
+      <span
+        class="ml-auto text-sm font-semibold text-green-600 dark:text-green-400"
+      >
+        9.2
+        /10
+      </span>
+    </div>
+    <div
+      class="flex items-center gap-2 mb-3 text-xs text-zinc-600 dark:text-zinc-400"
+    >
+      <svg
+        aria-hidden="true"
+        class="lucide lucide-clock w-3.5 h-3.5 shrink-0 text-zinc-400 dark:text-zinc-500"
+        fill="none"
+        height="24"
+        stroke="currentColor"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2"
+        viewBox="0 0 24 24"
+        width="24"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+        />
+        <path
+          d="M12 6v6l4 2"
+        />
+      </svg>
+      <span
+        class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-800/50"
+        title="Open Now · Closes 6 PM"
+      >
+        <span
+          class="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500"
+        />
+        Open Now · Closes 6 PM
+      </span>
+    </div>
+    <div
+      class="flex flex-col gap-2 mb-4 border-t border-zinc-100 dark:border-zinc-800 pt-3"
+    >
+      <span
+        class="text-[10px] font-bold text-zinc-400 tracking-wider uppercase"
+      >
+        Verify Amenities:
+      </span>
+      <div
+        class="flex flex-wrap gap-2"
+      >
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-wifi w-3.5 h-3.5 text-blue-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M12 20h.01"
+            />
+            <path
+              d="M2 8.82a15 15 0 0 1 20 0"
+            />
+            <path
+              d="M5 12.859a10 10 0 0 1 14 0"
+            />
+            <path
+              d="M8.5 16.429a5 5 0 0 1 7 0"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="WiFi (100%)"
+          >
+            WiFi (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-zap w-3.5 h-3.5 text-yellow-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Outlets (100%)"
+          >
+            Outlets (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-car w-3.5 h-3.5 text-blue-400 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"
+            />
+            <circle
+              cx="7"
+              cy="17"
+              r="2"
+            />
+            <path
+              d="M9 17h6"
+            />
+            <circle
+              cx="17"
+              cy="17"
+              r="2"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Street Parking (100%)"
+          >
+            Street Parking (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-circle-dollar-sign w-3.5 h-3.5 text-emerald-600 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="12"
+              cy="12"
+              r="10"
+            />
+            <path
+              d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"
+            />
+            <path
+              d="M12 18V6"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Paid Garage (100%)"
+          >
+            Paid Garage (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-bike w-3.5 h-3.5 text-orange-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="18.5"
+              cy="17.5"
+              r="3.5"
+            />
+            <circle
+              cx="5.5"
+              cy="17.5"
+              r="3.5"
+            />
+            <circle
+              cx="15"
+              cy="5"
+              r="1"
+            />
+            <path
+              d="M12 17.5V14l-3-3 4-3 2 3h2"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Bicycle Rack (100%)"
+          >
+            Bicycle Rack (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-shield w-3.5 h-3.5 text-zinc-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Moto Parking (100%)"
+          >
+            Moto Parking (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <svg
+            aria-hidden="true"
+            class="lucide lucide-paw-print w-3.5 h-3.5 text-orange-500 shrink-0"
+            fill="none"
+            height="24"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            width="24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="11"
+              cy="4"
+              r="2"
+            />
+            <circle
+              cx="18"
+              cy="8"
+              r="2"
+            />
+            <circle
+              cx="20"
+              cy="16"
+              r="2"
+            />
+            <path
+              d="M9 10a5 5 0 0 1 5 5v3.5a3.5 3.5 0 0 1-6.84 1.045Q6.52 17.48 4.46 16.84A3.5 3.5 0 0 1 5.5 10Z"
+            />
+          </svg>
+          <span
+            class="font-medium font-mono text-[11px] truncate max-w-[200px]"
+            title="Pets Allowed (100%)"
+          >
+            Pets Allowed (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <span
+            class="truncate max-w-[200px]"
+            title="🐶 Dog Friendly (100%)"
+          >
+            🐶 Dog Friendly 
+             
+            (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+        <div
+          class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-all border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300"
+        >
+          <span
+            class="truncate max-w-[200px]"
+            title="🐱 Cats Allowed (100%)"
+          >
+            🐱 Cats Allowed 
+             
+            (
+            100
+            %)
+          </span>
+          <div
+            class="ml-1 flex items-center border-l border-zinc-300 dark:border-zinc-700 pl-1.5 gap-1 text-[10px]"
+          >
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-green-500"
+            >
+              👍
+            </button>
+            <button
+              class="transition-colors focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded hover:text-red-500"
+            >
+              👎
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div
+      class="flex flex-wrap gap-2 mb-4"
+    >
+      <div
+        class="flex items-center gap-1 text-xs text-zinc-700 dark:text-zinc-300"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-zap w-4 h-4 text-yellow-600 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"
+          />
+        </svg>
+        <span
+          class="truncate max-w-[200px]"
+          title="Outlets"
+        >
+          Outlets
+        </span>
+      </div>
+    </div>
+    <div
+      class="flex gap-2"
+    >
+      <button
+        class="flex-1 flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white accent-bg accent-bg-hover rounded-lg transition-colors"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-navigation w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <polygon
+            points="3 11 22 2 13 21 11 13 3 11"
+          />
+        </svg>
+        Directions
+      </button>
+      <button
+        class="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-message-square w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z"
+          />
+        </svg>
+        Rate
+      </button>
+      <button
+        class="flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors"
+        title="Add to Collection"
+      >
+        <svg
+          aria-hidden="true"
+          class="lucide lucide-folder-plus w-4 h-4 shrink-0"
+          fill="none"
+          height="24"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="24"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M12 10v6"
+          />
+          <path
+            d="M9 13h6"
+          />
+          <path
+            d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"
+          />
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+`;

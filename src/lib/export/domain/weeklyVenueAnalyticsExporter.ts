@@ -31,11 +31,15 @@ export interface WeeklyVenueAnalyticsData {
 /**
  * Generates formatted CSV string for weekly venue analytics report.
  */
-export function generateWeeklyVenueAnalyticsCSV(data: WeeklyVenueAnalyticsData): string {
+export function generateWeeklyVenueAnalyticsCSV(
+  data: WeeklyVenueAnalyticsData,
+): string {
   const builder = new CsvBuilder<VenueWeeklySummary>({ lineDelimiter: "\r\n" });
 
   builder.addSectionHeader("WEEKLY VENUE ANALYTICS & FOOT-TRAFFIC REPORT");
-  builder.addRawLine(`Report Window,${escapeCSVField(data.startDate)} to ${escapeCSVField(data.endDate)}`);
+  builder.addRawLine(
+    `Report Window,${escapeCSVField(data.startDate)} to ${escapeCSVField(data.endDate)}`,
+  );
   builder.addRawLine(`Generated At,${escapeCSVField(data.generatedAt)}`);
   builder.addRawLine(`Total Venues Reported,${data.venues.length}`);
   builder.addBlankLine();
@@ -53,7 +57,8 @@ export function generateWeeklyVenueAnalyticsCSV(data: WeeklyVenueAnalyticsData):
     { header: "Foot Traffic Check-Ins", accessor: (v) => v.footTrafficCount },
     {
       header: "Average Rating",
-      accessor: (v) => (v.averageRating !== null ? v.averageRating.toFixed(1) : "N/A"),
+      accessor: (v) =>
+        v.averageRating !== null ? v.averageRating.toFixed(1) : "N/A",
     },
   ]);
 
@@ -94,36 +99,36 @@ export async function fetchWeeklyVenueAnalyticsData(options?: {
         },
         select: {
           id: true,
-          totalAmount: true,
-          currency: true,
+          // Revenue is recorded per guest when a split-bill share is paid.
+          guests: {
+            where: { paidAt: { not: null } },
+            select: { paidAmountCents: true, paidCurrency: true },
+          },
         },
       },
       checkIns: {
         where: {
-          checkedInAt: { gte: start, lte: end },
+          createdAt: { gte: start, lte: end },
         },
         select: { id: true },
-      },
-      ratings: {
-        select: { rating: true },
       },
     },
   });
 
   const venueSummaries: VenueWeeklySummary[] = venues.map((v) => {
     const totalBookings = v.bookings.length;
-    const totalRevenue = v.bookings.reduce((sum, b) => {
-      const amt = typeof b.totalAmount === "number" ? b.totalAmount : parseFloat(String(b.totalAmount || "0"));
-      return sum + (isNaN(amt) ? 0 : amt);
-    }, 0);
+    const payments = v.bookings.flatMap((b) => b.guests);
+    const totalRevenue =
+      payments.reduce((sum, g) => sum + (g.paidAmountCents ?? 0), 0) / 100;
 
-    const currency = v.bookings[0]?.currency || "$";
+    const paidCurrency = payments.find((g) => g.paidCurrency)?.paidCurrency;
+    const currency = paidCurrency ? `${paidCurrency.toUpperCase()} ` : "$";
     const footTrafficCount = v.checkIns.length;
 
-    const ratingSum = v.ratings.reduce((sum, r) => sum + r.rating, 0);
-    const averageRating = v.ratings.length > 0 ? ratingSum / v.ratings.length : v.rating || null;
+    const averageRating = v.rating ?? null;
 
-    const managerEmail = v.creator?.email || process.env.ADMIN_EMAIL || "manager@worksphere.app";
+    const managerEmail =
+      v.creator?.email || process.env.ADMIN_EMAIL || "manager@worksphere.app";
 
     return {
       venueId: v.id,
@@ -166,7 +171,9 @@ export async function sendWeeklyVenueAnalyticsEmail(
   const filename = `weekly-venue-analytics-${reportData.startDate}-to-${reportData.endDate}.csv`;
 
   if (!SMTP_USER || !SMTP_PASS) {
-    console.log("[Weekly Analytics Email Skip] SMTP credentials missing in environment");
+    console.log(
+      "[Weekly Analytics Email Skip] SMTP credentials missing in environment",
+    );
     return { success: false, recipient };
   }
 
@@ -226,7 +233,10 @@ export async function processWeeklyVenueAnalyticsJob(options?: {
 }> {
   const data = await fetchWeeklyVenueAnalyticsData(options);
   const csvContent = generateWeeklyVenueAnalyticsCSV(data);
-  const emailResult = await sendWeeklyVenueAnalyticsEmail(data, options?.recipientEmail);
+  const emailResult = await sendWeeklyVenueAnalyticsEmail(
+    data,
+    options?.recipientEmail,
+  );
 
   return {
     success: true,

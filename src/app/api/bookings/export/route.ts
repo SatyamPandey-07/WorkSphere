@@ -5,6 +5,7 @@ import { ensureUserExists } from "@/lib/auth";
 import { bookingsToCSV } from "@/lib/pdfHelpers";
 import { resolveDateRange, filterBookingsByRange } from "@/lib/taxExport";
 import { generateTaxExportPdf } from "@/lib/pdfGenerator";
+import { generateBookingsExcel } from "@/lib/export/domain/bookingHistoryExporter";
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,7 +18,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { bookingIds, format, taxYear, startDate, endDate } = body;
 
-    if (format !== "pdf" && format !== "csv") {
+    if (
+      format !== "pdf" &&
+      format !== "csv" &&
+      format !== "xlsx" &&
+      format !== "excel"
+    ) {
       return NextResponse.json({ error: "Invalid format" }, { status: 400 });
     }
 
@@ -73,6 +79,21 @@ export async function POST(req: NextRequest) {
         headers: {
           "Content-Type": "text/csv",
           "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${Date.now()}.csv"`,
+          "Cache-Control": "no-cache",
+        },
+      });
+    }
+
+    if (format === "xlsx" || format === "excel") {
+      const excelXml = generateBookingsExcel(bookings, {
+        venueName: bookings[0]?.venue?.name || "Workspace",
+      });
+      return new NextResponse(excelXml, {
+        status: 200,
+        headers: {
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="WorkSphere_Tax_Export_${Date.now()}.xlsx"`,
           "Cache-Control": "no-cache",
         },
       });

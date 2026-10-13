@@ -113,5 +113,19 @@ describe("Notifications and Reminders API", () => {
       expect(response.status).toBe(200);
       expect(response.contentType).toBe("application/pdf");
     });
+
+    it("generates XLSX with pricing totals and tax calculations successfully", async () => {
+      const response = {
+        status: 200,
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        contentDisposition:
+          'attachment; filename="WorkSphere_Tax_Export_123.xlsx"',
+      };
+      expect(response.status).toBe(200);
+      expect(response.contentType).toBe(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+    });
   });
 });

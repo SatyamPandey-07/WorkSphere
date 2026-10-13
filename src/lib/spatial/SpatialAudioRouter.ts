@@ -15,9 +15,46 @@ export interface PeerSpatialChain {
 export class SpatialAudioRouter {
   private ctx: AudioContext;
   private chains = new Map<string, PeerSpatialChain>();
+  private masterGain: GainNode;
+  private isMuted: boolean = false;
 
   constructor(ctx: AudioContext) {
     this.ctx = ctx;
+    this.masterGain = ctx.createGain();
+    this.masterGain.gain.value = 1.0;
+    this.masterGain.connect(ctx.destination);
+  }
+
+  /**
+   * Toggles master audio gain between 0.0 and 1.0.
+   */
+  toggleMuteAll(): boolean {
+    this.isMuted = !this.isMuted;
+    const target = this.isMuted ? 0.0 : 1.0;
+    if (this.masterGain.gain.setTargetAtTime) {
+      this.masterGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02);
+    } else {
+      this.masterGain.gain.value = target;
+    }
+    return this.isMuted;
+  }
+
+  setMasterGain(gain: number): void {
+    const target = Math.max(0, Math.min(1, gain));
+    this.isMuted = target === 0;
+    if (this.masterGain.gain.setTargetAtTime) {
+      this.masterGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.02);
+    } else {
+      this.masterGain.gain.value = target;
+    }
+  }
+
+  getMasterGain(): number {
+    return this.masterGain.gain.value;
+  }
+
+  getIsMuted(): boolean {
+    return this.isMuted;
   }
 
   /**
@@ -118,7 +155,7 @@ export class SpatialAudioRouter {
 
     source.connect(gain);
     gain.connect(panner);
-    panner.connect(this.ctx.destination);
+    panner.connect(this.masterGain);
 
     const chain: PeerSpatialChain = { source, gain, panner, peerId };
     this.chains.set(peerId, chain);

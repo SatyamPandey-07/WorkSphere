@@ -10,21 +10,54 @@ export interface DEMPoint {
     elevationMeters: number;
 }
 
+export interface DirectionVector {
+    x: number;
+    y: number;
+}
+
 export class GradientCalculator {
     private readonly MAX_WHEELCHAIR_GRADIENT = 8.33;
 
-    public calculateGradient(start: DEMPoint, end: DEMPoint): { gradientPercent: number; isAccessible: boolean } {
+    public calculateGradient(
+        start: DEMPoint,
+        end: DEMPoint,
+        traversalHeading?: DirectionVector
+    ): { gradientPercent: number; isAccessible: boolean } {
         const horizontalDistance = this.calculateHaversineDistance(
             start.latitude, start.longitude,
             end.latitude, end.longitude
         );
 
-        if (horizontalDistance === 0) {
-            return { gradientPercent: 0, isAccessible: true };
+        const elevationChange = end.elevationMeters - start.elevationMeters;
+        let distanceAlongPath = horizontalDistance;
+
+        if (traversalHeading) {
+            const headingMagnitude = Math.hypot(traversalHeading.x, traversalHeading.y);
+            if (!Number.isFinite(headingMagnitude) || headingMagnitude === 0) {
+                throw new RangeError('Traversal heading must be a finite, non-zero vector.');
+            }
+
+            const latitudeRadians = ((start.latitude + end.latitude) / 2) * (Math.PI / 180);
+            const eastwardDistance =
+                (end.longitude - start.longitude) * (Math.PI / 180) * 6371000 * Math.cos(latitudeRadians);
+            const northwardDistance =
+                (end.latitude - start.latitude) * (Math.PI / 180) * 6371000;
+            const headingX = traversalHeading.x / headingMagnitude;
+            const headingY = traversalHeading.y / headingMagnitude;
+
+            distanceAlongPath = eastwardDistance * headingX + northwardDistance * headingY;
         }
 
-        const elevationChange = Math.abs(end.elevationMeters - start.elevationMeters);
-        const gradientPercent = (elevationChange / horizontalDistance) * 100;
+        if (distanceAlongPath === 0) {
+            const gradientPercent = elevationChange === 0 ? 0 : Infinity;
+            return {
+                gradientPercent,
+                isAccessible: gradientPercent <= this.MAX_WHEELCHAIR_GRADIENT
+            };
+        }
+
+        const signedGradientPercent = (elevationChange / distanceAlongPath) * 100;
+        const gradientPercent = Math.abs(signedGradientPercent);
 
         return {
             gradientPercent,

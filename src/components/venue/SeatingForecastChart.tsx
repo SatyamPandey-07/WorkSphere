@@ -57,26 +57,72 @@ interface DayOccupancyData {
 
 function generateWeeklyOccupancy(
   capacity: number,
-  baseForecast: SeatingForecastResult["forecast"]
+  baseForecast: SeatingForecastResult["forecast"],
 ): DayOccupancyData[] {
   const days = [
-    { short: "Mon", full: "Monday", factor: 0.85, peakHour: "1:00 PM", quiet: "8:00 AM - 11:00 AM" },
-    { short: "Tue", full: "Tuesday", factor: 1.05, peakHour: "2:00 PM", quiet: "8:00 AM - 10:30 AM" },
-    { short: "Wed", full: "Wednesday", factor: 1.15, peakHour: "1:30 PM", quiet: "8:00 AM - 10:00 AM" },
-    { short: "Thu", full: "Thursday", factor: 1.1, peakHour: "12:30 PM", quiet: "8:30 AM - 10:30 AM" },
-    { short: "Fri", full: "Friday", factor: 0.75, peakHour: "11:30 AM", quiet: "2:00 PM - 6:00 PM" },
-    { short: "Sat", full: "Saturday", factor: 0.45, peakHour: "3:00 PM", quiet: "All Day" },
-    { short: "Sun", full: "Sunday", factor: 0.35, peakHour: "2:00 PM", quiet: "All Day" },
+    {
+      short: "Mon",
+      full: "Monday",
+      factor: 0.85,
+      peakHour: "1:00 PM",
+      quiet: "8:00 AM - 11:00 AM",
+    },
+    {
+      short: "Tue",
+      full: "Tuesday",
+      factor: 1.05,
+      peakHour: "2:00 PM",
+      quiet: "8:00 AM - 10:30 AM",
+    },
+    {
+      short: "Wed",
+      full: "Wednesday",
+      factor: 1.15,
+      peakHour: "1:30 PM",
+      quiet: "8:00 AM - 10:00 AM",
+    },
+    {
+      short: "Thu",
+      full: "Thursday",
+      factor: 1.1,
+      peakHour: "12:30 PM",
+      quiet: "8:30 AM - 10:30 AM",
+    },
+    {
+      short: "Fri",
+      full: "Friday",
+      factor: 0.75,
+      peakHour: "11:30 AM",
+      quiet: "2:00 PM - 6:00 PM",
+    },
+    {
+      short: "Sat",
+      full: "Saturday",
+      factor: 0.45,
+      peakHour: "3:00 PM",
+      quiet: "All Day",
+    },
+    {
+      short: "Sun",
+      full: "Sunday",
+      factor: 0.35,
+      peakHour: "2:00 PM",
+      quiet: "All Day",
+    },
   ];
 
   const validPoints = baseForecast.filter((f) => f.predictedOccupancy !== null);
   const baseAvg =
     validPoints.length > 0
-      ? validPoints.reduce((acc, f) => acc + (f.predictedOccupancy || 0), 0) / validPoints.length
+      ? validPoints.reduce((acc, f) => acc + (f.predictedOccupancy || 0), 0) /
+        validPoints.length
       : capacity * 0.5;
 
   return days.map((d) => {
-    const avgOcc = Math.min(capacity, Math.max(2, Math.round(baseAvg * d.factor)));
+    const avgOcc = Math.min(
+      capacity,
+      Math.max(2, Math.round(baseAvg * d.factor)),
+    );
     const occupancyRate = Math.min(100, Math.round((avgOcc / capacity) * 100));
     const peakOcc = Math.min(capacity, Math.round(avgOcc * 1.35));
 
@@ -188,10 +234,15 @@ function SeatingForecastModal({
 
   if (!isOpen) return null;
 
-  const quietestDay = [...weeklyData].sort((a, b) => a.occupancyRate - b.occupancyRate)[0];
-  const peakDay = [...weeklyData].sort((a, b) => b.occupancyRate - a.occupancyRate)[0];
+  const quietestDay = [...weeklyData].sort(
+    (a, b) => a.occupancyRate - b.occupancyRate,
+  )[0];
+  const peakDay = [...weeklyData].sort(
+    (a, b) => b.occupancyRate - a.occupancyRate,
+  )[0];
   const avgOccupancyAllDays = Math.round(
-    weeklyData.reduce((acc, curr) => acc + curr.occupancyRate, 0) / weeklyData.length
+    weeklyData.reduce((acc, curr) => acc + curr.occupancyRate, 0) /
+      weeklyData.length,
   );
 
   return (
@@ -220,7 +271,8 @@ function SeatingForecastModal({
               </h2>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Projected day-by-day seat occupancy trends based on historical check-in activity. Total venue capacity: {capacity} seats.
+              Projected day-by-day seat occupancy trends based on historical
+              check-in activity. Total venue capacity: {capacity} seats.
             </p>
           </div>
           <button
@@ -244,7 +296,8 @@ function SeatingForecastModal({
               {quietestDay.fullName}
             </p>
             <p className="text-xs text-green-700 dark:text-green-300">
-              ~{quietestDay.occupancyRate}% occupancy ({quietestDay.avgOccupancy} seats)
+              ~{quietestDay.occupancyRate}% occupancy (
+              {quietestDay.avgOccupancy} seats)
             </p>
           </div>
 
@@ -303,9 +356,13 @@ function SeatingForecastModal({
                 data={weeklyData}
                 margin={{ top: 12, right: 10, left: -20, bottom: 0 }}
                 onClick={(e) => {
-                  if (e && e.activePayload && e.activePayload.length > 0) {
-                    const payloadDay = e.activePayload[0].payload.day;
-                    setSelectedDay((prev) => (prev === payloadDay ? null : payloadDay));
+                  // The X axis is keyed by `day`, so the active label is the day.
+                  const payloadDay =
+                    typeof e?.activeLabel === "string" ? e.activeLabel : null;
+                  if (payloadDay) {
+                    setSelectedDay((prev) =>
+                      prev === payloadDay ? null : payloadDay,
+                    );
                   }
                 }}
               >
@@ -342,14 +399,21 @@ function SeatingForecastModal({
                           <p className="text-zinc-600 dark:text-zinc-300">
                             Avg Occupancy:{" "}
                             <span className="font-semibold text-indigo-600 dark:text-indigo-400">
-                              {dayData.avgOccupancy} / {capacity} seats ({dayData.occupancyRate}%)
+                              {dayData.avgOccupancy} / {capacity} seats (
+                              {dayData.occupancyRate}%)
                             </span>
                           </p>
                           <p className="text-zinc-500">
-                            Peak Time: <span className="font-medium text-zinc-700 dark:text-zinc-300">{dayData.peakHour}</span>
+                            Peak Time:{" "}
+                            <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                              {dayData.peakHour}
+                            </span>
                           </p>
                           <p className="text-zinc-500">
-                            Quietest Window: <span className="font-medium text-green-600 dark:text-green-400">{dayData.quietestWindow}</span>
+                            Quietest Window:{" "}
+                            <span className="font-medium text-green-600 dark:text-green-400">
+                              {dayData.quietestWindow}
+                            </span>
                           </p>
                         </div>
                       );
@@ -366,8 +430,12 @@ function SeatingForecastModal({
                     <Cell
                       key={`cell-${entry.day}`}
                       fill={entry.color}
-                      opacity={selectedDay && selectedDay !== entry.day ? 0.35 : 1}
-                      stroke={selectedDay === entry.day ? "#4f46e5" : "transparent"}
+                      opacity={
+                        selectedDay && selectedDay !== entry.day ? 0.35 : 1
+                      }
+                      stroke={
+                        selectedDay === entry.day ? "#4f46e5" : "transparent"
+                      }
                       strokeWidth={2}
                       className="cursor-pointer transition-opacity"
                     />
@@ -406,8 +474,8 @@ function SeatingForecastModal({
                           d.status === "Quiet"
                             ? "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300"
                             : d.status === "Busy"
-                            ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
-                            : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+                              ? "bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
                         }`}
                       >
                         {d.status}
@@ -623,4 +691,3 @@ export function SeatingForecastChart({ venueId }: SeatingForecastChartProps) {
     </div>
   );
 }
-

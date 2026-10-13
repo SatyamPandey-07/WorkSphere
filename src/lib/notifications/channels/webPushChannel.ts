@@ -73,109 +73,171 @@ export function isWithinQuietHours(
   return currentMinutes >= startMinutes || currentMinutes < endMinutes;
 }
 
+/**
+ * Determines whether push notifications for a user should be suppressed
+ * based on quiet hours or allowed notification windows.
+ */
+export function isUserInQuietHours(
+  now: Date,
+  user:
+    | {
+        quietHoursStart?: string | null;
+        quietHoursEnd?: string | null;
+        notificationStart?: string | null;
+        notificationEnd?: string | null;
+        timezone?: string | null;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!user) return false;
+
+  if (user.quietHoursStart && user.quietHoursEnd) {
+    return isWithinQuietHours(
+      now,
+      user.quietHoursStart,
+      user.quietHoursEnd,
+      user.timezone,
+    );
+  }
+
+  if (user.notificationStart && user.notificationEnd) {
+    return !isWithinNotificationWindow(
+      now,
+      user.notificationStart,
+      user.notificationEnd,
+      user.timezone,
+    );
+  }
+
+  return false;
+}
+
 export async function sendPushNotification(
   userId: string,
   payload: PushPayload,
-  options: PushNotificationOptions = {},
+  options?: PushNotificationOptions,
 ): Promise<PushNotificationResult> {
-  const prefs = await prisma.userNotificationPreference.findUnique({
-    where: { userId },
-  });
+  const isCritical = Boolean(
+    payload.isCritical ||
+    options?.isCritical ||
+    options?.force ||
+    options?.ignoreQuietHours,
+  );
 
-  const now = options.now ?? new Date();
+  // Check user quiet hours before dispatching non-critical notifications
+  if (!isCritical) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        quietHoursStart: true,
+        quietHoursEnd: true,
+        notificationStart: true,
+        notificationEnd: true,
+        timezone: true,
+      },
+    });
 
-  if (prefs?.timezone && prefs.notificationWindowStart && prefs.notificationWindowEnd) {
-    const inWindow = isWithinNotificationWindow(
-      now,
-      prefs.notificationWindowStart,
-      prefs.notificationWindowEnd,
-      prefs.timezone,
-    );
-    if (!inWindow && !options.isCritical && !options.force) {
+    const checkTime = options?.now ?? new Date(Date.now());
+    if (isUserInQuietHours(checkTime, user)) {
+      await prisma.pushNotificationLog.create({
+        data: {
+          userId,
+          venueId: (payload.data?.venueId as string) ?? null,
+          title: payload.title,
+          body: payload.body,
+          status: "DEFERRED_QUIET_HOURS",
+          error: "Notification suppressed during user quiet hours",
+        },
+      });
+
       return {
         sent: 0,
         failed: 0,
+        suppressed: true,
         deferred: true,
-        reason: "outside_notification_window",
+        reason: "QUIET_HOURS",
       };
     }
   }
 
-  const isQuiet =
-    !options.ignoreQuietHours &&
-    !options.isCritical &&
-    isWithinQuietHours(
-      now,
-      prefs?.quietHoursStart,
-      prefs?.quietHoursEnd,
-      prefs?.timezone,
-    );
-
-  if (isQuiet && !options.force) {
-    return {
-      sent: 0,
-      failed: 0,
-      suppressed: true,
-      reason: "quiet_hours",
-    };
-  }
+  configureVapid();
 
   const subscriptions = await prisma.pushSubscription.findMany({
     where: { userId },
   });
 
-  if (subscriptions.length === 0) {
-    return { sent: 0, failed: 0 };
-  }
-
-  try {
-    configureVapid();
-  } catch {
-    return { sent: 0, failed: subscriptions.length };
-  }
-
-  const payloadString = JSON.stringify(payload);
   let sent = 0;
   let failed = 0;
 
-  await Promise.all(
-    subscriptions.map(async (sub) => {
-      const contentEncoding = resolveWebPushContentEncoding(
-        sub.contentEncoding,
-        sub.endpoint,
-      );
+  const notificationPayload = JSON.stringify({
+    title: payload.title,
+    body: payload.body,
+    url: payload.url ?? "/",
+    icon: payload.icon ?? "/icons/icon.svg",
+    badge: payload.badge ?? "/icons/icon.svg",
+    tag: payload.tag ?? "worksphere-notification",
+    data: payload.data ?? {},
+  });
 
-      const pushSubscription = {
+  const staleEndpoints: string[] = [];
+
+  for (const sub of subscriptions) {
+    const pushSubscription = {
+      endpoint: sub.endpoint,
+      keys: {
+        p256dh: sub.p256dh,
+        auth: sub.auth,
+      },
+    };
+
+    try {
+      // Safari iOS 17.4: aes128gcm decrypt fails → blank notifications (#1032).
+      // Prefer aesgcm for Apple/Safari; aes128gcm for other push services.
+      const contentEncoding = resolveWebPushContentEncoding({
         endpoint: sub.endpoint,
-        keys: {
-          p256dh: sub.p256dh,
-          auth: sub.auth,
-        },
-      };
+        userAgent: sub.userAgent,
+      });
 
-      try {
-        await webPush.sendNotification(
-          pushSubscription,
-          payloadString,
-          {
-            contentEncoding,
-            TTL: 86400,
-            urgency: options.isCritical ? "high" : "normal",
-          } as any,
-        );
-        sent++;
-      } catch (err: any) {
-        failed++;
-        if (err.statusCode === 404 || err.statusCode === 410) {
-          await prisma.pushSubscription
-            .delete({ where: { id: sub.id } })
-            .catch(() => {});
-        }
+      await webPush.sendNotification(pushSubscription, notificationPayload, {
+        contentEncoding,
+      });
+      await prisma.pushSubscription.update({
+        where: { id: sub.id },
+        data: { lastUsedAt: new Date() },
+      });
+      sent++;
+    } catch (error: unknown) {
+      failed++;
+      const statusCode =
+        error && typeof error === "object" && "statusCode" in error
+          ? (error as { statusCode: number }).statusCode
+          : null;
+
+      if (statusCode === 404 || statusCode === 410) {
+        staleEndpoints.push(sub.endpoint);
       }
-    }),
-  );
+    }
+  }
 
-  return { sent, failed };
+  if (staleEndpoints.length > 0) {
+    await prisma.pushSubscription.deleteMany({
+      where: { endpoint: { in: staleEndpoints } },
+    });
+  }
+
+  await prisma.pushNotificationLog.create({
+    data: {
+      userId,
+      venueId: (payload.data?.venueId as string) ?? null,
+      title: payload.title,
+      body: payload.body,
+      status: failed === subscriptions.length ? "FAILED" : "SENT",
+      error: failed > 0 ? `${failed} subscriptions failed` : null,
+    },
+  });
+
+  return { sent, failed, suppressed: false, deferred: false };
 }
 
 export class WebPushNotificationChannel implements NotificationChannel {
@@ -199,7 +261,11 @@ export class WebPushNotificationChannel implements NotificationChannel {
       isCritical: (message.options?.isCritical as boolean) || false,
     };
 
-    const res = await sendPushNotification(userId, payload, message.options as PushNotificationOptions);
+    const res = await sendPushNotification(
+      userId,
+      payload,
+      message.options as PushNotificationOptions,
+    );
 
     if (res.deferred || res.suppressed) {
       return {
@@ -220,3 +286,28 @@ export class WebPushNotificationChannel implements NotificationChannel {
 }
 
 export const webPushNotificationChannel = new WebPushNotificationChannel();
+
+export async function sendVenueAvailabilityNotification(
+  venueId: string,
+  venueName: string,
+  availableSeats: number,
+): Promise<void> {
+  const favorites = await prisma.favorite.findMany({
+    where: { venueId },
+    select: { userId: true },
+  });
+
+  for (const favorite of favorites) {
+    await sendPushNotification(favorite.userId, {
+      title: "Seat Available!",
+      body: `${venueName} now has ${availableSeats} seat${availableSeats !== 1 ? "s" : ""} available.`,
+      url: `/venues/${venueId}`,
+      tag: `venue-availability-${venueId}`,
+      data: { venueId, venueName, availableSeats },
+    });
+  }
+}
+
+export function generateVapidKeys() {
+  return webPush.generateVAPIDKeys();
+}

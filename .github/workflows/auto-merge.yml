@@ -3,7 +3,7 @@ name: Auto-Merge Linked PR
 on:
   pull_request_target:
     branches: [main, master, dev, development]
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
   contents: write
@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Auto-merge if linked to an issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             try {
@@ -224,25 +224,60 @@ jobs:
                 ? `${cleanDescription}\n\n${missingTrailers.join('\n')}`
                 : cleanDescription;
 
-              const mergeResponse = await github.rest.pulls.merge({
-                owner,
-                repo,
-                pull_number: prNumber,
-                commit_title: commitTitle,
-                commit_message: commitMessage,
-                merge_method: 'squash'
-              });
+              // Execute squash merge with exponential backoff retry for transient API lockouts/concurrency errors
+              let mergeResponse = null;
+              const maxMergeAttempts = 3;
+              for (let attempt = 1; attempt <= maxMergeAttempts; attempt++) {
+                try {
+                  console.log(`Attempting squash merge for PR #${prNumber} (attempt ${attempt}/${maxMergeAttempts})...`);
+                  mergeResponse = await github.rest.pulls.merge({
+                    owner,
+                    repo,
+                    pull_number: prNumber,
+                    commit_title: commitTitle,
+                    commit_message: commitMessage,
+                    merge_method: 'squash'
+                  });
+                  if (mergeResponse?.data?.merged) {
+                    break;
+                  }
+                } catch (mergeErr) {
+                  console.warn(`Merge attempt ${attempt}/${maxMergeAttempts} failed:`, mergeErr.message);
+                  if (attempt < maxMergeAttempts) {
+                    const delayMs = attempt * 5000; // 5s, 10s backoff
+                    console.log(`Waiting ${delayMs / 1000}s before next merge attempt...`);
+                    await new Promise(r => setTimeout(r, delayMs));
+                  } else {
+                    throw mergeErr;
+                  }
+                }
+              }
 
-              console.log(`PR #${prNumber} successfully auto-merged! SHA: ${mergeResponse.data.sha}`);
+              if (mergeResponse?.data?.sha) {
+                console.log(`PR #${prNumber} successfully auto-merged! SHA: ${mergeResponse.data.sha}`);
 
-              const successMsg = `🚀 **Auto-merge complete!**\n\nThis pull request is linked to issue(s) ${linkedIssues.join(', ')} and has been automatically squash-merged into \`main\` with co-author credit! 🎉\n\nThank you for contributing to **WorkSphere**! ✨`;
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: prNumber,
-                body: successMsg
-              }).catch(e => console.warn('Success comment note:', e.message));
+                const successMsg = `🚀 **Auto-merge complete!**\n\nThis pull request is linked to issue(s) ${linkedIssues.join(', ')} and has been automatically squash-merged into \`main\` with co-author credit! 🎉\n\nThank you for contributing to **WorkSphere**! ✨`;
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: successMsg
+                }).catch(e => console.warn('Success comment note:', e.message));
+              }
 
             } catch (err) {
               console.error('Auto-merge step error (gracefully caught):', err.message);
+              try {
+                if (context.payload?.pull_request?.number) {
+                  const errorNotice = `⚠️ **Auto-merge note**: CI encountered a temporary error while attempting to merge: \`${err.message}\`. A maintainer will review or re-trigger shortly.`;
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: context.payload.pull_request.number,
+                    body: errorNotice
+                  });
+                }
+              } catch (noticeErr) {
+                console.warn('Could not post error notice:', noticeErr.message);
+              }
             }

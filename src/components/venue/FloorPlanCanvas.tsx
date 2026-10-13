@@ -7,7 +7,7 @@ import React, {
   useMemo,
   KeyboardEvent,
 } from "react";
-import { Check, Lock, Armchair, Zap, Star, Sun } from "lucide-react";
+import { Check, Lock, Armchair, Zap, Sun } from "lucide-react";
 import { DeskFavoriteAlertButton } from "./DeskFavoriteAlertButton";
 import {
   recommendNaturalLightDesks,
@@ -21,8 +21,8 @@ export interface Seat2D {
   label: string;
   row: number; // 0-indexed row position
   col: number; // 0-indexed column position
-  x: number;   // Spatial X coordinate in canvas units / meters
-  y: number;   // Spatial Y coordinate in canvas units / meters
+  x: number; // Spatial X coordinate in canvas units / meters
+  y: number; // Spatial Y coordinate in canvas units / meters
   status: SeatStatus;
   price?: number;
   type?: "standard" | "standing" | "booth" | "quiet";
@@ -47,40 +47,320 @@ export interface FloorPlanCanvasProps {
  */
 export const DEFAULT_FLOOR_PLAN_SEATS: Seat2D[] = [
   // Row 0 (Desks A1 - A8)
-  { id: "seat_a1", label: "A1", row: 0, col: 0, x: 50, y: 50, status: "available", price: 15, type: "quiet" },
-  { id: "seat_a2", label: "A2", row: 0, col: 1, x: 130, y: 50, status: "available", price: 15, type: "quiet" },
-  { id: "seat_a3", label: "A3", row: 0, col: 2, x: 210, y: 50, status: "reserved", price: 15, type: "quiet" },
-  { id: "seat_a4", label: "A4", row: 0, col: 3, x: 290, y: 50, status: "available", price: 15, type: "quiet" },
-  { id: "seat_a5", label: "A5", row: 0, col: 4, x: 410, y: 50, status: "available", price: 18, type: "standard" },
-  { id: "seat_a6", label: "A6", row: 0, col: 5, x: 490, y: 50, status: "held", price: 18, type: "standard" },
-  { id: "seat_a7", label: "A7", row: 0, col: 6, x: 570, y: 50, status: "available", price: 18, type: "standard" },
-  { id: "seat_a8", label: "A8", row: 0, col: 7, x: 650, y: 50, status: "available", price: 18, type: "standard" },
+  {
+    id: "seat_a1",
+    label: "A1",
+    row: 0,
+    col: 0,
+    x: 50,
+    y: 50,
+    status: "available",
+    price: 15,
+    type: "quiet",
+  },
+  {
+    id: "seat_a2",
+    label: "A2",
+    row: 0,
+    col: 1,
+    x: 130,
+    y: 50,
+    status: "available",
+    price: 15,
+    type: "quiet",
+  },
+  {
+    id: "seat_a3",
+    label: "A3",
+    row: 0,
+    col: 2,
+    x: 210,
+    y: 50,
+    status: "reserved",
+    price: 15,
+    type: "quiet",
+  },
+  {
+    id: "seat_a4",
+    label: "A4",
+    row: 0,
+    col: 3,
+    x: 290,
+    y: 50,
+    status: "available",
+    price: 15,
+    type: "quiet",
+  },
+  {
+    id: "seat_a5",
+    label: "A5",
+    row: 0,
+    col: 4,
+    x: 410,
+    y: 50,
+    status: "available",
+    price: 18,
+    type: "standard",
+  },
+  {
+    id: "seat_a6",
+    label: "A6",
+    row: 0,
+    col: 5,
+    x: 490,
+    y: 50,
+    status: "held",
+    price: 18,
+    type: "standard",
+  },
+  {
+    id: "seat_a7",
+    label: "A7",
+    row: 0,
+    col: 6,
+    x: 570,
+    y: 50,
+    status: "available",
+    price: 18,
+    type: "standard",
+  },
+  {
+    id: "seat_a8",
+    label: "A8",
+    row: 0,
+    col: 7,
+    x: 650,
+    y: 50,
+    status: "available",
+    price: 18,
+    type: "standard",
+  },
 
   // Row 1 (Desks B1 - B8)
-  { id: "seat_b1", label: "B1", row: 1, col: 0, x: 50, y: 130, status: "available", price: 15, type: "standard" },
-  { id: "seat_b2", label: "B2", row: 1, col: 1, x: 130, y: 130, status: "reserved", price: 15, type: "standard" },
-  { id: "seat_b3", label: "B3", row: 1, col: 2, x: 210, y: 130, status: "available", price: 15, type: "standard" },
-  { id: "seat_b4", label: "B4", row: 1, col: 3, x: 290, y: 130, status: "available", price: 15, type: "standard" },
-  { id: "seat_b5", label: "B5", row: 1, col: 4, x: 410, y: 130, status: "available", price: 18, type: "standard" },
-  { id: "seat_b6", label: "B6", row: 1, col: 5, x: 490, y: 130, status: "available", price: 18, type: "standard" },
-  { id: "seat_b7", label: "B7", row: 1, col: 6, x: 570, y: 130, status: "reserved", price: 18, type: "standard" },
-  { id: "seat_b8", label: "B8", row: 1, col: 7, x: 650, y: 130, status: "available", price: 18, type: "standard" },
+  {
+    id: "seat_b1",
+    label: "B1",
+    row: 1,
+    col: 0,
+    x: 50,
+    y: 130,
+    status: "available",
+    price: 15,
+    type: "standard",
+  },
+  {
+    id: "seat_b2",
+    label: "B2",
+    row: 1,
+    col: 1,
+    x: 130,
+    y: 130,
+    status: "reserved",
+    price: 15,
+    type: "standard",
+  },
+  {
+    id: "seat_b3",
+    label: "B3",
+    row: 1,
+    col: 2,
+    x: 210,
+    y: 130,
+    status: "available",
+    price: 15,
+    type: "standard",
+  },
+  {
+    id: "seat_b4",
+    label: "B4",
+    row: 1,
+    col: 3,
+    x: 290,
+    y: 130,
+    status: "available",
+    price: 15,
+    type: "standard",
+  },
+  {
+    id: "seat_b5",
+    label: "B5",
+    row: 1,
+    col: 4,
+    x: 410,
+    y: 130,
+    status: "available",
+    price: 18,
+    type: "standard",
+  },
+  {
+    id: "seat_b6",
+    label: "B6",
+    row: 1,
+    col: 5,
+    x: 490,
+    y: 130,
+    status: "available",
+    price: 18,
+    type: "standard",
+  },
+  {
+    id: "seat_b7",
+    label: "B7",
+    row: 1,
+    col: 6,
+    x: 570,
+    y: 130,
+    status: "reserved",
+    price: 18,
+    type: "standard",
+  },
+  {
+    id: "seat_b8",
+    label: "B8",
+    row: 1,
+    col: 7,
+    x: 650,
+    y: 130,
+    status: "available",
+    price: 18,
+    type: "standard",
+  },
 
   // Row 2 (Booths C1 - C4)
-  { id: "seat_c1", label: "Booth C1", row: 2, col: 0, x: 60, y: 230, status: "available", price: 25, type: "booth" },
-  { id: "seat_c2", label: "Booth C2", row: 2, col: 2, x: 220, y: 230, status: "available", price: 25, type: "booth" },
-  { id: "seat_c3", label: "Booth C3", row: 2, col: 4, x: 420, y: 230, status: "reserved", price: 25, type: "booth" },
-  { id: "seat_c4", label: "Booth C4", row: 2, col: 6, x: 580, y: 230, status: "available", price: 25, type: "booth" },
+  {
+    id: "seat_c1",
+    label: "Booth C1",
+    row: 2,
+    col: 0,
+    x: 60,
+    y: 230,
+    status: "available",
+    price: 25,
+    type: "booth",
+  },
+  {
+    id: "seat_c2",
+    label: "Booth C2",
+    row: 2,
+    col: 2,
+    x: 220,
+    y: 230,
+    status: "available",
+    price: 25,
+    type: "booth",
+  },
+  {
+    id: "seat_c3",
+    label: "Booth C3",
+    row: 2,
+    col: 4,
+    x: 420,
+    y: 230,
+    status: "reserved",
+    price: 25,
+    type: "booth",
+  },
+  {
+    id: "seat_c4",
+    label: "Booth C4",
+    row: 2,
+    col: 6,
+    x: 580,
+    y: 230,
+    status: "available",
+    price: 25,
+    type: "booth",
+  },
 
   // Row 3 (Standing Desks D1 - D8)
-  { id: "seat_d1", label: "D1", row: 3, col: 0, x: 50, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d2", label: "D2", row: 3, col: 1, x: 130, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d3", label: "D3", row: 3, col: 2, x: 210, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d4", label: "D4", row: 3, col: 3, x: 290, y: 320, status: "reserved", price: 20, type: "standing" },
-  { id: "seat_d5", label: "D5", row: 3, col: 4, x: 410, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d6", label: "D6", row: 3, col: 5, x: 490, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d7", label: "D7", row: 3, col: 6, x: 570, y: 320, status: "available", price: 20, type: "standing" },
-  { id: "seat_d8", label: "D8", row: 3, col: 7, x: 650, y: 320, status: "available", price: 20, type: "standing" },
+  {
+    id: "seat_d1",
+    label: "D1",
+    row: 3,
+    col: 0,
+    x: 50,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+  },
+  {
+    id: "seat_d2",
+    label: "D2",
+    row: 3,
+    col: 1,
+    x: 130,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+  },
+  {
+    id: "seat_d3",
+    label: "D3",
+    row: 3,
+    col: 2,
+    x: 210,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+  },
+  {
+    id: "seat_d4",
+    label: "D4",
+    row: 3,
+    col: 3,
+    x: 290,
+    y: 320,
+    status: "reserved",
+    price: 20,
+    type: "standing",
+  },
+  {
+    id: "seat_d5",
+    label: "D5",
+    row: 3,
+    col: 4,
+    x: 410,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+  },
+  {
+    id: "seat_d6",
+    label: "D6",
+    row: 3,
+    col: 5,
+    x: 490,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+  },
+  {
+    id: "seat_d7",
+    label: "D7",
+    row: 3,
+    col: 6,
+    x: 570,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+  },
+  {
+    id: "seat_d8",
+    label: "D8",
+    row: 3,
+    col: 7,
+    x: 650,
+    y: 320,
+    status: "available",
+    price: 20,
+    type: "standing",
+  },
 ];
 
 /**
@@ -89,7 +369,7 @@ export const DEFAULT_FLOOR_PLAN_SEATS: Seat2D[] = [
 export function findNearestSpatialSeat(
   current: Seat2D,
   direction: "UP" | "DOWN" | "LEFT" | "RIGHT",
-  allSeats: Seat2D[]
+  allSeats: Seat2D[],
 ): Seat2D | null {
   if (!allSeats || allSeats.length <= 1) return null;
 
@@ -97,13 +377,25 @@ export function findNearestSpatialSeat(
     if (seat.id === current.id) return false;
     switch (direction) {
       case "UP":
-        return seat.y < current.y || (seat.row < current.row && Math.abs(seat.x - current.x) < 80);
+        return (
+          seat.y < current.y ||
+          (seat.row < current.row && Math.abs(seat.x - current.x) < 80)
+        );
       case "DOWN":
-        return seat.y > current.y || (seat.row > current.row && Math.abs(seat.x - current.x) < 80);
+        return (
+          seat.y > current.y ||
+          (seat.row > current.row && Math.abs(seat.x - current.x) < 80)
+        );
       case "LEFT":
-        return seat.x < current.x || (seat.col < current.col && Math.abs(seat.y - current.y) < 80);
+        return (
+          seat.x < current.x ||
+          (seat.col < current.col && Math.abs(seat.y - current.y) < 80)
+        );
       case "RIGHT":
-        return seat.x > current.x || (seat.col > current.col && Math.abs(seat.y - current.y) < 80);
+        return (
+          seat.x > current.x ||
+          (seat.col > current.col && Math.abs(seat.y - current.y) < 80)
+        );
       default:
         return false;
     }
@@ -139,11 +431,12 @@ export function FloorPlanCanvas({
   onReserveSeat,
   className,
   venueName = "Interactive Seat Map",
+  venueId,
   venueLocation,
   venueCompassOrientation = 180,
 }: FloorPlanCanvasProps) {
   const [focusedSeatId, setFocusedSeatId] = useState<string>(
-    selectedSeatId || (seats.length > 0 ? seats[0].id : "")
+    selectedSeatId || (seats.length > 0 ? seats[0].id : ""),
   );
 
   const seatRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
@@ -171,7 +464,7 @@ export function FloorPlanCanvas({
           latitude: venueLocation.lat,
           longitude: venueLocation.lng,
           venueCompassOrientation,
-        }
+        },
       );
       recs.forEach((r) => {
         if (r.isOptimalNaturalLight) {
@@ -239,7 +532,7 @@ export function FloorPlanCanvas({
         handleSeatFocus(targetSeat.id);
       }
     },
-    [seats, handleSeatFocus, onSelectSeat, onReserveSeat]
+    [seats, handleSeatFocus, onSelectSeat, onReserveSeat],
   );
 
   return (
@@ -258,7 +551,8 @@ export function FloorPlanCanvas({
             {venueName}
           </h3>
           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
-            Use Arrow Keys (↑ ↓ ← →) to navigate seat grid. Press Enter/Space to select.
+            Use Arrow Keys (↑ ↓ ← →) to navigate seat grid. Press Enter/Space to
+            select.
           </p>
         </div>
 
@@ -310,13 +604,17 @@ export function FloorPlanCanvas({
               seat.isBestNaturalLight ||
               seat.hasNaturalLightBadge;
 
-            let bgClass = "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20";
+            let bgClass =
+              "bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/20";
             if (isSelected) {
-              bgClass = "bg-blue-600 text-white ring-4 ring-blue-400 shadow-blue-500/30";
+              bgClass =
+                "bg-blue-600 text-white ring-4 ring-blue-400 shadow-blue-500/30";
             } else if (isReserved) {
-              bgClass = "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed";
+              bgClass =
+                "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed";
             } else if (isHeld) {
-              bgClass = "bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20";
+              bgClass =
+                "bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20";
             }
 
             return (
@@ -385,11 +683,20 @@ export function FloorPlanCanvas({
         <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 rounded-xl bg-zinc-100 dark:bg-zinc-800/80 text-xs font-medium text-zinc-700 dark:text-zinc-300">
           <div className="flex items-center gap-3 flex-wrap">
             <div>
-              Active Focus: <span className="font-bold text-zinc-900 dark:text-white">{activeFocusedSeat.label}</span>
+              Active Focus:{" "}
+              <span className="font-bold text-zinc-900 dark:text-white">
+                {activeFocusedSeat.label}
+              </span>
               {" • "}
-              Status: <span className="capitalize font-semibold">{activeFocusedSeat.status}</span>
+              Status:{" "}
+              <span className="capitalize font-semibold">
+                {activeFocusedSeat.status}
+              </span>
               {" • "}
-              Price: <span className="font-mono">${activeFocusedSeat.price || 15}/hr</span>
+              Price:{" "}
+              <span className="font-mono">
+                ${activeFocusedSeat.price || 15}/hr
+              </span>
             </div>
 
             {(naturalLightMap.get(activeFocusedSeat.id) ||
@@ -411,7 +718,10 @@ export function FloorPlanCanvas({
               deskLabel={activeFocusedSeat.label}
               deskType={activeFocusedSeat.type}
               price={activeFocusedSeat.price}
-              isOccupied={activeFocusedSeat.status === "reserved" || activeFocusedSeat.status === "held"}
+              isOccupied={
+                activeFocusedSeat.status === "reserved" ||
+                activeFocusedSeat.status === "held"
+              }
               variant="compact"
             />
           </div>

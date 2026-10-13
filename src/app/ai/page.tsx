@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+  Suspense,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
@@ -39,7 +46,10 @@ import { Venue } from "@/components/chat/ChatMessages";
 import { PartyKitPresenceWrapper } from "@/components/chat/PartyKitPresenceWrapper";
 import { useBatteryStatus } from "@/hooks/useBatteryStatus";
 import { ShortcutTooltip } from "@/components/ui/ShortcutTooltip";
-import { usePlatformModifier, TOGGLE_CHATBOT_EVENT } from "@/hooks/usePlatformModifier";
+import {
+  usePlatformModifier,
+  TOGGLE_CHATBOT_EVENT,
+} from "@/hooks/usePlatformModifier";
 import { useUserLocation } from "@/hooks/useUserLocation";
 import { GeolocationFallbackBanner } from "@/components/venues/GeolocationFallbackBanner";
 
@@ -98,6 +108,7 @@ function AppPage() {
   const {
     location,
     locationName,
+    permissionState,
     isDenied: isLocationDenied,
     isLoading: isLoadingLocation,
     setLocation,
@@ -651,7 +662,9 @@ function AppPage() {
           venueName: ratingDialog.venue.name,
           data: venuePayload,
         });
-        alert("Review saved offline. It will automatically sync when you reconnect.");
+        alert(
+          "Review saved offline. It will automatically sync when you reconnect.",
+        );
       } catch (err) {
         console.error("Failed to queue review offline:", err);
         setMarkers(prevMarkers);
@@ -688,7 +701,9 @@ function AppPage() {
           venueName: ratingDialog.venue.name,
           data: venuePayload,
         });
-        alert("Review saved offline. It will automatically sync when you reconnect.");
+        alert(
+          "Review saved offline. It will automatically sync when you reconnect.",
+        );
       } catch (queueErr) {
         setMarkers(prevMarkers);
         console.error("Error submitting and queueing rating:", error, queueErr);
@@ -799,10 +814,11 @@ function AppPage() {
           lg:flex flex-1 lg:flex-[7] relative
         `}
         >
-          {/* Fallback Banner for Geolocation Permission Denied */}
-          {isLocationDenied && (
+          {/* Fallback Banner for Geolocation Permission Prompt / Denied */}
+          {(isLocationDenied || permissionState === "prompt") && (
             <div className="absolute top-4 left-4 right-4 z-20 max-w-xl mx-auto pointer-events-auto">
               <GeolocationFallbackBanner
+                status={permissionState}
                 currentLocationName={locationName}
                 onLocationSelected={(geocoded) => {
                   setManualLocation(
@@ -903,43 +919,44 @@ function AppPage() {
                         <button
                           key={profile}
                           onClick={async () => {
-                                setRouteProfile(profile);
-                              
-                                if (routes.length > 0 && location) {
-                                  const currentRequest = ++routeRequestId.current;
-                              
-                                  const { getRoute } = await import("@/lib/routing");
-                                  const lastRoute = routes[0];
-                              
-                                  const destination =
-                                    lastRoute.path[lastRoute.path.length - 1];
-                              
-                                  const routeData = await getRoute(
-                                    {
-                                      lat: location.latitude,
-                                      lng: location.longitude,
-                                    },
-                                    destination,
-                                    profile,
-                                  );
-                              
-                                  // Ignore older route requests
-                                  if (currentRequest !== routeRequestId.current) {
-                                    return;
-                                  }
-                              
-                                  if (routeData) {
-                                    setRoutes([
-                                      {
-                                        ...lastRoute,
-                                        path: routeData.path,
-                                        distance: routeData.distance,
-                                        duration: routeData.duration,
-                                      },
-                                    ]);
-                                  }
-                                }
-                              }}
+                            setRouteProfile(profile);
+
+                            if (routes.length > 0 && location) {
+                              const currentRequest = ++routeRequestId.current;
+
+                              const { getRoute } =
+                                await import("@/lib/routing");
+                              const lastRoute = routes[0];
+
+                              const destination =
+                                lastRoute.path[lastRoute.path.length - 1];
+
+                              const routeData = await getRoute(
+                                {
+                                  lat: location.latitude,
+                                  lng: location.longitude,
+                                },
+                                destination,
+                                profile,
+                              );
+
+                              // Ignore older route requests
+                              if (currentRequest !== routeRequestId.current) {
+                                return;
+                              }
+
+                              if (routeData) {
+                                setRoutes([
+                                  {
+                                    ...lastRoute,
+                                    path: routeData.path,
+                                    distance: routeData.distance,
+                                    duration: routeData.duration,
+                                  },
+                                ]);
+                              }
+                            }
+                          }}
                           className={`flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${
                             routeProfile === profile
                               ? "accent-bg text-white shadow-lg shadow-[var(--primary-accent)]/20"

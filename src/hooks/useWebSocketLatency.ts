@@ -16,10 +16,11 @@ interface WebSocketLatencyState {
   tier: LatencyTier;
 }
 
-function toTier(ms: number | null): LatencyTier {
+export function toTier(ms: number | null): LatencyTier {
   if (ms === null) return "unknown";
-  if (ms < 50) return "good";
-  if (ms < 150) return "fair";
+  const clamped = Math.max(0, ms);
+  if (clamped < 50) return "good";
+  if (clamped < 150) return "fair";
   return "poor";
 }
 
@@ -67,7 +68,10 @@ export function useWebSocketLatency(
 
     const handleMessage = () => {
       if (pingTimeRef.current === null) return;
-      const rtt = Math.round(performance.now() - pingTimeRef.current);
+      const rtt = Math.max(
+        0,
+        Math.round(performance.now() - pingTimeRef.current),
+      );
       pingTimeRef.current = null;
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       setLatencyMs(rtt);
@@ -93,5 +97,6 @@ export function useWebSocketLatency(
     };
   }, [socket, intervalMs, sendPing]);
 
-  return { latencyMs, tier: toTier(latencyMs) };
+  const clampedLatency = latencyMs !== null ? Math.max(0, latencyMs) : null;
+  return { latencyMs: clampedLatency, tier: toTier(clampedLatency) };
 }

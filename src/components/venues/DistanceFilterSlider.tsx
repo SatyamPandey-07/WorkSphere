@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { Navigation, MapPin, Locate, RotateCcw, Check } from "lucide-react";
 
 export interface DistanceFilterSliderProps {
@@ -15,6 +15,7 @@ export interface DistanceFilterSliderProps {
   onLocationDetected?: (loc: { lat: number; lng: number }) => void;
   className?: string;
   showLocationPrompt?: boolean;
+  debounceMs?: number; // default 250ms debounce for external onChange
 }
 
 export function DistanceFilterSlider({
@@ -29,6 +30,7 @@ export function DistanceFilterSlider({
   onLocationDetected,
   className = "",
   showLocationPrompt = true,
+  debounceMs = 250,
 }: DistanceFilterSliderProps) {
   const [localLocation, setLocalLocation] = useState<{
     lat: number;
@@ -37,12 +39,63 @@ export function DistanceFilterSlider({
   const [isLocating, setIsLocating] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
 
+  // Internal visual slider state for 60fps instant UI response
+  const [internalValue, setInternalValue] = useState<number>(value);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestOnChangeRef = useRef(onChange);
+  latestOnChangeRef.current = onChange;
+
+  // Sync internal value when external value changes
+  useEffect(() => {
+    setInternalValue(value);
+  }, [value]);
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
   // Sync prop location
   useEffect(() => {
     if (propUserLocation) {
       setLocalLocation(propUserLocation);
     }
   }, [propUserLocation]);
+
+  // Trigger immediate external change (for presets, reset, double-click)
+  const commitImmediateChange = useCallback((newVal: number) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    setInternalValue(newVal);
+    latestOnChangeRef.current(newVal);
+  }, []);
+
+  // Handle slider drag with 250ms debounce
+  const handleSliderChange = (newVal: number) => {
+    setInternalValue(newVal);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      debounceTimerRef.current = null;
+      latestOnChangeRef.current(newVal);
+    }, debounceMs);
+  };
+
+  // Commit immediately on pointer up / change end
+  const handleSliderCommit = () => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    latestOnChangeRef.current(internalValue);
+  };
 
   // Request browser geolocation
   const requestLocation = useCallback(() => {
@@ -78,13 +131,13 @@ export function DistanceFilterSlider({
     );
   }, [onLocationDetected]);
 
-  const isAnyDistance = value === 0 || value < min;
-  const sliderDisplayValue = isAnyDistance ? min : value;
+  const isAnyDistance = internalValue === 0 || internalValue < min;
+  const sliderDisplayValue = isAnyDistance ? min : internalValue;
 
   // Reset to default radius (default 10km) on double-click (#5026)
   const handleResetToDefault = useCallback(() => {
-    onChange(defaultValue);
-  }, [onChange, defaultValue]);
+    commitImmediateChange(defaultValue);
+  }, [commitImmediateChange, defaultValue]);
 
   return (
     <div
@@ -119,14 +172,14 @@ export function DistanceFilterSlider({
                 : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
             }`}
           >
-            {isAnyDistance ? "Any Distance" : `${value} km`}
+            {isAnyDistance ? "Any Distance" : `${internalValue} km`}
           </span>
 
           {!isAnyDistance && (
             <button
               type="button"
               data-testid="reset-distance-btn"
-              onClick={() => onChange(0)}
+              onClick={() => commitImmediateChange(0)}
               title="Reset to any distance"
               aria-label="Reset distance filter to any distance"
               className="p-1 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-800 transition-colors"
@@ -156,11 +209,15 @@ export function DistanceFilterSlider({
             max={max}
             step={step}
             value={sliderDisplayValue}
-            onChange={(e) => onChange(Number(e.target.value))}
+            onChange={(e) => handleSliderChange(Number(e.target.value))}
+            onPointerUp={handleSliderCommit}
+            onMouseUp={handleSliderCommit}
+            onTouchEnd={handleSliderCommit}
+            onKeyUp={handleSliderCommit}
             onDoubleClick={handleResetToDefault}
             aria-valuemin={min}
             aria-valuemax={max}
-            aria-valuenow={isAnyDistance ? min : value}
+            aria-valuenow={isAnyDistance ? min : internalValue}
             aria-label="Distance filter slider (1km to 50km)"
             className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
           />
@@ -183,7 +240,7 @@ export function DistanceFilterSlider({
         <button
           type="button"
           data-testid="preset-distance-any"
-          onClick={() => onChange(0)}
+          onClick={() => commitImmediateChange(0)}
           className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all ${
             isAnyDistance
               ? "bg-blue-600 text-white shadow-sm shadow-blue-500/20"
@@ -193,13 +250,13 @@ export function DistanceFilterSlider({
           Any
         </button>
         {presets.map((p) => {
-          const isSelected = !isAnyDistance && value === p;
+          const isSelected = !isAnyDistance && internalValue === p;
           return (
             <button
               key={p}
               type="button"
               data-testid={`preset-distance-${p}`}
-              onClick={() => onChange(p)}
+              onClick={() => commitImmediateChange(p)}
               className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all ${
                 isSelected
                   ? "bg-blue-600 text-white shadow-sm shadow-blue-500/20"
@@ -245,3 +302,5 @@ export function DistanceFilterSlider({
     </div>
   );
 }
+
+export default DistanceFilterSlider;

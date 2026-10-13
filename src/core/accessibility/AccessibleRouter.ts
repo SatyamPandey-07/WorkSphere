@@ -29,6 +29,11 @@ export interface NavigationCue {
   vibrationPattern: number[];
   waypointIndex?: number;
   metadata?: Record<string, unknown>;
+  warningBadge?: {
+    label: string;
+    severity: 'advisory' | 'warning' | 'critical';
+    code: 'NARROW_CORRIDOR' | 'TIGHT_TURNING_RADIUS';
+  };
 }
 
 export const HAPTIC_PATTERNS = {
@@ -67,6 +72,8 @@ export interface RouteSegment {
   turn?: TurnDirection | string;
   waypointType?: NavigationCueType | string;
   name?: string;
+  corridorClearanceCm?: number;
+  isSharpCorner?: boolean;
 }
 
 export interface AccessibilityWeightedRoute {
@@ -201,6 +208,25 @@ export class AccessibleRouter {
       const features = this.osmParser.parseFeatures(tags);
       const isLast = index === segments.length - 1;
 
+      // Wheelchair turning radius & corridor clearance warning check
+      let warningBadge: NavigationCue['warningBadge'];
+      const clearance = segment.corridorClearanceCm;
+      const isSharpCorner = segment.isSharpCorner;
+
+      if (clearance !== undefined && clearance < 91) {
+        warningBadge = {
+          label: `Tight Corridor: ${clearance}cm`,
+          severity: clearance < 80 ? 'critical' : 'warning',
+          code: 'NARROW_CORRIDOR',
+        };
+      } else if (isSharpCorner && (clearance === undefined || clearance < 100)) {
+        warningBadge = {
+          label: 'Tight Turning Radius',
+          severity: 'warning',
+          code: 'TIGHT_TURNING_RADIUS',
+        };
+      }
+
       // 1. Elevator waypoint check
       const isElevator =
         segment.waypointType === 'elevator' ||
@@ -220,6 +246,7 @@ export class AccessibleRouter {
           vibrationPattern: [...HAPTIC_PATTERNS.ELEVATOR],
           waypointIndex: index,
           metadata: { osmTags: tags },
+          warningBadge,
         });
         continue;
       }
@@ -245,6 +272,7 @@ export class AccessibleRouter {
           vibrationPattern: [...HAPTIC_PATTERNS.CURB_RAMP],
           waypointIndex: index,
           metadata: { osmTags: tags },
+          warningBadge,
         });
         continue;
       }
@@ -279,6 +307,7 @@ export class AccessibleRouter {
           vibrationPattern: pattern,
           waypointIndex: index,
           metadata: { turn: turnDirection },
+          warningBadge,
         });
         continue;
       }
@@ -292,6 +321,7 @@ export class AccessibleRouter {
           distance: segment.distance,
           vibrationPattern: [...HAPTIC_PATTERNS.DESTINATION],
           waypointIndex: index,
+          warningBadge,
         });
         continue;
       }
@@ -310,6 +340,7 @@ export class AccessibleRouter {
         distance: segment.distance,
         vibrationPattern: [...HAPTIC_PATTERNS.DECISION_POINT],
         waypointIndex: index,
+        warningBadge,
       });
     }
 

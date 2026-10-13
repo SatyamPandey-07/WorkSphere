@@ -113,7 +113,7 @@ export function rmsToCalibratedDb(
 ): number {
   if (rms <= 0.000001) {
     const calibratedSpl = calibration.offsetDb;
-    return Math.max(0, Math.min(130, Math.round(calibratedSpl * 10) / 10));
+    return Math.max(0, Math.min(120, Math.round(calibratedSpl * 10) / 10));
   }
 
   // Raw dBFS calculation (0 dBFS is digital maximum)
@@ -125,8 +125,8 @@ export function rmsToCalibratedDb(
   // Apply calibration offset
   const calibratedSpl = rawSpl + calibration.offsetDb;
 
-  // Clamp within acoustic range (0 dB absolute silence to 130 dB threshold of pain)
-  return Math.max(0, Math.min(130, Math.round(calibratedSpl * 10) / 10));
+  // Clamp within normalized acoustic range (0 dB floor to 120 dB SPL maximum)
+  return Math.max(0, Math.min(120, Math.round(calibratedSpl * 10) / 10));
 }
 
 /**

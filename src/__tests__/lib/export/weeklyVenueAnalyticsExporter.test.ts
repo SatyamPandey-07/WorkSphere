@@ -5,6 +5,8 @@ import {
   processWeeklyVenueAnalyticsJob,
   type WeeklyVenueAnalyticsData,
 } from "@/lib/export/domain/weeklyVenueAnalyticsExporter";
+import { prisma } from "@/lib/prisma";
+import nodemailer from "nodemailer";
 
 // Mock dependencies
 jest.mock("@/lib/prisma", () => ({
@@ -21,8 +23,8 @@ jest.mock("nodemailer", () => ({
   })),
 }));
 
-const { prisma } = require("@/lib/prisma");
-const nodemailer = require("nodemailer");
+const findManyMock = prisma.venue.findMany as jest.Mock;
+const createTransportMock = nodemailer.createTransport as jest.Mock;
 
 describe("Weekly Venue Analytics CSV Exporter & Automated Email Dispatch (#5070)", () => {
   beforeEach(() => {
@@ -68,9 +70,15 @@ describe("Weekly Venue Analytics CSV Exporter & Automated Email Dispatch (#5070)
       expect(csv).toContain("WEEKLY VENUE ANALYTICS & FOOT-TRAFFIC REPORT");
       expect(csv).toContain("Report Window,2026-10-01 to 2026-10-08");
       expect(csv).toContain("Total Venues Reported,2");
-      expect(csv).toContain("Venue ID,Venue Name,Category,Manager Email,Total Bookings,Total Revenue,Currency,Foot Traffic Check-Ins,Average Rating");
-      expect(csv).toContain("venue-alpha-100,Downtown WorkHub,Coworking Space,manager@workhub.com,24,$1200.50,42,4.8");
-      expect(csv).toContain("venue-beta-200,Quiet Study Cafe,Cafe,owner@quietcafe.com,15,$450.00,18,4.5");
+      expect(csv).toContain(
+        "Venue ID,Venue Name,Category,Manager Email,Total Bookings,Total Revenue,Currency,Foot Traffic Check-Ins,Average Rating",
+      );
+      expect(csv).toContain(
+        "venue-alpha-100,Downtown WorkHub,Coworking Space,manager@workhub.com,24,$1200.50,42,4.8",
+      );
+      expect(csv).toContain(
+        "venue-beta-200,Quiet Study Cafe,Cafe,owner@quietcafe.com,15,$450.00,18,4.5",
+      );
     });
 
     it("handles empty venue lists gracefully", () => {
@@ -89,19 +97,31 @@ describe("Weekly Venue Analytics CSV Exporter & Automated Email Dispatch (#5070)
 
   describe("fetchWeeklyVenueAnalyticsData", () => {
     it("aggregates venue booking revenue and foot-traffic check-ins from Prisma", async () => {
-      prisma.venue.findMany.mockResolvedValue([
+      findManyMock.mockResolvedValue([
         {
           id: "venue-1",
           name: "Innovation Loft",
           category: "Coworking Space",
           rating: 4.9,
-          creator: { email: "creator@loft.com", firstName: "Alex", lastName: "Rivera" },
+          creator: {
+            email: "creator@loft.com",
+            firstName: "Alex",
+            lastName: "Rivera",
+          },
           bookings: [
-            { id: "b1", totalAmount: 100.0, currency: "$" },
-            { id: "b2", totalAmount: 150.5, currency: "$" },
+            {
+              id: "b1",
+              guests: [{ paidAmountCents: 10000, paidCurrency: "usd" }],
+            },
+            {
+              id: "b2",
+              guests: [
+                { paidAmountCents: 10050, paidCurrency: "usd" },
+                { paidAmountCents: 5000, paidCurrency: "usd" },
+              ],
+            },
           ],
           checkIns: [{ id: "c1" }, { id: "c2" }, { id: "c3" }],
-          ratings: [{ rating: 5.0 }, { rating: 4.8 }],
         },
       ]);
 
@@ -121,17 +141,24 @@ describe("Weekly Venue Analytics CSV Exporter & Automated Email Dispatch (#5070)
 
   describe("sendWeeklyVenueAnalyticsEmail", () => {
     it("creates transporter and sends email with CSV attachment via Nodemailer", async () => {
-      const sendMailMock = jest.fn().mockResolvedValue({ messageId: "msg-789" });
-      nodemailer.createTransport.mockReturnValue({ sendMail: sendMailMock });
+      const sendMailMock = jest
+        .fn()
+        .mockResolvedValue({ messageId: "msg-789" });
+      createTransportMock.mockReturnValue({ sendMail: sendMailMock });
 
-      const res = await sendWeeklyVenueAnalyticsEmail(sampleData, "manager@workhub.com");
+      const res = await sendWeeklyVenueAnalyticsEmail(
+        sampleData,
+        "manager@workhub.com",
+      );
 
       expect(res.success).toBe(true);
       expect(res.recipient).toBe("manager@workhub.com");
       expect(sendMailMock).toHaveBeenCalledWith(
         expect.objectContaining({
           to: "manager@workhub.com",
-          subject: expect.stringContaining("Weekly Venue Analytics & Revenue Report"),
+          subject: expect.stringContaining(
+            "Weekly Venue Analytics & Revenue Report",
+          ),
           attachments: [
             expect.objectContaining({
               filename: expect.stringContaining("weekly-venue-analytics"),
@@ -153,9 +180,11 @@ describe("Weekly Venue Analytics CSV Exporter & Automated Email Dispatch (#5070)
 
   describe("processWeeklyVenueAnalyticsJob", () => {
     it("executes full export job returning aggregated CSV and email dispatch status", async () => {
-      prisma.venue.findMany.mockResolvedValue([]);
-      const sendMailMock = jest.fn().mockResolvedValue({ messageId: "msg-job-123" });
-      nodemailer.createTransport.mockReturnValue({ sendMail: sendMailMock });
+      findManyMock.mockResolvedValue([]);
+      const sendMailMock = jest
+        .fn()
+        .mockResolvedValue({ messageId: "msg-job-123" });
+      createTransportMock.mockReturnValue({ sendMail: sendMailMock });
 
       const result = await processWeeklyVenueAnalyticsJob({
         recipientEmail: "admin@worksphere.app",

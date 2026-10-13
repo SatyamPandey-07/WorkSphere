@@ -11,6 +11,7 @@ import {
   generateNomadComplianceReport,
   exportComplianceReportCSV,
   calculateNomadTaxPresence,
+  generateNomadTaxAuditPdf,
   type NomadCheckInRecord,
   type TaxPresenceEntry,
   type NomadTaxOptions,
@@ -171,6 +172,17 @@ export async function GET(req: NextRequest) {
 
     const report = generateNomadComplianceReport(records, year);
 
+    if (searchParams.get("format") === "pdf") {
+      const pdfBytes = await generateNomadTaxAuditPdf(report, { userId });
+      return new NextResponse(Buffer.from(pdfBytes), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename=WorkSphere-Nomad-Tax-Audit-${report.taxYear}.pdf`,
+        },
+      });
+    }
+
     return NextResponse.json({
       success: true,
       report,
@@ -233,6 +245,21 @@ export async function POST(req: NextRequest) {
         headers: {
           "Content-Type": "text/csv; charset=utf-8",
           "Content-Disposition": `attachment; filename=WorkSphere-Nomad-Tax-Dossier-${report.taxYear}.csv`,
+        },
+      });
+    }
+
+    if (format === "pdf") {
+      const pdfBytes = await generateNomadTaxAuditPdf(report, {
+        userId: body.userId,
+        userName: body.userName,
+        taxId: body.taxId,
+      });
+      return new NextResponse(Buffer.from(pdfBytes), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/pdf",
+          "Content-Disposition": `attachment; filename=WorkSphere-Nomad-Tax-Audit-${report.taxYear}.pdf`,
         },
       });
     }

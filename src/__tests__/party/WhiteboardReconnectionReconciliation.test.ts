@@ -85,6 +85,94 @@ describe("Whiteboard Reconnection Sequence & Reconciliation (#5360)", () => {
         expect(bob._received[1].sequenceNumber).toBe(2);
     });
 
+    it("grants an ephemeral note lease and rejects other users' updates until release", async () => {
+        const alice = createMockConn("alice");
+        const bob = createMockConn("bob");
+
+        await server.onMessage(JSON.stringify({
+            type: "HOLD_NOTE",
+            payload: { noteId: "note-1", userId: "alice-user", requestId: "hold-1" },
+        }), alice);
+
+        expect(alice._sent[0]).toMatchObject({
+            type: "NOTE_LOCK_GRANTED",
+            payload: { noteId: "note-1", requestId: "hold-1" },
+        });
+        expect(bob._received[0]).toMatchObject({
+            type: "NOTE_LOCK_STATE",
+            payload: { noteId: "note-1", ownerUserId: "alice-user" },
+        });
+
+        await server.onMessage(JSON.stringify({
+            type: "HOLD_NOTE",
+            payload: { noteId: "note-1", userId: "bob-user", requestId: "hold-2" },
+        }), bob);
+        expect(bob._sent[0]).toMatchObject({
+            type: "NOTE_LOCK_DENIED",
+            payload: { noteId: "note-1", requestId: "hold-2" },
+        });
+
+        await server.onMessage(JSON.stringify({
+            type: "APPLY_OPERATION",
+            payload: {
+                id: "note-1",
+                type: "ADD_TEXT",
+                nodeId: "bob-user",
+                timestamp: 1000,
+                vectorClock: { "bob-user": 1 },
+                payload: { points: [20, 30, 240, 160] },
+            },
+        }), bob);
+        expect(bob._sent.some((message: any) => message.type === "OPERATION_REJECTED")).toBe(true);
+        expect(alice._received.some((message: any) => message.type === "OPERATION_APPLIED")).toBe(false);
+
+        await server.onMessage(JSON.stringify({
+            type: "RELEASE_NOTE",
+            payload: { noteId: "note-1" },
+        }), alice);
+        expect(bob._received.some(
+            (message: any) =>
+                message.type === "NOTE_LOCK_STATE" &&
+                message.payload.noteId === "note-1" &&
+                message.payload.ownerUserId === null,
+        )).toBe(true);
+
+        await server.onMessage(JSON.stringify({
+            type: "APPLY_OPERATION",
+            payload: {
+                id: "note-1",
+                type: "ADD_TEXT",
+                nodeId: "bob-user",
+                timestamp: 1001,
+                vectorClock: { "bob-user": 1 },
+                payload: { points: [30, 40, 250, 170] },
+            },
+        }), bob);
+        expect(bob._sent.some((message: any) => message.type === "OPERATION_ACK")).toBe(true);
+    });
+
+    it("expires note leases automatically", async () => {
+        jest.useFakeTimers();
+        try {
+            const alice = createMockConn("alice");
+            const bob = createMockConn("bob");
+            await server.onMessage(JSON.stringify({
+                type: "HOLD_NOTE",
+                payload: { noteId: "note-expiring", userId: "alice-user" },
+            }), alice);
+
+            jest.advanceTimersByTime(5000);
+            await server.onMessage(JSON.stringify({
+                type: "HOLD_NOTE",
+                payload: { noteId: "note-expiring", userId: "bob-user", requestId: "after-expiry" },
+            }), bob);
+
+            expect(bob._sent.some((message: any) => message.type === "NOTE_LOCK_GRANTED")).toBe(true);
+        } finally {
+            jest.useRealTimers();
+        }
+    });
+
     it("reconciles out-of-order buffered strokes upon client reconnection", async () => {
         const alice = createMockConn("alice");
         const bob = createMockConn("bob");

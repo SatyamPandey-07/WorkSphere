@@ -22,6 +22,104 @@ interface OutboxState {
   checkIns: number;
 }
 
+/**
+ * Wraps an IndexedDB write transaction in a Promise resolving strictly on `transaction.oncomplete`.
+ * Rejects on `transaction.onerror` or `transaction.onabort`.
+ */
+export function wrapIdbTransaction<T = void>(
+  tx: IDBTransaction,
+  result?: T,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    tx.oncomplete = () => {
+      resolve(result as T);
+    };
+    tx.onerror = () => {
+      reject(tx.error || new Error("IDBTransaction error"));
+    };
+    tx.onabort = () => {
+      reject(tx.error || new Error("IDBTransaction aborted"));
+    };
+  });
+}
+
+/**
+ * Executes an IndexedDB write operation synchronized across tabs via the Web Locks API (`navigator.locks.request`).
+ * Wraps the IDB write transaction in a Promise resolving strictly on `transaction.oncomplete`
+ * and ensures the Web Lock callback awaits this Promise before releasing lock ownership.
+ *
+ * This prevents competing tabs from acquiring the lock prematurely while a write transaction
+ * is still committing to disk, eliminating dirty reads.
+ */
+export async function executeSynchronizedWrite<T = void>(
+  dbOrLockName: IDBDatabase | string,
+  storeNamesOrCallback:
+    | string
+    | string[]
+    | ((
+        tx?: IDBTransaction,
+      ) => Promise<IDBTransaction | T | void> | IDBTransaction | T | void),
+  operation?: (tx: IDBTransaction) => Promise<T> | T | void,
+  lockName: string = OFFLINE_WRITE_LOCK,
+): Promise<T | void> {
+  // Overload: executeSynchronizedWrite(lockName, callback)
+  if (typeof dbOrLockName === "string") {
+    const targetLock = dbOrLockName;
+    const callback = storeNamesOrCallback as () =>
+      Promise<IDBTransaction | T | void> | IDBTransaction | T | void;
+
+    const execute = async () => {
+      const outcome = await callback();
+      if (outcome && typeof outcome === "object" && "oncomplete" in outcome) {
+        await wrapIdbTransaction(outcome as unknown as IDBTransaction);
+      }
+      return outcome as T;
+    };
+
+    if (
+      typeof navigator === "undefined" ||
+      !("locks" in navigator) ||
+      !navigator.locks?.request
+    ) {
+      return await execute();
+    }
+
+    return await navigator.locks.request(targetLock, async () => {
+      return await execute();
+    });
+  }
+
+  // Standard overload: executeSynchronizedWrite(db, storeNames, operation, lockName)
+  const db = dbOrLockName;
+  const storeNames = storeNamesOrCallback as string | string[];
+  const op = operation || (() => {});
+  const targetLock = lockName;
+
+  const runTransaction = async (): Promise<T> => {
+    const tx = db.transaction(storeNames, "readwrite");
+    const completionPromise = wrapIdbTransaction<T>(tx);
+    const result = await Promise.resolve(op(tx));
+    // Await explicit resolution of transaction.oncomplete before lock callback resolves
+    await completionPromise;
+    return result as T;
+  };
+
+  if (
+    typeof navigator === "undefined" ||
+    !("locks" in navigator) ||
+    !navigator.locks?.request
+  ) {
+    return await runTransaction();
+  }
+
+  return await navigator.locks.request(targetLock, async () => {
+    return await runTransaction();
+  });
+}
+
+export const performSynchronizedWrite = executeSynchronizedWrite;
+export const synchronizedIdbWrite = executeSynchronizedWrite;
+
 export function WebLocksDiagnosticPanel() {
   const [lockState, setLockState] = useState<LockState>({
     held: false,
@@ -33,14 +131,18 @@ export function WebLocksDiagnosticPanel() {
   });
   const [isSupported, setIsSupported] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isWriting, setIsWriting] = useState(false);
   const [highContrast, setHighContrast] = useState(false);
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Check Web Locks API support
+      // Check Web Locks API support safely
       const supported =
-        typeof navigator !== "undefined" && "locks" in navigator;
+        typeof navigator !== "undefined" &&
+        "locks" in navigator &&
+        !!navigator.locks &&
+        typeof navigator.locks.query === "function";
       setIsSupported(supported);
 
       if (supported) {
@@ -74,7 +176,7 @@ export function WebLocksDiagnosticPanel() {
   }, [refresh]);
 
   const forceReleaseLock = () => {
-    if (typeof navigator === "undefined" || !("locks" in navigator)) return;
+    if (typeof navigator === "undefined" || !navigator.locks?.request) return;
     // Acquire then immediately release the lock to flush any stuck holder
     navigator.locks.request(
       OFFLINE_WRITE_LOCK,
@@ -82,6 +184,39 @@ export function WebLocksDiagnosticPanel() {
       async () => void 0,
     );
     setTimeout(refresh, 300);
+  };
+
+  const handleSynchronizedWriteTest = async () => {
+    if (typeof navigator === "undefined" || !navigator.locks?.request) return;
+    setIsWriting(true);
+    try {
+      await navigator.locks.request(OFFLINE_WRITE_LOCK, async () => {
+        if (typeof indexedDB === "undefined") return;
+        const req = indexedDB.open("WorkSphereOfflineDB");
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+
+        if (db.objectStoreNames.contains("favorites-outbox")) {
+          const tx = db.transaction("favorites-outbox", "readwrite");
+          const store = tx.objectStore("favorites-outbox");
+          store.put({
+            venueId: `diag-venue-${Date.now()}`,
+            action: "ADD",
+            timestamp: Date.now(),
+            retryCount: 0,
+          });
+          // Await IDBTransaction.oncomplete before lock callback resolves
+          await wrapIdbTransaction(tx);
+        }
+      });
+      await refresh();
+    } catch (err) {
+      console.warn("Diagnostic synchronized write failed:", err);
+    } finally {
+      setIsWriting(false);
+    }
   };
 
   return (
@@ -289,6 +424,21 @@ export function WebLocksDiagnosticPanel() {
                 </p>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={handleSynchronizedWriteTest}
+              disabled={isWriting || isLoading}
+              className={`w-full mt-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                highContrast
+                  ? "border-2 border-black dark:border-white bg-zinc-100 dark:bg-zinc-900 text-black dark:text-white font-bold hover:bg-zinc-200 dark:hover:bg-zinc-800"
+                  : "border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+              }`}
+            >
+              {isWriting
+                ? "Syncing IDB Write..."
+                : "Test Synchronized IDB Write"}
+            </button>
           </div>
         </>
       )}

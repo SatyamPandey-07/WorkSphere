@@ -119,3 +119,74 @@ export function calculateHaversineDistance(
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
+
+export interface ThrottleOptions {
+  leading?: boolean;
+  trailing?: boolean;
+}
+
+export interface ThrottledFunction<T extends (...args: any[]) => void> {
+  (...args: Parameters<T>): void;
+  cancel: () => void;
+}
+
+/**
+ * Throttles execution of a function to at most once per every `limit` milliseconds.
+ * Supports configurable leading/trailing call execution and a `.cancel()` method.
+ */
+export function throttle<T extends (...args: any[]) => void>(
+  func: T,
+  limit: number,
+  options: ThrottleOptions = {},
+): ThrottledFunction<T> {
+  const leading = options.leading !== false;
+  const trailing = options.trailing !== false;
+
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let lastArgs: Parameters<T> | null = null;
+  let lastCallTime = 0;
+
+  function cancel() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    lastArgs = null;
+    lastCallTime = 0;
+  }
+
+  const throttled = function (...args: Parameters<T>) {
+    const now = Date.now();
+
+    if (!lastCallTime && !leading) {
+      lastCallTime = now;
+    }
+
+    const remaining = limit - (now - lastCallTime);
+
+    if (remaining <= 0 || remaining > limit) {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      lastCallTime = now;
+      func(...args);
+    } else if (trailing) {
+      lastArgs = args;
+      if (!timer) {
+        timer = setTimeout(() => {
+          lastCallTime = leading ? Date.now() : 0;
+          timer = null;
+          if (lastArgs) {
+            func(...lastArgs);
+            lastArgs = null;
+          }
+        }, remaining);
+      }
+    }
+  } as ThrottledFunction<T>;
+
+  throttled.cancel = cancel;
+
+  return throttled;
+}

@@ -67,10 +67,15 @@ export function SearchBar({
     // Graceful fallback
   }
 
-  const { query, setQuery, venues, isLoading, clear, search } = useVenueSearch({
-    initialQuery,
-    debounceMs,
-  });
+  const {
+    query,
+    setQuery,
+    venues,
+    suggestedQuery,
+    isLoading,
+    clear,
+    search,
+  } = useVenueSearch({ initialQuery, debounceMs });
 
   // Detect OS for shortcut display badge (⌘K on macOS, Ctrl+K elsewhere)
   useEffect(() => {
@@ -207,6 +212,14 @@ export function SearchBar({
     updateUrlQuery(trimmedName);
   };
 
+  const handleSelectSuggestion = () => {
+    if (!suggestedQuery) return;
+    setQuery(suggestedQuery);
+    onSearch?.(suggestedQuery);
+    updateUrlQuery(suggestedQuery);
+    setIsOpen(true);
+  };
+
   const handleClear = (e?: React.MouseEvent<HTMLButtonElement>) => {
     if (e) {
       e.preventDefault();
@@ -308,6 +321,24 @@ export function SearchBar({
         >
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
           <span>{validationError}</span>
+        </div>
+      )}
+
+      {isOpen && venues.length === 0 && suggestedQuery && (
+        <div
+          role="status"
+          data-testid="search-bar-suggestion"
+          className="absolute z-50 left-0 right-0 mt-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 px-4 py-3 text-sm text-zinc-600 dark:text-zinc-300 shadow-xl"
+        >
+          Did you mean:{" "}
+          <button
+            type="button"
+            onClick={handleSelectSuggestion}
+            className="font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 underline underline-offset-2"
+          >
+            {suggestedQuery}
+          </button>
+          ?
         </div>
       )}
 

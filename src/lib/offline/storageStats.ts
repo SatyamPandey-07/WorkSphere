@@ -39,6 +39,20 @@ export const DEFAULT_OFFLINE_STORAGE_STATS: OfflineStorageStats = {
 };
 
 export const STORAGE_STATS_CACHE_KEY = "worksphere_offline_storage_stats";
+export const STALE_FLOOR_PLAN_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+const FLOOR_PLAN_STORES = ["venues", "favorites", "recentlyViewedVenues"] as const;
+
+interface CachedFloorPlanRecord {
+  id?: string;
+  floorplan?: unknown;
+  lastAccessedAt?: number;
+}
+
+export interface StaleFloorPlanCacheStats {
+  count: number;
+  reclaimableBytes: number;
+}
 
 /**
  * Safely parses and validates a raw string or payload into OfflineStorageStats.
@@ -213,6 +227,108 @@ export function calculateFloorPlanByteSize(floorplan: unknown): number {
 }
 
 /**
+ * Finds cached floorplans that have not been accessed in the last 30 days.
+ */
+export async function getStaleFloorPlanCacheStats(
+  now = Date.now(),
+): Promise<StaleFloorPlanCacheStats> {
+  const database = await initOfflineDB();
+  const storeNames = FLOOR_PLAN_STORES.filter((name) =>
+    database.objectStoreNames.contains(name),
+  );
+  if (storeNames.length === 0) return { count: 0, reclaimableBytes: 0 };
+
+  const transaction = database.transaction([...storeNames], "readonly");
+  const records = await Promise.all(
+    storeNames.map(
+      (storeName) =>
+        new Promise<CachedFloorPlanRecord[]>((resolve, reject) => {
+          const request = transaction.objectStore(storeName).getAll();
+          request.onsuccess = () => resolve(request.result as CachedFloorPlanRecord[]);
+          request.onerror = () => reject(request.error ?? new Error(`Failed reading ${storeName}`));
+        }),
+    ),
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () =>
+      reject(transaction.error ?? new Error("Failed reading cached floorplans"));
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error("Cached floorplan scan was aborted"));
+  });
+
+  const cutoff = now - STALE_FLOOR_PLAN_AGE_MS;
+  let count = 0;
+  let reclaimableBytes = 0;
+  for (const storeRecords of records) {
+    for (const record of storeRecords) {
+      if (
+        record?.floorplan != null &&
+        typeof record.lastAccessedAt === "number" &&
+        record.lastAccessedAt < cutoff
+      ) {
+        count++;
+        reclaimableBytes += calculateFloorPlanByteSize(record.floorplan);
+      }
+    }
+  }
+
+  return { count, reclaimableBytes };
+}
+
+/**
+ * Removes floorplan payloads from stale records while preserving cached venue metadata.
+ * Access timestamps are checked again inside the write transaction to avoid removing a
+ * floorplan that was accessed after the user reviewed the confirmation prompt.
+ */
+export async function purgeStaleFloorPlanCache(
+  now = Date.now(),
+): Promise<StaleFloorPlanCacheStats> {
+  const database = await initOfflineDB();
+  const storeNames = FLOOR_PLAN_STORES.filter((name) =>
+    database.objectStoreNames.contains(name),
+  );
+  if (storeNames.length === 0) return { count: 0, reclaimableBytes: 0 };
+
+  const cutoff = now - STALE_FLOOR_PLAN_AGE_MS;
+  const transaction = database.transaction([...storeNames], "readwrite");
+  let count = 0;
+  let reclaimableBytes = 0;
+
+  for (const storeName of storeNames) {
+    const request = transaction.objectStore(storeName).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+
+      const record = cursor.value as CachedFloorPlanRecord;
+      if (
+        record?.floorplan != null &&
+        typeof record.lastAccessedAt === "number" &&
+        record.lastAccessedAt < cutoff
+      ) {
+        const { floorplan, ...metadata } = record;
+        count++;
+        reclaimableBytes += calculateFloorPlanByteSize(floorplan);
+        cursor.update(metadata);
+      }
+      cursor.continue();
+    };
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () =>
+      reject(transaction.error ?? new Error("Failed purging stale floorplans"));
+    transaction.onabort = () =>
+      reject(transaction.error ?? new Error("Stale floorplan cleanup was aborted"));
+  });
+
+  return { count, reclaimableBytes };
+}
+
+/**
  * Queries IndexedDB and navigator.storage.estimate() to retrieve
  * comprehensive storage quota usage and floor plan cache consumption.
  */
@@ -321,4 +437,76 @@ export async function getCachedFloorPlanStorageStats(): Promise<OfflineStorageSt
 
   saveOfflineStorageStats(stats);
   return stats;
+}
+
+export interface StorageCategoryBreakdown {
+  name: string;
+  bytes: number;
+  percentage: number;
+  formattedBytes: string;
+  formattedPercent: string;
+}
+
+export interface StorageBreakdownResult {
+  totalBytes: number;
+  formattedTotal: string;
+  categories: StorageCategoryBreakdown[];
+}
+
+/**
+ * Formats a storage breakdown category cleanly as e.g. "0 B (0%)" or "1.5 MB (25%)".
+ * Guards against zero denominator and NaN.
+ */
+export function formatStorageBreakdown(bytes: number, totalBytes: number): string {
+  const formatted = formatBytes(bytes);
+  if (!totalBytes || totalBytes <= 0 || !Number.isFinite(totalBytes) || !bytes || bytes <= 0) {
+    return `${formatted} (0%)`;
+  }
+  const percent = Math.min(100, Math.max(0, Math.round((bytes / totalBytes) * 100)));
+  return `${formatted} (${percent}%)`;
+}
+
+/**
+ * Calculates storage breakdown metrics across categories.
+ * When total storage used is 0, category percentages safely default to 0% rather than evaluating to NaN.
+ */
+export async function getStorageBreakdown(
+  stats?: OfflineStorageStats,
+): Promise<StorageBreakdownResult> {
+  const currentStats = stats ?? (await getCachedFloorPlanStorageStats());
+  const totalBytes = currentStats.usageBytes || currentStats.floorPlanBytes || 0;
+
+  const floorPlanBytes = currentStats.floorPlanBytes || 0;
+  const otherBytes = Math.max(0, (currentStats.usageBytes || 0) - floorPlanBytes);
+
+  const calculatePercent = (bytes: number): number => {
+    if (!totalBytes || totalBytes <= 0 || !Number.isFinite(totalBytes) || !bytes || bytes <= 0) {
+      return 0;
+    }
+    const pct = (bytes / totalBytes) * 100;
+    return Number.isFinite(pct) ? Math.min(100, Math.max(0, Math.round(pct * 10) / 10)) : 0;
+  };
+
+  const categories: StorageCategoryBreakdown[] = [
+    {
+      name: "Floor Plans",
+      bytes: floorPlanBytes,
+      percentage: calculatePercent(floorPlanBytes),
+      formattedBytes: formatBytes(floorPlanBytes),
+      formattedPercent: `${calculatePercent(floorPlanBytes)}%`,
+    },
+    {
+      name: "Metadata & Cache",
+      bytes: otherBytes,
+      percentage: calculatePercent(otherBytes),
+      formattedBytes: formatBytes(otherBytes),
+      formattedPercent: `${calculatePercent(otherBytes)}%`,
+    },
+  ];
+
+  return {
+    totalBytes,
+    formattedTotal: formatBytes(totalBytes),
+    categories,
+  };
 }

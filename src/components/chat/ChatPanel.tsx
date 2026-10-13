@@ -1,9 +1,26 @@
 "use client";
-import React, { useMemo, useEffect, useRef, useState, useCallback } from "react";
+import React, {
+  useMemo,
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import { estimateTokens } from "@/lib/context-compression/tokens";
 export { estimateTokens };
 import type { Message } from "./ChatMessages";
-import { playChatMessageSound, isChatSoundEnabled } from "@/lib/chatSound";
+import type { Venue } from "@/types/venue";
+import { VenueDetailDialog } from "./VenueDetailDialog";
+import {
+  Plus,
+  Building2,
+  MapPin,
+  Star,
+  X,
+  Search,
+  ChevronRight,
+} from "lucide-react";
+import { playChatMessageSound } from "@/lib/chatSound";
 import {
   CHAT_TIMESTAMP_FORMAT_CHANGE_EVENT,
   formatChatTimestamp,
@@ -28,6 +45,9 @@ export interface ChatMessageLike {
   timestamp?: number | string;
   isCompressed?: boolean;
   contextCompressed?: boolean;
+  venue?: Venue;
+  venues?: Venue[];
+  attachedVenue?: Venue;
   agentSteps?: Array<{
     agent: string;
     result?: Record<string, unknown>;
@@ -59,6 +79,33 @@ export interface ChatPanelProps {
   isReconnecting?: boolean;
   pendingMessages?: Array<ChatMessageLike | Message>;
   onReconnectSync?: () => void;
+  onShareVenue?: (venue: Venue) => void;
+  venues?: Venue[];
+  onVenueClick?: (venue: Venue) => void;
+}
+
+/**
+ * Sanitizes chat input text:
+ * - Trims leading and trailing whitespace
+ * - Normalizes Unicode zero-width characters and full-width whitespace
+ * - Strips dangerous script / iframe injection tags
+ * - Returns clean sanitized string or empty string
+ */
+export function sanitizeChatInput(rawInput: string | null | undefined): string {
+  if (typeof rawInput !== "string") return "";
+
+  // Normalize Unicode invisible spaces & zero-width characters
+  const normalized = rawInput
+    .replace(/[\u200B-\u200D\uFEFF]/g, "") // Zero-width spaces and joiners
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, " ") // Non-breaking / ideographic spaces
+    .trim();
+
+  if (!normalized) return "";
+
+  // Strip script and iframe injection tags
+  return normalized
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, "")
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, "");
 }
 
 /**
@@ -291,11 +338,13 @@ export function ChatTokenCounter({
 export function generateClientMessageId(
   content: string = "",
   role: string = "user",
-  timestamp: number = Date.now()
+  timestamp: number = Date.now(),
 ): string {
   const cleanContent = content.trim().replace(/\s+/g, "_").slice(0, 32);
   const hash = Math.abs(
-    cleanContent.split("").reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0)
+    cleanContent
+      .split("")
+      .reduce((acc, char) => (acc << 5) - acc + char.charCodeAt(0), 0),
   ).toString(36);
   return `cmid_${role}_${timestamp.toString(36)}_${hash}`;
 }
@@ -306,11 +355,12 @@ export function generateClientMessageId(
 export function createOptimisticMessage(
   content: string,
   role: "user" | "assistant" | "system" = "user",
-  clientMessageId?: string
+  clientMessageId?: string,
 ): ChatMessageLike {
   const ts = Date.now();
   return {
-    clientMessageId: clientMessageId || generateClientMessageId(content, role, ts),
+    clientMessageId:
+      clientMessageId || generateClientMessageId(content, role, ts),
     role,
     content,
     status: "pending",
@@ -328,7 +378,7 @@ export function createOptimisticMessage(
  */
 export function deduplicateMessages<T extends ChatMessageLike>(
   existingMessages: T[] = [],
-  incomingMessages: T[] = []
+  incomingMessages: T[] = [],
 ): { deduplicated: T[]; reconciledCount: number } {
   if (!Array.isArray(incomingMessages) || incomingMessages.length === 0) {
     return { deduplicated: [...existingMessages], reconciledCount: 0 };
@@ -374,13 +424,17 @@ export function deduplicateMessages<T extends ChatMessageLike>(
     if (!incoming) continue;
 
     // 1. Match by explicit clientMessageId
-    if (incoming.clientMessageId && clientMessageIdMap.has(incoming.clientMessageId)) {
+    if (
+      incoming.clientMessageId &&
+      clientMessageIdMap.has(incoming.clientMessageId)
+    ) {
       const idx = clientMessageIdMap.get(incoming.clientMessageId)!;
       result[idx] = {
         ...result[idx],
         ...incoming,
         status: incoming.status || "sent",
-        clientMessageId: incoming.clientMessageId || result[idx].clientMessageId,
+        clientMessageId:
+          incoming.clientMessageId || result[idx].clientMessageId,
       };
       reconciledCount++;
       continue;
@@ -409,7 +463,8 @@ export function deduplicateMessages<T extends ChatMessageLike>(
             ...existingMsg,
             ...incoming,
             status: incoming.status || "sent",
-            clientMessageId: existingMsg.clientMessageId || incoming.clientMessageId,
+            clientMessageId:
+              existingMsg.clientMessageId || incoming.clientMessageId,
           };
           reconciledCount++;
           signatureMap.delete(sig);
@@ -443,7 +498,7 @@ export function deduplicateMessages<T extends ChatMessageLike>(
 export function reconcileMessageState<T extends ChatMessageLike>(
   currentMessages: T[] = [],
   incoming: T | T[],
-  options: { isReconnect?: boolean } = {}
+  _options: { isReconnect?: boolean } = {},
 ): T[] {
   const incomingArray = Array.isArray(incoming) ? incoming : [incoming];
   const { deduplicated } = deduplicateMessages(currentMessages, incomingArray);
@@ -454,9 +509,9 @@ export function reconcileMessageState<T extends ChatMessageLike>(
  * Hook to manage chat message state with built-in clientMessageId deduplication,
  * optimistic message queueing, and PartySocket fast reconnect reconciliation.
  */
-export function useDeduplicatedMessages<T extends ChatMessageLike = ChatMessageLike>(
-  initialMessages: T[] = []
-) {
+export function useDeduplicatedMessages<
+  T extends ChatMessageLike = ChatMessageLike,
+>(initialMessages: T[] = []) {
   const [messages, setMessages] = useState<T[]>(() => {
     return deduplicateMessages([], initialMessages).deduplicated;
   });
@@ -464,7 +519,8 @@ export function useDeduplicatedMessages<T extends ChatMessageLike = ChatMessageL
   const addOptimisticMessage = useCallback(
     (msg: Omit<T, "clientMessageId"> & { clientMessageId?: string }): T => {
       const clientMessageId =
-        msg.clientMessageId || generateClientMessageId(msg.content || "", msg.role || "user");
+        msg.clientMessageId ||
+        generateClientMessageId(msg.content || "", msg.role || "user");
       const optimistic = {
         ...msg,
         clientMessageId,
@@ -479,29 +535,36 @@ export function useDeduplicatedMessages<T extends ChatMessageLike = ChatMessageL
 
       return optimistic;
     },
-    []
+    [],
   );
 
   const reconcileIncoming = useCallback(
     (incoming: T | T[], isReconnect: boolean = false) => {
-      setMessages((prev) => reconcileMessageState(prev, incoming, { isReconnect }));
+      setMessages((prev) =>
+        reconcileMessageState(prev, incoming, { isReconnect }),
+      );
     },
-    []
+    [],
   );
 
-  const confirmMessage = useCallback((clientMessageId: string, serverId?: string) => {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.clientMessageId === clientMessageId
-          ? { ...m, id: serverId || m.id, status: "sent" }
-          : m
-      )
-    );
-  }, []);
+  const confirmMessage = useCallback(
+    (clientMessageId: string, serverId?: string) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.clientMessageId === clientMessageId
+            ? { ...m, id: serverId || m.id, status: "sent" }
+            : m,
+        ),
+      );
+    },
+    [],
+  );
 
   const pendingCount = useMemo(
-    () => messages.filter((m) => m.status === "pending" || m.status === "sending").length,
-    [messages]
+    () =>
+      messages.filter((m) => m.status === "pending" || m.status === "sending")
+        .length,
+    [messages],
   );
 
   return {
@@ -519,17 +582,19 @@ export function useDeduplicatedMessages<T extends ChatMessageLike = ChatMessageL
  * Tracks reconnect events and prevents already rendered optimistic messages
  * from being duplicated when receiving server sync broadcasts.
  */
-export function useChatReconnectDeduplication<T extends ChatMessageLike = ChatMessageLike>(
-  messages: T[],
-  onSyncComplete?: (count: number) => void
-) {
+export function useChatReconnectDeduplication<
+  T extends ChatMessageLike = ChatMessageLike,
+>(messages: T[], onSyncComplete?: (count: number) => void) {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const pendingBufferRef = useRef<Map<string, T>>(new Map());
 
   const handleBeforeReconnect = useCallback(() => {
     setIsReconnecting(true);
     messages.forEach((m) => {
-      if ((m.status === "pending" || m.status === "sending") && m.clientMessageId) {
+      if (
+        (m.status === "pending" || m.status === "sending") &&
+        m.clientMessageId
+      ) {
         pendingBufferRef.current.set(m.clientMessageId, m);
       }
     });
@@ -539,14 +604,14 @@ export function useChatReconnectDeduplication<T extends ChatMessageLike = ChatMe
     (incomingServerMessages: T[]) => {
       const { deduplicated, reconciledCount } = deduplicateMessages(
         messages,
-        incomingServerMessages
+        incomingServerMessages,
       );
       setIsReconnecting(false);
       pendingBufferRef.current.clear();
       onSyncComplete?.(reconciledCount);
       return deduplicated;
     },
-    [messages, onSyncComplete]
+    [messages, onSyncComplete],
   );
 
   return {
@@ -554,6 +619,313 @@ export function useChatReconnectDeduplication<T extends ChatMessageLike = ChatMe
     handleBeforeReconnect,
     handleReconnectSync,
   };
+}
+
+export const DEFAULT_SEARCH_VENUES: Venue[] = [
+  {
+    id: "venue-cowork-hub",
+    name: "Central Cowork Hub",
+    category: "coworking_space",
+    address: "123 Market St, Financial District",
+    rating: 4.8,
+    photoUrl:
+      "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=800",
+    lat: 37.789,
+    lng: -122.401,
+  },
+  {
+    id: "venue-roastery-cafe",
+    name: "The Roastery Café & Workspace",
+    category: "cafe",
+    address: "456 Mission St, SOMA",
+    rating: 4.6,
+    photoUrl:
+      "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&q=80&w=800",
+    lat: 37.785,
+    lng: -122.402,
+  },
+  {
+    id: "venue-quiet-harbor",
+    name: "Quiet Harbor Library Lab",
+    category: "library",
+    address: "789 Howard St, Yerba Buena",
+    rating: 4.9,
+    photoUrl:
+      "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&q=80&w=800",
+    lat: 37.783,
+    lng: -122.403,
+  },
+];
+
+export interface InteractiveVenuePreviewCardProps {
+  venue: Venue;
+  onClick?: (venue: Venue) => void;
+  className?: string;
+}
+
+export function InteractiveVenuePreviewCard({
+  venue,
+  onClick,
+  className = "",
+}: InteractiveVenuePreviewCardProps) {
+  const photo =
+    venue.imageUrl ||
+    venue.photoUrl ||
+    (venue.photos && venue.photos[0]) ||
+    "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=800";
+
+  const rating =
+    venue.rating ?? (venue.score ? Math.round(venue.score) / 2 : 4.8);
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      data-testid="interactive-venue-preview-card"
+      data-venue-id={venue.id}
+      onClick={() => onClick?.(venue)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.(venue);
+        }
+      }}
+      className={`group w-full max-w-sm mt-2 text-left rounded-xl border border-zinc-200 dark:border-zinc-700/80 bg-white dark:bg-zinc-800/95 hover:border-blue-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-800 p-2.5 shadow-sm transition-all duration-150 flex items-center gap-3 cursor-pointer ${className}`}
+    >
+      <div className="relative h-14 w-14 shrink-0 rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-700">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={photo}
+          alt={venue.name}
+          data-testid="venue-preview-image"
+          className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-200"
+        />
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center justify-between gap-1.5">
+          <h5
+            data-testid="venue-preview-name"
+            className="text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate"
+          >
+            {venue.name}
+          </h5>
+          <span
+            data-testid="venue-preview-rating"
+            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0"
+          >
+            <Star className="w-2.5 h-2.5 fill-current" />
+            {typeof rating === "number" ? rating.toFixed(1) : rating}
+          </span>
+        </div>
+
+        {venue.address && (
+          <p
+            data-testid="venue-preview-address"
+            className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate flex items-center gap-1 mt-0.5"
+          >
+            <MapPin className="w-3 h-3 shrink-0 text-zinc-400" />
+            <span className="truncate">{venue.address}</span>
+          </p>
+        )}
+
+        <div className="mt-1 flex items-center text-[10px] font-medium text-blue-600 dark:text-blue-400 group-hover:underline">
+          <span>View details & amenities</span>
+          <ChevronRight className="w-3 h-3 ml-0.5" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export interface VenueSearchModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSelectVenue: (venue: Venue) => void;
+  venues?: Venue[];
+}
+
+export function VenueSearchModal({
+  isOpen,
+  onClose,
+  onSelectVenue,
+  venues: propVenues,
+}: VenueSearchModalProps) {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [availableVenues, setAvailableVenues] = useState<Venue[]>(
+    propVenues || DEFAULT_SEARCH_VENUES,
+  );
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (propVenues && propVenues.length > 0) {
+      setAvailableVenues(propVenues);
+      return;
+    }
+
+    if (isOpen) {
+      setLoading(true);
+      fetch("/api/venues")
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to load venues");
+          return res.json();
+        })
+        .then((data) => {
+          const list = Array.isArray(data)
+            ? data
+            : Array.isArray(data?.venues)
+              ? data.venues
+              : [];
+          if (list.length > 0) {
+            setAvailableVenues(list);
+          } else {
+            setAvailableVenues(DEFAULT_SEARCH_VENUES);
+          }
+        })
+        .catch(() => {
+          setAvailableVenues(DEFAULT_SEARCH_VENUES);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    }
+  }, [isOpen, propVenues]);
+
+  if (!isOpen) return null;
+
+  const filteredVenues = availableVenues.filter((v) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      v.name.toLowerCase().includes(q) ||
+      (v.address && v.address.toLowerCase().includes(q)) ||
+      (v.category && v.category.toLowerCase().includes(q))
+    );
+  });
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Share a Venue"
+      data-testid="venue-search-modal"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+    >
+      <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+              Share a Venue
+            </h3>
+          </div>
+          <button
+            type="button"
+            data-testid="close-venue-search-modal"
+            aria-label="Close"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Search input */}
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="relative">
+            <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              autoFocus
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search venues by name or address..."
+              data-testid="venue-search-input"
+              className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        </div>
+
+        {/* Results */}
+        <div
+          data-testid="venue-search-results"
+          className="flex-1 overflow-y-auto p-4 space-y-2.5"
+        >
+          {loading && (
+            <div className="text-center py-8 text-xs text-zinc-400">
+              Loading venues...
+            </div>
+          )}
+
+          {!loading && filteredVenues.length === 0 && (
+            <div className="text-center py-8 text-xs text-zinc-400">
+              No venues found matching &quot;{searchQuery}&quot;
+            </div>
+          )}
+
+          {!loading &&
+            filteredVenues.map((venue) => {
+              const photo =
+                venue.imageUrl ||
+                venue.photoUrl ||
+                (venue.photos && venue.photos[0]) ||
+                "https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=800";
+              const rating =
+                venue.rating ??
+                (venue.score ? Math.round(venue.score) / 2 : 4.8);
+
+              return (
+                <div
+                  key={venue.id}
+                  data-testid={`venue-search-item-${venue.id}`}
+                  className="p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-blue-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-all flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-12 w-12 shrink-0 rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo}
+                        alt={venue.name}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <h4 className="text-xs sm:text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">
+                          {venue.name}
+                        </h4>
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
+                          <Star className="w-2.5 h-2.5 fill-current" />
+                          {typeof rating === "number"
+                            ? rating.toFixed(1)
+                            : rating}
+                        </span>
+                      </div>
+                      {venue.address && (
+                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate flex items-center gap-1 mt-0.5">
+                          <MapPin className="w-3 h-3 shrink-0 text-zinc-400" />
+                          <span className="truncate">{venue.address}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-testid="select-venue-button"
+                    onClick={() => onSelectVenue(venue)}
+                    className="shrink-0 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer"
+                  >
+                    Attach
+                  </button>
+                </div>
+              );
+            })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -573,7 +945,17 @@ export function ChatPanel({
   isReconnecting,
   pendingMessages,
   onReconnectSync,
+  onShareVenue,
+  venues,
+  onVenueClick,
 }: ChatPanelProps) {
+  const [isAttachmentMenuOpen, setIsAttachmentMenuOpen] = useState(false);
+  const [isVenueSearchOpen, setIsVenueSearchOpen] = useState(false);
+  const [attachedVenue, setAttachedVenue] = useState<Venue | null>(null);
+  const [activeDetailVenue, setActiveDetailVenue] = useState<Venue | null>(
+    null,
+  );
+
   const combinedMessages = useMemo(() => {
     const all = [...messages, ...(pendingMessages || [])];
     const { deduplicated, reconciledCount } = deduplicateMessages([], all);
@@ -585,7 +967,7 @@ export function ChatPanel({
 
   const isCompressedState = useMemo(
     () => checkIsContextCompressed(combinedMessages, isCompressed),
-    [combinedMessages, isCompressed]
+    [combinedMessages, isCompressed],
   );
 
   const prevMessageCountRef = useRef(combinedMessages.length);
@@ -601,9 +983,15 @@ export function ChatPanel({
       }
     };
 
-    window.addEventListener(CHAT_TIMESTAMP_FORMAT_CHANGE_EVENT, handleFormatChange);
+    window.addEventListener(
+      CHAT_TIMESTAMP_FORMAT_CHANGE_EVENT,
+      handleFormatChange,
+    );
     return () =>
-      window.removeEventListener(CHAT_TIMESTAMP_FORMAT_CHANGE_EVENT, handleFormatChange);
+      window.removeEventListener(
+        CHAT_TIMESTAMP_FORMAT_CHANGE_EVENT,
+        handleFormatChange,
+      );
   }, []);
 
   useEffect(() => {
@@ -616,10 +1004,21 @@ export function ChatPanel({
     prevMessageCountRef.current = combinedMessages.length;
   }, [combinedMessages]);
 
+  const characterCount = input.length;
+
+  const characterCounterColor =
+    characterCount >= 500
+      ? "text-red-600 dark:text-red-400"
+      : characterCount >= 480
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-zinc-500 dark:text-zinc-400";
+
+  const showForm = Boolean(onSubmit || onInputChange || onShareVenue);
+
   return (
     <div
       data-testid="chat-panel"
-      className={`flex flex-col h-full w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm ${
+      className={`flex flex-col h-full w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm relative ${
         className || ""
       }`}
     >
@@ -633,7 +1032,7 @@ export function ChatPanel({
           {onReconnectSync && (
             <button
               onClick={onReconnectSync}
-              className="underline font-medium hover:text-amber-900 dark:hover:text-amber-100"
+              className="underline font-medium hover:text-amber-900 dark:hover:text-amber-100 cursor-pointer"
             >
               Sync now
             </button>
@@ -650,9 +1049,21 @@ export function ChatPanel({
           </div>
         )}
         {!children &&
-          combinedMessages.map((m, idx) => {
+          combinedMessages
+            .filter((m) => {
+              const hasText = Boolean(m.content && m.content.trim().length > 0);
+              const hasVenue = Boolean(
+                m.venue || m.attachedVenue || (m.venues && m.venues.length > 0),
+              );
+              return hasText || hasVenue;
+            })
+            .map((m, idx) => {
             const messageKey = m.clientMessageId || m.id || `msg-${idx}`;
             const isPending = m.status === "pending" || m.status === "sending";
+            const messageVenue = (m.venue ||
+              m.attachedVenue ||
+              (m.venues && m.venues[0])) as Venue | undefined;
+
             return (
               <div
                 key={messageKey}
@@ -669,9 +1080,9 @@ export function ChatPanel({
                 >
                   <div
                     className={`rounded-2xl px-4 py-2.5 text-sm relative transition-opacity ${
-                    m.role === "user"
-                      ? "bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-900"
-                      : "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white"
+                      m.role === "user"
+                        ? "bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-900"
+                        : "bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-white"
                     } ${isPending ? "opacity-75" : "opacity-100"}`}
                   >
                     {m.content}
@@ -682,6 +1093,16 @@ export function ChatPanel({
                       >
                         (sending...)
                       </span>
+                    )}
+
+                    {messageVenue && (
+                      <InteractiveVenuePreviewCard
+                        venue={messageVenue}
+                        onClick={(v) => {
+                          onVenueClick?.(v);
+                          setActiveDetailVenue(v);
+                        }}
+                      />
                     )}
                   </div>
                   {m.timestamp !== undefined && m.timestamp !== null && (
@@ -699,32 +1120,120 @@ export function ChatPanel({
           })}
       </div>
 
-      {onSubmit && (
+      {showForm && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            const trimmed = (input || "").trim();
-            if (!trimmed || trimmed.length === 0) {
+            const sanitized = sanitizeChatInput(input);
+            if ((!sanitized || sanitized.length === 0) && !attachedVenue) {
               return;
             }
-            onSubmit(e);
+            if (attachedVenue && onShareVenue) {
+              onShareVenue(attachedVenue);
+            }
+            onSubmit?.(e);
+            setAttachedVenue(null);
           }}
-          className="p-3 border-t border-zinc-200 dark:border-zinc-800 flex gap-2"
+          className="p-3 border-t border-zinc-200 dark:border-zinc-800 flex flex-col gap-2 relative"
         >
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => onInputChange?.(e.target.value)}
-            placeholder="Type a message..."
-            className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
-          />
-          <button
-            type="submit"
-            disabled={!input || input.trim().length === 0}
-            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Send
-          </button>
+          {attachedVenue && (
+            <div
+              data-testid="attached-venue-chip"
+              className="flex items-center justify-between p-2 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-xs text-blue-900 dark:text-blue-200"
+            >
+              <div className="flex items-center gap-2 overflow-hidden">
+                <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span className="font-semibold truncate">
+                  Attached: {attachedVenue.name}
+                </span>
+                {attachedVenue.rating && (
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-0.5">
+                    <Star className="w-2.5 h-2.5 fill-current" />
+                    {attachedVenue.rating}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                data-testid="remove-attached-venue"
+                onClick={() => setAttachedVenue(null)}
+                className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900 rounded-lg text-blue-600 dark:text-blue-400 transition-colors cursor-pointer"
+                aria-label="Remove attached venue"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 relative">
+            <div className="relative">
+              <button
+                type="button"
+                data-testid="chat-attachment-trigger"
+                aria-label="Add attachment"
+                aria-expanded={isAttachmentMenuOpen}
+                aria-haspopup="menu"
+                onClick={() => setIsAttachmentMenuOpen((prev) => !prev)}
+                className="p-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+
+              {isAttachmentMenuOpen && (
+                <div
+                  data-testid="chat-attachment-menu"
+                  role="menu"
+                  className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg py-1 z-30 animate-in fade-in zoom-in-95 duration-100"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid="share-venue-action"
+                    onClick={() => {
+                      setIsAttachmentMenuOpen(false);
+                      setIsVenueSearchOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left cursor-pointer"
+                  >
+                    <Building2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>Share Venue</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <input
+              type="text"
+              value={input}
+              maxLength={500}
+              aria-label="Chat message"
+              onChange={(e) => onInputChange?.(e.target.value.slice(0, 500))}
+              placeholder={
+                attachedVenue
+                  ? "Add a note with this venue..."
+                  : "Type a message..."
+              }
+              className="flex-1 px-3 py-1.5 text-sm rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
+            />
+
+            <button
+              type="submit"
+              disabled={(!input || sanitizeChatInput(input).length === 0) && !attachedVenue}
+              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              Send
+            </button>
+          </div>
+
+          {characterCount > 400 && (
+            <div
+              data-testid="character-counter"
+              aria-live="polite"
+              className={`text-right text-xs font-medium ${characterCounterColor}`}
+            >
+              {characterCount} / 500
+            </div>
+          )}
         </form>
       )}
 
@@ -734,6 +1243,26 @@ export function ChatPanel({
         contextCapacity={contextCapacity}
         isCompressed={isCompressed}
         showCompressionNotice={false}
+      />
+
+      <VenueSearchModal
+        isOpen={isVenueSearchOpen}
+        onClose={() => setIsVenueSearchOpen(false)}
+        onSelectVenue={(v) => {
+          setAttachedVenue(v);
+          setIsVenueSearchOpen(false);
+          onShareVenue?.(v);
+        }}
+        venues={venues}
+      />
+
+      <VenueDetailDialog
+        venue={activeDetailVenue}
+        isOpen={!!activeDetailVenue}
+        onClose={() => setActiveDetailVenue(null)}
+        isFavorited={false}
+        onGetDirections={() => {}}
+        onToggleFavorite={() => {}}
       />
     </div>
   );

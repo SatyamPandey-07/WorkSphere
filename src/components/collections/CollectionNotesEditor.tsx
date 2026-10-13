@@ -7,14 +7,14 @@
  * `folder-notes-{folderId}`. Typing is translated into minimal character
  * ops (applyYTextDiff), so concurrent edits to different paragraphs merge
  * instead of the last save overwriting the rest. Editors also write a
- * debounced plain-text snapshot to Folder.description for list/PDF/public views.
+ * debounced plain-text snapshot to Folder.description for list/PDF/public views (#6065).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 import YPartyKitProvider from "y-partykit/provider";
 import { useAuth } from "@clerk/nextjs";
-import { Cloud, CloudOff, Loader2 } from "lucide-react";
+import { Cloud, CloudOff, Loader2, Check } from "lucide-react";
 import { applyYTextDiff } from "@/lib/crdt/applyYTextDiff";
 import {
   MAX_COLLECTION_NOTES_LENGTH,
@@ -23,7 +23,7 @@ import {
   seedCollectionNotes,
 } from "@/lib/crdt/collectionNotes";
 
-const SNAPSHOT_DEBOUNCE_MS = 1500;
+const SNAPSHOT_DEBOUNCE_MS = 800;
 
 interface CollectionNotesEditorProps {
   folderId: string;
@@ -34,16 +34,21 @@ interface CollectionNotesEditorProps {
 }
 
 type Status = "connecting" | "synced" | "offline";
+type AutosaveStatus = "saved" | "saving" | "unsaved";
 
 export function CollectionNotesEditor({ folderId, initialText, canEdit }: CollectionNotesEditorProps) {
   const { getToken } = useAuth();
   const [text, setText] = useState(initialText ?? "");
   const [status, setStatus] = useState<Status>("connecting");
+  const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("saved");
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const ytextRef = useRef<Y.Text | null>(null);
   const selectionRef = useRef<{ start: Y.RelativePosition; end: Y.RelativePosition } | null>(null);
   const initialTextRef = useRef(initialText);
   const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingTextRef = useRef<string | null>(null);
+
   // Read through a ref: getToken's identity may change between renders, and
   // it must not tear down the Y.Doc and reconnect the provider when it does.
   const getTokenRef = useRef(getToken);
@@ -60,6 +65,27 @@ export function CollectionNotesEditor({ folderId, initialText, canEdit }: Collec
     };
   }, []);
 
+  const flushSave = useCallback((contentToSave: string) => {
+    if (snapshotTimerRef.current) {
+      clearTimeout(snapshotTimerRef.current);
+      snapshotTimerRef.current = null;
+    }
+    pendingTextRef.current = null;
+    setAutosaveStatus("saving");
+
+    void fetch(`/api/folders/${folderId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description: contentToSave.slice(0, MAX_COLLECTION_NOTES_LENGTH) }),
+    })
+      .then(() => {
+        setAutosaveStatus("saved");
+      })
+      .catch(() => {
+        setAutosaveStatus("unsaved");
+      });
+  }, [folderId]);
+
   useEffect(() => {
     const doc = new Y.Doc();
     const ytext = getCollectionNotesText(doc);
@@ -72,15 +98,13 @@ export function CollectionNotesEditor({ folderId, initialText, canEdit }: Collec
     });
 
     const saveSnapshot = () => {
+      const currentSnapshot = ytext.toString();
+      pendingTextRef.current = currentSnapshot;
+      setAutosaveStatus("unsaved");
+
       if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
       snapshotTimerRef.current = setTimeout(() => {
-        // Every client converges to the same text, so snapshot writes can't
-        // lose edits; the CRDT, not this field, is the source of truth.
-        void fetch(`/api/folders/${folderId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description: ytext.toString().slice(0, MAX_COLLECTION_NOTES_LENGTH) }),
-        }).catch(() => {});
+        flushSave(currentSnapshot);
       }, SNAPSHOT_DEBOUNCE_MS);
     };
 
@@ -115,7 +139,19 @@ export function CollectionNotesEditor({ folderId, initialText, canEdit }: Collec
     provider.on("status", onStatus);
 
     return () => {
-      if (snapshotTimerRef.current) clearTimeout(snapshotTimerRef.current);
+      // Flush any pending save on unmount before tear-down
+      if (snapshotTimerRef.current) {
+        clearTimeout(snapshotTimerRef.current);
+        snapshotTimerRef.current = null;
+      }
+      if (pendingTextRef.current !== null) {
+        void fetch(`/api/folders/${folderId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ description: pendingTextRef.current.slice(0, MAX_COLLECTION_NOTES_LENGTH) }),
+        }).catch(() => {});
+      }
+
       ytext.unobserve(onTextChange);
       provider.off("sync", onSync);
       provider.off("status", onStatus);
@@ -123,7 +159,7 @@ export function CollectionNotesEditor({ folderId, initialText, canEdit }: Collec
       doc.destroy();
       ytextRef.current = null;
     };
-  }, [folderId, canEdit]);
+  }, [folderId, canEdit, flushSave]);
 
   const onChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     const ytext = ytextRef.current;
@@ -148,23 +184,51 @@ export function CollectionNotesEditor({ folderId, initialText, canEdit }: Collec
         >
           Collection notes
         </label>
-        <span className="inline-flex items-center gap-1 text-xs text-zinc-500" aria-live="polite">
-          {status === "connecting" && (
-            <>
-              <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" /> Connecting…
-            </>
+        <div className="flex items-center gap-3">
+          {/* Autosave status indicator */}
+          {canEdit && (
+            <span
+              data-testid="autosave-status-indicator"
+              className="inline-flex items-center gap-1 text-[11px] font-medium transition-colors"
+              aria-live="polite"
+            >
+              {autosaveStatus === "saving" && (
+                <span className="text-amber-500 inline-flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" /> Saving…
+                </span>
+              )}
+              {autosaveStatus === "saved" && (
+                <span className="text-zinc-400 dark:text-zinc-500 inline-flex items-center gap-1">
+                  <Check className="w-3 h-3 text-emerald-500" aria-hidden="true" /> All changes saved
+                </span>
+              )}
+              {autosaveStatus === "unsaved" && (
+                <span className="text-zinc-400 dark:text-zinc-500">
+                  Unsaved changes
+                </span>
+              )}
+            </span>
           )}
-          {status === "synced" && (
-            <>
-              <Cloud className="w-3 h-3" aria-hidden="true" /> Live — edits merge automatically
-            </>
-          )}
-          {status === "offline" && (
-            <>
-              <CloudOff className="w-3 h-3" aria-hidden="true" /> Offline — changes will merge on reconnect
-            </>
-          )}
-        </span>
+
+          {/* Connection status indicator */}
+          <span className="inline-flex items-center gap-1 text-xs text-zinc-500" aria-live="polite">
+            {status === "connecting" && (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" /> Connecting…
+              </>
+            )}
+            {status === "synced" && (
+              <>
+                <Cloud className="w-3 h-3" aria-hidden="true" /> Live — edits merge automatically
+              </>
+            )}
+            {status === "offline" && (
+              <>
+                <CloudOff className="w-3 h-3" aria-hidden="true" /> Offline — changes will merge on reconnect
+              </>
+            )}
+          </span>
+        </div>
       </div>
       <textarea
         id={`collection-notes-input-${folderId}`}
@@ -195,3 +259,5 @@ export function CollectionNotesEditor({ folderId, initialText, canEdit }: Collec
     </section>
   );
 }
+
+export default CollectionNotesEditor;

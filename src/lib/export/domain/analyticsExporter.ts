@@ -5,12 +5,7 @@
  */
 
 import { CsvBuilder, escapeCSVField } from "../csvBuilder";
-import {
-  PdfDocumentBuilder,
-  drawSafeText,
-  safeText,
-  truncateText,
-} from "../pdfBuilder";
+import { PdfDocumentBuilder, drawSafeText, truncateText } from "../pdfBuilder";
 import { rgb } from "pdf-lib";
 
 export interface AnalyticsMetric {
@@ -52,7 +47,9 @@ export function exportAnalyticsToCSV(data: AnalyticsMetric[]): string {
     {
       header: "Timestamp",
       accessor: (m) =>
-        m.timestamp instanceof Date ? m.timestamp.toISOString() : (m.timestamp ?? ""),
+        m.timestamp instanceof Date
+          ? m.timestamp.toISOString()
+          : (m.timestamp ?? ""),
     },
     { header: "Visitor Count", accessor: (m) => m.visitorCount ?? 0 },
     { header: "Check Ins", accessor: (m) => m.checkIns ?? 0 },
@@ -85,11 +82,16 @@ export function downloadAnalyticsCSV(
       {
         header: "Timestamp",
         accessor: (m) =>
-          m.timestamp instanceof Date ? m.timestamp.toISOString() : (m.timestamp ?? ""),
+          m.timestamp instanceof Date
+            ? m.timestamp.toISOString()
+            : (m.timestamp ?? ""),
       },
       { header: "Visitor Count", accessor: (m) => m.visitorCount ?? 0 },
       { header: "Check Ins", accessor: (m) => m.checkIns ?? 0 },
-      { header: "Mean Decibel Level", accessor: (m) => m.meanDecibelLevel ?? 0 },
+      {
+        header: "Mean Decibel Level",
+        accessor: (m) => m.meanDecibelLevel ?? 0,
+      },
     ]);
     builder.addRows(data as AnalyticsMetric[]);
     return builder.download(downloadFileName);
@@ -117,7 +119,9 @@ export function generateAnalyticsCSV(data: AnalyticsExportData): string {
 
   // Section 2: Venue Leaderboard
   builder.addSectionHeader("VENUE POPULARITY LEADERBOARD");
-  builder.addRawLine("Rank,Venue ID,Venue Name,Category,Views,Bookings,Rating,Score");
+  builder.addRawLine(
+    "Rank,Venue ID,Venue Name,Category,Views,Bookings,Rating,Score",
+  );
   data.venueLeaderboard.forEach((v, index) => {
     const cleanName = escapeCSVField(v.name);
     const ratingStr =
@@ -273,4 +277,34 @@ export async function generateAnalyticsPdfReport(
 
   pdfBuilder.addPageNumbers();
   return await pdfBuilder.build();
+}
+
+/**
+ * Generates the analytics PDF and triggers a browser download of it.
+ */
+export async function downloadAnalyticsPDF(
+  data: AnalyticsExportData,
+): Promise<Blob> {
+  const pdfBytes = await generateAnalyticsPdfReport(data);
+  const blob = new Blob([pdfBytes as BlobPart], { type: "application/pdf" });
+
+  if (typeof window !== "undefined" && typeof document !== "undefined") {
+    const generatedAt = new Date(data.generatedAt);
+    const dateStr = (
+      Number.isNaN(generatedAt.getTime()) ? new Date() : generatedAt
+    )
+      .toISOString()
+      .slice(0, 10);
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `workspace-analytics-${data.range}-${dateStr}.pdf`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }
+
+  return blob;
 }

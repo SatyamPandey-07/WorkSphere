@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 const EVENT_TYPES: { value: string; label: string }[] = [
   { value: "BOOKING_CONFIRMED", label: "Booking confirmed" },
   { value: "BOOKING_CANCELLED", label: "Booking cancelled" },
+  { value: "BOOKING_RESCHEDULED", label: "Booking rescheduled" },
   { value: "VENUE_CREATED", label: "Venue added" },
   { value: "REVIEW_SUBMITTED", label: "Review submitted" },
   { value: "AI_WORKFLOW_COMPLETED", label: "AI search completed" },

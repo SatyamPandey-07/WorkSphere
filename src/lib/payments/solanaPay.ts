@@ -22,11 +22,11 @@ export function validateRelayFeeLamports(
   feeLamports: number,
   maxFeeLamports = DEFAULT_MAX_RELAY_FEE_LAMPORTS,
 ): number {
-  if (!Number.isSafeInteger(feeLamports) || feeLamports < 0) {
-    throw new RangeError("Relay fee must be a non-negative integer");
+  if (!Number.isInteger(feeLamports) || !Number.isSafeInteger(feeLamports) || feeLamports <= 0) {
+    throw new RangeError("Relay fee must be a positive integer greater than zero");
   }
-  if (!Number.isSafeInteger(maxFeeLamports) || maxFeeLamports < 0) {
-    throw new RangeError("Maximum relay fee must be a non-negative integer");
+  if (!Number.isInteger(maxFeeLamports) || !Number.isSafeInteger(maxFeeLamports) || maxFeeLamports <= 0) {
+    throw new RangeError("Maximum relay fee must be a positive integer greater than zero");
   }
   if (feeLamports > maxFeeLamports) {
     throw new RangeError("Transaction fee exceeds the relayer limit");

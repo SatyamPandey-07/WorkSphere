@@ -5,13 +5,24 @@ import { CanvasWhiteboard } from "@/components/whiteboard/CanvasWhiteboard";
 const mockUseCanvasWhiteboard = jest.fn();
 
 jest.mock("@/hooks/useMeshCanvasWhiteboard", () => ({
-  useMeshCanvasWhiteboard: (...args: unknown[]) => mockUseCanvasWhiteboard(...args),
+  useMeshCanvasWhiteboard: (...args: unknown[]) =>
+    mockUseCanvasWhiteboard(...args),
 }));
 
 const mockGetContext = jest.fn();
 
 beforeAll(() => {
   HTMLCanvasElement.prototype.getContext = mockGetContext;
+  if (typeof window.PointerEvent === "undefined") {
+    class MockPointerEvent extends MouseEvent {
+      pointerId: number;
+      constructor(type: string, params: any = {}) {
+        super(type, params);
+        this.pointerId = params.pointerId ?? 0;
+      }
+    }
+    window.PointerEvent = MockPointerEvent as any;
+  }
 });
 
 beforeEach(() => {
@@ -118,9 +129,7 @@ describe("CanvasWhiteboard", () => {
   it("renders color presets", () => {
     render(<CanvasWhiteboard canvasId="test-4" />);
 
-    const colorButtons = screen
-      .getAllByRole("button")
-      .filter((btn) => btn.title?.startsWith("#"));
+    const colorButtons = screen.getAllByRole("radio");
     expect(colorButtons.length).toBe(8);
   });
 
@@ -192,5 +201,67 @@ describe("CanvasWhiteboard", () => {
 
     fireEvent.click(screen.getByTitle("Clear canvas"));
     expect(mockClear).toHaveBeenCalled();
+  });
+
+  describe("Pointer coordinates batching & throttling", () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("throttles rapid pointermove events to 30ms intervals to prevent UI freezing", () => {
+      const mockUpdateCursor = jest.fn();
+      mockUseCanvasWhiteboard.mockReturnValue({
+        shapeSnapshots: [],
+        remoteCursors: [],
+        tool: "pen",
+        color: "#ffffff",
+        strokeWidth: 3,
+        isConnected: true,
+        canUndo: false,
+        canRedo: false,
+        provider: null,
+        yDoc: null,
+        shapes: { observe: jest.fn(), toArray: () => [] },
+        setTool: jest.fn(),
+        setColor: jest.fn(),
+        setStrokeWidth: jest.fn(),
+        undo: jest.fn(),
+        redo: jest.fn(),
+        clearCanvas: jest.fn(),
+        addShape: jest.fn(),
+        updateShape: jest.fn(),
+        updateCursor: mockUpdateCursor,
+      });
+
+      const { container } = render(
+        <CanvasWhiteboard canvasId="test-throttle" />,
+      );
+      const canvas = container.querySelector("canvas");
+      expect(canvas).toBeInTheDocument();
+
+      // First pointermove: leading edge invokes updateCursor immediately
+      fireEvent.pointerMove(canvas!, { clientX: 100, clientY: 100 });
+      expect(mockUpdateCursor).toHaveBeenCalledTimes(1);
+      expect(mockUpdateCursor).toHaveBeenLastCalledWith(100, 100);
+
+      // Rapid consecutive pointermove events within the 30ms window
+      fireEvent.pointerMove(canvas!, { clientX: 110, clientY: 110 });
+      fireEvent.pointerMove(canvas!, { clientX: 120, clientY: 120 });
+      fireEvent.pointerMove(canvas!, { clientX: 130, clientY: 130 });
+
+      // Should NOT have triggered additional immediate dispatches
+      expect(mockUpdateCursor).toHaveBeenCalledTimes(1);
+
+      // Advance timers by 35ms to allow the 30ms trailing throttle timer to flush
+      jest.advanceTimersByTime(35);
+
+      // Trailing edge invokes updateCursor with the latest buffered position (130, 130)
+      expect(mockUpdateCursor).toHaveBeenCalledTimes(2);
+      expect(mockUpdateCursor).toHaveBeenLastCalledWith(130, 130);
+    });
   });
 });

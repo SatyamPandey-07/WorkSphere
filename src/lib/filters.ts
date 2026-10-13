@@ -213,6 +213,8 @@ export function buildVenueSearchSchema() {
         z.number().int().min(1),
       )
       .optional(),
+    semanticWeight: z.coerce.number().min(0).max(100).optional(),
+    fullTextWeight: z.coerce.number().min(0).max(100).optional(),
   };
 
   for (const [key, config] of Object.entries(VENUE_FILTERS)) {

@@ -41,6 +41,15 @@ interface VenueMusicState {
   reportedByConnId: string;
 }
 
+interface StickyNoteLease {
+  connId: string;
+  userId: string;
+  expiresAt: number;
+  timeout: ReturnType<typeof setTimeout>;
+}
+
+const STICKY_NOTE_LEASE_TTL_MS = 5000;
+
 // Venues we don't have real capacity data for yet still need a sensible
 // ring colour, so fall back to this when a check-in doesn't supply one.
 const DEFAULT_SEAT_CAPACITY = 8;
@@ -110,6 +119,7 @@ export default class WorkspaceServer implements Party.Server {
   // Music genre state per venue (#2077): tracks the current reported genre
   // for each venueId. Overwritten on each update — last reporter wins.
   private venueMusic = new Map<string, VenueMusicState>();
+  private stickyNoteLeases = new Map<string, StickyNoteLease>();
 
   // Active typing presence protocol (#3438)
   private roomPresence = new Map<string, PresenceUser>();
@@ -343,6 +353,19 @@ export default class WorkspaceServer implements Party.Server {
 
     try {
       const parsed = JSON.parse(message);
+
+      if (parsed.type === "HOLD_NOTE") {
+        this.handleStickyNoteHold(parsed.payload, sender);
+        return;
+      }
+
+      if (parsed.type === "RELEASE_NOTE") {
+        const noteId = parsed.payload?.noteId;
+        if (typeof noteId === "string") {
+          this.releaseStickyNoteLease(noteId, sender.id);
+        }
+        return;
+      }
 
       if (parsed.type === "typing") {
         this.room.broadcast(message, [sender.id]);
@@ -625,6 +648,9 @@ export default class WorkspaceServer implements Party.Server {
     this.connectionStates.delete(conn.id);
     this.handleSeatCheckout(conn);
     this.handleConnectionSeatHoldsCleanup(conn.id);
+    for (const [noteId, lease] of this.stickyNoteLeases) {
+      if (lease.connId === conn.id) this.releaseStickyNoteLease(noteId, conn.id);
+    }
 
     if (this.roomPresence.has(conn.id)) {
       const presence = this.roomPresence.get(conn.id)!;
@@ -638,6 +664,82 @@ export default class WorkspaceServer implements Party.Server {
         }),
       );
     }
+  }
+
+  private handleStickyNoteHold(
+    payload: { noteId?: unknown; requestId?: unknown },
+    sender: Party.Connection,
+  ) {
+    const noteId = payload?.noteId;
+    const requestId = payload?.requestId;
+    if (typeof noteId !== "string" || noteId.length === 0) return;
+
+    const current = this.getActiveStickyNoteLease(noteId);
+    if (current && current.connId !== sender.id) {
+      sender.send(
+        JSON.stringify({
+          type: "NOTE_LOCK_DENIED",
+          payload: { noteId, requestId },
+        }),
+      );
+      return;
+    }
+
+    if (current) clearTimeout(current.timeout);
+    const userId =
+      (sender.state as { userId?: string } | null)?.userId ?? sender.id;
+    const lease: StickyNoteLease = {
+      connId: sender.id,
+      userId,
+      expiresAt: Date.now() + STICKY_NOTE_LEASE_TTL_MS,
+      timeout: setTimeout(() => {
+        if (this.stickyNoteLeases.get(noteId) !== lease) return;
+        this.stickyNoteLeases.delete(noteId);
+        this.broadcastStickyNoteLease(noteId, null);
+      }, STICKY_NOTE_LEASE_TTL_MS),
+    };
+    this.stickyNoteLeases.set(noteId, lease);
+    sender.send(
+      JSON.stringify({
+        type: "NOTE_LOCK_GRANTED",
+        payload: { noteId, requestId, expiresAt: lease.expiresAt },
+      }),
+    );
+    this.broadcastStickyNoteLease(noteId, lease);
+  }
+
+  private getActiveStickyNoteLease(noteId: string): StickyNoteLease | undefined {
+    const lease = this.stickyNoteLeases.get(noteId);
+    if (!lease) return undefined;
+    if (lease.expiresAt > Date.now()) return lease;
+    clearTimeout(lease.timeout);
+    this.stickyNoteLeases.delete(noteId);
+    this.broadcastStickyNoteLease(noteId, null);
+    return undefined;
+  }
+
+  private releaseStickyNoteLease(noteId: string, connId: string) {
+    const lease = this.stickyNoteLeases.get(noteId);
+    if (!lease || lease.connId !== connId) return;
+    clearTimeout(lease.timeout);
+    this.stickyNoteLeases.delete(noteId);
+    this.broadcastStickyNoteLease(noteId, null);
+  }
+
+  private broadcastStickyNoteLease(
+    noteId: string,
+    lease: StickyNoteLease | null,
+  ) {
+    this.room.broadcast(
+      JSON.stringify({
+        type: "NOTE_LOCK_STATE",
+        payload: {
+          noteId,
+          ownerUserId: lease?.userId ?? null,
+          expiresAt: lease?.expiresAt ?? null,
+        },
+      }),
+    );
   }
 
   private handleSeatCheckin(

@@ -77,8 +77,17 @@ export class UnicodeTokenizer {
         for (let i = 0; i < count; i++) {
             const start = getStartFn(resultPtr, i);
             const end = getEndFn(resultPtr, i);
-            const tokenBytes = new Uint8Array(this.wasmMemory.buffer, inputPtr + start, end - start);
-            tokens.push(decoder.decode(tokenBytes));
+            if (typeof start === 'number' && typeof end === 'number' && start >= 0 && end <= inputLength && end > start) {
+                const tokenBytes = new Uint8Array(this.wasmMemory.buffer, inputPtr + start, end - start);
+                try {
+                    const token = decoder.decode(tokenBytes);
+                    if (token.length > 0) {
+                        tokens.push(token);
+                    }
+                } catch {
+                    // Skip un-decodable byte sequences
+                }
+            }
         }
 
         return tokens;

@@ -14,6 +14,8 @@ export interface VenueFilterValues {
   category: string;
   maxDistance: number;
   minCapacity?: number;
+  semanticWeight?: number;
+  fullTextWeight?: number;
 }
 
 export interface FilterPreset {
@@ -124,6 +126,8 @@ export function saveFilterPreset(name: string, filters: VenueFilterValues): Filt
         filters.minCapacity !== undefined
           ? sanitizeCapacityInput(filters.minCapacity)
           : undefined,
+      semanticWeight: filters.semanticWeight,
+      fullTextWeight: filters.fullTextWeight,
     },
     isDefault: false,
     createdAt: Date.now(),

@@ -7,8 +7,6 @@ import {
   MapContainer,
   TileLayer,
   Marker,
-  Popup,
-  Polyline,
   useMap,
   LayersControl,
   LayerGroup,
@@ -21,138 +19,24 @@ import "leaflet/dist/leaflet.css";
 import { MapMarker, MapRoute, MapView } from "@/types/map";
 import { AccessibleMarker } from "@/components/ui/MapMarker";
 import { WebGLHeatmapLayer } from "./WebGLHeatmapLayer";
-import {
-  useSeatAvailability,
-  type SeatStatus,
-} from "@/hooks/useSeatAvailability";
-import usePartySocket from "@/hooks/usePartySocketReconnect";
 import { Contrast } from "lucide-react";
-import { getVenueShape, type HighContrastShape } from "@/lib/mapAccessibility";
 import { formatDistance } from "@/lib/geo/formatDistance";
+import { MapMarkerFactory, SEAT_RING_COLORS } from "./map/MapMarkerFactory";
+import { MapRouteLayer } from "./map/MapRouteLayer";
+import { useMapRealtimeSync } from "@/hooks/useMapRealtimeSync";
 
-function throttle<T extends (...args: any[]) => void>(
-  func: T,
-  limit: number,
-): T {
-  let inThrottle = false;
-  return function (this: any, ...args: any[]) {
-    if (!inThrottle) {
-      func.apply(this, args);
-      inThrottle = true;
-      setTimeout(() => (inThrottle = false), limit);
-    }
-  } as unknown as T;
-}
-
-// Seat-availability ring colours (#703): green = plenty of room, yellow =
-// filling up, red = at/over capacity.
-const SEAT_RING_COLORS: Record<SeatStatus, string> = {
-  green: "#22c55e",
-  yellow: "#eab308",
-  red: "#ef4444",
-};
+export { throttle } from "@/lib/utils";
+export {
+  getHighContrastIcon,
+  getVenueIcon,
+  getDestinationIcon,
+  SEAT_RING_COLORS,
+} from "./map/MapMarkerFactory";
 
 // Import Leaflet Heatmap Plugin safely only on client-side and not in Jest tests
 if (typeof window !== "undefined" && process.env.NODE_ENV !== "test") {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   require("leaflet.heat");
-}
-
-// Custom venue marker for dark theme - purple/blue dot - client-safe setup
-let venueIcon: any;
-let destinationIcon: any;
-
-let highContrastCircleIcon: any;
-let highContrastSquareIcon: any;
-let highContrastDiamondIcon: any;
-
-export function getHighContrastIcon(shape: HighContrastShape): any {
-  if (typeof window === "undefined" || !L.divIcon) return venueIcon;
-  if (shape === "square") {
-    if (!highContrastSquareIcon) {
-      highContrastSquareIcon = L.divIcon({
-        className: "venue-marker high-contrast-marker hc-marker-square interactive-map-pin",
-        html: `<div class="hc-marker-wrapper hc-shape-square" data-shape="square" role="img" aria-label="Coworking marker (square)"><div class="hc-marker-inner hc-square-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1" /></svg></div></div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-        popupAnchor: [0, -14],
-      });
-    }
-    return highContrastSquareIcon;
-  }
-  if (shape === "diamond") {
-    if (!highContrastDiamondIcon) {
-      highContrastDiamondIcon = L.divIcon({
-        className: "venue-marker high-contrast-marker hc-marker-diamond interactive-map-pin",
-        html: `<div class="hc-marker-wrapper hc-shape-diamond" data-shape="diamond" role="img" aria-label="Library marker (diamond)"><div class="hc-marker-inner hc-diamond-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="12,3 21,12 12,21 3,12" /></svg></div></div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-        popupAnchor: [0, -14],
-      });
-    }
-    return highContrastDiamondIcon;
-  }
-  if (!highContrastCircleIcon) {
-    highContrastCircleIcon = L.divIcon({
-      className: "venue-marker high-contrast-marker hc-marker-circle interactive-map-pin",
-      html: `<div class="hc-marker-wrapper hc-shape-circle" data-shape="circle" role="img" aria-label="Cafe marker (circle)"><div class="hc-marker-inner hc-circle-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="12" cy="12" r="6" /></svg></div></div>`,
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
-      popupAnchor: [0, -14],
-    });
-  }
-  return highContrastCircleIcon;
-}
-
-if (typeof window !== "undefined") {
-  venueIcon = L.divIcon({
-    className: "venue-marker",
-    html: `<div class="venue-dot"></div>`,
-    iconSize: [24, 24],
-    iconAnchor: [12, 12],
-    popupAnchor: [0, -12],
-  });
-
-  // Destination marker - like the reference image
-  destinationIcon = L.divIcon({
-    className: "destination-marker",
-    html: `<div class="destination-pin"><span>D</span></div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-    popupAnchor: [0, -32],
-  });
-
-  highContrastCircleIcon = L.divIcon({
-    className: "venue-marker high-contrast-marker hc-marker-circle interactive-map-pin",
-    html: `<div class="hc-marker-wrapper hc-shape-circle" data-shape="circle" role="img" aria-label="Cafe marker (circle)"><div class="hc-marker-inner hc-circle-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><circle cx="12" cy="12" r="6" /></svg></div></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -14],
-  });
-
-  highContrastSquareIcon = L.divIcon({
-    className: "venue-marker high-contrast-marker hc-marker-square interactive-map-pin",
-    html: `<div class="hc-marker-wrapper hc-shape-square" data-shape="square" role="img" aria-label="Coworking marker (square)"><div class="hc-marker-inner hc-square-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="1" /></svg></div></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -14],
-  });
-
-  highContrastDiamondIcon = L.divIcon({
-    className: "venue-marker high-contrast-marker hc-marker-diamond interactive-map-pin",
-    html: `<div class="hc-marker-wrapper hc-shape-diamond" data-shape="diamond" role="img" aria-label="Library marker (diamond)"><div class="hc-marker-inner hc-diamond-inner"><svg class="hc-glyph" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><polygon points="12,3 21,12 12,21 3,12" /></svg></div></div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -14],
-  });
-
-  // Also fix the global default:
-  delete (L.Icon.Default.prototype as any)._getIconUrl;
-  L.Icon.Default.mergeOptions({
-    iconRetinaUrl: "/leaflet/marker-icon-2x.png",
-    iconUrl: "/leaflet/marker-icon.png",
-    shadowUrl: "/leaflet/marker-shadow.png",
-  });
 }
 
 function MapController({ mapView }: { mapView: MapView | null }) {
@@ -512,7 +396,10 @@ export function latLngToPixel(
   lng: number,
   zoom: number,
 ): { x: number; y: number } {
-  const siny = Math.min(Math.max(Math.sin((lat * Math.PI) / 180), -0.9999), 0.9999);
+  const siny = Math.min(
+    Math.max(Math.sin((lat * Math.PI) / 180), -0.9999),
+    0.9999,
+  );
   const scale = 256 * Math.pow(2, zoom);
   return {
     x: (0.5 + lng / 360) * scale,
@@ -750,124 +637,22 @@ const Map = ({
       .catch(() => setToken(null));
   }, [getToken]);
 
-  interface MapCursor {
-    lat: number;
-    lng: number;
-    name: string;
-    avatar: string;
-  }
-
-  const [mapCursors, setMapCursors] = useState<Record<string, MapCursor>>({});
-  const cursorLastSeen = useRef<Record<string, number>>({});
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const now = Date.now();
-      setMapCursors((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        for (const [userId, lastSeen] of Object.entries(
-          cursorLastSeen.current,
-        )) {
-          if (now - lastSeen > 3000) {
-            delete next[userId];
-            delete cursorLastSeen.current[userId];
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const socket = usePartySocket({
-    host: "127.0.0.1:1999",
-    room: isMounted && roomId ? roomId : "placeholder",
-    startClosed: !isMounted,
-    query: token ? { token } : undefined,
-    onMessage(event) {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === "map-cursor") {
-          const userId = data.userId || data.name;
-          cursorLastSeen.current[userId] = Date.now();
-          setMapCursors((prev) => ({
-            ...prev,
-            [userId]: {
-              lat: data.lat,
-              lng: data.lng,
-              name: data.name,
-              avatar: data.avatar,
-            },
-          }));
-        } else if (data.type === "map-cursor-offline") {
-          const userId = data.userId || data.name;
-          delete cursorLastSeen.current[userId];
-          setMapCursors((prev) => {
-            if (!(userId in prev)) return prev;
-            const next = { ...prev };
-            delete next[userId];
-            return next;
-          });
-        }
-      } catch {
-        // Ignore
-      }
-    },
+  const {
+    mapCursors,
+    throttledBroadcast,
+    getAvailability,
+    checkIn,
+    checkOut,
+    checkedInVenueId,
+    isSeatSocketConnected,
+  } = useMapRealtimeSync({
+    roomId,
+    isMounted,
+    token,
+    user: clerkUser,
+    initialLocation: location,
   });
 
-  const userRef = useRef(clerkUser);
-  useEffect(() => {
-    userRef.current = clerkUser;
-  }, [clerkUser]);
-
-  const throttledBroadcastRef = useRef<((latlng: L.LatLng) => void) | null>(
-    null,
-  );
-
-  useEffect(() => {
-    throttledBroadcastRef.current = throttle((latlng: L.LatLng) => {
-      if (socket && socket.readyState === 1) {
-        const user = userRef.current.user;
-        socket.send(
-          JSON.stringify({
-            type: "map-cursor",
-            lat: latlng.lat,
-            lng: latlng.lng,
-            name: user?.firstName || "Anonymous",
-            avatar: user?.imageUrl || "default",
-            userId: user?.id || "anonymous",
-          }),
-        );
-      }
-    }, 50);
-  }, [socket]);
-
-  const throttledBroadcast = useCallback((latlng: L.LatLng) => {
-    if (throttledBroadcastRef.current) {
-      throttledBroadcastRef.current(latlng);
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (socket && socket.readyState === 1) {
-        const user = userRef.current.user;
-        try {
-          socket.send(
-            JSON.stringify({
-              type: "map-cursor-offline",
-              name: user?.firstName || "Anonymous",
-              userId: user?.id || "anonymous",
-            }),
-          );
-        } catch {
-          // ignore
-        }
-      }
-    };
-  }, [socket]);
   const { latitude, longitude } = location;
   const routingPanelRef = useRef<HTMLDivElement>(null);
   // Forecast selector state
@@ -875,16 +660,6 @@ const Map = ({
   const [selectedHour, setSelectedHour] = useState<number>(
     new Date().getHours(),
   );
-
-  // Real-time seat availability (#703) — PartyKit presence layer that
-  // powers the green/yellow/red rings and the popup check-in button.
-  const {
-    getAvailability,
-    checkIn,
-    checkOut,
-    checkedInVenueId,
-    isConnected: isSeatSocketConnected,
-  } = useSeatAvailability();
 
   // Prevent touch/mouse/scroll event propagation on overlays from bubbling to Leaflet Map
   useEffect(() => {
@@ -928,7 +703,7 @@ const Map = ({
   // marker offsets at a consistent on-screen pixel separation regardless of
   // how far the user has zoomed in/out.
   const [settledZoom, setSettledZoom] = useState<number>(13);
-  const [isZooming, setIsZooming] = useState(false);
+  const [, setIsZooming] = useState(false);
   const handleZoomSettled = useCallback((zoom: number) => {
     setSettledZoom(zoom);
     setIsZooming(false);
@@ -951,13 +726,13 @@ const Map = ({
   >("walking");
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
   useEffect(() => {
-  if (
-    selectedMarkerId !== null &&
-    !markers.some((marker) => marker.id === selectedMarkerId)
-  ) {
-    setSelectedMarkerId(null);
-  }
-}, [markers, selectedMarkerId]);
+    if (
+      selectedMarkerId !== null &&
+      !markers.some((marker) => marker.id === selectedMarkerId)
+    ) {
+      setSelectedMarkerId(null);
+    }
+  }, [markers, selectedMarkerId]);
 
   // OSRM Multi-Stop coordinate solver engine
   const calculateOptimizedRoute = async (venuesList = routingQueue) => {
@@ -1107,59 +882,62 @@ const Map = ({
   }, [heatmapPoints, markers]);
 
   // Helper to spiderfy overlapping markers
-  const computeSpiderfiedMarkers = useCallback((markerList: MapMarker[], zoom: number) => {
-    const groups: { [key: string]: any[] } = {};
-    markerList.forEach((m) => {
-      if (
-        m &&
-        m.position &&
-        m.position.lat != null &&
-        m.position.lng != null &&
-        !isNaN(Number(m.position.lat)) &&
-        !isNaN(Number(m.position.lng))
-      ) {
-        const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
-        if (!groups[key]) {
-          groups[key] = [];
+  const computeSpiderfiedMarkers = useCallback(
+    (markerList: MapMarker[], zoom: number) => {
+      const groups: { [key: string]: any[] } = {};
+      markerList.forEach((m) => {
+        if (
+          m &&
+          m.position &&
+          m.position.lat != null &&
+          m.position.lng != null &&
+          !isNaN(Number(m.position.lat)) &&
+          !isNaN(Number(m.position.lng))
+        ) {
+          const key = `${Number(m.position.lat).toFixed(6)},${Number(m.position.lng).toFixed(6)}`;
+          if (!groups[key]) {
+            groups[key] = [];
+          }
+          groups[key].push(m);
         }
-        groups[key].push(m);
-      }
-    });
+      });
 
-    const result: any[] = [];
-    Object.keys(groups).forEach((key) => {
-      const groupItems = groups[key];
-      const n = groupItems.length;
-      if (n === 1) {
-        result.push({
-          ...groupItems[0],
-          renderedLat: Number(groupItems[0].position.lat),
-          renderedLng: Number(groupItems[0].position.lng),
-        });
-      } else {
-        const centerLat = Number(groupItems[0].position.lat);
-        const centerLng = Number(groupItems[0].position.lng);
-
-        const metersPerPixel =
-          (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
-          Math.pow(2, zoom);
-        const targetPixelSeparation = 24 + 2 * n;
-        const radius = (metersPerPixel * targetPixelSeparation) / 111320;
-
-        groupItems.forEach((item, index) => {
-          const angle = (2 * Math.PI * index) / n;
-          const offsetLat = centerLat + radius * Math.cos(angle);
-          const offsetLng = centerLng + radius * Math.sin(angle);
+      const result: any[] = [];
+      Object.keys(groups).forEach((key) => {
+        const groupItems = groups[key];
+        const n = groupItems.length;
+        if (n === 1) {
           result.push({
-            ...item,
-            renderedLat: offsetLat,
-            renderedLng: offsetLng,
+            ...groupItems[0],
+            renderedLat: Number(groupItems[0].position.lat),
+            renderedLng: Number(groupItems[0].position.lng),
           });
-        });
-      }
-    });
-    return result;
-  }, []);
+        } else {
+          const centerLat = Number(groupItems[0].position.lat);
+          const centerLng = Number(groupItems[0].position.lng);
+
+          const metersPerPixel =
+            (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) /
+            Math.pow(2, zoom);
+          const targetPixelSeparation = 24 + 2 * n;
+          const radius = (metersPerPixel * targetPixelSeparation) / 111320;
+
+          groupItems.forEach((item, index) => {
+            const angle = (2 * Math.PI * index) / n;
+            const offsetLat = centerLat + radius * Math.cos(angle);
+            const offsetLng = centerLng + radius * Math.sin(angle);
+            result.push({
+              ...item,
+              renderedLat: offsetLat,
+              renderedLng: offsetLng,
+            });
+          });
+        }
+      });
+      return result;
+    },
+    [],
+  );
 
   // Group and cluster or spiderfy overlapping markers
   const { clusteredMarkers, spiderfiedMarkers } = useMemo(() => {
@@ -1735,184 +1513,29 @@ const Map = ({
         {clusteredMarkers.map((cluster) => (
           <ClusterMarkerComponent key={cluster.id} cluster={cluster} />
         ))}
-        {spiderfiedMarkers.map((marker) => {
-          const isDest = marker.id.includes("dest");
-          const seat = !isDest ? getAvailability(marker.id) : null;
-          const isCheckedInHere = !isDest && checkedInVenueId === marker.id;
-          const telemetry = !isDest
-            ? {
-                seatCount: seat?.count,
-                seatCapacity: seat?.capacity,
-                isCheckedIn: isCheckedInHere,
-                isConnected: isSeatSocketConnected,
-              }
-            : undefined;
+        <MapMarkerFactory
+          markers={spiderfiedMarkers}
+          selectedMarkerId={selectedMarkerId}
+          onSelectMarker={setSelectedMarkerId}
+          isHighContrast={isHighContrast}
+          getAvailability={getAvailability}
+          checkIn={checkIn}
+          checkOut={checkOut}
+          checkedInVenueId={checkedInVenueId}
+          isSeatSocketConnected={isSeatSocketConnected}
+          routingQueue={routingQueue}
+          onAddToRoutingQueue={(stop) => {
+            const updated = [...routingQueue, stop];
+            setRoutingQueue(updated);
+            calculateOptimizedRoute(updated);
+          }}
+        />
 
-          const markerIcon = isDest
-            ? destinationIcon
-            : isHighContrast
-              ? getHighContrastIcon(getVenueShape(marker.category))
-              : venueIcon;
-
-          return (
-            <AccessibleMarker
-              key={marker.id}
-              position={[marker.renderedLat, marker.renderedLng]}
-              icon={markerIcon}
-              name={marker.name}
-              category={marker.category}
-              rating={marker.score}
-              score={marker.score}
-              isDestination={isDest}
-              isHighContrast={isHighContrast}
-              telemetryData={telemetry}
-              zIndexOffset={selectedMarkerId === marker.id ? 1000 : 0}
-              onClick={() => setSelectedMarkerId(marker.id)}
-            >
-              <div className="text-sm">
-                <div className="font-semibold text-white">{marker.name}</div>
-                {marker.category && (
-                  <div className="text-zinc-400">{marker.category}</div>
-                )}
-                {marker.address && (
-                  <div className="text-zinc-500 text-xs mt-1">
-                    {marker.address}
-                  </div>
-                )}
-                {!isDest &&
-                  (() => {
-                    const seatTextColor =
-                      seat!.status === "red"
-                        ? "text-red-400"
-                        : seat!.status === "yellow"
-                          ? "text-yellow-400"
-                          : "text-green-400";
-                    return (
-                      <div className="mt-2 flex items-center justify-between gap-2 border-t border-zinc-800 pt-2">
-                        <span
-                          className={`text-[10px] font-medium ${seatTextColor}`}
-                        >
-                          {isSeatSocketConnected
-                            ? `${seat!.count}/${seat!.capacity} checked in`
-                            : "Connecting…"}
-                        </span>
-                        <button
-                          onClick={() =>
-                            isCheckedInHere ? checkOut() : checkIn(marker.id)
-                          }
-                          className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
-                            isCheckedInHere
-                              ? "accent-bg text-white hover:opacity-90"
-                              : "bg-zinc-800 text-zinc-200 hover:accent-bg hover:text-white"
-                          }`}
-                        >
-                          {isCheckedInHere ? "Check out" : "Check in here"}
-                        </button>
-                      </div>
-                    );
-                  })()}
-              </div>
-              <button
-                onClick={() => {
-                  // Prevent duplicates in queue chain matrix
-                  if (!routingQueue.some((v) => v.id === marker.id)) {
-                    const updated = [
-                      ...routingQueue,
-                      {
-                        id: marker.id,
-                        name: marker.name,
-                        latitude: Number(marker.position.lat),
-                        longitude: Number(marker.position.lng),
-                      },
-                    ];
-                    setRoutingQueue(updated);
-                    calculateOptimizedRoute(updated);
-                  }
-                }}
-                className="mt-2 w-full rounded bg-zinc-800 py-1 text-[10px] font-medium text-zinc-200 hover:accent-bg hover:text-white transition-colors"
-              >
-                ➕ Add to Workday Timeline
-              </button>
-            </AccessibleMarker>
-          );
-        })}
-
-        {/* Render OSRM Optimized Multi-Stop Routing Layer Geometry */}
-        {optimizedRoute &&
-          optimizedRoute.coordinates &&
-          optimizedRoute.coordinates.length > 1 && (
-            <Polyline
-              positions={optimizedRoute.coordinates}
-              pathOptions={{
-                color: "#3b82f6", // Electric Blue for Multi-Stop Leg paths
-                weight: 6,
-                opacity: 0.9,
-                lineCap: "round",
-                lineJoin: "round",
-                dashArray: travelProfile === "walking" ? "5, 10" : undefined, // Dotted path line if walking
-              }}
-            >
-              <Popup
-                autoPanPadding={[20, 20]}
-                autoPanPaddingTopLeft={[20, 90]}
-                autoPanPaddingBottomRight={[20, 20]}
-              >
-                <div className="text-sm text-white">
-                  <div className="font-bold text-blue-400">
-                    Optimized Hybrid Schedule
-                  </div>
-                  <div>
-                    Total Distance:{" "}
-                    {formatDistance(optimizedRoute.distance / 1000)}
-                  </div>
-                  <div>
-                    Est. Travel Time: {Math.round(optimizedRoute.duration / 60)}{" "}
-                    mins
-                  </div>
-                </div>
-              </Popup>
-            </Polyline>
-          )}
-
-        {routes.map((route) => {
-          const validPositions = (route.path || [])
-            .filter(
-              (p) =>
-                p &&
-                p.lat != null &&
-                p.lng != null &&
-                !isNaN(Number(p.lat)) &&
-                !isNaN(Number(p.lng)),
-            )
-            .map((p) => [Number(p.lat), Number(p.lng)] as [number, number]);
-
-          if (validPositions.length < 2) return null;
-
-          return (
-            <Polyline
-              key={route.id}
-              positions={validPositions}
-              pathOptions={{
-                color: "#22c55e",
-                weight: 6,
-                opacity: 0.9,
-                lineCap: "round",
-                lineJoin: "round",
-              }}
-            >
-              {route.distance && (
-                <Popup autoPanPadding={[20, 20]}>
-                  <div className="text-sm">
-                    Distance: {formatDistance(route.distance / 1000)}
-                    {route.duration && (
-                      <div>Time: {Math.round(route.duration / 60)} min</div>
-                    )}
-                  </div>
-                </Popup>
-              )}
-            </Polyline>
-          );
-        })}
+        <MapRouteLayer
+          routes={routes}
+          optimizedRoute={optimizedRoute}
+          travelProfile={travelProfile}
+        />
         {/* MULTI-STOP ROUTING OPTIMIZER CONTROL INTERFACE OVERLAY */}
         <div
           ref={routingPanelRef}

@@ -1,6 +1,113 @@
 import React from "react";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import "@testing-library/jest-dom";
+
+// Mock Three.js for JSDOM test environment
+jest.mock("three", () => {
+  class Vector3 {
+    x: number;
+    y: number;
+    z: number;
+    constructor(x = 0, y = 0, z = 0) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+    }
+    set(x: number, y: number, z: number) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+      return this;
+    }
+  }
+  class Color {
+    r: number;
+    g: number;
+    b: number;
+    constructor(_hex = 0) {
+      this.r = 0;
+      this.g = 1;
+      this.b = 0;
+    }
+  }
+  class Object3D {
+    position = new Vector3();
+    rotation = new Vector3();
+    scale = new Vector3(1, 1, 1);
+    children: any[] = [];
+    name = "";
+    add(...objs: any[]) {
+      this.children.push(...objs);
+      return this;
+    }
+    traverse(cb: any) {
+      cb(this);
+      this.children.forEach((c) => c.traverse?.(cb));
+    }
+  }
+  class Group extends Object3D {}
+  class Scene extends Object3D {}
+  class PerspectiveCamera extends Object3D {
+    position = new Vector3();
+  }
+  class Mesh extends Object3D {
+    geometry: any;
+    material: any;
+    constructor(geo?: any, mat?: any) {
+      super();
+      this.geometry = geo;
+      this.material = mat;
+    }
+  }
+  class TorusGeometry {
+    radius: number;
+    tube: number;
+    constructor(r = 0.14, t = 0.02) {
+      this.radius = r;
+      this.tube = t;
+    }
+  }
+  class CylinderGeometry {
+    translate = jest.fn();
+  }
+  class ShaderMaterial {
+    uniforms: any;
+    vertexShader?: string;
+    fragmentShader?: string;
+    constructor(opts: any = {}) {
+      this.uniforms = opts.uniforms || {};
+    }
+    clone() {
+      return new ShaderMaterial({ uniforms: { ...this.uniforms } });
+    }
+  }
+  class WebGLRenderer {
+    setSize = jest.fn();
+    setPixelRatio = jest.fn();
+    render = jest.fn();
+    dispose = jest.fn();
+  }
+  class Clock {
+    getDelta = jest.fn().mockReturnValue(0.016);
+    getElapsedTime = jest.fn().mockReturnValue(1.0);
+  }
+  return {
+    Vector3,
+    Color,
+    Object3D,
+    Group,
+    Scene,
+    PerspectiveCamera,
+    Mesh,
+    TorusGeometry,
+    CylinderGeometry,
+    ShaderMaterial,
+    WebGLRenderer,
+    Clock,
+    DoubleSide: 2,
+  };
+});
+
 import WebXRDeskFinderView, {
   calculateDeskBadgeOpacity,
   calculateEstimatedWalkingSeconds,
@@ -9,7 +116,7 @@ import WebXRDeskFinderView, {
 describe("WebXRDeskFinderView Distance & Walking Time HUD Badge (#5388)", () => {
   beforeEach(() => {
     // Mock global fetch for wayfinding API
-    global.fetch = jest.fn().mockImplementation((url, options) => {
+    global.fetch = jest.fn().mockImplementation((url) => {
       if (url === "/api/ar/wayfinding") {
         return Promise.resolve({
           ok: true,
@@ -87,7 +194,9 @@ describe("WebXRDeskFinderView Distance & Walking Time HUD Badge (#5388)", () => 
   describe("WebXRDeskFinderView Component HUD", () => {
     it("renders the floating HUD distance and estimated walking time badge", async () => {
       await act(async () => {
-        render(<WebXRDeskFinderView targetSeatNumber="Desk B-08 (Window Pod)" />);
+        render(
+          <WebXRDeskFinderView targetSeatNumber="Desk B-08 (Window Pod)" />,
+        );
       });
 
       const badge = screen.getByTestId("desk-hud-distance-badge");
@@ -103,10 +212,15 @@ describe("WebXRDeskFinderView Distance & Walking Time HUD Badge (#5388)", () => 
         container = renderResult.container;
       });
 
-      const badgeBefore = screen.getByTestId("desk-hud-distance-badge").textContent;
+      const badgeBefore = screen.getByTestId(
+        "desk-hud-distance-badge",
+      ).textContent;
+      expect(badgeBefore).toBeTruthy();
 
       // Simulate moving camera across viewport
-      const viewport = container!.querySelector("[onpointermove], div.overflow-hidden");
+      const viewport = container!.querySelector(
+        "[onpointermove], div.overflow-hidden",
+      );
       expect(viewport).toBeTruthy();
 
       await act(async () => {

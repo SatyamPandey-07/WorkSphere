@@ -48,11 +48,16 @@ export interface MapMarker {
     specialtyEspresso?: boolean;
     oatAlmondMilk?: boolean;
     pourOverAvailable?: boolean;
+    circadianLighting?: boolean;
+    lighting?: string;
   };
+  hasCircadianLighting?: boolean;
+  circadianLighting?: boolean;
 }
 
 export interface MapRoute {
   id: string;
+  name?: string;
   path: Array<{ lat: number; lng: number }>;
   distance?: number;
   duration?: number;

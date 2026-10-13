@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { Clock, AlertTriangle, X, RefreshCw, Zap } from "lucide-react";
+import { Clock, X } from "lucide-react";
 import type { RateLimitEventDetail, RateLimitEndpoint } from "@/lib/apiClient";
 
 export interface RateLimitBannerProps {
@@ -19,13 +19,17 @@ interface ActiveRateLimitState {
   willRetry: boolean;
 }
 
-function formatEndpointName(endpoint: string): string {
-  if (endpoint === "chat") return "AI Assistant";
-  if (endpoint === "book") return "Reservations";
-  if (endpoint.startsWith("/api/")) {
-    return endpoint.replace("/api/", "").replace(/\//g, " ");
+export function formatEndpointName(endpoint?: string | null): string {
+  if (!endpoint || typeof endpoint !== "string" || !endpoint.trim()) {
+    return "General API";
   }
-  return endpoint;
+  const cleanEndpoint = endpoint.trim();
+  if (cleanEndpoint === "chat") return "AI Assistant";
+  if (cleanEndpoint === "book") return "Reservations";
+  if (cleanEndpoint.startsWith("/api/")) {
+    return cleanEndpoint.replace("/api/", "").replace(/\//g, " ");
+  }
+  return cleanEndpoint;
 }
 
 export function RateLimitBanner({
@@ -33,7 +37,8 @@ export function RateLimitBanner({
   showDismiss = true,
   onCountdownComplete,
 }: RateLimitBannerProps) {
-  const [rateLimitState, setRateLimitState] = useState<ActiveRateLimitState | null>(null);
+  const [rateLimitState, setRateLimitState] =
+    useState<ActiveRateLimitState | null>(null);
   const [isDismissed, setIsDismissed] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -55,7 +60,10 @@ export function RateLimitBanner({
     setIsDismissed(false);
     setRateLimitState({
       initialSeconds: retrySeconds,
-      remainingSeconds: Math.max(1, Math.ceil((targetRetryAt - Date.now()) / 1000)),
+      remainingSeconds: Math.max(
+        1,
+        Math.ceil((targetRetryAt - Date.now()) / 1000),
+      ),
       endpoint: detail.endpoint || "general",
       bucket: detail.bucket || "api",
       retryAt: targetRetryAt,
@@ -72,8 +80,12 @@ export function RateLimitBanner({
     };
   }, [handleRateLimit]);
 
+  const targetRetryAt = rateLimitState?.retryAt;
+  const targetBucket = rateLimitState?.bucket;
+  const targetEndpoint = rateLimitState?.endpoint;
+
   useEffect(() => {
-    if (!rateLimitState) {
+    if (!targetRetryAt) {
       clearTimer();
       return;
     }
@@ -82,7 +94,7 @@ export function RateLimitBanner({
 
     timerRef.current = setInterval(() => {
       const now = Date.now();
-      const diff = Math.ceil((rateLimitState.retryAt - now) / 1000);
+      const diff = Math.ceil((targetRetryAt - now) / 1000);
 
       if (diff <= 0) {
         clearTimer();
@@ -90,29 +102,41 @@ export function RateLimitBanner({
         if (typeof window !== "undefined") {
           window.dispatchEvent(
             new CustomEvent("rate-limit-cleared", {
-              detail: { bucket: rateLimitState.bucket, endpoint: rateLimitState.endpoint },
+              detail: { bucket: targetBucket, endpoint: targetEndpoint },
             }),
           );
         }
         onCountdownComplete?.();
       } else {
-        setRateLimitState((prev) => (prev ? { ...prev, remainingSeconds: diff } : null));
+        setRateLimitState((prev) =>
+          prev ? { ...prev, remainingSeconds: diff } : null,
+        );
       }
     }, 1000);
 
     return () => {
       clearTimer();
     };
-  }, [rateLimitState?.retryAt, clearTimer, onCountdownComplete]);
+  }, [
+    targetRetryAt,
+    targetBucket,
+    targetEndpoint,
+    clearTimer,
+    onCountdownComplete,
+  ]);
 
   if (!rateLimitState || isDismissed || rateLimitState.remainingSeconds <= 0) {
     return null;
   }
 
-  const { initialSeconds, remainingSeconds, endpoint, willRetry } = rateLimitState;
+  const { initialSeconds, remainingSeconds, endpoint, willRetry } =
+    rateLimitState;
   const progressPercent = Math.max(
     0,
-    Math.min(100, Math.round(((initialSeconds - remainingSeconds) / initialSeconds) * 100)),
+    Math.min(
+      100,
+      Math.round(((initialSeconds - remainingSeconds) / initialSeconds) * 100),
+    ),
   );
   const endpointName = formatEndpointName(endpoint);
 
@@ -144,7 +168,10 @@ export function RateLimitBanner({
             >
               {endpointName}
             </span>
-            <span data-testid="rate-limit-message" className="text-rose-800 dark:text-rose-200/90">
+            <span
+              data-testid="rate-limit-message"
+              className="text-rose-800 dark:text-rose-200/90"
+            >
               {willRetry
                 ? `Too many requests. Retrying automatically in `
                 : `Quota exceeded. Actions temporarily paused for `}

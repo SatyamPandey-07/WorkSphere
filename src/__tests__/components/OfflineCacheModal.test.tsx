@@ -1,8 +1,9 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { OfflineCacheModal } from "@/components/OfflineCacheModal";
 
-// Mock getAllVenuesOffline
+// Mock getAllVenuesOffline; the storage usage meter needs the rest of the module
 jest.mock("@/lib/offlineStorage", () => ({
+  ...jest.requireActual("@/lib/offlineStorage"),
   getAllVenuesOffline: jest.fn().mockResolvedValue([
     { id: "v1", name: "Café A" },
     { id: "v2", name: "Café B" },
@@ -12,7 +13,9 @@ jest.mock("@/lib/offlineStorage", () => ({
 // Mock navigator.storage.estimate
 Object.defineProperty(navigator, "storage", {
   value: {
-    estimate: jest.fn().mockResolvedValue({ usage: 1024 * 1024, quota: 50 * 1024 * 1024 }),
+    estimate: jest
+      .fn()
+      .mockResolvedValue({ usage: 1024 * 1024, quota: 50 * 1024 * 1024 }),
   },
   writable: true,
   configurable: true,

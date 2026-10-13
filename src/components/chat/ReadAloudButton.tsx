@@ -99,6 +99,8 @@ export interface ReadAloudButtonProps {
   defaultRate?: number;
   /** Initial pitch parameter (default: 1) */
   pitch?: number;
+  /** Preferred speech synthesis language locale (default: "en-US") */
+  lang?: string;
   /** Callback fired when speech starts */
   onStart?: () => void;
   /** Callback fired when speech completes */
@@ -110,17 +112,60 @@ export function ReadAloudButton({
   className = "",
   defaultRate = 1,
   pitch = 1,
+  lang = "en-US",
   onStart,
   onEnd,
 }: ReadAloudButtonProps) {
-  const { isSupported, isSpeaking, rate, setRate, speak, cancel } =
+  const { isSupported, isSpeaking, rate, setRate, speak, cancel, setVoice } =
     useSpeechSynthesis({
       textToSpeakDefault: text,
       defaultRate,
       defaultPitch: pitch,
+      lang,
       onStart,
       onEnd,
     });
+
+  // Re-evaluate available system voices when voiceschanged event triggers
+  React.useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+    const handleVoicesChanged = () => {
+      const availableVoices = window.speechSynthesis.getVoices();
+      if (!availableVoices || availableVoices.length === 0) {
+        setVoice(null);
+        return;
+      }
+      const preferred =
+        availableVoices.find((v) => v.lang.startsWith(lang)) ||
+        availableVoices.find((v) => v.default) ||
+        availableVoices[0] ||
+        null;
+      setVoice(preferred);
+    };
+
+    if (typeof window.speechSynthesis.addEventListener === "function") {
+      window.speechSynthesis.addEventListener(
+        "voiceschanged",
+        handleVoicesChanged,
+      );
+    }
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = handleVoicesChanged;
+    }
+
+    return () => {
+      if (typeof window.speechSynthesis.removeEventListener === "function") {
+        window.speechSynthesis.removeEventListener(
+          "voiceschanged",
+          handleVoicesChanged,
+        );
+      }
+      if (window.speechSynthesis.onvoiceschanged === handleVoicesChanged) {
+        window.speechSynthesis.onvoiceschanged = null;
+      }
+    };
+  }, [lang, setVoice]);
 
   if (!isSupported) {
     return (
@@ -143,6 +188,8 @@ export function ReadAloudButton({
     if (isSpeaking) {
       cancel();
     } else {
+      // Guard against null/undefined voice assignments before calling speak()
+      // If the preferred locale voice is not yet loaded, safely falls back to the browser default utterance voice
       speak(text);
     }
   };

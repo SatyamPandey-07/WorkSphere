@@ -1,17 +1,7 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
-import { Calendar, Users, TrendingUp, Sparkles, Loader2, Info } from "lucide-react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
+import { Users, TrendingUp, Sparkles, Loader2, Info } from "lucide-react";
 
 export interface BookingRecord {
   date: string; // ISO date string or "YYYY-MM-DD"
@@ -49,27 +39,19 @@ export function getMondayFirstIndex(jsDay: number): number {
 
 /**
  * Aggregates historical bookings into monthly average seat occupancy percentage per day of the week (Mon–Sun).
- *
- * @param bookings Array of historical bookings with date and duration
- * @param venueCapacity Total capacity of the venue (default 50)
- * @param operatingHoursPerDay Number of hours the venue operates per day (default 10)
- * @param weeksInMonth Window divisor for monthly averaging (default 4)
- * @returns Array of 7 DayOccupancyPoint objects (Mon-Sun)
  */
 export function calculateDayOfWeekOccupancy(
   bookings: BookingRecord[] = [],
   venueCapacity: number = 50,
   operatingHoursPerDay: number = 10,
-  weeksInMonth: number = 4
+  weeksInMonth: number = 4,
 ): DayOccupancyPoint[] {
   const safeCapacity = Math.max(1, venueCapacity);
   const safeOperatingHours = Math.max(1, operatingHoursPerDay);
   const safeWeeks = Math.max(1, weeksInMonth);
 
-  // Available seat-hours per day of the week over a typical monthly window (e.g. 4 Mondays in a month)
   const capacitySeatHours = safeCapacity * safeOperatingHours * safeWeeks;
 
-  // Initialize 7 days
   const dayStats = DAYS_ORDER.map((d) => ({
     day: d.full,
     shortDay: d.short,
@@ -78,9 +60,8 @@ export function calculateDayOfWeekOccupancy(
     bookingCount: 0,
   }));
 
-  // Filter out cancelled bookings
   const validBookings = bookings.filter(
-    (b) => !b.status || b.status.toUpperCase() !== "CANCELLED"
+    (b) => !b.status || b.status.toUpperCase() !== "CANCELLED",
   );
 
   validBookings.forEach((b) => {
@@ -91,7 +72,6 @@ export function calculateDayOfWeekOccupancy(
     const jsDay = parsedDate.getDay();
     const mondayIndex = getMondayFirstIndex(jsDay);
 
-    // Duration is in minutes (default 60 minutes = 1 hour)
     const durationMinutes =
       typeof b.duration === "number" && b.duration > 0 ? b.duration : 60;
     const hours = durationMinutes / 60;
@@ -102,7 +82,10 @@ export function calculateDayOfWeekOccupancy(
 
   return dayStats.map((stat) => {
     const rawPercentage = (stat.bookedHours / capacitySeatHours) * 100;
-    const occupancyPercent = Math.min(100, Math.max(0, Math.round(rawPercentage)));
+    const occupancyPercent = Math.min(
+      100,
+      Math.max(0, Math.round(rawPercentage)),
+    );
 
     return {
       day: stat.day,
@@ -123,15 +106,34 @@ export function calculateDayOfWeekOccupancy(
  * - High (>75%): Rose / Red
  */
 export function getOccupancyColor(percent: number): string {
-  if (percent >= 75) return "#ef4444"; // High occupancy
-  if (percent >= 40) return "#f59e0b"; // Moderate occupancy
-  return "#10b981"; // Low occupancy
+  if (percent >= 75) return "#ef4444";
+  if (percent >= 40) return "#f59e0b";
+  return "#10b981";
 }
 
 export function getOccupancyLabel(percent: number): string {
   if (percent >= 75) return "High Occupancy";
   if (percent >= 40) return "Moderate";
   return "Optimal Space";
+}
+
+/**
+ * Recalculates axis tick labels cleanly across viewport breakpoints:
+ * - Mobile (<= 420px, e.g. 375px): Single-letter abbreviation ('M', 'T', 'W'...)
+ * - Tablet (421px - 900px, e.g. 768px): Short day name ('Mon', 'Tue'...)
+ * - Desktop (> 900px, e.g. 1280px): Full day name ('Monday', 'Tuesday'...)
+ */
+export function getResponsiveDayLabel(
+  point: DayOccupancyPoint,
+  viewportWidth: number,
+): string {
+  if (viewportWidth <= 420) {
+    return point.shortDay.slice(0, 1);
+  }
+  if (viewportWidth <= 900) {
+    return point.shortDay;
+  }
+  return point.day;
 }
 
 export interface OccupancyTrendChartProps {
@@ -151,8 +153,52 @@ export function OccupancyTrendChart({
   title = "Monthly Average Seat Occupancy",
   className = "",
 }: OccupancyTrendChartProps) {
-  const [fetchedBookings, setFetchedBookings] = useState<BookingRecord[] | null>(null);
-  const [loading, setLoading] = useState<boolean>(!bookings && !precomputedData && !!venueId);
+  const [fetchedBookings, setFetchedBookings] = useState<
+    BookingRecord[] | null
+  >(null);
+  const [loading, setLoading] = useState<boolean>(
+    !bookings && !precomputedData && !!venueId,
+  );
+  const [activePoint, setActivePoint] = useState<DayOccupancyPoint | null>(
+    null,
+  );
+  const [containerWidth, setContainerWidth] = useState<number>(800);
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const measureWidth = (width: number) => {
+      if (width > 0) setContainerWidth(width);
+    };
+
+    const initialRect = containerRef.current.getBoundingClientRect();
+    if (initialRect.width > 0) {
+      measureWidth(initialRect.width);
+    }
+
+    if (typeof ResizeObserver !== "undefined") {
+      const resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          const contentWidth = entry.contentRect.width;
+          if (contentWidth > 0) {
+            measureWidth(contentWidth);
+          }
+        }
+      });
+      resizeObserver.observe(containerRef.current);
+      return () => resizeObserver.disconnect();
+    } else {
+      const handleResize = () => {
+        if (containerRef.current) {
+          measureWidth(containerRef.current.getBoundingClientRect().width);
+        }
+      };
+      window.addEventListener("resize", handleResize);
+      return () => window.removeEventListener("resize", handleResize);
+    }
+  }, []);
 
   useEffect(() => {
     if (precomputedData || bookings || !venueId) return;
@@ -167,7 +213,6 @@ export function OccupancyTrendChart({
         if (json?.bookings && Array.isArray(json.bookings)) {
           setFetchedBookings(json.bookings);
         } else {
-          // If no direct booking array, generate representative baseline for venue dashboard
           setFetchedBookings([]);
         }
       })
@@ -193,14 +238,29 @@ export function OccupancyTrendChart({
 
   const peakDay = useMemo(() => {
     if (chartData.length === 0) return null;
-    return [...chartData].sort((a, b) => b.occupancyPercent - a.occupancyPercent)[0];
+    return [...chartData].sort(
+      (a, b) => b.occupancyPercent - a.occupancyPercent,
+    )[0];
   }, [chartData]);
 
   const averageOccupancy = useMemo(() => {
     if (chartData.length === 0) return 0;
-    const total = chartData.reduce((acc, curr) => acc + curr.occupancyPercent, 0);
+    const total = chartData.reduce(
+      (acc, curr) => acc + curr.occupancyPercent,
+      0,
+    );
     return Math.round(total / chartData.length);
   }, [chartData]);
+
+  const SVG_WIDTH = 800;
+  const SVG_HEIGHT = 400;
+  const PADDING = { top: 35, right: 35, bottom: 55, left: 60 };
+  const PLOT_WIDTH = SVG_WIDTH - PADDING.left - PADDING.right;
+  const PLOT_HEIGHT = SVG_HEIGHT - PADDING.top - PADDING.bottom;
+
+  const yTicks = [0, 25, 50, 75, 100];
+  const slotWidth = PLOT_WIDTH / 7;
+  const barWidth = Math.min(54, slotWidth * 0.55);
 
   if (loading) {
     return (
@@ -210,7 +270,9 @@ export function OccupancyTrendChart({
         aria-live="polite"
       >
         <Loader2 className="w-6 h-6 animate-spin text-blue-500 mb-2" />
-        <span className="text-xs text-zinc-400">Loading seat occupancy trends...</span>
+        <span className="text-xs text-zinc-400">
+          Loading seat occupancy trends...
+        </span>
       </div>
     );
   }
@@ -226,10 +288,13 @@ export function OccupancyTrendChart({
         <div>
           <div className="flex items-center gap-2 mb-1">
             <TrendingUp className="w-4 h-4 text-blue-400" />
-            <h3 className="text-base font-bold text-white tracking-tight">{title}</h3>
+            <h3 className="text-base font-bold text-white tracking-tight">
+              {title}
+            </h3>
           </div>
           <p className="text-xs text-zinc-400 leading-relaxed">
-            Historical booking distribution across days of the week (Monday – Sunday)
+            Historical booking distribution across days of the week (Monday –
+            Sunday)
           </p>
         </div>
 
@@ -237,103 +302,197 @@ export function OccupancyTrendChart({
         <div className="flex items-center gap-2 text-xs">
           <div className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800/80 border border-zinc-700/60 rounded-xl text-zinc-300">
             <Users className="w-3.5 h-3.5 text-blue-400" />
-            <span>Avg: <strong className="text-white">{averageOccupancy}%</strong></span>
+            <span>
+              Avg: <strong className="text-white">{averageOccupancy}%</strong>
+            </span>
           </div>
           {peakDay && (
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-800/80 border border-zinc-700/60 rounded-xl text-zinc-300">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Peak: <strong className="text-white">{peakDay.shortDay}</strong> ({peakDay.occupancyPercent}%)</span>
+              <span>
+                Peak: <strong className="text-white">{peakDay.shortDay}</strong>{" "}
+                ({peakDay.occupancyPercent}%)
+              </span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Chart Canvas */}
-      <div className="w-full h-64 focus:outline-none">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={chartData}
-            margin={{ top: 12, right: 12, left: -16, bottom: 0 }}
-          >
-            <CartesianGrid
-              strokeDasharray="3 3"
-              vertical={false}
-              stroke="#27272a"
-            />
-            <XAxis
-              dataKey="shortDay"
-              stroke="#71717a"
-              fontSize={12}
-              tickLine={false}
-              axisLine={{ stroke: "#3f3f46" }}
-            />
-            <YAxis
-              domain={[0, 100]}
-              unit="%"
-              stroke="#71717a"
-              fontSize={11}
-              tickLine={false}
-              axisLine={{ stroke: "#3f3f46" }}
-              ticks={[0, 25, 50, 75, 100]}
-            />
-            <Tooltip
-              cursor={{ fill: "rgba(255, 255, 255, 0.04)" }}
-              content={({ active, payload }) => {
-                if (active && payload && payload.length) {
-                  const dataPoint = payload[0].payload as DayOccupancyPoint;
-                  const color = getOccupancyColor(dataPoint.occupancyPercent);
-                  const label = getOccupancyLabel(dataPoint.occupancyPercent);
-
-                  return (
-                    <div className="bg-zinc-950/95 border border-zinc-800 rounded-xl p-3 shadow-2xl backdrop-blur-md text-xs space-y-1.5 min-w-[140px]">
-                      <div className="font-bold text-white text-sm">
-                        {dataPoint.day}
-                      </div>
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-zinc-400">Occupancy:</span>
-                        <span
-                          className="font-bold px-1.5 py-0.5 rounded text-[11px]"
-                          style={{
-                            color,
-                            backgroundColor: `${color}15`,
-                            border: `1px solid ${color}30`,
-                          }}
-                        >
-                          {dataPoint.occupancyPercent}% ({label})
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-4 text-zinc-400">
-                        <span>Booked hours:</span>
-                        <span className="font-medium text-zinc-200">
-                          {dataPoint.bookedHours} hrs
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-4 text-zinc-400">
-                        <span>Bookings:</span>
-                        <span className="font-medium text-zinc-200">
-                          {dataPoint.bookingCount}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              }}
-            />
-            <Bar
-              dataKey="occupancyPercent"
-              radius={[6, 6, 0, 0]}
-              animationDuration={600}
-            >
-              {chartData.map((entry, index) => (
-                <Cell
-                  key={`cell-${index}`}
-                  fill={getOccupancyColor(entry.occupancyPercent)}
+      {/* Fluid percentage-width container with responsive SVG */}
+      <div
+        ref={containerRef}
+        data-testid="chart-container"
+        className="w-full h-72 sm:h-80 relative focus:outline-none"
+      >
+        <svg
+          data-testid="occupancy-trend-svg"
+          viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+          preserveAspectRatio="xMidYMid meet"
+          className="w-full h-full select-none"
+          role="img"
+          aria-label="Seat occupancy trends chart"
+        >
+          {/* Background Grid Lines & Y-Axis Labels */}
+          {yTicks.map((tick) => {
+            const y = PADDING.top + PLOT_HEIGHT - (tick / 100) * PLOT_HEIGHT;
+            return (
+              <g key={`ytick-${tick}`}>
+                <line
+                  x1={PADDING.left}
+                  y1={y}
+                  x2={SVG_WIDTH - PADDING.right}
+                  y2={y}
+                  stroke="#27272a"
+                  strokeDasharray="3 3"
+                  strokeWidth="1"
                 />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+                <text
+                  x={PADDING.left - 12}
+                  y={y + 4}
+                  textAnchor="end"
+                  fill="#71717a"
+                  fontSize="12"
+                  fontWeight="500"
+                >
+                  {tick}%
+                </text>
+              </g>
+            );
+          })}
+
+          {/* X Axis baseline */}
+          <line
+            x1={PADDING.left}
+            y1={PADDING.top + PLOT_HEIGHT}
+            x2={SVG_WIDTH - PADDING.right}
+            y2={PADDING.top + PLOT_HEIGHT}
+            stroke="#3f3f46"
+            strokeWidth="1.5"
+          />
+
+          {/* Bar Groups & Responsive X-Axis Labels */}
+          {chartData.map((point, index) => {
+            const barHeight = (point.occupancyPercent / 100) * PLOT_HEIGHT;
+            const x =
+              PADDING.left + index * slotWidth + (slotWidth - barWidth) / 2;
+            const y = PADDING.top + PLOT_HEIGHT - barHeight;
+            const centerX = x + barWidth / 2;
+            const color = getOccupancyColor(point.occupancyPercent);
+            const responsiveLabel = getResponsiveDayLabel(
+              point,
+              containerWidth,
+            );
+            const isHovered = activePoint?.dayIndex === point.dayIndex;
+
+            return (
+              <g
+                key={`bar-group-${point.day}`}
+                tabIndex={0}
+                role="graphics-symbol"
+                aria-label={`${point.day}: ${point.occupancyPercent}% occupancy`}
+                className="cursor-pointer focus:outline-none"
+                onMouseEnter={() => setActivePoint(point)}
+                onMouseLeave={() => setActivePoint(null)}
+                onFocus={() => setActivePoint(point)}
+                onBlur={() => setActivePoint(null)}
+              >
+                {/* Transparent hit area for easy hover/tap */}
+                <rect
+                  x={PADDING.left + index * slotWidth}
+                  y={PADDING.top}
+                  width={slotWidth}
+                  height={PLOT_HEIGHT + PADDING.bottom}
+                  fill="transparent"
+                />
+
+                {/* Occupancy Bar */}
+                <rect
+                  data-testid={`occupancy-bar-${point.dayIndex}`}
+                  x={x}
+                  y={y}
+                  width={barWidth}
+                  height={Math.max(4, barHeight)}
+                  rx="6"
+                  ry="6"
+                  fill={color}
+                  opacity={isHovered ? 1 : 0.9}
+                  className="transition-all duration-200"
+                  style={{
+                    filter: isHovered
+                      ? `drop-shadow(0 0 8px ${color}80)`
+                      : "none",
+                  }}
+                />
+
+                {/* Percentage label above bar */}
+                <text
+                  x={centerX}
+                  y={Math.max(PADDING.top - 8, y - 8)}
+                  textAnchor="middle"
+                  fill={isHovered ? "#ffffff" : "#a1a1aa"}
+                  fontSize={containerWidth <= 420 ? "11" : "12"}
+                  fontWeight="600"
+                  className="transition-colors duration-150"
+                >
+                  {point.occupancyPercent}%
+                </text>
+
+                {/* Dynamic Axis Tick Label */}
+                <text
+                  data-testid={`x-axis-tick-${point.dayIndex}`}
+                  x={centerX}
+                  y={PADDING.top + PLOT_HEIGHT + 26}
+                  textAnchor="middle"
+                  fill={isHovered ? "#ffffff" : "#a1a1aa"}
+                  fontSize={containerWidth <= 420 ? "12" : "13"}
+                  fontWeight="600"
+                  className="transition-colors duration-150"
+                >
+                  {responsiveLabel}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* Floating Tooltip */}
+        {activePoint && (
+          <div
+            data-testid="chart-tooltip"
+            role="tooltip"
+            className="absolute top-2 right-4 pointer-events-none bg-zinc-950/95 border border-zinc-800 rounded-xl p-3 shadow-2xl backdrop-blur-md text-xs space-y-1.5 min-w-[150px] z-10"
+          >
+            <div className="font-bold text-white text-sm">
+              {activePoint.day}
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-zinc-400">Occupancy:</span>
+              <span
+                className="font-bold px-1.5 py-0.5 rounded text-[11px]"
+                style={{
+                  color: getOccupancyColor(activePoint.occupancyPercent),
+                  backgroundColor: `${getOccupancyColor(activePoint.occupancyPercent)}15`,
+                  border: `1px solid ${getOccupancyColor(activePoint.occupancyPercent)}30`,
+                }}
+              >
+                {activePoint.occupancyPercent}% (
+                {getOccupancyLabel(activePoint.occupancyPercent)})
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4 text-zinc-400">
+              <span>Booked hours:</span>
+              <span className="font-medium text-zinc-200">
+                {activePoint.bookedHours} hrs
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4 text-zinc-400">
+              <span>Bookings:</span>
+              <span className="font-medium text-zinc-200">
+                {activePoint.bookingCount}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Accessible screen-reader & keyboard table */}

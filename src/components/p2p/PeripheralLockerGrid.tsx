@@ -19,8 +19,11 @@ import {
   ShieldCheck,
   RefreshCw,
   Sparkles,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import type { PeripheralItem, PeripheralRental } from "@/lib/peripherals/peripheralEngine";
+import { usePeerLifecycle } from "@/hooks/usePeerLifecycle";
 
 interface PeripheralLockerGridProps {
   venueId?: string;
@@ -38,6 +41,15 @@ export default function PeripheralLockerGrid({
   const [activeModalItem, setActiveModalItem] = useState<PeripheralItem | null>(null);
   const [checkingOut, setCheckingOut] = useState(false);
   const [returnSummary, setReturnSummary] = useState<any | null>(null);
+
+  // Peer Lifecycle Management for IoT/Locker Connectivity
+  // We monitor the "health" of the locker network. In a real scenario, this might
+  // track specific bay controllers. Here we simulate a general venue connectivity check.
+  const { state: connectionState, recordHeartbeat } = usePeerLifecycle({
+    peerId: `venue-${venueId}-locker-controller`,
+    heartbeatIntervalMs: 5000,
+    missedHeartbeatThreshold: 3,
+  });
 
   const fetchInventory = async () => {
     setLoading(true);
@@ -57,6 +69,23 @@ export default function PeripheralLockerGrid({
   useEffect(() => {
     fetchInventory();
   }, [selectedCategory, venueId]);
+
+  // Simulate heartbeat to keep the "connection" alive for demo purposes
+  // In production, this would be triggered by actual WebSocket messages from the lockers
+  useEffect(() => {
+    const interval = setInterval(() => {
+      recordHeartbeat();
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [recordHeartbeat]);
+
+  // Handle automatic cleanup if the locker controller goes offline
+  useEffect(() => {
+    if (connectionState === 'closed' || connectionState === 'failed') {
+      // In a real app, we might disable all checkout buttons or show a global error
+      console.warn("Locker controller connection lost. Disabling interactions.");
+    }
+  }, [connectionState]);
 
   const handleCheckout = async (item: PeripheralItem) => {
     setCheckingOut(true);
@@ -131,6 +160,8 @@ export default function PeripheralLockerGrid({
     }
   };
 
+  const isNetworkOnline = connectionState === 'connected';
+
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
       {/* Top Banner */}
@@ -152,6 +183,18 @@ export default function PeripheralLockerGrid({
             <div className="p-3.5 rounded-2xl bg-slate-900/80 border border-slate-800 text-xs space-y-1 font-mono">
               <span className="text-slate-400 block text-[10px]">Location Hub</span>
               <strong className="text-white text-xs block">{venueName}</strong>
+            </div>
+
+            {/* Network Status Indicator based on Peer Lifecycle */}
+            <div className={`p-3.5 rounded-2xl border text-xs space-y-1 font-mono flex items-center gap-2 ${isNetworkOnline
+                ? "bg-emerald-900/20 border-emerald-500/30 text-emerald-400"
+                : "bg-amber-900/20 border-amber-500/30 text-amber-400 animate-pulse"
+              }`}>
+              {isNetworkOnline ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
+              <div className="flex flex-col">
+                <span className="text-[10px] opacity-70">System Status</span>
+                <strong className="text-xs">{isNetworkOnline ? "Online" : "Reconnecting..."}</strong>
+              </div>
             </div>
           </div>
         </div>
@@ -211,11 +254,10 @@ export default function PeripheralLockerGrid({
           <button
             key={cat}
             onClick={() => setSelectedCategory(cat)}
-            className={`px-3.5 py-1.5 rounded-xl font-semibold capitalize whitespace-nowrap transition ${
-              selectedCategory === cat
+            className={`px-3.5 py-1.5 rounded-xl font-semibold capitalize whitespace-nowrap transition ${selectedCategory === cat
                 ? "bg-cyan-600 text-white shadow-md shadow-cyan-600/30"
                 : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-white"
-            }`}
+              }`}
           >
             {cat.toLowerCase()}
           </button>
@@ -233,11 +275,10 @@ export default function PeripheralLockerGrid({
           {items.map((item) => (
             <div
               key={item.id}
-              className={`p-5 rounded-3xl border flex flex-col justify-between space-y-4 backdrop-blur-md transition-all duration-200 ${
-                item.isAvailable
+              className={`p-5 rounded-3xl border flex flex-col justify-between space-y-4 backdrop-blur-md transition-all duration-200 ${item.isAvailable
                   ? "bg-slate-900/80 border-slate-800 hover:border-cyan-500/40 shadow-lg"
                   : "bg-slate-950/60 border-slate-800/60 opacity-60"
-              }`}
+                }`}
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -247,11 +288,10 @@ export default function PeripheralLockerGrid({
                   </div>
 
                   <span
-                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
-                      item.isAvailable
+                    className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${item.isAvailable
                         ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
                         : "bg-amber-500/10 border-amber-500/30 text-amber-400"
-                    }`}
+                      }`}
                   >
                     {item.isAvailable ? `🟢 Bay #${item.lockerBayNumber} Ready` : "🟡 In Use"}
                   </span>
@@ -282,7 +322,7 @@ export default function PeripheralLockerGrid({
                 </div>
 
                 <button
-                  disabled={!item.isAvailable || activeRental !== null}
+                  disabled={!item.isAvailable || activeRental !== null || !isNetworkOnline}
                   onClick={() => setActiveModalItem(item)}
                   className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold shadow-md transition disabled:opacity-40 flex items-center gap-1.5"
                 >
@@ -341,7 +381,7 @@ export default function PeripheralLockerGrid({
               </button>
               <button
                 onClick={() => handleCheckout(activeModalItem)}
-                disabled={checkingOut}
+                disabled={checkingOut || !isNetworkOnline}
                 className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/30 flex items-center gap-1.5 transition disabled:opacity-50"
               >
                 {checkingOut ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Unlock className="w-3.5 h-3.5" />}

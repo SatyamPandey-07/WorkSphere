@@ -475,3 +475,117 @@ export function resetMemorySeatLocks(): void {
   memoryLocks.clear();
 }
 
+export interface SeatWebLockOptions {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Client-side Web Locks helper using Navigator.locks API.
+ * Holds an exclusive lock named `seat-hold:${venueId}:${seatId}` for as long as the seat is held,
+ * ensuring that if the tab or worker terminates unexpectedly, the lock is released immediately (#5489).
+ * Includes timeout fallback and AbortController cancellation to prevent indefinite hangs (#4921).
+ */
+export async function withSeatWebLock<T>(
+  venueId: string,
+  seatId: string,
+  callback: (releaseWebLock: () => void) => Promise<T>,
+  options?: SeatWebLockOptions | number,
+): Promise<T> {
+  const timeoutMs =
+    typeof options === "number"
+      ? options
+      : typeof options?.timeoutMs === "number"
+        ? options.timeoutMs
+        : 5000;
+
+  const lockName = `seat-hold:${venueId}:${seatId}`;
+
+  if (
+    typeof navigator !== "undefined" &&
+    "locks" in navigator &&
+    navigator.locks?.request
+  ) {
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+
+    // Link caller's abort signal if supplied
+    if (typeof options === "object" && options?.signal) {
+      if (options.signal.aborted) {
+        throw new Error(`Lock request for ${lockName} aborted`);
+      }
+      options.signal.addEventListener("abort", () => {
+        controller.abort();
+      });
+    }
+
+    const lockPromise = new Promise<T>((resolve, reject) => {
+      const lockOptions: { mode: "exclusive"; signal?: AbortSignal } = {
+        mode: "exclusive",
+      };
+
+      if (typeof AbortController !== "undefined") {
+        lockOptions.signal = controller.signal;
+      }
+
+      navigator.locks
+        .request(lockName, lockOptions, async () => {
+          if (timedOut) {
+            return;
+          }
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+
+          let releaseLockFn: () => void = () => {};
+          const releasePromise = new Promise<void>((res) => {
+            releaseLockFn = res;
+          });
+
+          try {
+            const result = await callback(releaseLockFn);
+            resolve(result);
+          } catch (err) {
+            releaseLockFn();
+            reject(err);
+          }
+
+          await releasePromise;
+        })
+        .catch((err) => {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          if (timedOut) {
+            return;
+          }
+          reject(err);
+        });
+    });
+
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(
+          new Error(
+            `Web Lock acquisition timed out after ${timeoutMs}ms for ${lockName}`,
+          ),
+        );
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([lockPromise, timeoutPromise]);
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    }
+  }
+
+  // Fallback when Web Locks API is unavailable
+  return callback(() => {});
+}
+

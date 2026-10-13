@@ -5,7 +5,8 @@
  * for venue bookings, reservation history, status tracking, and expense records.
  */
 
-import { CsvBuilder, escapeCSVField } from "../csvBuilder";
+import { CsvBuilder, triggerBrowserDownload } from "../csvBuilder";
+import { ExcelXmlBuilder } from "../excelBuilder";
 
 export interface BookingHistoryExportItem {
   id: string;
@@ -145,4 +146,140 @@ export function downloadBookingsCSV(
 
   const builder = new CsvBuilder();
   return builder.download.call({ toBlob: () => blob }, filename);
+}
+
+export interface BookingHistoryExcelOptions {
+  filename?: string;
+  venueName?: string;
+  sheetName?: string;
+}
+
+export function generateBookingsExcel(
+  bookings: BookingHistoryExportItem[],
+  options: BookingHistoryExcelOptions = {},
+): string {
+  const builder = new ExcelXmlBuilder<BookingHistoryExportItem>({
+    worksheetName: options.sheetName || "Bookings",
+    author: "WorkSphere",
+  });
+
+  builder.setColumns([
+    {
+      header: "Confirmation ID",
+      type: "String",
+      accessor: (b) => b.confirmationId || `WS-#${b.id}`,
+    },
+    {
+      header: "Venue Name",
+      type: "String",
+      accessor: (b) => b.venue?.name || options.venueName || "Workspace",
+    },
+    {
+      header: "Category",
+      type: "String",
+      accessor: (b) => b.venue?.category || "Coworking",
+    },
+    {
+      header: "Address",
+      type: "String",
+      accessor: (b) => b.venue?.address || "",
+    },
+    {
+      header: "Date",
+      type: "Date",
+      accessor: (b) => b.date,
+    },
+    {
+      header: "Time",
+      type: "String",
+      accessor: (b) => b.time,
+    },
+    {
+      header: "Seat Number",
+      type: "String",
+      accessor: (b) => b.seatNumber || "General",
+    },
+    {
+      header: "Duration (mins)",
+      type: "Number",
+      accessor: (b) => b.duration || 60,
+    },
+    {
+      header: "Status",
+      type: "String",
+      accessor: (b) => formatBookingStatus(b.status),
+    },
+    {
+      header: "Estimated Price ($)",
+      type: "Currency",
+      accessor: (b) => {
+        const hours = (b.duration || 60) / 60;
+        return Number((hours * 15).toFixed(2));
+      },
+    },
+    {
+      header: "Tax ($)",
+      type: "Currency",
+      accessor: (b) => {
+        const hours = (b.duration || 60) / 60;
+        const price = hours * 15;
+        return Number((price * 0.08).toFixed(2));
+      },
+    },
+    {
+      header: "Total ($)",
+      type: "Currency",
+      accessor: (b) => {
+        const hours = (b.duration || 60) / 60;
+        const price = hours * 15;
+        const tax = Number((price * 0.08).toFixed(2));
+        return Number((price + tax).toFixed(2));
+      },
+    },
+    {
+      header: "Billing Code",
+      type: "String",
+      accessor: (b) => b.projectBillingCode || "N/A",
+    },
+    {
+      header: "Booked At",
+      type: "DateTime",
+      accessor: (b) => {
+        if (!b.createdAt) return "";
+        try {
+          return new Date(b.createdAt).toISOString();
+        } catch {
+          return String(b.createdAt);
+        }
+      },
+    },
+  ]);
+
+  builder.addRows(bookings);
+  return builder.build();
+}
+
+export const exportBookingsToExcel = generateBookingsExcel;
+
+export function downloadBookingsExcel(
+  bookings: BookingHistoryExportItem[],
+  options: BookingHistoryExcelOptions = {},
+): Blob {
+  const safeVenue = options.venueName
+    ? options.venueName.toLowerCase().replace(/[^a-z0-9]+/g, "-")
+    : "venue-bookings";
+  const today = new Date().toISOString().slice(0, 10);
+  const filename = options.filename || `${safeVenue}-history-${today}.xlsx`;
+  const safeFilename =
+    filename.endsWith(".xlsx") || filename.endsWith(".xml")
+      ? filename
+      : `${filename}.xlsx`;
+
+  const xmlContent = generateBookingsExcel(bookings, options);
+  const blob = new Blob([xmlContent], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8",
+  });
+
+  triggerBrowserDownload(blob, safeFilename);
+  return blob;
 }

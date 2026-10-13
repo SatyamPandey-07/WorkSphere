@@ -1,6 +1,21 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+
+export const DEFAULT_DECAY_FACTOR = 0.2;
+export const AUDIO_DECAY_TIMEOUT_MS = 300;
+
+/**
+ * Linear interpolation (lerp) decay step function.
+ * Smooths current level towards target level with given decay factor.
+ */
+export function lerpDecay(
+  currentLevel: number,
+  targetLevel: number,
+  decayFactor: number = DEFAULT_DECAY_FACTOR
+): number {
+  return currentLevel + (targetLevel - currentLevel) * decayFactor;
+}
 
 type AudioLevelIndicatorProps = {
   /** Normalized audio level 0–1 */
@@ -11,26 +26,91 @@ type AudioLevelIndicatorProps = {
   strokeWidth?: number;
   /** Show muted state */
   muted?: boolean;
+  /** Decay factor for linear interpolation (default 0.2) */
+  decayFactor?: number;
   /** Content to render inside the ring */
   children?: ReactNode;
 };
 
 /**
  * AudioLevelIndicator renders a circular audio volume meter around a child element.
+ * Smoothly decays volume levels using requestAnimationFrame and linear interpolation (lerp).
  */
 export function AudioLevelIndicator({
   level,
   size = 80,
   strokeWidth = 3,
   muted = false,
+  decayFactor = DEFAULT_DECAY_FACTOR,
   children,
 }: AudioLevelIndicatorProps): ReactNode {
+  const initialClamped = Math.min(1, Math.max(0, muted ? 0 : Number.isFinite(level) ? level : 0));
+  const [displayLevel, setDisplayLevel] = useState<number>(initialClamped);
+  const currentDisplayLevelRef = useRef<number>(initialClamped);
+  const targetLevelRef = useRef<number>(initialClamped);
+  const lastActiveTimeRef = useRef<number>(performance.now());
+  const rafIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const target = Math.min(1, Math.max(0, muted ? 0 : Number.isFinite(level) ? level : 0));
+    targetLevelRef.current = target;
+    if (target > 0) {
+      lastActiveTimeRef.current = performance.now();
+    }
+
+    const animate = () => {
+      const current = currentDisplayLevelRef.current;
+      const targetLevel = targetLevelRef.current;
+
+      if (targetLevel >= current) {
+        // Fast attack: jump up immediately to catch speech transients
+        currentDisplayLevelRef.current = targetLevel;
+        setDisplayLevel(targetLevel);
+        lastActiveTimeRef.current = performance.now();
+      } else {
+        // Smooth decay via linear interpolation
+        let next = lerpDecay(current, targetLevel, decayFactor);
+
+        // Fallback clamp: ensure level reaches 0 within 300ms when audio stops
+        if (targetLevel === 0 && performance.now() - lastActiveTimeRef.current >= AUDIO_DECAY_TIMEOUT_MS) {
+          next = 0;
+        } else if (Math.abs(next - targetLevel) < 0.005) {
+          next = targetLevel;
+        }
+
+        currentDisplayLevelRef.current = next;
+        setDisplayLevel(next);
+
+        if (Math.abs(next - targetLevel) > 0.001) {
+          rafIdRef.current = requestAnimationFrame(animate);
+          return;
+        }
+      }
+
+      if (Math.abs(currentDisplayLevelRef.current - targetLevelRef.current) > 0.001) {
+        rafIdRef.current = requestAnimationFrame(animate);
+      }
+    };
+
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+    }
+    rafIdRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+  }, [level, muted, decayFactor]);
+
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const center = size / 2;
 
   // Map 0–1 level to 0–circumference arc length (16% min visible ring)
-  const clamped = Math.min(1, Math.max(0, muted ? 0 : level));
+  const clamped = Math.min(1, Math.max(0, muted ? 0 : displayLevel));
   const offset = circumference * (1 - Math.max(0.16, clamped));
 
   // Animated gradient hue for active audio

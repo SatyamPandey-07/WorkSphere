@@ -13,6 +13,8 @@ import {
   MonitorUp,
   MonitorDown,
   PhoneOff,
+  Volume2,
+  VolumeX,
   Loader2,
 } from "lucide-react";
 
@@ -30,6 +32,11 @@ type MeshCallGridProps = {
 export function MeshCallGrid({ sessionSlug }: MeshCallGridProps) {
   const { user } = useUser();
   const [isJoined, setIsJoined] = useState(false);
+  const [isMuteAll, setIsMuteAll] = useState(false);
+
+  const toggleMuteAll = useCallback(() => {
+    setIsMuteAll((prev) => !prev);
+  }, []);
 
   const {
     localStream,
@@ -80,15 +87,21 @@ export function MeshCallGrid({ sessionSlug }: MeshCallGridProps) {
     // Remote peers
     for (const [peerId, stream] of Object.entries(remoteStreams)) {
       const level = audioLevels[peerId] ?? 0;
+      const audioTracks = stream?.getAudioTracks() ?? [];
+      const remoteAudioEnabled =
+        !isMuteAll &&
+        (audioTracks.length > 0
+          ? audioTracks.some((t) => t.enabled && !t.muted)
+          : true);
       items.push({
         peerId,
         name: `Peer ${peerId.slice(0, 6)}`,
         stream,
         isLocal: false,
         audioLevel: level,
-        audioEnabled: true,
+        audioEnabled: remoteAudioEnabled,
         videoEnabled: true,
-        isSpeaking: level > 0.15,
+        isSpeaking: level > 0.15 && remoteAudioEnabled,
       });
     }
 
@@ -100,6 +113,7 @@ export function MeshCallGrid({ sessionSlug }: MeshCallGridProps) {
     audioLevels,
     isAudioEnabled,
     isVideoEnabled,
+    isMuteAll,
     user,
   ]);
 
@@ -266,6 +280,29 @@ export function MeshCallGrid({ sessionSlug }: MeshCallGridProps) {
               )}
               <span className="hidden sm:inline">
                 {isScreenSharing ? "Stop share" : "Share screen"}
+              </span>
+            </button>
+
+            {/* Mute All peers toggle */}
+            <button
+              onClick={toggleMuteAll}
+              className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-all ${
+                isMuteAll
+                  ? "bg-rose-500/20 text-rose-300 hover:bg-rose-500/30"
+                  : "bg-white/10 text-zinc-200 hover:bg-white/15"
+              }`}
+              title={
+                isMuteAll ? "Unmute all participants" : "Mute all participants"
+              }
+              aria-label={isMuteAll ? "Unmute All" : "Mute All"}
+            >
+              {isMuteAll ? (
+                <VolumeX className="h-3.5 w-3.5" />
+              ) : (
+                <Volume2 className="h-3.5 w-3.5" />
+              )}
+              <span className="hidden sm:inline">
+                {isMuteAll ? "Unmute All" : "Mute All"}
               </span>
             </button>
 

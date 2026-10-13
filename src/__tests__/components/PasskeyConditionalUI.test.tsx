@@ -12,10 +12,12 @@ import * as simpleWebAuthn from "@simplewebauthn/browser";
 // allowing React Scheduler to use setImmediate instead of creating an unclosed MessageChannel
 if (
   typeof window !== "undefined" &&
-  typeof (window as unknown as { setImmediate?: unknown }).setImmediate === "undefined" &&
+  typeof (window as unknown as { setImmediate?: unknown }).setImmediate ===
+    "undefined" &&
   typeof global.setImmediate === "function"
 ) {
-  (window as unknown as { setImmediate: unknown }).setImmediate = global.setImmediate;
+  (window as unknown as { setImmediate: unknown }).setImmediate =
+    global.setImmediate;
 }
 
 jest.mock("@clerk/nextjs", () => ({
@@ -82,13 +84,18 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
     type: "public-key",
   };
 
+  const originalClerkKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
   beforeEach(() => {
     jest.clearAllMocks();
     activeAbortController = null;
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "pk_test_dummy";
 
     (simpleWebAuthn.browserSupportsWebAuthn as jest.Mock).mockReturnValue(true);
 
-    (simpleWebAuthn.WebAuthnAbortService.cancelCeremony as jest.Mock).mockImplementation(() => {
+    (
+      simpleWebAuthn.WebAuthnAbortService.cancelCeremony as jest.Mock
+    ).mockImplementation(() => {
       if (activeAbortController) {
         activeAbortController.abort();
         activeAbortController = null;
@@ -123,6 +130,7 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
   });
 
   afterEach(() => {
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = originalClerkKey;
     if (activeAbortController) {
       activeAbortController.abort();
       activeAbortController = null;
@@ -134,7 +142,9 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
       (simpleWebAuthn.browserSupportsWebAuthn as jest.Mock).mockReturnValue(
         true,
       );
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
         isConditionalMediationAvailable: jest.fn().mockResolvedValue(true),
       };
 
@@ -146,7 +156,9 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
       (simpleWebAuthn.browserSupportsWebAuthn as jest.Mock).mockReturnValue(
         false,
       );
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
         isConditionalMediationAvailable: jest.fn().mockResolvedValue(true),
       };
 
@@ -155,21 +167,26 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
     });
 
     it("returns false when PublicKeyCredential is not defined", async () => {
-      delete (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential;
+      delete (window as unknown as { PublicKeyCredential?: unknown })
+        .PublicKeyCredential;
 
       const supported = await isConditionalMediationSupported();
       expect(supported).toBe(false);
     });
 
     it("returns false when isConditionalMediationAvailable is not a function", async () => {
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {};
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {};
 
       const supported = await isConditionalMediationSupported();
       expect(supported).toBe(false);
     });
 
     it("returns false when isConditionalMediationAvailable resolves to false", async () => {
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
         isConditionalMediationAvailable: jest.fn().mockResolvedValue(false),
       };
 
@@ -198,7 +215,9 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
 
   describe("Conditional WebAuthn Assertion Flow", () => {
     it("automatically starts conditional assertion when conditional mediation is supported and eligible input exists", async () => {
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
         isConditionalMediationAvailable: jest.fn().mockResolvedValue(true),
       };
       (simpleWebAuthn.startAuthentication as jest.Mock).mockResolvedValue(
@@ -226,7 +245,9 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
     });
 
     it("silently skips conditional mediation when unsupported", async () => {
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
         isConditionalMediationAvailable: jest.fn().mockResolvedValue(false),
       };
 
@@ -239,11 +260,15 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
       });
 
       // No error banner should be visible
-      expect(screen.queryByText(/passkey/i, { selector: ".bg-red-500\\/10 *" })).toBeNull();
+      expect(
+        screen.queryByText(/passkey/i, { selector: ".bg-red-500\\/10 *" }),
+      ).toBeNull();
     });
 
     it("silently handles conditional UI cancellation/aborts without displaying an error", async () => {
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
         isConditionalMediationAvailable: jest.fn().mockResolvedValue(true),
       };
       const abortError = new Error("The operation was aborted");
@@ -263,16 +288,20 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
 
       await waitFor(() => {
         expect(screen.queryByText(/failed/i)).toBeNull();
-        expect(screen.getByRole("button", { name: /^sign in$/i })).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", { name: /^sign in$/i }),
+        ).toBeInTheDocument();
       });
     });
 
     it("cleans up active ceremony on unmount", async () => {
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
         isConditionalMediationAvailable: jest.fn().mockResolvedValue(true),
       };
-      (simpleWebAuthn.startAuthentication as jest.Mock).mockImplementation(
-        () => createCancellablePendingAuth(),
+      (simpleWebAuthn.startAuthentication as jest.Mock).mockImplementation(() =>
+        createCancellablePendingAuth(),
       );
 
       const { unmount } = render(<SignInClient />);
@@ -283,13 +312,42 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
 
       unmount();
 
-      expect(simpleWebAuthn.WebAuthnAbortService.cancelCeremony).toHaveBeenCalled();
+      expect(
+        simpleWebAuthn.WebAuthnAbortService.cancelCeremony,
+      ).toHaveBeenCalled();
+    });
+
+    it("renders PasskeySignInButton directly and launches non-blocking background request", async () => {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
+        isConditionalMediationAvailable: jest.fn().mockResolvedValue(true),
+      };
+      (simpleWebAuthn.startAuthentication as jest.Mock).mockResolvedValue(
+        mockAuthResponse,
+      );
+
+      const input = document.createElement("input");
+      input.setAttribute("autocomplete", "username webauthn");
+      document.body.appendChild(input);
+
+      render(<PasskeySignInButton />);
+
+      await waitFor(() => {
+        expect(simpleWebAuthn.startAuthentication).toHaveBeenCalledWith(
+          expect.objectContaining({ useBrowserAutofill: true }),
+        );
+      });
+
+      document.body.removeChild(input);
     });
   });
 
   describe("Explicit Passkey Button fallback", () => {
     it("preserves explicit passkey authentication button and cancels conditional ceremony before starting", async () => {
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
         isConditionalMediationAvailable: jest.fn().mockResolvedValue(true),
       };
       (simpleWebAuthn.startAuthentication as jest.Mock).mockImplementation(
@@ -311,7 +369,9 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
       fireEvent.click(passkeyButton);
 
       await waitFor(() => {
-        expect(simpleWebAuthn.WebAuthnAbortService.cancelCeremony).toHaveBeenCalled();
+        expect(
+          simpleWebAuthn.WebAuthnAbortService.cancelCeremony,
+        ).toHaveBeenCalled();
         expect(simpleWebAuthn.startAuthentication).toHaveBeenCalledWith({
           optionsJSON: mockOptions,
           useBrowserAutofill: false,
@@ -321,7 +381,9 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
 
     it("displays an error message when explicit passkey authentication fails with a real error", async () => {
       // Disable auto conditional mediation for this test to isolate button click
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
         isConditionalMediationAvailable: jest.fn().mockResolvedValue(false),
       };
       (simpleWebAuthn.startAuthentication as jest.Mock).mockRejectedValue(
@@ -337,18 +399,22 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
       fireEvent.click(passkeyButton);
 
       await waitFor(() => {
-        expect(screen.getByText("Biometric sensor timeout")).toBeInTheDocument();
+        expect(
+          screen.getByText("Biometric sensor timeout"),
+        ).toBeInTheDocument();
       });
     });
   });
 
   describe("Normal email/password login preservation", () => {
     it("allows user to log in with email and password without interference", async () => {
-      (window as unknown as { PublicKeyCredential?: unknown }).PublicKeyCredential = {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
         isConditionalMediationAvailable: jest.fn().mockResolvedValue(true),
       };
-      (simpleWebAuthn.startAuthentication as jest.Mock).mockImplementation(
-        () => createCancellablePendingAuth(),
+      (simpleWebAuthn.startAuthentication as jest.Mock).mockImplementation(() =>
+        createCancellablePendingAuth(),
       );
 
       render(<SignInClient />);
@@ -357,7 +423,9 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
       const passwordInput = screen.getByPlaceholderText("••••••••••••");
       const submitButton = screen.getByRole("button", { name: /^sign in$/i });
 
-      fireEvent.change(emailInput, { target: { value: "worker@worksphere.com" } });
+      fireEvent.change(emailInput, {
+        target: { value: "worker@worksphere.com" },
+      });
       fireEvent.change(passwordInput, { target: { value: "SecurePass123!" } });
       fireEvent.click(submitButton);
 
@@ -368,7 +436,80 @@ describe("Passkey Conditional UI & WebAuthn Autofill", () => {
       });
 
       // Verify WebAuthnAbortService.cancelCeremony was called on form submission
-      expect(simpleWebAuthn.WebAuthnAbortService.cancelCeremony).toHaveBeenCalled();
+      expect(
+        simpleWebAuthn.WebAuthnAbortService.cancelCeremony,
+      ).toHaveBeenCalled();
+    });
+  });
+
+  describe("Abort controller cleanup on page leave or standard login submit", () => {
+    it("aborts active conditional ceremony on pagehide or beforeunload", async () => {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
+        isConditionalMediationAvailable: jest.fn().mockResolvedValue(true),
+      };
+      (simpleWebAuthn.startAuthentication as jest.Mock).mockImplementation(() =>
+        createCancellablePendingAuth(),
+      );
+
+      render(<SignInClient />);
+
+      await waitFor(() => {
+        expect(simpleWebAuthn.startAuthentication).toHaveBeenCalled();
+      });
+
+      (
+        simpleWebAuthn.WebAuthnAbortService.cancelCeremony as jest.Mock
+      ).mockClear();
+
+      // Dispatch beforeunload
+      window.dispatchEvent(new Event("beforeunload"));
+      expect(
+        simpleWebAuthn.WebAuthnAbortService.cancelCeremony,
+      ).toHaveBeenCalled();
+
+      (
+        simpleWebAuthn.WebAuthnAbortService.cancelCeremony as jest.Mock
+      ).mockClear();
+
+      // Dispatch pagehide
+      window.dispatchEvent(new Event("pagehide"));
+      expect(
+        simpleWebAuthn.WebAuthnAbortService.cancelCeremony,
+      ).toHaveBeenCalled();
+    });
+
+    it("aborts active conditional ceremony when standard form submit event is triggered", async () => {
+      (
+        window as unknown as { PublicKeyCredential?: unknown }
+      ).PublicKeyCredential = {
+        isConditionalMediationAvailable: jest.fn().mockResolvedValue(true),
+      };
+      (simpleWebAuthn.startAuthentication as jest.Mock).mockImplementation(() =>
+        createCancellablePendingAuth(),
+      );
+
+      const { container } = render(<SignInClient />);
+
+      await waitFor(() => {
+        expect(simpleWebAuthn.startAuthentication).toHaveBeenCalled();
+      });
+
+      (
+        simpleWebAuthn.WebAuthnAbortService.cancelCeremony as jest.Mock
+      ).mockClear();
+
+      const form = container.querySelector("form");
+      if (form) {
+        fireEvent.submit(form);
+      } else {
+        window.dispatchEvent(new Event("submit"));
+      }
+
+      expect(
+        simpleWebAuthn.WebAuthnAbortService.cancelCeremony,
+      ).toHaveBeenCalled();
     });
   });
 });

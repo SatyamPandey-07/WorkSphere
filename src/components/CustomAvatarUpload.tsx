@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { useUser } from "@clerk/nextjs";
 import {
   CheckCircle2,
-  Image as ImageIcon,
   Loader2,
   Upload,
 } from "lucide-react";
@@ -56,7 +55,96 @@ function getImageDimensions(
   });
 }
 
-export function CustomAvatarUpload() {
+export const AVATAR_PALETTE_COLORS = [
+  {
+    id: "indigo",
+    name: "Indigo",
+    bgClass: "bg-indigo-500",
+    colorCode: "#6366f1",
+  },
+  {
+    id: "teal",
+    name: "Teal",
+    bgClass: "bg-teal-500",
+    colorCode: "#14b8a6",
+  },
+  {
+    id: "rose",
+    name: "Rose",
+    bgClass: "bg-rose-500",
+    colorCode: "#f43f5e",
+  },
+  {
+    id: "amber",
+    name: "Amber",
+    bgClass: "bg-amber-500",
+    colorCode: "#f59e0b",
+  },
+  {
+    id: "violet",
+    name: "Violet",
+    bgClass: "bg-violet-500",
+    colorCode: "#8b5cf6",
+  },
+  {
+    id: "emerald",
+    name: "Emerald",
+    bgClass: "bg-emerald-500",
+    colorCode: "#10b981",
+  },
+  {
+    id: "sky",
+    name: "Sky",
+    bgClass: "bg-sky-500",
+    colorCode: "#0ea5e9",
+  },
+  {
+    id: "fuchsia",
+    name: "Fuchsia",
+    bgClass: "bg-fuchsia-500",
+    colorCode: "#d946ef",
+  },
+] as const;
+
+export type AvatarPaletteColor = (typeof AVATAR_PALETTE_COLORS)[number]["id"];
+
+export interface CustomAvatarUploadProps {
+  initialColor?: AvatarPaletteColor;
+  onColorChange?: (color: AvatarPaletteColor) => void;
+  hasCustomPhoto?: boolean;
+}
+
+export function getAvatarInitials(
+  user: {
+    firstName?: string | null;
+    lastName?: string | null;
+    fullName?: string | null;
+  } | null,
+): string {
+  if (!user) return "WS";
+  if (user.firstName || user.lastName) {
+    const first = user.firstName?.[0] || "";
+    const last = user.lastName?.[0] || "";
+    const combined = `${first}${last}`.trim().toUpperCase();
+    if (combined) return combined;
+  }
+  if (user.fullName) {
+    const parts = user.fullName.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    }
+    if (parts.length === 1 && parts[0].length > 0) {
+      return parts[0].slice(0, 2).toUpperCase();
+    }
+  }
+  return "WS";
+}
+
+export function CustomAvatarUpload({
+  initialColor,
+  onColorChange,
+  hasCustomPhoto,
+}: CustomAvatarUploadProps = {}) {
   const { user, isLoaded } = useUser();
   const [isPreparing, setIsPreparing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -66,6 +154,94 @@ export function CustomAvatarUpload() {
   const [success, setSuccess] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [selectedColor, setSelectedColor] = useState<AvatarPaletteColor>(() => {
+    if (
+      initialColor &&
+      AVATAR_PALETTE_COLORS.some((c) => c.id === initialColor)
+    ) {
+      return initialColor as AvatarPaletteColor;
+    }
+    const metaColor = (user?.unsafeMetadata as Record<string, any> | undefined)
+      ?.avatarColor;
+    if (metaColor && AVATAR_PALETTE_COLORS.some((c) => c.id === metaColor)) {
+      return metaColor as AvatarPaletteColor;
+    }
+    if (typeof window !== "undefined") {
+      try {
+        const stored =
+          (user?.id &&
+            localStorage.getItem(`worksphere_avatar_color_${user.id}`)) ||
+          localStorage.getItem("worksphere_avatar_color");
+        if (stored && AVATAR_PALETTE_COLORS.some((c) => c.id === stored)) {
+          return stored as AvatarPaletteColor;
+        }
+      } catch {}
+    }
+    return "indigo";
+  });
+
+  useEffect(() => {
+    if (
+      initialColor &&
+      AVATAR_PALETTE_COLORS.some((c) => c.id === initialColor)
+    ) {
+      setSelectedColor(initialColor as AvatarPaletteColor);
+      return;
+    }
+    const metaColor = (user?.unsafeMetadata as Record<string, any> | undefined)
+      ?.avatarColor;
+    if (metaColor && AVATAR_PALETTE_COLORS.some((c) => c.id === metaColor)) {
+      setSelectedColor(metaColor as AvatarPaletteColor);
+    }
+  }, [initialColor, user?.unsafeMetadata]);
+
+  const handleColorSelect = async (colorId: AvatarPaletteColor) => {
+    setSelectedColor(colorId);
+    setSuccess("Avatar color updated.");
+
+    // Persist to localStorage
+    if (typeof window !== "undefined") {
+      try {
+        if (user?.id) {
+          localStorage.setItem(`worksphere_avatar_color_${user.id}`, colorId);
+        }
+        localStorage.setItem("worksphere_avatar_color", colorId);
+      } catch (e) {
+        console.warn("Failed to persist avatar color to localStorage:", e);
+      }
+    }
+
+    // Persist to Clerk user unsafeMetadata
+    if (user && typeof (user as any).update === "function") {
+      try {
+        await (user as any).update({
+          unsafeMetadata: {
+            ...((user.unsafeMetadata as Record<string, any>) || {}),
+            avatarColor: colorId,
+          },
+        });
+      } catch (err) {
+        console.warn(
+          "Failed to persist avatar color in Clerk unsafeMetadata:",
+          err,
+        );
+      }
+    }
+
+    // Persist via user settings API endpoint if supported
+    try {
+      if (typeof window !== "undefined" && typeof window.fetch === "function") {
+        fetch("/api/user/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ avatarColor: colorId }),
+        }).catch(() => {});
+      }
+    } catch {}
+
+    onColorChange?.(colorId);
+  };
 
   const objectUrls = useRef<Set<string>>(new Set());
 
@@ -287,13 +463,31 @@ export function CustomAvatarUpload() {
     }
   };
 
-  const activeAvatarUrl = previewUrl || (user?.hasImage ? user.imageUrl : null);
+  const hasPhoto =
+    hasCustomPhoto !== undefined ? hasCustomPhoto : Boolean(user?.hasImage);
+  const activeAvatarUrl = previewUrl || (hasPhoto ? user?.imageUrl : null);
+  const initials = getAvatarInitials(user);
+  const activeColorConfig =
+    AVATAR_PALETTE_COLORS.find((c) => c.id === selectedColor) ||
+    AVATAR_PALETTE_COLORS[0];
 
   return (
     <div className="space-y-4">
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 shadow-sm">
         <div className="flex items-start gap-4">
-          <div className="w-16 h-16 rounded-full overflow-hidden shrink-0 border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+          <div
+            data-testid="avatar-display"
+            className={`w-16 h-16 rounded-full overflow-hidden shrink-0 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center ${
+              activeAvatarUrl
+                ? "bg-zinc-100 dark:bg-zinc-800"
+                : activeColorConfig.bgClass
+            }`}
+            style={
+              !activeAvatarUrl
+                ? { backgroundColor: activeColorConfig.colorCode }
+                : undefined
+            }
+          >
             {activeAvatarUrl ? (
               <Image
                 src={activeAvatarUrl}
@@ -305,7 +499,13 @@ export function CustomAvatarUpload() {
                 unoptimized
               />
             ) : (
-              <ImageIcon className="w-6 h-6 text-zinc-400" />
+              <div
+                data-testid="initials-avatar"
+                className={`w-full h-full flex items-center justify-center font-bold text-white text-lg select-none tracking-wider ${activeColorConfig.bgClass}`}
+                style={{ backgroundColor: activeColorConfig.colorCode }}
+              >
+                {initials}
+              </div>
             )}
           </div>
 
@@ -378,6 +578,57 @@ export function CustomAvatarUpload() {
                 </p>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* 8 Preset Color Swatches for Default Initials Avatar */}
+        <div
+          className="mt-6 pt-5 border-t border-zinc-200 dark:border-zinc-800"
+          data-testid="avatar-color-palette"
+        >
+          <div className="mb-3">
+            <h4 className="text-sm font-semibold text-zinc-900 dark:text-white">
+              Avatar Initials Color
+            </h4>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Choose from 8 preset background colors for your initials avatar.
+            </p>
+          </div>
+
+          <div
+            className="flex flex-wrap items-center gap-2.5"
+            role="radiogroup"
+            aria-label="Avatar background color palette"
+          >
+            {AVATAR_PALETTE_COLORS.map((color) => {
+              const isSelected = selectedColor === color.id;
+              return (
+                <button
+                  key={color.id}
+                  type="button"
+                  role="button"
+                  data-testid={`color-swatch-${color.id}`}
+                  data-color={color.id}
+                  aria-label={color.name}
+                  aria-pressed={isSelected}
+                  title={color.name}
+                  onClick={() => handleColorSelect(color.id)}
+                  className={`w-8 h-8 rounded-full ${color.bgClass} transition-all hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-zinc-900 dark:focus:ring-white flex items-center justify-center relative ${
+                    isSelected
+                      ? "ring-2 ring-offset-2 ring-zinc-900 dark:ring-white scale-110 shadow-sm"
+                      : "opacity-85 hover:opacity-100"
+                  }`}
+                  style={{ backgroundColor: color.colorCode }}
+                >
+                  {isSelected && (
+                    <span
+                      data-testid="selected-swatch-indicator"
+                      className="w-2.5 h-2.5 rounded-full bg-white shadow-xs"
+                    />
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

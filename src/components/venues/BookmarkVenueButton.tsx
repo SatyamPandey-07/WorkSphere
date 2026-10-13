@@ -8,6 +8,7 @@ import {
   subscribeToFavoriteChanges,
 } from "@/lib/venues/favoriteStorage";
 import type { OfflineVenue } from "@/lib/offlineStorage";
+import { useToast } from "@/components/ui/Toast";
 
 export interface BookmarkVenueButtonProps {
   venueId: string;
@@ -20,6 +21,10 @@ export interface BookmarkVenueButtonProps {
   showLabel?: boolean;
   showTooltip?: boolean;
   onToggle?: (isFavorited: boolean) => void;
+  onPersist?: (
+    venueId: string,
+    isFavorited: boolean,
+  ) => Promise<boolean | void>;
   className?: string;
   disabled?: boolean;
 }
@@ -35,9 +40,11 @@ export function BookmarkVenueButton({
   showLabel = false,
   showTooltip = true,
   onToggle,
+  onPersist,
   className = "",
   disabled = false,
 }: BookmarkVenueButtonProps) {
+  const { toast } = useToast();
   const [isFavorited, setIsFavorited] = useState<boolean>(() => {
     if (typeof initialIsFavorited === "boolean") return initialIsFavorited;
     return isVenueFavoritedLocally(venueId);
@@ -45,21 +52,26 @@ export function BookmarkVenueButton({
   const [isAnimating, setIsAnimating] = useState(false);
   const [justToggled, setJustToggled] = useState(false);
 
+  const isFavoritedRef = useRef(isFavorited);
   const isTogglingRef = useRef(false);
   const lastToggleTimeRef = useRef(0);
 
   // Sync with local storage on mount & listen to external/cross-tab updates
   useEffect(() => {
     // Read current local state or sync updated prop
+    let currentState: boolean;
     if (typeof initialIsFavorited === "boolean") {
-      setIsFavorited(initialIsFavorited);
+      currentState = initialIsFavorited;
     } else {
-      setIsFavorited(isVenueFavoritedLocally(venueId));
+      currentState = isVenueFavoritedLocally(venueId);
     }
+    isFavoritedRef.current = currentState;
+    setIsFavorited(currentState);
 
     // Subscribe to multi-tab and multi-component state synchronization
     const unsubscribe = subscribeToFavoriteChanges((event) => {
       if (event.venueId === venueId) {
+        isFavoritedRef.current = event.isFavorited;
         setIsFavorited(event.isFavorited);
       }
     });
@@ -83,25 +95,51 @@ export function BookmarkVenueButton({
 
       isTogglingRef.current = true;
       lastToggleTimeRef.current = now;
+
+      // 1. Optimistic UI update: immediately toggle icon fill and notify parent
+      const previousState = isFavoritedRef.current;
+      const nextState = !previousState;
+      isFavoritedRef.current = nextState;
+      setIsFavorited(nextState);
+      onToggle?.(nextState);
+
       setIsAnimating(true);
       setJustToggled(true);
 
+      // 2. Dispatch background API call to persist bookmark
       try {
-        const nextState = await toggleVenueFavorite(venueId, {
-          id: venueId,
-          name: venueName,
-          ...venueData,
-        });
+        const result = await (onPersist
+          ? onPersist(venueId, nextState)
+          : toggleVenueFavorite(venueId, {
+              id: venueId,
+              name: venueName,
+              ...venueData,
+            }));
 
-        setIsFavorited(nextState);
-        onToggle?.(nextState);
+        // If backend returns authoritative state differing from optimistic state
+        if (typeof result === "boolean" && result !== nextState) {
+          isFavoritedRef.current = result;
+          setIsFavorited(result);
+          onToggle?.(result);
+        }
+      } catch (err: unknown) {
+        // 3. Rollback optimistic state gracefully with an error toast if API rejects
+        isFavoritedRef.current = previousState;
+        setIsFavorited(previousState);
+        onToggle?.(previousState);
+
+        const errorMessage =
+          err instanceof Error
+            ? err.message
+            : `Failed to update bookmark for ${venueName}. Please try again.`;
+        toast(errorMessage, "error");
       } finally {
         isTogglingRef.current = false;
         setTimeout(() => setIsAnimating(false), 400);
         setTimeout(() => setJustToggled(false), 2000);
       }
     },
-    [venueId, venueName, venueData, disabled, onToggle],
+    [venueId, venueName, venueData, disabled, onToggle, onPersist, toast],
   );
 
   // Icon sizing

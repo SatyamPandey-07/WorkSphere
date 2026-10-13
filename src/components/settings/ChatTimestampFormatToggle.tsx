@@ -35,14 +35,35 @@ export function ChatTimestampFormatToggle() {
     setChatTimestampFormat(selectedFormat);
   };
 
+  const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    setCurrentTime(new Date());
+  }, [format]);
+
+  // Format 12-hour (e.g. "2:30 PM") vs 24-hour (e.g. "14:30")
+  const previewTimeStr = format === "relative"
+    ? currentTime.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true })
+    : currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+
   return (
-    <div className="flex items-center justify-between gap-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
       <div className="space-y-1">
-        <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-          Chat timestamps
-        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+            Chat timestamps
+          </p>
+          <span
+            data-testid="timestamp-preview-chip"
+            aria-label={`Preview timestamp format: ${previewTimeStr}`}
+            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+          >
+            <span className="opacity-75">Preview:</span>
+            <span className="font-semibold font-mono">{previewTimeStr}</span>
+          </span>
+        </div>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Choose how message times are displayed.
+          Choose how message times are displayed (12-hour vs 24-hour exact time).
         </p>
       </div>
       <div
@@ -58,7 +79,7 @@ export function ChatTimestampFormatToggle() {
             onClick={() => selectFormat(option.value)}
             className={`px-3 py-1.5 text-sm rounded-md transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 ${
               format === option.value
-                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 font-medium"
                 : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
             }`}
           >

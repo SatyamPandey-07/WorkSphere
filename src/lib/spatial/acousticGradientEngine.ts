@@ -1,13 +1,48 @@
 /**
  * acousticGradientEngine.ts
  * Spatial acoustic field decay and Inverse Distance Weighting (IDW) interpolation engine.
- * Computes continuous 2D/3D sound level contours (30dB - 70dB) across workspace floorplans.
+ * Computes continuous 2D/3D sound level contours (20dB - 110dB) across workspace floorplans.
  */
+
+export const MIN_ACOUSTIC_DB = 20; // Sensible acoustic floor (20 dB)
+export const MAX_ACOUSTIC_DB = 110; // Sensible acoustic ceiling (110 dB)
+
+/**
+ * Clamps raw acoustic decibel telemetry inputs between a sensible acoustic floor (20 dB)
+ * and ceiling (110 dB) before calculating normalized shader coordinates or color interpolation.
+ */
+export function clampDecibels(
+  db: number,
+  floor = MIN_ACOUSTIC_DB,
+  ceiling = MAX_ACOUSTIC_DB,
+): number {
+  if (typeof db !== "number" || !Number.isFinite(db) || Number.isNaN(db))
+    return floor;
+  return Math.min(ceiling, Math.max(floor, db));
+}
+
+/**
+ * Normalizes acoustic decibels into a 0.0 - 1.0 range, clamped between acoustic floor (20 dB) and ceiling (110 dB).
+ * Used for shader coordinates, color ramp interpolation, and thermal contour mapping.
+ */
+export function normalizeAcousticDecibels(
+  db: number,
+  floor = MIN_ACOUSTIC_DB,
+  ceiling = MAX_ACOUSTIC_DB,
+): number {
+  const clamped = clampDecibels(db, floor, ceiling);
+  return Number(((clamped - floor) / (ceiling - floor)).toFixed(4));
+}
 
 export interface SoundEmitter {
   id: string;
   name: string;
-  type: "ESPRESSO_BAR" | "ENTRANCE_DOOR" | "COLLABORATIVE_TABLE" | "PHONE_BOOTH" | "HVAC_UNIT";
+  type:
+    | "ESPRESSO_BAR"
+    | "ENTRANCE_DOOR"
+    | "COLLABORATIVE_TABLE"
+    | "PHONE_BOOTH"
+    | "HVAC_UNIT";
   x: number; // 0 to 100 percentage of floorplan width
   y: number; // 0 to 100 percentage of floorplan height
   baseDecibels: number;
@@ -18,7 +53,8 @@ export interface AcousticGridPoint {
   x: number;
   y: number;
   decibels: number;
-  zone: "SILENT_FOCUS" | "BALANCED_AMBIENT" | "COLLABORATIVE_BUZZ" | "HIGH_NOISE";
+  zone:
+    "SILENT_FOCUS" | "BALANCED_AMBIENT" | "COLLABORATIVE_BUZZ" | "HIGH_NOISE";
 }
 
 export interface DeskSoundRating {
@@ -42,28 +78,37 @@ export interface AcousticFieldMap {
 
 /**
  * Calculates sound pressure level (SPL) at distance r using inverse square decay with air absorption.
+ * Clamps input source and output SPL between 20 dB and 110 dB.
  */
 export function calculatePointSPL(
   sourceDb: number,
   distanceUnits: number,
-  absorptionFactor = 0.08
+  absorptionFactor = 0.08,
 ): number {
+  const clampedSourceDb = clampDecibels(sourceDb);
   const r = Math.max(1.0, distanceUnits);
   // Geometric divergence: 20 * log10(r) + atmospheric/partition absorption
   const decay = 18 * Math.log10(r) + absorptionFactor * r;
-  return Math.max(30, Number((sourceDb - decay).toFixed(1)));
+  return clampDecibels(Number((clampedSourceDb - decay).toFixed(1)));
 }
 
 /**
  * Generates continuous 2D acoustic gradient grid and evaluates desk sound levels.
+ * Clamps all emitter inputs and resulting grid cells between 20 dB and 110 dB.
  */
 export function generateAcousticField(
   emitters: SoundEmitter[],
   desksInput: Array<{ id: string; seatNumber: string; x: number; y: number }>,
   gridWidth = 40,
-  gridHeight = 25
+  gridHeight = 25,
 ): AcousticFieldMap {
-  const activeEmitters = emitters.filter((e) => e.isActive);
+  const activeEmitters = emitters
+    .filter((e) => e.isActive)
+    .map((e) => ({
+      ...e,
+      baseDecibels: clampDecibels(e.baseDecibels),
+    }));
+
   const grid: number[][] = [];
 
   for (let r = 0; r < gridHeight; r++) {
@@ -82,9 +127,8 @@ export function generateAcousticField(
         totalLinearEnergy += Math.pow(10, spl / 10);
       }
 
-      const combinedDecibels = Math.min(
-        75,
-        Math.max(30, Number((10 * Math.log10(totalLinearEnergy)).toFixed(1)))
+      const combinedDecibels = clampDecibels(
+        Number((10 * Math.log10(totalLinearEnergy)).toFixed(1)),
       );
       row.push(combinedDecibels);
     }
@@ -107,15 +151,14 @@ export function generateAcousticField(
       totalLinearEnergy += Math.pow(10, spl / 10);
     }
 
-    const predictedDecibels = Math.min(
-      75,
-      Math.max(30, Number((10 * Math.log10(totalLinearEnergy)).toFixed(1)))
+    const predictedDecibels = clampDecibels(
+      Number((10 * Math.log10(totalLinearEnergy)).toFixed(1)),
     );
 
     // Call suitability: 100 at <= 38dB, drops to 0 at >= 65dB
     const callSuitabilityScore = Math.max(
       5,
-      Math.min(100, Math.round(100 - (predictedDecibels - 36) * 3.3))
+      Math.min(100, Math.round(100 - (predictedDecibels - 36) * 3.3)),
     );
 
     return {
@@ -141,19 +184,21 @@ export function generateAcousticField(
 
 /**
  * Maps a decibel value to RGBA color for heatmap rendering.
+ * Clamps dB between 20 dB and 110 dB before color ramp interpolation.
  */
 export function decibelsToRgba(db: number): [number, number, number, number] {
-  if (db <= 38) {
-    // Deep Focus Emerald (30-38 dB)
+  const clampedDb = clampDecibels(db);
+  if (clampedDb <= 38) {
+    // Deep Focus Emerald (20-38 dB)
     return [16, 185, 129, 0.75];
-  } else if (db <= 46) {
+  } else if (clampedDb <= 46) {
     // Gentle Cyan (39-46 dB)
     return [6, 182, 212, 0.75];
-  } else if (db <= 56) {
+  } else if (clampedDb <= 56) {
     // Amber Buzz (47-56 dB)
     return [245, 158, 11, 0.8];
   } else {
-    // Noise Hazard Crimson (>56 dB)
+    // Noise Hazard Crimson (>56 dB up to 110 dB)
     return [239, 68, 68, 0.85];
   }
 }

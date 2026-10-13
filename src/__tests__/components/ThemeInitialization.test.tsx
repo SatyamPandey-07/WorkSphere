@@ -78,6 +78,15 @@ describe("theme initialization before hydration", () => {
     expect(document.documentElement.style.colorScheme).toBe("light");
   });
 
+  it("applies the saved lantern-emerald accent and --accent-lantern CSS variable (#6164)", () => {
+    window.localStorage.setItem("worksphere-accent", "lantern-emerald");
+    runThemeInitScript();
+
+    const root = document.documentElement;
+    expect(root.style.getPropertyValue("--primary-accent")).toBe("#00ff88");
+    expect(root.style.getPropertyValue("--accent-lantern")).toBe("#00ff88");
+  });
+
   it("preserves the pre-paint theme during provider hydration", () => {
     window.localStorage.setItem("worksphere-theme", "dark");
     runThemeInitScript();

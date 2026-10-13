@@ -18,6 +18,7 @@ import {
   Sparkles,
   Layers,
   ArrowRight,
+  AlertCircle,
 } from "lucide-react";
 import {
   PaymentRail,
@@ -27,9 +28,39 @@ import {
   MicroPaymentEngine,
 } from "@/lib/payments/microPaymentEngine";
 
-export default function MultiCurrencyDeskCheckout() {
-  const [selectedRail, setSelectedRail] = useState<PaymentRail>("lightning");
-  const [hourlyRate, setHourlyRate] = useState(4.5); // $4.50/hr
+/**
+ * Validates and initiates a Satoshi payment.
+ * Rejects negative, zero, non-finite, and NaN satoshi amounts (requires Math.floor(amountInSats) >= 1).
+ */
+export function initiateSatoshiPayment(amountInSats: number): boolean {
+  if (
+    typeof amountInSats !== "number" ||
+    !Number.isFinite(amountInSats) ||
+    isNaN(amountInSats) ||
+    Math.floor(amountInSats) < 1
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export interface MultiCurrencyMicroCheckoutProps {
+  initialHourlyRate?: number;
+  initialRail?: PaymentRail;
+  initialAdjustmentUsd?: number;
+  onPaymentInitiated?: (sats: number) => void;
+  className?: string;
+}
+
+export function MultiCurrencyDeskCheckout({
+  initialHourlyRate = 4.5,
+  initialRail = "lightning",
+  initialAdjustmentUsd = 0,
+  onPaymentInitiated,
+  className = "",
+}: MultiCurrencyMicroCheckoutProps = {}) {
+  const [selectedRail, setSelectedRail] = useState<PaymentRail>(initialRail);
+  const [hourlyRate, setHourlyRate] = useState(initialHourlyRate); // $4.50/hr
   const [session, setSession] = useState<MicroBillingSession | null>(null);
   const [activeInvoice, setActiveInvoice] = useState<PaymentInvoice | null>(null);
   const [copied, setCopied] = useState(false);
@@ -39,6 +70,13 @@ export default function MultiCurrencyDeskCheckout() {
     amountPaidCrypto: string;
     rail: string;
   } | null>(null);
+
+  // Custom gratuity / promotional discount adjustment state
+  const [adjustmentInput, setAdjustmentInput] = useState<string>(
+    initialAdjustmentUsd !== 0 ? String(initialAdjustmentUsd) : ""
+  );
+  const [adjustmentUsd, setAdjustmentUsd] = useState<number>(initialAdjustmentUsd);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const copyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -61,6 +99,57 @@ export default function MultiCurrencyDeskCheckout() {
 
     return () => clearInterval(interval);
   }, [session?.status, session?.sessionId]);
+
+  const initiateSatoshiPaymentLocal = (amountInSats: number): boolean => {
+    const isValid = initiateSatoshiPayment(amountInSats);
+    if (!isValid) {
+      setValidationError(
+        "Payment amount must be at least 1 Satoshi (cannot be zero, negative, or NaN)."
+      );
+      return false;
+    }
+    setValidationError(null);
+    if (onPaymentInitiated) {
+      onPaymentInitiated(Math.floor(amountInSats));
+    }
+    return true;
+  };
+
+  const handleAdjustmentChange = (valueStr: string) => {
+    setAdjustmentInput(valueStr);
+    if (valueStr.trim() === "") {
+      setAdjustmentUsd(0);
+      setValidationError(null);
+      return;
+    }
+
+    const val = parseFloat(valueStr);
+    if (isNaN(val)) {
+      setAdjustmentUsd(NaN);
+      setValidationError("Invalid discount or tip amount: please enter a valid number.");
+      return;
+    }
+
+    setAdjustmentUsd(val);
+    const netUsd = (session?.totalAccruedUsd ?? 0) + val;
+    const netSats = Math.floor(netUsd * LIVE_EXCHANGE_RATES.satsPerUsd);
+
+    if (selectedRail === "lightning") {
+      if (netSats < 1 || isNaN(netSats)) {
+        setValidationError(
+          "Payment amount must be at least 1 Satoshi (cannot be zero, negative, or NaN)."
+        );
+      } else {
+        setValidationError(null);
+      }
+    } else {
+      if (netUsd <= 0) {
+        setValidationError("Payment amount must be greater than zero.");
+      } else {
+        setValidationError(null);
+      }
+    }
+  };
 
   const startSession = () => {
     const newSession: MicroBillingSession = {
@@ -87,16 +176,31 @@ export default function MultiCurrencyDeskCheckout() {
     if (!session) return;
     const finalSession = MicroPaymentEngine.tickSession(session);
     finalSession.status = "settled";
+
+    const totalToSettleUsd = finalSession.totalAccruedUsd + adjustmentUsd;
+    const calculatedSats = Math.floor(totalToSettleUsd * LIVE_EXCHANGE_RATES.satsPerUsd);
+
+    if (selectedRail === "lightning") {
+      const isValid = initiateSatoshiPaymentLocal(calculatedSats);
+      if (!isValid) {
+        // Prevent Lightning invoice generation
+        return;
+      }
+    } else if (totalToSettleUsd <= 0) {
+      setValidationError("Total settlement amount must be greater than zero.");
+      return;
+    }
+
     const proofHash = MicroPaymentEngine.generatePaymentReceiptHash(
       finalSession.sessionId,
       finalSession.paymentRail,
-      finalSession.totalAccruedUsd
+      totalToSettleUsd
     );
     finalSession.paymentProofHash = proofHash;
 
     const invoice = MicroPaymentEngine.createMicroInvoice(
       finalSession.sessionId,
-      Math.max(0.25, finalSession.totalAccruedUsd),
+      totalToSettleUsd,
       selectedRail
     );
 
@@ -104,11 +208,11 @@ export default function MultiCurrencyDeskCheckout() {
     setSession(finalSession);
     setSettledReceipt({
       proofHash,
-      amountPaidUsd: Math.max(0.25, finalSession.totalAccruedUsd),
+      amountPaidUsd: totalToSettleUsd,
       amountPaidCrypto:
         selectedRail === "lightning"
-          ? `${Math.max(100, finalSession.totalAccruedSats)} Sats`
-          : `$${Math.max(0.25, finalSession.totalAccruedUsdc).toFixed(2)} USDC`,
+          ? `${calculatedSats.toLocaleString()} Sats`
+          : `$${totalToSettleUsd.toFixed(2)} USDC`,
       rail: selectedRail,
     });
   };
@@ -230,28 +334,81 @@ export default function MultiCurrencyDeskCheckout() {
 
           <div className="flex items-center gap-3 pt-2">
             <span className="text-2xl sm:text-3xl font-bold font-mono text-yellow-400">
-              ${session ? session.totalAccruedUsd.toFixed(4) : "0.0000"} USD
+              ${session ? (session.totalAccruedUsd + adjustmentUsd).toFixed(4) : adjustmentUsd.toFixed(4)} USD
             </span>
             <span className="text-slate-500 font-mono">≈</span>
             <span className="text-lg sm:text-xl font-bold font-mono text-cyan-400">
-              {session ? session.totalAccruedSats.toLocaleString() : "0"} Sats
+              {session
+                ? Math.floor((session.totalAccruedUsd + adjustmentUsd) * LIVE_EXCHANGE_RATES.satsPerUsd).toLocaleString()
+                : Math.floor(adjustmentUsd * LIVE_EXCHANGE_RATES.satsPerUsd).toLocaleString()}{" "}
+              Sats
             </span>
           </div>
         </div>
+
+        {/* Custom Gratuity / Promo Discount Adjustment */}
+        <div className="max-w-xs mx-auto text-left space-y-1.5">
+          <label
+            htmlFor="custom-adjustment-input"
+            className="text-xs font-semibold text-slate-300 block"
+          >
+            Custom Gratuity / Promo Discount ($)
+          </label>
+          <div className="relative">
+            <input
+              id="custom-adjustment-input"
+              data-testid="custom-adjustment-input"
+              type="number"
+              step="0.01"
+              value={adjustmentInput}
+              onChange={(e) => handleAdjustmentChange(e.target.value)}
+              placeholder="e.g. 1.00 or -5.00"
+              className="w-full px-3.5 py-2 text-xs rounded-xl bg-slate-950 border border-slate-700 text-white font-mono focus:ring-2 focus:ring-yellow-500/40"
+            />
+          </div>
+        </div>
+
+        {/* Validation Warning Alert */}
+        {validationError && (
+          <div
+            data-testid="satoshi-validation-error"
+            role="alert"
+            className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-center justify-center gap-2 max-w-md mx-auto"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+            <span>{validationError}</span>
+          </div>
+        )}
 
         {/* Action Controls */}
         <div className="flex justify-center items-center gap-4">
           {!session || session.status === "settled" ? (
             <button
               onClick={startSession}
-              className="px-8 py-3.5 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-950 font-black text-sm rounded-xl transition-all shadow-lg flex items-center gap-2"
+              data-testid="start-session-button"
+              disabled={Boolean(validationError)}
+              className="px-8 py-3.5 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-950 font-black text-sm rounded-xl transition-all shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Play className="w-5 h-5 fill-slate-950" /> Start Streaming Desk Session
             </button>
           ) : (
             <button
               onClick={endAndSettle}
-              className="px-8 py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-sm rounded-xl transition-all shadow-lg flex items-center gap-2 animate-pulse"
+              data-testid="settle-payment-button"
+              disabled={Boolean(
+                validationError ||
+                (selectedRail === "lightning" &&
+                  Math.floor((session.totalAccruedUsd + adjustmentUsd) * LIVE_EXCHANGE_RATES.satsPerUsd) < 1) ||
+                session.totalAccruedUsd + adjustmentUsd <= 0
+              )}
+              className={`px-8 py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-black text-sm rounded-xl transition-all shadow-lg flex items-center gap-2 ${
+                validationError ||
+                (selectedRail === "lightning" &&
+                  Math.floor((session.totalAccruedUsd + adjustmentUsd) * LIVE_EXCHANGE_RATES.satsPerUsd) < 1) ||
+                session.totalAccruedUsd + adjustmentUsd <= 0
+                  ? "opacity-50 cursor-not-allowed"
+                  : "animate-pulse"
+              }`}
             >
               <Square className="w-4 h-4 fill-white" /> End Session & Settle Payment
             </button>
@@ -328,3 +485,5 @@ export default function MultiCurrencyDeskCheckout() {
     </div>
   );
 }
+
+export default MultiCurrencyDeskCheckout;

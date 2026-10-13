@@ -1,4 +1,8 @@
-import { queuePendingFavorite, venuesRepository, type OfflineVenue } from "@/lib/offlineStorage";
+import {
+  queuePendingFavorite,
+  venuesRepository,
+  type OfflineVenue,
+} from "@/lib/offlineStorage";
 
 const STORAGE_KEY = "worksphere:favorite_venues";
 const BROADCAST_CHANNEL_NAME = "worksphere:favorite-changes";
@@ -78,15 +82,15 @@ export function setVenueFavoritedLocally(
         latitude: venueData.latitude || 0,
         longitude: venueData.longitude || 0,
         category: venueData.category || "cafe",
-        address: venueData.address || null,
-        rating: venueData.rating || null,
-        wifiQuality: venueData.wifiQuality || null,
+        address: venueData.address || undefined,
+        rating: venueData.rating ?? undefined,
+        wifiQuality: venueData.wifiQuality ?? null,
         hasOutlets: Boolean(venueData.hasOutlets),
         noiseLevel: venueData.noiseLevel || null,
         imageUrl: venueData.imageUrl || null,
         isFavorite: isFavorited,
         isPinned: Boolean(venueData.isPinned),
-        cachedAt: Date.now(),
+        savedAt: Date.now(),
         lastAccessedAt: Date.now(),
       };
 

@@ -25,7 +25,14 @@ export class SemanticEmbeddingGenerator {
     }
 
     public async generateEmbedding(text: string): Promise<number[]> {
-        if (!text || text.trim().length === 0) {
+        if (!text || typeof text !== 'string') {
+            throw new Error('Input text cannot be empty for embedding generation.');
+        }
+
+        // Sanitize and normalize whitespace (leading/trailing spaces, consecutive tabs/newlines) (#5481)
+        const sanitizedText = text.trim().replace(/\s+/g, ' ');
+
+        if (sanitizedText.length === 0) {
             throw new Error('Input text cannot be empty for embedding generation.');
         }
 
@@ -38,7 +45,7 @@ export class SemanticEmbeddingGenerator {
                 },
                 body: JSON.stringify({
                     model: this.model,
-                    input: text,
+                    input: sanitizedText,
                     dimensions: this.dimensions,
                 }),
             });

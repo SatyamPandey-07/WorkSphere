@@ -105,8 +105,8 @@ export function CopyToClipboardButton({
             : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
         } ${className}`}
       >
-        {isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-        <span>{isCopied ? "Copied!" : label}</span>
+        <span className="shrink-0">{isCopied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}</span>
+        <span className="whitespace-nowrap max-w-[200px] truncate">{isCopied ? "Copied!" : label}</span>
       </button>
 
       {/* Self-contained Toast Notification */}

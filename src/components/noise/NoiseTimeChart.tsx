@@ -101,3 +101,5 @@ export function NoiseTimeChart({ venueId }: NoiseTimeChartProps) {
     </section>
   );
 }
+
+export default NoiseTimeChart;

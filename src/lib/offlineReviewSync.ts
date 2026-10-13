@@ -1,12 +1,85 @@
 "use client";
 
 import { withWebLock, OFFLINE_WRITE_LOCK } from "./webLock";
+import { syncQueueManager } from "./offline/SyncQueueManager";
 
 export const DB_NAME = "worksphere-offline";
 export const DB_VERSION = 7;
 export const REVIEW_STORE_NAME = "pendingReviews";
 export const QUEUED_REVIEWS_STORE_NAME = "queued_reviews";
 export const REVIEW_SYNC_CHANNEL = "worksphere:review-sync";
+
+// Register review sync handler with consolidated SyncQueueManager
+syncQueueManager.registerHandler("review", async (item) => {
+  const review = item.payload as QueuedVenueReview;
+  if (!review?.venueId) return;
+
+  let csrfToken = "";
+  try {
+    const csrfRes = await fetch("/api/auth/csrf-token");
+    if (csrfRes.ok) {
+      const csrfData = await csrfRes.json();
+      csrfToken = csrfData.csrfToken || "";
+    }
+  } catch {}
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Idempotency-Key": review.id,
+  };
+  if (csrfToken) {
+    headers["x-csrf-token"] = csrfToken;
+  }
+
+  const baseVersionTimestamp =
+    review.baseVersionTimestamp ||
+    review.baseReviewUpdatedAt ||
+    review.baseVenueUpdatedAt;
+
+  const res = await fetch(
+    `/api/venues/${encodeURIComponent(review.venueId)}/reviews`,
+    {
+      method: "POST",
+      headers,
+      credentials: "same-origin",
+      body: JSON.stringify({
+        ...review.data,
+        idempotencyKey: review.id,
+        reviewId: review.reviewId,
+        baseVenueUpdatedAt: review.baseVenueUpdatedAt,
+        baseReviewUpdatedAt: review.baseReviewUpdatedAt || baseVersionTimestamp,
+        baseVersion: review.baseVersion || baseVersionTimestamp,
+        baseVersionTimestamp,
+      }),
+    },
+  );
+
+  if (res.ok) {
+    await removeQueuedReview(review.id);
+    broadcastReviewSyncEvent({
+      type: "REVIEW_SYNC_SUCCESS",
+      id: review.id,
+      venueId: review.venueId,
+      venueName: review.venueName,
+    });
+    return true;
+  }
+
+  if (res.status === 409) {
+    const conflictJson = await res.json().catch(() => ({}));
+    await updateQueuedReviewStatus(review.id, "CONFLICT", conflictJson);
+    broadcastReviewSyncEvent({
+      type: "REVIEW_SYNC_CONFLICT",
+      id: review.id,
+      venueId: review.venueId,
+      venueName: review.venueName,
+      conflictDetails: conflictJson,
+    });
+    return false;
+  }
+
+  throw new Error(`Review sync HTTP error: ${res.status}`);
+});
 
 export type QueuedReviewStatus =
   | "PENDING"
@@ -338,6 +411,17 @@ export async function queueOfflineReview(
 
     // Request Service Worker Background Sync where supported
     await requestReviewBackgroundSync();
+
+    // Also register with consolidated SyncQueueManager
+    void syncQueueManager
+      .enqueue<QueuedVenueReview>({
+        id: queuedReview.id,
+        entity: "review",
+        action: "create",
+        payload: queuedReview,
+        timestamp: queuedReview.createdAt,
+      })
+      .catch(() => {});
 
     return queuedReview;
   }, OFFLINE_WRITE_LOCK);

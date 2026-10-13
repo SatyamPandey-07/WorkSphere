@@ -8,6 +8,7 @@ export interface StorageQuotaWarningDetail {
   source: string;
   errorName?: string;
   message?: string;
+  usagePercentage?: number;
   timestamp: number;
 }
 
@@ -26,8 +27,7 @@ export function isQuotaExceededError(err: unknown): boolean {
   if (typeof err === "object" && err !== null && "name" in err) {
     const name = (err as { name?: unknown }).name;
     return (
-      name === "QuotaExceededError" ||
-      name === "NS_ERROR_DOM_QUOTA_REACHED"
+      name === "QuotaExceededError" || name === "NS_ERROR_DOM_QUOTA_REACHED"
     );
   }
   return false;
@@ -36,10 +36,14 @@ export function isQuotaExceededError(err: unknown): boolean {
 /**
  * Dispatches the custom window event `worksphere:storage-quota-warning`.
  */
-export function dispatchStorageQuotaWarning(source: string, error?: unknown): void {
+export function dispatchStorageQuotaWarning(
+  source: string,
+  error?: unknown,
+): void {
   if (typeof window === "undefined") return;
 
-  const safeSource = typeof source === "string" && source.trim() ? source.trim() : "storage";
+  const safeSource =
+    typeof source === "string" && source.trim() ? source.trim() : "storage";
   const detail: StorageQuotaWarningDetail = {
     source: safeSource,
     errorName: (error as any)?.name ?? "QuotaExceededError",
@@ -49,17 +53,23 @@ export function dispatchStorageQuotaWarning(source: string, error?: unknown): vo
 
   try {
     window.dispatchEvent(
-      new CustomEvent(STORAGE_QUOTA_WARNING_EVENT, { detail })
+      new CustomEvent(STORAGE_QUOTA_WARNING_EVENT, { detail }),
     );
   } catch (err) {
-    console.error("[StorageQuota] Failed to dispatch quota warning event:", err);
+    console.error(
+      "[StorageQuota] Failed to dispatch quota warning event:",
+      err,
+    );
   }
 }
 
 /**
  * Clears stale ephemeral caches across the application to free up IndexedDB storage.
  */
-export async function clearStaleCaches(): Promise<{ cleared: string[]; errors: string[] }> {
+export async function clearStaleCaches(): Promise<{
+  cleared: string[];
+  errors: string[];
+}> {
   const cleared: string[] = [];
   const errors: string[] = [];
 

@@ -163,6 +163,44 @@ describe("SearchBar component (#4401, #4404)", () => {
     expect(input).toHaveValue("Artisan Coffee");
   });
 
+  it("shows a clickable typo suggestion and searches for the suggested query", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        venues: [],
+        suggestedQuery: "Starbucks",
+      }),
+    });
+
+    render(<SearchBar />);
+    const input = screen.getByTestId("search-bar-input");
+
+    act(() => {
+      fireEvent.change(input, { target: { value: "Starbuks" } });
+    });
+
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+    });
+
+    const suggestion = await screen.findByRole("button", { name: "Starbucks" });
+    expect(screen.getByTestId("search-bar-suggestion")).toHaveTextContent(
+      "Did you mean: Starbucks?",
+    );
+
+    fireEvent.click(suggestion);
+    expect(input).toHaveValue("Starbucks");
+
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+    });
+
+    expect(mockFetch).toHaveBeenLastCalledWith(
+      "/api/venues?query=Starbucks",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
   describe("Accessibility aria-live announcements (#4404)", () => {
     it("renders polite aria-live container with role status", () => {
       render(<SearchBar />);

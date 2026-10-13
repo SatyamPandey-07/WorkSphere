@@ -121,8 +121,6 @@ import {
   configureSimulcastSender,
   createSimulcastEncodings,
   SimulcastAdaptiveController,
-  ConnectionLifecycleState,
-  mapIceToLifecycleState,
 } from "@/lib/realtime/webrtc";
 
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
@@ -369,7 +367,9 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
           // Attempt ICE restart before tearing down — this recovers the call
           // when the user switches from Wi-Fi to cellular (Issue #1932).
           if (typeof pc?.restartIce === "function") {
-            console.log(`[WebRTCMesh] ICE failed for ${peerId} — attempting restart`);
+            console.log(
+              `[WebRTCMesh] ICE failed for ${peerId} — attempting restart`,
+            );
             try {
               pc.restartIce();
             } catch (err) {
@@ -382,7 +382,10 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
         } else if (state === "disconnected") {
           // "disconnected" is transient; give ICE 5s to recover before cleanup
           setTimeout(() => {
-            if (pc?.iceConnectionState === "disconnected" || pc?.iceConnectionState === "failed") {
+            if (
+              pc?.iceConnectionState === "disconnected" ||
+              pc?.iceConnectionState === "failed"
+            ) {
               cleanupPeer(peerId);
             }
           }, 5000);
@@ -393,7 +396,10 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
         for (const track of localStreamRef.current.getTracks()) {
           let sender: RTCRtpSender | undefined;
           let isSimulcastTransceiver = false;
-          if (track.kind === "video" && typeof pc.addTransceiver === "function") {
+          if (
+            track.kind === "video" &&
+            typeof pc.addTransceiver === "function"
+          ) {
             try {
               const encodings = createSimulcastEncodings();
               const transceiver = pc.addTransceiver(track, {
@@ -413,16 +419,24 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
           if (track.kind === "video") {
             const videoSender =
               sender ||
-              pc.getSenders?.().find((s) => s.track === track || s.track?.kind === "video");
+              pc
+                .getSenders?.()
+                .find((s) => s.track === track || s.track?.kind === "video");
             if (videoSender) {
-              const encodingsCount = videoSender.getParameters?.()?.encodings?.length ?? (isSimulcastTransceiver ? 3 : 1);
+              const encodingsCount =
+                videoSender.getParameters?.()?.encodings?.length ??
+                (isSimulcastTransceiver ? 3 : 1);
               if (isSimulcastTransceiver || encodingsCount >= 3) {
                 void configureSimulcastSender(videoSender);
-                const controller = new SimulcastAdaptiveController(pc, videoSender);
+                const controller = new SimulcastAdaptiveController(
+                  pc,
+                  videoSender,
+                );
                 controller.start();
                 simulcastControllersRef.current.set(peerId, controller);
               } else {
-                const existingController = simulcastControllersRef.current.get(peerId);
+                const existingController =
+                  simulcastControllersRef.current.get(peerId);
                 if (existingController) {
                   existingController.destroy();
                   simulcastControllersRef.current.delete(peerId);
@@ -740,7 +754,10 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
           try {
             let sender: RTCRtpSender | undefined;
             let isSimulcastTransceiver = false;
-            if (track.kind === "video" && typeof pc.addTransceiver === "function") {
+            if (
+              track.kind === "video" &&
+              typeof pc.addTransceiver === "function"
+            ) {
               try {
                 const encodings = createSimulcastEncodings();
                 const transceiver = pc.addTransceiver(track, {
@@ -760,19 +777,27 @@ export function useWebRTCMesh({ roomId, userId }: Options) {
             if (track.kind === "video") {
               const videoSender =
                 sender ||
-                pc.getSenders?.().find((s) => s.track === track || s.track?.kind === "video");
+                pc
+                  .getSenders?.()
+                  .find((s) => s.track === track || s.track?.kind === "video");
               if (videoSender) {
-                const encodingsCount = videoSender.getParameters?.()?.encodings?.length ?? (isSimulcastTransceiver ? 3 : 1);
+                const encodingsCount =
+                  videoSender.getParameters?.()?.encodings?.length ??
+                  (isSimulcastTransceiver ? 3 : 1);
                 if (isSimulcastTransceiver || encodingsCount >= 3) {
                   void configureSimulcastSender(videoSender);
                   let controller = simulcastControllersRef.current.get(peerId);
                   if (!controller) {
-                    controller = new SimulcastAdaptiveController(pc, videoSender);
+                    controller = new SimulcastAdaptiveController(
+                      pc,
+                      videoSender,
+                    );
                     controller.start();
                     simulcastControllersRef.current.set(peerId, controller);
                   }
                 } else {
-                  const existingController = simulcastControllersRef.current.get(peerId);
+                  const existingController =
+                    simulcastControllersRef.current.get(peerId);
                   if (existingController) {
                     existingController.destroy();
                     simulcastControllersRef.current.delete(peerId);
